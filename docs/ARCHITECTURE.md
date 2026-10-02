@@ -18,7 +18,7 @@ shared contracts that let several people (and agents) build in parallel.
 | `apps/game-server` | Node 22 | authoritative rooms, show flow, bots |
 | `apps/api` | Node 22 | accounts, inventory, store, ranking (Fastify + Drizzle) |
 
-Dependency direction (no cycles): `shared ← sim ← content ← render/audio/netcode ← ui ← client`.
+Dependency direction (no cycles): `shared ← sim ← content ← render/audio/netcode ← ui ← client`. Full spec: `docs/SPEC.md`. Game design: `docs/design/`.
 `netcode` may import `sim` types; `ui` must NOT import three or sim runtime (types only).
 
 ## Sub-path imports
@@ -30,11 +30,14 @@ Every package exports `"./*": "./src/*/index.ts"`, so a folder with an
 
 ## Core contracts (already written — code against these)
 
-- `packages/sim/src/character/types.ts` — `CharacterInput`, `Button`, `CharacterState`, `CharacterFullState`, `CharacterFlag`.
+- `packages/sim/src/character/types.ts` — `CharacterInput`, `Button`, `CharacterState`, `CharacterFullState`, `CharacterFlag`, `TumblerControllerLike`, `CharacterStepContext`, `CreateTumblerController`.
+- `packages/render/src/obstacles/types.ts` — `ObstacleVisual`, `ObstacleVisualFactory`, `ObstacleVisualSet`.
 - `packages/sim/src/obstacles/types.ts` — `ObstacleType`, `ObstacleInstance`, `ObstacleModule`, `ObstacleRuntime`, `ObstacleActor`, build/step contexts.
 - `packages/sim/src/physics/surfaces.ts` — `SurfaceRegistry`, `SurfaceInfo` (ice, conveyor, bouncy, grabbable, lethal…).
 - `packages/sim/src/events.ts` — `SimEvent` union + `EventSink`. All gameplay feedback (VFX, SFX, UI toasts, netcode events) flows through these.
-- `packages/content/src/schema/round.ts` — `RoundDefinitionSchema`: geometry pieces, obstacles, triggers, spawns, flyover, bot waypoints, variations.
+- `packages/shared/src/schema/round.ts` — `RoundDefinitionSchema` + `defineRound`: geometry pieces, obstacles, triggers, spawns, flyover, bot waypoints, variations. (Lives in shared so sim can read rounds; `@tumble/content` re-exports it.)
+- `packages/sim/src/match/types.ts` — `MatchSim`, `MatchSimOptions`, `RoundStatus`, `PlayerRoundStatus`: one round running in a Rapier world; driven identically by server (authority), client (predict) and offline/dev.
+- `packages/render/src/character/types.ts` — `TumblerVisual`, `TumblerLoadout`, `TumblerAnimInput`, `CreateTumblerVisual`: every on-screen Tumbler (game, lobby, locker, player wall, podium) goes through this.
 - `packages/shared/src/game.ts` — `RoundType`, `RoundPhase`, `ShowPhase`, `ThemeId`, `TEAM_COLORS`.
 - `packages/shared/src/collision.ts` — `CollisionGroup`, `InteractionGroups` presets.
 

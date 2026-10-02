@@ -1,4 +1,8 @@
+import type { Collider, RigidBody, World } from '@dimforge/rapier3d-compat';
 import type { Quat, Vec3 } from '@tumble/shared';
+import type { EventSink } from '../events.ts';
+import type { Rapier } from '../physics/rapier.ts';
+import type { SurfaceRegistry } from '../physics/surfaces.ts';
 
 /** Button bitfield carried in every input packet. */
 export const Button = {
@@ -100,3 +104,61 @@ export const CharacterFlag = {
   OnIce: 1 << 6,
   InSlime: 1 << 7,
 } as const;
+
+/** Everything a controller needs for one fixed step. */
+export interface CharacterStepContext {
+  R: Rapier;
+  world: World;
+  dt: number;
+  tick: number;
+  /** Match time in seconds. */
+  time: number;
+  surfaces: SurfaceRegistry;
+  events: EventSink;
+  /** Resolves a collider handle to the controller that owns it (player-on-player grabs, dive hits). */
+  controllerByCollider(handle: number): TumblerControllerLike | undefined;
+}
+
+/**
+ * The Tumbler controller as seen by the match sim, bots and netcode.
+ * Implemented in `@tumble/sim/character`.
+ */
+export interface TumblerControllerLike {
+  readonly id: number;
+  readonly body: RigidBody;
+  readonly collider: Collider;
+  readonly state: CharacterStateId;
+  readonly grounded: boolean;
+  /** Apply input and intent forces. Call BEFORE `world.step()`. */
+  step(input: CharacterInput, ctx: CharacterStepContext): void;
+  /** Ground detection, state transitions, events. Call AFTER `world.step()`. */
+  postStep(ctx: CharacterStepContext): void;
+  getState(out: CharacterFullState): CharacterFullState;
+  setState(s: CharacterFullState): void;
+  /** Knockback; stuns when `stun` or when the impulse exceeds the stun threshold. */
+  knock(impulse: Vec3, stun: boolean): void;
+  /** Velocity change applied this step (fans, wind). */
+  push(deltaVelocity: Vec3): void;
+  teleport(pos: Vec3, yaw?: number): void;
+  /** Ghost: no player/prop collisions (respawn grace, finished, spectating). */
+  setGhost(ghost: boolean, seconds?: number): void;
+  /** Frozen on the start gate during countdown: can jump in place and emote, cannot move. */
+  setFrozen(frozen: boolean): void;
+  /** Mark finished/eliminated etc.; switches to Finished/Spectating/Eliminated states. */
+  setFate(state: CharacterStateId): void;
+  dispose(): void;
+}
+
+/** Options for creating a controller. */
+export interface CreateControllerOptions {
+  R: Rapier;
+  world: World;
+  id: number;
+  position: Vec3;
+  yaw: number;
+  /** Tuning overrides; omitted fields use the defaults in `@tumble/sim/character`. */
+  tuning?: Record<string, unknown>;
+}
+
+/** Factory exported by `@tumble/sim/character` as `createTumblerController`. */
+export type CreateTumblerController = (opts: CreateControllerOptions) => TumblerControllerLike;

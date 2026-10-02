@@ -1,0 +1,38 @@
+{
+  "name": "@tumble/client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@tumble/audio": "workspace:*",
+    "@tumble/content": "workspace:*",
+    "@tumble/netcode": "workspace:*",
+    "@tumble/render": "workspace:*",
+    "@tumble/shared": "workspace:*",
+    "@tumble/sim": "workspace:*",
+    "@tumble/ui": "workspace:*",
+    "lil-gui": "^0.21.0",
+    "react": "^19",
+    "react-dom": "^19",
+    "three": "0.186.1",
+    "zustand": "^5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/three": "0.186.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "tailwindcss": "4.3.3",
+    "vite": "^8.3.2"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@tumble/game-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@tumble/content": "workspace:*",
+    "@tumble/netcode": "workspace:*",
+    "@tumble/shared": "workspace:*",
+    "@tumble/sim": "workspace:*",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.2",
+    "tsx": "^4.23.15"
+  }
+}

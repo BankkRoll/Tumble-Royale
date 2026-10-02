@@ -1,0 +1,16 @@
+{
+  "name": "@tumble/content",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": { "@tumble/shared": "workspace:*", "@tumble/sim": "workspace:*", "zod": "^4.1.0" },
+  "devDependencies": {}
+}

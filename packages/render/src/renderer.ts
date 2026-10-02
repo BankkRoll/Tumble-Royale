@@ -1,4 +1,4 @@
-import { ACESFilmicToneMapping, PCFSoftShadowMap, SRGBColorSpace, WebGPURenderer } from 'three/webgpu';
+import { ACESFilmicToneMapping, PCFShadowMap, SRGBColorSpace, WebGPURenderer } from 'three/webgpu';
 
 /** Which GPU backend to request. `auto` picks WebGPU when available and falls back to WebGL2. */
 export type BackendPreference = 'auto' | 'webgpu' | 'webgl';
@@ -31,7 +31,7 @@ export async function createRenderer(
   renderer.toneMapping = ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = PCFSoftShadowMap;
+  renderer.shadowMap.type = PCFShadowMap;
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
   // WebGPURenderer silently falls back to WebGL2 when adapter acquisition fails,

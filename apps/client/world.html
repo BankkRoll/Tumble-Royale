@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>Tumble Royale — World Lab</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #4fa3ff;
+        font-family: 'Trebuchet MS', system-ui, sans-serif;
+      }
+      #world {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        outline: none;
+      }
+      #toast {
+        position: fixed;
+        left: 50%;
+        top: 18px;
+        transform: translateX(-50%);
+        padding: 10px 22px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.92);
+        color: #3a1f4d;
+        font-weight: 900;
+        font-size: 22px;
+        letter-spacing: 0.03em;
+        box-shadow: 0 6px 0 rgba(58, 31, 77, 0.25);
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.25s, transform 0.25s;
+        z-index: 40;
+      }
+      #toast.show {
+        opacity: 1;
+        transform: translateX(-50%) scale(1.05);
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="world" tabindex="0"></canvas>
+    <div id="toast"></div>
+    <script type="module" src="/src/world-lab/main.ts"></script>
+  </body>
+</html>

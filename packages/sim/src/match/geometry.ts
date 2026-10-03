@@ -10,7 +10,7 @@
  * | box      | full extents x, y, z                  | cuboid                                                |
  * | cylinder | x = radius, y = height                | cylinder along Y                                      |
  * | ramp     | full extents                          | right-triangle prism: low edge at −Z, rising to +Z    |
- * | wedge    | full extents                          | ridge prism: base full width, ridge along X at top    |
+ * | wedge    | full extents                          | roof prism: ridge along Z at top, faces fall to ±X    |
  * | sphere   | x = radius                            | ball                                                  |
  * | hexPrism | x = circumradius, y = height          | convex hull, vertices at k·60° (flat sides on ±Z)     |
  * | torus    | x = major radius, y = tube radius     | ring of capsules lying in the XZ plane                |
@@ -182,7 +182,7 @@ function wedgePoints(hx: number, hy: number, hz: number): Float32Array {
   return new Float32Array([
     -hx, -hy, -hz,  hx, -hy, -hz,
     -hx, -hy,  hz,  hx, -hy,  hz,
-    -hx,  hy,  0,   hx,  hy,  0,
+     0,  hy, -hz,   0,  hy,  hz,
   ]);
 }
 

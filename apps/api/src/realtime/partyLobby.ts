@@ -10,6 +10,8 @@
  *   platform bounds, catalog emotes);
  * - accept a look only if it passes the same catalog + ownership checks as a
  *   saved loadout, and at most once per `lookMinIntervalMs`;
+ * - keep the shared ball state from the leader only, and a grab only when it
+ *   names another current member;
  * - deliver to the other current members only, never the sender.
  *
  * Nothing is persisted. Membership is read from the party store on every
@@ -79,6 +81,9 @@ export class PartyLobbyRelay {
     if (!party) return 'no_party';
     const others = party.members.map((m) => m.userId).filter((id) => id !== userId);
     if (others.length === 0) return 'relayed';
+    // The leader's client simulates the shared ball; anyone else claiming it would fight them.
+    if (frame.ball && party.leaderId !== userId) delete frame.ball;
+    if (frame.grab && !others.includes(frame.grab)) delete frame.grab;
     if (frame.look) {
       const ok =
         now - bucket.lookAt >= PARTY_LOBBY_LIMITS.lookMinIntervalMs &&

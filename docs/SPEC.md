@@ -22,11 +22,15 @@ Build **Tumble Royale**: a browser-native, real-time multiplayer party royale wh
 
 ## 1. Tech stack
 
-TypeScript strict · pnpm + Turborepo · Vite (code-split rounds) · three.js `WebGPURenderer` with WebGL2 fallback, TSL node materials · Rapier compat (pinned, same on client and server) · `three-mesh-bvh` (camera collision, picking) · TSL post nodes (bloom, outline, SMAA/FXAA, vignette, LUT) · `troika-three-text` (nameplates, signage) · React 19 + Zustand + Tailwind DOM overlay (game loop NOT React-driven) · procedural animation + AnimationMixer · Web Audio (spatial via PannerNode) · glTF + procedural geometry (playable with zero external assets) · WebSocket binary protocol (custom bit-packed `DataView` snapshots/inputs, msgpackr for low-frequency) · Node 22 game server, many rooms per process · Redis (matchmaking/presence) · Fastify API · Postgres + Drizzle · Guest → Discord/Google/email auth, JWT · Stripe (cosmetics only) · Sentry + Prometheus · Vitest + Playwright.
+TypeScript strict · pnpm + Turborepo · Vite (rounds are statically imported into the main bundle; only the UI overlay is a separate chunk) · three.js `WebGPURenderer` with WebGL2 fallback, TSL node materials · Rapier compat (pinned, same on client and server), also used for camera collision casts · TSL post nodes (selective bloom, SMAA/FXAA, per-theme colour grade, vignette, chromatic punch) · nameplates and signs drawn to canvas textures · React 19 + Zustand DOM overlay with its own CSS (game loop NOT React-driven) · procedural animation + AnimationMixer · Web Audio (spatial via PannerNode) · procedural geometry (playable with zero external assets) · WebSocket binary protocol (custom bit-packed `DataView` snapshots/inputs, msgpackr for low-frequency) · Node 22 game server, many rooms per process · Redis (matchmaking/presence; in-memory fallback for a single instance) · Fastify API · Postgres + Drizzle (PGlite locally) · Guest → Discord/Google/email auth, JWT · Stripe (cosmetics only) · Prometheus text metrics (game server) · Vitest + Playwright.
+
+Not built: crash/error reporting (no Sentry or equivalent), SSAO, glTF character overrides, BVH raycasting, SDF text. The screen-space edge outline exists but is off in every preset (`DECISIONS.md`).
 
 ## 2. Monorepo
 
-`apps/{client,game-server,api,matchmaker,level-editor}`, `packages/{shared,sim,netcode,content,render,audio,ui}`, `tools/{asset-pipeline,bot-swarm,balance}`. `sim` runs on server (authoritative) and client (prediction).
+`apps/{client,game-server,api,matchmaker}`, `packages/{shared,sim,netcode,content,render,audio,ui}`, `tools/{bot-swarm,media}`. `sim` runs on server (authoritative) and client (prediction).
+
+Not built (future): `apps/level-editor`, `tools/asset-pipeline`, `tools/balance`.
 
 ## 3. Core loop & show structure
 
@@ -94,15 +98,15 @@ States: Idle, Run, Jump, Fall, Dive, DiveSlide, GetUp, Grab, Grabbed, Carry, Stu
 
 Candy-coloured toy world floating in a bright sky. Pastel + saturated accents, soft shadows, rim light, chunky readable shapes. **Danger = magenta/orange, safe = cyan/mint, interactable = yellow.**
 
-- Toon/PBR hybrid (3-step ramp, Fresnel rim, fake SSS on characters, candy specular). Inverted-hull outline for characters; screen-space edge outline for levels (tiered). Hazard-tape stripes, emissive telegraph pulses. Slime/void with scrolling noise, foam edges, vertex waves. Sky gradient + drifting clouds + floating background islands/balloons/blimps (instanced, parallax). Water/ice/glass variants.
-- One sun with cascaded shadows (2–3), hemisphere ambient, SSAO only on High. **Blob shadows under every character always.**
-- Post: SMAA/FXAA → selective bloom → LUT per theme → vignette → chromatic punch on hit.
+- Toon/PBR hybrid (3-step ramp, Fresnel rim, fake SSS on characters, candy specular). Inverted-hull outline for characters (the level edge outline is off in every preset). Hazard-tape stripes, emissive telegraph pulses. Slime/void with scrolling noise, foam edges, vertex waves. Sky gradient + drifting clouds + floating background islands/balloons/blimps (instanced, parallax). Water/ice/glass variants.
+- One sun: no shadow map on Low, one map on Medium, cascaded shadows on High/Ultra; hemisphere ambient; no SSAO. **Blob shadows under every character always.**
+- Post: SMAA/FXAA → selective bloom (emissive buffer only) → per-theme colour grade → vignette → chromatic punch on hit.
 - VFX: confetti, dust puffs, dive speed lines, stun star ring, slime splash, finish fireworks, qualification sparkle column, elimination "poof" balloons, crown shine, bounce rings, fan wind streaks, tile crack previews, team smoke.
 - Budgets: 60 FPS on Iris Xe / M1; < 250 draw calls; instancing; shared character geometry with per-instance colour; LODs; < 6 MB gz initial; < 4 MB per round chunk; Low/Medium/High/Ultra/Auto with adaptive resolution.
 
 ## 7. Camera
 
-Third-person spring arm, orbit with mouse/stick, smoothed follow with look-ahead; BVH camera collision with occluder fading; modes: free orbit, fixed side cam, top-down tilt; trauma shake (toggle); spectator (cycle Q/E, follow leader/friend, free fly in customs); intro flyover splines; finish slow-mo.
+Third-person spring arm, orbit with mouse/stick, smoothed follow with look-ahead; camera collision via Rapier shape casts, dithered occluder fades; modes: free orbit, fixed side cam, top-down tilt; trauma shake (toggle); spectator (cycle Q/E, follow leader/friend, free fly in customs); intro flyover splines; finish slow-mo.
 
 ## 8. Obstacle library
 
@@ -130,8 +134,8 @@ Each round definition contains id, name, type, theme, player range, qualificatio
 - Snapshots: position 16-bit/axis in round bounds, smallest-three quaternion (30 bits), quantised velocity, state, grab target, flags. Delta vs last acked; interest management; reliable ordered events channel.
 - Local prediction against local Rapier world with kinematic obstacles at `pose(matchTime)`; rewind + replay on error; smooth small corrections (~100 ms), snap large.
 - Remote players interpolated ~100 ms behind, hermite with velocity, brief extrapolation.
-- Lag compensation for grab/dive hits (≤150 ms rewind). Finish order by server tick with sub-tick interpolation.
-- Anti-cheat: never trust client results; rate limits; speed/teleport sanity.
+- Lag compensation for grab/dive hits (≤150 ms rewind), built as a server hit assist: after each authoritative step a fresh grab/dive is checked against the other players rewound to that client's view time, and the server can only add a hit the client saw. Bodies are never moved back (`apps/game-server/src/hitAssist.ts`, `lagcomp.ts`). Finish order by server tick with sub-tick interpolation.
+- Anti-cheat: never trust client results; token-bucket rate limits on inputs, chat and acks; input sequence sanity. Speed/teleport checks run on the server's own bodies and only count anomaly metrics; they never kick or correct a player (`anomaly.ts`).
 - Reconnect within 30 s with resume token. Region ping probes. Tick budget < 12 ms at 40 players.
 
 ## 11. Bots
@@ -144,7 +148,7 @@ XP & levels; Crowns + Crown Shards; Season Pass (100 tiers, free + premium, cosm
 
 ## 13. Social
 
-Friends (name#tag), presence, recent players; parties up to 4 with ready checks and invite links `/join/<code>`; custom lobbies (code, host picks rounds, bots on/off, timers, spectators); lobby/party text chat (filtered); in-match emotes + quick pings; report/mute/block; streamer mode.
+Friends (name#tag), presence, recent players; parties up to 4 with ready checks and invite links `/join/<code>`; private shows (code, host picks rounds, bots on/off, timers, spectators, kick/ban, lock, transfer host); lobby/party text chat (filtered); in-match emotes + quick pings; report/mute/block; streamer mode.
 
 ## 14. Every screen & flow
 
@@ -157,7 +161,7 @@ Friends (name#tag), presence, recent players; parties up to 4 with ready checks 
 14.7 Final & victory: slow-mo crown grab, victory screen with celebration, crown counter, music swell, fireworks, photo mode. Others see winner cam then results.
 **End of show: the PLAYER WALL** — every player of the show displayed on a giant wall grid; as the show recap plays, eliminated players' cells drop away round by round (they fall out comedically) until only the winner remains, crowned.
 14.8 Rewards: XP breakdown, level-up animation, pass progress, unlock rarity reveal, RP change (ranked), Play Again / Back to Lobby.
-14.9 Locker · 14.10 Store · 14.11 Season Pass & Challenges · 14.12 Profile, Leaderboards, Match History · 14.13 Settings (graphics, controls + rebinding, audio, accessibility incl. colourblind/reduced shake/flash/captions/UI scale, gameplay, account) · 14.14 Level editor (internal first).
+14.9 Locker · 14.10 Store · 14.11 Season Pass & Challenges · 14.12 Profile, Leaderboards, Match History · 14.13 Settings (graphics, controls + rebinding, audio, accessibility incl. colourblind/reduced shake/flash/captions/UI scale, gameplay, account) · 14.14 Level editor (not built).
 
 ## 15. Audio
 
@@ -169,15 +173,17 @@ users, auth_identities, sessions, profiles, player_stats, player_round_stats, in
 
 ## 17. Phases & acceptance
 
-- **P0 Foundations** — ✅ toon test scene 60 FPS on both backends; Rapier identical client/server after 600 steps.
-- **P1 Tumbler feels amazing** — ✅ run/jump/dive/grab/ledge-climb/ride moving & rotating platforms; stun + ragdoll; "feels good" in 30 s.
-- **P2 Netcode slice** — ✅ 150 ms + 2% loss: local movement instant, remotes smooth, tick < 12 ms at 40, no rubber-banding.
-- **P3 First Show** — ✅ full 3-round show, 40 entities, end-to-end, no crashes.
+Legend: ✅ verified · 🟡 partial (what is and isn't verified is listed) · ⬜ not started.
+
+- **P0 Foundations** — ✅ test scene renders on both backends (`e2e/phase0.spec.ts`); Rapier identical client/server after 600 steps.
+- **P1 Tumbler feels amazing** — ✅ run/jump/dive/grab/ledge-climb/ride moving & rotating platforms; stun + ragdoll. "Feels good" still needs human playtesting.
+- **P2 Netcode slice** — ✅ 150 ms + 2% loss: local movement instant, remotes smooth, no rubber-banding (`apps/client/test/prediction.test.ts`). Tick time at 40 players is measured with `tools/bot-swarm` on a dev machine, not in CI.
+- **P3 First Show** — ✅ full show, 40 entities, end-to-end in the browser (`e2e/game.spec.ts`).
 - **P4 Meta & accounts** — ✅ account → customize → party queue → show → XP & unlock persisted.
-- **P5 Content MVP** — ✅ 10+ rounds rotating; phones 30+ FPS on Low.
-- **P6 Ranked/store/pass/social** — ✅ 40-player rating update unit-tested; idempotent purchases; custom lobby codes.
-- **P7 Launch hardening** — ✅ 24 h soak no memory growth; p95 tick < 16 ms; crash-free > 99.5%.
-- **P8 Post-launch** — P rounds, creator editor sharing, events, replays/ghosts, WebTransport.
+- **P5 Content MVP** — 🟡 Verified: 20 rounds rotating, a Low preset (no shadows, bloom or outline, FXAA, 0.8 render scale), touch controls. Not verified: phones 30+ FPS on Low; no phone has been measured.
+- **P6 Ranked/store/pass/social** — ✅ 40-player rating update unit-tested; idempotent purchases; private show codes; friends, chat, report/block/mute.
+- **P7 Launch hardening** — 🟡 Built: rate limits, bans, reconnect, a results outbox, matchmaker region fallback, tick/RTT/anomaly metrics on `GET /metrics`, whole-round soak tests in Vitest, a load tester that prints the server's p95 tick. Not verified: 24 h soak without memory growth, p95 tick < 16 ms under real load, crash-free > 99.5% (nothing reports crashes, so it cannot be measured).
+- **P8 Post-launch** — 🟡 round replays are built (`docs/design/REPLAYS.md`). Not built: more rounds, a creator editor, events, ghosts, WebTransport.
 
 ## 18. Code quality
 

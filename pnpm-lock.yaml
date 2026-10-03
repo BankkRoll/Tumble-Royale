@@ -14,6 +14,9 @@ importers:
       '@types/node':
         specifier: ^22.15.0
         version: 22.20.5
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
       eslint:
         specifier: ^10.12.0
         version: 10.12.0(jiti@2.7.0)
@@ -178,6 +181,9 @@ importers:
 
   apps/game-server:
     dependencies:
+      '@dimforge/rapier3d-compat':
+        specifier: 0.21.0
+        version: 0.21.0
       '@tumble/content':
         specifier: workspace:*
         version: link:../../packages/content
@@ -190,9 +196,18 @@ importers:
       '@tumble/sim':
         specifier: workspace:*
         version: link:../../packages/sim
+      msgpackr:
+        specifier: ^1.11.0
+        version: 1.12.1
+      pino:
+        specifier: 10.4.0
+        version: 10.4.0
       ws:
         specifier: 8.22.0
         version: 8.22.0
+      zod:
+        specifier: ^4.1.0
+        version: 4.6.5
     devDependencies:
       '@types/ws':
         specifier: 8.18.2

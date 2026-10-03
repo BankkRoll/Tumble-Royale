@@ -2,7 +2,8 @@
  * Database bootstrap: node-postgres when `DATABASE_URL` is set, embedded PGlite
  * otherwise. Both run the same Drizzle schema and the same SQL migrations.
  */
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import type { ExtractTablesWithRelations } from 'drizzle-orm';
@@ -36,7 +37,13 @@ export interface Database {
   close(): Promise<void>;
 }
 
-const MIGRATIONS_DIR = fileURLToPath(new URL('../../drizzle', import.meta.url));
+// NOTE: this module runs from `src/db/` under tsx and from the `dist/` bundle in
+// production, so the migrations folder is one or two levels up.
+const MIGRATIONS_DIR =
+  ['../../drizzle', '../drizzle']
+    .map((rel) => fileURLToPath(new URL(rel, import.meta.url)))
+    .find((dir) => existsSync(join(dir, 'meta', '_journal.json'))) ??
+  fileURLToPath(new URL('../../drizzle', import.meta.url));
 
 /**
  * Opens the database.

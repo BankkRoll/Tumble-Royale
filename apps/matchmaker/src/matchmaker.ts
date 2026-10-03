@@ -184,6 +184,10 @@ const LOBBY_TTL_MS = 2 * 3_600_000;
 /** Hash of live lobby codes, walked by the away sweep. */
 const LOBBY_INDEX = 'lobby-index';
 const LOBBY_LOCK_TTL_MS = 5000;
+const TICK_LOCK = 'tick-lock';
+/** Tick lock lifetime; renewed every {@link TICK_LOCK_RENEW_MS} while a tick runs. */
+export const TICK_LOCK_TTL_MS = 5000;
+const TICK_LOCK_RENEW_MS = 1500;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 /** Default custom lobby settings. */
@@ -287,14 +291,22 @@ export class Matchmaker {
     return all[id] ? (JSON.parse(all[id]) as QueueEntry) : null;
   }
 
-  private async removeEntry(e: QueueEntry): Promise<void> {
-    await this.store.hdel(ENTRIES, e.id);
+  /**
+   * Removes an entry from the queue.
+   *
+   * @returns False when it was already gone (a concurrent tick claimed it for
+   *   a match, or another request removed it first).
+   */
+  private async removeEntry(e: QueueEntry): Promise<boolean> {
+    const removed = await this.store.hdel(ENTRIES, e.id);
+    await this.clearEntryKeys(e);
+    return removed;
+  }
+
+  private async clearEntryKeys(e: QueueEntry): Promise<void> {
     await this.store.del(`server-wait:${e.id}`);
     await this.store.del(`server-fallback:${e.id}`);
-    for (const m of e.members) {
-      if ((await this.store.get(`user-entry:${m.userId}`)) === e.id)
-        await this.store.del(`user-entry:${m.userId}`);
-    }
+    for (const m of e.members) await this.store.delIfEquals(`user-entry:${m.userId}`, e.id);
   }
 
   /**
@@ -316,6 +328,8 @@ export class Matchmaker {
         throw new MMError(409, 'in_lobby', 'Leave the custom lobby before queueing');
       const prev = await this.entryFor(m.userId);
       if (prev) await this.removeEntry(prev);
+      else if (await this.store.get(`user-entry:${m.userId}`))
+        throw new MMError(409, 'match_forming', 'A match is being formed for you; try again in a moment');
     }
     const entry: QueueEntry = {
       id: randomUUID(),
@@ -352,8 +366,15 @@ export class Matchmaker {
   /** Cancels the queue entry containing `userId` (the whole party leaves). */
   async cancel(userId: string, reason = 'cancelled'): Promise<boolean> {
     const e = await this.entryFor(userId);
-    if (!e) return false;
-    await this.removeEntry(e);
+    if (!e) {
+      // The pointer without its entry means a tick holds the entry right now.
+      // Dropping the pointer stops the tick from putting it back if its lobby
+      // falls through; if the lobby is placed, the match stands.
+      const id = await this.store.get(`user-entry:${userId}`);
+      if (id) await this.store.delIfEquals(`user-entry:${userId}`, id);
+      return false;
+    }
+    if (!(await this.removeEntry(e))) return false;
     for (const m of e.members) await this.emit(m.userId, { type: 'queue_cancelled', reason });
     return true;
   }
@@ -386,11 +407,26 @@ export class Matchmaker {
    * @returns The matches created this tick.
    */
   async tick(): Promise<MatchRecord[]> {
-    if (!(await this.store.setNX('tick-lock', '1', 5000))) return [];
+    const token = randomUUID();
+    if (!(await this.store.setNX(TICK_LOCK, token, TICK_LOCK_TTL_MS))) return [];
+    let owned = true;
+    // A slow tick (Redis latency, many lobbies) must not let the lock lapse and
+    // a second instance start placing the same entries; renew while working.
+    const renew = setInterval(() => {
+      void this.store
+        .expireIfEquals(TICK_LOCK, token, TICK_LOCK_TTL_MS)
+        .then((ok) => {
+          if (!ok) owned = false;
+        })
+        .catch(() => undefined);
+    }, TICK_LOCK_RENEW_MS);
+    renew.unref?.();
     try {
       const lobbies = formLobbies(await this.entries(), this.now(), this.engine);
       const created: MatchRecord[] = [];
       for (const lobby of lobbies) {
+        // Lost the lock (expired during a stall): stop; the new holder re-forms from the store.
+        if (!owned || !(await this.store.expireIfEquals(TICK_LOCK, token, TICK_LOCK_TTL_MS))) break;
         const fallback = await this.serverWait(lobby);
         const server = await this.allocateServer(lobby.region, lobby.size, fallback.otherRegions);
         if (!server) {
@@ -404,13 +440,48 @@ export class Matchmaker {
           }
           continue;
         }
-        for (const e of lobby.entries) await this.removeEntry(e);
+        if (!(await this.claimEntries(lobby.entries))) continue;
         created.push(await this.placeMatch(lobby, server));
       }
       return created;
     } finally {
-      await this.store.del('tick-lock');
+      clearInterval(renew);
+      await this.store.delIfEquals(TICK_LOCK, token);
     }
+  }
+
+  /**
+   * Takes a formed lobby's entries out of the queue atomically. The lobby was
+   * formed from a snapshot; a cancel or re-queue may have removed an entry
+   * since, and placing it anyway would send `match_found` to someone who left.
+   * Each entry is claimed with an atomic `hdel`; if any is gone the claimed
+   * ones go back (unless a member re-queued meanwhile) and the lobby waits for
+   * the next tick.
+   *
+   * @returns True when every entry was claimed.
+   */
+  private async claimEntries(entries: readonly QueueEntry[]): Promise<boolean> {
+    const claimed: QueueEntry[] = [];
+    for (const e of entries) if (await this.store.hdel(ENTRIES, e.id)) claimed.push(e);
+    if (claimed.length === entries.length) {
+      for (const e of claimed) await this.clearEntryKeys(e);
+      return true;
+    }
+    for (const e of claimed) {
+      if (await this.entryIsCurrent(e)) {
+        await this.store.hset(ENTRIES, e.id, JSON.stringify(e));
+        // A cancel that ran between the check and the put-back left this
+        // entry without its pointers; take it out again so it is never placed.
+        if (!(await this.entryIsCurrent(e)) && (await this.store.hdel(ENTRIES, e.id)))
+          await this.clearEntryKeys(e);
+      } else await this.clearEntryKeys(e);
+    }
+    return false;
+  }
+
+  private async entryIsCurrent(e: QueueEntry): Promise<boolean> {
+    for (const m of e.members) if ((await this.store.get(`user-entry:${m.userId}`)) !== e.id) return false;
+    return true;
   }
 
   /**
@@ -675,7 +746,7 @@ export class Matchmaker {
     try {
       return await fn(await this.loadLobby(code));
     } finally {
-      await this.store.del(key);
+      await this.store.delIfEquals(key, token);
     }
   }
 
@@ -875,6 +946,10 @@ export class Matchmaker {
       return lobby;
     });
     await this.emit(userId, { type: 'lobby_kicked', code: lobby.code, reason: 'kicked' });
+    if (lobby.status === 'started' && lobby.matchId) {
+      await this.store.set(`match-kicked:${lobby.matchId}:${userId}`, '1', MATCH_TTL_MS);
+      await this.clearPendingMatch(userId, lobby.matchId);
+    }
     const removedFromMatch =
       lobby.status === 'started' && lobby.matchId ? await this.kickFromMatch(lobby.matchId, userId) : null;
     return { lobby, removedFromMatch };

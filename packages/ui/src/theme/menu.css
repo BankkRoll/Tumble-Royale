@@ -209,12 +209,13 @@
   color: var(--ink);
   transform: scale(1.04);
 }
+/* Sits in the tab's corner, clear of the label even when the active tab scales up. */
 .tr-tab-badge {
   position: absolute;
-  top: 0.3em;
-  right: 0.35em;
-  width: 0.6em;
-  height: 0.6em;
+  top: 0.1em;
+  right: 0.1em;
+  width: 0.5em;
+  height: 0.5em;
   border-radius: 50%;
   background: var(--bubblegum);
   box-shadow: 0 0 0 0.12em #fff;

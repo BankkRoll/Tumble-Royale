@@ -37,6 +37,7 @@ const EnvSchema = z.object({
   STRIPE_WEBHOOK_SECRET: optionalString,
   NAME_CHANGE_COOLDOWN_DAYS: z.coerce.number().int().min(0).default(30),
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(300),
+  PRESENCE_GRACE_MS: z.coerce.number().int().min(0).max(120_000).default(8_000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 });
 
@@ -76,6 +77,8 @@ export interface ApiConfig {
   nameChangeCooldownDays: number;
   /** Requests per minute per client for the global rate limiter. */
   rateLimitMax: number;
+  /** How long a user stays "online" after their last realtime connection closes. */
+  presenceGraceMs: number;
   logLevel: string;
 }
 
@@ -125,6 +128,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       : undefined,
     nameChangeCooldownDays: e.NAME_CHANGE_COOLDOWN_DAYS,
     rateLimitMax: e.RATE_LIMIT_MAX,
+    presenceGraceMs: e.PRESENCE_GRACE_MS,
     logLevel: e.LOG_LEVEL,
   };
 }

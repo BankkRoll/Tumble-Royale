@@ -56,7 +56,14 @@ export async function createTestApi(startIso = '2026-10-02T12:00:00.000Z'): Prom
       nowMs = Date.parse(iso);
     },
   };
-  const config = loadConfig({ NODE_ENV: 'test', RATE_LIMIT_MAX: '100000', ADMIN_TOKEN, LOG_LEVEL: 'silent' });
+  const config = loadConfig({
+    NODE_ENV: 'test',
+    RATE_LIMIT_MAX: '100000',
+    ADMIN_TOKEN,
+    LOG_LEVEL: 'silent',
+    // Short enough for tests to watch a disconnect turn into "offline".
+    PRESENCE_GRACE_MS: '150',
+  });
   const mailer = new MemoryMailer();
   const built = await buildApp(config, { now: clock.now, mailer, logger: false });
 

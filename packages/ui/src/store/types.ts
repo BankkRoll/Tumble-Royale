@@ -698,6 +698,22 @@ export interface ShowIntroInfo {
   roundCount: number;
 }
 
+/** Live state of the round loading screen. */
+export interface RoundLoadingState {
+  /** This machine's build progress, 0..1 (real: scene steps and shader compilation). */
+  progress: number;
+  /** This machine finished building and is waiting for the round to start. */
+  ready: boolean;
+  /** Players who finished loading (online; 0 when nobody else loads). */
+  loaded: number;
+  /** Players loading this round (online; 0 when nobody else loads). */
+  total: number;
+  /** Who the round is still waiting for (at most 8; never the local player). */
+  waiting: ShowPlayer[];
+  /** Everyone is loaded: the round starts right after this beat. */
+  everyoneIn: boolean;
+}
+
 /** Everything the flyover title card, rules card and loading screen need. */
 export interface RoundIntroInfo {
   roundId: string;

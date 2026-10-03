@@ -47,6 +47,7 @@ import type {
   RewardsSummary,
   RoundCatalogEntry,
   RoundIntroInfo,
+  RoundLoadingState,
   RoundResults,
   ScreenId,
   SeasonPassData,
@@ -139,6 +140,8 @@ export interface UIState {
   preShow: PreShowInfo | null;
   showIntro: ShowIntroInfo | null;
   roundIntro: RoundIntroInfo | null;
+  /** Loading screen progress and who is still loading (null outside a round load). */
+  roundLoading: RoundLoadingState | null;
   hud: HudState;
   /** 3, 2, 1, 0 (= GO), or null when hidden. */
   countdown: number | null;
@@ -217,6 +220,11 @@ export interface UIState {
   setPreShow: (info: PreShowInfo | null) => void;
   setShowIntro: (info: ShowIntroInfo | null) => void;
   setRoundIntro: (info: RoundIntroInfo | null) => void;
+  /**
+   * Merges loading screen state (null clears it). Progress changes re-render
+   * the loading screen: call at ≤ 4 Hz while a round builds.
+   */
+  setRoundLoading: (patch: Partial<RoundLoadingState> | null) => void;
   /** Merges HUD fields. Safe to call at 10–15 Hz. */
   setHud: (patch: Partial<HudState>) => void;
   resetHud: (patch?: Partial<HudState>) => void;
@@ -306,6 +314,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   preShow: null,
   showIntro: null,
   roundIntro: null,
+  roundLoading: null,
   hud: DEFAULT_HUD,
   countdown: null,
   stamps: [],
@@ -449,6 +458,23 @@ export const ui = createStore<UIState>()((set, get) => ({
   setPreShow: (preShow) => set({ preShow }),
   setShowIntro: (showIntro) => set({ showIntro }),
   setRoundIntro: (roundIntro) => set({ roundIntro }),
+  setRoundLoading: (patch) =>
+    set({
+      roundLoading:
+        patch === null
+          ? null
+          : {
+              ...(get().roundLoading ?? {
+                progress: 0,
+                ready: false,
+                loaded: 0,
+                total: 0,
+                waiting: [],
+                everyoneIn: false,
+              }),
+              ...patch,
+            },
+    }),
   setHud: (patch) => {
     const hud = get().hud;
     for (const k in patch) {

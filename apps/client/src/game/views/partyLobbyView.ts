@@ -11,7 +11,12 @@
  *   opens are simply standing;
  * - remote poses through {@link LobbyInterpolation} plus light smoothing;
  *   live re-skins from looks carried in frames or fetched profile cards;
- * - the local send cadence ({@link LobbyFrameSender});
+ * - the local send cadence ({@link LobbyFrameSender}) with the hangout
+ *   extras: menu status, grab target, the leader's ball, a member's bump;
+ * - status chips (Leader / Ready / Not ready / In Locker / In Store / …)
+ *   and a ring under the local Tumbler so you always know which one is you;
+ * - queries the menu needs for toys and roughhousing: who is in reach for
+ *   a grab, who is holding us, whose dive hit us, the leader's ball;
  * - picking a member's Tumbler for the profile card.
  *
  * Allocation-free per frame; spawns allocate once per member.
@@ -19,7 +24,9 @@
 import {
   encodeLobbyFrame,
   sanitizeLobbyFrame,
+  type LobbyExtras,
   type LobbyLook,
+  type LobbyStatus,
   type LobbyPose,
   type PartyLobbyFrame,
   type PartyLobbyMessage,
@@ -33,13 +40,28 @@ import {
   type CreateTumblerVisual,
   type TumblerLoadout,
 } from '@tumble/render/scenes';
-import { Group, Raycaster, Vector2, type Camera, type Object3D, type Scene } from 'three/webgpu';
+import {
+  Color,
+  Group,
+  Mesh,
+  MeshBasicNodeMaterial,
+  Raycaster,
+  RingGeometry,
+  Vector2,
+  type Camera,
+  type Object3D,
+  type Scene,
+} from 'three/webgpu';
 import {
   LOBBY_SLOT_POSITIONS,
   LobbyFrameSender,
   LobbyInterpolation,
   assignLobbySlots,
+  framePoints,
   slotFacing,
+  statusChip,
+  type BallState,
+  type LobbyFraming,
   type LobbyMember,
   type PartyRoster,
 } from './partyLobby.ts';
@@ -69,6 +91,12 @@ export interface PartyLobbyViewOptions {
   link: PartyLobbyLink | null;
   /** Spawn/despawn puff at a feet position. */
   poof(at: { x: number; y: number; z: number }): void;
+  /** A member joined while the menu was open (the local Tumbler waves). */
+  onJoin?(userId: string): void;
+  /** The leader, local or remote, changed menu status (`queue` = they hit Play). */
+  onLeaderStatus?(status: LobbyStatus): void;
+  /** Leader only: a member knocked the shared ball to this velocity. */
+  onBump?(vx: number, vy: number, vz: number): void;
 }
 
 const DROP_HEIGHT = 3.2;
@@ -77,6 +105,10 @@ const DESPAWN_S = 0.45;
 /** No frame for this long: the member is shown standing back on their slot. */
 const STALE_MS = 10_000;
 const PLATE_HEIGHT = 2.35;
+/** Leader's ball updates while it rolls (ms between frames). */
+const BALL_SEND_MS = 150;
+const DIVE_HIT_RADIUS = 1.1;
+const GRAB_HOLD_OFFSET = 0.85;
 
 interface Remote {
   userId: string;
@@ -93,6 +125,11 @@ interface Remote {
   lastState: number;
   look: TumblerLoadout | null;
   seen: boolean;
+  status: LobbyStatus;
+  /** Member this one is holding. */
+  grab: string | null;
+  /** Seconds before this member's dive can knock us again. */
+  hitCooldown: number;
 }
 
 const idlePose = (): LobbyPose => ({
@@ -148,6 +185,17 @@ export class PartyLobbyView {
   private visible = true;
   private equipped: LobbyLook | null = null;
   private selfLook: TumblerLoadout | null = null;
+  private selfStatus: LobbyStatus = 'menu';
+  private readonly extras: LobbyExtras = {};
+  private ballOut: BallState | null = null;
+  private lastBallAt = -Infinity;
+  private readonly ballIn: BallState = [0, 0, 0, 0, 0, 0];
+  private ballInAt = -Infinity;
+  private pendingBump: [number, number, number] | null = null;
+  private readonly plateText: string[] = LOBBY_SLOT_POSITIONS.map(() => '');
+  private readonly fx = new Float32Array(LOBBY_SLOT_POSITIONS.length);
+  private readonly fz = new Float32Array(LOBBY_SLOT_POSITIONS.length);
+  private readonly ring: Mesh;
   private readonly raycaster = new Raycaster();
   private readonly ndc = new Vector2();
   private readonly hits: Object3D[] = [];
@@ -155,6 +203,19 @@ export class PartyLobbyView {
   constructor(private readonly opts: PartyLobbyViewOptions) {
     this.factory = tumblerFactory(opts.createTumbler);
     opts.scene.add(this.plates.object);
+    this.ring = new Mesh(
+      new RingGeometry(0.62, 0.78, 40),
+      new MeshBasicNodeMaterial({
+        color: new Color('#ffe066'),
+        transparent: true,
+        opacity: 0.75,
+        depthWrite: false,
+      }),
+    );
+    this.ring.rotation.x = -Math.PI / 2;
+    this.ring.visible = false;
+    this.ring.name = 'lobby-you-ring';
+    opts.scene.add(this.ring);
     if (opts.link) {
       this.offs.push(
         opts.link.onFrame((userId, frame) => this.receive(userId, frame, performance.now())),
@@ -200,7 +261,10 @@ export class PartyLobbyView {
         if (r && r.despawnT < 0) {
           r.slot = s.slot;
           if (!r.seen) this.placeHome(r);
-        } else this.spawn(s.userId, s.slot, animate);
+        } else {
+          this.spawn(s.userId, s.slot, animate);
+          if (animate) this.opts.onJoin?.(s.userId);
+        }
       }
     } else this.self.slot = 0;
     for (const r of this.remotes.values()) if (!keep.has(r.userId) && r.despawnT < 0) this.despawn(r);
@@ -211,7 +275,156 @@ export class PartyLobbyView {
       if (this.equipped) this.sender.announceLook(this.equipped);
     }
     this.plates.object.visible = live && this.visible;
+    this.ring.visible = live && this.visible;
     this.drawPlates();
+  }
+
+  /** True when the local player leads a live party (owns the shared ball). */
+  get isLeader(): boolean {
+    return this.self.live && this.roster?.leaderId === this.roster?.selfId;
+  }
+
+  /** The local player's menu status; the party sees it above their Tumbler. */
+  setStatus(status: LobbyStatus): void {
+    if (status === this.selfStatus) return;
+    this.selfStatus = status;
+    this.sender.poke();
+    this.drawPlates();
+    if (this.isLeader) this.opts.onLeaderStatus?.(status);
+  }
+
+  /** Who the local Tumbler is holding (null to let go). */
+  setGrab(userId: string | null): void {
+    if ((this.extras.grab ?? null) === userId) return;
+    if (userId) this.extras.grab = userId;
+    else delete this.extras.grab;
+    this.sender.poke();
+  }
+
+  /** Leader: the shared ball's state this frame (read by reference when sending). */
+  setBallOut(state: BallState | null): void {
+    this.ballOut = state;
+  }
+
+  /** Non-leader: the local Tumbler knocked the ball; the leader applies the new velocity. */
+  bump(vx: number, vy: number, vz: number): void {
+    if (!this.self.live || this.isLeader) return;
+    this.pendingBump = [vx, vy, vz];
+    this.sender.poke();
+  }
+
+  /**
+   * Non-leader: the leader's latest ball state.
+   *
+   * @param now - `performance.now()` (ms).
+   * @param out - Receives the state.
+   * @returns Its age in seconds, or -1 when there is none (or we lead).
+   */
+  ballTarget(now: number, out: BallState): number {
+    if (!this.self.live || this.isLeader || this.ballInAt === -Infinity) return -1;
+    for (let i = 0; i < 6; i++) out[i] = this.ballIn[i]!;
+    return (now - this.ballInAt) / 1000;
+  }
+
+  /** A member's current (interpolated) `CharacterState`, or -1 when absent. */
+  memberState(userId: string): number {
+    const r = this.remotes.get(userId);
+    return r && r.despawnT < 0 ? r.pose.state : -1;
+  }
+
+  /** The member whose frames say they are holding the local player, if any. */
+  holderOfSelf(): string | null {
+    const self = this.roster?.selfId;
+    if (!self) return null;
+    for (let i = 0; i < this.list.length; i++) {
+      const r = this.list[i]!;
+      if (r.despawnT < 0 && r.grab === self) return r.userId;
+    }
+    return null;
+  }
+
+  /**
+   * The nearest member in front of a point within `reach` (grab target).
+   *
+   * @param facing - Yaw the grabber faces (radians).
+   */
+  memberInReach(x: number, z: number, facing: number, reach: number): string | null {
+    const fx = Math.sin(facing);
+    const fz = Math.cos(facing);
+    let best: string | null = null;
+    let bestD = reach;
+    for (let i = 0; i < this.list.length; i++) {
+      const r = this.list[i]!;
+      if (r.despawnT >= 0) continue;
+      const dx = r.holder.position.x - x;
+      const dz = r.holder.position.z - z;
+      const d = Math.hypot(dx, dz);
+      if (d > bestD || (d > 0.05 && (dx * fx + dz * fz) / d < 0.3)) continue;
+      best = r.userId;
+      bestD = d;
+    }
+    return best;
+  }
+
+  /**
+   * Where a member holds what they grab: in front of their chest.
+   *
+   * @returns False when the member is not on the platform.
+   */
+  holdPoint(userId: string, out: { x: number; y: number; z: number }): boolean {
+    const r = this.remotes.get(userId);
+    if (!r || r.despawnT >= 0) return false;
+    const h = r.holder.position;
+    out.x = h.x + Math.sin(r.pose.yaw) * GRAB_HOLD_OFFSET;
+    out.y = h.y + 0.35;
+    out.z = h.z + Math.cos(r.pose.yaw) * GRAB_HOLD_OFFSET;
+    return true;
+  }
+
+  /**
+   * A member diving into the point: writes the push direction (away from the
+   * diver) and starts that diver's cooldown.
+   *
+   * @returns True on a hit.
+   */
+  diveHit(x: number, z: number, out: { x: number; z: number }): boolean {
+    for (let i = 0; i < this.list.length; i++) {
+      const r = this.list[i]!;
+      if (r.despawnT >= 0 || r.hitCooldown > 0) continue;
+      if (r.pose.state !== CharacterState.Dive || r.pose.speed < 2) continue;
+      const dx = x - r.holder.position.x;
+      const dz = z - r.holder.position.z;
+      const d = Math.hypot(dx, dz);
+      if (d > DIVE_HIT_RADIUS) continue;
+      r.hitCooldown = 1.2;
+      out.x = d > 0.01 ? dx / d : Math.sin(r.pose.yaw);
+      out.z = d > 0.01 ? dz / d : Math.cos(r.pose.yaw);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Centre and spread of everyone actually on the platform (live positions),
+   * so the camera keeps the whole party in frame as they wander.
+   *
+   * @param x - Local Tumbler feet X.
+   * @param z - Local Tumbler feet Z.
+   * @param out - Reused result.
+   */
+  groupFraming(x: number, z: number, out: LobbyFraming): LobbyFraming {
+    let n = 0;
+    this.fx[n] = x;
+    this.fz[n++] = z;
+    if (this.self.live) {
+      for (let i = 0; i < this.list.length && n < this.fx.length; i++) {
+        const r = this.list[i]!;
+        if (r.despawnT >= 0 || !r.holder.visible) continue;
+        this.fx[n] = r.holder.position.x;
+        this.fz[n++] = r.holder.position.z;
+      }
+    }
+    return framePoints(this.fx, this.fz, n, out);
   }
 
   /** A member's look from their profile card (initial skin). Frames' looks win later. */
@@ -237,6 +450,7 @@ export class PartyLobbyView {
     this.visible = on;
     for (const r of this.remotes.values()) r.holder.visible = on;
     this.plates.object.visible = on && this.self.live;
+    this.ring.visible = on && this.self.live;
   }
 
   /** Home feet position of the local player. */
@@ -284,10 +498,24 @@ export class PartyLobbyView {
     if (local) {
       const f = local.feet;
       this.plates.setPosition(this.self.slot, f.x, f.y + PLATE_HEIGHT, f.z);
+      this.ring.position.set(f.x, Math.max(0, f.y) + 0.04, f.z);
       const link = this.opts.link;
+      const ball = this.isLeader ? this.ballOut : null;
+      if (ball && now - this.lastBallAt >= BALL_SEND_MS && Math.hypot(ball[3], ball[4], ball[5]) > 0.05)
+        this.sender.poke();
       if (link && this.sender.due(now, local.pose)) {
         const { seq, look } = this.sender.take(now, local.pose);
-        link.send(encodeLobbyFrame(local.pose, seq, look));
+        const x = this.extras;
+        if (this.selfStatus !== 'menu') x.status = this.selfStatus;
+        else delete x.status;
+        if (ball) {
+          x.ball = ball;
+          this.lastBallAt = now;
+        } else delete x.ball;
+        if (this.pendingBump) x.bump = this.pendingBump;
+        else delete x.bump;
+        this.pendingBump = null;
+        link.send(encodeLobbyFrame(local.pose, seq, look, x));
       }
     }
   }
@@ -297,6 +525,9 @@ export class PartyLobbyView {
     for (const r of this.remotes.values()) this.free(r);
     this.remotes.clear();
     this.plates.dispose();
+    this.ring.removeFromParent();
+    this.ring.geometry.dispose();
+    (this.ring.material as MeshBasicNodeMaterial).dispose();
   }
 
   // ---------------------------------------------------------------------------
@@ -314,6 +545,19 @@ export class PartyLobbyView {
       r.buf.reset(frame, now);
     } else r.buf.push(frame, now);
     if (frame.look) this.applyLook(userId, frame.look);
+    r.grab = frame.grab ?? null;
+    const leaderId = this.roster?.leaderId;
+    const status = frame.status ?? 'menu';
+    if (status !== r.status) {
+      r.status = status;
+      this.drawPlates();
+      if (userId === leaderId) this.opts.onLeaderStatus?.(status);
+    }
+    if (frame.ball && userId === leaderId && !this.isLeader) {
+      for (let i = 0; i < 6; i++) this.ballIn[i] = frame.ball[i]!;
+      this.ballInAt = now;
+    }
+    if (frame.bump && this.isLeader) this.opts.onBump?.(frame.bump[0], frame.bump[1], frame.bump[2]);
   }
 
   private applyLook(userId: string, look: TumblerLoadout): void {
@@ -349,6 +593,9 @@ export class PartyLobbyView {
       lastState: -1,
       look,
       seen: false,
+      status: 'menu',
+      grab: null,
+      hitCooldown: 0,
     };
     this.remotes.set(userId, r);
     this.list.push(r);
@@ -399,6 +646,7 @@ export class PartyLobbyView {
       if (k >= 1) this.free(r);
       return;
     }
+    r.hitCooldown = Math.max(0, r.hitCooldown - dt);
     if (r.seen && now - r.buf.newestAt > STALE_MS) {
       r.seen = false;
       this.placeHome(r);
@@ -450,21 +698,31 @@ export class PartyLobbyView {
   // Nameplates
   // ---------------------------------------------------------------------------
 
+  /** Redraws plates whose text changed (canvas work, so never per frame). */
   private drawPlates(): void {
     const roster = this.roster;
-    for (let i = 0; i < LOBBY_SLOT_POSITIONS.length; i++) this.plates.setScale(i, 0);
-    if (!roster) return;
-    for (const s of assignLobbySlots(roster.members, roster.leaderId)) {
-      const m = roster.members.find((x) => x.userId === s.userId)!;
-      const look = m.userId === roster.selfId ? this.selfLook : this.looks.get(m.userId);
-      const label = `${s.leader ? '👑 ' : ''}${m.name}${m.tag ? `#${m.tag}` : ''}`;
-      this.plates.setName(
-        s.slot,
-        label,
-        look?.colors[0] ?? '#ff6fb5',
-        s.leader || m.ready ? 'READY' : 'NOT READY',
-      );
-      this.plates.setScale(s.slot, 1);
+    const used = new Set<number>();
+    if (roster) {
+      for (const s of assignLobbySlots(roster.members, roster.leaderId)) {
+        const m = roster.members.find((x) => x.userId === s.userId)!;
+        const self = m.userId === roster.selfId;
+        const look = self ? this.selfLook : this.looks.get(m.userId);
+        const status = self ? this.selfStatus : (this.remotes.get(m.userId)?.status ?? 'menu');
+        const label = `${s.leader ? '👑 ' : ''}${m.name}${m.tag ? `#${m.tag}` : ''}`;
+        const chip = statusChip(status, s.leader, m.ready);
+        const accent = look?.colors[0] ?? '#ff6fb5';
+        const key = `${label}|${chip}|${accent}`;
+        used.add(s.slot);
+        if (this.plateText[s.slot] === key) continue;
+        this.plateText[s.slot] = key;
+        this.plates.setName(s.slot, label, accent, chip);
+        this.plates.setScale(s.slot, 1);
+      }
+    }
+    for (let i = 0; i < this.plateText.length; i++) {
+      if (used.has(i) || this.plateText[i] === '') continue;
+      this.plateText[i] = '';
+      this.plates.setScale(i, 0);
     }
   }
 }

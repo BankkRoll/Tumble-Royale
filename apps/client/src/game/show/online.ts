@@ -35,7 +35,9 @@ import {
   type MatchSimHandle,
 } from '@tumble/sim/match';
 import { CourseMetric } from '@tumble/sim/rounds';
-import { ShowPlaylistSchema } from '@tumble/sim/show';
+import { PRE_SHOW_LOBBY_ROUND, ShowPlaylistSchema, scaleRoundDuration } from '@tumble/sim/show';
+import type { ArenaPlayer } from '@tumble/render/scenes';
+import { getTheme } from '@tumble/content/themes';
 import { bindUI, ui, type RewardsSummary } from '@tumble/ui';
 import { NetClient, NetGameSession, defaultServerUrl, type ConnectionState } from '../../net/index.ts';
 import { botLoadout, decodeLoadout, encodeLoadout } from '../cosmetics.ts';
@@ -47,10 +49,21 @@ import {
   type PlayerSample,
   type RoundSource,
 } from '../round/source.ts';
+import type { PreShowControl, PreShowView } from '../views/ceremonies.ts';
+import { createLiveLobbyView, type LiveLobbySource, type LiveLobbyView } from '../views/liveLobby.ts';
+import type { CharacterInput } from '@tumble/sim';
 import type { GameContext, RoundOutcomeInfo, RoundStart, SessionPlayer } from './context.ts';
 import { ShowSession } from './session.ts';
 
 const MAIN = ShowPlaylistSchema.parse(MAIN_SHOW);
+const AIRBORNE: ReadonlySet<number> = new Set([
+  CharacterState.Jump,
+  CharacterState.Fall,
+  CharacterState.Dive,
+  CharacterState.Bounce,
+  CharacterState.Stunned,
+  CharacterState.LedgeHang,
+]);
 /** Leader/progress recompute rate (the HUD pushes at 12 Hz). */
 const LEADER_INTERVAL_S = 0.1;
 
@@ -150,6 +163,15 @@ export class OnlineShowSession extends ShowSession {
   private readonly sampleTmp = createPlayerSample();
   private readonly pos = { x: 0, y: 0, z: 0 };
   private readonly hudPlayers = new Map<number, HudPlayerStatus>();
+  /** The server's pre-show platform is running (between the first join and round 1). */
+  private lobbyLive = false;
+  private lobbyView: LiveLobbyView | null = null;
+  /** Seconds until round 1 as last announced (`showPhase.startsInMs`, else the fill wait). */
+  private preShowSeconds = -1;
+  private preShowViewEntered = false;
+  private lobbyCapacity = 0;
+  private showStarted = false;
+  private readonly lobbySource: LiveLobbySource;
   private standings: number[] = [];
   private readonly hudInput: HudInput = {
     timeLeft: -1,
@@ -176,9 +198,110 @@ export class OnlineShowSession extends ShowSession {
     });
     this.session = new NetGameSession(this.net, (join) => this.createPredictSim(join), {
       onEvent: (e) => this.events.push(e),
-      onRoundReady: () => this.buildRoundView(),
+      onRoundReady: (join) => {
+        if (!join.lobby) this.buildRoundView();
+      },
+    });
+    this.lobbySource = this.createLobbySource();
+  }
+
+  /** Network-driven roster and poses for the live pre-show view. */
+  private createLobbySource(): LiveLobbySource {
+    const session = this.session;
+    const net = this.net;
+    const emoteSlots = this.emoteSlots;
+    const players = this.players;
+    return {
+      get localId() {
+        return net.playerId;
+      },
+      get live() {
+        return net.round?.lobby === true;
+      },
+      sample(id, out) {
+        let e;
+        if (id === net.playerId) {
+          if (!session.prediction || net.round?.lobby !== true) return false;
+          e = session.local;
+        } else e = session.remotes.get(id);
+        if (!e) return false;
+        out.x = e.pos.x;
+        out.y = e.pos.y;
+        out.z = e.pos.z;
+        out.vx = e.vel.x;
+        out.vy = e.vel.y;
+        out.vz = e.vel.z;
+        out.state = e.state;
+        out.stateTime = e.stateTime;
+        out.facing = e.facing;
+        out.grounded = !AIRBORNE.has(e.state);
+        out.flags = e.flags;
+        out.emote = e.state === CharacterState.Emote ? (emoteSlots.get(id) ?? 1) : 0;
+        return true;
+      },
+      hasLeft: (id) => session.lobbyLeft[id] === 1,
+      player(id): ArenaPlayer | null {
+        const p = players.get(id);
+        return p ? { id: String(id), name: p.name, loadout: p.loadout } : null;
+      },
+    };
+  }
+
+  protected override liveJoinFeed(): boolean {
+    return this.lobbyLive;
+  }
+
+  protected override buildPreShowView(
+    arenaPlayers: ArenaPlayer[],
+    control: PreShowControl | undefined,
+  ): PreShowView {
+    this.preShowViewEntered = true;
+    if (!this.lobbyLive) return super.buildPreShowView(arenaPlayers, control);
+    this.lobbyView = createLiveLobbyView(
+      getTheme('candy'),
+      this.ctx.quality.preset,
+      this.ctx.tumblers.create,
+      this.lobbySource,
+    );
+    this.updatePreShowFeed();
+    return this.lobbyView;
+  }
+
+  /** On the live platform the local Tumbler takes input relative to the lobby camera. */
+  protected override fillInput(out: CharacterInput): CharacterInput {
+    if (!this.lobbyLive || this.round) return super.fillInput(out);
+    this.ctx.input.sample(this.lobbyView?.yaw ?? 0, out);
+    const emote = this.takePendingEmote();
+    if (emote > 0) out.emote = emote;
+    if (this.ctx.cfg.autoplay || !this.lobbyView) {
+      out.moveX = 0;
+      out.moveZ = 0;
+      out.buttons = 0;
+    }
+    return out;
+  }
+
+  protected override onSpectateTarget(id: number): void {
+    this.net.sendLowFreq({ t: 'spectate', target: id });
+  }
+
+  /** Pre-show player count and join feed from the server's roster (not the offline fake feed). */
+  private updatePreShowFeed(): void {
+    if (!this.lobbyLive) return;
+    const info = ui.getState().preShow;
+    if (!info) return;
+    const names = this.order
+      .filter((id) => this.present.has(id))
+      .map((id) => this.players.get(id)?.name ?? '');
+    ui.getState().setPreShow({
+      ...info,
+      playersJoined: names.length,
+      maxPlayers: Math.max(names.length, this.lobbyCapacity || info.maxPlayers),
+      joinFeed: names,
     });
   }
+
+  private readonly present = new Set<number>();
 
   start(): void {
     const s = ui.getState();
@@ -211,6 +334,9 @@ export class OnlineShowSession extends ShowSession {
         ui.getState().setConnection({ status: 'online' });
       }),
       net.on('lobby', (l) => {
+        this.lobbyCapacity = l.capacity;
+        if (this.preShowSeconds < 0 || !this.showStarted)
+          this.preShowSeconds = Math.max(0, l.startsInMs / 1000) + 10;
         ui.getState().setQueue({
           playersFound: l.humans,
           playersNeeded: l.capacity,
@@ -225,6 +351,12 @@ export class OnlineShowSession extends ShowSession {
       net.on('message', (m) => {
         if (m.t === 'showInfo') this.onShowInfo(m);
         else if (m.t === 'showRewards') this.apiReward = m.reward;
+        else if (m.t === 'showPhase' && m.phase === ShowPhase.PreShow && m.startsInMs !== undefined) {
+          this.showStarted = true;
+          this.preShowSeconds = m.startsInMs / 1000;
+          // The show is on: every client restarts the same countdown from the server's clock.
+          if (this.preShowViewEntered) this.setPreShowCountdown(this.preShowSeconds);
+        }
       }),
       net.on('showPhase', (p) => this.onServerShowPhase(p)),
       net.on('joinRound', (j) => this.onJoin(j)),
@@ -248,8 +380,10 @@ export class OnlineShowSession extends ShowSession {
   }
 
   private createPredictSim(join: JoinRoundMsg): MatchSim {
-    const round = getRound(join.roundId);
-    if (!round) throw new Error(`Unknown round "${join.roundId}" from the server`);
+    const base = join.lobby ? PRE_SHOW_LOBBY_ROUND : getRound(join.roundId);
+    if (!base) throw new Error(`Unknown round "${join.roundId}" from the server`);
+    // The server scaled the time limit for private shows; predict with the same timer.
+    const round = scaleRoundDuration(base, join.durationScale ?? 1);
     const sim = createMatchSim(
       {
         R: this.ctx.R,
@@ -259,6 +393,7 @@ export class OnlineShowSession extends ShowSession {
         players: join.players,
         mode: 'predict',
         localPlayerId: this.net.playerId,
+        ...(join.lobby ? { lobby: true } : {}),
         // Same layout and quota as the server, so predicted obstacles match the authoritative ones.
         ...(join.variationId ? { variationId: join.variationId } : {}),
         ...(join.qualifyTarget > 0 ? { qualifyTarget: join.qualifyTarget } : {}),
@@ -316,9 +451,13 @@ export class OnlineShowSession extends ShowSession {
         prev?.loadout ??
         botLoadout(this.roomSeed, p.id, p.name);
       const sp: SessionPlayer = { id: p.id, name: p.name, isBot: p.isBot, loadout };
+      if (p.partyId !== undefined) sp.partyId = p.partyId;
       this.players.set(p.id, sp);
       if (!this.order.includes(p.id)) this.order.push(p.id);
     }
+    this.present.clear();
+    for (const p of list) this.present.add(p.id);
+    this.updatePreShowFeed();
   }
 
   private onServerShowPhase(phase: number): void {
@@ -332,13 +471,22 @@ export class OnlineShowSession extends ShowSession {
     const s = ui.getState();
     s.setQueue({ status: 'found', playersFound: this.order.length || 40 });
     s.setScreen('matchFound');
-    this.after(1.5, () => {
-      if (this.roundIndex < 0) this.enterPreShow(7, this.showInfo ? null : MAIN);
+    this.after(this.lobbyLive ? 0.8 : 1.5, () => {
+      if (this.roundIndex < 0)
+        this.enterPreShow(this.preShowSeconds >= 0 ? this.preShowSeconds : 7, this.showInfo ? null : MAIN);
     });
   }
 
   private onJoin(j: JoinRoundMsg): void {
-    const round = getRound(j.roundId);
+    if (j.lobby) {
+      // A resume re-sends the platform's joinRound; the pre-show is already up.
+      this.lobbyLive = true;
+      this.enterOnlinePreShow();
+      return;
+    }
+    this.lobbyLive = false;
+    const base = getRound(j.roundId);
+    const round = base ? scaleRoundDuration(base, j.durationScale ?? 1) : undefined;
     if (!round) {
       this.fail(`This build doesn't have the round "${j.roundId}"`);
       return;
@@ -414,8 +562,9 @@ export class OnlineShowSession extends ShowSession {
             };
           });
     const placements = new Map<number, number>();
-    let place = 1;
-    for (const w of winners) placements.set(w, place++);
+    // Duos/squads: the whole winning party shares the Crown (place 1), like offline.
+    for (const w of winners) placements.set(w, 1);
+    let place = winners.length + 1;
     for (let i = outcomes.length - 1; i >= 0; i--) {
       const o = outcomes[i] as RoundOutcomeInfo;
       for (const id of [...o.qualified, ...o.eliminated])

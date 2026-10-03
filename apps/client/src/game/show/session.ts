@@ -18,7 +18,7 @@
  */
 import type { ChallengeMetric } from '@tumble/content/progression';
 import { getTheme } from '@tumble/content/themes';
-import type { TumblerLoadout } from '@tumble/render/scenes';
+import type { ArenaPlayer, TumblerLoadout } from '@tumble/render/scenes';
 import { RoundPhase, ShowPhase, type RoundPhaseId, type RoundType } from '@tumble/shared';
 import { CharacterState, type CharacterFullState, type CharacterInput, type SimEvent } from '@tumble/sim';
 import { createBotBrain, type BotBrainLike, type BotSelfView } from '@tumble/sim/bots';
@@ -47,6 +47,7 @@ import {
   createPreShowView,
   RoundWallView,
   WallView,
+  type PreShowControl,
   type PreShowView,
 } from '../views/ceremonies.ts';
 import type { GameContext, RoundOutcomeInfo, RoundStart, SessionPlayer, SessionSummary } from './context.ts';
@@ -189,6 +190,7 @@ export abstract class ShowSession {
   private slowmo = 0;
   private wheelOpen = false;
   private pendingEmote = 0;
+  private countdownToken = 0;
   private toastTokens = 4;
   private uiSummary: UiShowSummary | null = null;
   private pilot: BotBrainLike | null = null;
@@ -271,6 +273,48 @@ export abstract class ShowSession {
 
   /** Extra teardown in subclasses. */
   protected onDispose(): void {}
+
+  /** The spectated player changed (online: tell the server for interest management). */
+  protected onSpectateTarget(_id: number): void {}
+
+  /** True when a subclass drives the pre-show join feed from real joins (online live lobby). */
+  protected liveJoinFeed(): boolean {
+    return false;
+  }
+
+  /**
+   * Builds the pre-show 3D view. Online shows override this with the live
+   * lobby view; offline keeps the local arena.
+   */
+  protected buildPreShowView(arenaPlayers: ArenaPlayer[], control: PreShowControl | undefined): PreShowView {
+    return createPreShowView(
+      getTheme('candy'),
+      this.ctx.quality.preset,
+      this.ctx.tumblers.create,
+      arenaPlayers,
+      this.localId >= 0 ? String(this.localId) : undefined,
+      control,
+    );
+  }
+
+  /** Takes the emote picked on the wheel (slot 1–4), or 0. */
+  protected takePendingEmote(): number {
+    const e = this.pendingEmote;
+    this.pendingEmote = 0;
+    return e;
+  }
+
+  /**
+   * Plays a loadout emote by id (the lobby emote bar), like picking it on the wheel.
+   *
+   * @param emoteId - Emote id from the local loadout.
+   */
+  emoteById(emoteId: string): void {
+    const slot = this.ctx.look().emotes.indexOf(emoteId);
+    if (slot < 0) return;
+    this.pendingEmote = Math.min(4, slot + 1);
+    this.counters.emotes = (this.counters.emotes ?? 0) + 1;
+  }
 
   /** Debug: force-ends the current round (offline). */
   skipRound(): void {}
@@ -495,7 +539,7 @@ export abstract class ShowSession {
     const s = ui.getState();
     if (playlist) this.roundCount = estimateRoundCount(playlist, this.order.length);
     const names = this.order.map((id) => this.players.get(id)?.name ?? '');
-    const first = Math.min(names.length, 8);
+    const first = this.liveJoinFeed() ? names.length : Math.min(names.length, 8);
     s.setPreShow({
       showName: this.showName,
       roundCount: this.roundCount,
@@ -513,18 +557,13 @@ export abstract class ShowSession {
       const control = this.ctx.cfg.autoplay
         ? undefined
         : { R: this.ctx.R, input: this.ctx.input, audio: this.ctx.audio.game };
-      this.preShow = createPreShowView(
-        getTheme('candy'),
-        this.ctx.quality.preset,
-        this.ctx.tumblers.create,
-        arenaPlayers,
-        this.localId >= 0 ? String(this.localId) : undefined,
-        control,
-      );
+      this.preShow = this.buildPreShowView(arenaPlayers, control);
       this.preShow.arena.setBanner(this.showName.toUpperCase(), `${this.roundCount} ROUNDS · starting soon`);
       this.ctx.director.show(this.preShow);
     });
     this.ctx.audio.game.onShowPhase(ShowPhase.PreShow);
+    this.setPreShowCountdown(seconds);
+    if (this.liveJoinFeed()) return;
     let joined = first;
     const feed = (): void => {
       if (this.ended || joined >= names.length) return;
@@ -535,8 +574,21 @@ export abstract class ShowSession {
       this.after(0.18, feed);
     };
     this.after(0.6, feed);
+  }
+
+  /**
+   * (Re)starts the pre-show countdown: UI deadline and arch banner. Calling it
+   * again (the server announced the real start) cancels the previous ticks.
+   *
+   * @param seconds - Flow-time seconds until round 1.
+   */
+  protected setPreShowCountdown(seconds: number): void {
+    const token = ++this.countdownToken;
+    const info = ui.getState().preShow;
+    if (info) ui.getState().setPreShow({ ...info, startsAt: Date.now() + (seconds / this.flowScale) * 1000 });
     for (let k = Math.floor(seconds); k >= 1; k--) {
       this.after(seconds - k, () => {
+        if (token !== this.countdownToken) return;
         this.preShow?.arena.setBanner(this.showName.toUpperCase(), `starting in ${k}`);
         if (k === 3) this.preShow?.arena.hype();
       });
@@ -1047,6 +1099,7 @@ export abstract class ShowSession {
   private spectatePlayer(id: number, index: number, count: number): void {
     const r = this.round;
     if (!r) return;
+    if (r.spectateId !== id) this.onSpectateTarget(id);
     r.spectateId = id;
     r.view?.spectate(id);
     const st = this.liveStatus()?.players?.get(id);

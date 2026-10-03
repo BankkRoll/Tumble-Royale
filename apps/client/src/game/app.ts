@@ -1064,6 +1064,7 @@ export class GameApp {
       onLeaveShow: () => this.leaveToMenu(),
       onEmote: ({ id }) => {
         if (!this.session) this.menu?.emote(id);
+        else this.session.emoteById(id);
       },
       onPhotoMode: () =>
         s().pushToast({

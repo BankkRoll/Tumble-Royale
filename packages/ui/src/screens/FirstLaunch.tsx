@@ -16,6 +16,7 @@ import { shakeNo, squash } from '../theme/motion.ts';
 import { tumblerSwatches } from '../theme/tokens.ts';
 import { Icon } from '../components/icons/index.tsx';
 import { fireConfetti } from '../transitions/Confetti.tsx';
+import { WelcomeSignIn } from './overlays/AccountSheet.tsx';
 
 const BOOT_LINES = [
   'Inflating Tumblers…',
@@ -229,6 +230,7 @@ export function WelcomeScreen(): JSX.Element {
               {busy ? <span className="tr-gumball-spinner tr-gumball-spinner--sm" /> : "Let's go!"}
             </Button>
             <p className="tr-small tr-muted">You can change your look any time in the Locker.</p>
+            <WelcomeSignIn />
           </div>
         </Panel>
       </div>

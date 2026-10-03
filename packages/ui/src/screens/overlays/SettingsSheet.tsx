@@ -7,11 +7,10 @@ import { useEffect, useState, type JSX, type ReactNode } from 'react';
 import { playCue } from '../../audio-cues.ts';
 import { Button, Segmented, Slider, Toggle } from '../../components/controls.tsx';
 import { BIND_ACTION_LABELS, DEFAULT_KEYBINDS } from '../../store/defaults.ts';
-import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { BindAction, Keybinds, SettingsSection } from '../../store/types.ts';
 import { Icon } from '../../components/icons/index.tsx';
-import { confirmDeleteAccount, confirmSignOut } from '../../components/account.ts';
+import { AccountSection } from './AccountSheet.tsx';
 import { semanticColors } from '../../theme/tokens.ts';
 
 const SECTIONS: { id: SettingsSection; label: string }[] = [
@@ -160,7 +159,6 @@ function Rebinder(): JSX.Element {
 
 function Section({ id }: { id: SettingsSection }): JSX.Element {
   const s = useUI((st) => st.settings);
-  const profile = useUI((st) => st.profile);
   const up = ui.getState().updateSettings;
   const pct = (v: number): string => `${Math.round(v * 100)}%`;
   switch (id) {
@@ -472,45 +470,7 @@ function Section({ id }: { id: SettingsSection }): JSX.Element {
         </>
       );
     case 'account':
-      return (
-        <>
-          <Row label="Display name" hint={profile ? `#${profile.tag}` : undefined}>
-            <b>{profile?.name ?? 'Guest'}</b>
-          </Row>
-          <Row
-            label="Linked accounts"
-            hint={profile?.isGuest ? 'Link one to keep your stuff safe!' : undefined}
-          >
-            <div className="tr-row tr-wrap" style={{ justifyContent: 'flex-end' }}>
-              {(['discord', 'google', 'email'] as const).map((p) => {
-                const linked = profile?.linkedProviders?.includes(p);
-                return (
-                  <Button
-                    key={p}
-                    size="sm"
-                    variant={linked ? 'mint' : 'secondary'}
-                    disabled={linked}
-                    onClick={() => uiEvents.emit('accountAction', { action: `link-${p}` })}
-                  >
-                    {linked ? <Icon name="check" size="0.9em" /> : null}
-                    {p === 'discord' ? 'Discord' : p === 'google' ? 'Google' : 'Email'}
-                  </Button>
-                );
-              })}
-            </div>
-          </Row>
-          <Row label="Sign out">
-            <Button size="sm" variant="secondary" data-testid="sign-out" onClick={confirmSignOut}>
-              Sign out
-            </Button>
-          </Row>
-          <Row label="Delete Tumbler" hint="Gone forever. Like a Tumbler in the goo.">
-            <Button size="sm" variant="danger" onClick={confirmDeleteAccount}>
-              Delete…
-            </Button>
-          </Row>
-        </>
-      );
+      return <AccountSection />;
   }
 }
 

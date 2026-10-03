@@ -11,6 +11,7 @@ import { useState, type CSSProperties, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
 import { Bar, ItemArt, TypeBadge } from '../../components/bits.tsx';
 import { confirmSignOut } from '../../components/account.ts';
+import { RenameField } from '../overlays/AccountSheet.tsx';
 import { Button } from '../../components/controls.tsx';
 import { formatNumber, ordinal } from '../../components/hooks.ts';
 import { Icon, type IconName } from '../../components/icons/index.tsx';
@@ -476,10 +477,7 @@ function AccountCard({ p }: { p: ProfileData }): JSX.Element {
     <div className="tr-panel tr-profile-account">
       <div className="tr-col tr-grow" style={{ gap: '0.15em', minWidth: 0 }}>
         <span className="tr-label">Account</span>
-        <b className="tr-ellipsis">
-          {p.name}
-          <small className="tr-muted">#{p.tag}</small>
-        </b>
+        <RenameField testId="profile-rename" />
         <small className="tr-muted">
           {p.isGuest ? 'Guest · saved on this device only' : 'Signed in · saved to your account'}
         </small>

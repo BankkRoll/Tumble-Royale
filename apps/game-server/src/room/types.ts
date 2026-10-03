@@ -13,7 +13,12 @@ import type {
   RoundStatus,
 } from '@tumble/netcode';
 import type { CharacterInput, Rapier } from '@tumble/sim';
-import type { RoundDefinition, RoundPhaseId, ShowPhaseId } from '@tumble/shared';
+import {
+  DEFAULT_SHOW_PLAYERS,
+  type RoundDefinition,
+  type RoundPhaseId,
+  type ShowPhaseId,
+} from '@tumble/shared';
 import type { ResultsSink } from '../results.ts';
 import type { TicketCustomSettings } from '../tickets.ts';
 
@@ -215,9 +220,9 @@ export interface RoomConfig {
 
 /** Defaults per SPEC §3.1. */
 export const DEFAULT_ROOM_CONFIG: RoomConfig = {
-  capacity: 40,
+  capacity: DEFAULT_SHOW_PLAYERS,
   fillWaitMs: 25_000,
-  startAtHumans: 40,
+  startAtHumans: DEFAULT_SHOW_PLAYERS,
   resumeWindowMs: 30_000,
   snapshotByteBudget: 1200,
   snapshotEvery: 1,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EnvConfigError } from '@tumble/shared/env';
-import { loadConfig } from '../src/config.ts';
+import { DEFAULT_SHOW_PLAYERS, MAX_PLAYERS } from '@tumble/shared';
+import { DEFAULT_MAX_ROOMS, loadConfig } from '../src/config.ts';
 import { TEST_SECRETS, testEnv } from './helpers.ts';
 
 const issueNames = (env: Record<string, string | undefined>): string[] => {
@@ -20,7 +21,7 @@ describe('game server config', () => {
       env: 'test',
       port: 7350,
       fillWaitMs: 25_000,
-      startAtHumans: 40,
+      startAtHumans: DEFAULT_SHOW_PLAYERS,
       ticketedFillWaitMs: 15_000,
       devSim: null,
       ticketSecret: TEST_SECRETS.GAME_TICKET_SECRET,
@@ -32,7 +33,15 @@ describe('game server config', () => {
   });
 
   it('keeps the seat and room limits consistent by default', () => {
-    expect(loadConfig(testEnv()).capacity).toEqual({ roomCapacity: 40, maxRooms: 10, serverCapacity: 400 });
+    expect(loadConfig(testEnv()).capacity).toEqual({
+      roomCapacity: DEFAULT_SHOW_PLAYERS,
+      maxRooms: DEFAULT_MAX_ROOMS,
+      serverCapacity: DEFAULT_MAX_ROOMS * DEFAULT_SHOW_PLAYERS,
+    });
+    expect(issueNames(testEnv({ ROOM_CAPACITY: String(MAX_PLAYERS + 1) }))).toEqual(['ROOM_CAPACITY']);
+    expect(loadConfig(testEnv({ ROOM_CAPACITY: String(MAX_PLAYERS) })).capacity.roomCapacity).toBe(
+      MAX_PLAYERS,
+    );
     expect(loadConfig(testEnv({ MAX_ROOMS: '4', ROOM_CAPACITY: '20' })).capacity.serverCapacity).toBe(80);
     expect(loadConfig(testEnv({ SERVER_CAPACITY: '120' })).capacity.serverCapacity).toBe(120);
   });

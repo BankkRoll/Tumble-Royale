@@ -6,6 +6,7 @@
  *   verify before admitting a player.
  */
 import { jwtVerify, SignJWT } from 'jose';
+import { MAX_PLAYERS } from '@tumble/shared';
 import { z } from 'zod';
 
 const API_ISSUER = 'tumble-api';
@@ -57,8 +58,8 @@ const QueueTicketSchema = z.object({
   playlistId: z.string().min(1).max(64),
   queue: z.enum(['casual', 'ranked']),
   teamSize: z.number().int().min(1).max(4),
-  maxPlayers: z.number().int().min(2).max(60).optional(),
-  minPlayers: z.number().int().min(1).max(60).optional(),
+  maxPlayers: z.number().int().min(2).max(MAX_PLAYERS).optional(),
+  minPlayers: z.number().int().min(1).max(MAX_PLAYERS).optional(),
   botsAllowed: z.boolean().optional(),
   region: z.string().min(2).max(8),
   members: z

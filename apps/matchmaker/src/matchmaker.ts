@@ -4,7 +4,7 @@
  * events go out on per-user channels that the WebSocket layer relays.
  */
 import { randomInt, randomUUID } from 'node:crypto';
-import { filterChat } from '@tumble/shared';
+import { DEFAULT_SHOW_PLAYERS, filterChat } from '@tumble/shared';
 import { NO_BANS, type BanLookup } from './bans.ts';
 import type { MatchmakerConfig } from './config.ts';
 import { MMError } from './errors.ts';
@@ -190,7 +190,7 @@ const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const DEFAULT_CUSTOM: CustomSettings = {
   playlistId: 'main-show',
   rounds: [],
-  maxPlayers: 40,
+  maxPlayers: DEFAULT_SHOW_PLAYERS,
   bots: true,
   roundTimeScale: 1,
   lobbyCountdownSec: 10,

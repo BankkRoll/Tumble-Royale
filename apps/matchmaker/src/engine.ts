@@ -15,6 +15,7 @@
  *    `minPlayers` humans are present.
  * 4. Repeat with the next unassigned anchor.
  */
+import { DEFAULT_SHOW_PLAYERS } from '@tumble/shared';
 
 /** A queued party member. */
 export interface QueueMember {
@@ -59,7 +60,7 @@ export interface EngineConfig {
 export const DEFAULT_ENGINE: EngineConfig = {
   maxWaitMs: 25_000,
   hotMaxWaitMs: 12_000,
-  hotThreshold: 80,
+  hotThreshold: 2 * DEFAULT_SHOW_PLAYERS,
   band: { base: 3, perSecond: 0.6, max: 30 },
 };
 

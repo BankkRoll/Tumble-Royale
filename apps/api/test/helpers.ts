@@ -2,6 +2,7 @@
  * Test harness: an API on in-memory PGlite + memory KV with a controllable clock.
  */
 import { randomUUID } from 'node:crypto';
+import { DEFAULT_SHOW_PLAYERS } from '@tumble/shared';
 import type { Env } from '@tumble/shared/env';
 import type { LightMyRequestResponse } from 'fastify';
 import { buildApp, type BuildOptions, type BuiltApp } from '../src/app.ts';
@@ -169,8 +170,9 @@ export async function createTestApi(
 }
 
 /**
- * Builds a 40-slot show: humans take the given placements, bots fill the rest.
- * Rounds: race 40→26, survival 26→14, team 14→7, final 7→1.
+ * Builds a full show (`DEFAULT_SHOW_PLAYERS` slots unless `size` says otherwise):
+ * humans take the given placements, bots fill the rest.
+ * Rounds follow the Main Show curve: race 100→60, survival 60→30, team 30→12, final 12→1.
  *
  * @param humans - User ids in finishing order among humans with explicit placements.
  */
@@ -181,7 +183,7 @@ export function buildShow(opts: {
   size?: number;
   startIso?: string;
 }): MatchResultInput {
-  const size = opts.size ?? 40;
+  const size = opts.size ?? DEFAULT_SHOW_PLAYERS;
   const byPlacement = new Map(opts.humans.map((h) => [h.placement, h.userId]));
   const participants = Array.from({ length: size }, (_, i) => {
     const placement = i + 1;
@@ -196,7 +198,7 @@ export function buildShow(opts: {
         : {}),
     };
   });
-  const cut = [size, 26, 14, 7, 1];
+  const cut = [size, Math.round(size * 0.6), Math.round(size * 0.3), Math.round(size * 0.12), 1];
   const types = ['race', 'survival', 'team', 'final'] as const;
   const rounds = types.map((roundType, r) => ({
     roundId: `${roundType}-${r}`,

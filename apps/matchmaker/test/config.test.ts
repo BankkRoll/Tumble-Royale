@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EnvConfigError } from '@tumble/shared/env';
+import { DEFAULT_SHOW_PLAYERS, MAX_PLAYERS } from '@tumble/shared';
 import { loadConfig } from '../src/config.ts';
 import { TEST_SECRETS, testEnv } from './helpers.ts';
 
@@ -26,6 +27,14 @@ describe('matchmaker config', () => {
       'JWT_SECRET',
       'TARGET_SIZE',
     ]);
+  });
+
+  it('defaults lobbies to the full show size and caps them at MAX_PLAYERS', () => {
+    const c = loadConfig(testEnv());
+    expect(c.targetSize).toBe(DEFAULT_SHOW_PLAYERS);
+    expect(c.hotThreshold).toBe(2 * DEFAULT_SHOW_PLAYERS);
+    expect(loadConfig(testEnv({ TARGET_SIZE: String(MAX_PLAYERS) })).targetSize).toBe(MAX_PLAYERS);
+    expect(issueNames(testEnv({ TARGET_SIZE: String(MAX_PLAYERS + 1) }))).toEqual(['TARGET_SIZE']);
   });
 
   it('refuses placeholder secrets copied from .env.example', () => {

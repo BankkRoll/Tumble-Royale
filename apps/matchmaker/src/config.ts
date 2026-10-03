@@ -10,6 +10,7 @@
  * - Refuse to boot without secrets, with placeholder secrets, or in
  *   production on the in-process store unless that is explicitly allowed.
  */
+import { DEFAULT_SHOW_PLAYERS, MAX_PLAYERS } from '@tumble/shared';
 import { EnvIssues, type Env } from '@tumble/shared/env';
 import { z } from 'zod';
 
@@ -28,10 +29,15 @@ const EnvSchema = z.object({
   PUBLIC_WEB_URL: z.string().url().default('http://localhost:5173'),
   ALLOWED_ORIGINS: optional,
   DEFAULT_GAME_SERVER_URL: optional,
-  TARGET_SIZE: z.coerce.number().int().min(2).max(60).default(40),
+  TARGET_SIZE: z.coerce.number().int().min(2).max(MAX_PLAYERS).default(DEFAULT_SHOW_PLAYERS),
   MAX_WAIT_MS: z.coerce.number().int().min(1000).default(25_000),
   HOT_MAX_WAIT_MS: z.coerce.number().int().min(1000).default(12_000),
-  HOT_THRESHOLD: z.coerce.number().int().min(1).default(80),
+  // Two full lobbies' worth of searchers: enough that waiting longer would not add humans.
+  HOT_THRESHOLD: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .default(2 * DEFAULT_SHOW_PLAYERS),
   REGION_FALLBACK_MS: z.coerce.number().int().min(0).default(10_000),
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(120),
   USER_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(30),

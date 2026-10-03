@@ -8,6 +8,7 @@
  * `none`/RS256 token can never pass.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { MAX_PLAYERS } from '@tumble/shared';
 
 /** Issuer claim of join tickets. */
 export const TICKET_ISSUER = 'tumble-matchmaker';
@@ -100,7 +101,7 @@ export function verifyJoinTicket(secret: string, token: string, nowMs: number): 
   if (c.nbf !== undefined && (!isInt(c.nbf) || c.nbf > nowSec + 5)) return null;
   if (typeof c.sub !== 'string' || typeof c.mid !== 'string' || !/^[A-Za-z0-9_-]{6,64}$/.test(c.mid))
     return null;
-  if (!isInt(c.size) || !isInt(c.humans) || c.size < 1 || c.size > 60 || c.humans < 0) return null;
+  if (!isInt(c.size) || !isInt(c.humans) || c.size < 1 || c.size > MAX_PLAYERS || c.humans < 0) return null;
   const role = c.role === 'spectator' ? 'spectator' : 'player';
   const queue = c.queue === 'ranked' || c.queue === 'custom' ? c.queue : 'casual';
   return {

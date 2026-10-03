@@ -4,6 +4,7 @@
  * host migration, reload recovery and the game-server kick hand-off.
  */
 import type { AddressInfo } from 'node:net';
+import { MAX_PLAYERS } from '@tumble/shared';
 import { SignJWT } from 'jose';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
@@ -135,6 +136,15 @@ describe('live settings', () => {
       'too_many_players',
     );
     expect((await call('PATCH', `/lobbies/${code}`, 'host', { roundTimeScale: 9 })).status).toBe(400);
+    // Exactly the cap is a legal lobby; one more is not.
+    expect((await call('PATCH', `/lobbies/${code}`, 'host', { maxPlayers: MAX_PLAYERS + 1 })).status).toBe(
+      400,
+    );
+    expect((await call('PATCH', `/lobbies/${code}`, 'host', { minPlayers: MAX_PLAYERS + 1 })).status).toBe(
+      400,
+    );
+    expect((await call('PATCH', `/lobbies/${code}`, 'host', { maxPlayers: MAX_PLAYERS })).status).toBe(200);
+    expect(lastLobby(bob)!.settings.maxPlayers).toBe(MAX_PLAYERS);
     expect(
       (await call('PATCH', `/lobbies/${code}`, 'host', { minPlayers: 50, maxPlayers: 20 })).body.error,
     ).toBe('min_over_max');

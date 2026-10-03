@@ -13,6 +13,12 @@ No Docker needed: without `DATABASE_URL` the API runs on embedded
 [PGlite](https://pglite.dev) (`./.data/pglite`, in-memory for tests); without
 `REDIS_URL` it uses an in-process KV. Same schema, same migrations either way.
 
+> **Production needs Redis.** The in-process KV holds parties, presence, live
+> leaderboards, OAuth state, login codes and HMAC replay nonces: all of it is
+> lost on restart and none of it is shared between instances. With
+> `NODE_ENV=production` the API refuses to boot without `REDIS_URL` unless
+> `ALLOW_MEMORY_STORE=1` is set, and then logs a loud warning at boot.
+
 ## Environment
 
 | Variable                                      | Default                             | Purpose                                                                                                        |
@@ -20,7 +26,8 @@ No Docker needed: without `DATABASE_URL` the API runs on embedded
 | `PORT` / `HOST`                               | `7360` / `0.0.0.0`                  | Listen address                                                                                                 |
 | `DATABASE_URL`                                | –                                   | Postgres; unset → PGlite                                                                                       |
 | `PGLITE_DIR`                                  | `./.data/pglite`                    | PGlite data directory                                                                                          |
-| `REDIS_URL`                                   | –                                   | Redis for parties, presence, leaderboards, pub/sub; unset → memory                                             |
+| `REDIS_URL`                                   | –                                   | Redis for parties, presence, leaderboards, pub/sub; unset → memory (required in production, see above)         |
+| `ALLOW_MEMORY_STORE`                          | –                                   | `1` lets production boot without `REDIS_URL` (single instance, state lost on restart)                          |
 | `JWT_SECRET`                                  | dev value                           | HS256 secret for access tokens and party queue tickets. **Shared with the matchmaker.** Required in production |
 | `INTERNAL_HMAC_SECRET`                        | dev value                           | Signs `/internal/match-results` from game servers. Required in production                                      |
 | `ADMIN_TOKEN`                                 | –                                   | Bearer for `/internal/bans`, `/internal/flags`, `/internal/reports`, `/internal/ledger`; unset → disabled      |

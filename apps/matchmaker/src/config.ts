@@ -11,6 +11,8 @@
  *   production on the in-process store unless that is explicitly allowed.
  */
 import { EnvIssues, type Env } from '@tumble/shared/env';
+import { readMetricsExposure, type MetricsExposure } from '@tumble/shared/metrics';
+import type { TrustProxy } from '@tumble/shared/proxy';
 import { z } from 'zod';
 
 const optional = z
@@ -37,7 +39,6 @@ const EnvSchema = z.object({
   USER_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(30),
   TICK_MS: z.coerce.number().int().min(50).default(500),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
-  METRICS_TOKEN: optional,
   SENTRY_DSN: optional,
 });
 
@@ -77,15 +78,21 @@ export interface MatchmakerConfig {
   hotThreshold: number;
   /** How long a released lobby waits for a server in its own region before trying others. */
   regionFallbackMs: number;
-  /** Requests per minute per IP address. */
+  /**
+   * Reverse proxies allowed to set X-Forwarded-For (`TRUST_PROXY`): false
+   * (default, the socket address is the client), a hop count or proxy
+   * addresses/CIDRs.
+   */
+  trustProxy: TrustProxy;
+  /** Requests per minute per IP address, across all instances sharing the store. */
   rateLimitMax: number;
   /** Queue and lobby requests per minute per signed-in player. */
   userRateLimitMax: number;
   /** Matchmaking tick interval; 0 in tests (ticks are driven manually). */
   tickMs: number;
   logLevel: string;
-  /** Bearer for `/metrics`; absent → open in development, disabled in production. */
-  metricsToken: string | undefined;
+  /** `/metrics` exposure: `METRICS_TOKEN`, `INTERNAL_PORT`, `INTERNAL_HOST`. */
+  metrics: MetricsExposure;
   /** Sentry-compatible DSN for crash reports. */
   sentryDsn: string | undefined;
 }
@@ -115,6 +122,7 @@ export function loadConfig(env: Env = process.env): MatchmakerConfig {
   // report alongside the schema issues.
   const e = parsed.success ? parsed.data : EnvSchema.parse({});
   const production = e.NODE_ENV === 'production';
+  const trustProxy = issues.trustProxy();
   const apiUrl = e.API_URL ?? (e.NODE_ENV === 'development' ? 'http://localhost:7360' : undefined);
   const internalHmacSecret = apiUrl ? issues.secret('INTERNAL_HMAC_SECRET', 16) : undefined;
   if (production && !e.REDIS_URL && e.ALLOW_MEMORY_STORE !== '1') {
@@ -125,6 +133,7 @@ export function loadConfig(env: Env = process.env): MatchmakerConfig {
         'Set ALLOW_MEMORY_STORE=1 to run a single instance on memory anyway.',
     );
   }
+  const metrics = readMetricsExposure(issues, e.PORT);
   issues.throwIfAny('matchmaker');
   return {
     env: e.NODE_ENV,
@@ -149,11 +158,12 @@ export function loadConfig(env: Env = process.env): MatchmakerConfig {
     hotMaxWaitMs: e.HOT_MAX_WAIT_MS,
     hotThreshold: e.HOT_THRESHOLD,
     regionFallbackMs: e.REGION_FALLBACK_MS,
+    trustProxy,
     rateLimitMax: e.RATE_LIMIT_MAX,
     userRateLimitMax: e.USER_RATE_LIMIT_MAX,
     tickMs: e.NODE_ENV === 'test' ? 0 : e.TICK_MS,
     logLevel: e.LOG_LEVEL,
-    metricsToken: e.METRICS_TOKEN,
+    metrics,
     sentryDsn: e.SENTRY_DSN,
   };
 }

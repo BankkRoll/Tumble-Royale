@@ -12,6 +12,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@fastify/proxy-addr": "5.1.1",
     "@tumble/shared": "workspace:*",
     "fastify": "5.12.5",
     "ioredis": "6.0.0",

@@ -29,12 +29,12 @@ describe('health, readiness and request ids', () => {
 
   it('reports a failing dependency as not ready', async () => {
     api = await createTestApi();
-    const original = api.ctx.kv.get.bind(api.ctx.kv);
-    api.ctx.kv.get = () => Promise.reject(new Error('redis down'));
+    const original = api.ctx.kv.ping.bind(api.ctx.kv);
+    api.ctx.kv.ping = () => Promise.reject(new Error('redis down'));
     const res = await api.req('GET', '/ready');
     expect(res.statusCode).toBe(503);
     expect(res.json().checks.kv).toBe('redis down');
-    api.ctx.kv.get = original;
+    api.ctx.kv.ping = original;
   });
 
   it('echoes a safe x-request-id and replaces an unsafe one', async () => {
@@ -70,13 +70,14 @@ describe('/metrics', () => {
   });
 
   it('requires the token when one is configured', async () => {
-    api = await createTestApi(undefined, { METRICS_TOKEN: 'scrape-token' });
+    api = await createTestApi(undefined, { METRICS_TOKEN: 'scrape-token-0123456789' });
     expect((await api.req('GET', '/metrics')).statusCode).toBe(401);
     expect(
       (await api.req('GET', '/metrics', { headers: { authorization: 'Bearer wrong-token!' } })).statusCode,
     ).toBe(401);
     expect(
-      (await api.req('GET', '/metrics', { headers: { authorization: 'Bearer scrape-token' } })).statusCode,
+      (await api.req('GET', '/metrics', { headers: { authorization: 'Bearer scrape-token-0123456789' } }))
+        .statusCode,
     ).toBe(200);
   });
 });

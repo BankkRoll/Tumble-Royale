@@ -1,7 +1,14 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import { installLifecycle, type LifecycleLogger } from '../src/lifecycle.ts';
-import { metricsAccess, Registry } from '../src/metrics.ts';
+import { EnvIssues } from '../src/env.ts';
+import {
+  metricsAccess,
+  publicMetricsAccess,
+  readMetricsExposure,
+  Registry,
+  startInternalMetrics,
+} from '../src/metrics.ts';
 import { matchRequestId, requestIdFor, sanitizeRequestId } from '../src/requestId.ts';
 
 describe('Registry', () => {
@@ -147,5 +154,38 @@ describe('installLifecycle', () => {
     // A second crash while the first is handled exits without re-entering.
     h.proc.emit('unhandledRejection', new Error('again'));
     expect(h.proc.exit).toHaveBeenLastCalledWith(1);
+  });
+});
+
+describe('metrics exposure', () => {
+  it('reads METRICS_TOKEN, INTERNAL_PORT and INTERNAL_HOST like the game server', () => {
+    const issues = new EnvIssues({ METRICS_TOKEN: 'short', INTERNAL_PORT: '7360' });
+    readMetricsExposure(issues, 7360);
+    expect(issues.list.map((i) => i.name)).toEqual(['METRICS_TOKEN', 'INTERNAL_PORT']);
+    const ok = readMetricsExposure(
+      new EnvIssues({ METRICS_TOKEN: 'x'.repeat(16), INTERNAL_PORT: '9360', INTERNAL_HOST: '10.0.0.4' }),
+      7360,
+    );
+    expect(ok).toEqual({ token: 'x'.repeat(16), internalPort: 9360, internalHost: '10.0.0.4' });
+  });
+
+  it('closes the public route when a private listener exists, unless a token is set', () => {
+    const internal = { token: undefined, internalPort: 9360, internalHost: undefined };
+    expect(publicMetricsAccess(internal, undefined, false)).toBe('disabled');
+    expect(publicMetricsAccess({ ...internal, internalPort: undefined }, undefined, false)).toBe('ok');
+    const token = 't'.repeat(16);
+    expect(publicMetricsAccess({ ...internal, token }, `Bearer ${token}`, true)).toBe('ok');
+  });
+
+  it('serves /metrics and /health on the private listener', async () => {
+    const server = await startInternalMetrics(() => 'tumble_up 1\n', 0, '127.0.0.1');
+    try {
+      const base = `http://127.0.0.1:${server.port}`;
+      expect(await (await fetch(`${base}/metrics`)).text()).toBe('tumble_up 1\n');
+      expect((await fetch(`${base}/health`)).status).toBe(200);
+      expect((await fetch(`${base}/rooms`)).status).toBe(404);
+    } finally {
+      await server.close();
+    }
   });
 });

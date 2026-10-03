@@ -10,6 +10,7 @@
  */
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
+import { trustFunction } from '@tumble/shared/proxy';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { registerIdentityRoutes } from './accounts/identities.ts';
 import { registerAccountRoutes } from './accounts/routes.ts';
@@ -29,6 +30,7 @@ import {
 import { registerEconomyRoutes } from './economy/routes.ts';
 import { ApiError } from './http/errors.ts';
 import { rateLimitKey } from './http/rate-limit.ts';
+import { kvRateLimitStore } from './http/rate-limit-store.ts';
 import { createKV, type KV } from './kv/index.ts';
 import { registerMatchRoutes } from './matches/routes.ts';
 import { registerAdminRoutes } from './moderation/admin.ts';
@@ -61,6 +63,8 @@ export interface BuildOptions {
   seasonListeners?: SeasonChangeListener[];
   /** Disable request logging (tests). */
   logger?: boolean;
+  /** Count rate limits in the KV (default: when REDIS_URL is set). */
+  sharedRateLimit?: boolean;
 }
 
 /** A built API ready to `listen()` or `inject()`. */
@@ -172,7 +176,8 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
 
   const app = Fastify({
     logger: opts.logger === false ? false : { level: config.logLevel },
-    trustProxy: true,
+    // SECURITY: X-Forwarded-For is believed only from the proxies TRUST_PROXY names.
+    trustProxy: trustFunction(config.trustProxy) || false,
     bodyLimit: 256 * 1024,
     ...requestIdOptions,
   });
@@ -201,6 +206,12 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     max: config.rateLimitMax,
     timeWindow: '1 minute',
     keyGenerator: (req) => rateLimitKey(config.jwtSecret, req, now),
+    // Shared windows across instances whenever there is a shared store; the
+    // in-process store only for single-instance memory setups (its expired keys
+    // are never revisited, so the KV store would leak them).
+    ...((opts.sharedRateLimit ?? !!config.redisUrl)
+      ? { store: kvRateLimitStore(kv, () => now().getTime()), skipOnError: true }
+      : {}),
     errorResponseBuilder: (_req, c) => ({
       statusCode: 429,
       error: 'rate_limited',
@@ -239,16 +250,16 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     }
   });
 
-  // Liveness only: dependencies are checked by /ready, so a database outage never restarts healthy processes.
-  app.get('/health', { config: { rateLimit: false }, logLevel: 'warn' }, async () => {
-    return {
-      ok: true,
-      db: database.driver,
-      kv: config.redisUrl ? 'redis' : 'memory',
-      payments: payments.id,
-      season: catalog.season.id,
-    };
-  });
+  // Liveness only: an instance that lost the database or Redis answers 503 on
+  // /ready (load balancers route on that), but orchestrators must not restart
+  // a process that is merely waiting for a dependency to come back.
+  app.get('/health', { config: { rateLimit: false }, logLevel: 'warn' }, async () => ({
+    ok: true,
+    db: database.driver,
+    kv: config.redisUrl ? 'redis' : 'memory',
+    payments: payments.id,
+    season: catalog.season.id,
+  }));
 
   registerAuthRoutes(app, ctx);
   registerAccountRoutes(app, ctx);

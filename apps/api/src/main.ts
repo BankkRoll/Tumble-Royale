@@ -4,6 +4,7 @@
 import { resolve } from 'node:path';
 import { loadServiceConfig } from '@tumble/shared/env';
 import { consoleLogger, installLifecycle } from '@tumble/shared/lifecycle';
+import { startInternalMetrics } from '@tumble/shared/metrics';
 import { buildApp } from './app.ts';
 import { SmtpMailer } from './auth/mailer.ts';
 import { loadConfig } from './config.ts';
@@ -47,6 +48,18 @@ if (built.ctx.mailer instanceof SmtpMailer) {
 if (!config.stripe) app.log.info('Stripe disabled: Gem checkouts complete instantly via the fake provider');
 
 await app.listen({ host: config.host, port: config.port });
+const { internalPort, internalHost } = config.ops.metrics;
+if (internalPort !== undefined) {
+  const internal = await startInternalMetrics(
+    () => built.ops.metrics.registry.render(),
+    internalPort,
+    internalHost,
+  );
+  life.onShutdown(() => internal.close());
+  app.log.info(`[api] internal metrics on :${internal.port}/metrics`);
+} else if (config.env === 'production' && !config.ops.metrics.token) {
+  app.log.warn('[api] /metrics is disabled: set INTERNAL_PORT (private listener) or METRICS_TOKEN (bearer)');
+}
 app.log.info(
   `[api] ${built.database.driver} | ${config.redisUrl ? 'redis' : 'memory kv'} | listening on :${config.port}`,
 );

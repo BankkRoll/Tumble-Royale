@@ -6,10 +6,13 @@
  *   boot, reporting every problem together.
  * - Provide development defaults for everything except secrets, which come
  *   from the environment or the `.env` files `pnpm setup:env` writes.
- * - Refuse to boot without secrets, with placeholder secrets, or in
- *   production without Redis unless that is explicitly allowed.
+ * - Refuse to boot without secrets, with placeholder secrets, with a Stripe
+ *   key but no webhook secret, or in production without Redis unless that is
+ *   explicitly allowed.
  */
 import { EnvIssues, type Env } from '@tumble/shared/env';
+import { readMetricsExposure, type MetricsExposure } from '@tumble/shared/metrics';
+import type { TrustProxy } from '@tumble/shared/proxy';
 import { z } from 'zod';
 
 const optionalString = z
@@ -28,7 +31,6 @@ const OpsEnvSchema = z.object({
   DB_POOL_MAX: z.coerce.number().int().min(1).max(500).default(10),
   ALLOW_EMBEDDED_DB: flag,
   MIGRATE_ON_BOOT: flag,
-  METRICS_TOKEN: optionalString,
   SENTRY_DSN: optionalString,
   RETENTION_INTERVAL_MINUTES: z.coerce.number().int().min(0).default(360),
   RETENTION_SESSION_GRACE_DAYS: z.coerce.number().int().min(1).default(7),
@@ -101,11 +103,21 @@ export interface ApiConfig {
   corsOrigins: string[] | true;
   discord: OAuthClientConfig | undefined;
   google: OAuthClientConfig | undefined;
-  stripe: { secretKey: string; webhookSecret: string | undefined } | undefined;
+  /**
+   * Stripe credentials. The webhook secret is mandatory alongside the key:
+   * without it refunds and chargebacks could never reach the ledger.
+   */
+  stripe: { secretKey: string; webhookSecret: string } | undefined;
   /** SMTP relay for sign-in emails; absent → console (dev) or email sign-in disabled (production). */
   smtp: { url: string; from: string } | undefined;
   nameChangeCooldownDays: number;
-  /** Requests per minute per client for the global rate limiter. */
+  /**
+   * Reverse proxies allowed to set X-Forwarded-For (TRUST_PROXY): false
+   * (default, the socket address is the client), a hop count or proxy
+   * addresses/CIDRs.
+   */
+  trustProxy: TrustProxy;
+  /** Requests per minute per client for the global rate limiter (shared across instances with Redis). */
   rateLimitMax: number;
   /** How long a user stays "online" after their last realtime connection closes. */
   presenceGraceMs: number;
@@ -132,8 +144,8 @@ export interface ApiOpsConfig {
   dbPoolMax: number;
   /** Apply migrations at boot (`MIGRATE_ON_BOOT`, default on). Off when a separate `migrate` step runs them. */
   migrateOnBoot: boolean;
-  /** Bearer for `/metrics`; absent → open in development, disabled in production. */
-  metricsToken: string | undefined;
+  /** `/metrics` exposure: `METRICS_TOKEN`, `INTERNAL_PORT`, `INTERNAL_HOST`. */
+  metrics: MetricsExposure;
   /** Sentry-compatible DSN for crash reports. */
   sentryDsn: string | undefined;
   retention: RetentionConfig;
@@ -149,7 +161,8 @@ function pair(id: string | undefined, secret: string | undefined): OAuthClientCo
  * @param env - Usually `process.env`; tests pass a literal map.
  * @returns The validated configuration.
  * @throws {EnvConfigError} Listing every malformed variable and missing or
- *   placeholder secret, and `REDIS_URL` in production unless `ALLOW_MEMORY_STORE=1`.
+ *   placeholder secret, `REDIS_URL` in production unless `ALLOW_MEMORY_STORE=1`,
+ *   and `STRIPE_WEBHOOK_SECRET` whenever `STRIPE_SECRET_KEY` is set.
  */
 export function loadConfig(env: Env = process.env): ApiConfig {
   const issues = new EnvIssues(env);
@@ -175,6 +188,18 @@ export function loadConfig(env: Env = process.env): ApiConfig {
         'tooling and cannot be shared between API instances. Set ALLOW_EMBEDDED_DB=1 to run on it anyway.',
     );
   }
+  // WARNING: a live Stripe key without a webhook secret takes real money but
+  // never hears about completions, refunds or chargebacks: paid Gems would
+  // never arrive and refunded Gems would never be revoked.
+  if (e.STRIPE_SECRET_KEY && !e.STRIPE_WEBHOOK_SECRET) {
+    issues.add(
+      'STRIPE_WEBHOOK_SECRET',
+      'is required when STRIPE_SECRET_KEY is set: checkout completions, refunds and disputes ' +
+        'arrive only through signed webhooks.',
+    );
+  }
+  const trustProxy = issues.trustProxy();
+  const metrics = readMetricsExposure(issues, e.PORT);
   issues.throwIfAny('api');
   const corsOrigins: string[] | true = e.CORS_ORIGINS
     ? e.CORS_ORIGINS.split(',')
@@ -199,9 +224,10 @@ export function loadConfig(env: Env = process.env): ApiConfig {
     corsOrigins,
     discord: pair(e.DISCORD_CLIENT_ID, e.DISCORD_CLIENT_SECRET),
     google: pair(e.GOOGLE_CLIENT_ID, e.GOOGLE_CLIENT_SECRET),
-    stripe: e.STRIPE_SECRET_KEY
-      ? { secretKey: e.STRIPE_SECRET_KEY, webhookSecret: e.STRIPE_WEBHOOK_SECRET }
-      : undefined,
+    stripe:
+      e.STRIPE_SECRET_KEY && e.STRIPE_WEBHOOK_SECRET
+        ? { secretKey: e.STRIPE_SECRET_KEY, webhookSecret: e.STRIPE_WEBHOOK_SECRET }
+        : undefined,
     smtp: e.SMTP_URL
       ? {
           url: e.SMTP_URL,
@@ -209,13 +235,14 @@ export function loadConfig(env: Env = process.env): ApiConfig {
         }
       : undefined,
     nameChangeCooldownDays: e.NAME_CHANGE_COOLDOWN_DAYS,
+    trustProxy,
     rateLimitMax: e.RATE_LIMIT_MAX,
     presenceGraceMs: e.PRESENCE_GRACE_MS,
     logLevel: e.LOG_LEVEL,
     ops: {
       dbPoolMax: e.DB_POOL_MAX,
       migrateOnBoot: e.MIGRATE_ON_BOOT !== '0',
-      metricsToken: e.METRICS_TOKEN,
+      metrics,
       sentryDsn: e.SENTRY_DSN,
       retention: {
         intervalMs: e.NODE_ENV === 'test' ? 0 : e.RETENTION_INTERVAL_MINUTES * 60_000,

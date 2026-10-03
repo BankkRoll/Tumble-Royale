@@ -40,5 +40,8 @@ export interface KV {
   /** Subscribes to a channel; the returned function unsubscribes this handler. */
   subscribe(channel: string, handler: MessageHandler): Promise<() => Promise<void>>;
 
+  /** Checks the backing store answers (health checks); rejects when it does not. */
+  ping(): Promise<void>;
+
   close(): Promise<void>;
 }

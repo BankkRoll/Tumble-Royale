@@ -6,11 +6,16 @@
  *   text exposition format (0.0.4).
  * - Gauges computed at scrape time (queue depth, open sockets) through
  *   collect callbacks, so nothing has to be kept in sync by hand.
- * - The shared `/metrics` access rule ({@link metricsAccess}).
+ * - The shared `/metrics` exposure rules for every service: `METRICS_TOKEN`
+ *   (bearer on the public port), `INTERNAL_PORT` / `INTERNAL_HOST` (private
+ *   listener without a token), open only in development without either.
  *
  * prom-client would do, but it pulls in its own default process collectors
- * and a cluster aggregator none of the services use; this is ~200 lines.
+ * and a cluster aggregator none of the services use.
  */
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import type { EnvIssues } from './env.ts';
 
 /** Label set of one series. */
 export type Labels = Readonly<Record<string, string | number>>;
@@ -270,4 +275,102 @@ export function registerProcessMetrics(
       [{ stat: 'p99' }, eventLoopDelay.percentile(99) / 1e9],
     ]);
   }
+}
+
+/** Where and how a service exposes `/metrics` (the same variables in every service). */
+export interface MetricsExposure {
+  /** Bearer for `/metrics` on the public port (`METRICS_TOKEN`, 16+ chars). */
+  token: string | undefined;
+  /** Private listener serving `/metrics` without a token (`INTERNAL_PORT`). */
+  internalPort: number | undefined;
+  /** Bind address of the private listener (`INTERNAL_HOST`; default all interfaces). */
+  internalHost: string | undefined;
+}
+
+/**
+ * Reads `METRICS_TOKEN`, `INTERNAL_PORT` and `INTERNAL_HOST` with the rules
+ * every service shares, recording problems in `issues`.
+ *
+ * @param issues - The service's environment issue collector.
+ * @param publicPort - The service's public `PORT`; the internal port must differ.
+ */
+export function readMetricsExposure(issues: EnvIssues, publicPort: number): MetricsExposure {
+  const token =
+    issues.optional('METRICS_TOKEN') === undefined ? undefined : issues.secret('METRICS_TOKEN', 16);
+  const internalPort =
+    issues.optional('INTERNAL_PORT') === undefined
+      ? undefined
+      : issues.int('INTERNAL_PORT', 0, { min: 1, max: 65535 });
+  if (internalPort !== undefined && internalPort === publicPort)
+    issues.add('INTERNAL_PORT', 'must differ from PORT: the internal listener must not be the public one');
+  return { token: token || undefined, internalPort, internalHost: issues.optional('INTERNAL_HOST') };
+}
+
+/**
+ * The access decision for `/metrics` on a public port. With a private
+ * listener configured the public route closes unless a token is set, as in
+ * production.
+ *
+ * @param exposure - From {@link readMetricsExposure}.
+ * @param authorization - Request `Authorization` header.
+ * @param production - `NODE_ENV === 'production'`.
+ */
+export function publicMetricsAccess(
+  exposure: MetricsExposure,
+  authorization: string | undefined,
+  production: boolean,
+): 'ok' | 'unauthorized' | 'disabled' {
+  return metricsAccess(exposure.token, authorization, production || exposure.internalPort !== undefined);
+}
+
+/** A running private metrics listener. */
+export interface InternalMetricsServer {
+  readonly port: number;
+  close(): Promise<void>;
+}
+
+/**
+ * Serves `GET /metrics` and `GET /health` without a token on a private port,
+ * for scrapers on an internal network.
+ *
+ * @param render - Produces the exposition text.
+ * @param port - `INTERNAL_PORT`; 0 picks a free one.
+ * @param host - `INTERNAL_HOST`.
+ * @example
+ * const internal = await startInternalMetrics(() => registry.render(), 9360, '10.0.0.4');
+ */
+export async function startInternalMetrics(
+  render: () => Promise<string> | string,
+  port: number,
+  host?: string,
+): Promise<InternalMetricsServer> {
+  const server = createServer((req, res) => {
+    const path = (req.url ?? '/').split('?')[0];
+    if (req.method !== 'GET' || (path !== '/metrics' && path !== '/health')) {
+      res.writeHead(404).end();
+      return;
+    }
+    if (path === '/health') {
+      res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
+      return;
+    }
+    Promise.resolve()
+      .then(render)
+      .then(
+        (text) => res.writeHead(200, { 'content-type': METRICS_CONTENT_TYPE }).end(text),
+        () => res.writeHead(500).end(),
+      );
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, host, () => resolve());
+  });
+  return {
+    port: (server.address() as AddressInfo).port,
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.closeAllConnections();
+        server.close(() => resolve());
+      }),
+  };
 }

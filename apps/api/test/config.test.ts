@@ -51,12 +51,17 @@ describe('api config', () => {
       testEnv({
         DB_POOL_MAX: '25',
         MIGRATE_ON_BOOT: '0',
-        METRICS_TOKEN: 'scrape-me',
+        METRICS_TOKEN: 'scrape-me-0123456789',
+        INTERNAL_PORT: '9360',
         RETENTION_EVENTS_DAYS: '0',
         RETENTION_GUEST_DAYS: '365',
       }),
     ).ops;
-    expect(ops).toMatchObject({ dbPoolMax: 25, migrateOnBoot: false, metricsToken: 'scrape-me' });
+    expect(ops).toMatchObject({
+      dbPoolMax: 25,
+      migrateOnBoot: false,
+      metrics: { token: 'scrape-me-0123456789', internalPort: 9360 },
+    });
     expect(ops.retention).toMatchObject({ eventsDays: 0, guestDays: 365, sessionGraceDays: 7 });
     // Tests drive the retention job by hand.
     expect(ops.retention.intervalMs).toBe(0);
@@ -64,6 +69,16 @@ describe('api config', () => {
       'DB_POOL_MAX',
       'MIGRATE_ON_BOOT',
     ]);
+  });
+
+  it('requires the Stripe webhook secret whenever a Stripe key is set', () => {
+    expect(issueNames(testEnv({ STRIPE_SECRET_KEY: 'sk_test_123' }))).toEqual(['STRIPE_WEBHOOK_SECRET']);
+    expect(issueNames(testEnv({ STRIPE_SECRET_KEY: 'sk_test_123', STRIPE_WEBHOOK_SECRET: '  ' }))).toEqual([
+      'STRIPE_WEBHOOK_SECRET',
+    ]);
+    const ok = loadConfig(testEnv({ STRIPE_SECRET_KEY: 'sk_test_123', STRIPE_WEBHOOK_SECRET: 'whsec_abc' }));
+    expect(ok.stripe).toEqual({ secretKey: 'sk_test_123', webhookSecret: 'whsec_abc' });
+    expect(loadConfig(testEnv({ STRIPE_WEBHOOK_SECRET: 'whsec_abc' })).stripe).toBeUndefined();
   });
 
   it('keeps zero-setup memory state outside production', () => {

@@ -1,6 +1,8 @@
 /**
  * `/auth/*` routes: guest device sign-in, refresh rotation, logout, OAuth
  * (Discord, Google), email magic links and the one-time login-code exchange.
+ * Every sign-in re-applies bans retained from a deleted account that shared an
+ * identity, email address or device secret (`moderation/ban-evasion.ts`).
  */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -14,7 +16,8 @@ import {
 import type { AppContext } from '../context.ts';
 import type { DbOrTx } from '../db/client.ts';
 import { users } from '../db/schema.ts';
-import { optionalUser, requireUser } from '../http/auth.ts';
+import { invalidateBanCache, optionalUser, requireUser } from '../http/auth.ts';
+import { reapplyRetainedBans, type StableIdentifier } from '../moderation/ban-evasion.ts';
 import { ApiError, parse } from '../http/errors.ts';
 import { AUTH_RATE } from '../http/rate-limit.ts';
 import { completeOAuth, startOAuth, type OAuthProviderId } from './oauth.ts';
@@ -109,6 +112,32 @@ async function resolveIdentity(
 }
 
 /**
+ * Resolves an OAuth or email identity to an account, re-applies any ban that
+ * outlived a deleted account with the same identity or address, then starts
+ * a session. The account change commits before the session is minted, so a
+ * re-applied `all` ban sticks even though this sign-in is then refused.
+ *
+ * @throws {ApiError} 403 `banned` while the resolved account is suspended.
+ */
+async function signInWithIdentity(
+  ctx: AppContext,
+  id: Parameters<typeof resolveIdentity>[2],
+  userAgent: string | undefined,
+): Promise<TokenPair & { outcome: AuthOutcome }> {
+  const { userId, outcome, reapplied } = await ctx.db.transaction(async (tx) => {
+    const resolved = await resolveIdentity(tx, ctx, id);
+    const presented: StableIdentifier[] = [{ kind: 'identity', provider: id.provider, subject: id.subject }];
+    if (id.email) presented.push({ kind: 'email', email: id.email });
+    return { ...resolved, reapplied: await reapplyRetainedBans(tx, ctx, resolved.userId, presented) };
+  });
+  if (reapplied > 0) await invalidateBanCache(ctx, userId);
+  const pair = await ctx.db.transaction((tx) =>
+    startSession(tx, ctx.config.jwtSecret, userId, ctx.now(), userAgent),
+  );
+  return { ...pair, outcome };
+}
+
+/**
  * Registers `/auth/*`.
  *
  * @param app - Fastify instance.
@@ -120,26 +149,41 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
   app.post('/auth/guest', { config: AUTH_RATE }, async (req) => {
     const body = parse(GuestBody, req.body ?? {});
     const ua = req.headers['user-agent'];
-    return ctx.db.transaction(async (tx) => {
-      if (body.deviceToken) {
-        const userId = await findIdentity(tx, 'device', sha256(body.deviceToken));
+    const offered = body.deviceToken;
+    const account = await ctx.db.transaction(async (tx) => {
+      if (offered) {
+        const userId = await findIdentity(tx, 'device', sha256(offered));
         if (userId) {
-          const pair = await startSession(tx, secret, userId, ctx.now(), ua);
-          return { ...pair, deviceToken: body.deviceToken, created: false };
+          const reapplied = await reapplyRetainedBans(tx, ctx, userId);
+          return { userId, deviceToken: offered, created: false, reapplied };
         }
       }
       // Device tokens are server-issued, so an unknown one means local data
-      // from a wiped server; start a fresh guest rather than failing the launch.
-      const deviceToken = randomToken();
-      const account = await createAccount(tx, ctx.catalog, {
+      // from a wiped server (or a deleted account); start a fresh guest rather
+      // than failing the launch.
+      let deviceToken = randomToken();
+      const created = await createAccount(tx, ctx.catalog, {
         isGuest: true,
         ...(body.region ? { region: body.region } : {}),
         ...(body.displayName ? { displayName: body.displayName } : {}),
         identity: { provider: 'device', subject: sha256(deviceToken) },
       });
-      const pair = await startSession(tx, secret, account.userId, ctx.now(), ua);
-      return { ...pair, deviceToken, created: true };
+      const presented: StableIdentifier[] = offered
+        ? [{ kind: 'identity', provider: 'device', subject: sha256(offered) }]
+        : [];
+      const reapplied = await reapplyRetainedBans(tx, ctx, created.userId, presented);
+      if (reapplied > 0 && offered) {
+        // SECURITY: the offered secret belonged to a deleted, banned account.
+        // Binding it to the new account makes every retry land on this same
+        // suspended account instead of minting a fresh one each launch.
+        await linkIdentity(tx, created.userId, 'device', sha256(offered));
+        deviceToken = offered;
+      }
+      return { userId: created.userId, deviceToken, created: true, reapplied };
     });
+    if (account.reapplied > 0) await invalidateBanCache(ctx, account.userId);
+    const pair = await ctx.db.transaction((tx) => startSession(tx, secret, account.userId, ctx.now(), ua));
+    return { ...pair, deviceToken: account.deviceToken, created: account.created };
   });
 
   app.post('/auth/refresh', { config: AUTH_RATE }, async (req) => {
@@ -192,11 +236,10 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
         q.code,
         q.state,
       );
-      const result = await ctx.db.transaction(async (tx) => {
-        const { userId, outcome } = await resolveIdentity(tx, ctx, identity);
-        const pair = await startSession(tx, secret, userId, ctx.now(), req.headers['user-agent']);
-        return { ...pair, outcome, provider };
-      });
+      const result = {
+        ...(await signInWithIdentity(ctx, identity, req.headers['user-agent'])),
+        provider,
+      };
       const code = randomToken(24);
       await ctx.kv.set(`login:${code}`, JSON.stringify(result), LOGIN_CODE_TTL_MS);
       return reply.redirect(`${back}&code=${code}`);
@@ -252,16 +295,11 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     const raw = await ctx.kv.getDel(`magic:${sha256(token)}`);
     if (!raw) throw new ApiError(400, 'invalid_token', 'Sign-in link expired or already used');
     const { email, linkUserId } = JSON.parse(raw) as { email: string; linkUserId: string | null };
-    return ctx.db.transaction(async (tx): Promise<AuthResult> => {
-      const { userId, outcome } = await resolveIdentity(tx, ctx, {
-        provider: 'email',
-        subject: email,
-        email,
-        name: null,
-        linkUserId,
-      });
-      const pair = await startSession(tx, secret, userId, ctx.now(), req.headers['user-agent']);
-      return { ...pair, outcome, provider: 'email' };
-    });
+    const signedIn = await signInWithIdentity(
+      ctx,
+      { provider: 'email', subject: email, email, name: null, linkUserId },
+      req.headers['user-agent'],
+    );
+    return { ...signedIn, provider: 'email' } satisfies AuthResult;
   });
 }

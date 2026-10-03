@@ -47,6 +47,9 @@ importers:
       '@fastify/cors':
         specifier: 11.3.0
         version: 11.3.0
+      '@fastify/proxy-addr':
+        specifier: 5.1.1
+        version: 5.1.1
       '@fastify/rate-limit':
         specifier: 11.2.0
         version: 11.2.0
@@ -184,6 +187,9 @@ importers:
       '@dimforge/rapier3d-compat':
         specifier: 0.21.0
         version: 0.21.0
+      '@fastify/proxy-addr':
+        specifier: 5.1.1
+        version: 5.1.1
       '@tumble/content':
         specifier: workspace:*
         version: link:../../packages/content
@@ -224,6 +230,9 @@ importers:
 
   apps/matchmaker:
     dependencies:
+      '@fastify/proxy-addr':
+        specifier: 5.1.1
+        version: 5.1.1
       '@tumble/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -334,6 +343,9 @@ importers:
 
   packages/shared:
     dependencies:
+      '@fastify/proxy-addr':
+        specifier: 5.1.1
+        version: 5.1.1
       zod:
         specifier: ^4.1.0
         version: 4.6.5

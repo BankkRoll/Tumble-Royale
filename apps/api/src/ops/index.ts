@@ -73,13 +73,17 @@ export function registerOps(
         checks[name] = err instanceof Error ? err.message.slice(0, 200) : 'failed';
       }
     };
-    await Promise.all([
-      probe('db', () => ctx.db.execute(sql`select 1`)),
-      probe('kv', () => ctx.kv.get('ops:ready-probe')),
-    ]);
+    await Promise.all([probe('db', () => ctx.db.execute(sql`select 1`)), probe('kv', () => ctx.kv.ping())]);
     const ok = Object.values(checks).every((v) => v === 'ok');
     if (!ok) req.log.warn({ checks }, 'not ready');
-    return reply.code(ok ? 200 : 503).send({ ok, db: deps.database.driver, checks });
+    return reply.code(ok ? 200 : 503).send({
+      ok,
+      db: deps.database.driver,
+      dbOk: checks.db === 'ok',
+      kv: ctx.config.redisUrl ? 'redis' : 'memory',
+      kvOk: checks.kv === 'ok',
+      checks,
+    });
   });
 
   registerMetrics(app, ctx.config, metrics);

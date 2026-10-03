@@ -8,6 +8,9 @@
  */
 import type { CapacityReport } from './room/RoomManager.ts';
 
+/** Matches the matchmaker's heartbeat schema limit. */
+const MAX_JOINED = 10_000;
+
 /** Options for {@link startMatchmakerLink}. */
 export interface MatchmakerLinkOptions {
   matchmakerUrl: string;
@@ -29,6 +32,8 @@ export interface MatchmakerLinkOptions {
   humans?: () => number;
   /** Show results not yet delivered to the API (reported for monitoring). */
   outbox?: () => number;
+  /** Drains ticketed joins since the last call, so the matchmaker stops replaying their `match_found`. */
+  joined?: () => { matchId: string; userId: string }[];
   log?: (msg: string) => void;
   /** HTTP client (tests). */
   fetch?: typeof fetch;
@@ -55,6 +60,8 @@ export function startMatchmakerLink(opts: MatchmakerLinkOptions): MatchmakerLink
   const headers = { authorization: `Bearer ${opts.secret}`, 'content-type': 'application/json' };
   const fetchFn = opts.fetch ?? fetch;
   let registered = false;
+  // Joins from a failed heartbeat ride along on the next one.
+  let unsent: { matchId: string; userId: string }[] = [];
   const call = async (path: string, method: string, body?: unknown): Promise<boolean> => {
     try {
       const res = await fetchFn(`${base}${path}`, {
@@ -85,6 +92,8 @@ export function startMatchmakerLink(opts: MatchmakerLinkOptions): MatchmakerLink
       if (registered) opts.log?.(`[matchmaker] registered ${opts.serverId} at ${opts.publicUrl}`);
       return;
     }
+    const joined = [...unsent, ...(opts.joined?.() ?? [])].slice(-MAX_JOINED);
+    unsent = [];
     // A matchmaker restart forgets us; re-register when the heartbeat is refused.
     if (
       !(await call('/servers/heartbeat', 'POST', {
@@ -94,9 +103,12 @@ export function startMatchmakerLink(opts: MatchmakerLinkOptions): MatchmakerLink
         matches: r.matches,
         ...(opts.humans ? { humans: opts.humans() } : {}),
         ...(opts.outbox ? { outbox: opts.outbox() } : {}),
+        ...(joined.length ? { joined } : {}),
       }))
-    )
+    ) {
       registered = false;
+      unsent = joined;
+    }
   };
   void beat();
   const timer = setInterval(() => void beat(), opts.intervalMs ?? 5000);

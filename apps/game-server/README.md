@@ -11,13 +11,23 @@ pnpm --filter @tumble/game-server build && pnpm --filter @tumble/game-server sta
 
 ## Endpoints
 
-| Path                           | Purpose                                                              |
-| ------------------------------ | -------------------------------------------------------------------- |
-| `/ws`                          | Game WebSocket (binary protocol, see `packages/netcode/PROTOCOL.md`) |
-| `/health`                      | Liveness, Rapier version, room count                                 |
-| `/rooms`                       | Active rooms                                                         |
-| `/metrics`                     | Prometheus: tick time avg/p95/max, rooms, players, bytes out, RTT    |
-| `/debug/determinism?steps=600` | Runs the Rapier determinism scenario (clients compare against it)    |
+| Path                           | Purpose                                                                         |
+| ------------------------------ | ------------------------------------------------------------------------------- |
+| `/ws`                          | Game WebSocket (binary protocol, see `packages/netcode/PROTOCOL.md`)            |
+| `/health`                      | Liveness, Rapier version, room count                                            |
+| `/rooms`                       | Active rooms (internal port, or `METRICS_TOKEN` bearer)                         |
+| `/metrics`                     | Prometheus: tick time, rooms, players, bytes out, RTT (same access as `/rooms`) |
+| `/debug/determinism?steps=600` | Rapier determinism scenario; development only, at most 1200 steps               |
+| `POST /internal/kick`          | Signed matchmaker host kick (also `/gs/internal/kick`)                          |
+
+Exposure: in production `/debug/*` is off (it runs Rapier on the room event
+loop), `/metrics` and `/rooms` are served on `INTERNAL_PORT` or with
+`Authorization: Bearer $METRICS_TOKEN`, and otherwise answer 404. CORS is sent
+only to `ALLOWED_ORIGINS` (default `PUBLIC_WEB_URL` in production), which also
+gate WebSocket upgrades that carry an `Origin`. Each client address may hold
+`MAX_PENDING_PER_IP` (8) sockets that have not sent their Hello, which must
+arrive within `HELLO_TIMEOUT_MS` (5 s). Client addresses come from the socket
+unless `TRUST_PROXY` names the proxies in front.
 
 ## Environment
 

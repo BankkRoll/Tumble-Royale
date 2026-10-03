@@ -1,13 +1,13 @@
 /**
  * Prometheus metrics for the API, served at `GET /metrics`.
  *
- * Access follows `metricsAccess`: `METRICS_TOKEN` as a bearer when set,
+ * Access follows `publicMetricsAccess`: `METRICS_TOKEN` as a bearer when set,
  * otherwise open in development and disabled (404) in production.
  */
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import {
-  metricsAccess,
   METRICS_CONTENT_TYPE,
+  publicMetricsAccess,
   Registry,
   registerProcessMetrics,
   type Counter,
@@ -82,8 +82,8 @@ export function registerMetrics(app: FastifyInstance, config: ApiConfig, metrics
   });
 
   app.get('/metrics', { config: { rateLimit: false }, logLevel: 'warn' }, async (req, reply) => {
-    const access = metricsAccess(
-      config.ops.metricsToken,
+    const access = publicMetricsAccess(
+      config.ops.metrics,
       req.headers.authorization,
       config.env === 'production',
     );

@@ -11,8 +11,8 @@
  */
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import {
-  metricsAccess,
   METRICS_CONTENT_TYPE,
+  publicMetricsAccess,
   Registry,
   registerProcessMetrics,
   type Labels,
@@ -159,7 +159,7 @@ export function registerOps(
   });
 
   app.get('/metrics', { logLevel: 'warn' }, async (req, reply) => {
-    const access = metricsAccess(cfg.metricsToken, req.headers.authorization, cfg.env === 'production');
+    const access = publicMetricsAccess(cfg.metrics, req.headers.authorization, cfg.env === 'production');
     if (access === 'disabled') return reply.code(404).send({ error: 'not_found', message: 'Not found' });
     if (access === 'unauthorized')
       return reply.code(401).send({ error: 'unauthorized', message: 'Metrics token required' });

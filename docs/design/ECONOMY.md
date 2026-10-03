@@ -90,6 +90,47 @@ or above the premium price.
 
 No API key is ever needed to run or play the game.
 
+Only linked accounts may buy Gems: a guest lives in one browser's storage, so
+a purchase there could vanish with the device and could never be refunded to
+anyone. `POST /gems/checkout` answers guests with **403 `account_required`**
+and the client opens the link-account dialog instead.
+
+### 3.2 Refunds and chargebacks
+
+Stripe tells the API about money moving back through signed webhooks
+(`charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`,
+`charge.dispute.funds_reinstated`). `apps/api/src/economy/reversals.ts` holds
+the implementation; the policy is:
+
+- **Reconcile to a target.** Per PaymentIntent the API stores the highest
+  refunded amount seen and the dispute status, then moves Gems by the
+  difference between the target below and what it already took back.
+  Duplicated, late and out-of-order deliveries all converge on the same
+  ledger; each Stripe event id is also applied at most once.
+- **Target.** An open or lost dispute takes back the whole pack. Otherwise a
+  refund takes back `ceil(gems × refunded ÷ charged)`: a partial refund removes
+  a proportional share, rounded against the player. A won dispute (also an
+  inquiry closed without a chargeback, or reinstated funds) gives the
+  dispute's share back; the refund's share, if any, stays reversed.
+- **Append-only.** Every change is a new ledger row (`gem_reversal`,
+  `gem_restore`, `debt_repayment`, `debt_forgiven`); nothing is edited.
+- **Debt.** Gems already spent cannot be taken back, so the shortfall becomes
+  Gem debt (ledger account `gem_debt`, shown as `gemDebt` by `GET /wallet`).
+  Every later Gem credit (rewards, restores, adjustments) repays the debt
+  first, so a player in debt always holds 0 Gems. While the debt is above
+  zero, `POST /gems/checkout` answers **402 `payment_debt`**. Support can write
+  it off with `POST /internal/payments/debt/:userId/forgive` (admin token).
+  Cosmetics bought with reversed Gems are kept.
+- **Ordering.** A refund or dispute that arrives before the checkout
+  completion is stored and applied the moment the completion credits the
+  pack. Events for unknown sessions or charges get a 200 so Stripe stops
+  retrying them.
+- **Failed refunds** (Stripe lowering `amount_refunded` again) are not
+  re-credited automatically; support restores those Gems with an adjustment.
+- An expired session (`checkout.session.expired`) or a declined delayed payment
+  (`checkout.session.async_payment_failed`) marks the pending purchase
+  `expired` / `failed`; no Gems move.
+
 ## 4. Crown Shard shop
 
 - Stock: only `source: 'shards'` cosmetics (the royal set). They are never sold

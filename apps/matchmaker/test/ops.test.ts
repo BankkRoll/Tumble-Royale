@@ -127,10 +127,11 @@ describe('matchmaker ops endpoints', () => {
   });
 
   it('guards /metrics with the token, and hides it in production without one', async () => {
-    const m = await build({ METRICS_TOKEN: 'scrape' });
+    const m = await build({ METRICS_TOKEN: 'scrape-0123456789ab' });
     expect((await m.app.inject({ url: '/metrics' })).statusCode).toBe(401);
     expect(
-      (await m.app.inject({ url: '/metrics', headers: { authorization: 'Bearer scrape' } })).statusCode,
+      (await m.app.inject({ url: '/metrics', headers: { authorization: 'Bearer scrape-0123456789ab' } }))
+        .statusCode,
     ).toBe(200);
     await m.close();
     mm = await buildMatchmaker(

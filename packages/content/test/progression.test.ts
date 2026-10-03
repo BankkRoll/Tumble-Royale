@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getCosmetic } from '../src/cosmetics/index.ts';
+import { CosmeticSlotSchema, RaritySchema, getCosmetic } from '../src/cosmetics/index.ts';
 import {
   CHALLENGE_POOL,
   CHALLENGE_SLOTS,
@@ -73,12 +73,47 @@ describe('season pass', () => {
     expect(SEASON_PASS.tiers.at(-1)!.premium[0]).toMatchObject({ kind: 'cosmetic', rarity: 'mythic' });
     const ids = SEASON_PASS.tiers.flatMap((t) => [...t.free, ...t.premium]).flatMap((r) => (r.kind === 'cosmetic' ? [r.itemId] : []));
     expect(new Set(ids).size).toBe(ids.length);
-    const real = ids.filter((id) => getCosmetic(id));
-    expect(real.length).toBeGreaterThan(0);
-    for (const id of real) expect(getCosmetic(id)!.source).toBe('pass');
+    expect(ids.filter((id) => !getCosmetic(id))).toEqual([]);
+    expect(ids.some((id) => id.startsWith('pass.'))).toBe(false);
     expect(passTierForXp(0).tier).toBe(0);
     const total = SEASON_PASS.tiers.reduce((s, t) => s + t.xp, 0);
     expect(passTierForXp(total).tier).toBe(PASS_TIERS);
     expect(passTierForXp(SEASON_PASS.tiers[0]!.xp).tier).toBe(1);
+  });
+
+  const all = SEASON_PASS.tiers.flatMap((t) => [...t.free, ...t.premium]);
+  const cosmeticsOf = (list: typeof all) => list.flatMap((r) => (r.kind === 'cosmetic' ? [r] : []));
+  const rank = (r: string) => RaritySchema.options.indexOf(r as never);
+
+  it('only references real pass cosmetics with matching slot and rarity', () => {
+    for (const r of cosmeticsOf(all)) {
+      const item = getCosmetic(r.itemId);
+      expect(item, r.itemId).toBeDefined();
+      expect(item!.source).toBe('pass');
+      expect(r.slot).toBe(item!.slot);
+      expect(r.rarity).toBe(item!.rarity);
+    }
+  });
+
+  it('is mostly real items, with currency as filler only', () => {
+    const free = SEASON_PASS.tiers.flatMap((t) => t.free);
+    const premium = SEASON_PASS.tiers.flatMap((t) => t.premium);
+    expect(cosmeticsOf(all).length / all.length).toBeGreaterThanOrEqual(0.6);
+    expect(cosmeticsOf(premium).length / premium.length).toBeGreaterThanOrEqual(0.65);
+    expect(free.length).toBeGreaterThanOrEqual(90);
+    for (const r of free) expect(['cosmetic', 'gumballs']).toContain(r.kind);
+    expect(new Set(cosmeticsOf(all).map((r) => r.slot)).size).toBe(CosmeticSlotSchema.options.length);
+  });
+
+  it('puts showcase cosmetics on milestone tiers', () => {
+    for (const t of SEASON_PASS.tiers.filter((x) => x.tier % 10 === 0)) {
+      const [free, premium] = [t.free[0], t.premium[0]];
+      expect(free?.kind, `tier ${t.tier} free`).toBe('cosmetic');
+      expect(premium?.kind, `tier ${t.tier} premium`).toBe('cosmetic');
+      if (free?.kind === 'cosmetic') expect(rank(free.rarity)).toBeGreaterThanOrEqual(rank('rare'));
+      if (premium?.kind === 'cosmetic') expect(rank(premium.rarity)).toBeGreaterThanOrEqual(rank('epic'));
+    }
+    for (const tier of [25, 50, 75]) expect(SEASON_PASS.tiers[tier - 1]!.premium[0]).toMatchObject({ kind: 'cosmetic', rarity: 'legendary' });
+    expect(SEASON_PASS.tiers[PASS_TIERS - 1]!.premium[0]).toMatchObject({ kind: 'cosmetic', rarity: 'mythic', slot: 'victory' });
   });
 });

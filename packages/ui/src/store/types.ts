@@ -321,12 +321,28 @@ export interface StoreOffer {
   tag?: string;
 }
 
+/** A Gem pack for real money (shown only when the account API sells them). */
+export interface GemPackOffer {
+  id: string;
+  name: string;
+  gems: number;
+  /** Localised price label, e.g. "$4.99". */
+  price: string;
+}
+
 /** Store rotation. */
 export interface StoreData {
   featured: StoreOffer[];
   daily: StoreOffer[];
   /** Epoch ms when daily picks rotate. */
   rotationEndsAt: number;
+  /** Gem packs (online accounts), listed in the Gems shop. */
+  gemPacks?: GemPackOffer[];
+  /**
+   * `enabled` when real checkout works (Stripe configured, or the dev fake
+   * provider behind `?debug=1`); otherwise packs show "Coming soon".
+   */
+  gemCheckout?: 'enabled' | 'comingSoon';
 }
 
 /** One Season Pass reward. */
@@ -369,6 +385,10 @@ export interface Challenge {
   reward: { kind: Currency | 'xp' | 'stars'; amount: number };
   claimed: boolean;
   canReroll: boolean;
+  /** What the challenge counts (drives the illustrated icon), e.g. `racesQualified`. */
+  metric?: string;
+  /** Secondary reward shown beside the main one (e.g. XP on a Gumball challenge). */
+  bonus?: { kind: Currency | 'xp'; amount: number };
 }
 
 /** Challenge board. */
@@ -377,6 +397,10 @@ export interface ChallengesData {
   /** Epoch ms. */
   dailyResetsAt: number;
   weeklyResetsAt: number;
+  /** Swaps left today (undefined = swapping unavailable, e.g. offline). */
+  rerollsLeft?: number;
+  /** Swaps granted per day. */
+  rerollsPerDay?: number;
 }
 
 /** Ranked tiers (SPEC §12). */
@@ -414,9 +438,45 @@ export interface ProfileData {
     roundsQualified: number;
     bestStreak: number;
     favouriteRound?: string;
+    /** Crowns won (defaults to `ProfileData.crowns`). */
+    wins?: number;
+    roundsPlayed?: number;
+    /** Gameplay totals, when tracked. */
+    totals?: { jumps?: number; dives?: number; grabs?: number; emotes?: number };
+    /** Best race finishing times, fastest first. */
+    bestTimes?: { round: string; timeSec: number }[];
+    /** Most played rounds with qualify counts. */
+    rounds?: { name: string; type: RoundType; played: number; qualified: number }[];
+    /** Last shows, newest first (for the form strip). */
+    recentForm?: ('crown' | 'final' | 'eliminated')[];
   };
   showcase?: CosmeticItem[];
   linkedProviders?: ('discord' | 'google' | 'email')[];
+  /** Crown Shards toward the next Crown. */
+  crownShards?: number;
+  /** Shards that make one Crown. */
+  shardsPerCrown?: number;
+  /** Equipped profile banner art. */
+  banner?: ProfileBanner;
+  /** Equipped nameplate styling. */
+  nameplate?: ProfileNameplate;
+}
+
+/** Profile banner art (from the equipped banner cosmetic). */
+export interface ProfileBanner {
+  name: string;
+  motif: 'confetti' | 'clouds' | 'stripes' | 'stars' | 'candy' | 'waves';
+  colors: [string, string, string];
+}
+
+/** Nameplate styling (from the equipped nameplate cosmetic). */
+export interface ProfileNameplate {
+  name: string;
+  style: 'pill' | 'ribbon' | 'bubble' | 'ticket' | 'neon';
+  bg: string;
+  bg2: string;
+  text: string;
+  border: string;
 }
 
 /** One leaderboard row. */
@@ -427,10 +487,25 @@ export interface LeaderboardRow {
   value: number;
   colors: TumblerColors;
   isSelf?: boolean;
+  isBot?: boolean;
+  /** Secondary line, e.g. "Faced 6 times · 2 Crowns". */
+  detail?: string;
 }
 
-/** Leaderboard ids. */
-export type LeaderboardId = 'crowns' | 'ranked' | 'weekly' | 'friends';
+/** Leaderboard ids. `friends` is kept for callers that predate scopes (= crowns, friends scope). */
+export type LeaderboardId = 'crowns' | 'crowns_all_time' | 'ranked' | 'weekly' | 'win_streak' | 'friends';
+
+/** Who a leaderboard ranks. */
+export type LeaderboardScope = 'global' | 'regional' | 'friends';
+
+/** Where the rows of a leaderboard came from. */
+export interface LeaderboardInfo {
+  scope: LeaderboardScope;
+  /** `api` = live server board; `local` = Hall of Fame built from this device's real show history. */
+  source: 'api' | 'local';
+  /** Epoch ms of the fetch. */
+  updatedAt: number;
+}
 
 /** One past show for match history. */
 export interface MatchHistoryEntry {
@@ -438,19 +513,63 @@ export interface MatchHistoryEntry {
   /** Epoch ms. */
   time: number;
   playlist: string;
-  rounds: { name: string; type: RoundType; qualified: boolean }[];
+  rounds: {
+    name: string;
+    type: RoundType;
+    qualified: boolean;
+    roundId?: string;
+    /** Placement within the round (1 = first to qualify). */
+    place?: number;
+    /** Players who started the round. */
+    of?: number;
+    /** Race finishing time in seconds. */
+    timeSec?: number;
+  }[];
   result: 'crown' | 'final' | 'eliminated';
   xp: number;
+  /** Final placement and field size. */
+  place?: number;
+  participants?: number;
+  gumballs?: number;
 }
 
 /** A News tab card. */
 export interface NewsItem {
   id: string;
   title: string;
+  /** Short teaser (cards); the reader shows `blocks` when present. */
   body: string;
   tag: string;
   art: [string, string];
   icon: string;
+  /** ISO date (yyyy-mm-dd). */
+  date?: string;
+  /** Hero image URL. */
+  image?: string;
+  /** Full post for the reader view. */
+  blocks?: NewsBlock[];
+  featured?: boolean;
+  unread?: boolean;
+}
+
+/** One block of a news post. */
+export type NewsBlock =
+  | { type: 'paragraph'; text: string }
+  | { type: 'heading'; text: string }
+  | { type: 'list'; items: string[] }
+  | { type: 'image'; src: string; caption?: string }
+  | { type: 'tip'; text: string };
+
+/** How the player starts a show from the Play tab. */
+export type PlayMode = 'online' | 'offline';
+
+/** Whether online play (account API + matchmaker) is reachable. */
+export interface OnlineStatus {
+  state: 'checking' | 'online' | 'offline' | 'disabled';
+  /** Players online / in queue, when the server reports it. */
+  playersOnline?: number;
+  /** Short human explanation for the offline state. */
+  message?: string;
 }
 
 // -----------------------------------------------------------------------------
@@ -629,6 +748,7 @@ export interface HudState {
   /** Leaders shown on the race bar (top 3 recommended). */
   leaders: ProgressMarker[];
   teams: TeamScore[];
+  /** Round-trip time in ms; negative when there is no server (offline show). */
   ping: number;
   fps: number;
   /** Local player's colour for the progress marker. */

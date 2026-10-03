@@ -1,12 +1,14 @@
 /**
- * Locker: slot rail, rarity filter + search, item grid with try-on/equip,
- * loadouts and the colour/pattern editor. docs/design/SCREENS.md §5.1.
+ * Locker, as a dressing room: the 3D Tumbler on stage at the left, slot chips,
+ * rarity filter + search, the item grid (select = live try-on), loadouts, the
+ * colour/pattern editor and a docked detail with Equip. docs/design/SCREENS.md §5.1.
  */
-import { useMemo, useState, type JSX } from 'react';
+import { useEffect, useMemo, useState, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
-import { ItemCard, Panel } from '../../components/bits.tsx';
+import { ItemCard } from '../../components/bits.tsx';
 import { Button, Swatch } from '../../components/controls.tsx';
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
+import { Icon } from '../../components/icons/index.tsx';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import {
@@ -14,28 +16,28 @@ import {
   RARITIES,
   type CosmeticItem,
   type CosmeticSlot,
-  type Loadout,
   type PatternId,
   type Rarity,
   type TumblerColors,
 } from '../../store/types.ts';
 import { rarityLabels, tumblerSwatches } from '../../theme/tokens.ts';
+import { DressingRoom, ItemDetail, isEquipped } from './DressingRoom.tsx';
 
-const SLOT_META: Record<CosmeticSlot, { label: string; icon: string }> = {
-  colors: { label: 'Colours', icon: '🎨' },
-  pattern: { label: 'Pattern', icon: '🦓' },
-  face: { label: 'Face', icon: '😎' },
-  upper: { label: 'Upper', icon: '👕' },
-  lower: { label: 'Lower', icon: '👖' },
-  headwear: { label: 'Headwear', icon: '🎩' },
-  back: { label: 'Back', icon: '🎒' },
-  emote: { label: 'Emotes', icon: '💃' },
-  celebration: { label: 'Celebration', icon: '🎉' },
-  victory: { label: 'Victory', icon: '🏆' },
-  nameplate: { label: 'Nameplate', icon: '🏷️' },
-  banner: { label: 'Banner', icon: '🚩' },
-  trail: { label: 'Trail', icon: '✨' },
-  footsteps: { label: 'Footsteps', icon: '👣' },
+const SLOT_LABEL: Record<CosmeticSlot, string> = {
+  colors: 'Colours',
+  pattern: 'Pattern',
+  face: 'Face',
+  upper: 'Upper',
+  lower: 'Lower',
+  headwear: 'Headwear',
+  back: 'Back',
+  emote: 'Emotes',
+  celebration: 'Celebration',
+  victory: 'Victory',
+  nameplate: 'Nameplate',
+  banner: 'Banner',
+  trail: 'Trail',
+  footsteps: 'Footsteps',
 };
 
 const PATTERN_IDS: PatternId[] = [
@@ -49,13 +51,6 @@ const PATTERN_IDS: PatternId[] = [
   'galaxy',
   'camo',
 ];
-
-function isEquipped(loadout: Loadout | undefined, item: CosmeticItem): boolean {
-  if (!loadout) return false;
-  if (item.slot === 'emote') return loadout.emotes.includes(item.id);
-  if (item.slot === 'colors' || item.slot === 'pattern') return false;
-  return loadout.items[item.slot] === item.id;
-}
 
 function ColorEditor({ colors, patternOnly }: { colors: TumblerColors; patternOnly: boolean }): JSX.Element {
   const set = (patch: Partial<TumblerColors>): void =>
@@ -111,7 +106,13 @@ function ColorEditor({ colors, patternOnly }: { colors: TumblerColors; patternOn
 /** Locker tab. */
 export function LockerTab(): JSX.Element {
   const inv = useUI((s) => s.inventory);
-  const [slot, setSlot] = useState<CosmeticSlot>('headwear');
+  const deepSlot = useUI((s) => s.lockerSlot);
+  const [slot, setSlot] = useState<CosmeticSlot>(() => deepSlot ?? 'headwear');
+  useEffect(() => {
+    if (!deepSlot) return;
+    setSlot(deepSlot);
+    ui.setState({ lockerSlot: null });
+  }, [deepSlot]);
   const [rarity, setRarity] = useState<Rarity | 'all'>('all');
   const [ownedOnly, setOwnedOnly] = useState(false);
   const [query, setQuery] = useState('');
@@ -128,25 +129,31 @@ export function LockerTab(): JSX.Element {
         (q === '' || i.name.toLowerCase().includes(q)),
     );
   }, [inv, slot, rarity, ownedOnly, query]);
-  const selected = items.find((i) => i.id === selectedId) ?? null;
+  const selected = (inv?.items ?? []).find((i) => i.id === selectedId) ?? null;
   const editor = slot === 'colors' || slot === 'pattern';
 
   const tryOn = (item: CosmeticItem): void => {
+    playCue('ui.click');
     setSelectedId(item.id);
     uiEvents.emit('tryOn', { slot: item.slot, itemId: item.id });
   };
+  const reset = (): void => {
+    setSelectedId(null);
+    uiEvents.emit('tryOn', { slot, itemId: null });
+  };
+  const tryingOn = selected && !isEquipped(loadout, selected) ? selected.name : null;
 
   return (
-    <div className="tr-locker">
-      <Panel tilt={-0.5} className="tr-locker-rail tr-scroll" tight>
-        <div role="tablist" aria-label="Slots" className="tr-col" style={{ gap: '0.3em' }}>
+    <DressingRoom className="tr-locker" tryingOn={tryingOn} onReset={reset}>
+      <div className="tr-panel tr-locker-shelf">
+        <div className="tr-slot-chips tr-scroll-x" role="tablist" aria-label="Slots">
           {COSMETIC_SLOTS.map((s) => (
             <button
               key={s}
               type="button"
               role="tab"
               aria-selected={s === slot}
-              className={`tr-rail-btn${s === slot ? ' is-active' : ''}`}
+              className={`tr-slot-chip${s === slot ? ' is-active' : ''}`}
               data-nav=""
               onClick={() => {
                 playCue('ui.tab');
@@ -155,16 +162,12 @@ export function LockerTab(): JSX.Element {
                 uiEvents.emit('tryOn', { slot: s, itemId: null });
               }}
             >
-              <span aria-hidden>{SLOT_META[s].icon}</span>
-              <span className="tr-rail-label">{SLOT_META[s].label}</span>
+              {SLOT_LABEL[s]}
             </button>
           ))}
         </div>
-      </Panel>
-
-      <Panel tilt={0.4} delay={60} className="tr-locker-main">
         <div className="tr-panel-head">
-          <h2 className="tr-title tr-h3 tr-grow">{SLOT_META[slot].label}</h2>
+          <h2 className="tr-title tr-h3 tr-grow">{SLOT_LABEL[slot]}</h2>
           {inv && (
             <div className="tr-row tr-loadouts" aria-label="Loadouts">
               {inv.loadouts.map((l, i) => (
@@ -185,7 +188,7 @@ export function LockerTab(): JSX.Element {
             </div>
           )}
           <Button size="sm" variant="sky" cue="ui.confirm" onClick={() => uiEvents.emit('randomizeOutfit')}>
-            🎲 Randomize
+            <Icon name="dice" size="1.1em" /> Randomize
           </Button>
         </div>
         {editor && loadout ? (
@@ -226,7 +229,7 @@ export function LockerTab(): JSX.Element {
               </label>
               <input
                 className="tr-input tr-search"
-                placeholder="🔎 Search"
+                placeholder="Search"
                 value={query}
                 data-nav=""
                 onChange={(e) => setQuery(e.target.value)}
@@ -235,7 +238,7 @@ export function LockerTab(): JSX.Element {
             </div>
             {items.length === 0 ? (
               <div className="tr-empty">
-                <span aria-hidden>🕳️</span>
+                <Icon name="locker" size="2.4em" />
                 <p>No matches. Try “cone” or “disco”.</p>
               </div>
             ) : (
@@ -246,7 +249,7 @@ export function LockerTab(): JSX.Element {
                     item={item}
                     selected={item.id === selectedId}
                     equipped={isEquipped(loadout, item)}
-                    delay={Math.min(i * 35, 500)}
+                    delay={Math.min(i * 25, 300)}
                     onClick={() => tryOn(item)}
                   />
                 ))}
@@ -254,48 +257,15 @@ export function LockerTab(): JSX.Element {
             )}
           </>
         )}
-      </Panel>
-
+      </div>
       {selected && !editor && (
-        <Panel
-          key={selected.id}
-          tilt={-1}
-          enter="right"
-          className={`tr-locker-detail tr-item-detail--${selected.rarity}`}
-        >
-          <div
-            className="tr-locker-detail-art"
-            style={{ ['--art-a' as string]: selected.art[0], ['--art-b' as string]: selected.art[1] }}
-          >
-            <span>{selected.icon}</span>
-          </div>
-          <span className={`tr-rarity-band tr-rarity-band--${selected.rarity}`}>
-            {rarityLabels[selected.rarity]}
-          </span>
-          <h3 className="tr-title tr-h3">{selected.name}</h3>
-          {selected.description && <p className="tr-small">{selected.description}</p>}
-          {selected.set && <span className="tr-chip">Set: {selected.set}</span>}
-          {selected.owned ? (
-            isEquipped(loadout, selected) ? (
-              <span className="tr-chip tr-chip--mint">✓ Equipped</span>
-            ) : (
-              <Button
-                variant="mint"
-                block
-                cue="ui.confirm"
-                autoFocusNav
-                onClick={() => uiEvents.emit('equip', { slot: selected.slot, itemId: selected.id })}
-              >
-                Equip
-              </Button>
-            )
-          ) : (
-            <Button variant="premium" block onClick={() => ui.getState().setMenuTab('store')}>
-              Get in Store
-            </Button>
-          )}
-        </Panel>
+        <ItemDetail
+          item={selected}
+          equipped={isEquipped(loadout, selected)}
+          onEquip={() => uiEvents.emit('equip', { slot: selected.slot, itemId: selected.id })}
+          onGetInStore={() => ui.getState().setMenuTab('store')}
+        />
       )}
-    </div>
+    </DressingRoom>
   );
 }

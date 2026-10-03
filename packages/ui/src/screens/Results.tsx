@@ -13,6 +13,7 @@ import { uiEvents } from '../store/events.ts';
 import { useUI } from '../store/uiStore.ts';
 import type { ResultsEntry } from '../store/types.ts';
 import { confettiSets } from '../theme/tokens.ts';
+import { Icon } from '../components/icons/index.tsx';
 import { fireConfetti, fireFireworks } from '../transitions/Confetti.tsx';
 
 const FLIP_START = 900;
@@ -94,7 +95,7 @@ export function RoundResultsScreen(): JSX.Element | null {
                 />
                 <span className="tr-res-name tr-ellipsis">{name(e.player)}</span>
                 <span className="tr-res-mark" aria-label={e.qualified ? 'Qualified' : 'Eliminated'}>
-                  {e.qualified ? '✓' : '✗'}
+                  {e.qualified ? <Icon name="check" size="0.8em" /> : <Icon name="close" size="0.8em" />}
                 </span>
                 {e.player.isLocal && <span className="tr-res-you">YOU</span>}
               </div>
@@ -105,8 +106,8 @@ export function RoundResultsScreen(): JSX.Element | null {
       </div>
       {step >= 1 && (
         <div className="tr-results-summary tr-enter">
-          <span className="tr-chip tr-chip--good">✓ {q} qualified</span>
-          <span className="tr-chip tr-chip--bad">✗ {out} eliminated</span>
+          <span className="tr-chip tr-chip--good"><Icon name="check" size="0.9em" /> {q} qualified</span>
+          <span className="tr-chip tr-chip--bad"><Icon name="close" size="0.9em" /> {out} eliminated</span>
         </div>
       )}
     </div>
@@ -148,7 +149,7 @@ export function BetweenRoundsScreen(): JSX.Element | null {
               <div className="tr-title tr-h2 tr-between-mystery">???</div>
             )}
             {info.next.isFinal && step >= 3 && (
-              <span className="tr-chip tr-chip--lemon">👑 It's the final!</span>
+              <span className="tr-chip tr-chip--lemon"><Icon name="crown" size="1em" /> It's the final!</span>
             )}
           </div>
         )}
@@ -253,7 +254,7 @@ export function VictoryScreen(): JSX.Element | null {
             </div>
             <div className="tr-row tr-interactive" data-nav-scope="1">
               <Button variant="secondary" size="lg" onClick={() => uiEvents.emit('photoMode')}>
-                📸 Photo mode
+                <Icon name="camera" size="1.1em" /> Photo mode
               </Button>
               <Button
                 variant="go"
@@ -285,7 +286,7 @@ export function WinnerCamScreen(): JSX.Element | null {
           <TumblerAvatar colors={v.winner.colors} hat="crown" expression="cheer" size="4em" />
           <div className="tr-title tr-h2">{name(v.winner)}</div>
         </div>
-        <span className="tr-chip tr-chip--lemon">👑 Took the Crown in {v.showName}</span>
+        <span className="tr-chip tr-chip--lemon"><Icon name="crown" size="1em" /> Took the Crown in {v.showName}</span>
       </div>
       <div className="tr-winnercam-actions tr-interactive" data-nav-scope="1">
         {['GG!', 'Wow!', 'Next time…'].map((t) => (

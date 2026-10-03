@@ -269,124 +269,199 @@ Music (`playMusic(track)` hook): `music.menu`, `music.matchmaking`,
 ### 4.1 Layout
 
 ```
-┌ TopBar ────────────────────────────────────────────────────────────────┐
-│ [Lv 12 ███▒▒ XP]   [Tabs: PLAY LOCKER STORE PASS CHALLENGES PROFILE    │
-│                     LEADERBOARDS NEWS]      [●Gumballs][◆Gems][🔔][👥][⚙]│
-├────────────────────────────────────────────────────────────────────────┤
-│                         (3D lobby visible here)                         │
-│   [Tab content panel — left or right aligned, never covers the Tumbler]│
-├ BottomBar ─────────────────────────────────────────────────────────────┤
-│ [Party slots ◯◯◯◯ + invite]     [Playlist ▾ Main Show]   [  PLAY  ]   │
-│                                  [Ready ✓]                              │
-└────────────────────────────────────────────────────────────────────────┘
+┌ TopBar ───────────────────────────────────────────────────────────────────┐
+│ [LV 12 ▓▓▓▒▒ 300/900 XP]  [Q PLAY LOCKER STORE PASS CHALLENGES PROFILE    │
+│                              RANKS NEWS E]      [● 4,250 +][◆ 0 +][bell][friends][gear]
+├───────────────────────────────────────────────────────────────────────────┤
+│ ┌ Season card ┐                                       ┌ Start card ──────┐│
+│ │ Tier 23 ▓▓▒ │          (3D lobby: your Tumbler,     │[Online][Bots][Custom]│
+│ └─────────────┘           party, candy stage)         │ ◀ Main Show · 40 ▶│
+│ ┌ Challenges ─┐                                       │ ◯◯◯◯  [  PLAY  ] ││
+│ └─────────────┘                                       └──────────────────┘│
+│ ┌ News ───────┐                                                           │
+│ [emote]                                                                   │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **TopBar**: level badge (gumdrop with number) + XP bar; tab strip (active tab
-  is a raised lemon sticker, others flat cream); currency pills (Gumball icon /
-  Gem icon, count with thousands separators, `+` button opens Store); bell with
-  red count dot; friends icon with online count; gear.
-- **BottomBar** (Play tab only): party slots (4 circles: you + 3; empty ones
-  show `+` and open the friends panel), playlist selector card (name, art
-  gradient, player count, "Ends in 3d" chip for events; ◀ ▶ arrows cycle),
-  **PLAY** button — 2× size bubblegum sticker, wiggles every 6 s idle; when in a
-  party as non-leader it becomes **READY** (toggle; green tick when ready).
-- **Mobile portrait**: tabs become a bottom dock with icons; PLAY is a full-width
-  pill above the dock; currencies collapse into one pill.
+- **Rule: left side = info only, every start-a-game control lives in the
+  start card (bottom-right).** Nothing covers the 3D Tumbler in the centre.
+- **TopBar**: level badge + XP bar + "300 / 900 XP" (button → Profile);
+  **text-only tab strip** (no emoji, no icons; claimable/unread tabs get a
+  small pink dot; Q/E hints); currency pills = coin + amount + `+` only (the
+  currency name is in the tooltip/aria label and inside the popovers, never as
+  visible text in the bar); round sticker buttons for bell (unread count incl.
+  unread news), friends (online count) and settings.
+- **Info cards (left)**: Season card (tier, progress, next marquee reward
+  thumbnail, "N rewards to claim" glow) → Pass; Today's challenges (3 dailies
+  with progress, "N ready to claim") → Challenges; latest/featured news post
+  with its hero image → opens that post in the News reader.
+- **Start card (right)**: mode tiles **Play Online** (status dot: checking /
+  N playing / "Servers offline" + Retry) · **Vs Bots** (always works) ·
+  **Custom Show** (opens `customLobby`); playlist picker (Main Show, Duos,
+  Squads, Chaos Mode; Ranked only when online); party slots (you + 3, empty
+  `+` invites) with status line; **PLAY** with a sub-label ("Online · Main
+  Show" / "Vs bots · Duos"). Non-leader party members get **Ready up**.
+  While queueing the same card becomes the matchmaking status (count, timer,
+  ETA, region, tips, Cancel).
+- **Mobile portrait**: tabs scroll horizontally under the bar; info cards
+  become one swipeable row at the top; the start card spans the bottom.
 
-### 4.2 Tabs (`menuTab`) and what the 3D lobby does
+### 4.2 Start flow
 
-| Tab            | Panel                                                            | 3D layer (`menuTab` intent)                            |
-| -------------- | ---------------------------------------------------------------- | ------------------------------------------------------ |
-| `play`         | playlist info card + "Today's challenges" mini list, News ticker | your Tumbler + party on floating platform, idle emotes |
-| `locker`       | §5.1                                                             | camera dollies to turntable close-up                   |
-| `store`        | §5.2                                                             | Tumbler wears hovered item                             |
-| `pass`         | §5.3                                                             | Tumbler wears the tier reward focused                  |
-| `challenges`   | §5.4                                                             | wide shot, Tumbler does stretches                      |
-| `profile`      | §5.5                                                             | Tumbler strikes victory pose                           |
-| `leaderboards` | §5.6                                                             | camera pans to trophy island                           |
-| `news`         | §5.7                                                             | wide shot                                              |
+```
+splash ─▶ menu (Play tab)
+            ├─ Play Online ──(account + matchmaker reachable)──▶ matchmaking ─▶ matchFound ─▶ preShow ─▶ rounds
+            │        └─(unreachable)── tile shows "Servers offline" + Retry; PLAY falls back to Vs Bots
+            ├─ Vs Bots ───────────────────────────────────────────▶ preShow (40 incl. bots) ─▶ rounds
+            └─ Custom Show ─▶ customLobby
+                     ├─ Create online lobby (needs servers) ─▶ lobby code + players ─▶ Start show
+                     ├─ Join with code (needs servers)
+                     └─ Play now vs bots (picked rounds, always works) ─▶ preShow ─▶ rounds
+rounds ─▶ victory / winnerCam ─▶ playerWall ─▶ rewards ─▶ menu (Play again restarts the same mode)
+```
 
-- **Motion**: menu enter — TopBar drops from -100% (spring, 0 ms), BottomBar
-  rises (spring, 80 ms), tab content springs in (160 ms), PLAY button does a
-  `squash` at 500 ms. Tab change: old panel exits sideways in the direction of
-  travel (200 ms `backIn`), new panel springs in from the opposite side; active
-  tab sticker slides under the labels (FLIP, 320 ms `backOut`); cue `ui.tab`.
-- **Nav**: Q/E/LB/RB cycle tabs; down-arrow from tabs enters panel; PLAY is the
-  autofocus on the Play tab.
-- **Intents**: `menuTab`, `selectPlaylist`, `play`, `ready`, `openOverlay`.
+The selected mode is `UIState.playMode`; reachability is `onlineStatus`
+(published by the client). `play { playlistId, mode }` carries the mode;
+`retryOnline` re-probes; `playCustomOffline { options }` starts a custom show
+against bots.
+
+### 4.3 Tabs and the 3D lobby
+
+| Tab            | Panel | 3D layer |
+| -------------- | ----- | -------- |
+| `play`         | §4.1  | 3/4 lobby framing; idle play on movement keys (3rd-person follow, eases back when idle) |
+| `locker`, `store`, `pass` | dressing room (§5.1–5.3) | Tumbler eases (~400 ms) into the left 40% (top on phones); drag spins, wheel/pinch zooms; selection = live try-on |
+| other tabs     | §5.4–5.7 | lobby framing |
+
+- **Tab change**: the incoming panel slides/fades in (200 ms) while the old
+  one fades out underneath — no wipe, never a blank frame.
+- **Nav**: Q/E/LB/RB cycle tabs; Esc in a dressing room returns to Play.
+
+### 4.4 Button map
+
+Every clickable on the menu and where it goes. `apps/client/e2e/menu.spec.ts`
+clicks each top-level control and asserts the destination.
+
+| Control | Where | Result |
+| --- | --- | --- |
+| Tabs (8) | top bar | `menuTab` = that tab; panel cross-fades in |
+| Q / E (LB / RB) | keyboard / pad | previous / next tab |
+| Level badge + XP | top bar | Profile tab |
+| Gumballs `+` (or pill) | top bar | "Earn Gumballs" popover: shows, challenges, pass; buttons → Challenges, Season Pass, Store. Never a purchase |
+| Gems `+` (or pill) | top bar | Gems popover: what Gems are for + packs in a disabled "Coming soon — secure checkout via Stripe" state (live packs only when `gemCheckout === 'enabled'`) |
+| Bell | top bar | notifications drop-down (toggle) |
+| Friends | top bar | Party & friends sheet (toggle) |
+| Gear | top bar | Settings sheet (toggle); Esc/back on the root menu also opens it |
+| Season card | Play, left | **Season Pass** tab |
+| Today's challenges card ("All") | Play, left | Challenges tab |
+| News card | Play, left | News tab with that post open in the reader |
+| Play Online tile | start card | `playMode = 'online'`; when servers are offline: Retry (`retryOnline`) |
+| Vs Bots tile | start card | `playMode = 'offline'` |
+| Custom Show tile | start card | `customLobby` screen |
+| ◀ / ▶ playlist | start card | cycle playlists (`selectPlaylist`) |
+| Party `+` slots | start card | Party & friends sheet |
+| PLAY | start card | `play { playlistId, mode }` → matchmaking (online) or pre-show vs bots |
+| Ready up (party member) | start card | `ready` toggle |
+| Cancel | matchmaking card | `cancelQueue` |
+| Emote button / B, 1–4 | Play, bottom-left | lobby emote wheel; plays owned emotes on the 3D Tumbler, locked → Store |
+| Item card | Store / Locker | live try-on (emotes play), docked detail; "Trying on" chip + Reset |
+| Buy → Confirm | Store detail | `purchase`; then "Equip now" (`equip`) |
+| Find in Store | Locker detail | Store tab |
+| Reward card | Pass track | select (3D try-on + preview card); claimable → `claimPassTier` |
+| Claim all | Pass header | claims every cleared, unclaimed reward |
+| Unlock Premium | Pass header | `buyPremiumPass` (disabled with "Gems coming soon" when unaffordable) |
+| Milestone chips | Pass board | scroll the track to that tier |
+| Claim / Swap | Challenge card | `claimChallenge` (confetti) / `rerollChallenge` (only when swaps left today) |
+| Season progress strip | Challenges | Season Pass tab |
+| Edit banner / Change nameplate | Profile card | Locker on that slot |
+| History row | Profile | expands per-round results |
+| Leaderboard row / podium | Ranks | that player's profile card overlay (`inspectPlayer`) |
+| Board / scope chips | Ranks | `leaderboardQuery { board, scope }` |
+| Post / featured | News | reader view; `newsRead` clears the unread badges |
+| All news / Esc | News reader | back to the list |
+| Results / Rewards / Eliminated sheet | show flow | Spectate (`spectate`), Back to lobby (`backToLobby`), Play again (`playAgain`, same mode), Continue (`continue`) |
 
 ---
 
 ## 5. Meta screens (menu tabs)
 
-### 5.1 Locker
+### 5.1 Locker (dressing room)
 
-- **Layout**: left rail of slot tabs (Colours, Pattern, Face, Upper, Lower,
-  Headwear, Back, Emotes, Celebration, Victory, Nameplate, Banner, Trail,
-  Footsteps); top filter row (rarity chips, owned-only toggle, search field with
-  🔎); item grid (5 cols desktop, 3 mobile) of rarity-framed cards (icon/gradient,
-  name, rarity band, ✓ equipped badge, 🔒 if unowned with price); right column:
-  loadout chips (1–6), **Randomize**, **Equip** / **Try on**, item detail.
-- **Colour/pattern editor** (Colours/Pattern slots): three swatch rows
-  (primary/secondary/tertiary, 18 swatches + custom hue slider), pattern tiles
-  rendered live with the selected colours.
-- **States**: empty search ("No matches. Try 'cone' or 'disco'"), unowned item
-  (Try on enabled, Equip replaced by "Get in Store").
-- **Motion**: grid items pop in staggered; equip → card `squash` + mint tick
-  stamps on (`ui.confirm`); try-on updates 3D instantly.
-- **Intents**: `tryOn`, `equip`, `selectLoadout`, `customizeColors`, `randomizeOutfit`.
+- **Layout**: stage (left 40% / top on phones) with the real 3D Tumbler,
+  "Trying on: X" chip + Reset, drag-to-spin/scroll-to-zoom hint; shelf on the
+  right: text slot chips (Colours … Footsteps), loadouts 1–6, Randomize,
+  rarity filter, owned-only, search, thumbnail grid; docked item detail
+  (never a modal over the character) with Equip / Find in Store.
+- Colours/Pattern slots show the swatch + pattern editor instead of the grid.
+- Leaving restores the equipped look. Intents: `tryOn`, `tryOnBundle`,
+  `equip`, `selectLoadout`, `customizeColors`, `randomizeOutfit`,
+  `dressingRoom`, `turntable`.
 
-### 5.2 Store
+### 5.2 Store (dressing room)
 
-- **Layout**: featured carousel (big hero cards, 3 visible desktop / 1 mobile,
-  auto-advance 6 s, dots), "Daily Picks" grid with a rotation countdown chip
-  ("New picks in 05:12:33"), bundles row. Cards show rarity frame, art, name,
-  price pill (Gumball or Gem icon), "OWNED" ribbon.
-- **Item modal**: large preview, description, rarity, set, price, **Buy** /
-  **Try on**. **Purchase confirm** dialog: "Spend ◆ 800 on Disco Visor?" →
-  Confirm / Cancel; success = coins pour into the item, `ui.purchase`, toast.
-  Insufficient funds: button disabled with "Need 120 more ●".
-- **Intents**: `purchase({ offerId })`, `tryOn`.
+- Same stage. Shelf: compact Featured row (rendered thumbnails, rarity band,
+  price), rotation countdown, Daily picks grid. Selecting tries the item on
+  (bundles try on every piece). Docked detail: Buy (purchase confirm) →
+  "Equip now". Gumball items are fully purchasable; Gem items show the price
+  and "Gems coming soon" when unaffordable.
 
-### 5.3 Season Pass
+### 5.3 Season Pass (dressing room)
 
-- **Layout**: header ("SEASON 1: SUGAR RUSH", days left, tier `23/100`, progress
-  bar to next tier); horizontal scrolling **tier track**: each tier a column
-  with a free reward card (top) and premium reward card (bottom, grape frame,
-  🔒 if not premium); current tier marker is a Tumbler pin; claimable tiers
-  bounce with a lemon glow. Premium CTA "Unlock Premium ◆ 950".
-- **Motion**: on open, the track auto-scrolls (spring) to the current tier;
-  claim → card flips (rotateY 180°, 420 ms) revealing the item, rarity cue.
-- **Nav**: left/right scroll tiers, up/down switch free/premium row.
-- **Intents**: `claimPassTier({ tier, track })`, `buyPremiumPass`.
+- **Stage**: the 3D Tumbler wears/performs the selected reward (default: the
+  next marquee reward); preview card under it with track + tier chip, rarity,
+  slot, full name, description, and Claim / Equip / "Reach tier N".
+- **Header**: season name, days left, big tier badge, progress bar + "% to
+  tier N", **Claim all (n)**, Unlock Premium (Gems; "Gems coming soon").
+- **Board**: milestone jump chips; full-height track with lane labels
+  **FREE** / **TIER** / **PREMIUM**; tier numbers sit on one progress spine
+  between the lanes ("You" marker on the next tier); every 10th tier is a big
+  milestone card; claimable cards glow mint; claimed get a tick; premium
+  shows a lock until bought. Names wrap (no truncation).
+- **Input**: snap scrolling, mouse wheel scrolls sideways, arrow keys / d-pad.
+- **Content**: 100 tiers, mostly real catalogue cosmetics (headwear, back,
+  faces, patterns, colours, emotes, celebrations, victory poses, nameplates,
+  banners, trails, footsteps); currency only as filler
+  (`packages/content/src/progression/season-pass.ts`).
 
 ### 5.4 Challenges
 
-- **Layout**: two columns: DAILY (3, refresh timer) and WEEKLY (6, refresh
-  timer). Each card: icon, title ("Qualify from 3 races"), progress bar
-  `2/3`, reward (XP / Gumballs / pass stars), **Reroll** (one per day) and
-  **Claim** when done.
-- **Motion**: completed cards wobble and glow; claim → card slides out and a
-  new one drops in.
-- **Intents**: `rerollChallenge(id)`, `claimChallenge(id)`.
+- Season-progress strip (tier, bar, upcoming reward thumbnails → Pass).
+- Daily and Weekly sections: header with "New in 05:12:33", "N to claim" and
+  "Swaps 1/1 today"; card grid. Each card: illustrated icon inside a chunky
+  progress ring, title, big `2 / 3`, reward chip (coin icon + amount + name,
+  bonus XP), and one state: in progress (labelled **Swap** when swaps are
+  left), ready (glowing **Claim**), claimed (stamp). Claim bursts confetti
+  from the card and pops it.
 
-### 5.5 Profile card
+### 5.5 Profile
 
-Banner + nameplate + `name#tag`, level, rank emblem, stat tiles (Crowns, Shows,
-Final appearances, Rounds qualified, Win %, Best streak), favourite round,
-showcase of 3 items, "Match history" button → `matchHistory` screen (last 20
-shows: date, playlist, rounds reached chips, result, XP).
+- Left: player card (equipped banner with Edit, level badge, nameplate-styled
+  `name#tag` with Change nameplate, XP bar, Crowns + Crown Shards bar, ranked
+  badge or "Unranked"), showcase of the 3 rarest owned cosmetics.
+- Centre: the 3D Tumbler.
+- Right: stats from real history (shows, wins + win rate, finals, rounds
+  qualified + rate, best win streak, favourite round, jumps/dives/grabs,
+  best race times, recent form dots) and match history (last 20; expandable
+  rows with round, type badge, placement, race time, qualified/out).
+- The same card opens for other players (`ProfileOverlay`, `inspectPlayer`).
 
-### 5.6 Leaderboards
+### 5.6 Ranks
 
-Tabs: Crowns · Ranked · Wins this week · Friends. Table with rank, avatar, name,
-value; top 3 have gold/silver/bronze sticker medals. **Your row is pinned** at
-the bottom (or highlighted in place if visible). Intent `leaderboardQuery(board)`.
+- Ranked ladder: Bronze → Silver → Gold → Platinum → Diamond → Champion →
+  Crown League, divisions I–III, your tier highlighted with RP to promote,
+  placement-shows note.
+- Leaderboards: boards Crowns (season), Crowns (all time), Ranked, Win
+  streak, This week; scopes Global / Region / Friends when online (API
+  `/leaderboards/:type`). Offline: **Hall of Fame** built only from this
+  device's real show history (you + the Tumblers you faced), clearly labelled.
+  Podium for the top 3, your row highlighted and pinned when off-screen.
 
 ### 5.7 News
 
-Card list: season banner, event ("Goo Weekend — double XP"), patch notes.
-Cards tilt alternately ±1.5°.
+- Featured hero carousel (hero image, tag, date, title, summary, Read), post
+  list (thumbnail, tag, NEW badge, date, title, summary), reader view (hero,
+  headings, paragraphs, lists, tips, images). Content:
+  `packages/content/src/news`. Unread posts drive the tab dot and bell count.
 
 ### 5.8 Friends / party panel (overlay `friends`)
 
@@ -397,13 +472,15 @@ avatar, name, status, Invite button. Streamer mode masks the code (`••••
 with a "Reveal" hold button). Intents: `inviteFriend`, `copyInvite`,
 `kickPartyMember`, `leaveParty`, `addFriend`.
 
-### 5.9 Custom lobby — `customLobby`
+### 5.9 Custom Show — `customLobby`
 
-Two tabs: **Create** (round picker checklist grouped by type, bots on/off,
-max players slider, round timer multiplier, spectators allowed, private) and
-**Join** (6-character code input with big chunky monospace cells; invalid →
-shake + `ui.error`). Created lobby shows the code huge with copy, player list,
-host Start button. Intents: `createCustom(opts)`, `joinCode(code)`.
+Two tabs: **Create** (round picker grouped by type, bots on/off, max players,
+round timer multiplier, spectators) with **Create online lobby** (needs the
+servers) and **Play now vs bots** (always works; the picked rounds against
+bots), and **Join** (6-character code cells; invalid → shake + `ui.error`;
+servers offline → explanation + Retry). A created lobby shows the code huge
+with Copy, the player list and the host's Start show. Intents:
+`createCustom`, `joinCode`, `startCustom`, `leaveCustom`, `playCustomOffline`.
 
 ### 5.10 Settings (overlay `settings`)
 

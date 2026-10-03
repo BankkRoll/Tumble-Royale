@@ -36,6 +36,16 @@ export interface TumbleHooks {
   tier?: () => string;
   /** Per-round GPU memory log (game only). */
   memoryLog?: { round: string; geometries: number; textures: number }[];
+  /** Online account state (game only): null when playing offline. */
+  account?: () => { userId: string; name: string; partyCode: string | null; partySize: number; leader: boolean } | null;
+  /** The UI store, for tests that inspect or drive menus (game only). */
+  ui?: typeof import('@tumble/ui').ui;
+  /** Emits a UI intent as if the player clicked it (tests). */
+  emit?: (name: import('@tumble/ui').UIIntentName, payload?: unknown) => void;
+  /** Main-menu lobby Tumbler (state, feet, idle play, camera pitch); null outside the menu (game only). */
+  lobbyState?: () => import('./views/menuView.ts').LobbyDebugState | null;
+  /** True while queued with the matchmaker (game only). */
+  queued?: () => boolean;
 }
 
 declare global {

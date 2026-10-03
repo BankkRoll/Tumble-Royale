@@ -8,6 +8,7 @@
  */
 import { memo, useEffect, useRef, useState, type JSX, type PointerEvent as RPointerEvent } from 'react';
 import { uiEvents } from '../store/events.ts';
+import { Icon } from '../components/icons/index.tsx';
 import { ui, useUI } from '../store/uiStore.ts';
 
 interface TouchState {
@@ -115,14 +116,14 @@ export const TouchControls = memo(function TouchControls(): JSX.Element | null {
       <div className="tr-touch-buttons tr-interactive">
         {btn('jump', 'Jump', '⤒')}
         {btn('dive', 'Dive', '➶')}
-        {btn('grab', 'Grab', '✊')}
+        {btn('grab', 'Grab', '✋')}
         <button
           type="button"
           className="tr-touch-btn tr-touch-btn--emote"
           aria-label="Emote"
           onClick={() => ui.getState().setEmoteWheel(!ui.getState().emoteWheelOpen)}
         >
-          <span aria-hidden>😀</span>
+          <Icon name="emote" size="1.6em" />
         </button>
       </div>
     </div>

@@ -31,6 +31,7 @@ import type {
 } from '../store/types.ts';
 import { prefersReducedMotion, screenShake } from '../theme/motion.ts';
 import { confettiSets } from '../theme/tokens.ts';
+import { Icon } from '../components/icons/index.tsx';
 import { fireConfetti, fireFireworks } from '../transitions/Confetti.tsx';
 
 // -----------------------------------------------------------------------------
@@ -518,7 +519,7 @@ export function PlayerWall({
       </div>
 
       <div className="tr-wall-bottom tr-interactive" data-nav-scope="1">
-        <span className="tr-chip tr-chip--ink">🎪 {summary.showName}</span>
+        <span className="tr-chip tr-chip--ink"><Icon name="ticket" size="1em" /> {summary.showName}</span>
         <span className="tr-spacer" />
         {state.ended ? (
           <Button

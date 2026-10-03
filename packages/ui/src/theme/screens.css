@@ -3207,3 +3207,234 @@
   white-space: nowrap;
   pointer-events: none;
 }
+
+/* Rendered cosmetic thumbnails (fall back to the emoji icon until ready). */
+.tr-item-thumb {
+  width: 92%;
+  height: 92%;
+  object-fit: contain;
+  filter: drop-shadow(0 0.12em 0 rgba(43, 26, 94, 0.3));
+  animation: tr-fade-in 220ms ease-out;
+}
+@keyframes tr-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* -----------------------------------------------------------------------------
+ * Dressing room (Store + Locker): clear 3D stage on the left, shelf on the right
+ * -------------------------------------------------------------------------- */
+
+.tr-dressing,
+.tr-dressing.tr-store,
+.tr-dressing.tr-locker {
+  display: grid;
+  grid-template-columns: minmax(0, 40%) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 1em;
+  width: 100%;
+  min-height: 0;
+  overflow: visible;
+}
+.tr-dressing-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+  min-height: 0;
+  padding: 0.2em;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.tr-dressing-stage:active {
+  cursor: grabbing;
+}
+.tr-dressing-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  flex-wrap: wrap;
+}
+.tr-dressing-hint {
+  align-self: center;
+  padding: 0.25em 0.8em;
+  border-radius: 999px;
+  background: rgba(43, 26, 94, 0.45);
+  color: #fff;
+  opacity: 0.85;
+}
+.tr-dressing-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8em;
+  min-height: 0;
+  min-width: 0;
+}
+.tr-store-shelf,
+.tr-locker-shelf {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.tr-store-shelf .tr-item-grid,
+.tr-locker-shelf .tr-item-grid {
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+.tr-featured-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13em, 1fr));
+  gap: 0.6em;
+}
+.tr-featured-card {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  padding: 0.5em 0.7em;
+  border-radius: 1em;
+  border: 0.16em solid var(--ink) !important;
+  background:
+    radial-gradient(circle at 15% 40%, rgba(255, 255, 255, 0.7), transparent 55%),
+    linear-gradient(150deg, var(--art-a), var(--art-b)) !important;
+  box-shadow: 0 0.18em 0 var(--ink);
+  text-align: left;
+  color: var(--ink);
+  transition: transform 160ms var(--ease-back-out);
+}
+.tr-featured-card:hover,
+.tr-featured-card.is-selected {
+  transform: translateY(-0.12em) rotate(-0.6deg);
+}
+.tr-featured-card.is-selected {
+  outline: 0.2em solid var(--lemon);
+  outline-offset: 0.12em;
+}
+.tr-featured-art {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 4.6em;
+  height: 4.6em;
+  border-radius: 0.8em;
+  border: 0.12em solid var(--ink);
+  background: rgba(255, 255, 255, 0.55);
+}
+.tr-featured-art .tr-item-icon {
+  font-size: 2.4em;
+}
+.tr-featured-tag {
+  padding: 0.05em 0.6em;
+  border-radius: 999px;
+  border: 0.12em solid var(--ink);
+  background: var(--bubblegum);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 0.7em;
+  letter-spacing: 0.06em;
+}
+.tr-item-detail {
+  display: flex;
+  align-items: center;
+  gap: 0.9em;
+  flex: none;
+}
+.tr-item-detail-art {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 6em;
+  height: 6em;
+  border-radius: 1em;
+  border: 0.16em solid var(--ink);
+  background:
+    radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.7), transparent 60%),
+    linear-gradient(160deg, var(--art-a), var(--art-b));
+}
+.tr-item-detail-art .tr-item-icon {
+  font-size: 3em;
+}
+.tr-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tr-slot-chips {
+  display: flex;
+  gap: 0.35em;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding-bottom: 0.2em;
+}
+.tr-slot-chip {
+  flex: none;
+  padding: 0.3em 0.75em;
+  border-radius: 999px;
+  border: 0.13em solid var(--ink) !important;
+  background: var(--cloud) !important;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.tr-slot-chip.is-active {
+  background: var(--lemon) !important;
+  box-shadow: 0 0.12em 0 var(--ink);
+}
+
+/* Menu tabs swap with a quick slide/fade, never a full wipe. */
+.tr-tab-panel.tr-tab-from-right {
+  animation: tr-tab-in-right 200ms var(--ease-out, ease-out) backwards;
+}
+.tr-tab-panel.tr-tab-from-left {
+  animation: tr-tab-in-left 200ms var(--ease-out, ease-out) backwards;
+}
+@keyframes tr-tab-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(2.5%);
+  }
+}
+@keyframes tr-tab-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-2.5%);
+  }
+}
+
+@media (max-width: 760px), (orientation: portrait) {
+  .tr-dressing,
+  .tr-dressing.tr-store,
+  .tr-dressing.tr-locker {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 36vh minmax(0, 1fr);
+    gap: 0.5em;
+  }
+  .tr-tab-panel:has(.tr-dressing) {
+    overflow: visible;
+  }
+  .tr-featured-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tr-featured-art {
+    width: 3.4em;
+    height: 3.4em;
+  }
+  .tr-item-detail-art {
+    width: 4.4em;
+    height: 4.4em;
+  }
+}
+.tr-capsule-icon.tr-item-thumb,
+.tr-pass-reward-art.tr-item-thumb,
+.tr-showcase-art.tr-item-thumb {
+  width: 2.4em;
+  height: 2.4em;
+}
+.tr-capsule-icon.tr-item-thumb {
+  width: 4.2em;
+  height: 4.2em;
+}

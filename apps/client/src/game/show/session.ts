@@ -33,9 +33,11 @@ import {
   type ScreenId,
   type SetScreenOptions,
   type ShowPlayer,
+  type RewardsSummary,
   type ShowSummary as UiShowSummary,
 } from '@tumble/ui';
 import { emoteSlots, showPlayer } from '../cosmetics.ts';
+import type { ShowResultForProfile } from '../profile.ts';
 import { HudMapper, type HudInput } from '../round/hud.ts';
 import { TumblerPool } from '../round/playerVisuals.ts';
 import { RoundView } from '../round/roundView.ts';
@@ -62,6 +64,8 @@ interface ActiveRound {
   countdown: number | null;
   spectateId: number;
   playingSince: number;
+  /** Seconds from GO to the local player qualifying (race finish time). */
+  qualifiedAfter?: number;
 }
 
 const SLOWMO_SCALE = 0.3;
@@ -210,9 +214,9 @@ export abstract class ShowSession {
   /** Live status for HUD/countdown, or null when no round is running. */
   protected abstract liveStatus(): HudInput | null;
 
-  /** Round-trip time for the HUD (0 offline). */
+  /** Round-trip time for the HUD; negative offline (the HUD hides it). */
   protected ping(): number {
-    return 0;
+    return -1;
   }
 
   /**
@@ -450,7 +454,9 @@ export abstract class ShowSession {
         const p = this.players.get(id) as SessionPlayer;
         return { id: String(id), name: p.name, loadout: p.loadout };
       });
-      this.preShow = createPreShowView(getTheme('candy'), this.ctx.quality.preset, this.ctx.tumblers.create, arenaPlayers, this.localId >= 0 ? String(this.localId) : undefined);
+      // Autoplay keeps the pre-show hands-off; a human can roam the platform until the show starts.
+      const control = this.ctx.cfg.autoplay ? undefined : { R: this.ctx.R, input: this.ctx.input, audio: this.ctx.audio.game };
+      this.preShow = createPreShowView(getTheme('candy'), this.ctx.quality.preset, this.ctx.tumblers.create, arenaPlayers, this.localId >= 0 ? String(this.localId) : undefined, control);
       this.preShow.arena.setBanner(this.showName.toUpperCase(), `${this.roundCount} ROUNDS · starting soon`);
       this.ctx.director.show(this.preShow);
     });
@@ -668,7 +674,7 @@ export abstract class ShowSession {
           this.spectateLeader();
         } else r.view?.followLocal();
         s.setScreen('round', { transition: 'fade' });
-        if (!set.gameplay.showPing) s.setHud({ ping: 0 });
+        if (!set.gameplay.showPing) s.setHud({ ping: -1 });
         break;
       }
       case RoundPhase.Playing:
@@ -751,16 +757,38 @@ export abstract class ShowSession {
     this.ctx.audio.game.onShowPhase(ShowPhase.BetweenRounds);
   }
 
-  private readonly playedRounds: { name: string; type: RoundType; qualified: boolean }[] = [];
+  private readonly playedRounds: ShowResultForProfile['rounds'] = [];
 
   private recordLocalRound(qualified: boolean): void {
-    const rs = this.round?.start;
-    if (!rs) return;
-    this.playedRounds.push({ name: rs.round.name, type: rs.round.type, qualified });
+    const r = this.round;
+    const rs = r?.start;
+    if (!r || !rs) return;
+    const idx = r.outcome ? r.outcome.qualified.indexOf(this.localId) : -1;
+    this.playedRounds.push({
+      name: rs.round.name,
+      type: rs.isFinal ? 'final' : rs.round.type,
+      qualified,
+      roundId: rs.round.id,
+      of: rs.players.length,
+      ...(idx >= 0 ? { place: idx + 1 } : {}),
+      ...(qualified && rs.round.type === 'race' && r.qualifiedAfter !== undefined ? { timeSec: Math.round(r.qualifiedAfter * 10) / 10 } : {}),
+    });
+  }
+
+  /** Who else was in the show, for the offline Hall of Fame. */
+  protected fieldSummary(): NonNullable<ShowResultForProfile['field']> {
+    const placements = this.summary?.placements;
+    return this.order
+      .filter((id) => id !== this.localId)
+      .map((id) => {
+        const p = this.uiPlayer(id);
+        const place = placements?.get(id) ?? this.order.length;
+        return { name: p.name, colors: p.colors, isBot: p.isBot, place, crowned: this.summary?.winnerId === id };
+      });
   }
 
   /** Rounds the local player entered, with outcomes. */
-  protected localRounds(): { name: string; type: RoundType; qualified: boolean }[] {
+  protected localRounds(): ShowResultForProfile['rounds'] {
     return this.playedRounds;
   }
 
@@ -822,6 +850,7 @@ export abstract class ShowSession {
     const r = this.round;
     if (!r || r.fate !== 'playing') return;
     r.fate = 'qualified';
+    if (r.playingSince > 0) r.qualifiedAfter = Math.max(0, this.flowClock - r.playingSince);
     const s = ui.getState();
     s.setHud({ localStatus: 'qualified' });
     s.setEmoteWheel(false);
@@ -1047,7 +1076,7 @@ export abstract class ShowSession {
       this.after(1.2, () => this.goWall());
       return;
     }
-    const crowns = this.ctx.profile.crowns;
+    const crowns = this.ctx.crowns();
     s.setVictory({ winner: this.uiPlayer(winnerId), isLocalWinner: localWon, crownsBefore: crowns, crownsAfter: crowns + (localWon ? 1 : 0), showName: this.showName });
     const finalTheme = getTheme(this.round?.start.round.theme ?? 'candy');
     const ranked = [...summary.placements.entries()].sort((a, b) => a[1] - b[1]).map(([id]) => id);
@@ -1084,19 +1113,45 @@ export abstract class ShowSession {
         rounds: uiSummary.rounds.map((r) => ({ name: r.name, eliminatedIds: r.eliminatedIds.map(String) })),
         winnerId: summary.winnerId !== null ? String(summary.winnerId) : null,
       };
-      this.wall = new WallView(getTheme('candy'), this.ctx.quality.preset, this.ctx.tumblers.create, wall3d, uiSummary, this.ctx.post, s.settings.accessibility.reduceMotion);
+      this.wall = new WallView(getTheme('candy'), this.ctx.quality.preset, this.ctx.tumblers.create, wall3d, this.ctx.post);
       this.ctx.director.show(this.wall);
     });
   }
 
+  /**
+   * True while an authoritative reward is still on its way (online: the game
+   * server forwards the API's grant a moment after the show ends).
+   */
+  protected rewardsPending(): boolean {
+    return false;
+  }
+
+  /**
+   * The rewards screen payload. Offline (and as the online fallback) the local
+   * profile computes and banks it; online sessions return the API's grant.
+   *
+   * @param facts - What happened from the local player's seat.
+   */
+  protected computeRewards(facts: ShowResultForProfile): RewardsSummary {
+    return this.ctx.profile.applyShow(facts);
+  }
+
+  private rewardsWait = 0;
+
   private goRewards(): void {
     if (this.awaiting === 'rewards' || !this.summary) return;
+    // Give the server's reward summary a few seconds before falling back to the local estimate.
+    if (this.rewardsPending() && this.rewardsWait < 32) {
+      this.rewardsWait++;
+      this.after(0.25, () => this.goRewards());
+      return;
+    }
     this.awaiting = 'rewards';
     const summary = this.summary;
     const rounds = this.localRounds();
     const finalOutcome = summary.rounds[summary.rounds.length - 1];
     const reachedFinal = !!finalOutcome?.isFinal && (finalOutcome.qualified.includes(this.localId) || finalOutcome.eliminated.includes(this.localId));
-    const rewards = this.ctx.profile.applyShow({
+    const rewards = this.computeRewards({
       playlistName: this.showName,
       rounds,
       reachedFinal,
@@ -1105,6 +1160,7 @@ export abstract class ShowSession {
       participants: this.order.length,
       quit: false,
       counters: this.counters,
+      field: this.fieldSummary(),
     });
     const s = ui.getState();
     s.setRewards(rewards);

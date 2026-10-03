@@ -211,6 +211,159 @@ const footsteps: CosmeticItemInput[] = [
 ];
 
 // -----------------------------------------------------------------------------
+// Season 1: Sugar Rush pass
+// -----------------------------------------------------------------------------
+
+const pass = (rarity: Rarity): { rarity: Rarity; source: Src; price: Price } => meta(rarity, 'pass');
+
+const sugarRushColors: CosmeticItemInput[] = [
+  { id: 'color.cherry-cola', slot: 'color', name: 'Cherry Cola', description: 'Fizzy red with a syrupy dark trim.', colors: ['#c8102e', '#3b1f1a', '#fff1e0'], ...pass('common') },
+  { id: 'color.marshmallow', slot: 'color', name: 'Marshmallow Puff', description: 'Soft, squishy and toasted to nobody.', colors: ['#fff8f0', '#ffd6e8', '#c9b8ff'], ...pass('common') },
+  { id: 'color.pistachio', slot: 'color', name: 'Pistachio Cream', description: 'Nutty green gelato with a waffle-cone trim.', colors: ['#b5d99c', '#fff4d6', '#8a6b4a'], ...pass('common') },
+  { id: 'color.blue-raspberry', slot: 'color', name: 'Blue Razz', description: 'A flavour that does not exist in nature. Delicious.', colors: ['#2f7dff', '#7cf2ff', '#ff3b8d'], ...pass('uncommon') },
+  { id: 'color.peach-ring', slot: 'color', name: 'Peach Ring', description: 'Sugar-dusted peach with a sunny centre.', colors: ['#ffb07a', '#ffe08a', '#ff6f61'], ...pass('uncommon') },
+  { id: 'color.caramel-apple', slot: 'color', name: 'Caramel Apple', description: 'Crisp green apple dunked in caramel.', colors: ['#7ad151', '#c98a3d', '#5a3b2e'], ...pass('uncommon') },
+  { id: 'color.root-beer', slot: 'color', name: 'Root Beer Float', description: 'Frothy cream on a fizzy brown base.', colors: ['#6b3a22', '#fff1d6', '#d98c4a'], ...pass('uncommon') },
+  { id: 'color.sour-apple', slot: 'color', name: 'Sour Apple Zap', description: 'So sour your eyes water from across the course.', colors: ['#9dff3b', '#2fbf71', '#fffb8a'], ...pass('rare') },
+  { id: 'color.berry-swirl', slot: 'color', name: 'Berry Swirl', description: 'Raspberry and blackcurrant, swirled not stirred.', colors: ['#c2185b', '#7e57c2', '#f8bbd0'], ...pass('rare') },
+  { id: 'color.honeycomb', slot: 'color', name: 'Honeycomb Crunch', description: 'Golden, crackly and full of tiny air pockets.', colors: ['#ffb300', '#fff3c4', '#6d4c1f'], ...pass('rare') },
+  { id: 'color.rock-candy', slot: 'color', name: 'Rock Candy Crystal', description: 'Pale crystal facets that catch the stage lights.', colors: ['#a0e9ff', '#e0b0ff', '#ffffff'], ...pass('epic') },
+  { id: 'color.chocolate-fudge', slot: 'color', name: 'Triple Fudge', description: 'Three layers of chocolate. Zero regrets.', colors: ['#4e2a1e', '#8b5a3c', '#ffd8a8'], ...pass('epic') },
+  { id: 'color.sugar-rush', slot: 'color', name: 'Sugar Rush', description: 'The Season 1 signature: hot pink, electric blue, pure buzz.', colors: ['#ff2e93', '#00e0ff', '#ffe600'], ...pass('legendary') },
+];
+
+const sugarRushPatterns: CosmeticItemInput[] = [
+  { id: 'pattern.peppermint', slot: 'pattern', name: 'Peppermint Twist', description: 'Chunky stripes wound the other way round.', pattern: 'stripes', scale: 1.4, angle: -35, ...pass('common') },
+  { id: 'pattern.gumball-dots', slot: 'pattern', name: 'Gumball Machine', description: 'Big round gumballs, ready to roll out.', pattern: 'dots', scale: 0.6, ...pass('common') },
+  { id: 'pattern.ribbon-candy', slot: 'pattern', name: 'Ribbon Candy', description: 'Folded sugar ribbons running head to toe.', pattern: 'waves', scale: 1.6, angle: 90, ...pass('common') },
+  { id: 'pattern.licorice-lace', slot: 'pattern', name: 'Licorice Lace', description: 'Tight zigzag laces of chewy licorice.', pattern: 'zigzag', scale: 1.5, angle: 90, ...pass('uncommon') },
+  { id: 'pattern.jelly-tile', slot: 'pattern', name: 'Jelly Tiles', description: 'Tiny wobbly jelly squares, set on the diagonal.', pattern: 'checker', scale: 0.5, angle: 45, ...pass('uncommon') },
+  { id: 'pattern.cookie-crumble', slot: 'pattern', name: 'Cookie Crumble', description: 'Extra chunky, extra crumbly.', pattern: 'spots', scale: 1.6, ...pass('uncommon') },
+  { id: 'pattern.taffy-pull', slot: 'pattern', name: 'Taffy Pull', description: 'One giant stretchy swirl, fresh off the hook.', pattern: 'swirl', scale: 0.6, ...pass('rare') },
+  { id: 'pattern.mini-hearts', slot: 'pattern', name: 'Candy Hearts', description: 'Dozens of tiny hearts with even tinier messages.', pattern: 'hearts', scale: 1.8, angle: 15, ...pass('rare') },
+  { id: 'pattern.wrapper-plaid', slot: 'pattern', name: 'Wrapper Plaid', description: 'Tartan borrowed from a fancy toffee tin.', pattern: 'plaid', scale: 0.7, angle: 45, ...pass('rare') },
+  { id: 'pattern.neapolitan', slot: 'pattern', name: 'Neapolitan Split', description: 'Sliced clean down the middle, ice-cream style.', pattern: 'split', angle: 90, ...pass('epic') },
+  { id: 'pattern.gemstone', slot: 'pattern', name: 'Gemstone Glaze', description: 'Big glossy facets like a cut sugar jewel.', pattern: 'diamonds', scale: 1.5, ...pass('epic') },
+  { id: 'pattern.sugar-nebula', slot: 'pattern', name: 'Sugar Nebula', description: 'A sprawling candy galaxy, tilted for drama.', pattern: 'galaxy', scale: 0.7, angle: 30, ...pass('legendary') },
+];
+
+const sugarRushFaces: CosmeticItemInput[] = [
+  { id: 'face.gumdrop-gaze', slot: 'face', name: 'Gumdrop Gaze', description: 'Big orange eyes, round as gumdrops.', face: { iris: '#ff8a3d', eyeScale: 1.15 }, ...pass('common') },
+  { id: 'face.sugar-sleepy', slot: 'face', name: 'Sugar Crash', description: 'What happens ten minutes after the rush.', face: { lidRest: 0.25, lashes: true, iris: '#c25bff' }, ...pass('common') },
+  { id: 'face.sprinkle-freckles', slot: 'face', name: 'Sprinkle Cheeks', description: 'Freckles like a light dusting of sprinkles.', face: { freckles: true, lashes: true, iris: '#3fa9ff' }, ...pass('uncommon') },
+  { id: 'face.lemon-squint', slot: 'face', name: 'Sour Squint', description: 'Just bit into a lemon drop. Regrets nothing.', face: { lidRest: 0.5, iris: '#ffe14d', blush: false }, ...pass('uncommon') },
+  { id: 'face.minty-cat', slot: 'face', name: 'Minty Glare', description: 'Cool cat eyes with a fresh mint shine.', face: { pupil: 'cat', iris: '#3fd0a8', lashes: true }, ...pass('uncommon') },
+  { id: 'face.candy-specs', slot: 'face', name: 'Candy Specs', description: 'Bubblegum-pink frames for reading the course.', face: { accessory: 'glasses', tint: ['#ff4f8b'] }, ...pass('rare') },
+  { id: 'face.twirl-stache', slot: 'face', name: 'Toffee Twirl', description: 'A golden toffee mustache, waxed to perfection.', face: { accessory: 'mustache', tint: ['#ffcf4a'], eyeScale: 0.9 }, ...pass('rare') },
+  { id: 'face.swirl-eyes', slot: 'face', name: 'Lollipop Hypno', description: 'Pink spiral eyes on a frosted face plate.', face: { pupil: 'spiral', iris: '#ff2e93', eyeScale: 1.2, plateColor: '#fff0f8' }, ...pass('epic') },
+  { id: 'face.racer-visor', slot: 'face', name: 'Sugar Rush Visor', description: 'Orange-tinted racing visor. Eyes on the finish.', face: { accessory: 'visor', tint: ['#ff8a3d'], lidRest: 0.15 }, ...pass('epic') },
+  { id: 'face.star-gaze', slot: 'face', name: 'Golden Glimmer', description: 'Gold star shades over star-struck eyes.', face: { accessory: 'star-shades', tint: ['#ffd23f'], pupil: 'star', iris: '#ffb02e' }, ...pass('epic') },
+];
+
+const sugarRushHeadwear: CosmeticItemInput[] = [
+  { id: 'headwear.gumdrop-cone', slot: 'headwear', name: 'Gumdrop Cone', description: 'A lime party cone with a sugary tip.', mesh: 'party-cone', tint: ['#7ad151', '#ffffff', '#ff4f8b'], ...pass('common') },
+  { id: 'headwear.mint-beanie', slot: 'headwear', name: 'Mint Beanie', description: 'Cool mint knit with a snowy pom.', mesh: 'beanie-pom', tint: ['#7ff0c8', '#ffffff'], ...pass('common') },
+  { id: 'headwear.cherry-sprout', slot: 'headwear', name: 'Cherry Stem', description: 'You are the cherry on top.', mesh: 'sprout', tint: ['#c8102e'], ...pass('common') },
+  { id: 'headwear.cupcake-chef', slot: 'headwear', name: 'Cupcake Chef', description: 'A frosting-pink chef hat for sweet creations.', mesh: 'chef-hat', tint: ['#ffc4e8'], ...pass('uncommon') },
+  { id: 'headwear.lolli-propeller', slot: 'headwear', name: 'Lollicopter', description: 'A lollipop-striped whirly cap.', mesh: 'propeller-cap', tint: ['#ff2e93', '#ffffff', '#7cf2ff'], ...pass('uncommon') },
+  { id: 'headwear.cocoa-ears', slot: 'headwear', name: 'Cocoa Kitty Ears', description: 'Hot-chocolate ears with marshmallow insides.', mesh: 'cat-ears', tint: ['#6b3a22', '#ffd8a8'], ...pass('uncommon') },
+  { id: 'headwear.jelly-feelers', slot: 'headwear', name: 'Jelly Feelers', description: 'Wobbly antennae tipped with lemon jelly.', mesh: 'antenna', tint: ['#ff6fb5', '#ffe14d'], ...pass('rare') },
+  { id: 'headwear.marshmallow-bunny', slot: 'headwear', name: 'Marshmallow Ears', description: 'Pillowy ears with a candy-floss lining.', mesh: 'bunny-ears', tint: ['#fff8f0', '#ff9ef0'], ...pass('rare') },
+  { id: 'headwear.candy-headphones', slot: 'headwear', name: 'Sweet Beats', description: 'Pink-and-aqua cans pumping the Sugar Rush mix.', mesh: 'headphones', tint: ['#ff4f8b', '#7cf2ff'], ...pass('rare') },
+  { id: 'headwear.licorice-horns', slot: 'headwear', name: 'Licorice Horns', description: 'Glossy black horns with a hot-pink cap.', mesh: 'horns', tint: ['#2a2238', '#ff2e93'], ...pass('epic') },
+  { id: 'headwear.ringmaster', slot: 'headwear', name: 'Ringmaster Topper', description: 'Cherry-red top hat for running the whole show.', mesh: 'top-hat', tint: ['#c8102e', '#ffd23f'], ...pass('epic') },
+  { id: 'headwear.sugar-halo', slot: 'headwear', name: 'Spun Sugar Halo', description: 'A glowing ring of pink candy floss.', mesh: 'halo', tint: ['#ff9ef0'], ...pass('legendary') },
+];
+
+const sugarRushBack: CosmeticItemInput[] = [
+  { id: 'back.lunchbox', slot: 'back', name: 'Lunchbox Pack', description: 'Packed with sandwiches. Mostly candy sandwiches.', mesh: 'backpack', tint: ['#ff8a3d', '#7ff0c8'], ...pass('common') },
+  { id: 'back.gummy-shell', slot: 'back', name: 'Gummy Shell', description: 'A chewy shell in strawberry and lemon.', mesh: 'shell', tint: ['#ff5a6e', '#ffe14d'], ...pass('uncommon') },
+  { id: 'back.taffy-tail', slot: 'back', name: 'Taffy Tail', description: 'A stretchy striped tail that never stops wagging.', mesh: 'tail', tint: ['#ffb3d9', '#7ff0c8'], ...pass('uncommon') },
+  { id: 'back.wrapper-cape', slot: 'back', name: 'Wrapper Cape', description: 'A crinkly sweet-wrapper cape in blue and pink.', mesh: 'cape', tint: ['#3fa9ff', '#ff4f8b'], ...pass('rare') },
+  { id: 'back.fizz-rockets', slot: 'back', name: 'Fizz Rockets', description: 'Soda-powered boosters. Shake before use.', mesh: 'jetpack', tint: ['#ff2e93', '#7cf2ff'], ...pass('rare') },
+  { id: 'back.butterscotch-wings', slot: 'back', name: 'Butterscotch Wings', description: 'Golden wings of brittle, glowing butterscotch.', mesh: 'wings', tint: ['#ffcf4a', '#fff3c4'], ...pass('epic') },
+  { id: 'back.cotton-candy-wings', slot: 'back', name: 'Cotton Candy Wings', description: 'Fluffy pink-and-blue wings spun at the fair.', mesh: 'wings', tint: ['#ff9ef0', '#a0e9ff'], ...pass('legendary') },
+];
+
+const sugarRushUpper: CosmeticItemInput[] = [
+  { id: 'upper.licorice-bow', slot: 'upper', name: 'Licorice Bow', description: 'A smart black bow tie, faintly aniseed.', mesh: 'bow-tie', tint: ['#2a2238'], ...pass('common') },
+  { id: 'upper.lemon-bow', slot: 'upper', name: 'Lemon Drop Bow', description: 'A sunny yellow bow with a zesty edge.', mesh: 'bow-tie', tint: ['#ffe14d', '#ff8a3d'], ...pass('common') },
+  { id: 'upper.peppermint-scarf', slot: 'upper', name: 'Peppermint Scarf', description: 'Red-and-white stripes that flap at full sprint.', mesh: 'scarf', tint: ['#ffffff', '#e53935'], ...pass('uncommon') },
+  { id: 'upper.gumball-medal', slot: 'upper', name: 'Silver Gumball Medal', description: 'Second place never tasted so sweet.', mesh: 'medal', tint: ['#c0c8d8', '#ff4f8b'], ...pass('uncommon') },
+  { id: 'upper.mint-scarf', slot: 'upper', name: 'Mint Chip Muffler', description: 'Mint knit with chocolate-chip flecks.', mesh: 'scarf', tint: ['#7ff0c8', '#5a3b2e'], ...pass('rare') },
+  { id: 'upper.gold-medal', slot: 'upper', name: 'Golden Gobstopper Medal', description: 'Awarded for surviving every round of the season.', mesh: 'medal', tint: ['#ffcf4a', '#c8102e'], ...pass('rare') },
+  { id: 'upper.rush-medal', slot: 'upper', name: 'Sugar Rush Medal', description: 'The official Season 1 medal, still sticky.', mesh: 'medal', tint: ['#ff2e93', '#00e0ff'], ...pass('epic') },
+];
+
+const sugarRushLower: CosmeticItemInput[] = [
+  { id: 'lower.candy-belt', slot: 'lower', name: 'Candy Cane Belt', description: 'A striped belt with a minty buckle.', mesh: 'belt', tint: ['#ff4f8b', '#ffffff'], ...pass('common') },
+  { id: 'lower.racer-shorts', slot: 'lower', name: 'Racer Shorts', description: 'Orange go-faster stripes on midnight shorts.', mesh: 'shorts-stripes', tint: ['#ff8a3d', '#2a2238'], ...pass('common') },
+  { id: 'lower.gummy-ring', slot: 'lower', name: 'Gummy Ring Floatie', description: 'An apple gummy ring, inflated for safety.', mesh: 'floatie', tint: ['#7ad151', '#ffffff'], ...pass('uncommon') },
+  { id: 'lower.lavender-tutu', slot: 'lower', name: 'Lavender Tutu', description: 'A soft lilac tutu that smells faintly of fudge.', mesh: 'tutu', tint: ['#c9b8ff'], ...pass('uncommon') },
+  { id: 'lower.toffee-belt', slot: 'lower', name: 'Toffee Champion Belt', description: 'A toffee strap with a buckle of solid butterscotch.', mesh: 'belt', tint: ['#8b5a3c', '#ffd23f'], ...pass('rare') },
+  { id: 'lower.sherbet-tutu', slot: 'lower', name: 'Sherbet Swirl Tutu', description: 'Layers of fizzy sherbet tulle in peach and pink.', mesh: 'tutu', tint: ['#ff8fb1', '#ffd36e'], ...pass('epic') },
+];
+
+const sugarRushClips: CosmeticItemInput[] = [
+  { id: 'emote.sugar-wave', slot: 'emote', name: 'Sticky Wave', description: 'A wave so sweet your hand sticks a little.', clip: 'wave', ...pass('common') },
+  { id: 'emote.giggle', slot: 'emote', name: 'Giggle Fit', description: 'Cannot. Stop. Giggling.', clip: 'laugh', ...pass('common') },
+  { id: 'emote.sugar-shimmy', slot: 'emote', name: 'Sugar Shimmy', description: 'Too much candy, not enough places to put the energy.', clip: 'dance', ...pass('common') },
+  { id: 'emote.stretch', slot: 'emote', name: 'Pre-Race Stretch', description: 'Limber up before the gates drop.', clip: 'jumping-jacks', ...pass('uncommon') },
+  { id: 'emote.oops', slot: 'emote', name: 'Sticky Situation', description: 'When you dove straight into the goo. Again.', clip: 'facepalm', ...pass('uncommon') },
+  { id: 'emote.who-knows', slot: 'emote', name: 'Out of Gumballs', description: 'Empty pockets, zero worries.', clip: 'shrug', ...pass('uncommon') },
+  { id: 'emote.lollipop-spin', slot: 'emote', name: 'Lollipop Spin', description: 'Twirl like a lolly on a stick.', clip: 'spin', ...pass('rare') },
+  { id: 'emote.curtsy', slot: 'emote', name: 'Sweet Curtsy', description: 'A polite little bow for good sports.', clip: 'bow', ...pass('rare') },
+  { id: 'emote.cheer-squad', slot: 'emote', name: 'Cheer Squad', description: 'Rally the team, pom-poms optional.', clip: 'cheer', ...pass('epic') },
+  { id: 'celebration.hop-hop', slot: 'celebration', name: 'Sugar Hop', description: 'Bounce, bounce, bounce across the line.', clip: 'jumping-jacks', ...pass('common') },
+  { id: 'celebration.wiggle', slot: 'celebration', name: 'Finish Line Wiggle', description: 'Qualified! Time to wiggle.', clip: 'dance', ...pass('uncommon') },
+  { id: 'celebration.pump', slot: 'celebration', name: 'Gumball Pump', description: 'Pump it like a gumball machine handle.', clip: 'fist-pump', ...pass('uncommon') },
+  { id: 'celebration.twirl', slot: 'celebration', name: 'Cotton Candy Twirl', description: 'Spin until you are fluffy.', clip: 'spin', ...pass('rare') },
+  { id: 'celebration.giddy', slot: 'celebration', name: 'Giddy Giggles', description: 'Laughing all the way to the next round.', clip: 'laugh', ...pass('rare') },
+  { id: 'celebration.flex', slot: 'celebration', name: 'Jawbreaker Flex', description: 'Rock-hard candy muscles on full display.', clip: 'flex', ...pass('epic') },
+  { id: 'celebration.flip', slot: 'celebration', name: 'Sprinkle Flip', description: 'A backflip that leaves sprinkles hanging in the air.', clip: 'backflip', ...pass('epic') },
+  { id: 'victory.encore-bow', slot: 'victory', name: 'Encore Bow', description: 'A deep bow while the crowd chants for more.', clip: 'bow', ...pass('rare') },
+  { id: 'victory.cheer', slot: 'victory', name: 'Confetti Cheer', description: 'Leap for joy under a confetti cannon.', clip: 'cheer', ...pass('epic') },
+  { id: 'victory.hero-gold', slot: 'victory', name: 'Candy Champion', description: 'A heroic stance atop a mountain of sweets.', clip: 'victory-hero', ...pass('legendary') },
+  { id: 'victory.sugar-rush', slot: 'victory', name: 'Sugar Rush Supreme', description: 'The Season 1 finale pose. Arms up, sugar high, crown secured.', clip: 'victory-superstar', ...pass('mythic') },
+];
+
+const sugarRushProfile: CosmeticItemInput[] = [
+  { id: 'nameplate.lemon-pill', slot: 'nameplate', name: 'Lemon Pill', description: 'Sunny yellow with a tangy orange rim.', plate: { style: 'pill', bg: '#ffe14d', bg2: '#fff19a', text: '#5a3b2e', border: '#ff8a3d' }, ...pass('common') },
+  { id: 'nameplate.grape-bubble', slot: 'nameplate', name: 'Grape Bubble', description: 'A purple bubble that never pops.', plate: { style: 'bubble', bg: '#9b5cff', bg2: '#c9a8ff', text: '#ffffff', border: '#ece0ff' }, ...pass('common') },
+  { id: 'nameplate.cola-ticket', slot: 'nameplate', name: 'Cola Ticket', description: 'A fizzy brown ticket stub.', plate: { style: 'ticket', bg: '#6b3a22', bg2: '#8b5a3c', text: '#fff1d6', border: '#d98c4a' }, ...pass('common') },
+  { id: 'nameplate.taffy-ribbon', slot: 'nameplate', name: 'Taffy Ribbon', description: 'Pink taffy ribbon with a mint edge.', plate: { style: 'ribbon', bg: '#ffb3d9', bg2: '#ffd6ec', text: '#7a2d55', border: '#7ff0c8' }, ...pass('uncommon') },
+  { id: 'nameplate.mint-bubble', slot: 'nameplate', name: 'Mint Fizz', description: 'A cool, bubbly mint plate.', plate: { style: 'bubble', bg: '#3fd0a8', bg2: '#9ff5d9', text: '#1e3b33', border: '#ffffff' }, ...pass('uncommon') },
+  { id: 'nameplate.cherry-pill', slot: 'nameplate', name: 'Cherry Pop', description: 'Glossy cherry red with a golden glint.', plate: { style: 'pill', bg: '#c8102e', bg2: '#ff4f6a', text: '#ffffff', border: '#ffd23f' }, ...pass('uncommon') },
+  { id: 'nameplate.golden-ticket', slot: 'nameplate', name: 'Gold Wrapper', description: 'Found inside the very last chocolate bar.', plate: { style: 'ticket', bg: '#ffcf4a', bg2: '#fff3a0', text: '#6d4c1f', border: '#c8102e' }, ...pass('rare') },
+  { id: 'nameplate.sour-neon', slot: 'nameplate', name: 'Sour Neon', description: 'Buzzing lime neon. Tastes like a battery.', plate: { style: 'neon', bg: '#14261a', bg2: '#1f3a26', text: '#b6ff3b', border: '#ffe600' }, ...pass('rare') },
+  { id: 'nameplate.sugar-rush', slot: 'nameplate', name: 'Sugar Rush Sign', description: 'The Season 1 marquee in pink and electric blue.', plate: { style: 'neon', bg: '#2a0f2e', bg2: '#3d1442', text: '#ff9ef0', border: '#00e0ff' }, ...pass('epic') },
+  { id: 'banner.lemonade', slot: 'banner', name: 'Lemonade Stand', description: 'Fresh-squeezed stripes, five gumballs a cup.', banner: { motif: 'stripes', colors: ['#ffe14d', '#ffffff', '#ff8a3d'] }, ...pass('common') },
+  { id: 'banner.cotton-sky', slot: 'banner', name: 'Cotton Candy Sky', description: 'Pastel clouds you could almost eat.', banner: { motif: 'clouds', colors: ['#ffc4e8', '#b8e7ff', '#ffffff'] }, ...pass('common') },
+  { id: 'banner.sprinkle-party', slot: 'banner', name: 'Sprinkle Party', description: 'Vanilla frosting with a fistful of sprinkles.', banner: { motif: 'confetti', colors: ['#fff8f0', '#ff4f8b', '#3fa9ff'] }, ...pass('common') },
+  { id: 'banner.soda-waves', slot: 'banner', name: 'Soda Fountain', description: 'Rolling waves of root beer and cream.', banner: { motif: 'waves', colors: ['#6b3a22', '#d98c4a', '#fff1d6'] }, ...pass('uncommon') },
+  { id: 'banner.gumball-machine', slot: 'banner', name: 'Gumball Bonanza', description: 'Red, yellow and blue gumballs everywhere.', banner: { motif: 'candy', colors: ['#e53935', '#ffd23f', '#3fa9ff'] }, ...pass('uncommon') },
+  { id: 'banner.mint-stripes', slot: 'banner', name: 'Mint Racer', description: 'Cool mint racing stripes.', banner: { motif: 'stripes', colors: ['#7ff0c8', '#ffffff', '#2fbf71'] }, ...pass('uncommon') },
+  { id: 'banner.night-market', slot: 'banner', name: 'Midnight Sweets', description: 'A late-night candy market under neon stars.', banner: { motif: 'stars', colors: ['#2a0f2e', '#ff2e93', '#7cf2ff'] }, ...pass('rare') },
+  { id: 'banner.lollipop-land', slot: 'banner', name: 'Lollipop Land', description: 'Lollipops as far as the eye can see.', banner: { motif: 'candy', colors: ['#ff9ef0', '#ffe600', '#7ad151'] }, ...pass('rare') },
+  { id: 'banner.sugar-rush', slot: 'banner', name: 'Sugar Rush Spectacular', description: 'The full Season 1 confetti blast.', banner: { motif: 'confetti', colors: ['#ff2e93', '#00e0ff', '#ffe600'] }, ...pass('epic') },
+];
+
+const sugarRushVfx: CosmeticItemInput[] = [
+  { id: 'trail.fizz', slot: 'trail', name: 'Soda Fizz', description: 'Creamy soda bubbles trail behind you.', trail: { kind: 'bubbles', colors: ['#ffd8a8', '#fff1d6'] }, ...pass('common') },
+  { id: 'trail.sugar-sparkle', slot: 'trail', name: 'Sugar Glitter', description: 'A fine dusting of pink sugar.', trail: { kind: 'sparkle', colors: ['#ff9ef0', '#ffffff'] }, ...pass('common') },
+  { id: 'trail.candy-hearts', slot: 'trail', name: 'Lemon Hearts', description: 'Citrus hearts bobbing in your wake.', trail: { kind: 'hearts', colors: ['#ffe14d', '#ff8a3d'] }, ...pass('uncommon') },
+  { id: 'trail.sprinkles', slot: 'trail', name: 'Sprinkle Shake', description: 'Leaves a sprinkle mess everywhere you go.', trail: { kind: 'confetti', colors: ['#ff4f8b', '#3fa9ff', '#ffe14d'] }, ...pass('uncommon') },
+  { id: 'trail.mint-stars', slot: 'trail', name: 'Mint Meteor', description: 'Cool mint stars streaking behind you.', trail: { kind: 'stars', colors: ['#7ff0c8', '#ffffff'] }, ...pass('rare') },
+  { id: 'trail.taffy-rainbow', slot: 'trail', name: 'Pastel Ribbon', description: 'A soft pastel rainbow, stretched like taffy.', trail: { kind: 'rainbow', colors: ['#ff9ef0', '#ffd36e', '#7ff0c8', '#c9b8ff'] }, ...pass('epic') },
+  { id: 'trail.sugar-streak', slot: 'trail', name: 'Sugar Rush Streak', description: 'A blazing neon streak. The rush made visible.', trail: { kind: 'rainbow', colors: ['#ff2e93', '#ffe600', '#00e0ff', '#b6ff3b'] }, ...pass('legendary') },
+  { id: 'footsteps.gummy-squeak', slot: 'footsteps', name: 'Gummy Squeaks', description: 'Squeaky gummy soles.', pack: 'squeak', ...pass('common') },
+  { id: 'footsteps.marshmallow', slot: 'footsteps', name: 'Marshmallow Stomp', description: 'Soft, squishy, oddly satisfying steps.', pack: 'jelly', ...pass('common') },
+  { id: 'footsteps.pogo', slot: 'footsteps', name: 'Pogo Pops', description: 'Every step a little bounce.', pack: 'boing', ...pass('uncommon') },
+  { id: 'footsteps.candy-tap', slot: 'footsteps', name: 'Candy Clickers', description: 'Hard-candy heels that click on every tile.', pack: 'tap', ...pass('uncommon') },
+  { id: 'footsteps.sleigh-bells', slot: 'footsteps', name: 'Sleigh Bell Sprint', description: 'A jingle on every stride, all season long.', pack: 'bell', ...pass('rare') },
+];
+
+// -----------------------------------------------------------------------------
 // Catalog
 // -----------------------------------------------------------------------------
 
@@ -230,6 +383,16 @@ export const COSMETICS: readonly CosmeticItem[] = [
   ...banners,
   ...trails,
   ...footsteps,
+  ...sugarRushColors,
+  ...sugarRushPatterns,
+  ...sugarRushFaces,
+  ...sugarRushHeadwear,
+  ...sugarRushBack,
+  ...sugarRushUpper,
+  ...sugarRushLower,
+  ...sugarRushClips,
+  ...sugarRushProfile,
+  ...sugarRushVfx,
 ].map((item) => CosmeticItemSchema.parse(item));
 
 const byId = new Map<string, CosmeticItem>();

@@ -11,6 +11,7 @@ import { formatClock, useDisplayName } from '../components/hooks.ts';
 import { uiEvents } from '../store/events.ts';
 import { ui, useUI } from '../store/uiStore.ts';
 import { squash } from '../theme/motion.ts';
+import { Icon } from '../components/icons/index.tsx';
 import { roundTypeStyle } from '../theme/tokens.ts';
 
 /** Round timer pill; turns tangerine < 30 s and bubblegum + pulsing < 10 s. */
@@ -117,7 +118,7 @@ export const RaceProgress = memo(function RaceProgress(): JSX.Element | null {
             style={{ left: `${l.progress * 100}%`, background: l.color }}
             title={name({ id: l.id, name: l.name, isBot: true })}
           >
-            {i === 0 ? '👑' : i + 1}
+            {i === 0 ? <Icon name="crown" size="0.9em" /> : i + 1}
           </span>
         ))}
         {status === 'playing' && (
@@ -128,7 +129,7 @@ export const RaceProgress = memo(function RaceProgress(): JSX.Element | null {
           />
         )}
         <span className="tr-hud-race-flag" aria-hidden>
-          🏁
+          <Icon name="flag" size="1.4em" />
         </span>
       </div>
     </div>
@@ -148,7 +149,7 @@ export const TeamScores = memo(function TeamScores(): JSX.Element | null {
           className={`tr-hud-team${t.isMine ? ' is-mine' : ''}`}
           style={{ ['--team' as string]: t.color }}
         >
-          {t.score === top && top > 0 && <span className="tr-hud-team-crown">👑</span>}
+          {t.score === top && top > 0 && <span className="tr-hud-team-crown"><Icon name="crown" size="1em" /></span>}
           <span className="tr-hud-team-name">{t.name}</span>
           <span key={t.score} className="tr-hud-team-score">
             {t.score}
@@ -159,16 +160,18 @@ export const TeamScores = memo(function TeamScores(): JSX.Element | null {
   );
 });
 
-/** Ping / FPS readout. */
+/** Ping / FPS readout. The ping hides when `hud.ping` is negative (offline). */
 export const NetStats = memo(function NetStats(): JSX.Element | null {
   const { ping, fps } = useUI(useShallow((s) => ({ ping: s.hud.ping, fps: s.hud.fps })));
   const showPing = useUI((s) => s.settings.gameplay.showPing);
   const showFps = useUI((s) => s.settings.graphics.showFps);
-  if (!showPing && !showFps) return null;
+  // A negative ping means there is no server (offline show): nothing to report.
+  const hasPing = showPing && ping >= 0;
+  if (!hasPing && !showFps) return null;
   const pingQ = ping < 80 ? 'good' : ping < 160 ? 'warn' : 'bad';
   return (
     <div className="tr-hud-net">
-      {showPing && <span className={`is-${pingQ}`}>{ping} ms</span>}
+      {hasPing && <span className={`is-${pingQ}`}>{ping} ms</span>}
       {showFps && <span>{fps} fps</span>}
     </div>
   );
@@ -238,7 +241,7 @@ export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null
         aria-label="Previous player"
         onClick={() => uiEvents.emit('spectateNext', { dir: -1 })}
       >
-        ◀
+        <Icon name="chevron-left" size="1em" />
       </Button>
       <div key={spec.player.id} className="tr-spectate-card">
         <span className="tr-label tr-spectate-label">Spectating</span>
@@ -249,7 +252,7 @@ export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null
             {spec.detail} · {spec.index + 1}/{spec.count}
           </span>
         </span>
-        {spec.qualified && <span className="tr-chip tr-chip--good">✓ Qualified</span>}
+        {spec.qualified && <span className="tr-chip tr-chip--good"><Icon name="check" size="0.9em" /> Qualified</span>}
       </div>
       <Button
         variant="secondary"
@@ -258,7 +261,7 @@ export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null
         aria-label="Next player"
         onClick={() => uiEvents.emit('spectateNext', { dir: 1 })}
       >
-        ▶
+        <Icon name="chevron-right" size="1em" />
       </Button>
     </div>
   );
@@ -282,7 +285,7 @@ export const EliminatedSheet = memo(function EliminatedSheet(): JSX.Element | nu
               uiEvents.emit('spectate');
             }}
           >
-            👀 Spectate
+            <Icon name="eye" size="1.1em" /> Spectate
           </Button>
           <Button
             variant="secondary"
@@ -291,10 +294,10 @@ export const EliminatedSheet = memo(function EliminatedSheet(): JSX.Element | nu
             cue="ui.back"
             onClick={() => uiEvents.emit('backToLobby')}
           >
-            🏠 Back to lobby
+            <Icon name="home" size="1.1em" /> Back to lobby
           </Button>
           <Button variant="go" size="lg" cue="ui.confirm" onClick={() => uiEvents.emit('playAgain')}>
-            🔁 Play again
+            <Icon name="refresh" size="1.1em" /> Play again
           </Button>
         </div>
       </div>
@@ -309,7 +312,7 @@ export const CaptionChip = memo(function CaptionChip(): JSX.Element | null {
   if (!enabled || !caption) return null;
   return (
     <div className="tr-caption" key={caption} aria-live="polite">
-      <span aria-hidden>📣</span> {caption}
+      <Icon name="megaphone" size="1.2em" /> {caption}
     </div>
   );
 });

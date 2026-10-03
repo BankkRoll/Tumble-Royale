@@ -58,6 +58,8 @@ export interface LookDelta {
 /** Standard-mapping gamepad button indices. */
 const PAD = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, Up: 12, Down: 13, Left: 14, Right: 15 } as const;
 
+const MOVE_ACTIONS: readonly InputAction[] = ['forward', 'back', 'left', 'right'];
+
 const PREVENT_DEFAULT_CODES = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab']);
 
 /**
@@ -92,6 +94,7 @@ export class InputSystem {
   private readonly padLook = { x: 0, y: 0 };
   private readonly look: LookDelta = { yaw: 0, pitch: 0 };
   private readonly unlisten: (() => void)[] = [];
+  private mouseActions = true;
 
   /**
    * @param opts.element - Focus/pointer-lock target, usually the game canvas.
@@ -137,6 +140,46 @@ export class InputSystem {
   /** Whether the pointer is currently locked to the game element. */
   get pointerLocked(): boolean {
     return document.pointerLockElement === this.element;
+  }
+
+  /** False while menus suppress mouse gameplay (see {@link setMouseActions}). */
+  get mouseActionsEnabled(): boolean {
+    return this.mouseActions;
+  }
+
+  /**
+   * Menu mode switch. With mouse actions off, mouse buttons never press
+   * gameplay actions, the pointer is never locked and mouse look is ignored;
+   * keyboard, gamepad and touch keep working. Shows keep the default (on).
+   *
+   * @param enabled - False in menus, true in shows.
+   * @example
+   * input.setMouseActions(false); // main menu lobby
+   */
+  setMouseActions(enabled: boolean): void {
+    if (enabled === this.mouseActions) return;
+    this.mouseActions = enabled;
+    if (enabled) return;
+    this.releaseMouseButtons();
+    this.mouseDx = 0;
+    this.mouseDy = 0;
+    if (this.pointerLocked) document.exitPointerLock();
+  }
+
+  /**
+   * Whether a movement key is held right now (WASD/arrows as bound).
+   *
+   * @param ignoreArrows - Skip arrow keys (menus use them for focus navigation).
+   * @returns True when any bound movement key is down.
+   */
+  movementKeyHeld(ignoreArrows = false): boolean {
+    for (const a of MOVE_ACTIONS) {
+      for (const code of this.keymap[a]) {
+        if (ignoreArrows && code.startsWith('Arrow')) continue;
+        if (this.downCodes.has(code)) return true;
+      }
+    }
+    return false;
   }
 
   /** Whether the emote wheel key/button is held (UI shows the wheel). */
@@ -253,7 +296,7 @@ export class InputSystem {
 
   /** Requests pointer lock (must be called from a user gesture). */
   lockPointer(): void {
-    if (!this.pointerLocked) void this.element.requestPointerLock?.();
+    if (this.mouseActions && !this.pointerLocked) void this.element.requestPointerLock?.();
   }
 
   /** Removes all listeners and touch DOM. */
@@ -287,6 +330,7 @@ export class InputSystem {
   }
 
   private onMouseButton(e: MouseEvent, down: boolean): void {
+    if (!this.mouseActions) return;
     if (down && this.settings.pointerLock && !this.pointerLocked) {
       // The click that captures the pointer is not a gameplay press.
       this.lockPointer();
@@ -308,7 +352,7 @@ export class InputSystem {
   }
 
   private onMouseMove(e: MouseEvent): void {
-    if (!this.pointerLocked) return;
+    if (!this.mouseActions || !this.pointerLocked) return;
     this.mouseDx += e.movementX;
     this.mouseDy += e.movementY;
   }

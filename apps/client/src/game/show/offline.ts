@@ -73,14 +73,14 @@ export class OfflineShowSession extends ShowSession {
       playlist,
       rounds: this.rounds,
       seed,
-      humanName: ctx.profile.name,
+      humanName: ctx.playerName(),
       ...(ctx.cfg.players ? { players: Math.max(2, Math.min(60, Math.round(ctx.cfg.players))) } : {}),
       timings: TIMINGS,
     });
     this.localId = this.show.humanId;
     this.showName = playlist.name;
     for (const p of this.show.participants) {
-      const loadout = p.id === this.localId ? ctx.profile.tumblerLoadout() : botLoadout(seed, p.id, p.name);
+      const loadout = p.id === this.localId ? ctx.look() : botLoadout(seed, p.id, p.name);
       const sp: SessionPlayer = { id: p.id, name: p.name, isBot: p.isBot, loadout };
       if (p.partyId !== undefined) sp.partyId = p.partyId;
       this.players.set(p.id, sp);

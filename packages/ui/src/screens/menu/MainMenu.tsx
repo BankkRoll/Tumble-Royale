@@ -1,47 +1,40 @@
 /**
- * Main menu shell: top bar (level, tabs, wallet, social, settings), the active
- * tab panel, and the bottom play bar / matchmaking card.
+ * Main menu shell: top bar (level → Profile, text-only tabs with Q/E cycling,
+ * named wallet pills with their popovers, bell, friends, settings) and the
+ * active tab panel. Tabs cross-fade (~200 ms slide/fade, the old panel fades
+ * out under the new one) so switching never flashes or wipes.
  * docs/design/SCREENS.md §4 and §6.
  */
-import { useRef, type JSX } from 'react';
+import { useEffect, useRef, useState, type JSX, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { playCue } from '../../audio-cues.ts';
-import { Bar, CurrencyPill, TipCarousel } from '../../components/bits.tsx';
-import { Button } from '../../components/controls.tsx';
-import { formatClock, formatRemaining, useNow } from '../../components/hooks.ts';
-import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
-import { uiEvents } from '../../store/events.ts';
+import { Bar, CurrencyPill } from '../../components/bits.tsx';
+import { Icon } from '../../components/icons/index.tsx';
 import { ui, useUI } from '../../store/uiStore.ts';
 import { MENU_TABS, type MenuTab } from '../../store/types.ts';
 import { ChallengesTab } from './ChallengesTab.tsx';
+import { CurrencyPanel } from './CurrencyPanel.tsx';
 import { LeaderboardsTab } from './LeaderboardsTab.tsx';
 import { LockerTab } from './LockerTab.tsx';
 import { NewsTab } from './NewsTab.tsx';
 import { PassTab } from './PassTab.tsx';
-import { PlayTab } from './PlayTab.tsx';
-import { ProfileTab } from './ProfileTab.tsx';
+import { claimablePass, PlayTab } from './PlayTab.tsx';
+import { ProfileTab, ProfileOverlay } from './ProfileTab.tsx';
 import { StoreTab } from './StoreTab.tsx';
 
-const TAB_META: Record<MenuTab, { label: string; icon: string }> = {
-  play: { label: 'Play', icon: '🎮' },
-  locker: { label: 'Locker', icon: '👕' },
-  store: { label: 'Store', icon: '🛍️' },
-  pass: { label: 'Pass', icon: '⭐' },
-  challenges: { label: 'Challenges', icon: '🎯' },
-  profile: { label: 'Profile', icon: '🙂' },
-  leaderboards: { label: 'Ranks', icon: '🏆' },
-  news: { label: 'News', icon: '📰' },
-};
+export { MATCHMAKING_TIPS } from './PlayTab.tsx';
 
-/** Tips shown while queueing. */
-export const MATCHMAKING_TIPS: readonly string[] = [
-  'Dive mid-jump to cover more ground!',
-  'Grab a ledge and press Jump to climb up.',
-  'Spinning platforms carry you — ride them, don’t fight them.',
-  'Magenta and orange mean danger. Mint means safe.',
-  'Feeling stuck? A well-timed dive gets you up most ramps.',
-  'Bumping into other Tumblers is legal. And hilarious.',
-];
+/** Tab labels (text only, by product rule). */
+export const TAB_LABELS: Record<MenuTab, string> = {
+  play: 'Play',
+  locker: 'Locker',
+  store: 'Store',
+  pass: 'Pass',
+  challenges: 'Challenges',
+  profile: 'Profile',
+  leaderboards: 'Ranks',
+  news: 'News',
+};
 
 function LevelBadge(): JSX.Element | null {
   const p = useUI(
@@ -51,19 +44,47 @@ function LevelBadge(): JSX.Element | null {
   );
   if (!p) return null;
   return (
-    <div className="tr-level tr-interactive" title={`${p.xp} / ${p.next} XP`}>
+    <button
+      type="button"
+      className="tr-level tr-interactive"
+      data-nav=""
+      data-testid="level-badge"
+      title={`Level ${p.level} · ${p.xp.toLocaleString('en-US')} / ${p.next.toLocaleString('en-US')} XP — open your profile`}
+      aria-label={`Level ${p.level}, ${p.xp} of ${p.next} XP. Open profile`}
+      onClick={() => {
+        playCue('ui.click');
+        ui.getState().setMenuTab('profile');
+      }}
+    >
       <span className="tr-level-badge">
         <small>LV</small>
         {p.level}
       </span>
-      <Bar value={p.xp / Math.max(1, p.next)} label="XP to next level" className="tr-level-bar" />
-    </div>
+      <span className="tr-level-meta">
+        <Bar value={p.xp / Math.max(1, p.next)} label="XP to next level" className="tr-level-bar" />
+        <small className="tr-level-xp">
+          {p.xp.toLocaleString('en-US')} / {p.next.toLocaleString('en-US')} XP
+        </small>
+      </span>
+    </button>
+  );
+}
+
+/** Badge counts per tab (claimables, unread news). */
+function useTabBadges(): Partial<Record<MenuTab, number>> {
+  return useUI(
+    useShallow((s) => ({
+      pass: claimablePass(s.pass),
+      challenges: s.challenges?.list.filter((c) => !c.claimed && c.progress >= c.goal).length ?? 0,
+      news: s.news.filter((n) => n.unread).length,
+    })),
   );
 }
 
 function TabStrip(): JSX.Element {
   const tab = useUI((s) => s.menuTab);
   const disabled = useUI((s) => s.screen === 'matchmaking');
+  const badges = useTabBadges();
   return (
     <nav className="tr-tabs tr-interactive" role="tablist" aria-label="Menu" data-nav-tabs="">
       <span className="tr-tabs-hint" aria-hidden>
@@ -78,16 +99,15 @@ function TabStrip(): JSX.Element {
           disabled={disabled && t !== tab}
           className={`tr-tab${t === tab ? ' is-active' : ''}`}
           data-nav=""
+          data-tab={t}
           onClick={() => {
             if (t === tab) return;
             playCue('ui.tab');
             ui.getState().setMenuTab(t);
           }}
         >
-          <span className="tr-tab-icon" aria-hidden>
-            {TAB_META[t].icon}
-          </span>
-          <span className="tr-tab-label">{TAB_META[t].label}</span>
+          {TAB_LABELS[t]}
+          {(badges[t] ?? 0) > 0 && <span className="tr-tab-badge" aria-label={`${badges[t]} new`} />}
         </button>
       ))}
       <span className="tr-tabs-hint" aria-hidden>
@@ -97,278 +117,176 @@ function TabStrip(): JSX.Element {
   );
 }
 
+function IconButton({
+  label,
+  icon,
+  badge,
+  badgeTone,
+  onClick,
+  testId,
+  pressed,
+}: {
+  label: string;
+  icon: Parameters<typeof Icon>[0]['name'];
+  badge?: number;
+  badgeTone?: 'mint';
+  onClick: () => void;
+  testId: string;
+  pressed?: boolean;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      className={`tr-round-btn${pressed ? ' is-on' : ''}`}
+      data-nav=""
+      data-testid={testId}
+      aria-label={label}
+      title={label}
+      aria-pressed={pressed}
+      onClick={onClick}
+    >
+      <Icon name={icon} size="1.5em" />
+      {badge !== undefined && badge > 0 && (
+        <span className={`tr-badge-dot${badgeTone ? ` tr-badge-dot--${badgeTone}` : ''}`}>{badge}</span>
+      )}
+    </button>
+  );
+}
+
 function TopBar(): JSX.Element {
   const wallet = useUI(
     useShallow((s) => ({ gumballs: s.profile?.gumballs ?? 0, gems: s.profile?.gems ?? 0 })),
   );
-  const unread = useUI((s) => s.notifications.filter((n) => !n.read).length);
+  const unread = useUI(
+    (s) => s.notifications.filter((n) => !n.read).length + s.news.filter((n) => n.unread).length,
+  );
   const online = useUI((s) => s.friends.filter((f) => f.presence !== 'offline').length);
   const overlay = useUI((s) => s.overlay);
-  const toggle = (o: 'friends' | 'notifications' | 'settings'): void =>
-    ui.getState().setOverlay(overlay === o ? 'none' : o);
+  const panel = useUI((s) => s.currencyPanel);
+  const toggle = (o: 'friends' | 'notifications' | 'settings'): void => {
+    playCue('ui.click');
+    const st = ui.getState();
+    st.setCurrencyPanel('none');
+    st.setOverlay(overlay === o ? 'none' : o);
+  };
+  const wallet$ = (c: 'gumballs' | 'gems'): void => {
+    playCue('ui.click');
+    const st = ui.getState();
+    st.setOverlay('none');
+    st.setCurrencyPanel(panel === c ? 'none' : c);
+  };
   return (
     <header className="tr-topbar">
       <LevelBadge />
       <TabStrip />
       <div className="tr-topbar-right tr-interactive">
-        <CurrencyPill
-          currency="gumballs"
-          amount={wallet.gumballs}
-          onAdd={() => ui.getState().setMenuTab('store')}
-        />
-        <CurrencyPill currency="gems" amount={wallet.gems} onAdd={() => ui.getState().setMenuTab('store')} />
-        <Button
-          variant="secondary"
-          className="tr-btn--icon"
-          aria-label={`Notifications (${unread} new)`}
-          icon={<span>🔔</span>}
+        <span
+          className="tr-wallet-pill"
+          data-testid="wallet-pill-gumballs"
+          title="Gumballs — earned by playing"
+          aria-label="Gumballs: earned by playing. Open Earn Gumballs"
+          onClick={() => wallet$('gumballs')}
+        >
+          <CurrencyPill currency="gumballs" amount={wallet.gumballs} onAdd={() => wallet$('gumballs')} />
+        </span>
+        <span
+          className="tr-wallet-pill"
+          data-testid="wallet-pill-gems"
+          title="Gems — premium currency"
+          aria-label="Gems: premium currency. Open Gems"
+          onClick={() => wallet$('gems')}
+        >
+          <CurrencyPill currency="gems" amount={wallet.gems} onAdd={() => wallet$('gems')} />
+        </span>
+        <IconButton
+          label={`Notifications (${unread} new)`}
+          icon="bell"
+          badge={unread}
           onClick={() => toggle('notifications')}
-        >
-          {unread > 0 ? <span className="tr-badge-dot">{unread}</span> : null}
-        </Button>
-        <Button
-          variant="secondary"
-          className="tr-btn--icon"
-          aria-label={`Friends (${online} online)`}
-          icon={<span>👥</span>}
+          testId="btn-notifications"
+          pressed={overlay === 'notifications'}
+        />
+        <IconButton
+          label={`Friends & party (${online} online)`}
+          icon="friends"
+          badge={online}
+          badgeTone="mint"
           onClick={() => toggle('friends')}
-        >
-          {online > 0 ? <span className="tr-badge-dot tr-badge-dot--mint">{online}</span> : null}
-        </Button>
-        <Button
-          variant="secondary"
-          aria-label="Settings"
-          icon={<span>⚙️</span>}
+          testId="btn-friends"
+          pressed={overlay === 'friends'}
+        />
+        <IconButton
+          label="Settings"
+          icon="gear"
           onClick={() => toggle('settings')}
+          testId="btn-settings"
+          pressed={overlay === 'settings'}
         />
       </div>
     </header>
   );
 }
 
-function PartySlots(): JSX.Element {
-  const party = useUI((s) => s.party);
-  const profile = useUI((s) => s.profile);
-  const members =
-    party?.members ??
-    (profile
-      ? [
-          {
-            id: profile.id,
-            name: profile.name,
-            colors: profile.colors,
-            ready: false,
-            isLeader: true,
-            isSelf: true,
-          },
-        ]
-      : []);
-  const max = party?.maxSize ?? 4;
-  return (
-    <div className="tr-party tr-interactive" aria-label="Party">
-      {Array.from({ length: max }, (_, i) => {
-        const m = members[i];
-        if (!m) {
-          return (
-            <button
-              key={i}
-              type="button"
-              className="tr-party-slot is-empty"
-              data-nav=""
-              aria-label="Invite a friend"
-              onClick={() => ui.getState().setOverlay('friends')}
-            >
-              +
-            </button>
-          );
-        }
-        return (
-          <div
-            key={m.id}
-            className={`tr-party-slot${m.ready ? ' is-ready' : ''}${m.isSelf ? ' is-self' : ''}`}
-            title={m.name}
-          >
-            <TumblerAvatar colors={m.colors} size="2.6em" blink={false} noShadow />
-            {m.isLeader && <span className="tr-party-crown">👑</span>}
-            {m.ready && <span className="tr-party-tick">✓</span>}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function PlaylistPicker({ disabled }: { disabled: boolean }): JSX.Element | null {
-  const playlists = useUI((s) => s.playlists);
-  const selected = useUI((s) => s.selectedPlaylist);
-  const now = useNow(1000);
-  const idx = Math.max(
-    0,
-    playlists.findIndex((p) => p.id === selected),
-  );
-  const p = playlists[idx];
-  if (!p) return null;
-  const cycle = (d: number): void => {
-    const next = playlists[(idx + d + playlists.length) % playlists.length];
-    if (next) {
-      playCue('ui.click');
-      ui.getState().selectPlaylist(next.id);
-    }
-  };
-  return (
-    <div
-      className="tr-playlist tr-interactive"
-      style={{ ['--art-a' as string]: p.art[0], ['--art-b' as string]: p.art[1] }}
-    >
-      <button
-        type="button"
-        className="tr-playlist-arrow"
-        data-nav=""
-        disabled={disabled}
-        aria-label="Previous playlist"
-        onClick={() => cycle(-1)}
-      >
-        ◀
-      </button>
-      <div key={p.id} className="tr-playlist-card tr-enter-pop">
-        <span className="tr-playlist-icon" aria-hidden>
-          {p.icon}
-        </span>
-        <div className="tr-col" style={{ gap: '0.1em', minWidth: 0 }}>
-          <b className="tr-playlist-name tr-ellipsis">{p.name}</b>
-          <span className="tr-small">
-            {p.players} players{p.teamSize > 1 ? ` · ${p.teamSize === 2 ? 'Duos' : 'Squads'}` : ''}
-            {p.ranked ? ' · Ranked' : ''}
-          </span>
-        </div>
-        {p.endsAt && (
-          <span className="tr-chip tr-chip--pink tr-playlist-ends">
-            Ends in {formatRemaining(p.endsAt - now)}
-          </span>
-        )}
-      </div>
-      <button
-        type="button"
-        className="tr-playlist-arrow"
-        data-nav=""
-        disabled={disabled}
-        aria-label="Next playlist"
-        onClick={() => cycle(1)}
-      >
-        ▶
-      </button>
-    </div>
-  );
-}
-
-function PlayButton(): JSX.Element {
-  const { party, ready, selected } = useUI(
-    useShallow((s) => ({ party: s.party, ready: s.localReady, selected: s.selectedPlaylist })),
-  );
-  const self = party?.members.find((m) => m.isSelf);
-  const isMember = party && self && !self.isLeader;
-  if (isMember) {
-    return (
-      <Button
-        variant={ready ? 'mint' : 'go'}
-        size="xl"
-        className="tr-play-btn"
-        autoFocusNav
-        cue="ui.confirm"
-        hint="Y"
-        onClick={() => {
-          ui.getState().setLocalReady(!ready);
-          uiEvents.emit('ready', { ready: !ready });
-        }}
-      >
-        {ready ? '✓ Ready!' : 'Ready'}
-      </Button>
-    );
+function tabBody(tab: MenuTab, matchmaking: boolean): ReactNode {
+  switch (tab) {
+    case 'play':
+      return <PlayTab matchmaking={matchmaking} />;
+    case 'locker':
+      return <LockerTab />;
+    case 'store':
+      return <StoreTab />;
+    case 'pass':
+      return <PassTab />;
+    case 'challenges':
+      return <ChallengesTab />;
+    case 'profile':
+      return <ProfileTab />;
+    case 'leaderboards':
+      return <LeaderboardsTab />;
+    case 'news':
+      return <NewsTab />;
   }
-  return (
-    <Button
-      variant="go"
-      size="xl"
-      className="tr-play-btn tr-loop"
-      autoFocusNav
-      cue="ui.confirm"
-      onClick={() => uiEvents.emit('play', { playlistId: selected })}
-    >
-      Play
-    </Button>
-  );
 }
 
-function MatchmakingCard(): JSX.Element {
-  const q = useUI((s) => s.queue);
-  const now = useNow(500);
-  const elapsed = q.startedAt ? (now - q.startedAt) / 1000 : 0;
-  const numRef = useRef<HTMLSpanElement>(null);
-  return (
-    <div className="tr-mm tr-interactive" data-nav-scope="6">
-      <TipCarousel tips={MATCHMAKING_TIPS} now={now} />
-      <div className="tr-panel tr-mm-card tr-enter">
-        <div className="tr-mm-machine tr-loop" aria-hidden>
-          <span />
-        </div>
-        <div className="tr-col tr-grow" style={{ gap: '0.25em' }}>
-          <div className="tr-title tr-h3">{q.status === 'found' ? 'Show found!' : 'Finding Tumblers…'}</div>
-          <div className="tr-row tr-wrap tr-small">
-            <span className="tr-mm-count">
-              <span ref={numRef} key={q.playersFound} className="tr-mm-num">
-                {q.playersFound}
-              </span>
-              <span className="tr-muted"> / {q.playersNeeded}</span>
-            </span>
-            <span className="tr-chip">⏱ {formatClock(elapsed)}</span>
-            <span className="tr-chip">ETA {q.etaSec >= 0 ? `~${formatClock(q.etaSec)}` : '??'}</span>
-            <span className="tr-chip tr-chip--ink">🌍 {q.region}</span>
-          </div>
-          <Bar value={q.playersFound / Math.max(1, q.playersNeeded)} label="Players found" />
-        </div>
-        <Button
-          variant="secondary"
-          data-nav-back=""
-          data-autofocus=""
-          hint="Esc"
-          cue="ui.back"
-          onClick={() => uiEvents.emit('cancelQueue')}
-        >
-          Cancel
-        </Button>
-      </div>
-    </div>
-  );
-}
+/** Length of the outgoing tab's fade (keep in sync with `.tr-tab-panel.is-leaving`). */
+const LEAVE_MS = 200;
 
-function TabPanel(): JSX.Element {
+function TabPanel({ matchmaking }: { matchmaking: boolean }): JSX.Element {
   const tab = useUI((s) => s.menuTab);
+  const reduce = useUI((s) => s.settings.accessibility.reduceMotion);
   const prev = useRef<MenuTab>(tab);
-  const dir = MENU_TABS.indexOf(tab) >= MENU_TABS.indexOf(prev.current) ? 'right' : 'left';
-  prev.current = tab;
-  const body = (() => {
-    switch (tab) {
-      case 'play':
-        return <PlayTab />;
-      case 'locker':
-        return <LockerTab />;
-      case 'store':
-        return <StoreTab />;
-      case 'pass':
-        return <PassTab />;
-      case 'challenges':
-        return <ChallengesTab />;
-      case 'profile':
-        return <ProfileTab />;
-      case 'leaderboards':
-        return <LeaderboardsTab />;
-      case 'news':
-        return <NewsTab />;
-    }
-  })();
+  const [leaving, setLeaving] = useState<{ tab: MenuTab; dir: 'left' | 'right' } | null>(null);
+  const dir: 'left' | 'right' = MENU_TABS.indexOf(tab) >= MENU_TABS.indexOf(prev.current) ? 'right' : 'left';
+  if (prev.current !== tab) {
+    const from = prev.current;
+    prev.current = tab;
+    if (!reduce) setLeaving({ tab: from, dir });
+  }
+  useEffect(() => {
+    if (!leaving) return;
+    const id = window.setTimeout(() => setLeaving(null), LEAVE_MS);
+    return () => window.clearTimeout(id);
+  }, [leaving]);
   return (
-    <div key={tab} className={`tr-tab-panel tr-tab-panel--${tab} tr-tab-from-${dir}`}>
-      {body}
+    <div className="tr-tab-stack">
+      {leaving && leaving.tab !== tab && (
+        <div
+          key={leaving.tab}
+          className={`tr-tab-panel tr-tab-panel--${leaving.tab} is-leaving to-${leaving.dir}`}
+          aria-hidden
+          inert
+        >
+          {tabBody(leaving.tab, false)}
+        </div>
+      )}
+      <div
+        key={tab}
+        className={`tr-tab-panel tr-tab-panel--${tab} tr-tab-from-${leaving?.dir ?? dir}`}
+        role="tabpanel"
+        data-testid={`panel-${tab}`}
+      >
+        {tabBody(tab, matchmaking)}
+      </div>
     </div>
   );
 }
@@ -380,22 +298,14 @@ function TabPanel(): JSX.Element {
 export function MainMenu({ matchmaking = false }: { matchmaking?: boolean }): JSX.Element {
   const tab = useUI((s) => s.menuTab);
   return (
-    <div className={`tr-screen tr-menu${matchmaking ? ' is-matchmaking' : ''}`} data-nav-scope="0">
+    <div
+      className={`tr-screen tr-menu tr-menu--${tab}${matchmaking ? ' is-matchmaking' : ''}`}
+      data-nav-scope="0"
+    >
       <TopBar />
-      <TabPanel />
-      {(tab === 'play' || matchmaking) && (
-        <footer className="tr-bottombar">
-          <PartySlots />
-          {matchmaking ? (
-            <MatchmakingCard />
-          ) : (
-            <div className="tr-bottombar-right">
-              <PlaylistPicker disabled={false} />
-              <PlayButton />
-            </div>
-          )}
-        </footer>
-      )}
+      <TabPanel matchmaking={matchmaking} />
+      <CurrencyPanel />
+      <ProfileOverlay />
     </div>
   );
 }

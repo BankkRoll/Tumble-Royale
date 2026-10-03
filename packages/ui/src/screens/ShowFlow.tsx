@@ -199,8 +199,8 @@ export function RoundIntroScreen(): JSX.Element | null {
           <div className="tr-row tr-wrap tr-enter-pop">
             <span className="tr-chip tr-chip--lemon">
               {info.isFinal
-                ? '👑 Last Tumbler wins the Crown'
-                : `✅ ${info.qualifyTarget} of ${info.playerCount} ${info.type === 'survival' ? 'survive' : 'qualify'}`}
+                ? 'Last Tumbler wins the Crown'
+                : `${info.qualifyTarget} of ${info.playerCount} ${info.type === 'survival' ? 'survive' : 'qualify'}`}
             </span>
             <RoundDots index={info.roundIndex} count={info.roundCount} />
           </div>

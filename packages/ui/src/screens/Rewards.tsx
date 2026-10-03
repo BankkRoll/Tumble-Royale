@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { playCue } from '../audio-cues.ts';
-import { Bar, Coin } from '../components/bits.tsx';
+import { Bar, Coin, ItemArt } from '../components/bits.tsx';
 import { Button } from '../components/controls.tsx';
 import { formatNumber } from '../components/hooks.ts';
 import { uiEvents } from '../store/events.ts';
@@ -16,6 +16,7 @@ import { useUI } from '../store/uiStore.ts';
 import type { RewardsSummary } from '../store/types.ts';
 import { confettiSets, rarityLabels } from '../theme/tokens.ts';
 import { fireConfetti } from '../transitions/Confetti.tsx';
+import { Icon } from '../components/icons/index.tsx';
 import { RankEmblem } from './menu/ProfileTab.tsx';
 
 const LINE_GAP = 350;
@@ -220,6 +221,12 @@ export function RewardsScreen(): JSX.Element | null {
             className="tr-panel tr-rewards-level tr-enter"
             style={{ ['--tilt' as string]: '0.8deg', animationDelay: '120ms' }}
           >
+            {inBurst && (
+              // Floats above the panel so the slam never overlaps the badge or the XP bar.
+              <span key={`lvl-${shownLevel}`} className="tr-levelup-ribbon tr-title tr-h3 tr-title--lemon tr-slam" role="status">
+                Level up!
+              </span>
+            )}
             <div className="tr-row">
               <span
                 key={shownLevel}
@@ -229,11 +236,7 @@ export function RewardsScreen(): JSX.Element | null {
                 {shownLevel}
               </span>
               <div className="tr-col tr-grow" style={{ gap: '0.3em' }}>
-                {inBurst ? (
-                  <span className="tr-title tr-h3 tr-title--lemon tr-slam">Level up!</span>
-                ) : (
-                  <span className="tr-label">Level progress</span>
-                )}
+                <span className="tr-label">Level progress</span>
                 <Bar
                   value={inBurst ? 1 : barValue}
                   large
@@ -254,7 +257,7 @@ export function RewardsScreen(): JSX.Element | null {
                 )}
                 {r.pass && (
                   <span className="tr-chip tr-chip--grape">
-                    ⭐ Tier {r.pass.tierFrom + Math.round((r.pass.tierTo - r.pass.tierFrom) * gumP)}
+                    <Icon name="star" size="1em" /> Tier {r.pass.tierFrom + Math.round((r.pass.tierTo - r.pass.tierFrom) * gumP)}
                     {r.pass.tierTo > r.pass.tierFrom ? ` (+${r.pass.tierTo - r.pass.tierFrom})` : ''}
                   </span>
                 )}
@@ -287,7 +290,7 @@ export function RewardsScreen(): JSX.Element | null {
                       {opened ? (
                         <>
                           <span className="tr-capsule-burst" aria-hidden />
-                          <span className="tr-capsule-icon">{u.icon}</span>
+                          <ItemArt item={u} className="tr-capsule-icon" />
                           <b className="tr-ellipsis">{u.name}</b>
                           <span className={`tr-rarity-band tr-rarity-band--${u.rarity}`}>
                             {rarityLabels[u.rarity]}
@@ -336,7 +339,7 @@ export function RewardsScreen(): JSX.Element | null {
           cue="ui.back"
           onClick={() => uiEvents.emit('backToLobby')}
         >
-          🏠 Back to lobby
+          <Icon name="home" size="1.1em" /> Back to lobby
         </Button>
         <Button
           variant="go"
@@ -345,7 +348,7 @@ export function RewardsScreen(): JSX.Element | null {
           cue="ui.confirm"
           onClick={() => uiEvents.emit('playAgain')}
         >
-          🔁 Play again
+          <Icon name="refresh" size="1.1em" /> Play again
         </Button>
       </div>
     </div>

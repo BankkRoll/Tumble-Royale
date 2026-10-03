@@ -67,6 +67,15 @@ describe('cosmetics catalog', () => {
     }
   });
 
+  it('stocks the season pass with varied pass-only items across every slot', () => {
+    const pass = COSMETICS.filter((c) => c.source === 'pass');
+    expect(pass.length).toBeGreaterThanOrEqual(120);
+    for (const slot of CosmeticSlotSchema.options) expect(pass.some((c) => c.slot === slot), slot).toBe(true);
+    expect(pass.some((c) => c.rarity === 'mythic' && c.slot === 'victory')).toBe(true);
+    const names = COSMETICS.map((c) => c.name.toLowerCase());
+    expect(new Set(names).size).toBe(names.length);
+  });
+
   it('uses original names only', () => {
     for (const c of COSMETICS) {
       expect(c.name).not.toMatch(BANNED);

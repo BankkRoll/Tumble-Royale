@@ -9,9 +9,12 @@ export { LockerTab } from './menu/LockerTab.tsx';
 export { StoreTab } from './menu/StoreTab.tsx';
 export { PassTab } from './menu/PassTab.tsx';
 export { ChallengesTab } from './menu/ChallengesTab.tsx';
-export { ProfileTab, RankEmblem } from './menu/ProfileTab.tsx';
+export { ProfileTab, ProfileCard, ProfileOverlay, RankEmblem, RankGem, HistoryList } from './menu/ProfileTab.tsx';
 export { LeaderboardsTab } from './menu/LeaderboardsTab.tsx';
-export { NewsTab } from './menu/NewsTab.tsx';
+export { NewsTab, openNewsPost } from './menu/NewsTab.tsx';
+export { CurrencyPanel } from './menu/CurrencyPanel.tsx';
+export { StartCluster } from './menu/PlayTab.tsx';
+export { LobbyEmotes, type LobbyEmotesProps } from './menu/LobbyEmotes.tsx';
 export {
   MatchFoundScreen,
   PreShowScreen,

@@ -13,6 +13,7 @@ import { useUI } from '../store/uiStore.ts';
 import type { PatternId, TumblerColors } from '../store/types.ts';
 import { shakeNo, squash } from '../theme/motion.ts';
 import { tumblerSwatches } from '../theme/tokens.ts';
+import { Icon } from '../components/icons/index.tsx';
 import { fireConfetti } from '../transitions/Confetti.tsx';
 
 const BOOT_LINES = [
@@ -213,7 +214,7 @@ export function WelcomeScreen(): JSX.Element {
                 <Button
                   variant="secondary"
                   aria-label="Random name"
-                  icon={<span>🎲</span>}
+                  icon={<Icon name="dice" size="1.4em" />}
                   onClick={() => setName(randomTumblerName())}
                 />
               </span>
@@ -277,7 +278,7 @@ export function TutorialPromptScreen(): JSX.Element {
           size="9em"
         />
         <span className="tr-tutorial-whistle" aria-hidden>
-          📣
+          <Icon name="megaphone" size="1.6em" />
         </span>
       </div>
       <Panel enter="drop" tilt={-1.5} className="tr-tutorial-card tr-col">

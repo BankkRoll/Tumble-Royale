@@ -9,9 +9,11 @@ import type {
   CosmeticSlot,
   CustomLobbyOptions,
   LeaderboardId,
+  LeaderboardScope,
   MenuTab,
   NavDirection,
   OverlayId,
+  PlayMode,
   PatternId,
   PlayerWallEvent,
   ScreenId,
@@ -32,7 +34,14 @@ export interface UIIntents {
   menuTab: { tab: MenuTab };
   overlay: { overlay: OverlayId };
   selectPlaylist: { playlistId: string };
-  play: { playlistId: string };
+  /** Start a show. `mode` defaults to online when reachable, else offline vs bots. */
+  play: { playlistId: string; mode?: PlayMode };
+  /** Play tab mode switch (online matchmaking vs offline with bots). */
+  playMode: { mode: PlayMode };
+  /** Re-probe the game servers from the "server offline" state. */
+  retryOnline: undefined;
+  /** Host an offline custom show vs bots with the picked rounds. */
+  playCustomOffline: { options: CustomLobbyOptions };
   cancelQueue: undefined;
   ready: { ready: boolean };
   /** Preview an item on the 3D Tumbler (`itemId` null = clear). */
@@ -42,11 +51,25 @@ export interface UIIntents {
   customizeColors: { colors: TumblerColors };
   randomizeOutfit: undefined;
   purchase: { offerId: string };
+  /** Buy a Gem pack (`StoreData.gemPacks`). */
+  buyGems: { packId: string };
+  /** Try on several items at once (bundles); an empty list restores the equipped look. */
+  tryOnBundle: { items: { slot: CosmeticSlot; itemId: string }[] };
+  /** Store/Locker opened (true) or closed: the 3D lobby frames the Tumbler in the dressing-room stage area. */
+  dressingRoom: { active: boolean };
+  /** Turntable input on the dressing-room stage: yaw drag (radians) and zoom steps (+ = closer). */
+  turntable: { rotate: number; zoom: number };
+  /** Cards want rendered thumbnails for these item ids (batched, deduplicated). */
+  needThumbnails: { ids: string[] };
   claimPassTier: { tier: number; track: 'free' | 'premium' };
   buyPremiumPass: undefined;
   rerollChallenge: { id: string };
   claimChallenge: { id: string };
-  leaderboardQuery: { board: LeaderboardId };
+  leaderboardQuery: { board: LeaderboardId; scope?: LeaderboardScope };
+  /** Open another player's profile card (ranks, results, friends). */
+  inspectPlayer: { playerId: string; name?: string };
+  /** News posts the player has opened (clears unread badges). */
+  newsRead: { ids: string[] };
   requestMatchHistory: undefined;
   settingsChange: { settings: Settings; section: SettingsSection };
   accountAction: {

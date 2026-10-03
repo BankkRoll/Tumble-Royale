@@ -12,6 +12,8 @@ import './theme/base.css';
 import './theme/screens.css';
 import './theme/hud.css';
 import './theme/wall.css';
+import './theme/lobby.css';
+import './theme/menu.css';
 
 /** Options for `mountUI`. */
 export interface MountOptions {

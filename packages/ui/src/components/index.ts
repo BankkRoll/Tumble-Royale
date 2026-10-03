@@ -22,6 +22,7 @@ export {
   CurrencyPill,
   Price,
   ItemCard,
+  ItemArt,
   RoundDots,
   Logo,
   CountUp,

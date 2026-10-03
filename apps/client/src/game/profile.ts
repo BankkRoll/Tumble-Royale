@@ -23,6 +23,7 @@ import {
   SEASON_PASS,
   computeShowRewards,
   levelForXp,
+  SHARDS_PER_CROWN,
   passTierForXp,
   pickChallenges,
   type ChallengeDef,
@@ -89,7 +90,13 @@ interface SavedProfile {
     bestStreak: number;
     streak: number;
     roundCounts: Record<string, number>;
+    /** Added later: rounds entered, gameplay totals, per-round records. Optional for old saves. */
+    roundsPlayed?: number;
+    totals?: { jumps: number; dives: number; grabs: number; emotes: number };
+    perRound?: Record<string, { type: RoundType; played: number; qualified: number; bestTime?: number }>;
   };
+  /** Tumblers met in shows on this device (the offline Hall of Fame), by name. */
+  opponents?: Record<string, OpponentRecord>;
   history: MatchHistoryEntry[];
   tutorialAnswered: boolean;
   lastShowDay: string;
@@ -100,9 +107,22 @@ interface SavedProfile {
 }
 
 /** One finished show, as the runner saw it from the local player's seat. */
+/** A Tumbler the local player has shared a show with. */
+export interface OpponentRecord {
+  colors: TumblerColors;
+  isBot: boolean;
+  faced: number;
+  crowns: number;
+  /** Best final placement (1 = Crown). */
+  best: number;
+  lastSeen: number;
+}
+
 export interface ShowResultForProfile {
   playlistName: string;
-  rounds: { name: string; type: RoundType; qualified: boolean }[];
+  rounds: MatchHistoryEntry['rounds'];
+  /** Everyone else in the show (offline Hall of Fame). */
+  field?: { name: string; colors: TumblerColors; isBot: boolean; place: number; crowned: boolean }[];
   reachedFinal: boolean;
   wonCrown: boolean;
   place: number;
@@ -113,6 +133,22 @@ export interface ShowResultForProfile {
 }
 
 const LOADOUT_SLOTS = 6;
+
+const RARITY_RANK = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+
+/**
+ * Profile banner and nameplate styling from a loadout's equipped cosmetics.
+ *
+ * @param l - UI loadout.
+ */
+export function profileDressing(l: UiLoadout): Pick<ProfileData, 'banner' | 'nameplate'> {
+  const out: Pick<ProfileData, 'banner' | 'nameplate'> = {};
+  const banner = l.items.banner ? getCosmetic(l.items.banner) : getCosmetic('banner.confetti');
+  if (banner?.slot === 'banner') out.banner = { name: banner.name, motif: banner.banner.motif, colors: [...banner.banner.colors] };
+  const plate = getCosmetic(l.items.nameplate ?? DEFAULT_LOADOUT.nameplate);
+  if (plate?.slot === 'nameplate') out.nameplate = { name: plate.name, ...plate.plate };
+  return out;
+}
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -143,6 +179,49 @@ function randomId(): string {
   } catch {
     return `local-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e9).toString(36)}`;
   }
+}
+
+/**
+ * Puts one locker item into a loadout (emotes go to the front of the wheel).
+ *
+ * @param l - Loadout to change (not mutated).
+ * @param slot - UI slot.
+ * @param itemId - Cosmetic id.
+ * @returns The new loadout.
+ */
+export function loadoutWithItem(l: UiLoadout, slot: UiSlot, itemId: string): UiLoadout {
+  if (slot === 'emote') return { ...l, emotes: [itemId, ...l.emotes.filter((e) => e !== itemId)].slice(0, 4) };
+  if (slot === 'colors') {
+    const c = getCosmetic(itemId);
+    if (c && c.slot === 'color') return { ...l, colors: { ...l.colors, primary: c.colors[0], secondary: c.colors[1], tertiary: c.colors[2] } };
+    return l;
+  }
+  if (slot === 'pattern') return { ...l, colors: { ...l.colors, pattern: contentPatternToUi(itemId) } };
+  return { ...l, items: { ...l.items, [slot]: itemId } };
+}
+
+/**
+ * A random outfit built only from items the player owns.
+ *
+ * @param l - Current loadout (kept where nothing owned fits).
+ * @param owns - Ownership check.
+ * @param seed - Random seed.
+ */
+export function randomizedLoadout(l: UiLoadout, owns: (id: string) => boolean, seed: number): UiLoadout {
+  const rnd = randomLoadout(new Rng(seed >>> 0));
+  const pickOwned = (id: string | null): string | undefined => (id && owns(id) ? id : undefined);
+  return {
+    ...l,
+    colors: { primary: rnd.colors[0], secondary: rnd.colors[1], tertiary: rnd.colors[2], pattern: owns(rnd.pattern) ? contentPatternToUi(rnd.pattern) : l.colors.pattern },
+    items: {
+      ...l.items,
+      face: pickOwned(rnd.face) ?? l.items.face,
+      headwear: pickOwned(rnd.headwear),
+      back: pickOwned(rnd.back),
+      upper: pickOwned(rnd.upper),
+      lower: pickOwned(rnd.lower),
+    },
+  };
 }
 
 /** Default colours for a brand new Tumbler (overwritten by the welcome screen). */
@@ -279,15 +358,13 @@ export class ProfileStore {
     return uiLoadoutToTumbler(this.withItem(this.loadout, slot, itemId));
   }
 
+  /** Previews several items at once (bundles) without saving. */
+  tryOnMany(items: readonly { slot: UiSlot; itemId: string }[]): TumblerLoadout {
+    return uiLoadoutToTumbler(items.reduce((l, it) => loadoutWithItem(l, it.slot, it.itemId), this.loadout));
+  }
+
   private withItem(l: UiLoadout, slot: UiSlot, itemId: string): UiLoadout {
-    if (slot === 'emote') return { ...l, emotes: [itemId, ...l.emotes.filter((e) => e !== itemId)].slice(0, 4) };
-    if (slot === 'colors') {
-      const c = getCosmetic(itemId);
-      if (c && c.slot === 'color') return { ...l, colors: { ...l.colors, primary: c.colors[0], secondary: c.colors[1], tertiary: c.colors[2] } };
-      return l;
-    }
-    if (slot === 'pattern') return { ...l, colors: { ...l.colors, pattern: contentPatternToUi(itemId) } };
-    return { ...l, items: { ...l.items, [slot]: itemId } };
+    return loadoutWithItem(l, slot, itemId);
   }
 
   /**
@@ -323,21 +400,7 @@ export class ProfileStore {
   randomize(): void {
     const d = this.data;
     if (!d) return;
-    const rnd = randomLoadout(new Rng((Date.now() ^ hashString(d.id)) >>> 0));
-    const pickOwned = (id: string | null): string | undefined => (id && this.owns(id) ? id : undefined);
-    const l = this.loadout;
-    d.loadouts[d.activeLoadout] = {
-      ...l,
-      colors: { primary: rnd.colors[0], secondary: rnd.colors[1], tertiary: rnd.colors[2], pattern: contentPatternToUi(rnd.pattern) },
-      items: {
-        ...l.items,
-        face: pickOwned(rnd.face) ?? l.items.face,
-        headwear: pickOwned(rnd.headwear),
-        back: pickOwned(rnd.back),
-        upper: pickOwned(rnd.upper),
-        lower: pickOwned(rnd.lower),
-      },
-    };
+    d.loadouts[d.activeLoadout] = randomizedLoadout(this.loadout, (id) => this.owns(id), (Date.now() ^ hashString(d.id)) >>> 0);
     this.save();
   }
 
@@ -378,12 +441,32 @@ export class ProfileStore {
         roundsQualified: d?.stats.roundsQualified ?? 0,
         bestStreak: d?.stats.bestStreak ?? 0,
         ...(favourite ? { favouriteRound: favourite } : {}),
+        wins: d?.crowns ?? 0,
+        roundsPlayed: d?.stats.roundsPlayed ?? (d ? d.history.reduce((n, h) => n + h.rounds.length, 0) : 0),
+        ...(d?.stats.totals ? { totals: d.stats.totals } : {}),
+        bestTimes: Object.entries(d?.stats.perRound ?? {})
+          .filter(([, v]) => v.bestTime !== undefined)
+          .map(([round, v]) => ({ round, timeSec: v.bestTime as number }))
+          .sort((a, b) => a.timeSec - b.timeSec),
+        rounds: Object.entries(d?.stats.perRound ?? {})
+          .map(([name, v]) => ({ name, type: v.type, played: v.played, qualified: v.qualified }))
+          .sort((a, b) => b.played - a.played),
+        recentForm: (d?.history ?? []).slice(0, 10).map((h) => h.result),
       },
       showcase: COSMETICS.filter((c) => owned.has(c.id))
-        .slice(-3)
+        .sort((a, b) => RARITY_RANK.indexOf(b.rarity) - RARITY_RANK.indexOf(a.rarity))
+        .slice(0, 3)
         .map((c) => uiItem(c, true)),
       linkedProviders: [],
+      crownShards: d?.crownShards ?? 0,
+      shardsPerCrown: SHARDS_PER_CROWN,
+      ...profileDressing(this.loadout),
     };
+  }
+
+  /** Opponents met on this device, for the offline Hall of Fame. */
+  opponents(): Readonly<Record<string, OpponentRecord>> {
+    return this.data?.opponents ?? {};
   }
 
   /** Locker contents. */
@@ -549,6 +632,8 @@ export class ProfileStore {
         cadence: def.cadence,
         title: def.description.replace('{n}', String(def.target)),
         icon: icon[def.metric] ?? '⭐',
+        metric: def.metric,
+        ...(def.rewardGumballs > 0 && def.rewardXp > 0 ? { bonus: { kind: 'xp' as const, amount: def.rewardXp } } : {}),
         progress: Math.min(def.target, counters.counts[def.metric] ?? 0),
         goal: def.target,
         reward: def.rewardGumballs > 0 ? { kind: 'gumballs' as const, amount: def.rewardGumballs } : { kind: 'xp' as const, amount: def.rewardXp },
@@ -627,6 +712,38 @@ export class ProfileStore {
     p.stats.streak = r.wonCrown ? p.stats.streak + 1 : 0;
     p.stats.bestStreak = Math.max(p.stats.bestStreak, p.stats.streak);
     for (const x of r.rounds) p.stats.roundCounts[x.name] = (p.stats.roundCounts[x.name] ?? 0) + 1;
+    p.stats.roundsPlayed = (p.stats.roundsPlayed ?? p.history.reduce((n, h) => n + h.rounds.length, 0)) + r.rounds.length;
+    const totals = (p.stats.totals ??= { jumps: 0, dives: 0, grabs: 0, emotes: 0 });
+    totals.jumps += r.counters.jumps ?? 0;
+    totals.dives += r.counters.dives ?? 0;
+    totals.grabs += r.counters.grabs ?? 0;
+    totals.emotes += r.counters.emotes ?? 0;
+    const perRound = (p.stats.perRound ??= {});
+    for (const x of r.rounds) {
+      const rec = (perRound[x.name] ??= { type: x.type, played: 0, qualified: 0 });
+      rec.played++;
+      if (x.qualified) rec.qualified++;
+      if (x.timeSec !== undefined && (rec.bestTime === undefined || x.timeSec < rec.bestTime)) rec.bestTime = x.timeSec;
+    }
+    if (r.field) {
+      const opp = (p.opponents ??= {});
+      for (const o of r.field) {
+        const rec = (opp[o.name] ??= { colors: o.colors, isBot: o.isBot, faced: 0, crowns: 0, best: o.place, lastSeen: 0 });
+        rec.faced++;
+        rec.colors = o.colors;
+        if (o.crowned) rec.crowns++;
+        rec.best = Math.min(rec.best, o.place);
+        rec.lastSeen = Date.now();
+      }
+      // Keep the Hall of Fame bounded: drop the least notable, least recent names.
+      const names = Object.keys(opp);
+      if (names.length > 300) {
+        names
+          .sort((a, b) => opp[a]!.crowns - opp[b]!.crowns || opp[a]!.faced - opp[b]!.faced || opp[a]!.lastSeen - opp[b]!.lastSeen)
+          .slice(0, names.length - 300)
+          .forEach((n) => delete opp[n]);
+      }
+    }
 
     const counters: Partial<Record<ChallengeMetric, number>> = {
       ...r.counters,
@@ -665,6 +782,9 @@ export class ProfileStore {
       rounds: r.rounds,
       result: r.wonCrown ? 'crown' : r.reachedFinal ? 'final' : 'eliminated',
       xp: breakdown.xp,
+      place: r.place,
+      participants: r.participants,
+      gumballs: breakdown.gumballs,
     });
     p.history.length = Math.min(p.history.length, 20);
     this.save();

@@ -3,6 +3,7 @@
  * plus helpers to push meta data into the UI store and reset transient state.
  */
 import { ui, type ShowSummary } from '@tumble/ui';
+import { uiNews } from '../game/meta.ts';
 import {
   NEWS,
   NOTIFICATIONS,
@@ -45,6 +46,11 @@ export function seedMeta(): void {
   s.setLeaderboard('crowns', makeLeaderboard(21, 1));
   s.setLeaderboard('ranked', makeLeaderboard(22, 4));
   s.setLeaderboard('weekly', makeLeaderboard(23, 0.2));
+  s.setLeaderboard('crowns_all_time', makeLeaderboard(25, 3));
+  s.setLeaderboard('win_streak', makeLeaderboard(26, 0.05));
+  for (const b of ['crowns', 'ranked', 'weekly', 'crowns_all_time', 'win_streak'] as const) ui.setState((st) => ({ leaderboardInfo: { ...st.leaderboardInfo, [b]: { scope: 'global', source: 'api', updatedAt: Date.now() } } }));
+  s.setOnlineStatus({ state: 'online', playersOnline: 1284 });
+  ui.setState({ playMode: 'online' });
   s.setLeaderboard(
     'friends',
     makeLeaderboard(24, 0.1)
@@ -56,7 +62,9 @@ export function seedMeta(): void {
       ),
   );
   s.setMatchHistory(makeHistory());
-  s.setNews(NEWS);
+  // The real feed from @tumble/content/news (falls back to the mock list if it is empty).
+  const news = uiNews();
+  s.setNews(news.length > 0 ? news : NEWS);
   s.setFriends(makeFriends());
   s.setParty(makeParty(world.players));
   s.setPlaylists(PLAYLISTS, 'main');

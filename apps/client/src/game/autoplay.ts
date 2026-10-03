@@ -41,7 +41,10 @@ export function installAutoplay(shows = 1): () => void {
           later(2600, () => {
             if (ui.getState().screen !== 'menu') return;
             played++;
-            uiEvents.emit('play', { playlistId: ui.getState().selectedPlaylist });
+            const st = ui.getState();
+            // Same path as a player pressing PLAY on the Play tab's start card.
+            const mode = st.playMode === 'online' && st.onlineStatus.state === 'online' ? 'online' : 'offline';
+            uiEvents.emit('play', { playlistId: st.selectedPlaylist, mode });
           });
         }
         break;

@@ -13,6 +13,7 @@
  */
 export { mountUI, type MountOptions, type UIHandle } from './mount.tsx';
 export { App } from './App.tsx';
+export { openNewsPost } from './screens/menu/NewsTab.tsx';
 export * from './store/index.ts';
 export {
   setAudioHooks,

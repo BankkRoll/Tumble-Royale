@@ -15,6 +15,8 @@ export interface GameConfig {
   debug: boolean;
   /** `?autoplay=1`: a bot brain drives the local Tumbler and the UI auto-advances. */
   autoplay: boolean;
+  /** `?shows=N` with autoplay: how many shows to start from the menu (0 = stop at the menu). */
+  autoShows: number;
   /** `?ts=N`: global time scale (sim, director, flow timers). */
   timeScale: number;
   /** `?online=1`: play against the local game server instead of offline bots. */
@@ -33,6 +35,10 @@ export interface GameConfig {
   playlist: string | null;
   /** Account API base URL (`?apiUrl=`). */
   apiUrl: string;
+  /** Matchmaker base URL (`?mmUrl=`). */
+  mmUrl: string;
+  /** `?mm=0` never matchmakes (Play always runs an offline show unless `?online=1`). */
+  matchmaking: boolean;
 }
 
 const TIERS: readonly QualityTier[] = ['low', 'medium', 'high', 'ultra'];
@@ -61,6 +67,7 @@ export function readConfig(search: string = location.search): GameConfig {
     backend: backend === 'webgpu' || backend === 'webgl' ? backend : 'auto',
     debug: p.get('debug') === '1',
     autoplay: p.get('autoplay') === '1',
+    autoShows: Math.max(0, num(p.get('shows')) ?? 1),
     timeScale: ts !== null && ts > 0 ? Math.min(ts, 16) : 1,
     online: p.get('online') === '1',
     seed: num(p.get('seed')),
@@ -70,5 +77,7 @@ export function readConfig(search: string = location.search): GameConfig {
     players: num(p.get('players')),
     playlist: p.get('playlist'),
     apiUrl: p.get('apiUrl') ?? 'http://localhost:7360',
+    mmUrl: p.get('mmUrl') ?? 'http://localhost:7370',
+    matchmaking: p.get('mm') !== '0',
   };
 }

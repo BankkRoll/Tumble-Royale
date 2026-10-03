@@ -10,15 +10,16 @@ import { BIND_ACTION_LABELS, DEFAULT_KEYBINDS } from '../../store/defaults.ts';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { BindAction, Keybinds, SettingsSection } from '../../store/types.ts';
+import { Icon, type IconName } from '../../components/icons/index.tsx';
 import { semanticColors } from '../../theme/tokens.ts';
 
-const SECTIONS: { id: SettingsSection; label: string; icon: string }[] = [
-  { id: 'graphics', label: 'Graphics', icon: '🖥️' },
-  { id: 'controls', label: 'Controls', icon: '🎮' },
-  { id: 'audio', label: 'Audio', icon: '🔊' },
-  { id: 'accessibility', label: 'Accessibility', icon: '♿' },
-  { id: 'gameplay', label: 'Gameplay', icon: '🎪' },
-  { id: 'account', label: 'Account', icon: '👤' },
+const SECTIONS: { id: SettingsSection; label: string; icon: IconName }[] = [
+  { id: 'graphics', label: 'Graphics', icon: 'monitor' },
+  { id: 'controls', label: 'Controls', icon: 'gamepad' },
+  { id: 'audio', label: 'Audio', icon: 'speaker' },
+  { id: 'accessibility', label: 'Accessibility', icon: 'access' },
+  { id: 'gameplay', label: 'Gameplay', icon: 'ticket' },
+  { id: 'account', label: 'Account', icon: 'profile' },
 ];
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }): JSX.Element {
@@ -483,7 +484,7 @@ function Section({ id }: { id: SettingsSection }): JSX.Element {
                     disabled={linked}
                     onClick={() => uiEvents.emit('accountAction', { action: `link-${p}` })}
                   >
-                    {linked ? '✓ ' : ''}
+                    {linked ? <Icon name="check" size="0.9em" /> : null}
                     {p === 'discord' ? 'Discord' : p === 'google' ? 'Google' : 'Email'}
                   </Button>
                 );
@@ -558,7 +559,7 @@ export function SettingsSheet(): JSX.Element {
               ui.getState().setOverlay('none');
             }}
           >
-            ✕
+            <Icon name="close" size="1em" />
           </button>
         </div>
         <div className="tr-settings-tabs" role="tablist" data-nav-tabs="">
@@ -576,7 +577,7 @@ export function SettingsSheet(): JSX.Element {
                 setSection(sec.id);
               }}
             >
-              <span aria-hidden>{sec.icon}</span> <span className="tr-settings-tab-label">{sec.label}</span>
+              <Icon name={sec.icon} size="1.3em" /> <span className="tr-settings-tab-label">{sec.label}</span>
             </button>
           ))}
         </div>

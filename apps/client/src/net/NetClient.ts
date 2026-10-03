@@ -85,6 +85,8 @@ export interface NetClientOptions {
   name: string;
   /** Opaque cosmetic loadout forwarded to other players. */
   loadout?: string;
+  /** Matchmaker join ticket (matchmade shows); omitted for unticketed dev rooms. */
+  ticket?: string;
   /** Impairment per direction; defaults to parsing `location.search` (`lag`, `jitter`, `loss`, `dup`, `reorder`). */
   conditioner?: ConditionerOptions | null;
   /** Monotonic clock in ms. */
@@ -168,6 +170,7 @@ export class NetClient extends TypedEmitter<NetClientEvents> {
       url: opts.url ?? defaultServerUrl(),
       name: opts.name,
       loadout: opts.loadout ?? '',
+      ticket: opts.ticket ?? '',
       conditioner: opts.conditioner !== undefined ? opts.conditioner : typeof location !== 'undefined' ? conditionerFromParams(new URLSearchParams(location.search)) : null,
       now,
       createSocket: opts.createSocket ?? ((url) => new WebSocket(url) as unknown as WebSocketLike),
@@ -311,7 +314,7 @@ export class NetClient extends TypedEmitter<NetClientEvents> {
   private sendHello(): void {
     this.lastHelloAt = this.opts.now();
     const w = this.w.reset();
-    writeHello(w, { version: PROTOCOL_VERSION, name: this.opts.name, resumeToken: this.resumeToken, loadout: this.opts.loadout });
+    writeHello(w, { version: PROTOCOL_VERSION, name: this.opts.name, resumeToken: this.resumeToken, loadout: this.opts.loadout, ticket: this.opts.ticket });
     this.send(w.finish());
   }
 

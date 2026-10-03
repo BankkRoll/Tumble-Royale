@@ -26,15 +26,19 @@ import type {
   Friend,
   HudState,
   InventoryData,
+  CosmeticSlot,
   LeaderboardId,
+  LeaderboardInfo,
   LeaderboardRow,
   MatchHistoryEntry,
   MenuTab,
   NavDirection,
   NewsItem,
   NotificationItem,
+  OnlineStatus,
   OverlayId,
   PartyState,
+  PlayMode,
   PlayerWallOptions,
   Playlist,
   PreShowInfo,
@@ -113,6 +117,20 @@ export interface UIState {
   localReady: boolean;
   customLobby: CustomLobbyState | null;
   roundCatalog: RoundCatalogEntry[];
+  /** Rendered cosmetic thumbnails (data/blob URLs) by item id; cards fall back to the emoji icon. */
+  thumbnails: Record<string, string>;
+  /** Top-bar currency popover. */
+  currencyPanel: 'none' | 'gumballs' | 'gems';
+  /** Play tab start mode. */
+  playMode: PlayMode;
+  /** Online play reachability (drives the Play Online card). */
+  onlineStatus: OnlineStatus;
+  /** Where each leaderboard's rows came from. */
+  leaderboardInfo: Partial<Record<LeaderboardId, LeaderboardInfo>>;
+  /** Another player's profile card being viewed (null = closed). */
+  inspectedProfile: ProfileData | null;
+  /** Slot the Locker should open on (set by deep links such as Profile → banner). */
+  lockerSlot: CosmeticSlot | null;
 
   // --- show ----------------------------------------------------------------
   queue: QueueState;
@@ -172,7 +190,7 @@ export interface UIState {
   setStoreData: (store: StoreData | null) => void;
   setPass: (pass: SeasonPassData | null) => void;
   setChallenges: (challenges: ChallengesData | null) => void;
-  setLeaderboard: (board: LeaderboardId, rows: LeaderboardRow[]) => void;
+  setLeaderboard: (board: LeaderboardId, rows: LeaderboardRow[], info?: LeaderboardInfo) => void;
   setMatchHistory: (entries: MatchHistoryEntry[]) => void;
   setNews: (news: NewsItem[]) => void;
   setFriends: (friends: Friend[]) => void;
@@ -182,6 +200,15 @@ export interface UIState {
   setLocalReady: (ready: boolean) => void;
   setCustomLobby: (lobby: CustomLobbyState | null) => void;
   setRoundCatalog: (rounds: RoundCatalogEntry[]) => void;
+  /** Adds rendered thumbnails (merged into `thumbnails`). */
+  setThumbnails: (thumbs: Record<string, string>) => void;
+  setCurrencyPanel: (panel: 'none' | 'gumballs' | 'gems') => void;
+  /** Switches the Play tab mode and emits `playMode`. */
+  setPlayMode: (mode: PlayMode) => void;
+  setOnlineStatus: (status: OnlineStatus) => void;
+  setInspectedProfile: (profile: ProfileData | null) => void;
+  /** Opens the Locker tab on a slot. */
+  openLocker: (slot: CosmeticSlot | null) => void;
 
   // --- actions: show -------------------------------------------------------
   setQueue: (queue: Partial<QueueState>) => void;
@@ -264,6 +291,13 @@ export const ui = createStore<UIState>()((set, get) => ({
   localReady: false,
   customLobby: null,
   roundCatalog: [],
+  thumbnails: {},
+  currencyPanel: 'none',
+  playMode: 'offline',
+  onlineStatus: { state: 'checking' },
+  leaderboardInfo: {},
+  inspectedProfile: null,
+  lockerSlot: null,
 
   queue: { status: 'idle', startedAt: 0, playersFound: 0, playersNeeded: 40, etaSec: -1, region: 'auto' },
   preShow: null,
@@ -376,7 +410,11 @@ export const ui = createStore<UIState>()((set, get) => ({
   setStoreData: (store) => set({ store }),
   setPass: (pass) => set({ pass }),
   setChallenges: (challenges) => set({ challenges }),
-  setLeaderboard: (board, rows) => set({ leaderboards: { ...get().leaderboards, [board]: rows } }),
+  setLeaderboard: (board, rows, info) =>
+    set({
+      leaderboards: { ...get().leaderboards, [board]: rows },
+      ...(info ? { leaderboardInfo: { ...get().leaderboardInfo, [board]: info } } : {}),
+    }),
   setMatchHistory: (matchHistory) => set({ matchHistory }),
   setNews: (news) => set({ news }),
   setFriends: (friends) => set({ friends }),
@@ -390,6 +428,19 @@ export const ui = createStore<UIState>()((set, get) => ({
   setLocalReady: (localReady) => set({ localReady }),
   setCustomLobby: (customLobby) => set({ customLobby }),
   setRoundCatalog: (roundCatalog) => set({ roundCatalog }),
+  setThumbnails: (thumbs) => set({ thumbnails: { ...get().thumbnails, ...thumbs } }),
+  setCurrencyPanel: (currencyPanel) => set({ currencyPanel }),
+  setPlayMode: (playMode) => {
+    if (get().playMode === playMode) return;
+    set({ playMode });
+    uiEvents.emit('playMode', { mode: playMode });
+  },
+  setOnlineStatus: (onlineStatus) => set({ onlineStatus }),
+  setInspectedProfile: (inspectedProfile) => set({ inspectedProfile }),
+  openLocker: (lockerSlot) => {
+    set({ lockerSlot });
+    get().setMenuTab('locker');
+  },
 
   setQueue: (queue) => set({ queue: { ...get().queue, ...queue } }),
   setPreShow: (preShow) => set({ preShow }),

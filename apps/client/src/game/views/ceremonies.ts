@@ -4,9 +4,7 @@
  *
  * The wall is the interesting one: the UI owns the authoritative wall
  * timeline (`playerWallTimeline`) and emits each beat as a `playerWallEvent`;
- * the 3D wall has its own internal choreography. {@link WallView} time-warps
- * the 3D recap so its round banners, crown drop and finale land on the UI's
- * beats (piecewise-linear map between the two schedules).
+ * {@link WallView} plays each beat on the 3D wall as it arrives.
  */
 import type { ThemeDefinition } from '@tumble/content/themes';
 import type { PostPipeline } from '@tumble/render/post';
@@ -26,8 +24,14 @@ import {
   type TumblerLoadout,
   type VictoryPodium,
 } from '@tumble/render/scenes';
-import { playerWallTimeline, type PlayerWallEvent, type ShowSummary as UiShowSummary } from '@tumble/ui';
+import type { PlayerWallEvent } from '@tumble/ui';
+import { Vector3 } from 'three/webgpu';
+import type { GameAudio } from '@tumble/audio';
+import type { Rapier } from '@tumble/sim';
+import { CharacterState } from '@tumble/sim/character';
+import type { InputSystem } from '../../input/index.ts';
 import { sceneOptions, wrapScene } from './common.ts';
+import { IdlePlay } from './idlePlay.ts';
 import type { GameView } from './types.ts';
 
 /** Post effects the ceremony scenes may trigger (accessibility-filtered by the app). */
@@ -57,14 +61,69 @@ export function createPreShowView(
   createTumbler: CreateTumblerVisual,
   players: readonly ArenaPlayer[],
   localId: string | undefined,
+  control?: PreShowControl,
 ): PreShowView {
+  const local = localId !== undefined ? players.find((p) => p.id === localId) : undefined;
+  const drive = !!control && !!local;
   const arena = createPreShowArena({
     ...sceneOptions(theme, preset, createTumbler),
     players,
-    ...(localId !== undefined ? { localPlayerId: localId } : {}),
+    ...(localId !== undefined ? { localPlayerId: localId, driveLocal: drive } : {}),
     seed: players.length * 31 + 7,
   });
-  return Object.assign(wrapScene('preShow', arena), { arena });
+  if (!drive || !control || !local) return Object.assign(wrapScene('preShow', arena), { arena });
+
+  // The local Tumbler runs, jumps and emotes among the crowd with real physics; the camera follows it.
+  const holder = arena.getActorObject(local.id);
+  const anim = arena.getActorAnim(local.id);
+  const start = holder ? { x: holder.position.x, z: holder.position.z } : { x: 0, z: 0 };
+  const idle = new IdlePlay(control.R, arena.platformRadius + 0.6, control.input, control.audio, start);
+  const camDir = new Vector3();
+  const camPos = new Vector3();
+  const look = new Vector3();
+  let camInit = false;
+  let t = 0;
+  const view = wrapScene('preShow', arena, {
+    update(_dt, realDt) {
+      t += realDt;
+      const cam = arena.camera;
+      cam.getWorldDirection(camDir);
+      idle.yaw = Math.atan2(camDir.x, camDir.z);
+      idle.advance(realDt);
+      const { feet, vel } = idle.sample();
+      holder?.position.set(feet.x, feet.y, feet.z);
+      const c = idle.ctrl;
+      if (anim) {
+        anim.state = c.state;
+        anim.stateTime = c.stateTime;
+        anim.speed = Math.hypot(vel.x, vel.z);
+        anim.verticalSpeed = vel.y;
+        anim.facing = c.facing;
+        anim.grounded = c.grounded;
+        anim.emote = c.state === CharacterState.Emote && c.emote > 0 ? (local.loadout.emotes[c.emote - 1] ?? null) : null;
+      }
+      // Slow orbit like the arena's crane, but centred on the player and close enough to see them.
+      const a = t * 0.05 + 0.6;
+      const target = look.set(feet.x, feet.y + 1, feet.z);
+      const want = camDir.set(feet.x + Math.sin(a) * 13, feet.y + 7.5, feet.z + Math.cos(a) * 13);
+      if (!camInit) {
+        camPos.copy(want);
+        camInit = true;
+      }
+      camPos.lerp(want, 1 - Math.exp(-realDt * 3));
+      cam.position.copy(camPos);
+      cam.lookAt(target);
+    },
+    dispose: () => idle.dispose(),
+  });
+  return Object.assign(view, { arena });
+}
+
+/** What the pre-show needs to let the local player move. */
+export interface PreShowControl {
+  R: Rapier;
+  input: InputSystem;
+  audio: GameAudio | null;
 }
 
 // -----------------------------------------------------------------------------
@@ -138,63 +197,15 @@ export function createPodiumView(
 // Player wall
 // -----------------------------------------------------------------------------
 
-/** 3D recap timings (mirrors `createPlayerWallScene`'s internal schedule). */
-const W3 = {
-  intro: 2.6,
-  banner: 1.3,
-  emptyRound: 0.8,
-  flash: 1.4,
-  firstGap: 0.42,
-  gapDecay: 0.78,
-  minGap: 0.07,
-  afterDrops: 1.6,
-  roundTail: 0.4,
-  sweepWinner: 1.2,
-  sweepNoWinner: 0.4,
-  focusToCrown: 1.2,
-  crownToReveal: 1.7,
-  revealToEnd: 3.2 + 2.5,
-} as const;
-
-/** Anchor beats of the 3D schedule (seconds). */
-function wall3dAnchors(summary: PlayerWallSummary): { rounds: number[]; focus: number; crown: number; reveal: number; end: number } {
-  const known = new Set(summary.players.map((p) => p.id));
-  const rounds: number[] = [];
-  let at = W3.intro;
-  for (const r of summary.rounds) {
-    rounds.push(at);
-    at += W3.banner;
-    const victims = r.eliminatedIds.filter((id) => known.has(id) && id !== summary.winnerId);
-    if (victims.length === 0) {
-      at += W3.emptyRound;
-      continue;
-    }
-    at += W3.flash;
-    let gap: number = W3.firstGap;
-    for (let i = 0; i < victims.length; i++) {
-      at += gap;
-      gap = Math.max(W3.minGap, gap * W3.gapDecay);
-    }
-    at += W3.afterDrops + W3.roundTail;
-  }
-  const hasWinner = summary.winnerId !== null && known.has(summary.winnerId);
-  at += hasWinner ? W3.sweepWinner : W3.sweepNoWinner;
-  const focus = at;
-  const crown = focus + W3.focusToCrown;
-  const reveal = crown + W3.crownToReveal;
-  const end = hasWinner ? reveal + W3.revealToEnd : at;
-  return { rounds, focus, crown, reveal, end };
-}
-
-/** Player wall view synced to the UI wall timeline. */
+/**
+ * Player wall view: the 3D wall plays each beat of the UI's wall timeline
+ * (`playerWallEvent` intents) as it happens, so the overlay's banners,
+ * counter and the 3D drops and crown always land together.
+ */
 export class WallView implements GameView {
   readonly kind = 'wall';
   readonly wall: PlayerWallScene;
-  /** Pairs of (UI seconds, 3D seconds), ascending. */
-  private readonly map: [number, number][] = [];
   private started = false;
-  private uiClock = 0;
-  private clock3d = 0;
   private waitStart = 0;
 
   /**
@@ -202,18 +213,14 @@ export class WallView implements GameView {
    * @param preset - Quality preset.
    * @param createTumbler - Tumbler factory.
    * @param summary3d - Wall input (string ids, loadouts).
-   * @param uiSummary - The same show as the UI sees it (drives the UI timeline).
    * @param post - Post effects.
-   * @param reduceMotion - Mirrors the UI timeline's reduce-motion timing.
    */
   constructor(
     theme: ThemeDefinition,
     preset: QualityPreset,
     createTumbler: CreateTumblerVisual,
     private readonly summary3d: PlayerWallSummary,
-    uiSummary: UiShowSummary,
     post: CeremonyPost,
-    reduceMotion: boolean,
   ) {
     this.wall = createPlayerWallScene({
       ...sceneOptions(theme, preset, createTumbler),
@@ -221,25 +228,6 @@ export class WallView implements GameView {
       title: 'THE TUMBLE WALL',
     });
     this.wall.attachPost(post);
-
-    const ui = playerWallTimeline(uiSummary, { reduceMotion });
-    const w = wall3dAnchors(summary3d);
-    this.map.push([0, 0]);
-    const banners = ui.events.filter((e) => e.type === 'roundBanner');
-    banners.forEach((e, i) => {
-      const t3 = w.rounds[i];
-      if (t3 !== undefined) this.map.push([e.t / 1000, t3]);
-    });
-    const at = (type: PlayerWallEvent['type']): number | undefined => ui.events.find((e) => e.type === type)?.t;
-    const pairs: [number | undefined, number][] = [
-      [at('winnerFocus'), w.focus],
-      [at('crownDrop'), w.crown],
-      [at('winnerReveal'), w.reveal],
-      [ui.duration, w.end],
-    ];
-    for (const [u, t3] of pairs) if (u !== undefined) this.map.push([u / 1000, t3]);
-    // Both schedules are monotonic, but guard against a zero-length UI segment.
-    this.map.sort((a, b) => a[0] - b[0]);
   }
 
   get scene(): GameView['scene'] {
@@ -261,44 +249,60 @@ export class WallView implements GameView {
    */
   handle(e: PlayerWallEvent): void {
     if (!this.started) this.start();
-    if (e.type === 'skip') this.wall.skip();
+    const w = this.wall;
+    switch (e.type) {
+      case 'wallStart':
+        w.beat({ type: 'intro' });
+        break;
+      case 'roundBanner':
+        w.beat({ type: 'round', roundIndex: e.roundIndex });
+        break;
+      case 'cellFlash':
+        w.beat({ type: 'flash', roundIndex: e.roundIndex, ids: e.playerIds.map(String) });
+        break;
+      case 'cellDrop':
+        w.beat({ type: 'drop', roundIndex: e.roundIndex, id: String(e.playerId), order: this.drops++ });
+        break;
+      case 'roundEnd':
+        w.beat({ type: 'roundEnd', roundIndex: e.roundIndex });
+        break;
+      case 'winnerFocus':
+        w.beat({ type: 'winnerFocus' });
+        break;
+      case 'crownDrop':
+        w.beat({ type: 'crown' });
+        break;
+      case 'winnerReveal':
+        w.beat({ type: 'reveal' });
+        break;
+      case 'wallEnd':
+        w.beat({ type: 'end' });
+        break;
+      case 'skip':
+        w.skip();
+        break;
+      default:
+        break;
+    }
   }
+
+  private drops = 0;
 
   private start(): void {
     this.started = true;
-    this.uiClock = 0;
-    this.clock3d = 0;
-    this.wall.playRecap(this.summary3d);
-  }
-
-  /** 3D time for a UI time (piecewise linear between anchors, clamped). */
-  private to3d(u: number): number {
-    const m = this.map;
-    for (let i = 1; i < m.length; i++) {
-      const a = m[i - 1] as [number, number];
-      const b = m[i] as [number, number];
-      if (u <= b[0]) {
-        const span = b[0] - a[0];
-        return span <= 1e-6 ? b[1] : a[1] + ((u - a[0]) / span) * (b[1] - a[1]);
-      }
-    }
-    const last = m[m.length - 1] as [number, number];
-    return last[1] + (u - last[0]);
+    this.wall.startDrivenRecap(this.summary3d);
   }
 
   update(_dt: number, realDt: number): void {
     if (!this.started) {
-      // The UI normally starts the timeline as the wipe reveals; never sit idle if it doesn't.
+      // The UI normally starts the timeline as the wipe reveals; never sit on an empty wall if it doesn't.
       this.waitStart += realDt;
-      if (this.waitStart > 2) this.start();
-      this.wall.update(realDt);
-      return;
+      if (this.waitStart > 2) {
+        this.start();
+        this.wall.beat({ type: 'intro' });
+      }
     }
-    this.uiClock += realDt;
-    const target = this.to3d(this.uiClock);
-    const step = Math.max(0, Math.min(0.25, target - this.clock3d));
-    this.clock3d += step;
-    this.wall.update(step);
+    this.wall.update(realDt);
   }
 
   resize(width: number, height: number): void {

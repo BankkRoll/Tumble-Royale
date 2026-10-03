@@ -10,6 +10,7 @@ import { uiEvents } from '../store/events.ts';
 import { ui, useUI } from '../store/uiStore.ts';
 import type { CustomLobbyOptions, RoundType } from '../store/types.ts';
 import { shakeNo } from '../theme/motion.ts';
+import { Icon } from '../components/icons/index.tsx';
 import { roundTypeStyle } from '../theme/tokens.ts';
 
 const CODE_LEN = 6;
@@ -67,6 +68,7 @@ export function CustomLobbyScreen(): JSX.Element {
   const lobby = useUI((s) => s.customLobby);
   const catalog = useUI((s) => s.roundCatalog);
   const streamer = useUI((s) => s.settings.gameplay.streamerMode);
+  const online = useUI((s) => s.onlineStatus.state === 'online');
   const [tab, setTab] = useState<'create' | 'join'>('create');
   const [reveal, setReveal] = useState(false);
   const [opts, setOpts] = useState<CustomLobbyOptions>({
@@ -87,7 +89,7 @@ export function CustomLobbyScreen(): JSX.Element {
     <div className="tr-screen tr-custom" data-nav-scope="0">
       <div className="tr-custom-head">
         <Button variant="secondary" data-nav-back="" cue="ui.back" hint="Esc" onClick={back}>
-          ◀ Back
+          <Icon name="chevron-left" size="0.9em" /> Back
         </Button>
         <h1 className="tr-title tr-h2">Custom show</h1>
       </div>
@@ -108,10 +110,10 @@ export function CustomLobbyScreen(): JSX.Element {
                 onClick={() => {
                   void navigator.clipboard?.writeText(lobby.code);
                   uiEvents.emit('copyInvite', { code: lobby.code });
-                  ui.getState().pushToast({ kind: 'success', title: 'Code copied!', icon: '📋' });
+                  ui.getState().pushToast({ kind: 'success', title: 'Code copied!' });
                 }}
               >
-                📋 Copy
+                <Icon name="copy" size="1em" /> Copy
               </Button>
             </div>
           </Panel>
@@ -158,17 +160,28 @@ export function CustomLobbyScreen(): JSX.Element {
               ))}
             </div>
             {tab === 'join' ? (
-              <CodeInput onSubmit={(code) => uiEvents.emit('joinCode', { code })} />
+              online ? (
+                <CodeInput onSubmit={(code) => uiEvents.emit('joinCode', { code })} />
+              ) : (
+                <div className="tr-empty">
+                  <Icon name="globe" size="3em" />
+                  <p>Joining with a code needs the online servers, which aren't reachable right now.</p>
+                  <Button variant="sky" onClick={() => uiEvents.emit('retryOnline')}>
+                    <Icon name="refresh" size="1em" /> Retry
+                  </Button>
+                </div>
+              )
             ) : (
-              <div className="tr-col" style={{ gap: '0.9em' }}>
+              <div className="tr-custom-create">
                 <div className="tr-custom-rounds tr-scroll">
+                  <span className="tr-label">Rounds · {opts.rounds.length} picked</span>
                   {TYPE_ORDER.map((type) => {
                     const rounds = catalog.filter((r) => r.type === type);
                     if (rounds.length === 0) return null;
                     return (
                       <div key={type} className="tr-col" style={{ gap: '0.3em' }}>
                         <span className="tr-label" style={{ color: roundTypeStyle[type].color }}>
-                          {roundTypeStyle[type].icon} {roundTypeStyle[type].label}
+                          {roundTypeStyle[type].label}
                         </span>
                         <div className="tr-row tr-wrap">
                           {rounds.map((r) => {
@@ -189,7 +202,7 @@ export function CustomLobbyScreen(): JSX.Element {
                                   });
                                 }}
                               >
-                                {on ? '✓ ' : ''}
+                                {on ? <Icon name="check" size="0.85em" /> : null}
                                 {r.name}
                               </button>
                             );
@@ -199,51 +212,72 @@ export function CustomLobbyScreen(): JSX.Element {
                     );
                   })}
                 </div>
-                <div className="tr-settings-row">
-                  <span>Bots fill empty spots</span>
-                  <Toggle label="Bots" checked={opts.bots} onChange={(bots) => patch({ bots })} />
+                <div className="tr-custom-side">
+                  <div className="tr-settings-row">
+                    <span>Bots fill empty spots</span>
+                    <Toggle label="Bots" checked={opts.bots} onChange={(bots) => patch({ bots })} />
+                  </div>
+                  <div className="tr-settings-row">
+                    <span>Max players</span>
+                    <Slider
+                      label="Max players"
+                      value={opts.maxPlayers}
+                      min={2}
+                      max={60}
+                      step={1}
+                      format={(v) => String(v)}
+                      onChange={(maxPlayers) => patch({ maxPlayers })}
+                    />
+                  </div>
+                  <div className="tr-settings-row">
+                    <span>Round timers</span>
+                    <Slider
+                      label="Round timer scale"
+                      value={opts.timerScale}
+                      min={0.5}
+                      max={2}
+                      step={0.25}
+                      format={(v) => `×${v}`}
+                      onChange={(timerScale) => patch({ timerScale })}
+                    />
+                  </div>
+                  <div className="tr-settings-row">
+                    <span>Allow spectators</span>
+                    <Toggle
+                      label="Spectators"
+                      checked={opts.spectators}
+                      onChange={(spectators) => patch({ spectators })}
+                    />
+                  </div>
+                  <div className="tr-custom-actions">
+                    <Button
+                      variant="go"
+                      size="lg"
+                      cue="ui.confirm"
+                      disabled={opts.rounds.length === 0 || !online}
+                      data-testid="custom-create"
+                      onClick={() => uiEvents.emit('createCustom', { options: opts })}
+                    >
+                      <Icon name="globe" size="1.1em" /> Create online lobby
+                    </Button>
+                    <Button
+                      variant="sky"
+                      size="lg"
+                      cue="ui.confirm"
+                      disabled={opts.rounds.length === 0}
+                      data-testid="custom-offline"
+                      onClick={() => uiEvents.emit('playCustomOffline', { options: opts })}
+                    >
+                      <Icon name="bot" size="1.1em" /> Play now vs bots
+                    </Button>
+                  </div>
+                  {!online && (
+                    <p className="tr-small tr-muted tr-custom-note">
+                      The online servers are offline right now — invite codes need them. You can still play
+                      your custom show against bots.
+                    </p>
+                  )}
                 </div>
-                <div className="tr-settings-row">
-                  <span>Max players</span>
-                  <Slider
-                    label="Max players"
-                    value={opts.maxPlayers}
-                    min={2}
-                    max={60}
-                    step={1}
-                    format={(v) => String(v)}
-                    onChange={(maxPlayers) => patch({ maxPlayers })}
-                  />
-                </div>
-                <div className="tr-settings-row">
-                  <span>Round timers</span>
-                  <Slider
-                    label="Round timer scale"
-                    value={opts.timerScale}
-                    min={0.5}
-                    max={2}
-                    step={0.25}
-                    format={(v) => `×${v}`}
-                    onChange={(timerScale) => patch({ timerScale })}
-                  />
-                </div>
-                <div className="tr-settings-row">
-                  <span>Allow spectators</span>
-                  <Toggle
-                    label="Spectators"
-                    checked={opts.spectators}
-                    onChange={(spectators) => patch({ spectators })}
-                  />
-                </div>
-                <Button
-                  variant="go"
-                  size="lg"
-                  cue="ui.confirm"
-                  disabled={opts.rounds.length === 0}
-                  onClick={() => uiEvents.emit('createCustom', { options: opts })}
-                >
-                  Create lobby
-                </Button>
               </div>
             )}
           </Panel>
@@ -267,7 +301,7 @@ export function MatchHistoryScreen(): JSX.Element {
           autoFocusNav
           onClick={() => ui.getState().setScreen('menu')}
         >
-          ◀ Back
+          <Icon name="chevron-left" size="0.9em" /> Back
         </Button>
         <h1 className="tr-title tr-h2">Match history</h1>
       </div>
@@ -280,7 +314,10 @@ export function MatchHistoryScreen(): JSX.Element {
             style={{ animationDelay: `${i * 40}ms` }}
           >
             <span className="tr-history-result">
-              {m.result === 'crown' ? '👑' : m.result === 'final' ? '🏁' : '💥'}
+              <Icon
+                name={m.result === 'crown' ? 'crown' : m.result === 'final' ? 'flag' : 'close'}
+                size="1.3em"
+              />
             </span>
             <div className="tr-col tr-grow" style={{ gap: '0.25em', minWidth: 0 }}>
               <b>

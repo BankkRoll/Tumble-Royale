@@ -12,6 +12,7 @@ import type { InputSystem } from '../../input/index.ts';
 import type { AudioBridge } from '../audioBridge.ts';
 import type { ResolvedTumblerFactory } from '../characters.ts';
 import type { GameConfig } from '../config.ts';
+import type { OnlineAccount } from '../online/account.ts';
 import type { ProfileStore } from '../profile.ts';
 import type { QualityManager } from '../quality.ts';
 import type { CeremonyPost } from '../views/ceremonies.ts';
@@ -31,7 +32,16 @@ export interface GameContext {
   readonly quality: QualityManager;
   readonly audio: AudioBridge;
   readonly input: InputSystem;
+  /** Offline profile (also the rewards fallback when no account answered). */
   readonly profile: ProfileStore;
+  /** Signed-in account, or null when playing offline. */
+  readonly account: OnlineAccount | null;
+  /** The local player's current look (account loadout online, profile offline). */
+  look(): TumblerLoadout;
+  /** The local player's display name. */
+  playerName(): string;
+  /** Lifetime Crowns before this show (victory card counter). */
+  crowns(): number;
   readonly tumblers: ResolvedTumblerFactory;
   readonly matchDeps: MatchDeps;
   /** Smoothed FPS for the HUD. */

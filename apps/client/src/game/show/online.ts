@@ -1,25 +1,40 @@
 /**
- * Online show runner (`?online=1`): connects to the game server, plays the
- * server's real show (ShowDirector) with local prediction of the player's
- * Tumbler and interpolated remotes, and maps the reliable phase/fate/results
- * messages onto the same choreography as offline play.
+ * Online show runner: connects to a game server and plays the server's real
+ * show (ShowDirector) with local prediction of the player's Tumbler and
+ * interpolated remotes, mapping the reliable phase/fate/results messages onto
+ * the same choreography as offline play.
+ *
+ * Two ways in:
+ * - matchmade (`match_found`): the matchmaker's server URL + join ticket; the
+ *   server posts results to the account API and forwards this player's grant
+ *   (`showRewards`), which the rewards screen shows;
+ * - dev (`?online=1`): an unticketed join to the local game server.
+ *
+ * Also derives race-progress leaders from the interpolated positions (the
+ * snapshot carries no per-player progress) and plays remote Tumblers' equipped
+ * emotes.
  */
-import { MAIN_SHOW } from '@tumble/content/shows';
+import { MAIN_SHOW, getPlaylist } from '@tumble/content/shows';
 import { getRound } from '@tumble/content/rounds';
-import type { DecodedSnapshot, JoinRoundMsg, NetPlayerInfo, RoundResultEntry } from '@tumble/netcode';
-import { RoundPhase, ShowPhase, type RoundPhaseId } from '@tumble/shared';
+import type { DecodedSnapshot, JoinRoundMsg, NetPlayerInfo, PlayerRewardMsg, RoundResultEntry, ShowInfoMsg } from '@tumble/netcode';
+import { CharacterState } from '@tumble/sim';
+import { RoundPhase, ShowPhase, type RoundDefinition, type RoundPhaseId } from '@tumble/shared';
 import { emptyInput, type SimEvent } from '@tumble/sim';
-import { PlayerRoundStatus, createMatchSim, type MatchSim, type MatchSimHandle } from '@tumble/sim/match';
+import { PlayerRoundStatus, createMatchSim, type MatchPlayerInfo, type MatchSim, type MatchSimHandle } from '@tumble/sim/match';
+import { CourseMetric } from '@tumble/sim/rounds';
 import { ShowPlaylistSchema } from '@tumble/sim/show';
-import { bindUI, ui } from '@tumble/ui';
+import { bindUI, ui, type RewardsSummary } from '@tumble/ui';
 import { NetClient, NetGameSession, type ConnectionState } from '../../net/index.ts';
 import { botLoadout, decodeLoadout, encodeLoadout } from '../cosmetics.ts';
-import type { HudInput } from '../round/hud.ts';
-import { OnlineRoundSource, type RoundSource } from '../round/source.ts';
+import type { ShowResultForProfile } from '../profile.ts';
+import type { HudInput, HudPlayerStatus } from '../round/hud.ts';
+import { OnlineRoundSource, createPlayerSample, type PlayerSample, type RoundSource } from '../round/source.ts';
 import type { GameContext, RoundOutcomeInfo, RoundStart, SessionPlayer } from './context.ts';
 import { ShowSession } from './session.ts';
 
 const MAIN = ShowPlaylistSchema.parse(MAIN_SHOW);
+/** Leader/progress recompute rate (the HUD pushes at 12 Hz). */
+const LEADER_INTERVAL_S = 0.1;
 
 /**
  * Probes the game server through the Vite proxy.
@@ -43,6 +58,55 @@ export async function gameServerAvailable(timeoutMs = 1500): Promise<boolean> {
   }
 }
 
+/** How to reach the show. */
+export interface OnlineShowOptions {
+  /** Game server WebSocket URL (default: `?gs=` or the dev proxy). */
+  url?: string;
+  /** Matchmaker join ticket. */
+  ticket?: string;
+  /** Match id from `match_found` (rewards are expected for it). */
+  matchId?: string;
+  /** Playlist id for the show name before `showInfo` arrives. */
+  playlistId?: string;
+}
+
+/**
+ * Online source that also replays remote emotes: the snapshot carries the
+ * Emote state, the `emote` SimEvent says which wheel slot.
+ */
+class EmotingSource implements RoundSource {
+  constructor(
+    private readonly inner: OnlineRoundSource,
+    private readonly emoteSlots: ReadonlyMap<number, number>,
+  ) {}
+
+  get sim(): MatchSimHandle {
+    return this.inner.sim;
+  }
+
+  get players(): readonly MatchPlayerInfo[] {
+    return this.inner.players;
+  }
+
+  get localId(): number {
+    return this.inner.localId;
+  }
+
+  get alive(): boolean {
+    return this.inner.alive;
+  }
+
+  renderTime(): number {
+    return this.inner.renderTime();
+  }
+
+  sample(id: number, out: PlayerSample): boolean {
+    if (!this.inner.sample(id, out)) return false;
+    if (id !== this.inner.localId && out.state === CharacterState.Emote) out.emote = this.emoteSlots.get(id) ?? 1;
+    return true;
+  }
+}
+
 /** A connected show. */
 export class OnlineShowSession extends ShowSession {
   private readonly net: NetClient;
@@ -54,7 +118,20 @@ export class OnlineShowSession extends ShowSession {
   private preShowEntered = false;
   private roomSeed = 0;
   private lastJoin: JoinRoundMsg | null = null;
+  private showInfo: ShowInfoMsg | null = null;
+  private apiReward: PlayerRewardMsg | null | undefined = undefined;
+  private welcomed = false;
   private readonly unsub: (() => void)[] = [];
+  private readonly emoteSlots = new Map<number, number>();
+  private readonly fates = new Map<number, number>();
+  private readonly qualifyOrder: number[] = [];
+  private course: CourseMetric | null = null;
+  private courseRound: RoundDefinition | null = null;
+  private leaderAcc = LEADER_INTERVAL_S;
+  private readonly sampleTmp = createPlayerSample();
+  private readonly pos = { x: 0, y: 0, z: 0 };
+  private readonly hudPlayers = new Map<number, HudPlayerStatus>();
+  private standings: number[] = [];
   private readonly hudInput: HudInput = {
     timeLeft: -1,
     qualifiedCount: 0,
@@ -66,10 +143,18 @@ export class OnlineShowSession extends ShowSession {
     standings: null,
   };
 
-  constructor(ctx: GameContext) {
+  constructor(
+    ctx: GameContext,
+    private readonly opts: OnlineShowOptions = {},
+  ) {
     super(ctx);
-    this.showName = MAIN.name;
-    this.net = new NetClient({ name: ctx.profile.name, loadout: encodeLoadout(ctx.profile.tumblerLoadout()) });
+    this.showName = (opts.playlistId ? getPlaylist(opts.playlistId)?.name : undefined) ?? MAIN.name;
+    this.net = new NetClient({
+      name: ctx.playerName(),
+      loadout: encodeLoadout(ctx.look()),
+      ...(opts.url ? { url: opts.url } : {}),
+      ...(opts.ticket ? { ticket: opts.ticket } : {}),
+    });
     this.session = new NetGameSession(this.net, (join) => this.createPredictSim(join), {
       onEvent: (e) => this.events.push(e),
       onRoundReady: () => this.buildRoundView(),
@@ -78,13 +163,24 @@ export class OnlineShowSession extends ShowSession {
 
   start(): void {
     const s = ui.getState();
-    s.setQueue({ status: 'searching', startedAt: Date.now(), playersFound: 1, playersNeeded: 40, etaSec: -1, region: 'Local server' });
-    s.setScreen('matchmaking');
+    if (this.opts.ticket) {
+      s.setQueue({ status: 'found' });
+      s.setScreen('matchFound');
+    } else {
+      s.setQueue({ status: 'searching', startedAt: Date.now(), playersFound: 1, playersNeeded: 40, etaSec: -1, region: 'Local server' });
+      s.setScreen('matchmaking');
+    }
     s.setConnection({ status: 'connecting' });
     const net = this.net;
     this.unsub.push(
       net.on('state', (st) => this.onConnection(st)),
       net.on('welcome', (w) => {
+        // A fresh (non-resumed) Welcome mid-show means the server lost the room (restart): the show is gone.
+        if (this.welcomed && !w.resumed && (this.preShowEntered || this.roundIndex >= 0)) {
+          this.fail('The show server restarted and this show was lost.');
+          return;
+        }
+        this.welcomed = true;
         this.localId = w.playerId;
         ui.getState().setConnection({ status: 'online' });
       }),
@@ -96,19 +192,24 @@ export class OnlineShowSession extends ShowSession {
         // The director starts in PreShow without announcing it; bots joining means the show is on.
         if (list.some((p) => p.isBot)) this.enterOnlinePreShow();
       }),
+      net.on('message', (m) => {
+        if (m.t === 'showInfo') this.onShowInfo(m);
+        else if (m.t === 'showRewards') this.apiReward = m.reward;
+      }),
       net.on('showPhase', (p) => this.onServerShowPhase(p)),
       net.on('joinRound', (j) => this.onJoin(j)),
       net.on('roundPhase', ({ phase }) => this.onRoundPhase(phase as RoundPhaseId)),
       net.on('roundResults', ({ roundId, results }) => this.onResults(roundId, results)),
       net.on('showSummary', (m) => this.onSummary(m.winners, m.rounds)),
       net.on('snapshot', (snap) => this.onSnapshot(snap)),
-      net.on('kicked', ({ detail }) => this.fail(detail || 'Removed from the show')),
+      net.on('kicked', ({ reason, detail }) => this.fail(reason === 7 ? 'Your match ticket expired — queue again.' : detail || 'Removed from the show')),
       bindUI({
         onDialogResult: ({ dialogId }) => {
           if (dialogId === 'net-failed') this.ctx.onEnd('failed');
         },
       }),
     );
+    this.ctx.account?.markShowStart();
     net.connect();
   }
 
@@ -116,7 +217,18 @@ export class OnlineShowSession extends ShowSession {
     const round = getRound(join.roundId);
     if (!round) throw new Error(`Unknown round "${join.roundId}" from the server`);
     const sim = createMatchSim(
-      { R: this.ctx.R, round, seed: join.seed, stage: join.stage, players: join.players, mode: 'predict', localPlayerId: this.net.playerId },
+      {
+        R: this.ctx.R,
+        round,
+        seed: join.seed,
+        stage: join.stage,
+        players: join.players,
+        mode: 'predict',
+        localPlayerId: this.net.playerId,
+        // Same layout and quota as the server, so predicted obstacles match the authoritative ones.
+        ...(join.variationId ? { variationId: join.variationId } : {}),
+        ...(join.qualifyTarget > 0 ? { qualifyTarget: join.qualifyTarget } : {}),
+      },
       this.ctx.matchDeps,
     ) as MatchSimHandle;
     this.predictSim = sim;
@@ -131,16 +243,26 @@ export class OnlineShowSession extends ShowSession {
     else if (st === 'failed') this.fail('Connection lost');
   }
 
+  private failed = false;
+
   private fail(message: string): void {
+    if (this.failed) return;
+    this.failed = true;
     const s = ui.getState();
     s.setConnection({ status: 'offline', message });
     s.showDialog({ id: 'net-failed', kind: 'error', title: 'Connection lost', body: message, code: 'E-NET-04', buttons: [{ id: 'menu', label: 'Back to menu', autofocus: true }] });
   }
 
+  private onShowInfo(m: ShowInfoMsg): void {
+    this.showInfo = m;
+    this.showName = m.showName;
+    this.roundCount = Math.max(1, m.roundCount);
+  }
+
   private onPlayerList(list: NetPlayerInfo[]): void {
     for (const p of list) {
       const prev = this.players.get(p.id);
-      const loadout = (p.id === this.net.playerId ? this.ctx.profile.tumblerLoadout() : decodeLoadout(p.loadout)) ?? prev?.loadout ?? botLoadout(this.roomSeed, p.id, p.name);
+      const loadout = (p.id === this.net.playerId ? this.ctx.look() : decodeLoadout(p.loadout)) ?? prev?.loadout ?? botLoadout(this.roomSeed, p.id, p.name);
       const sp: SessionPlayer = { id: p.id, name: p.name, isBot: p.isBot, loadout };
       this.players.set(p.id, sp);
       if (!this.order.includes(p.id)) this.order.push(p.id);
@@ -159,7 +281,7 @@ export class OnlineShowSession extends ShowSession {
     s.setQueue({ status: 'found', playersFound: this.order.length || 40 });
     s.setScreen('matchFound');
     this.after(1.5, () => {
-      if (this.roundIndex < 0) this.enterPreShow(7, MAIN);
+      if (this.roundIndex < 0) this.enterPreShow(7, this.showInfo ? null : MAIN);
     });
   }
 
@@ -177,16 +299,23 @@ export class OnlineShowSession extends ShowSession {
         this.order.push(p.id);
       }
     }
-    this.roundIndex++;
-    const isFinal = round.type === 'final' || j.players.length <= 2;
+    // A resume re-sends the current round's joinRound; only a new round index starts a new round.
+    const index = j.roundIndex;
+    if (index === this.roundIndex && this.round?.start.round.id === j.roundId) return;
+    this.roundIndex = index;
+    this.fates.clear();
+    this.qualifyOrder.length = 0;
+    this.emoteSlots.clear();
+    this.course = null;
+    this.courseRound = null;
     const start: RoundStart = {
-      index: this.roundIndex,
-      isFinal,
+      index,
+      isFinal: j.isFinal,
       round,
       players: j.players,
       seed: j.seed,
       stage: j.stage,
-      qualifyTarget: isFinal ? 1 : Math.max(1, Math.round(j.players.length * (MAIN.qualifyCurve[this.roundIndex] ?? round.qualification.ratio))),
+      qualifyTarget: j.isFinal ? 1 : Math.max(1, j.qualifyTarget),
     };
     this.onRoundSelected(start);
   }
@@ -238,6 +367,13 @@ export class OnlineShowSession extends ShowSession {
   protected advance(): void {
     this.session.frame(performance.now(), () => this.fillInput(this.input));
     if (this.events.length > 0) {
+      for (const e of this.events) {
+        if (e.type === 'emote' && e.emote > 0) this.emoteSlots.set(e.player, e.emote);
+        else if (e.type === 'qualified') {
+          this.fates.set(e.player, PlayerRoundStatus.Qualified);
+          if (!this.qualifyOrder.includes(e.player)) this.qualifyOrder.push(e.player);
+        } else if (e.type === 'eliminated') this.fates.set(e.player, PlayerRoundStatus.Eliminated);
+      }
       this.onSimEvents(this.events);
       this.events.length = 0;
     }
@@ -246,15 +382,86 @@ export class OnlineShowSession extends ShowSession {
   protected createSource(rs: RoundStart): RoundSource | null {
     const sim = this.predictSim;
     if (!sim || this.session.sim !== sim || sim.round.id !== rs.round.id || this.lastJoin?.roundId !== rs.round.id) return null;
-    return new OnlineRoundSource(sim, rs.players, rs.players.some((p) => p.id === this.localId) ? this.localId : -1, this.session);
+    const inner = new OnlineRoundSource(sim, rs.players, rs.players.some((p) => p.id === this.localId) ? this.localId : -1, this.session);
+    return new EmotingSource(inner, this.emoteSlots);
+  }
+
+  /**
+   * Per-player progress and standings from interpolated positions (race-style
+   * rounds) and the fate events seen so far, at 10 Hz.
+   */
+  private updateStandings(): void {
+    const r = this.round;
+    const source = r?.source;
+    if (!r || !source?.alive) return;
+    const round = r.start.round;
+    const racing = round.qualification.mode === 'finish' || round.type === 'race';
+    if (racing && this.courseRound !== round) {
+      this.courseRound = round;
+      this.course = new CourseMetric(round, round.spawn.origin);
+    }
+    const ids: number[] = [];
+    for (const p of r.start.players) {
+      const fate = this.fates.get(p.id) ?? PlayerRoundStatus.Playing;
+      let progress = 0;
+      if (fate === PlayerRoundStatus.Qualified) progress = 1;
+      else if (this.course && source.sample(p.id, this.sampleTmp)) {
+        this.pos.x = this.sampleTmp.x;
+        this.pos.y = this.sampleTmp.y;
+        this.pos.z = this.sampleTmp.z;
+        progress = this.course.measure(this.pos);
+      }
+      let entry = this.hudPlayers.get(p.id);
+      if (!entry) {
+        entry = { status: fate, score: 0, progress, place: 0 };
+        this.hudPlayers.set(p.id, entry);
+      }
+      entry.status = fate;
+      entry.progress = progress;
+      ids.push(p.id);
+    }
+    const rank = (id: number): number => {
+      const q = this.qualifyOrder.indexOf(id);
+      if (q >= 0) return 2 + (1 - q / 1000);
+      const e = this.hudPlayers.get(id);
+      return e?.status === PlayerRoundStatus.Eliminated ? -1 : (e?.progress ?? 0);
+    };
+    ids.sort((a, b) => rank(b) - rank(a));
+    ids.forEach((id, i) => {
+      const e = this.hudPlayers.get(id);
+      if (e) e.place = i + 1;
+    });
+    this.standings = ids;
+    this.hudInput.players = this.hudPlayers;
+    this.hudInput.standings = this.standings;
   }
 
   protected liveStatus(): HudInput | null {
-    return this.round ? this.hudInput : null;
+    if (!this.round) return null;
+    return this.hudInput;
+  }
+
+  override frame(dt: number, realDt: number): void {
+    this.leaderAcc += realDt;
+    if (this.leaderAcc >= LEADER_INTERVAL_S) {
+      this.leaderAcc = 0;
+      this.updateStandings();
+    }
+    super.frame(dt, realDt);
   }
 
   protected override ping(): number {
     return this.net.rtt;
+  }
+
+  protected override rewardsPending(): boolean {
+    return !!this.opts.matchId && !!this.ctx.account?.active && this.apiReward === undefined;
+  }
+
+  protected override computeRewards(facts: ShowResultForProfile): RewardsSummary {
+    const account = this.ctx.account;
+    if (this.apiReward && account?.active) return account.rewardsSummary(this.apiReward);
+    return super.computeRewards(facts);
   }
 
   protected override onDispose(): void {

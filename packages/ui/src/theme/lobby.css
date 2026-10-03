@@ -1,0 +1,255 @@
+/*
+ * Lobby emotes: the round sticker button on the menu Play tab and its emote
+ * picker (opens upward and to the right of the button).
+ */
+
+.tr-lobby-emotes {
+  position: relative;
+  display: inline-block;
+  pointer-events: auto;
+  z-index: 6;
+}
+
+/* -----------------------------------------------------------------------------
+ * Button
+ * -------------------------------------------------------------------------- */
+
+.tr-lobby-emote-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 3.4em;
+  height: 3.4em;
+  padding: 0;
+  border-radius: 50%;
+  border: var(--outline) solid var(--ink) !important;
+  background: radial-gradient(circle at 35% 28%, #fff 0 18%, transparent 19%), linear-gradient(180deg, #ffe783 0%, var(--lemon) 55%, #ffb800 100%);
+  box-shadow:
+    0 0.28em 0 var(--ink),
+    0 0.6em 1em rgba(43, 26, 94, 0.25);
+  cursor: pointer;
+  transition:
+    transform 160ms var(--ease-back-out),
+    box-shadow 160ms var(--ease-back-out);
+}
+.tr-lobby-emote-btn:hover {
+  transform: translateY(-0.08em) rotate(-6deg) scale(1.06);
+}
+.tr-lobby-emote-btn:active,
+.tr-lobby-emotes.is-open .tr-lobby-emote-btn {
+  transform: translateY(0.2em) scale(0.97);
+  box-shadow:
+    0 0.08em 0 var(--ink),
+    0 0.2em 0.5em rgba(43, 26, 94, 0.2);
+}
+.tr-lobby-emotes.is-open .tr-lobby-emote-btn {
+  background: linear-gradient(180deg, #ff9fcb 0%, #ff6fae 55%, #e8307f 100%);
+}
+.tr-lobby-emote-btn-face {
+  display: grid;
+  place-items: center;
+  width: 2.3em;
+  height: 2.3em;
+  font-size: 1.15em;
+  line-height: 1;
+}
+.tr-lobby-emote-btn-key {
+  position: absolute;
+  right: -0.35em;
+  bottom: -0.2em;
+  min-width: 1.45em;
+  padding: 0.12em 0.3em 0.16em;
+  font-family: var(--font-display);
+  font-size: 0.7em;
+  line-height: 1;
+  color: var(--cloud);
+  background: var(--ink);
+  border: 0.14em solid var(--cloud);
+  border-radius: 0.5em;
+}
+
+/* -----------------------------------------------------------------------------
+ * Picker
+ * -------------------------------------------------------------------------- */
+
+.tr-lobby-emote-panel {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 0.9em);
+  width: min(21.5em, calc(100vw - 2em));
+  padding: 0.7em 0.7em 0.55em;
+  border-radius: var(--rad-lg);
+  border: var(--outline) solid var(--ink);
+  background: var(--cream);
+  box-shadow:
+    0 0.32em 0 var(--ink),
+    var(--shadow-soft);
+  transform-origin: 1.7em calc(100% + 0.9em);
+  animation: tr-pop-in 260ms var(--ease-spring);
+}
+.tr-lobby-emote-panel::after {
+  content: '';
+  position: absolute;
+  left: 1.25em;
+  bottom: -0.62em;
+  width: 0.95em;
+  height: 0.95em;
+  background: var(--cream);
+  border-right: var(--outline) solid var(--ink);
+  border-bottom: var(--outline) solid var(--ink);
+  transform: rotate(45deg);
+}
+.tr-lobby-emote-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 0.3em 0.45em;
+}
+.tr-lobby-emote-title {
+  font-family: var(--font-display);
+  font-size: 1.15em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cloud);
+  -webkit-text-stroke: 0.09em var(--ink);
+  paint-order: stroke fill;
+}
+.tr-lobby-emote-count {
+  font-size: 0.75em;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+.tr-lobby-emote-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45em;
+  max-height: min(19em, 52vh);
+  overflow-y: auto;
+  padding: 0.15em 0.15em 0.3em;
+  scrollbar-width: thin;
+}
+.tr-lobby-emote-item {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 0.15em;
+  padding: 0.35em 0.2em 0.3em;
+  border-radius: var(--rad-md);
+  border: 0.14em solid var(--ink);
+  background: linear-gradient(160deg, var(--art-a, #fff) 0%, var(--art-b, #ffe) 100%);
+  box-shadow: 0 0.18em 0 var(--ink);
+  cursor: pointer;
+  animation: tr-pop-in 280ms var(--ease-spring) backwards;
+  transition:
+    transform 140ms var(--ease-back-out),
+    box-shadow 140ms var(--ease-back-out);
+}
+.tr-lobby-emote-item:hover,
+.tr-lobby-emote-item:focus-visible {
+  transform: translateY(-0.1em) scale(1.06) rotate(-2deg);
+  z-index: 1;
+}
+.tr-lobby-emote-item:active {
+  transform: translateY(0.12em) scale(0.97);
+  box-shadow: 0 0.05em 0 var(--ink);
+}
+.tr-lobby-emote-item.is-equipped {
+  box-shadow:
+    0 0.18em 0 var(--ink),
+    inset 0 0 0 0.14em rgba(255, 255, 255, 0.85);
+}
+.tr-lobby-emote-art {
+  display: grid;
+  place-items: center;
+  width: 2.6em;
+  height: 2.6em;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.78);
+  border: 0.12em solid rgba(43, 26, 94, 0.25);
+}
+.tr-lobby-emote-img {
+  font-size: 1.35em;
+  line-height: 1;
+}
+.tr-lobby-emote-img.tr-item-thumb {
+  width: 2.4em;
+  height: 2.4em;
+}
+.tr-lobby-emote-name {
+  max-width: 100%;
+  font-size: 0.66em;
+  font-weight: 700;
+  color: var(--ink);
+}
+.tr-lobby-emote-slot {
+  position: absolute;
+  top: -0.35em;
+  left: -0.35em;
+  display: grid;
+  place-items: center;
+  width: 1.35em;
+  height: 1.35em;
+  font-family: var(--font-display);
+  font-size: 0.72em;
+  color: var(--ink);
+  background: var(--lemon);
+  border: 0.13em solid var(--ink);
+  border-radius: 50%;
+}
+.tr-lobby-emote-item.is-locked {
+  background: linear-gradient(160deg, #e9e4f2 0%, #d4cde3 100%);
+}
+.tr-lobby-emote-item.is-locked .tr-lobby-emote-art {
+  filter: grayscale(1) opacity(0.55);
+}
+.tr-lobby-emote-item.is-locked .tr-lobby-emote-name {
+  color: var(--ink-soft);
+  opacity: 0.8;
+}
+.tr-lobby-emote-lock {
+  display: grid;
+  line-height: 0;
+  position: absolute;
+  top: 0.15em;
+  right: 0.2em;
+  font-size: 0.75em;
+}
+.tr-lobby-emote-where {
+  font-size: 0.56em;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 0.05em 0.45em;
+  border-radius: 999px;
+  color: var(--cloud);
+  background: var(--grape);
+}
+.tr-lobby-emote-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25em;
+  padding-top: 0.45em;
+  font-size: 0.68em;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+.tr-lobby-emote-sep {
+  width: 0.9em;
+}
+.tr-lobby-emote-kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.5em;
+  padding: 0.05em 0.3em;
+  border-radius: 0.35em;
+  border: 0.12em solid var(--ink-soft);
+  background: var(--cloud);
+  color: var(--ink);
+  font-family: var(--font-display);
+}
+@media (pointer: coarse) {
+  .tr-lobby-emote-foot {
+    display: none;
+  }
+}

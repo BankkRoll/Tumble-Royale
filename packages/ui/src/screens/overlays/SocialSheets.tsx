@@ -8,6 +8,7 @@ import { Button } from '../../components/controls.tsx';
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
+import { Icon } from '../../components/icons/index.tsx';
 import type { Friend, Presence } from '../../store/types.ts';
 
 const PRESENCE: Record<Presence, { label: string; cls: string }> = {
@@ -87,7 +88,7 @@ export function FriendsSheet(): JSX.Element {
               ui.getState().setOverlay('none');
             }}
           >
-            ✕
+            <Icon name="close" size="1em" />
           </button>
         </div>
         <div className="tr-sheet-body tr-scroll">
@@ -114,7 +115,7 @@ export function FriendsSheet(): JSX.Element {
                     window.setTimeout(() => setCopied(false), 1600);
                   }}
                 >
-                  {copied ? 'Copied!' : '📋 Copy'}
+                  {copied ? 'Copied!' : <><Icon name="copy" size="1em" /> Copy</>}
                 </Button>
               </div>
             </div>
@@ -128,12 +129,12 @@ export function FriendsSheet(): JSX.Element {
                 <div key={m.id} className="tr-friend">
                   <TumblerAvatar colors={m.colors} size="2.4em" blink={false} noShadow />
                   <b className="tr-grow tr-ellipsis">
-                    {m.isLeader ? '👑 ' : ''}
+                    {m.isLeader ? <Icon name="crown" size="0.9em" /> : null}
                     {m.name}
                     {m.isSelf ? ' (you)' : ''}
                   </b>
                   <span className={`tr-chip ${m.ready ? 'tr-chip--good' : ''}`}>
-                    {m.ready ? '✓ Ready' : 'Not ready'}
+                    {m.ready ? <><Icon name="check" size="0.85em" /> Ready</> : 'Not ready'}
                   </span>
                   {self?.isLeader && !m.isSelf && (
                     <Button
@@ -142,7 +143,7 @@ export function FriendsSheet(): JSX.Element {
                       aria-label={`Kick ${m.name}`}
                       onClick={() => uiEvents.emit('kickPartyMember', { memberId: m.id })}
                     >
-                      ✕
+                      <Icon name="close" size="1em" />
                     </Button>
                   )}
                 </div>
@@ -204,7 +205,7 @@ export function FriendsSheet(): JSX.Element {
 /** Notifications drop-down under the bell. */
 export function NotificationsPanel(): JSX.Element {
   const items = useUI((s) => s.notifications);
-  const icon = { invite: '💌', friendRequest: '🤝', news: '📰', reward: '🎁' } as const;
+  const icon = { invite: 'party', friendRequest: 'friends', news: 'news', reward: 'gift' } as const;
   return (
     <div className="tr-notif-wrap tr-interactive" data-nav-scope="10">
       <div className="tr-notif-catcher" onClick={() => ui.getState().setOverlay('none')} />
@@ -219,14 +220,14 @@ export function NotificationsPanel(): JSX.Element {
             aria-label="Close"
             onClick={() => ui.getState().setOverlay('none')}
           >
-            ✕
+            <Icon name="close" size="1em" />
           </button>
         </div>
         {items.length === 0 && <p className="tr-muted">All quiet. Suspiciously quiet.</p>}
         <div className="tr-col tr-scroll" style={{ maxHeight: '60vh' }}>
           {items.map((n) => (
             <div key={n.id} className={`tr-notif-item${n.read ? '' : ' is-unread'}`}>
-              <span aria-hidden>{icon[n.kind]}</span>
+              <Icon name={icon[n.kind]} size="1.6em" />
               <div className="tr-col tr-grow" style={{ gap: 0 }}>
                 <b>{n.title}</b>
                 {n.body && <small>{n.body}</small>}

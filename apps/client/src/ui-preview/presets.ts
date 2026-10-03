@@ -1,7 +1,7 @@
 /**
  * Every previewable screen/state, deep-linkable as `ui.html?screen=<id>`.
  */
-import { ui, type MenuTab } from '@tumble/ui';
+import { openNewsPost, ui, type MenuTab } from '@tumble/ui';
 import { hudForRound, stopAutoplay } from './autoplay.ts';
 import {
   SHOW_NAME,
@@ -26,6 +26,8 @@ const s = () => ui.getState();
 
 function menu(tab: MenuTab): () => void {
   return () => {
+    s().setCurrencyPanel('none');
+    s().setInspectedProfile(null);
     s().setScreen('menu', { transition: 'none' });
     s().setMenuTab(tab);
   };
@@ -146,6 +148,40 @@ export const PRESETS: Preset[] = [
   { id: 'profile', label: 'Profile', group: 'Menu', apply: menu('profile') },
   { id: 'leaderboards', label: 'Leaderboards', group: 'Menu', apply: menu('leaderboards') },
   { id: 'news', label: 'News', group: 'Menu', apply: menu('news') },
+  {
+    id: 'newsReader',
+    label: 'News · post reader',
+    group: 'Menu',
+    apply: () => {
+      const first = s().news[0];
+      if (first) openNewsPost(first.id);
+      s().setScreen('menu', { transition: 'none' });
+      ui.setState({ menuTab: 'news' });
+    },
+  },
+  {
+    id: 'modeOffline',
+    label: 'Play · servers offline',
+    group: 'Menu',
+    apply: () => {
+      s().setOnlineStatus({ state: 'offline', message: 'The game servers are offline right now.' });
+      ui.setState({ playMode: 'offline' });
+      menu('play')();
+    },
+  },
+  { id: 'gumballs', label: 'Wallet · Earn Gumballs', group: 'Menu', apply: () => (menu('play')(), s().setCurrencyPanel('gumballs')) },
+  { id: 'gems', label: 'Wallet · Gems (coming soon)', group: 'Menu', apply: () => (menu('play')(), s().setCurrencyPanel('gems')) },
+  {
+    id: 'inspectProfile',
+    label: 'Ranks · another player card',
+    group: 'Menu',
+    apply: () => {
+      menu('leaderboards')();
+      const row = s().leaderboards.crowns?.[0];
+      const me = s().profile;
+      if (row && me) s().setInspectedProfile({ ...me, id: row.playerId, name: row.name, colors: row.colors, crowns: row.value, isGuest: false, showcase: [] });
+    },
+  },
   {
     id: 'matchHistory',
     label: 'Match history',

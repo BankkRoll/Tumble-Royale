@@ -110,7 +110,7 @@ export const DEFAULT_HUD: HudState = {
   progress: 0,
   leaders: [],
   teams: [],
-  ping: 0,
+  ping: -1,
   fps: 0,
   localColor: '#ff4f9a',
   place: 0,

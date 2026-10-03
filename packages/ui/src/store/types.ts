@@ -314,7 +314,23 @@ export interface CosmeticItem {
   art: [string, string];
   owned: boolean;
   set?: string;
+  /** What the item looks like, for previews drawn on the player's own Tumbler. */
+  look?: ItemLook;
 }
+
+/**
+ * Render facts a preview needs (from the content catalog). Wearable tints may
+ * say primary / secondary / 	ertiary to follow the wearer's colours.
+ */
+export type ItemLook =
+  | { kind: 'skin'; colors?: [string, string, string]; pattern?: PatternId }
+  | { kind: 'wearable'; tint: string[]; hat?: AvatarHat }
+  | { kind: 'face'; iris: string; accessory?: string; tint?: string }
+  | { kind: 'pose'; clip: string }
+  | { kind: 'nameplate'; plate: Omit<ProfileNameplate, 'name'> }
+  | { kind: 'banner'; banner: Omit<ProfileBanner, 'name'> }
+  | { kind: 'trail'; effect: string; colors: string[] }
+  | { kind: 'footsteps'; pack: string };
 
 /** Equipped item ids per slot (`emote` holds up to 4). */
 export interface Loadout {
@@ -346,6 +362,10 @@ export interface StoreOffer {
   /** Bundle contents; `item` is the hero. */
   bundle?: CosmeticItem[];
   tag?: string;
+  /** Bundle display name (bundles only). */
+  title?: string;
+  /** Bundle blurb (bundles only). */
+  blurb?: string;
 }
 
 /** A Gem pack for real money (shown only when the account API sells them). */
@@ -375,7 +395,18 @@ export interface StoreData {
   gemCheckout?: 'enabled' | 'test' | 'comingSoon';
   /** This week's Crown Shard shop. */
   shardShop?: ShardShopData;
+  /** This week's discounted picks. */
+  weekly?: StoreOffer[];
+  /** Epoch ms when the weekly picks restock. */
+  weeklyEndsAt?: number;
+  /** Bundles (`bundle:<id>` offers); the hero bundle is flagged `featured`. */
+  bundles?: StoreOffer[];
+  /** Every item for sale at list price (browsable catalog). */
+  catalog?: StoreOffer[];
 }
+
+/** Store tab sections. */
+export type StoreSection = 'today' | 'week' | 'catalog' | 'shards';
 
 /** A Crown Shard shop offer. */
 export interface ShardOffer {
@@ -399,7 +430,7 @@ export interface ShardShopData {
 export interface PassReward {
   item?: CosmeticItem;
   /** Currency or XP-type rewards. */
-  currency?: { kind: Currency | 'xp'; amount: number };
+  currency?: { kind: Currency | 'xp' | 'crownShards'; amount: number };
   claimed: boolean;
 }
 

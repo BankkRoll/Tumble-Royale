@@ -112,9 +112,25 @@ export interface ApiLoadouts {
 /** A store offer. `offerId` is the cosmetic id. */
 export interface ApiOffer {
   offerId: string;
-  section: 'featured' | 'daily';
+  section: 'featured' | 'daily' | 'weekly';
   item: { id: string; name: string; slot: string; rarity: string };
+  /** Today's price. */
   price: { currency: 'gumballs' | 'gems'; amount: number };
+  /** Catalog price (higher than `price` on deals). */
+  listPrice?: { currency: 'gumballs' | 'gems'; amount: number };
+  owned: boolean;
+}
+
+/** A bundle priced for the caller (`offerId` is `bundle:<id>`). */
+export interface ApiBundle {
+  offerId: string;
+  name: string;
+  description: string;
+  itemIds: string[];
+  /** Items the caller does not own yet; buying grants these. */
+  missing: string[];
+  price: { currency: 'gumballs' | 'gems'; amount: number };
+  listPrice: { currency: 'gumballs' | 'gems'; amount: number };
   owned: boolean;
 }
 
@@ -123,7 +139,14 @@ export interface ApiStore {
   day: string;
   featured: ApiOffer[];
   daily: ApiOffer[];
+  weekly?: ApiOffer[];
+  /** This week's hero bundle offer id. */
+  heroBundle?: string | null;
+  bundles?: ApiBundle[];
+  /** Every item for sale at list price. */
+  catalog?: { offerId: string; price: { currency: 'gumballs' | 'gems'; amount: number }; owned: boolean }[];
   refreshesAt: string;
+  weeklyRefreshesAt?: string;
 }
 
 /** A Gem pack. */

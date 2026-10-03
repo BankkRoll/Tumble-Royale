@@ -7,9 +7,10 @@
  * expandable per-round results. `ProfileOverlay` shows the same card for
  * another player (ranks, results). docs/design/SCREENS.md §5.5.
  */
-import { useState, type CSSProperties, type JSX } from 'react';
+import { useState, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
-import { Bar, BotTag, ItemArt, TypeBadge } from '../../components/bits.tsx';
+import { Bar, BotTag, TypeBadge } from '../../components/bits.tsx';
+import { ItemPreview, Nameplate, bannerStyle } from '../../components/ItemPreview.tsx';
 import { confirmSignOut } from '../../components/account.ts';
 import { RenameField } from '../overlays/AccountSheet.tsx';
 import { Button } from '../../components/controls.tsx';
@@ -23,9 +24,7 @@ import type { PlayerRef } from '../../store/social.ts';
 import type {
   MatchHistoryEntry,
   MetOfflineInfo,
-  ProfileBanner,
   ProfileData,
-  ProfileNameplate,
   RankInfo,
   RankTier,
 } from '../../store/types.ts';
@@ -127,45 +126,7 @@ export function RankEmblem({ rank, compact }: { rank: RankInfo; compact?: boolea
   );
 }
 
-/** CSS background for a banner motif. */
-export function bannerStyle(b: ProfileBanner | undefined): CSSProperties {
-  const [a, c, d] = b?.colors ?? ['#ff6fb5', '#ffd23f', '#5ce1e6'];
-  const motif: Record<ProfileBanner['motif'], string> = {
-    confetti: `radial-gradient(circle at 20% 30%, ${c} 0 6%, transparent 7%), radial-gradient(circle at 70% 60%, ${d} 0 5%, transparent 6%), radial-gradient(circle at 45% 80%, #fff 0 4%, transparent 5%), radial-gradient(circle at 85% 20%, ${c} 0 4%, transparent 5%)`,
-    clouds: `radial-gradient(ellipse 30% 40% at 25% 70%, ${d} 0 60%, transparent 61%), radial-gradient(ellipse 25% 35% at 70% 40%, ${d} 0 60%, transparent 61%)`,
-    stripes: `repeating-linear-gradient(115deg, transparent 0 18px, ${c}55 18px 36px)`,
-    stars: `radial-gradient(circle at 15% 25%, ${d} 0 2%, transparent 3%), radial-gradient(circle at 55% 70%, ${d} 0 2.5%, transparent 3.5%), radial-gradient(circle at 80% 35%, #fff 0 2%, transparent 3%), radial-gradient(circle at 35% 55%, #fff 0 1.5%, transparent 2.5%)`,
-    candy: `radial-gradient(circle at 20% 40%, ${c} 0 9%, transparent 10%), radial-gradient(circle at 75% 55%, ${d} 0 8%, transparent 9%)`,
-    waves: `repeating-radial-gradient(circle at 50% 140%, ${c}66 0 14px, transparent 14px 28px)`,
-  };
-  return { background: `${motif[b?.motif ?? 'confetti']}, linear-gradient(135deg, ${a}, ${c})` };
-}
-
-/** Name#tag in the equipped nameplate's style. */
-export function Nameplate({
-  name,
-  tag,
-  plate,
-}: {
-  name: string;
-  tag?: string;
-  plate?: ProfileNameplate;
-}): JSX.Element {
-  const style = plate
-    ? ({
-        ['--np-bg' as string]: plate.bg,
-        ['--np-bg2' as string]: plate.bg2,
-        ['--np-fg' as string]: plate.text,
-        ['--np-border' as string]: plate.border,
-      } as CSSProperties)
-    : undefined;
-  return (
-    <span className={`tr-nameplate tr-nameplate--${plate?.style ?? 'pill'}`} style={style}>
-      <b>{name}</b>
-      {tag && <small>#{tag}</small>}
-    </span>
-  );
-}
+export { bannerStyle, Nameplate };
 
 function Stat({
   icon,
@@ -371,7 +332,7 @@ function Showcase({ p }: { p: ProfileData }): JSX.Element | null {
               title={it.name}
               style={{ ['--art-a' as string]: it.art[0], ['--art-b' as string]: it.art[1] }}
             >
-              <ItemArt item={it} className="tr-showcase-art" />
+              <ItemPreview item={it} className="tr-showcase-art" />
               <b>{it.name}</b>
               <small className={`tr-rarity-text--${it.rarity}`}>{rarityLabels[it.rarity]}</small>
             </span>

@@ -11,7 +11,8 @@
 import { useEffect, useRef, type JSX, type ReactNode } from 'react';
 import { playCue } from '../../audio-cues.ts';
 import { Button } from '../../components/controls.tsx';
-import { ItemArt, Price } from '../../components/bits.tsx';
+import { Price } from '../../components/bits.tsx';
+import { ItemPreview } from '../../components/ItemPreview.tsx';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import { SLOT_NAMES, type CosmeticItem, type Currency, type Loadout } from '../../store/types.ts';
@@ -178,8 +179,10 @@ export interface ItemDetailProps {
   onEquip: () => void;
   /** Locker: unowned items link to the store. */
   onGetInStore?: () => void;
-  /** Bundle contents. */
+  /** Bundle contents (besides `item`, the hero). */
   bundle?: CosmeticItem[];
+  /** Heading when it differs from the item name (bundles). */
+  title?: string;
 }
 
 /** Docked item detail (never a modal over the stage). */
@@ -193,6 +196,7 @@ export function ItemDetail({
   onEquip,
   onGetInStore,
   bundle,
+  title,
 }: ItemDetailProps): JSX.Element {
   return (
     <div key={item.id} className={`tr-panel tr-item-detail tr-item-detail--${item.rarity} tr-enter-pop`}>
@@ -200,25 +204,32 @@ export function ItemDetail({
         className="tr-item-detail-art"
         style={{ ['--art-a' as string]: item.art[0], ['--art-b' as string]: item.art[1] }}
       >
-        <ItemArt item={item} />
+        <ItemPreview item={item} className="tr-item-icon" />
       </div>
       <div className="tr-col tr-grow" style={{ gap: '0.3em', minWidth: 0 }}>
         <span className={`tr-rarity-band tr-rarity-band--${item.rarity}`}>{rarityLabels[item.rarity]}</span>
-        <span className="tr-chip">{SLOT_NAMES[item.slot]}</span>
-        <b className="tr-title tr-h3 tr-ellipsis">{item.name}</b>
+        <span className="tr-chip">
+          {bundle ? `Bundle · ${bundle.length + 1} items` : SLOT_NAMES[item.slot]}
+        </span>
+        <b className="tr-title tr-h3 tr-ellipsis">{title ?? item.name}</b>
         {item.description && <span className="tr-small tr-muted tr-clamp-2">{item.description}</span>}
         {ANIMATED.has(item.slot) && <span className="tr-small">Playing on your Tumbler</span>}
         {bundle && bundle.length > 0 && (
           <div className="tr-row tr-wrap">
-            {bundle.map((b) => (
-              <span key={b.id} className="tr-chip tr-small">
-                {b.name}
+            {[item, ...bundle].map((b) => (
+              <span key={b.id} className={`tr-chip tr-small${b.owned ? ' tr-chip--mint' : ''}`}>
+                {b.name} · {SLOT_NAMES[b.slot]}
+                {b.owned ? ' · owned' : ''}
               </span>
             ))}
           </div>
         )}
         <div className="tr-row tr-wrap" style={{ gap: '0.5em' }}>
-          {item.owned ? (
+          {item.owned && bundle ? (
+            <span className="tr-chip tr-chip--mint">
+              <Icon name="check" size="0.9em" /> All owned
+            </span>
+          ) : item.owned ? (
             equipped ? (
               <span className="tr-chip tr-chip--mint">
                 <Icon name="check" size="0.9em" /> Equipped

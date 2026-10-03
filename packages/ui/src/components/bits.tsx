@@ -2,13 +2,15 @@
  * Presentational building blocks: sticker panels, progress bars, round-type
  * badges, currency pills, rarity item cards, the logo and round gumdrops.
  */
-import { useEffect, type CSSProperties, type JSX, type ReactNode } from 'react';
-import { uiEvents } from '../store/events.ts';
+import { type CSSProperties, type JSX, type ReactNode } from 'react';
 import { useUI } from '../store/uiStore.ts';
-import { SLOT_NAMES, type CosmeticItem, type Currency, type Rarity, type RoundType } from '../store/types.ts';
-import { rarityColors, rarityLabels, roundTypeStyle } from '../theme/tokens.ts';
+import { SLOT_NAMES, type CosmeticItem, type Currency, type RoundType } from '../store/types.ts';
+import { rarityLabels, roundTypeStyle } from '../theme/tokens.ts';
 import { formatNumber, useCountUp } from './hooks.ts';
 import { Icon } from './icons/index.tsx';
+import { ItemPreview } from './ItemPreview.tsx';
+
+export { ItemSilhouette } from './ItemPreview.tsx';
 
 /** Props for `Panel`. */
 export interface PanelProps {
@@ -192,68 +194,19 @@ export function Price({
   );
 }
 
-const requested = new Set<string>();
-let pending: string[] = [];
-let flushQueued = false;
-
-/** Batches thumbnail requests from every card mounted in the same tick into one intent. */
-function requestThumbnail(id: string): void {
-  // Deduplicate within one batch only: the renderer may evict (LRU) and needs a re-request later.
-  if (requested.has(id)) return;
-  requested.add(id);
-  pending.push(id);
-  if (flushQueued) return;
-  flushQueued = true;
-  queueMicrotask(() => {
-    flushQueued = false;
-    const ids = pending;
-    pending = [];
-    requested.clear();
-    if (ids.length > 0) uiEvents.emit('needThumbnails', { ids });
-  });
-}
-
 /**
- * Neutral placeholder while a thumbnail renders (or when it can't): a
- * Tumbler silhouette tinted with the item's rarity colour. Never an emoji.
- */
-export function ItemSilhouette({
-  rarity = 'common',
-  className,
-}: {
-  rarity?: Rarity;
-  className?: string;
-}): JSX.Element {
-  const c = rarityColors[rarity];
-  return (
-    <svg className={`tr-item-silhouette${className ? ` ${className}` : ''}`} viewBox="0 0 40 48" aria-hidden>
-      <path
-        d="M9 44c-1.5 0-2.5-1.2-2.3-2.7C8 28 10 6 20 6s12 22 13.3 35.3c.2 1.5-.8 2.7-2.3 2.7z"
-        fill={c}
-        opacity=".6"
-      />
-      <ellipse cx="20" cy="20" rx="7.5" ry="6" fill="#fff" opacity=".6" />
-    </svg>
-  );
-}
-
-/**
- * A cosmetic's picture: the rendered 3D thumbnail when the game provided
- * one (requested lazily on first mount), else a rarity silhouette.
+ * A cosmetic's picture.
+ *
+ * @deprecated Use {@link ItemPreview} (same behaviour, shown on the player's Tumbler).
  */
 export function ItemArt({
   item,
   className = 'tr-item-icon',
 }: {
-  item: Pick<CosmeticItem, 'id' | 'name'> & { rarity?: Rarity };
+  item: CosmeticItem;
   className?: string;
 }): JSX.Element {
-  const thumb = useUI((s) => s.thumbnails[item.id]);
-  useEffect(() => {
-    if (!thumb) requestThumbnail(item.id);
-  }, [item.id, thumb]);
-  if (thumb) return <img className={`${className} tr-item-thumb`} src={thumb} alt="" draggable={false} />;
-  return <ItemSilhouette rarity={item.rarity ?? 'common'} className={className} />;
+  return <ItemPreview item={item} className={className} />;
 }
 
 /** Props for `ItemCard`. */
@@ -282,7 +235,7 @@ export function ItemCard({
   return (
     <button
       type="button"
-      className={`tr-item tr-item--${item.rarity} tr-item--${size}${selected ? ' is-selected' : ''}${!item.owned ? ' is-locked' : ''}`}
+      className={`tr-item tr-item--${item.rarity} tr-item--${size}${selected ? ' is-selected' : ''}${!item.owned && !footer ? ' is-locked' : ''}`}
       style={{
         animationDelay: `${delay}ms`,
         ['--art-a' as string]: item.art[0],
@@ -295,11 +248,11 @@ export function ItemCard({
       aria-label={`${item.name}, ${rarityLabels[item.rarity]}${item.owned ? '' : ', not owned'}`}
     >
       <span className="tr-item-art">
-        <ItemArt item={item} />
+        <ItemPreview item={item} className="tr-item-icon" />
       </span>
       <span className="tr-item-name tr-ellipsis">{item.name}</span>
       <span className="tr-item-rarity">
-        {rarityLabels[item.rarity]} · {SLOT_NAMES[item.slot]}
+        {SLOT_NAMES[item.slot]} · {rarityLabels[item.rarity]}
       </span>
       {equipped && (
         <span className="tr-item-equipped" aria-label="Equipped">

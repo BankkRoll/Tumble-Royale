@@ -20,7 +20,52 @@ export interface TumblerAvatarProps {
   /** Hide the ground shadow (e.g. while falling). */
   noShadow?: boolean;
   title?: string;
+  /** Arm/body pose (emote previews). Default `idle`. */
+  pose?: AvatarPose;
 }
+
+/** Simple 2D poses for emote, celebration and victory previews. */
+export type AvatarPose = 'idle' | 'wave' | 'armsUp' | 'flex' | 'shrug' | 'hips' | 'facepalm' | 'bow' | 'spin';
+
+/** Arm ellipse centre and tilt (left, right) per pose, in the 100×120 body space. */
+const ARMS: Readonly<Record<AvatarPose, readonly [[number, number, number], [number, number, number]]>> = {
+  idle: [
+    [13, 72, 20],
+    [87, 72, -20],
+  ],
+  wave: [
+    [13, 72, 20],
+    [93, 40, 25],
+  ],
+  armsUp: [
+    [7, 40, -25],
+    [93, 40, 25],
+  ],
+  flex: [
+    [5, 56, -65],
+    [95, 56, 65],
+  ],
+  shrug: [
+    [6, 64, -75],
+    [94, 64, 75],
+  ],
+  hips: [
+    [17, 82, -40],
+    [83, 82, 40],
+  ],
+  facepalm: [
+    [13, 72, 20],
+    [62, 50, -35],
+  ],
+  bow: [
+    [13, 72, 20],
+    [87, 72, -20],
+  ],
+  spin: [
+    [8, 60, -50],
+    [92, 60, 50],
+  ],
+};
 
 const BODY = 'M50 9 C77 9 88 40 88 70 C88 98 72 110 50 110 C28 110 12 98 12 70 C12 40 23 9 50 9 Z';
 const INK = '#2b1a5e';
@@ -261,6 +306,7 @@ export const TumblerAvatar = memo(function TumblerAvatar({
   className,
   noShadow,
   title,
+  pose = 'idle',
 }: TumblerAvatarProps): JSX.Element {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
   const gradId = `g${uid}`;
@@ -272,6 +318,7 @@ export const TumblerAvatar = memo(function TumblerAvatar({
   // The 3D Tumbler's face plate is always cream; the tertiary body colour is for patterns.
   const face = '#fff7ec';
   const limb = shade(colors.primary, -0.18);
+  const arms = ARMS[pose];
 
   return (
     <svg
@@ -296,54 +343,69 @@ export const TumblerAvatar = memo(function TumblerAvatar({
       {!noShadow && <ellipse cx="50" cy="116" rx="28" ry="4.5" fill="rgba(43,26,94,.25)" />}
       <ellipse cx="38" cy="108" rx="10" ry="6.5" fill={limb} stroke={INK} strokeWidth="3.5" />
       <ellipse cx="62" cy="108" rx="10" ry="6.5" fill={limb} stroke={INK} strokeWidth="3.5" />
-      <ellipse
-        cx="13"
-        cy="72"
-        rx="7.5"
-        ry="10"
-        fill={limb}
-        stroke={INK}
-        strokeWidth="3.5"
-        transform="rotate(20 13 72)"
-      />
-      <ellipse
-        cx="87"
-        cy="72"
-        rx="7.5"
-        ry="10"
-        fill={limb}
-        stroke={INK}
-        strokeWidth="3.5"
-        transform="rotate(-20 87 72)"
-      />
-      <path d={BODY} fill={`url(#${gradId})`} />
-      {hasPattern && (
-        <rect
-          x="0"
-          y="0"
-          width="100"
-          height="120"
-          fill={`url(#${patId})`}
-          clipPath={`url(#${clipId})`}
-          opacity="0.9"
-        />
-      )}
-      <path
-        d="M22 90 C30 104 70 104 78 90 C74 104 62 110 50 110 C38 110 26 104 22 90 Z"
-        fill="rgba(43,26,94,.16)"
-      />
-      <path d={BODY} fill="none" stroke={INK} strokeWidth="4" />
-      <rect x="23" y="29" width="54" height="36" rx="18" fill={face} stroke={INK} strokeWidth="3" />
-      <ellipse cx="34" cy="22" rx="9" ry="4.5" fill="rgba(255,255,255,.65)" transform="rotate(-28 34 22)" />
-      <Eyes expression={expression} />
-      <Mouth expression={expression} />
-      {(expression === 'happy' || expression === 'grin' || expression === 'cheer') && (
-        <g fill="rgba(255,90,140,.35)">
-          <ellipse cx="30" cy="54" rx="4" ry="2.4" />
-          <ellipse cx="70" cy="54" rx="4" ry="2.4" />
+      {pose === 'spin' && (
+        <g fill="none" stroke={INK} strokeWidth="2.6" strokeLinecap="round" opacity=".55" aria-hidden>
+          <path d="M-4 52 Q-10 70 -2 88" />
+          <path d="M104 52 Q110 70 102 88" />
         </g>
       )}
-      <Hat hat={hat} />
+      <g transform={pose === 'bow' ? 'rotate(16 50 110)' : pose === 'spin' ? 'rotate(-8 50 110)' : undefined}>
+        {arms.map(([x, y, r], i) =>
+          pose === 'facepalm' && i === 1 ? null : (
+            <ellipse
+              key={i}
+              cx={x}
+              cy={y}
+              rx="7.5"
+              ry="10"
+              fill={limb}
+              stroke={INK}
+              strokeWidth="3.5"
+              transform={`rotate(${r} ${x} ${y})`}
+            />
+          ),
+        )}
+        <path d={BODY} fill={`url(#${gradId})`} />
+        {hasPattern && (
+          <rect
+            x="0"
+            y="0"
+            width="100"
+            height="120"
+            fill={`url(#${patId})`}
+            clipPath={`url(#${clipId})`}
+            opacity="0.9"
+          />
+        )}
+        <path
+          d="M22 90 C30 104 70 104 78 90 C74 104 62 110 50 110 C38 110 26 104 22 90 Z"
+          fill="rgba(43,26,94,.16)"
+        />
+        <path d={BODY} fill="none" stroke={INK} strokeWidth="4" />
+        <rect x="23" y="29" width="54" height="36" rx="18" fill={face} stroke={INK} strokeWidth="3" />
+        <ellipse cx="34" cy="22" rx="9" ry="4.5" fill="rgba(255,255,255,.65)" transform="rotate(-28 34 22)" />
+        <Eyes expression={expression} />
+        <Mouth expression={expression} />
+        {(expression === 'happy' || expression === 'grin' || expression === 'cheer') && (
+          <g fill="rgba(255,90,140,.35)">
+            <ellipse cx="30" cy="54" rx="4" ry="2.4" />
+            <ellipse cx="70" cy="54" rx="4" ry="2.4" />
+          </g>
+        )}
+        <Hat hat={hat} />
+        {pose === 'facepalm' && (
+          <ellipse
+            cx={arms[1][0]}
+            cy={arms[1][1]}
+            rx="7.5"
+            ry="10"
+            fill={limb}
+            stroke={INK}
+            strokeWidth="3.5"
+            transform={`rotate(${arms[1][2]} ${arms[1][0]} ${arms[1][1]})`}
+          />
+        )}
+      </g>
     </svg>
   );
 });

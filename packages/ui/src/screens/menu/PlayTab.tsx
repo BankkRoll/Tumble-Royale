@@ -11,7 +11,8 @@
 import { useRef, useState, type JSX } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { playCue } from '../../audio-cues.ts';
-import { Bar, ItemArt, TipCarousel } from '../../components/bits.tsx';
+import { Bar, TipCarousel } from '../../components/bits.tsx';
+import { ItemPreview } from '../../components/ItemPreview.tsx';
 import { Button } from '../../components/controls.tsx';
 import { formatClock, formatRemaining, useNow } from '../../components/hooks.ts';
 import { SafeImg } from '../../components/SafeImg.tsx';
@@ -104,7 +105,7 @@ function SeasonCard(): JSX.Element | null {
             className={`tr-season-next tr-rar-frame tr-rar-frame--${next.reward.item.rarity}`}
             title={`Tier ${next.tier}: ${next.reward.item.name}`}
           >
-            <ItemArt item={next.reward.item} className="tr-season-next-art" />
+            <ItemPreview item={next.reward.item} className="tr-season-next-art" />
             <small>T{next.tier}</small>
           </span>
         )}

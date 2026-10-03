@@ -85,6 +85,7 @@ beforeEach(() => {
 describe('Crown Shard shop', () => {
   it('lists the weekly exclusives with slot names, shard prices and the balance', () => {
     ui.getState().setStoreData(store());
+    ui.setState({ storeSection: 'shards' });
     const html = renderToStaticMarkup(<StoreTab />);
     expect(html).toContain('data-testid="shard-shop"');
     const t = text(html);

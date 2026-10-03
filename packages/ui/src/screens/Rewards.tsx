@@ -8,7 +8,8 @@
  */
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { playCue } from '../audio-cues.ts';
-import { Bar, Coin, ItemArt } from '../components/bits.tsx';
+import { Bar, Coin } from '../components/bits.tsx';
+import { ItemPreview } from '../components/ItemPreview.tsx';
 import { Button } from '../components/controls.tsx';
 import { formatNumber } from '../components/hooks.ts';
 import { uiEvents } from '../store/events.ts';
@@ -296,7 +297,7 @@ export function RewardsScreen(): JSX.Element | null {
                       {opened ? (
                         <>
                           <span className="tr-capsule-burst" aria-hidden />
-                          <ItemArt item={u} className="tr-capsule-icon" />
+                          <ItemPreview item={u} className="tr-capsule-icon" />
                           <b className="tr-ellipsis">{u.name}</b>
                           <span className={`tr-rarity-band tr-rarity-band--${u.rarity}`}>
                             {rarityLabels[u.rarity]}

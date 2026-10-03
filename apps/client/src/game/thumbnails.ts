@@ -3,14 +3,16 @@
  * challenge rewards, profile showcase, rewards unlock reveal, lobby emotes).
  *
  * Responsibilities:
- * - wearables, faces, patterns, colours: a real Tumbler (createTumblerVisual)
- *   wearing the item, rendered once into an offscreen render target on the
- *   game's renderer, framed on the part that matters (head for headwear and
- *   faces, a back view for back items, the body for patterns/colours);
- * - emotes, celebrations, victory poses: the Tumbler mid-animation;
+ * - wearables, faces, patterns, colours: the player's own Tumbler (their
+ *   active loadout, createTumblerVisual) wearing the item, rendered once into
+ *   an offscreen render target on the game's renderer, framed on the part that
+ *   matters (head for headwear and faces, a back view for back items, the body
+ *   for patterns/colours);
+ * - emotes, celebrations, victory poses: the player's Tumbler mid-animation;
+ * - when the active loadout changes, every rendered body thumbnail is dropped
+ *   and re-rendered on the new look, so cards never show a stranger;
  * - nameplates, banners, trails, footsteps (no mesh on the body): a small 2D
- *   illustration in the item's own colours;
- * - a vivid candy body (never a pale base) so patterns and colours read;
+ *   illustration in the item's own colours (the UI usually draws these itself);
  * - lazy + budgeted: one item per menu frame, skipped on slow frames; results
  *   are PNG data URLs in the UI store (`thumbnails`), LRU-capped.
  *
@@ -23,7 +25,7 @@
 import { getCosmetic, type CosmeticItem } from '@tumble/content/cosmetics';
 import type { CreateTumblerVisual } from '@tumble/render/scenes';
 import { CharacterState } from '@tumble/sim/character';
-import { ui, type CosmeticSlot as UiSlot, type TumblerColors } from '@tumble/ui';
+import { ui, type CosmeticSlot as UiSlot, type Loadout as UiLoadout, type TumblerColors } from '@tumble/ui';
 import {
   Color,
   DirectionalLight,
@@ -47,25 +49,25 @@ const SLOW_FRAME_MS = 24;
 const POSED = new Set<UiSlot>(['emote', 'celebration', 'victory']);
 const FLAT = new Set<UiSlot>(['nameplate', 'banner', 'trail', 'footsteps']);
 
-/** Candy body colours so the item reads against the card (wearables) or is the point (patterns). */
-const WEAR_BODY: TumblerColors = {
-  primary: '#7cc4ff',
-  secondary: '#ffffff',
-  tertiary: '#fff7ea',
-  pattern: 'plain',
-};
-const PATTERN_BODY: TumblerColors = {
-  primary: '#ff5fa8',
+/** Body used before the player has a profile (first frames, tests). */
+const FALLBACK_BODY: TumblerColors = {
+  primary: '#ff6fb5',
   secondary: '#ffd23f',
-  tertiary: '#fff7ea',
+  tertiary: '#7c5cff',
   pattern: 'plain',
 };
-const POSE_BODY: TumblerColors = {
-  primary: '#ffb03b',
-  secondary: '#ff5fa8',
-  tertiary: '#fff7ea',
-  pattern: 'dots',
-};
+
+/** The player's active look, which every body thumbnail is rendered on. */
+function wearerLoadout(): UiLoadout {
+  const s = ui.getState();
+  const active = s.inventory?.loadouts[s.inventory.activeLoadout];
+  return active ?? defaultUiLoadout('thumb', s.profile?.colors ?? FALLBACK_BODY);
+}
+
+/** Change key for the wearer: colours and equipped items. */
+function wearerKey(l: UiLoadout): string {
+  return JSON.stringify([l.colors, l.items, l.emotes]);
+}
 
 function uiSlot(item: CosmeticItem): UiSlot {
   return item.slot === 'color' ? 'colors' : item.slot;
@@ -141,7 +143,7 @@ function drawFlat(ctx: CanvasRenderingContext2D, item: CosmeticItem): void {
     ctx.font = '700 30px "Lilita One", "Fredoka", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('Tumbler', 128, 130);
+    ctx.fillText(ui.getState().profile?.name ?? 'You', 128, 130, 196);
     return;
   }
   if (item.slot === 'banner') {
@@ -242,6 +244,8 @@ export class ThumbnailRenderer {
   private readonly canvas = document.createElement('canvas');
   private readonly clear = new Color();
   private failed = false;
+  /** {@link wearerKey} of the look the cached thumbnails show. */
+  private wearer = '';
 
   /**
    * @param renderer - The game's renderer (shared, so no second GPU context).
@@ -262,6 +266,29 @@ export class ThumbnailRenderer {
     this.scene.add(rim);
     this.canvas.width = SIZE;
     this.canvas.height = SIZE;
+    this.wearer = wearerKey(wearerLoadout());
+    ui.subscribe((s, prev) => {
+      if (s.inventory !== prev.inventory || s.profile?.colors !== prev.profile?.colors) this.syncWearer();
+    });
+  }
+
+  /**
+   * Re-renders body thumbnails on the player's new look. Cached ids are
+   * re-queued (most recent first) so mounted cards refresh in place.
+   */
+  private syncWearer(): void {
+    const key = wearerKey(wearerLoadout());
+    if (key === this.wearer) return;
+    this.wearer = key;
+    const stale = this.lru.filter((id) => {
+      const item = getCosmetic(id);
+      return item !== undefined && !FLAT.has(uiSlot(item));
+    });
+    if (stale.length === 0) return;
+    const drop = new Set(stale);
+    for (let i = this.lru.length - 1; i >= 0; i--) if (drop.has(this.lru[i]!)) this.lru.splice(i, 1);
+    // Old pictures stay up until their replacements land; stale ones jump the queue.
+    if (!this.failed) this.queue.unshift(...[...stale].reverse().filter((id) => !this.queue.includes(id)));
   }
 
   /**
@@ -298,10 +325,13 @@ export class ThumbnailRenderer {
   pump(frameMs = 0): void {
     if (this.busy || this.failed || this.queue.length === 0 || frameMs > SLOW_FRAME_MS) return;
     const id = this.queue.shift() as string;
+    const look = this.wearer;
     this.busy = true;
     this.render(id)
       .then((url) => {
         if (url) this.store(id, url);
+        // The look changed mid-render: this picture is already stale.
+        if (look !== this.wearer && !this.queue.includes(id)) this.queue.unshift(id);
       })
       .catch((err) => {
         // A backend that can't read back (rare) keeps the rarity silhouettes.
@@ -322,6 +352,8 @@ export class ThumbnailRenderer {
   }
 
   private store(id: string, url: string): void {
+    const at = this.lru.indexOf(id);
+    if (at >= 0) this.lru.splice(at, 1);
     this.lru.push(id);
     const s = ui.getState();
     if (this.lru.length <= CACHE_CAP) {
@@ -342,10 +374,7 @@ export class ThumbnailRenderer {
     if (!item) return null;
     const slot = uiSlot(item);
     const posed = POSED.has(slot);
-    const body = posed ? POSE_BODY : slot === 'pattern' ? PATTERN_BODY : WEAR_BODY;
-    const visual = this.createTumbler(
-      uiLoadoutToTumbler(loadoutWithItem(defaultUiLoadout('thumb', body), slot, id)),
-    );
+    const visual = this.createTumbler(uiLoadoutToTumbler(loadoutWithItem(wearerLoadout(), slot, id)));
     this.scene.add(visual.object);
     visual.object.rotation.y = slot === 'back' ? Math.PI * 0.85 : slot === 'face' ? -0.12 : -0.35;
     const anim = {

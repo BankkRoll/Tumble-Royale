@@ -98,6 +98,24 @@ interface TiltOpts {
   thickness?: number;
   pivotDepth?: number;
   columnHeight?: number;
+  /** Idle sway peak (degrees); defaults to {@link idleSway}. */
+  swayDeg?: number;
+}
+
+/**
+ * Idle sway for a piece: a third of its tilt limit, capped so riders are never
+ * thrown. Without it an unloaded town sits dead flat and reads as static
+ * scenery (players only find out a plate tips once they are on it).
+ */
+function idleSway(maxTiltDeg: number): number {
+  return Math.min(3.5, maxTiltDeg * 0.3);
+}
+
+/** Deterministic per-piece sway phase/period so neighbours never rock in lockstep. */
+function swayTiming(x: number, z: number): { swayPhase: number; swayPeriod: number } {
+  const h = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
+  const f = h - Math.floor(h);
+  return { swayPhase: f * Math.PI * 2, swayPeriod: 4.5 + f * 2 };
 }
 
 /** Tilt plate addressed by its walking top. */
@@ -126,6 +144,8 @@ function tilt(
       mass: o.mass,
       pivotDepth: o.pivotDepth ?? 0,
       columnHeight: o.columnHeight ?? 8,
+      swayDeg: o.swayDeg ?? idleSway(o.maxTiltDeg),
+      ...swayTiming(x, z),
     },
   };
 }
@@ -139,6 +159,7 @@ interface SawOpts {
   stiffness: number;
   damping: number;
   mass: number;
+  swayDeg?: number;
 }
 
 /** Seesaw addressed by its level plank top, rocking along the course (yaw 90). */
@@ -148,7 +169,7 @@ function seesaw(id: string, x: number, top: number, z: number, o: SawOpts): Obst
     type: 'seesaw',
     position: v(x, top - o.pivotHeight - o.thickness, z),
     rotation: { yaw: 90 },
-    params: { ...o },
+    params: { ...o, swayDeg: o.swayDeg ?? idleSway(o.maxTiltDeg), ...swayTiming(x, z) },
   };
 }
 
@@ -162,10 +183,10 @@ const STRAIT_SAW: SawOpts = {
   damping: 100,
   mass: 30,
 };
-const SMALL_TILT: TiltOpts = { maxTiltDeg: 12, stiffness: 800, damping: 260, mass: 40 };
-const PLATE: TiltOpts = { maxTiltDeg: 12, stiffness: 700, damping: 230, mass: 35 };
+const SMALL_TILT: TiltOpts = { maxTiltDeg: 12, stiffness: 500, damping: 200, mass: 40 };
+const PLATE: TiltOpts = { maxTiltDeg: 12, stiffness: 420, damping: 170, mass: 35 };
 /** The grid sits under hammers: stiffer plates so a knock-back isn't also a slide-off. */
-const GRID_PLATE: TiltOpts = { maxTiltDeg: 10, stiffness: 900, damping: 300, mass: 35 };
+const GRID_PLATE: TiltOpts = { maxTiltDeg: 10, stiffness: 650, damping: 240, mass: 35 };
 
 // -----------------------------------------------------------------------------
 // Geometry
@@ -290,7 +311,7 @@ const bayDecor: Piece[] = [
 const obstacles: Obstacle[] = [
   { id: 's0-gate', type: 'startGate', position: v(0, 0, 7), params: { width: 26, height: 3 } },
 
-  tilt('s1-tilt-big', 0, 0, 18, 20, 12, { maxTiltDeg: 8, stiffness: 4000, damping: 1200, mass: 150 }),
+  tilt('s1-tilt-big', 0, 0, 18, 20, 12, { maxTiltDeg: 8, stiffness: 2500, damping: 900, mass: 150 }),
   tilt('s1-tilt-a', -7, 0, 39, 6, 10, SMALL_TILT),
   tilt('s1-tilt-b', 0, 0, 39, 6, 10, SMALL_TILT),
   tilt('s1-tilt-c', 7, 0, 39, 6, 10, SMALL_TILT),
@@ -321,15 +342,15 @@ const obstacles: Obstacle[] = [
 
   tilt('s4-table-1', 0, 0, 221, 24, 24, {
     maxTiltDeg: 10,
-    stiffness: 12000,
-    damping: 3500,
+    stiffness: 7000,
+    damping: 2400,
     mass: 300,
     thickness: 1,
   }),
   tilt('s4-table-2', 0, 0, TABLE_2_Z, 18, 18, {
     maxTiltDeg: 12,
-    stiffness: 8000,
-    damping: 2400,
+    stiffness: 5000,
+    damping: 1700,
     mass: 200,
     thickness: 1,
   }),
@@ -344,8 +365,8 @@ const obstacles: Obstacle[] = [
     [-5, 5].map((x) =>
       tilt(`s5-step-${k + 1}${x < 0 ? 'L' : 'R'}`, x, stepTop(k), z, 8, 8, {
         maxTiltDeg: 10,
-        stiffness: 1200,
-        damping: 400,
+        stiffness: 800,
+        damping: 300,
         mass: 60,
         columnHeight: 6 + stepTop(k),
       }),
@@ -395,6 +416,8 @@ const obstacles: Obstacle[] = [
     stiffness: 900,
     damping: 330,
     mass: 100,
+    // A 30 m plank lags its motor target badly; aim past the default so it still visibly rocks (~1°).
+    swayDeg: 4.5,
   }),
   { id: 's7-finish', type: 'finishLine', position: v(0, UPPER, 432), params: { width: 26, height: 6.5 } },
 
@@ -634,8 +657,8 @@ export default defineRound({
         ),
         's6-plank': { stiffness: 180, damping: 80 },
         's7-grand': { stiffness: 630, damping: 260 },
-        's4-table-1': { maxTiltDeg: 13, stiffness: 9000 },
-        's4-table-2': { maxTiltDeg: 15, stiffness: 6000 },
+        's4-table-1': { maxTiltDeg: 13, stiffness: 5200 },
+        's4-table-2': { maxTiltDeg: 15, stiffness: 3600 },
       },
     },
     {

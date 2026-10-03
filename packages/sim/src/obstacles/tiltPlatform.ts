@@ -12,6 +12,8 @@ import {
   ObstacleGroups,
   RuntimeBase,
   configureHinge,
+  setHingeTarget,
+  swayAngle,
   dequantize,
   hingeAngle,
   hingeRate,
@@ -53,6 +55,12 @@ export const tiltPlatformSchema = z.object({
   /** Build a static support column under the pivot. */
   column: z.boolean().default(true),
   columnHeight: z.number().positive().default(6),
+  /** Idle sway: peak rest-angle drift (degrees) so an empty plate still wobbles. 0 = still. */
+  swayDeg: z.number().min(0).max(30).default(0),
+  /** Seconds per sway cycle. Scaled by speedScale. */
+  swayPeriod: z.number().positive().default(5),
+  /** Sway phase (radians), to desynchronise neighbouring plates. */
+  swayPhase: z.number().default(0),
 });
 
 /** Validated tilt platform params. */
@@ -201,6 +209,16 @@ export class TiltPlatformRuntime extends RuntimeBase implements TiltPlatformView
   }
 
   update(ctx: ObstacleStepContext): void {
+    const p = this.p;
+    if (p.swayDeg > 0) {
+      const amp = p.swayDeg * DEG2RAD;
+      const t = ctx.t * this.build.speedScale;
+      // The two gimbal axes sway a quarter cycle apart, so a 'both' plate circles instead of see-sawing.
+      for (let i = 0; i < this.joints.length; i++) {
+        const target = swayAngle(t, amp, p.swayPeriod, p.swayPhase + i * Math.PI * 0.5);
+        setHingeTarget(this.joints[i]!, target, p.stiffness, p.damping);
+      }
+    }
     // Hysteresis so a plate resting near the threshold doesn't creak every step.
     if (ctx.tick % 6 === 0) {
       const max = this.p.maxTiltDeg * DEG2RAD;

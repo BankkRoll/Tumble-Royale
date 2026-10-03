@@ -107,6 +107,10 @@ describe('visibleChat', () => {
 
 describe('ChatWidget', () => {
   const ChatLayer = ChatWidget;
+  const tabsOf = (html: string) =>
+    [...html.matchAll(/role="tab"[^>]*>(.*?)<\/button>/g)].map((m) => m[1]!.replace(/<[^>]+>/g, ''));
+  const online = () => social.getState().dispatchChat({ type: 'room', room: 'global', access: 'write' });
+
   it('renders masked lines with the filter on and raw ones with it off', () => {
     social.getState().pushChat(line({ text: 'what the fuck', masked: 'what the ****' }));
     expect(renderToStaticMarkup(<ChatLayer />)).toContain('what the ****');
@@ -125,48 +129,115 @@ describe('ChatWidget', () => {
     expect(html).not.toContain('Go here!');
   });
 
-  it('open: tabs for available channels with unread badges, and the input', () => {
-    const s = social.getState();
-    s.dispatchChat({ type: 'available', channel: 'party', on: true });
-    s.dispatchChat({ type: 'available', channel: 'show', on: true });
-    s.pushChat(line({ text: 'ready?', channel: 'party', from: { userId: PAL, name: 'Pal', key: PAL } }));
-    s.dispatchChat({ type: 'open', channel: 'show' });
+  it('opens on All with "Message everyone" and shows Name#tag lines', () => {
+    online();
+    social
+      .getState()
+      .pushChat(
+        line({ text: 'hello world', from: { userId: RIVAL, name: 'Rival', tag: '0002', key: RIVAL } }),
+      );
+    social.getState().dispatchChat({ type: 'open' });
     const html = renderToStaticMarkup(<ChatLayer />);
-    const tabs = [...html.matchAll(/role="tab"[^>]*>(.*?)<\/button>/g)].map((m) =>
-      m[1]!.replace(/<[^>]+>/g, ''),
-    );
-    expect(tabs).toEqual(['Show', 'Party1', 'System']);
-    expect(html).toContain('aria-label="Chat message"');
+    expect(tabsOf(html)).toEqual(['All']);
+    expect(html).toContain('placeholder="Message everyone"');
+    expect(html).toContain('Rival#0002');
+    expect(html).toContain('hello world');
+    expect(html).toContain('aria-label="Actions for Rival"');
+  });
+
+  it('offline: one line explaining chat needs the online servers, no errors', () => {
+    social.getState().dispatchChat({ type: 'open' });
+    const html = renderToStaticMarkup(<ChatLayer />);
+    expect(html).toContain('placeholder="Chat needs the online servers"');
+    expect(html).not.toMatch(/System|not allowed|read-only/);
+    expect(html).not.toContain('No messages yet');
+  });
+
+  it('tabs: Party in a party with an unread dot, Whispers once there is a conversation, no System', () => {
+    online();
+    const s = social.getState();
+    s.dispatchChat({ type: 'party', on: true });
+    s.dispatchChat({ type: 'whispers', on: true });
+    s.pushChat(line({ text: 'ready?', channel: 'party', from: { userId: PAL, name: 'Pal', key: PAL } }));
+    s.dispatchChat({ type: 'open' });
+    let html = renderToStaticMarkup(<ChatLayer />);
+    expect(tabsOf(html)).toEqual(['All', 'Party']);
+    expect(html).toContain('aria-label="1 unread"');
     expect(html).not.toContain('ready?');
-    for (const t of tabs) expect(t).not.toMatch(EMOJI);
+    s.pushChat(line({ text: 'psst', channel: 'whisper', from: { userId: PAL, name: 'Pal', key: PAL } }));
+    html = renderToStaticMarkup(<ChatLayer />);
+    expect(tabsOf(html)).toEqual(['All', 'Party', 'Whispers']);
+    for (const t of tabsOf(html)) expect(t).not.toMatch(EMOJI);
+  });
+
+  it('System notices show inline in every tab and are never clickable', () => {
+    online();
+    const s = social.getState();
+    s.dispatchChat({ type: 'party', on: true });
+    s.pushChat(
+      line({ text: 'Pal joined the party', channel: 'system', from: { name: 'System', key: 'system' } }),
+    );
+    for (const tab of ['all', 'party'] as const) {
+      s.dispatchChat({ type: 'open', channel: tab });
+      const html = renderToStaticMarkup(<ChatLayer />);
+      expect(html).toMatch(/class="tr-chat-line is-system"[^>]*>.*Pal joined the party/);
+      expect(html).not.toContain('Actions for System');
+    }
+  });
+
+  it('colours party mates, marks friends and hides blocked players', () => {
+    online();
+    ui.getState().setFriends([{ id: PAL, name: 'Pal', tag: '0001', presence: 'inMenu', colors }]);
+    ui.getState().setParty({
+      code: 'ABC234',
+      maxSize: 4,
+      members: [
+        { id: me.id, name: me.name, colors, ready: true, isLeader: true, isSelf: true },
+        { id: PAL, name: 'Pal', tag: '0001', colors, ready: false, isLeader: false, isSelf: false },
+      ],
+    });
+    social.getState().setBlocked([{ userId: RIVAL, name: 'Rival', tag: '0002' }]);
+    social
+      .getState()
+      .pushChat(line({ text: 'from pal', from: { userId: PAL, name: 'Pal', tag: '0001', key: PAL } }));
+    social.getState().pushChat(line({ text: 'from rival' }));
+    social.getState().dispatchChat({ type: 'open' });
+    const html = renderToStaticMarkup(<ChatLayer />);
+    expect(html).toContain('is-party-mate');
+    expect(html).toContain('tr-chat-friend');
+    expect(html).toContain('Actions for Pal (friend)');
+    expect(html).toContain('from pal');
+    expect(html).not.toContain('from rival');
+  });
+
+  it('shows a refusal once as a short hint', () => {
+    social.getState().dispatchChat({ type: 'hint', text: 'Slow down a little', at: Date.now() });
+    const html = renderToStaticMarkup(<ChatLayer />);
+    expect(html.match(/Slow down a little/g)).toHaveLength(1);
+    expect(html).toContain('data-testid="chat-hint"');
   });
 
   it('gamepad quick chat shows preset buttons instead of a text field', () => {
-    social.getState().dispatchChat({ type: 'available', channel: 'show', on: true });
+    social.getState().dispatchChat({ type: 'room', room: 'show', access: 'read' });
     social.getState().dispatchChat({ type: 'open', mode: 'quick' });
     const html = renderToStaticMarkup(<ChatLayer />);
     expect(buttons(html)).toEqual(expect.arrayContaining(['Go here!', 'Watch out!', 'GG!', 'Wow!', 'Close']));
     expect(html).not.toContain('aria-label="Chat message"');
   });
 
-  it('labels outgoing whispers and system notices', () => {
-    const s = social.getState();
-    s.pushChat(
+  it('labels outgoing whispers', () => {
+    social.getState().pushChat(
       line({
         text: 'see you there',
         channel: 'whisper',
         self: true,
         from: { name: 'Sprinkles', key: me.id },
-        to: { userId: PAL, name: 'Pal', key: PAL },
+        to: { userId: PAL, name: 'Pal', tag: '0001', key: PAL },
       }),
-    );
-    s.pushChat(
-      line({ text: 'Pal joined the party', channel: 'system', from: { name: 'System', key: 'system' } }),
     );
     settings({ showChat: false });
     const html = renderToStaticMarkup(<ChatLayer />);
-    expect(html).toContain('To Pal');
-    expect(html).toContain('Pal joined the party');
+    expect(html).toContain('To Pal#0001');
   });
 });
 

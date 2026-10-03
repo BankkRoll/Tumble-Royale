@@ -72,6 +72,8 @@ export interface LobbyDebugState {
   partySlot: number;
   /** Tumblers on the platform, the local one included. */
   partySize: number;
+  /** Other party members as drawn on this screen. */
+  remotes: { userId: string; slot: number; x: number; z: number }[];
 }
 
 /** Seconds without input before idle play eases back to the lobby framing. */
@@ -320,6 +322,7 @@ export class MenuView implements GameView {
         cameraPitch: pitch,
         partySlot: this.partyLobby.selfSlot,
         partySize: this.partyLobby.memberCount,
+        remotes: this.partyLobby.debugRemotes(),
       };
     }
     const p = this.stage.playerObject.position;
@@ -330,6 +333,7 @@ export class MenuView implements GameView {
       cameraPitch: pitch,
       partySlot: this.partyLobby.selfSlot,
       partySize: this.partyLobby.memberCount,
+      remotes: this.partyLobby.debugRemotes(),
     };
   }
 

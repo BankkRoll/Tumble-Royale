@@ -237,6 +237,16 @@ export class PartyLobbyView {
   }
 
   /** Members on the platform, including the local player (1 when solo). */
+  /** Other members as drawn here (debug/automation; allocates, never call per frame). */
+  debugRemotes(): { userId: string; slot: number; x: number; z: number }[] {
+    return this.list.map((r) => ({
+      userId: r.userId,
+      slot: r.slot,
+      x: r.holder.position.x,
+      z: r.holder.position.z,
+    }));
+  }
+
   get memberCount(): number {
     return this.self.live ? (this.roster?.members.length ?? 1) : 1;
   }

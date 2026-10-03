@@ -4,7 +4,9 @@
  * renders it with the real level, environment and obstacle visuals.
  *
  * URL params: `round`, `bots` (default 20), `seed`, `stage`, `variation`,
- * `cam=orbit|flyover|follow`, `backend`, `ts` (time scale).
+ * `mutator`, `intro=1` (hold the round in its intro like a show does, so the
+ * pre-roll obstacle clock is visible), `cam=orbit|flyover|follow`, `backend`,
+ * `ts` (time scale).
  * Keys: O orbit · F flyover · L follow leader · N next bot · R restart.
  */
 import { Clock, PerspectiveCamera, Scene, Vector3 } from 'three/webgpu';
@@ -12,7 +14,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { getRound, ROUNDS } from '@tumble/content/rounds';
 import { getTheme } from '@tumble/content/themes';
 import { createRenderer, type BackendPreference } from '@tumble/render';
-import { createEnvironment, type Environment } from '@tumble/render/environment';
+import { MeshBatcher } from '@tumble/render/batching';
+import { createEnvironment, roundDressing, type Environment } from '@tumble/render/environment';
 import { buildLevelVisuals, type LevelVisuals } from '@tumble/render/level';
 import { getObstacleVisual, type ObstacleVisual } from '@tumble/render/obstacles';
 import { createPlaceholderTumbler, defaultLoadout, type TumblerVisual } from '@tumble/render/scenes';
@@ -22,12 +25,19 @@ import {
   loadRapier,
   type CharacterFullState,
   type CreateTumblerController,
+  type ObstacleRuntime,
   type Rapier,
 } from '@tumble/sim';
-import { createMatchSim, createSimpleController, type MatchSimHandle } from '@tumble/sim/match';
+import {
+  createMatchSim,
+  createSimpleController,
+  measureCourse,
+  type MatchSimHandle,
+} from '@tumble/sim/match';
 import { OBSTACLE_REGISTRY } from '@tumble/sim/obstacles';
 import { generateBotNames } from '@tumble/sim/bots';
 import { StatsOverlay } from '../debug/stats.ts';
+import { ObstacleClock, introPreRollSeconds } from '../game/round/obstacleClock.ts';
 
 const COLORS = ['#ff6fb5', '#5ce1e6', '#ffd23f', '#7c5cff', '#6ee7a8', '#ff8a3d', '#ff4f8b', '#3fa9ff'];
 const COUNTDOWN = 3;
@@ -39,6 +49,11 @@ interface LevelDebug {
   warnings: readonly string[];
   setCamera(mode: CamMode, t?: number): void;
   status(): { time: number; qualified: number; target: number; eliminated: number; finished: boolean };
+  /**
+   * Per obstacle: a checksum of its visual's world matrices and of its colliders' poses.
+   * Sampled twice, a moving collider whose visual checksum never changes is a frozen visual.
+   */
+  obstacleSignatures(): { id: string; type: string; visual: number; sim: number }[];
   /** Max progress along +Z reached by any bot, as a rough reachability signal. */
   furthestZ(): number;
 }
@@ -94,7 +109,11 @@ class LevelSession {
   readonly sim: MatchSimHandle;
   readonly level: LevelVisuals;
   readonly env: Environment;
-  readonly obstacles: ObstacleVisual[] = [];
+  readonly obstacles: { visual: ObstacleVisual; runtime: ObstacleRuntime }[] = [];
+  /** Same automatic instancing as the game's round view, so batched parts are checked here too. */
+  readonly batcher = new MeshBatcher();
+  private readonly clock: ObstacleClock;
+  private introLeft: number;
   /** Sim warnings plus visual build failures. */
   readonly warnings: string[] = [];
   readonly tumblers = new Map<number, TumblerVisual>();
@@ -126,7 +145,7 @@ class LevelSession {
     R: Rapier,
     readonly round: RoundDefinition,
     create: CreateTumblerController,
-    opts: { bots: number; seed: number; stage: number; variation?: string },
+    opts: { bots: number; seed: number; stage: number; variation?: string; mutator?: string; intro: boolean },
   ) {
     const theme = getTheme(round.theme);
     const names = generateBotNames(opts.bots, new Rng(opts.seed), new Set());
@@ -146,29 +165,42 @@ class LevelSession {
         players,
         mode: 'offline',
         ...(opts.variation ? { variationId: opts.variation } : {}),
+        ...(opts.mutator ? { mutatorId: opts.mutator } : {}),
       },
       { createController: create, obstacles: OBSTACLE_REGISTRY },
     ) as MatchSimHandle;
-    this.sim.setPhase(RoundPhase.Countdown, -COUNTDOWN);
+    this.clock = new ObstacleClock(introPreRollSeconds(round.flyover.duration));
+    this.introLeft = opts.intro ? introPreRollSeconds(round.flyover.duration) : 0;
+    this.sim.setPhase(
+      opts.intro ? RoundPhase.IntroFlyover : RoundPhase.Countdown,
+      opts.intro ? 0 : -COUNTDOWN,
+    );
     this.warnings.push(...this.sim.warnings);
 
-    this.env = createEnvironment(theme, { courseBounds: round.bounds, seed: round.decorSeed });
+    this.env = createEnvironment(theme, {
+      ...roundDressing(round, measureCourse(this.sim.round, this.sim.obstacleRuntimes)),
+      seed: round.decorSeed,
+    });
     this.env.attach(this.scene);
     this.level = buildLevelVisuals(round, theme);
     this.scene.add(this.level.object);
 
-    const speedScale = round.speedScaleByStage[Math.min(opts.stage, round.speedScaleByStage.length - 1)] ?? 1;
+    const speedScale = this.sim.speedScale;
     for (const rt of this.sim.obstacleRuntimes) {
       const factory = getObstacleVisual(rt.instance.type);
       if (!factory) continue;
       try {
         const v = factory(rt.instance, { theme: round.theme, speedScale, seed: opts.seed });
-        this.obstacles.push(v);
+        this.obstacles.push({ visual: v, runtime: rt });
         this.scene.add(v.object);
+        this.batcher.add(v.object);
       } catch (err) {
         this.warnings.push(`visual ${rt.instance.id} (${rt.instance.type}): ${String(err)}`);
       }
     }
+
+    this.batcher.build();
+    this.scene.add(this.batcher.object);
 
     for (const p of players) {
       const v = createPlaceholderTumbler(defaultLoadout(COLORS[p.id % COLORS.length]));
@@ -181,6 +213,10 @@ class LevelSession {
 
   update(dt: number): void {
     this.wall += dt;
+    if (this.introLeft > 0) {
+      this.introLeft -= dt;
+      if (this.introLeft <= 0) this.sim.setPhase(RoundPhase.Countdown, -COUNTDOWN);
+    }
     if (this.sim.phase === RoundPhase.Countdown && this.sim.time >= 0)
       this.sim.setPhase(RoundPhase.Playing, 0);
     this.stepper.advance(dt);
@@ -209,14 +245,28 @@ class LevelSession {
     this.level.update(this.sim.time, dt);
   }
 
-  /** Obstacle visuals need their runtime for non-pure state; pair them up by index. */
+  /** Poses every obstacle visual on the same clock the game's round view uses. */
   updateObstacles(dt: number): void {
-    const rts = this.sim.obstacleRuntimes;
-    let vi = 0;
-    for (const rt of rts) {
-      if (!getObstacleVisual(rt.instance.type)) continue;
-      this.obstacles[vi++]?.update(this.sim.time, dt, rt);
-    }
+    const t = this.clock.time(this.sim.phase, this.sim.time, dt);
+    for (const o of this.obstacles) o.visual.update(t, dt, o.runtime);
+  }
+
+  signatures(): { id: string; type: string; visual: number; sim: number }[] {
+    return this.obstacles.map(({ visual, runtime }) => {
+      let v = 0;
+      visual.object.updateMatrixWorld(true);
+      visual.object.traverse((o) => {
+        const e = o.matrixWorld.elements;
+        for (let i = 0; i < 16; i++) v += e[i]! * (i + 1);
+      });
+      let sum = 0;
+      for (const c of runtime.colliders) {
+        const t = c.translation();
+        const r = c.rotation();
+        sum += t.x + t.y * 3 + t.z * 7 + r.x * 11 + r.y * 13 + r.z * 17 + r.w * 19;
+      }
+      return { id: runtime.instance.id, type: runtime.instance.type, visual: v, sim: sum };
+    });
   }
 
   leaderPosition(out: Vector3): Vector3 {
@@ -228,7 +278,8 @@ class LevelSession {
   }
 
   dispose(): void {
-    for (const o of this.obstacles) o.dispose();
+    this.batcher.dispose();
+    for (const o of this.obstacles) o.visual.dispose();
     for (const v of this.tumblers.values()) v.dispose();
     this.level.dispose();
     this.env.dispose();
@@ -262,6 +313,8 @@ async function main(): Promise<void> {
     seed: Number(params.get('seed') ?? 7),
     stage: Number(params.get('stage') ?? 0),
     ...(params.get('variation') ? { variation: params.get('variation')! } : {}),
+    ...(params.get('mutator') ? { mutator: params.get('mutator')! } : {}),
+    intro: params.get('intro') === '1',
   };
   let session = new LevelSession(R, round, controller.create, opts);
 
@@ -319,6 +372,7 @@ async function main(): Promise<void> {
       };
     },
     furthestZ: () => session.furthest,
+    obstacleSignatures: () => session.signatures(),
   };
   window.__level = debug;
 

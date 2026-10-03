@@ -820,27 +820,31 @@ they don't collide with the surface-overlay meanings).
 | C    | Hazards, kinematic obstacles | Screen-space edge (object-ID mask)        | 2.5 px             | `ink` @ 85 %             | Fades 100–140 m             |
 | D    | Background decor             | None (near layer: 1 px `ink-soft` @ 30 %) | 0–1 px             | `ink-soft` `#3a2f66`     | Off beyond 80 m             |
 
-Low quality: tier B/C merged into a single depth-only pass at 1.5 px.
+Built: only tier A. The screen-space edge outline (tiers B/C) exists in
+`@tumble/render/post` but is **off in every quality preset**: it traced
+blob-shadow decals as squares and fringed edges (`DECISIONS.md`, "Bloom only
+above rim light; no screen-space edge outline"). Readability comes from tier
+A, rim light and the palette rules instead.
 
 ### 11.2 Bloom
 
-| Parameter     | Value                                                                                                                   |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Mode          | Selective: only emissive > 1.0 HDR or bloom-layer objects (Crown, lasers, telegraph peaks, confetti glints, neon decor) |
-| Threshold     | 1.0 (linear HDR), knee 0.2                                                                                              |
-| Strength      | Theme value (§3.2) × weather multiplier, clamp 0.15–1.0                                                                 |
-| Radius        | 0.4 (mip chain 5)                                                                                                       |
-| Reduced-flash | Strength cap 0.25                                                                                                       |
+| Parameter     | Value                                                                                                                 |
+| ------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Mode          | Selective: only the scene pass's emissive buffer blooms (Crown, lasers, telegraph peaks, VFX, neon decor). Off on Low |
+| Threshold     | 0.75 in every theme, above the toon rim light that also writes emissive (`DECISIONS.md`)                              |
+| Strength      | Theme value (`packages/content/src/themes/themes.ts`) × weather multiplier                                            |
+| Radius        | 0.45 (0.4 in one theme)                                                                                               |
+| Reduced-flash | Strength cap 0.25                                                                                                     |
 
 ### 11.3 LUT, vignette, chromatic punch
 
-| Effect                | Value                                                                                                                                                                 |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| LUT                   | 32³ per theme (`lut_<theme>`), applied after bloom; `safe`/`danger`/`grab-yellow` pixels protected by an object-ID mask so grading never shifts semantic hues by > 6° |
-| Vignette              | Intensity 0.18, smoothness 0.45, colour `ink` `#1f1640`; 0.35 during finish slow-mo; 0.28 while spectating; never > 0.4                                               |
-| Chromatic punch       | On hit/knockback only: max 0.006 UV offset, 120 ms decay, max 2 triggers per second, never on spectated players; disabled in reduced-flash                            |
-| Camera shake (trauma) | Max trauma 0.6, decay 1.5/s, toggleable                                                                                                                               |
-| Finish slow-mo        | 0.35 time scale, 0.8 s, desat background 15 %, Tumbler excluded                                                                                                       |
+| Effect                | Value                                                                                                                                                 |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Colour grade          | Built as per-theme grade parameters (saturation, contrast, tint, vignette) after tone mapping, not 32³ LUT textures; no object-ID hue protection mask |
+| Vignette              | Intensity 0.18, smoothness 0.45, colour `ink` `#1f1640`; 0.35 during finish slow-mo; 0.28 while spectating; never > 0.4                               |
+| Chromatic punch       | On hit/knockback only: max 0.006 UV offset, 120 ms decay, max 2 triggers per second, never on spectated players; disabled in reduced-flash            |
+| Camera shake (trauma) | Max trauma 0.6, decay 1.5/s, toggleable                                                                                                               |
+| Finish slow-mo        | 0.35 time scale, 0.8 s, desat background 15 %, Tumbler excluded                                                                                       |
 
 ### 11.4 Reduced-flash mode
 

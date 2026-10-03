@@ -846,6 +846,8 @@ export class GameApp {
       },
       onMenuTab: ({ tab }) => {
         if (tab !== 'play') this.menu?.setIdlePlay(false);
+        // The Profile tab lists the latest shows; an account's history lives on the API.
+        if (tab === 'profile') void online()?.history();
       },
       onOverlay: ({ overlay }) => {
         if (overlay === 'friends') void online()?.ensureParty();

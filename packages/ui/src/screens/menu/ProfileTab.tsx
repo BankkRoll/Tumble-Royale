@@ -15,6 +15,7 @@ import { Button } from '../../components/controls.tsx';
 import { formatNumber, ordinal, useDisplayName } from '../../components/hooks.ts';
 import { Icon, type IconName } from '../../components/icons/index.tsx';
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
+import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type {
   MatchHistoryEntry,
@@ -492,6 +493,16 @@ function AccountCard({ p }: { p: ProfileData }): JSX.Element {
   );
 }
 
+/** Shows listed inline on the Profile tab; See all opens the full Match history. */
+export const PROFILE_HISTORY_PREVIEW = 5;
+
+/** Opens the full Match history screen, asking the game for fresh entries. */
+export function openMatchHistory(): void {
+  playCue('ui.click');
+  uiEvents.emit('requestMatchHistory');
+  ui.getState().setScreen('matchHistory', { transition: 'fade' });
+}
+
 /** Profile tab (self). */
 export function ProfileTab(): JSX.Element {
   const p = useUI((s) => s.profile);
@@ -508,10 +519,14 @@ export function ProfileTab(): JSX.Element {
         <Stats p={p} />
         <div className="tr-panel tr-profile-history">
           <div className="tr-panel-head">
-            <h2 className="tr-title tr-h3 tr-grow">Match history</h2>
-            <small className="tr-muted">Last {Math.min(20, history.length)} shows</small>
+            <h2 className="tr-title tr-h3 tr-grow">Latest shows</h2>
+            {history.length > 0 && (
+              <Button variant="secondary" size="sm" data-testid="history-see-all" onClick={openMatchHistory}>
+                See all
+              </Button>
+            )}
           </div>
-          <HistoryList entries={history} />
+          <HistoryList entries={history.slice(0, PROFILE_HISTORY_PREVIEW)} />
         </div>
       </div>
     </div>

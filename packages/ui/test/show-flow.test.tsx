@@ -8,7 +8,14 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { ConnectionLayer, reconnectStatusLine } from '../src/components/system.tsx';
 import { EliminatedSheet, SpectateBanner } from '../src/hud/widgets.tsx';
 import { onlineTileSub } from '../src/screens/menu/PlayTab.tsx';
-import { MetOfflineCard } from '../src/screens/menu/ProfileTab.tsx';
+import { MatchHistoryScreen, closeMatchHistory } from '../src/screens/MatchHistory.tsx';
+import {
+  MetOfflineCard,
+  PROFILE_HISTORY_PREVIEW,
+  ProfileTab,
+  openMatchHistory,
+} from '../src/screens/menu/ProfileTab.tsx';
+import { uiEvents } from '../src/store/events.ts';
 import { InGameMenu, leaveShowBody } from '../src/screens/overlays/InGameMenu.tsx';
 import { FinalHypeScreen, RoundResultsScreen } from '../src/screens/Results.tsx';
 import { WatchChoiceLayer, watchChoiceRewardsNote } from '../src/screens/overlays/WatchChoice.tsx';
@@ -180,6 +187,56 @@ describe('met-offline profile card', () => {
     expect(html).toContain('BOT');
     expect(html).not.toContain('XP');
     expect(html).not.toContain('Unranked');
+  });
+});
+
+describe('match history', () => {
+  const entries = Array.from({ length: 9 }, (_, i) => ({
+    id: `m${i}`,
+    time: 1_700_000_000_000 + i,
+    playlist: `Show ${i}`,
+    rounds: [{ name: 'Gumdrop Gauntlet', type: 'race' as const, qualified: true }],
+    result: 'eliminated' as const,
+    xp: 100,
+  }));
+
+  it('the Profile tab lists the latest few with See all', () => {
+    ui.setState({
+      matchHistory: entries,
+      profile: {
+        id: 'me',
+        name: 'Sprinkles',
+        tag: '1234',
+        level: 3,
+        xp: 10,
+        xpToNext: 100,
+        gumballs: 0,
+        gems: 0,
+        crowns: 0,
+        colors,
+        isGuest: true,
+        stats: { shows: 9, finals: 0, roundsQualified: 9, bestStreak: 0 },
+      },
+    });
+    const html = renderToStaticMarkup(<ProfileTab />);
+    expect(html).toContain('data-testid="history-see-all"');
+    expect(html.match(/tr-history-row/g)).toHaveLength(PROFILE_HISTORY_PREVIEW);
+  });
+
+  it('See all opens the screen and asks for fresh history; Back returns to Profile', () => {
+    let asked = 0;
+    const off = uiEvents.on('requestMatchHistory', () => asked++);
+    ui.setState({ screen: 'menu', menuTab: 'play' });
+    openMatchHistory();
+    expect(asked).toBe(1);
+    expect(ui.getState().screen === 'matchHistory' || ui.getState().wipe.target === 'matchHistory').toBe(
+      true,
+    );
+    ui.setState({ matchHistory: entries });
+    expect(renderToStaticMarkup(<MatchHistoryScreen />).match(/tr-history-row/g)).toHaveLength(9);
+    closeMatchHistory();
+    expect(ui.getState().menuTab).toBe('profile');
+    off();
   });
 });
 

@@ -538,8 +538,8 @@ export class ApiClient {
     this.request('PUT', `/loadouts/${index}`, { name, items });
   activateLoadout = (index: number): Promise<{ activeIndex: number; items: ApiLoadoutItems }> =>
     this.request('POST', `/loadouts/${index}/activate`);
-  /** Deletes the account on the server. */
-  deleteMe = (): Promise<void> => this.request('DELETE', '/me', { confirm: true });
+  /** Deletes the account on the server (204; the literal confirm guards against stray calls). */
+  deleteMe = (): Promise<void> => this.request('DELETE', '/me', { confirm: 'DELETE' });
 
   // ---------------------------------------------------------------------------
   // Sign-in methods

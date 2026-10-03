@@ -2,11 +2,11 @@
  * System layers: toasts (cards + in-round feed), modal dialogs and the
  * reconnecting curtain.
  */
-import { memo, useEffect, useRef, type JSX } from 'react';
+import { memo, useEffect, useRef, useState, type JSX } from 'react';
 import { playCue } from '../audio-cues.ts';
 import { uiEvents } from '../store/events.ts';
 import { ui, useUI } from '../store/uiStore.ts';
-import type { DialogButton, Toast } from '../store/types.ts';
+import type { ConnectionState, DialogButton, Toast } from '../store/types.ts';
 import { Button } from './controls.tsx';
 import { TumblerAvatar } from './TumblerAvatar.tsx';
 
@@ -191,11 +191,80 @@ export const DialogLayer = memo(function DialogLayer(): JSX.Element | null {
   );
 });
 
-/** Reconnecting curtain. */
+/**
+ * Curtain status line: the attempt number and the countdown to the next try.
+ *
+ * @param conn - Connection state.
+ * @param now - Epoch ms.
+ * @returns Copy, or null when there is no attempt to report.
+ */
+export function reconnectStatusLine(conn: ConnectionState, now: number): string | null {
+  if (conn.attempt === undefined || conn.maxAttempts === undefined) return null;
+  const of = `Attempt ${conn.attempt} of ${conn.maxAttempts}`;
+  if (conn.nextAttemptAt === undefined) return of;
+  const secs = Math.ceil((conn.nextAttemptAt - now) / 1000);
+  return secs > 0 ? `${of} in ${secs}s` : `${of}…`;
+}
+
+/** Re-renders every 250 ms while `active` (curtain countdown). */
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    setNow(Date.now());
+    const id = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(id);
+  }, [active]);
+  return now;
+}
+
+/** Reconnecting curtain; after the last attempt fails it offers Try again and Leave. */
 export const ConnectionLayer = memo(function ConnectionLayer(): JSX.Element | null {
   const conn = useUI((s) => s.connection);
   const colors = useUI((s) => s.profile?.colors);
+  const now = useNow(conn.status === 'reconnecting');
+  if (conn.status === 'lost') {
+    return (
+      <div
+        className="tr-reconnect tr-interactive"
+        data-nav-scope="15"
+        role="alertdialog"
+        aria-live="assertive"
+        data-testid="connection-lost"
+      >
+        <div className="tr-dim" />
+        <div className="tr-panel tr-reconnect-card tr-enter-pop">
+          <h2 className="tr-title tr-h2">Connection lost</h2>
+          <p className="tr-muted">
+            {conn.message ?? "We couldn't get your Tumbler back into the show."}
+            {conn.maxAttempts !== undefined && ` Tried ${conn.maxAttempts} times.`}
+          </p>
+          <div className="tr-row tr-wrap" style={{ justifyContent: 'center' }}>
+            <Button
+              variant="go"
+              autoFocusNav
+              cue="ui.confirm"
+              data-testid="connection-retry"
+              onClick={() => uiEvents.emit('retryConnection')}
+            >
+              Try again
+            </Button>
+            <Button
+              variant="secondary"
+              data-nav-back=""
+              cue="ui.back"
+              data-testid="connection-leave"
+              onClick={() => uiEvents.emit('leaveShow')}
+            >
+              Leave
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (conn.status !== 'reconnecting' && conn.status !== 'connecting') return null;
+  const line = reconnectStatusLine(conn, now);
   return (
     <div className="tr-reconnect tr-interactive" data-nav-scope="15" role="alertdialog" aria-live="assertive">
       <div className="tr-dim" />
@@ -213,20 +282,28 @@ export const ConnectionLayer = memo(function ConnectionLayer(): JSX.Element | nu
           </div>
         </div>
         <h2 className="tr-title tr-h2">{conn.status === 'connecting' ? 'Connecting…' : 'Reconnecting…'}</h2>
-        <p className="tr-muted">
-          {conn.message ?? 'Hold on, your Tumbler is running back to the show.'}
-          {conn.attempt !== undefined &&
-            conn.maxAttempts !== undefined &&
-            ` (attempt ${conn.attempt} of ${conn.maxAttempts})`}
-        </p>
+        <p className="tr-muted">{conn.message ?? 'Hold on, your Tumbler is running back to the show.'}</p>
+        {line && (
+          <p className="tr-small" data-testid="reconnect-attempt">
+            {line}
+          </p>
+        )}
         <div className="tr-dots-loading" aria-hidden>
           <i />
           <i />
           <i />
         </div>
-        <Button variant="secondary" data-nav-back="" cue="ui.back" onClick={() => uiEvents.emit('leaveShow')}>
-          Leave
-        </Button>
+        {/* Reconnects run their attempts out first (Leave comes with Connection lost); a first join can be abandoned. */}
+        {conn.status === 'connecting' && (
+          <Button
+            variant="secondary"
+            data-nav-back=""
+            cue="ui.back"
+            onClick={() => uiEvents.emit('leaveShow')}
+          >
+            Leave
+          </Button>
+        )}
       </div>
     </div>
   );

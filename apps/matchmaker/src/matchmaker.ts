@@ -14,7 +14,7 @@ import {
   type QueueEntry,
   type QueueStatus,
 } from './engine.ts';
-import { pickServer, SERVER_TTL_MS, type GameServer } from './servers.ts';
+import { humansInRooms, pickServer, SERVER_TTL_MS, type GameServer } from './servers.ts';
 import type { MMStore } from './store.ts';
 import {
   JOIN_TICKET_TTL_SEC,
@@ -80,6 +80,16 @@ export type MMEvent =
   | { type: 'lobby_update'; lobby: CustomLobby }
   | { type: 'lobby_closed'; code: string }
   | { type: 'lobby_kicked'; code: string };
+
+/** `GET /stats`: cheap public player counts. */
+export interface MatchmakerStats {
+  /** Players waiting in the matchmaking queue (party members counted). */
+  queued: number;
+  /** Humans in game-server rooms, from the latest heartbeats. */
+  inGame: number;
+  /** Live game servers. */
+  servers: number;
+}
 
 /** A custom/private lobby. */
 export interface CustomLobby {
@@ -349,12 +359,30 @@ export class Matchmaker {
    *
    * @throws {MMError} 404 when unknown (the server should re-register).
    */
-  async heartbeat(id: string, load: number): Promise<GameServer> {
+  async heartbeat(id: string, load: number, humans?: number): Promise<GameServer> {
     const raw = (await this.store.hgetall(SERVERS))[id];
     if (!raw) throw new MMError(404, 'unknown_server', 'Register first');
-    const server = { ...(JSON.parse(raw) as GameServer), load, lastSeen: this.now() };
+    const server: GameServer = {
+      ...(JSON.parse(raw) as GameServer),
+      load,
+      ...(humans !== undefined ? { humans } : {}),
+      lastSeen: this.now(),
+    };
     await this.store.hset(SERVERS, id, JSON.stringify(server));
     return server;
+  }
+
+  /**
+   * Public player counts for the Play tab: players waiting in queue and
+   * humans in game-server rooms (from heartbeats).
+   */
+  async stats(): Promise<MatchmakerStats> {
+    const servers = await this.servers();
+    return {
+      queued: (await this.entries()).reduce((s, e) => s + e.members.length, 0),
+      inGame: humansInRooms(servers, this.now()),
+      servers: servers.length,
+    };
   }
 
   /** Removes a server (graceful shutdown). */

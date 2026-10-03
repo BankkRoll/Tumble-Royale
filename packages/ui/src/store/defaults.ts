@@ -79,6 +79,7 @@ export const DEFAULT_SETTINGS: Settings = {
     streamerMode: false,
     showPing: true,
     autoSpectate: true,
+    botTags: true,
     chatFilter: true,
     region: 'auto',
   },

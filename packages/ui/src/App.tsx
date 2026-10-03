@@ -10,6 +10,7 @@ import { SettingsSheet } from './screens/overlays/SettingsSheet.tsx';
 import { InGameMenu } from './screens/overlays/InGameMenu.tsx';
 import { JoinCodeDialog, PrivateShowDialog } from './screens/overlays/PrivateShow.tsx';
 import { FriendsSheet, NotificationsPanel } from './screens/overlays/SocialSheets.tsx';
+import { WatchChoiceLayer } from './screens/overlays/WatchChoice.tsx';
 import { ScreenLayer } from './screens/ScreenLayer.tsx';
 import { useUI } from './store/uiStore.ts';
 import { installEasingVars } from './theme/motion.ts';
@@ -76,6 +77,7 @@ export function App(): JSX.Element {
         <StampLayer />
       </div>
       <ConfettiLayer />
+      <WatchChoiceLayer />
       <ToastLayer />
       <OverlayLayer />
       <DialogLayer />

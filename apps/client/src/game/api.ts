@@ -193,12 +193,42 @@ export interface ApiFriendCard {
   level: number;
 }
 
+/** Presence states the API reports. */
+export type ApiPresenceStatus = 'online' | 'in_menu' | 'in_queue' | 'in_match' | 'offline';
+
+/** What friends see about a player's presence (`GET /friends`, realtime `presence`). */
+export interface ApiPresenceView {
+  playlistId?: string;
+  lobbyCode?: string;
+  joinable?: boolean;
+}
+
+/** A friend row in `GET /friends`. */
+export type ApiFriend = ApiFriendCard & ApiPresenceView & { presence: ApiPresenceStatus; since?: string };
+
+/** A pending request or blocked row (`at` = ISO time it was made). */
+export type ApiFriendRequest = ApiFriendCard & { at?: string };
+
 /** `GET /friends`. */
 export interface ApiFriends {
-  friends: (ApiFriendCard & { presence: string })[];
-  incoming: ApiFriendCard[];
-  outgoing: ApiFriendCard[];
+  friends: ApiFriend[];
+  incoming: ApiFriendRequest[];
+  outgoing: ApiFriendRequest[];
+  blocked?: ApiFriendRequest[];
+  total?: number;
 }
+
+/** How the caller relates to another player. */
+export type ApiRelation = 'self' | 'friend' | 'incoming' | 'outgoing' | 'none';
+
+/** `GET /friends/recent` row. */
+export type ApiRecentPlayer = ApiFriendCard & { relation?: ApiRelation; presence?: ApiPresenceStatus };
+
+/** `GET /friends/search` row. */
+export type ApiSearchResult = ApiFriendCard & { relation: ApiRelation };
+
+/** Report reasons accepted by `POST /report`. */
+export type ApiReportReason = 'cheating' | 'harassment' | 'offensive_name' | 'griefing' | 'spam' | 'other';
 
 /** A party (API view). */
 export interface ApiParty {
@@ -504,15 +534,40 @@ export class ApiClient {
   // ---------------------------------------------------------------------------
 
   friends = (): Promise<ApiFriends> => this.request('GET', '/friends');
-  recentPlayers = (): Promise<{ players: ApiFriendCard[] }> => this.request('GET', '/friends/recent');
+  recentPlayers = (): Promise<{ players: ApiRecentPlayer[] }> => this.request('GET', '/friends/recent');
+  searchPlayers = (q: string): Promise<{ players: ApiSearchResult[] }> =>
+    this.request('GET', `/friends/search?q=${encodeURIComponent(q)}`);
+  /** Sends a request by `name#tag` or account id. */
   friendRequest = (
-    nameTag: string,
-  ): Promise<{ status: 'pending' | 'accepted'; user: { displayName: string; tag: string } }> =>
-    this.request('POST', '/friends/request', { nameTag });
+    target: string | { userId: string },
+  ): Promise<{
+    status: 'pending' | 'accepted';
+    user: { userId: string; displayName: string; tag: string };
+  }> => this.request('POST', '/friends/request', typeof target === 'string' ? { nameTag: target } : target);
   acceptFriend = (userId: string): Promise<unknown> => this.request('POST', '/friends/accept', { userId });
   declineFriend = (userId: string): Promise<unknown> => this.request('POST', '/friends/decline', { userId });
-  presence = (status: 'online' | 'in_menu' | 'in_queue' | 'in_match'): Promise<unknown> =>
-    this.request('POST', '/presence', { status });
+  cancelFriendRequest = (userId: string): Promise<void> =>
+    this.request('DELETE', `/friends/request/${encodeURIComponent(userId)}`);
+  removeFriend = (userId: string): Promise<void> =>
+    this.request('DELETE', `/friends/${encodeURIComponent(userId)}`);
+  block = (userId: string): Promise<unknown> => this.request('POST', '/friends/block', { userId });
+  unblock = (userId: string): Promise<void> =>
+    this.request('DELETE', `/friends/block/${encodeURIComponent(userId)}`);
+  report = (body: {
+    targetUserId: string;
+    reason: ApiReportReason;
+    details?: string;
+    matchId?: string;
+  }): Promise<{ id: string }> => this.request('POST', '/report', body);
+  presence = (
+    status: 'online' | 'in_menu' | 'in_queue' | 'in_match',
+    details: { playlistId?: string; lobbyCode?: string } = {},
+  ): Promise<unknown> => this.request('POST', '/presence', { status, ...details });
+  joinFriendParty = (userId: string): Promise<{ party: ApiParty }> =>
+    this.request('POST', '/party/join-friend', { userId });
+  declinePartyInvite = (userId: string): Promise<void> =>
+    this.request('POST', '/party/invite/decline', { userId });
+  partyChat = (text: string): Promise<unknown> => this.request('POST', '/party/chat', { text });
   party = (): Promise<{ party: ApiParty | null }> => this.request('GET', '/party');
   createParty = (): Promise<{ party: ApiParty }> => this.request('POST', '/party');
   joinParty = (code: string): Promise<{ party: ApiParty }> => this.request('POST', '/party/join', { code });

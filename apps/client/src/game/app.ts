@@ -28,6 +28,7 @@ import {
   type CustomLobbyState,
   type Settings,
 } from '@tumble/ui';
+import { loadMutes, publishSocialAvailability, socialIntents } from './social/intents.ts';
 import { createRenderer } from '@tumble/render';
 import { createPostPipeline, type PostPipeline } from '@tumble/render/post';
 import type { TumblerLoadout } from '@tumble/render/scenes';
@@ -353,8 +354,16 @@ export class GameApp {
     if (cfg.debug)
       createDebugPanel({ renderer, quality, stats, session: () => app.session, timeScale: app.timeScale });
     if (cfg.autoplay) installAutoplay(cfg.autoShows);
-    if (cfg.api) void app.connectAccount(null).finally(() => void app.refreshOnlineStatus());
-    else void app.refreshOnlineStatus();
+    loadMutes();
+    if (cfg.api)
+      void app.connectAccount(null).finally(() => {
+        publishSocialAvailability(app.account?.active ?? false);
+        void app.refreshOnlineStatus();
+      });
+    else {
+      publishSocialAvailability(false);
+      void app.refreshOnlineStatus();
+    }
     window.setTimeout(() => ui.getState().setScreen('splash', { transition: 'wipe' }), 350);
     return app;
   }
@@ -383,6 +392,7 @@ export class GameApp {
     if (!ok || !(await account.load())) return;
     if (welcome && fresh) await account.adoptWelcomeColors(welcome.colors);
     account.startRealtime();
+    publishSocialAvailability(true);
     if (this.mm) {
       void this.mm.probe().then((up) => {
         if (up) this.mm?.socket.start();
@@ -620,7 +630,7 @@ export class GameApp {
       const { ticket } = await this.api.queueTicket(playlistId);
       await mm.queue(ticket);
       this.queued = true;
-      account.setPresence('in_queue');
+      account.setPresence('in_queue', { playlistId });
     } catch (err) {
       this.queued = false;
       const notReady = err instanceof ApiError && err.code === 'not_ready';
@@ -706,7 +716,7 @@ export class GameApp {
       playlistId: m.playlistId,
     });
     this.session = session;
-    this.account?.setPresence('in_match');
+    this.account?.setPresence('in_match', { playlistId: m.playlistId });
     session.start();
   }
 
@@ -742,8 +752,11 @@ export class GameApp {
     const me = this.account?.userId;
     if (!lobby || lobby.status === 'started') {
       ui.getState().setCustomLobby(null);
+      if (!lobby && this.account?.active && !this.session) this.account.setPresence('in_menu');
       return;
     }
+    // Friends see the code on our row and can hop into the private show.
+    if (this.account?.active) this.account.setPresence('in_menu', { lobbyCode: lobby.code });
     const state: CustomLobbyState = {
       code: lobby.code,
       isHost: lobby.hostId === me,
@@ -949,7 +962,10 @@ export class GameApp {
       },
       onRetryOnline: () => {
         void (this.account && !this.account.active ? this.connectAccount(null) : Promise.resolve()).finally(
-          () => void this.refreshOnlineStatus(),
+          () => {
+            publishSocialAvailability(this.account?.active ?? false);
+            void this.refreshOnlineStatus();
+          },
         );
       },
       onPlayCustomOffline: ({ options }) => {
@@ -1124,6 +1140,7 @@ export class GameApp {
         this.applyLobby(null);
         if (lobby && this.mm) void this.mm.leaveLobby(lobby.code).catch(() => undefined);
       },
+      ...socialIntents(online),
       onInviteFriend: ({ friendId }) => {
         const a = online();
         if (a) void a.invite(friendId);

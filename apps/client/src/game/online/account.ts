@@ -61,6 +61,7 @@ import {
   type ApiParty,
   type ApiPass,
   type ApiPassReward,
+  type ApiTutorialComplete,
 } from '../api.ts';
 import {
   avatarHat,
@@ -750,6 +751,22 @@ export class OnlineAccount {
     }
   }
 
+  /**
+   * Claims the one-time Practice Island reward on the account.
+   *
+   * @returns The server's answer, or null when the API could not be reached.
+   */
+  async completeTutorial(): Promise<ApiTutorialComplete | null> {
+    try {
+      const r = await this.api.tutorialComplete();
+      if (r.granted) void this.refreshProgress();
+      return r;
+    } catch (err) {
+      console.warn('[account] tutorial reward failed', err);
+      return null;
+    }
+  }
+
   /** Claims a pass tier reward. */
   async claimPassTier(tier: number, track: 'free' | 'premium'): Promise<void> {
     try {
@@ -899,25 +916,21 @@ export class OnlineAccount {
     this.pushProfile();
   }
 
-  /** Renames the account (first rename free, then a cooldown). */
-  async rename(name: string): Promise<boolean> {
-    try {
-      const r = await this.api.patchMe({ displayName: name });
-      if (this.me && r.displayName) {
-        this.me.displayName = r.displayName;
-        if (r.tag) this.me.tag = r.tag;
-      }
-      this.pushProfile();
-      return true;
-    } catch (err) {
-      ui.getState().showDialog({
-        id: 'rename-failed',
-        kind: 'error',
-        title: "Couldn't rename",
-        body: describe(err),
-      });
-      return false;
+  /**
+   * Renames the account (first rename free, then a cooldown) and re-reads
+   * `/me` for the new tag and next allowed rename.
+   *
+   * @throws {ApiError} `invalid_name`, `name_cooldown` or a network failure;
+   *   the rename UI shows the reason inline.
+   */
+  async rename(name: string): Promise<void> {
+    const r = await this.api.patchMe({ displayName: name });
+    if (this.me && r.displayName) {
+      this.me.displayName = r.displayName;
+      if (r.tag) this.me.tag = r.tag;
     }
+    this.me = await this.api.me().catch(() => this.me);
+    this.pushProfile();
   }
 
   // ---------------------------------------------------------------------------

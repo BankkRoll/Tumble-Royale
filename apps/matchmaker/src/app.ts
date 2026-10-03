@@ -13,8 +13,10 @@ import type { Duplex } from 'node:stream';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { WebSocket, WebSocketServer } from 'ws';
 import { z } from 'zod';
+import { ApiBanLookup, NO_BANS, type BanLookup } from './bans.ts';
 import type { MatchmakerConfig } from './config.ts';
 import { DEFAULT_CUSTOM, Matchmaker, MMError, userChannel } from './matchmaker.ts';
+import { RateLimiter } from './rateLimit.ts';
 import { createStore, type MMStore } from './store.ts';
 import { verifyAccess, verifyQueueTicket, type Player } from './tickets.ts';
 
@@ -23,6 +25,8 @@ export interface MatchmakerAppOptions {
   store?: MMStore;
   now?: () => number;
   logger?: boolean;
+  /** Ban lookups; defaults to the API at `API_URL`, or none without it. */
+  bans?: BanLookup;
 }
 
 /** A built matchmaker. */
@@ -40,8 +44,18 @@ const RegisterBody = z.object({
   region: z.string().min(2).max(8),
   capacity: z.number().int().min(1).max(100_000),
   load: z.number().int().min(0).default(0),
+  humans: z.number().int().min(0).optional(),
+  maxRooms: z.number().int().min(1).max(10_000).optional(),
+  rooms: z.number().int().min(0).optional(),
 });
-const HeartbeatBody = z.object({ serverId: z.string().min(1).max(64), load: z.number().int().min(0) });
+const HeartbeatBody = z.object({
+  serverId: z.string().min(1).max(64),
+  load: z.number().int().min(0),
+  /** Humans connected to the server's rooms (older servers omit it). */
+  humans: z.number().int().min(0).optional(),
+  rooms: z.number().int().min(0).optional(),
+  matches: z.array(z.string().min(1).max(64)).max(10_000).optional(),
+});
 const SettingsSchema = z
   .object({
     playlistId: z.string().min(1).max(64),
@@ -96,19 +110,48 @@ export async function buildMatchmaker(
 ): Promise<MatchmakerApp> {
   const now = opts.now ?? Date.now;
   const store = opts.store ?? createStore(cfg.redisUrl, now);
-  const mm = new Matchmaker(cfg, store, now);
+  const bans =
+    opts.bans ??
+    (cfg.apiUrl
+      ? new ApiBanLookup({
+          apiUrl: cfg.apiUrl,
+          secret: cfg.internalHmacSecret,
+          now,
+          log: (m) => app.log.warn(m),
+        })
+      : NO_BANS);
+  const mm = new Matchmaker(cfg, store, now, bans);
   const app = Fastify({ logger: opts.logger === false ? false : { level: cfg.logLevel }, trustProxy: true });
+
+  const ipLimiter = new RateLimiter(cfg.rateLimitMax, 60_000, now);
+  const userLimiter = new RateLimiter(cfg.userRateLimitMax, 60_000, now);
+  const originAllowed = (origin: string): boolean =>
+    cfg.allowedOrigins === true || cfg.allowedOrigins.includes(origin);
+  const rateLimited = (retryAfterMs: number): MMError =>
+    new MMError(429, 'rate_limited', `Too many requests; retry in ${Math.ceil(retryAfterMs / 1000)} s`);
 
   // @fastify/cors is not a dependency here; the surface is small enough to answer preflights directly.
   app.addHook('onRequest', async (req, reply) => {
     const origin = req.headers.origin;
     if (origin) {
-      reply.header('access-control-allow-origin', origin);
       reply.header('vary', 'origin');
-      reply.header('access-control-allow-headers', 'authorization, content-type');
-      reply.header('access-control-allow-methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+      if (originAllowed(origin)) {
+        reply.header('access-control-allow-origin', origin);
+        reply.header('access-control-allow-headers', 'authorization, content-type');
+        reply.header('access-control-allow-methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+      } else if (req.method === 'OPTIONS') {
+        return reply.code(403).send({ error: 'origin_not_allowed', message: 'Origin not allowed' });
+      }
     }
     if (req.method === 'OPTIONS') return reply.code(204).send();
+    // Game servers authenticate with their shared secret and may sit behind one NAT; they are not throttled per IP.
+    const path = req.url.split('?')[0] ?? '';
+    if (path === '/health' || path.startsWith('/servers') || path.startsWith('/matches/')) return;
+    const r = ipLimiter.hit(`ip:${req.ip}`);
+    if (!r.allowed) {
+      reply.header('retry-after', String(Math.ceil(r.retryAfterMs / 1000)));
+      throw rateLimited(r.retryAfterMs);
+    }
   });
 
   app.setErrorHandler((err, req, reply) => {
@@ -124,6 +167,11 @@ export async function buildMatchmaker(
     const token = bearer(req);
     const p = token ? await verifyAccess(cfg.jwtSecret, token, new Date(now())) : null;
     if (!p) throw new MMError(401, 'unauthorized', 'Valid API access token required');
+    // Reads are cheap and polled; only queue and lobby mutations count against the per-player budget.
+    if (req.method !== 'GET') {
+      const r = userLimiter.hit(`u:${p.userId}`);
+      if (!r.allowed) throw rateLimited(r.retryAfterMs);
+    }
     return p;
   };
   const gameServer = (req: FastifyRequest): void => {
@@ -146,6 +194,12 @@ export async function buildMatchmaker(
     void reply.header('cache-control', 'no-store');
     const regions = [...new Set((await mm.servers()).map((s) => s.region))].sort();
     return { ok: true, regions };
+  });
+
+  // Public and unauthenticated: the Play tab shows these counts before sign-in.
+  app.get('/stats', async (_req, reply) => {
+    reply.header('cache-control', 'public, max-age=5');
+    return mm.stats();
   });
 
   // --- Queue -----------------------------------------------------------------
@@ -184,13 +238,21 @@ export async function buildMatchmaker(
       region: b.region,
       capacity: b.capacity,
       load: b.load,
+      ...(b.humans !== undefined ? { humans: b.humans } : {}),
+      ...(b.maxRooms !== undefined ? { maxRooms: b.maxRooms } : {}),
+      ...(b.rooms !== undefined ? { rooms: b.rooms } : {}),
     });
   });
 
   app.post('/servers/heartbeat', async (req) => {
     gameServer(req);
     const b = parse(HeartbeatBody, req.body);
-    return mm.heartbeat(b.serverId, b.load);
+    return mm.heartbeat(b.serverId, {
+      load: b.load,
+      ...(b.humans !== undefined ? { humans: b.humans } : {}),
+      ...(b.rooms !== undefined ? { rooms: b.rooms } : {}),
+      ...(b.matches ? { matches: b.matches } : {}),
+    });
   });
 
   app.delete('/servers/:id', async (req, reply) => {
@@ -264,10 +326,25 @@ export async function buildMatchmaker(
   const onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (url.pathname !== '/ws') return;
+    const origin = req.headers.origin;
+    // Same trust model as Fastify's `trustProxy: true`: the left-most forwarded address is the client.
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip =
+      (typeof forwarded === 'string' ? forwarded.split(',')[0]?.trim() : undefined) ||
+      (req.socket.remoteAddress ?? 'unknown');
+    // SECURITY: browsers send Origin on WebSocket handshakes but CORS does not apply, so check it here.
+    if ((origin && !originAllowed(origin)) || !ipLimiter.hit(`ip:${ip}`).allowed) {
+      socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+      socket.destroy();
+      return;
+    }
     void (async () => {
       const p = await verifyAccess(cfg.jwtSecret, url.searchParams.get('token') ?? '', new Date(now()));
-      if (!p) {
-        socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+      const suspended = p ? await mm.isSuspended(p.userId) : false;
+      if (!p || suspended) {
+        socket.write(
+          `HTTP/1.1 ${suspended ? '403 Forbidden' : '401 Unauthorized'}\r\nConnection: close\r\n\r\n`,
+        );
         socket.destroy();
         return;
       }

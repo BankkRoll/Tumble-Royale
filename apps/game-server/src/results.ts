@@ -158,32 +158,56 @@ export class HttpResultsSink implements ResultsSink {
   constructor(private readonly opts: HttpResultsSinkOptions) {}
 
   async post(payload: MatchResultPayload): Promise<IngestResponse | null> {
-    const body = JSON.stringify(payload);
-    const url = `${this.opts.apiUrl.replace(/\/$/, '')}/internal/match-results`;
     const attempts = this.opts.attempts ?? 3;
     for (let i = 0; i < attempts; i++) {
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            ...signInternal(this.opts.secret, body, Date.now()),
-          },
-          body,
-          signal: AbortSignal.timeout(8000),
-        });
-        if (res.ok) return (await res.json()) as IngestResponse;
-        const text = await res.text().catch(() => '');
-        this.opts.log?.(`[results] ${payload.matchId}: API answered ${res.status} ${text.slice(0, 300)}`);
-        // 4xx (bad payload/signature) will not get better by retrying.
-        if (res.status < 500) return null;
-      } catch (err) {
-        this.opts.log?.(
-          `[results] ${payload.matchId}: post failed (${err instanceof Error ? err.message : String(err)})`,
-        );
-      }
+      const out = await sendResultsOnce(this.opts, payload);
+      if (out.kind === 'delivered') return out.response;
+      if (out.kind === 'rejected') return null;
       await new Promise((r) => setTimeout(r, 500 * 2 ** i));
     }
     return null;
+  }
+}
+
+/** Outcome of one delivery attempt. */
+export type SendOutcome =
+  | { kind: 'delivered'; response: IngestResponse }
+  /** The API refused the payload itself; resending the same bytes cannot succeed. */
+  | { kind: 'rejected'; status: number; detail: string }
+  /** Network failure, 5xx, or a 4xx that configuration or time can fix (signature, rate limit). */
+  | { kind: 'retry'; detail: string };
+
+/** Statuses that mean the payload itself is unacceptable. */
+const PERMANENT_STATUSES = new Set([400, 404, 413, 422]);
+
+/**
+ * Makes one signed `POST /internal/match-results` (fresh timestamp and nonce).
+ *
+ * @param opts - API base URL, HMAC secret, optional log and HTTP client.
+ * @param payload - The show summary.
+ */
+export async function sendResultsOnce(
+  opts: { apiUrl: string; secret: string; log?: (msg: string) => void; fetch?: typeof fetch },
+  payload: MatchResultPayload,
+): Promise<SendOutcome> {
+  const body = JSON.stringify(payload);
+  const url = `${opts.apiUrl.replace(/\/$/, '')}/internal/match-results`;
+  try {
+    const res = await (opts.fetch ?? fetch)(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...signInternal(opts.secret, body, Date.now()) },
+      body,
+      signal: AbortSignal.timeout(8000),
+    });
+    if (res.ok) return { kind: 'delivered', response: (await res.json()) as IngestResponse };
+    const text = (await res.text().catch(() => '')).slice(0, 300);
+    opts.log?.(`[results] ${payload.matchId}: API answered ${res.status} ${text}`);
+    return PERMANENT_STATUSES.has(res.status)
+      ? { kind: 'rejected', status: res.status, detail: text }
+      : { kind: 'retry', detail: `HTTP ${res.status}` };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    opts.log?.(`[results] ${payload.matchId}: post failed (${detail})`);
+    return { kind: 'retry', detail };
   }
 }

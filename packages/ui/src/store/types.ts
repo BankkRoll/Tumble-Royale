@@ -156,9 +156,13 @@ export interface BootState {
 
 /** Network status. `reconnecting` shows the curtain overlay. */
 export interface ConnectionState {
-  status: 'online' | 'connecting' | 'reconnecting' | 'offline';
+  /** `lost`: every reconnect attempt failed; the curtain offers Try again and Leave. */
+  status: 'online' | 'connecting' | 'reconnecting' | 'lost' | 'offline';
+  /** Current reconnect attempt (1-based). */
   attempt?: number;
   maxAttempts?: number;
+  /** Epoch ms of the next reconnect attempt (curtain countdown). */
+  nextAttemptAt?: number;
   message?: string;
 }
 
@@ -436,6 +440,12 @@ export interface RankInfo {
 
 /** Profile + stats for the profile card and top bar. */
 export interface ProfileData {
+  /**
+   * Set for a Tumbler only met in offline shows: just what this device saw.
+   * The card shows these facts and hides level, XP, rank and lifetime stats,
+   * which are unknown for them.
+   */
+  metOffline?: MetOfflineInfo;
   id: string;
   name: string;
   tag: string;
@@ -477,6 +487,21 @@ export interface ProfileData {
   banner?: ProfileBanner;
   /** Equipped nameplate styling. */
   nameplate?: ProfileNameplate;
+}
+
+/** What this device knows about a Tumbler met in offline shows. */
+export interface MetOfflineInfo {
+  isBot: boolean;
+  /** Shows played together. */
+  showsTogether: number;
+  /** Their best final place in those shows (1 = Crown). */
+  bestPlace: number;
+  /** Crowns they won in those shows. */
+  crownsTogether: number;
+  /** Shows where they finished ahead of you, when tracked. */
+  aheadOfYou?: number;
+  /** Epoch ms of the last show together. */
+  lastSeen: number;
 }
 
 /** Profile banner art (from the equipped banner cosmetic). */
@@ -583,8 +608,10 @@ export type PlayMode = 'online' | 'offline';
 /** Whether online play (account API + matchmaker) is reachable. */
 export interface OnlineStatus {
   state: 'checking' | 'online' | 'offline' | 'disabled';
-  /** Players online / in queue, when the server reports it. */
+  /** Humans online in shows right now (matchmaker `GET /stats`), when reported. */
   playersOnline?: number;
+  /** Players waiting in the matchmaking queue, when reported. */
+  inQueue?: number;
   /** Short human explanation for the offline state. */
   message?: string;
 }
@@ -716,6 +743,8 @@ export interface RoundIntroInfo {
   playerCount: number;
   /** How many qualify (or survive); 1 for finals. */
   qualifyTarget: number;
+  /** The show's mutator (Chaos Mode), announced on the card. */
+  mutator?: { name: string; description: string; icon: string };
 }
 
 /** Local grab feedback for the HUD. */
@@ -829,6 +858,27 @@ export interface SpectateInfo {
   qualified: boolean;
   index: number;
   count: number;
+  /** Players still in the running this round (qualified or playing), when known. */
+  remaining?: number;
+}
+
+/** The local player's seat in the running show. */
+export interface ShowSeat {
+  /** The show runs on a game server (rewards are granted by the account API). */
+  online: boolean;
+  /** Knocked out of the show: watching the remaining rounds as a spectator. */
+  outOfShow: boolean;
+}
+
+/**
+ * "Keep watching / Leave show" choice, offered once the local player is
+ * knocked out (the in-round sheet, and the card over the results wall).
+ */
+export interface WatchChoice {
+  /** Epoch ms when Keep watching is picked automatically (null = waits for the player). */
+  autoAt: number | null;
+  /** Players still in the show, when known. */
+  remaining?: number;
 }
 
 /** One cell of the round results grid. */
@@ -1032,7 +1082,10 @@ export interface Settings {
     nameplates: boolean;
     streamerMode: boolean;
     showPing: boolean;
+    /** Pick "Keep watching" automatically after qualifying or being knocked out. */
     autoSpectate: boolean;
+    /** Small "BOT" tag beside bot names (nameplates, results, wall, spectate). */
+    botTags: boolean;
     chatFilter: boolean;
     region: string;
   };
@@ -1063,3 +1116,67 @@ export interface RegionStatus {
 
 /** Settings section ids. */
 export type SettingsSection = keyof Settings | 'account';
+
+// -----------------------------------------------------------------------------
+// Replays
+// -----------------------------------------------------------------------------
+
+/** Replay viewer camera: follow a player, orbit freely, or the recorded live view. */
+export type ReplayCameraMode = 'follow' | 'free' | 'pov';
+
+/** Viewer controls the UI (buttons, scrub bar) sends to the game. */
+export type ReplayCommand =
+  | { type: 'toggle' }
+  /** Absolute seek, seconds from the start of the recording. */
+  | { type: 'seek'; t: number }
+  | { type: 'seekBy'; seconds: number }
+  | { type: 'speed'; speed: number }
+  | { type: 'speedStep'; dir: 1 | -1 }
+  | { type: 'camera'; mode: ReplayCameraMode | 'next' }
+  /** Follow the previous/next player. */
+  | { type: 'player'; dir: 1 | -1 }
+  | { type: 'save' }
+  | { type: 'exit' };
+
+/** A recorded round of the current show the player can rewatch. */
+export interface ReplayRoundEntry {
+  key: string;
+  /** 0-based round index within the show. */
+  roundIndex: number;
+  name: string;
+  type: RoundType;
+  isFinal: boolean;
+  /** The local player's fate in that round. */
+  outcome: 'qualified' | 'eliminated' | 'spectated';
+  /** Seconds. */
+  duration: number;
+}
+
+/** A point of interest on the replay scrub bar. */
+export interface ReplayMarkerInfo {
+  /** Seconds from the start of the recording. */
+  t: number;
+  kind: 'eliminated' | 'qualified' | 'localEliminated' | 'localQualified';
+  label: string;
+}
+
+/** Live state of the open replay viewer. */
+export interface ReplayViewerState {
+  title: string;
+  subtitle: string;
+  /** Playhead, seconds. */
+  time: number;
+  duration: number;
+  playing: boolean;
+  speed: number;
+  camera: ReplayCameraMode;
+  /** The recording carries the local player's camera ("Your view"). */
+  povAvailable: boolean;
+  /** Followed player (follow / your view cameras). */
+  target: { name: string; color: string; index: number; count: number } | null;
+  markers: ReplayMarkerInfo[];
+  /** Offer "Save replay" (recordings made in this session). */
+  canSave: boolean;
+  /** Where the recording came from. */
+  origin: 'show' | 'file';
+}

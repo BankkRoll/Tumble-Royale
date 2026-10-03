@@ -24,6 +24,10 @@ export interface OfflineShowOptions {
   /** Total seats including the human. Defaults to the playlist's `maxPlayers`. */
   players?: number;
   timings?: Partial<ShowTimings>;
+  /** Round timer multiplier, clamped to 0.5–2 (see {@link ShowDirectorOptions.roundTimeScale}). */
+  roundTimeScale?: number;
+  /** Forces the show mutator (see {@link ShowDirectorOptions.mutatorId}). */
+  mutatorId?: string | null;
 }
 
 /** A single-player show against bots, running entirely in the browser (or a test). */
@@ -48,9 +52,40 @@ export interface OfflineShow {
 }
 
 /**
+ * Fewest seats a show needs when the playlist does not allow bots to fill the
+ * lobby (a private show with "Fill empty spots with bots" off). Offline there
+ * are no other humans, so some bots must still play or nothing could be
+ * qualified against: the lobby gets exactly enough Tumblers for the most
+ * demanding round in the pool (its `players.min`, e.g. a team round needs
+ * opponents on every team), and never fewer than 2 (a final needs a rival).
+ * Ids missing from the catalogue are ignored.
+ *
+ * @param playlist - The show's playlist.
+ * @param rounds - Round catalogue.
+ * @returns Seats including the human.
+ * @example
+ * minimumShowSeats(customPlaylist, ROUNDS); // 2 for a crown-climb-only show
+ */
+export function minimumShowSeats(
+  playlist: ShowPlaylist | ShowPlaylistInput,
+  rounds: OfflineShowOptions['rounds'],
+): number {
+  const byId = new Map<string, number>();
+  const list = rounds instanceof Map ? [...rounds.values()] : (rounds as readonly RoundDefinitionInput[]);
+  for (const r of list) byId.set(r.id, r.players?.min ?? 2);
+  let seats = 2;
+  for (const entry of playlist.pool) {
+    const min = byId.get(entry.roundId);
+    if (min !== undefined) seats = Math.max(seats, min);
+  }
+  return seats;
+}
+
+/**
  * Builds an offline show: one human (id 0) plus seeded bots with generated
  * names and the playlist's skill mix, a director, and a match sim per round
- * stepped at the fixed rate.
+ * stepped at the fixed rate. When the playlist sets `botsAllowed: false`, only
+ * {@link minimumShowSeats} seats are filled.
  *
  * @example
  * const show = createOfflineShow({ R, deps, playlist: FIRST_SHOW, rounds: ROUNDS, seed: 42, humanName: 'You' });
@@ -58,7 +93,11 @@ export interface OfflineShow {
  */
 export function createOfflineShow(opts: OfflineShowOptions): OfflineShow {
   const playlist = ShowPlaylistSchema.parse(opts.playlist);
-  const seats = Math.max(2, Math.min(60, opts.players ?? playlist.maxPlayers));
+  const requested = Math.max(2, Math.min(60, opts.players ?? playlist.maxPlayers));
+  const seats =
+    playlist.botsAllowed || opts.humanName === null
+      ? requested
+      : Math.min(requested, minimumShowSeats(playlist, opts.rounds));
   const rng = new Rng((opts.seed ^ NAMES_SALT) >>> 0);
   const humanId = opts.humanName === null ? -1 : 0;
   const participants: ShowParticipant[] = [];
@@ -85,6 +124,8 @@ export function createOfflineShow(opts: OfflineShowOptions): OfflineShow {
     rounds: opts.rounds,
     participants,
     timings: opts.timings,
+    ...(opts.roundTimeScale !== undefined ? { roundTimeScale: opts.roundTimeScale } : {}),
+    ...(opts.mutatorId !== undefined ? { mutatorId: opts.mutatorId } : {}),
     host: {
       startRound(info) {
         const sim = createMatchSim(
@@ -96,6 +137,8 @@ export function createOfflineShow(opts: OfflineShowOptions): OfflineShow {
             players: info.players,
             mode: 'offline',
             qualifyTarget: info.qualifyTarget,
+            mutatorId: info.mutatorId,
+            roundTimeScale: info.roundTimeScale,
           },
           opts.deps,
         );

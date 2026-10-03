@@ -1,0 +1,254 @@
+/*
+ * Replay viewer chrome and the replay entry points (results, rewards,
+ * profile). While a replay is open the screen, HUD and stamps underneath are
+ * hidden (not unmounted) so closing it returns to exactly the same state.
+ */
+
+.tr-root[data-replay='true'] > .tr-stage,
+.tr-root[data-replay='true'] > .tr-confetti {
+  visibility: hidden;
+}
+
+.tr-replay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: calc(var(--safe-t) + 0.8em) calc(var(--safe-r) + 1em) calc(var(--safe-b) + 0.8em)
+    calc(var(--safe-l) + 1em);
+  pointer-events: none;
+  animation: tr-replay-in 0.25s ease-out both;
+}
+
+@keyframes tr-replay-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.tr-replay-top {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  max-width: 64em;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0.5em 0.8em;
+  border-radius: var(--rad-md);
+  background: rgba(43, 26, 94, 0.72);
+  color: var(--cloud);
+}
+.tr-replay-top .tr-title {
+  color: var(--cloud);
+}
+.tr-replay-sub {
+  opacity: 0.8;
+}
+.tr-replay-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.2em 0.7em;
+  border-radius: 999px;
+  background: var(--bubblegum);
+  border: 0.14em solid var(--ink);
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.tr-replay-bar {
+  max-width: 64em;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+  padding: 0.8em 1em;
+}
+
+/* Scrub bar: a native range (keyboard, touch and screen readers) with markers laid over its track. */
+.tr-replay-scrub {
+  position: relative;
+  height: 2.2em;
+}
+.tr-replay-range {
+  --pos: 0%;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.tr-replay-range::-webkit-slider-runnable-track {
+  height: 0.7em;
+  border-radius: 999px;
+  border: 0.14em solid var(--ink);
+  background: linear-gradient(90deg, var(--grape) var(--pos), #e9e0ff var(--pos));
+}
+.tr-replay-range::-moz-range-track {
+  height: 0.7em;
+  border-radius: 999px;
+  border: 0.14em solid var(--ink);
+  background: linear-gradient(90deg, var(--grape) var(--pos), #e9e0ff var(--pos));
+}
+.tr-replay-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 1.5em;
+  height: 1.5em;
+  margin-top: -0.55em;
+  border-radius: 50%;
+  border: 0.16em solid var(--ink);
+  background: var(--lemon);
+  box-shadow: 0 0.14em 0 var(--ink);
+}
+.tr-replay-range::-moz-range-thumb {
+  width: 1.3em;
+  height: 1.3em;
+  border-radius: 50%;
+  border: 0.16em solid var(--ink);
+  background: var(--lemon);
+}
+.tr-replay-markers {
+  position: absolute;
+  left: 0.75em;
+  right: 0.75em;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+.tr-replay-marker {
+  position: absolute;
+  top: 0.05em;
+  width: 0.5em;
+  height: 0.7em;
+  margin-left: -0.25em;
+  padding: 0;
+  border: 0.1em solid var(--ink);
+  border-radius: 0.2em;
+  background: var(--bad);
+  pointer-events: auto;
+  cursor: pointer;
+}
+.tr-replay-marker.is-qualified {
+  background: var(--good);
+  height: 0.5em;
+}
+.tr-replay-marker.is-localQualified,
+.tr-replay-marker.is-localEliminated {
+  top: -0.2em;
+  width: 0.9em;
+  height: 0.9em;
+  margin-left: -0.45em;
+  border-radius: 50%;
+  background: var(--lemon);
+  z-index: 1;
+}
+.tr-replay-marker.is-localEliminated {
+  background: var(--tangerine);
+}
+
+.tr-replay-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6em 1em;
+}
+.tr-replay-transport {
+  gap: 0.4em;
+}
+.tr-replay-time {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  min-width: 6.5em;
+}
+.tr-replay-time small {
+  opacity: 0.6;
+}
+.tr-replay-group {
+  gap: 0.3em;
+}
+.tr-replay-chip {
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  color: var(--ink);
+}
+.tr-replay-chip.is-on {
+  background: var(--lemon);
+}
+.tr-replay-chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.tr-replay-target {
+  gap: 0.35em;
+}
+.tr-replay-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  max-width: 12em;
+  font-weight: 700;
+}
+.tr-replay-swatch {
+  flex: none;
+  width: 0.9em;
+  height: 0.9em;
+  border-radius: 50%;
+  border: 0.12em solid var(--ink);
+}
+.tr-replay-hints {
+  margin: 0;
+  opacity: 0.75;
+}
+
+/* Entry points */
+.tr-replay-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4em;
+}
+.tr-replay-picker .tr-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  color: var(--cloud);
+}
+.tr-replay-pick {
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  color: var(--ink);
+}
+.tr-replay-pick.is-qualified {
+  background: var(--mint);
+}
+.tr-replay-pick.is-eliminated {
+  background: var(--blush);
+}
+.tr-rewards-actions .tr-replay-picker {
+  flex-basis: 100%;
+}
+.tr-results-replay {
+  margin-top: 0.8em;
+}
+
+@media (max-width: 760px) {
+  .tr-replay-top {
+    flex-wrap: wrap;
+  }
+  .tr-replay-controls {
+    justify-content: center;
+  }
+  .tr-replay-hints {
+    display: none;
+  }
+}

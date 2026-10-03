@@ -15,7 +15,7 @@
  */
 import { memo, useCallback, useEffect, useMemo, useReducer, useRef, useState, type JSX } from 'react';
 import { playCue } from '../audio-cues.ts';
-import { TypeBadge } from '../components/bits.tsx';
+import { BotTag, TypeBadge } from '../components/bits.tsx';
 import { Button } from '../components/controls.tsx';
 import { useDisplayName } from '../components/hooks.ts';
 import { TumblerAvatar } from '../components/TumblerAvatar.tsx';
@@ -219,6 +219,7 @@ const WallCell = memo(function WallCell({
       <div className="tr-wall-plate">
         {player.isParty && <span aria-label="Party member">👥</span>}
         <span className="tr-ellipsis">{label}</span>
+        <BotTag isBot={player.isBot} />
       </div>
       {player.isLocal && <span className="tr-wall-you">YOU</span>}
     </div>

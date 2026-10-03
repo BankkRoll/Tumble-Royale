@@ -90,7 +90,8 @@ export class PhotoMode {
    */
   enter(): boolean {
     const view = this.director.view;
-    if (!view || this.view) return false;
+    // The replay viewer owns the camera, keys and pad while it is open.
+    if (!view || this.view || ui.getState().replay !== null) return false;
     this.view = view;
     const src = view.camera;
     src.getWorldPosition(this.tmp);

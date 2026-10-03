@@ -14,6 +14,7 @@ import {
   copyState,
   createDecodedSnapshot,
   decodeReliableMessage,
+  encodeReliableMessage,
   readWelcome,
   writeHello,
   writeInputBatch,
@@ -288,6 +289,11 @@ export class TestClient {
     );
     this.conn.receive(this.w.finish());
     return seq;
+  }
+
+  /** Queues a chat line on the reliable channel; it goes out on the next {@link pump}. */
+  chat(text: string): void {
+    this.reliable.send(encodeReliableMessage({ kind: 'msg', msg: { t: 'chat', from: 0, text } }));
   }
 
   lowFreq(t: LowFreqMessage['t']): LowFreqMessage[] {

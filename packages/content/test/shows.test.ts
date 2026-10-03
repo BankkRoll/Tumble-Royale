@@ -9,7 +9,8 @@ import { ShowDirector, type ShowParticipant } from '@tumble/sim/show';
 import { describe, expect, it } from 'vitest';
 import { loadRapier } from '@tumble/sim';
 import { ROUNDS, getRound, roundCatalog, showRoundCatalog } from '../src/rounds/index.ts';
-import { DUOS, PLANNED_ROUND_IDS, PLAYLISTS, getPlaylist } from '../src/shows/index.ts';
+import { MUTATOR_IDS } from '@tumble/sim/mutators';
+import { DUOS, PLANNED_ROUND_IDS, PLANNED_ROUNDS, PLAYLISTS, getPlaylist } from '../src/shows/index.ts';
 
 describe('playlists', () => {
   it('validate and cover all 20 planned rounds', () => {
@@ -32,6 +33,68 @@ describe('playlists', () => {
     const first = getPlaylist('first-show')!;
     expect(first.botSkillMix.clumsy).toBeGreaterThan(first.botSkillMix.sharp);
     expect(getPlaylist('ranked')!.botsAllowed).toBe(false);
+  });
+
+  it('ranked has no team rounds and needs 24 humans (SHOWS.md §4.5)', () => {
+    const ranked = getPlaylist('ranked')!;
+    expect(ranked.minPlayers).toBe(24);
+    expect(ranked.mutators).toEqual([]);
+    const ids = ranked.pool.map((r) => r.roundId);
+    for (const team of PLANNED_ROUNDS.team) expect(ids).not.toContain(team);
+    expect(ids).toContain('tail-chase');
+    expect(ids).toContain('pattern-panic');
+    for (const f of PLANNED_ROUNDS.final) expect(ids).toContain(f);
+  });
+
+  it('only Chaos Mode carries mutators, and every one is known to the sim', () => {
+    for (const p of PLAYLISTS) {
+      if (p.id === 'chaos-mode') expect(p.mutators.length).toBeGreaterThanOrEqual(5);
+      else expect(p.mutators).toEqual([]);
+    }
+    for (const m of getPlaylist('chaos-mode')!.mutators) expect(MUTATOR_IDS).toContain(m.id);
+  });
+
+  it('ranked shows never select a team round', () => {
+    const ranked = getPlaylist('ranked')!;
+    const types = new Set<string>();
+    for (let seed = 1; seed <= 40; seed++) {
+      const director = new ShowDirector({
+        seed,
+        playlist: ranked,
+        rounds: roundCatalog(),
+        participants: Array.from({ length: 40 }, (_, i) => ({ id: i, name: `P${i}`, isBot: false })),
+        host: {
+          startRound(info) {
+            types.add(info.round.type);
+            expect(info.mutatorId).toBeNull();
+            let phase: RoundPhaseId = RoundPhase.Loading;
+            const target = info.qualifyTarget ?? Math.ceil(info.players.length / 2);
+            const players = new Map(
+              info.players.map((p, i) => [
+                p.id,
+                {
+                  status: (i < target ? PlayerRoundStatus.Qualified : PlayerRoundStatus.Eliminated) as 1 | 2,
+                  score: 0,
+                  progress: 0,
+                  place: i + 1,
+                },
+              ]),
+            );
+            return {
+              setPhase: (p) => void (phase = p),
+              getStatus: () => ({ phase, finished: phase >= RoundPhase.Playing, players }),
+              dispose() {},
+            };
+          },
+        },
+      });
+      director.on((e) => {
+        if (e.type === 'roundSelected') for (let i = 0; i < 40; i++) director.onPlayerLoaded(i);
+      });
+      for (let i = 0; i < 5000 && director.current().showPhase !== ShowPhase.Ended; i++) director.tick(0.5);
+    }
+    expect(types.has('team')).toBe(false);
+    expect(types.size).toBeGreaterThan(1);
   });
 });
 

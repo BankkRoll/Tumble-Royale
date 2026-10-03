@@ -11,6 +11,8 @@ import { InGameMenu } from './screens/overlays/InGameMenu.tsx';
 import { PhotoModeBar } from './screens/overlays/PhotoMode.tsx';
 import { JoinCodeDialog, PrivateShowDialog } from './screens/overlays/PrivateShow.tsx';
 import { FriendsSheet, NotificationsPanel } from './screens/overlays/SocialSheets.tsx';
+import { WatchChoiceLayer } from './screens/overlays/WatchChoice.tsx';
+import { ReplayLayer } from './screens/Replay.tsx';
 import { ScreenLayer } from './screens/ScreenLayer.tsx';
 import { useUI } from './store/uiStore.ts';
 import { installEasingVars } from './theme/motion.ts';
@@ -49,6 +51,7 @@ export function App(): JSX.Element {
   const streamer = useUI((s) => s.settings.gameplay.streamerMode);
   const screen = useUI((s) => s.screen);
   const photo = useUI((s) => s.photo.active);
+  const replay = useUI((s) => s.replay !== null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -71,6 +74,7 @@ export function App(): JSX.Element {
       data-streamer={String(streamer)}
       data-screen={screen}
       data-photo={String(photo)}
+      data-replay={replay ? 'true' : undefined}
       style={{ ['--ui-scale' as string]: String(a.uiScale) }}
     >
       {/* Photo mode hides the UI without unmounting it, so screens don't replay their entrances. */}
@@ -82,7 +86,9 @@ export function App(): JSX.Element {
         </div>
         <ConfettiLayer />
       </div>
+      {!photo && <WatchChoiceLayer />}
       <ToastLayer />
+      <ReplayLayer />
       {photo ? <PhotoModeBar /> : <OverlayLayer />}
       <DialogLayer />
       <ConnectionLayer />

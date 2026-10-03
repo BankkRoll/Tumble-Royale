@@ -5,6 +5,8 @@
  * - Delete the user row and, through `ON DELETE CASCADE`, everything keyed to
  *   it: identities, sessions, profile, stats, inventory, loadouts, ledger,
  *   purchases, pass/challenge progress, ratings, friendships, reports, bans.
+ * - Keep active bans as hashed-identifier marks (`moderation/ban-evasion.ts`)
+ *   so a new account with the same login, email or device inherits them.
  * - Anonymise the player in other people's match history and drop their
  *   analytics events (no foreign keys there).
  * - Clear KV state: party membership, presence and live leaderboard rows.
@@ -15,8 +17,10 @@
 import { eq, sql } from 'drizzle-orm';
 import type { AppContext } from '../context.ts';
 import { events, matchParticipants, users } from '../db/schema.ts';
+import { invalidateBanCache } from '../http/auth.ts';
 import { notFound } from '../http/errors.ts';
 import { removeFromLeaderboards } from '../leaderboards/service.ts';
+import { retainBans } from '../moderation/ban-evasion.ts';
 import { friendIds } from '../social/friends.ts';
 import { PartyService } from '../social/party.ts';
 import { setPresence } from '../social/presence.ts';
@@ -55,6 +59,9 @@ export async function deleteAccount(
       .set({ userId: null, name: DELETED_PLAYER_NAME })
       .where(eq(matchParticipants.userId, userId));
     await tx.delete(events).where(eq(events.userId, userId));
+    // SECURITY: bans cascade away with the user row; keep them, keyed by
+    // hashed identifiers, so deleting the account is no way out of a ban.
+    await retainBans(tx, ctx, userId);
     await tx.delete(users).where(eq(users.id, userId));
     await tx.insert(events).values({
       userId,
@@ -70,6 +77,7 @@ export async function deleteAccount(
   });
 
   await markErased(ctx.kv, userId);
+  await invalidateBanCache(ctx, userId);
   await setPresence(ctx.kv, userId, 'offline', now.getTime());
   await removeFromLeaderboards(ctx, userId, user.region);
   await ctx.notifier.notifyMany(friends, { type: 'friend_removed', userId });

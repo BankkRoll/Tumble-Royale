@@ -109,6 +109,12 @@ export const profiles = pgTable(
     crownShards: integer('crown_shards').notNull().default(0),
     gumballs: integer('gumballs').notNull().default(0),
     gems: integer('gems').notNull().default(0),
+    /**
+     * Gems owed after a refund or chargeback revoked more than the balance
+     * held (ledger currency `gem_debt`). While positive, Gem checkout is
+     * refused and Gem credits repay it before reaching `gems`.
+     */
+    gemDebt: integer('gem_debt').notNull().default(0),
     activeLoadout: integer('active_loadout').notNull().default(0),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
@@ -242,6 +248,12 @@ export const purchases = pgTable(
     status: text('status').notNull(),
     provider: text('provider'),
     providerRef: text('provider_ref'),
+    /**
+     * Stripe PaymentIntent id, recorded when the checkout completes. Refund and
+     * dispute webhooks only name the charge's PaymentIntent, so this is how
+     * they find the purchase.
+     */
+    paymentIntent: text('payment_intent'),
     /** Response returned to the client, replayed verbatim on a retried request. */
     response: jsonb('response'),
     createdAt: createdAt(),
@@ -250,7 +262,47 @@ export const purchases = pgTable(
   (t) => [
     uniqueIndex('purchases_user_key_uq').on(t.userId, t.idempotencyKey),
     uniqueIndex('purchases_provider_ref_uq').on(t.providerRef),
+    uniqueIndex('purchases_payment_intent_uq').on(t.paymentIntent),
   ],
+);
+
+/**
+ * Stripe webhook event ids already applied. Inserted in the same transaction
+ * as the event's effects, so a redelivered event is a no-op and a failed one
+ * is retried.
+ */
+export const stripeEvents = pgTable('stripe_events', {
+  id: text('id').primaryKey(),
+  type: text('type').notNull(),
+  createdAt: createdAt(),
+});
+
+/**
+ * What Stripe has told us about refunds and disputes on one PaymentIntent, and
+ * how many Gems that has already taken back. Rows may exist before the
+ * purchase is known (refund delivered before the checkout completion), and
+ * are reconciled once it is.
+ */
+export const paymentReversals = pgTable(
+  'payment_reversals',
+  {
+    paymentIntent: text('payment_intent').primaryKey(),
+    chargeId: text('charge_id'),
+    /** Charged amount in minor units, as Stripe reports it. */
+    amountCents: integer('amount_cents'),
+    /** Highest cumulative refunded amount seen (Stripe's `amount_refunded`). */
+    amountRefundedCents: integer('amount_refunded_cents').notNull().default(0),
+    disputeId: text('dispute_id'),
+    /** `open`, `won` or `lost`; null when never disputed. */
+    disputeStatus: text('dispute_status'),
+    /** Gems currently taken back for this payment (balance plus debt). */
+    gemsReversed: integer('gems_reversed').notNull().default(0),
+    /** Ledger adjustments made so far; numbers the next adjustment's ref. */
+    adjustments: integer('adjustments').notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('payment_reversals_charge_idx').on(t.chargeId)],
 );
 
 /** Persisted daily store rotations (deterministic; stored for audit and support). */
@@ -540,9 +592,42 @@ export const bans = pgTable(
     reason: text('reason').notNull(),
     expiresAt: ts('expires_at'),
     revokedAt: ts('revoked_at'),
+    /**
+     * For a ban re-applied because the player came back after deleting a
+     * banned account: the `ban_evasion_marks.ban_id` it was copied from.
+     */
+    evasionOf: uuid('evasion_of'),
     createdAt: createdAt(),
   },
-  (t) => [index('bans_user_idx').on(t.userId)],
+  (t) => [index('bans_user_idx').on(t.userId), uniqueIndex('bans_user_evasion_uq').on(t.userId, t.evasionOf)],
+);
+
+/**
+ * Bans that outlive account deletion. When a banned account is erased, each
+ * active ban is stored once per stable identifier of the account (OAuth
+ * subject, email address, guest device secret), as a keyed hash only; a later
+ * account that presents a matching identifier gets the ban re-applied.
+ * No user id is kept, so the row identifies nobody on its own.
+ */
+export const banEvasionMarks = pgTable(
+  'ban_evasion_marks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Id of the ban that was active at deletion; groups the identifier rows. */
+    banId: uuid('ban_id').notNull(),
+    /** Hex HMAC-SHA256 of the identifier, keyed with `INTERNAL_HMAC_SECRET`. */
+    identifierHash: text('identifier_hash').notNull(),
+    scope: text('scope').notNull(),
+    reason: text('reason').notNull(),
+    expiresAt: ts('expires_at'),
+    /** Set when an admin lifts a ban re-applied from this mark (a pardon). */
+    revokedAt: ts('revoked_at'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('ban_evasion_marks_ban_identifier_uq').on(t.banId, t.identifierHash),
+    index('ban_evasion_marks_identifier_idx').on(t.identifierHash),
+  ],
 );
 
 /** Feature flags with percentage rollout. */

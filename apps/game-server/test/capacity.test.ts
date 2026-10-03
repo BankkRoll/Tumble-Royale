@@ -111,4 +111,48 @@ describe('matchmaker link', () => {
     });
     expect(calls[2]?.url).toBe('http://mm.test/servers/gs-a');
   });
+
+  it('reports ticketed joins on the heartbeat and carries them over a failed one', async () => {
+    const heartbeats: Record<string, unknown>[] = [];
+    let fail = false;
+    const fakeFetch = (async (url: string, init: RequestInit) => {
+      if (url.endsWith('/servers/heartbeat')) {
+        heartbeats.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        if (fail) return new Response('{}', { status: 503 });
+      }
+      return new Response('{}', { status: 200 });
+    }) as typeof fetch;
+    const queue: { matchId: string; userId: string }[][] = [
+      [{ matchId: 'm_1', userId: 'u1' }],
+      [{ matchId: 'm_1', userId: 'u2' }],
+      [],
+    ];
+    const link = startMatchmakerLink({
+      matchmakerUrl: 'http://mm.test',
+      secret: 'secret',
+      serverId: 'gs-a',
+      publicUrl: 'ws://gs-a/ws',
+      region: 'eu',
+      capacity: 400,
+      report: () => ({ load: 0, rooms: 0, matches: [] }),
+      joined: () => queue.shift() ?? [],
+      fetch: fakeFetch,
+      intervalMs: 60_000,
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    fail = true;
+    await link.beat();
+    fail = false;
+    // The refused heartbeat dropped the registration: this beat re-registers, the next carries both joins.
+    await link.beat();
+    await link.beat();
+    await link.beat();
+    await link.stop();
+    expect(heartbeats[0]?.joined).toEqual([{ matchId: 'm_1', userId: 'u1' }]);
+    expect(heartbeats[1]?.joined).toEqual([
+      { matchId: 'm_1', userId: 'u1' },
+      { matchId: 'm_1', userId: 'u2' },
+    ]);
+    expect(heartbeats[2]?.joined).toBeUndefined();
+  });
 });

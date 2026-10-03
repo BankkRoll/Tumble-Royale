@@ -11,6 +11,7 @@
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import { sql } from 'drizzle-orm';
+import { trustFunction } from '@tumble/shared/proxy';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { registerIdentityRoutes } from './accounts/identities.ts';
 import { registerAccountRoutes } from './accounts/routes.ts';
@@ -30,6 +31,7 @@ import {
 import { registerEconomyRoutes } from './economy/routes.ts';
 import { ApiError } from './http/errors.ts';
 import { rateLimitKey } from './http/rate-limit.ts';
+import { kvRateLimitStore } from './http/rate-limit-store.ts';
 import { createKV, type KV } from './kv/index.ts';
 import { registerMatchRoutes } from './matches/routes.ts';
 import { registerModerationRoutes } from './moderation/routes.ts';
@@ -60,6 +62,8 @@ export interface BuildOptions {
   seasonListeners?: SeasonChangeListener[];
   /** Disable request logging (tests). */
   logger?: boolean;
+  /** Count rate limits in the KV (default: when REDIS_URL is set). */
+  sharedRateLimit?: boolean;
 }
 
 /** A built API ready to `listen()` or `inject()`. */
@@ -108,6 +112,23 @@ export async function syncCatalog(ctx: AppContext): Promise<void> {
       .insert(challenges)
       .values({ id: c.id, ...values })
       .onConflictDoUpdate({ target: challenges.id, set: values });
+  }
+}
+
+const HEALTH_PROBE_MS = 2000;
+
+/** Runs a dependency check with a deadline; false on failure or timeout. */
+async function probe(check: () => Promise<unknown>): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), HEALTH_PROBE_MS);
+  });
+  try {
+    return await Promise.race([check().then(() => true), timeout]);
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -160,7 +181,8 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
 
   const app = Fastify({
     logger: opts.logger === false ? false : { level: config.logLevel },
-    trustProxy: true,
+    // SECURITY: X-Forwarded-For is believed only from the proxies TRUST_PROXY names.
+    trustProxy: trustFunction(config.trustProxy) || false,
     bodyLimit: 256 * 1024,
   });
 
@@ -187,6 +209,12 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     max: config.rateLimitMax,
     timeWindow: '1 minute',
     keyGenerator: (req) => rateLimitKey(config.jwtSecret, req, now),
+    // Shared windows across instances whenever there is a shared store; the
+    // in-process store only for single-instance memory setups (its expired keys
+    // are never revisited, so the KV store would leak them).
+    ...((opts.sharedRateLimit ?? !!config.redisUrl)
+      ? { store: kvRateLimitStore(kv, () => now().getTime()), skipOnError: true }
+      : {}),
     errorResponseBuilder: (_req, c) => ({
       statusCode: 429,
       error: 'rate_limited',
@@ -225,15 +253,23 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     }
   });
 
-  app.get('/health', { config: { rateLimit: false } }, async () => {
-    await ctx.db.execute(sql`select 1`);
-    return {
-      ok: true,
+  // Load balancers route on this: an instance that lost Redis cannot fan out
+  // realtime events, keep presence or share rate limits, so it reports 503.
+  app.get('/health', { config: { rateLimit: false } }, async (_req, reply) => {
+    const [db, store] = await Promise.all([
+      probe(() => ctx.db.execute(sql`select 1`)),
+      probe(() => kv.ping()),
+    ]);
+    const ok = db && store;
+    return reply.code(ok ? 200 : 503).send({
+      ok,
       db: database.driver,
+      dbOk: db,
       kv: config.redisUrl ? 'redis' : 'memory',
+      kvOk: store,
       payments: payments.id,
       season: catalog.season.id,
-    };
+    });
   });
 
   registerAuthRoutes(app, ctx);

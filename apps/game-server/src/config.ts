@@ -14,6 +14,7 @@
  */
 import { hostname } from 'node:os';
 import { EnvIssues, type Env, type NodeEnv } from '@tumble/shared/env';
+import type { TrustProxy } from '@tumble/shared/proxy';
 
 /** How much this process hosts. */
 export interface CapacityConfig {
@@ -50,6 +51,29 @@ export interface LinkConfig {
   controlUrl: string | undefined;
 }
 
+/** Who may reach what over HTTP and the WebSocket. */
+export interface ExposureConfig {
+  /** Serve `/debug/*` (development and test only). */
+  debug: boolean;
+  /**
+   * Browser origins allowed CORS on `/health` and WebSocket upgrades
+   * (`ALLOWED_ORIGINS`, else `PUBLIC_WEB_URL` in production); true = any.
+   */
+  allowedOrigins: string[] | true;
+  /** Bearer for `/metrics` and `/rooms` on the public port (`METRICS_TOKEN`). */
+  metricsToken: string | undefined;
+  /** Separate listener serving `/metrics`, `/rooms` and `/health` without a token (`INTERNAL_PORT`). */
+  internalPort: number | undefined;
+  /** Interface for the internal listener (`INTERNAL_HOST`, default all). */
+  internalHost: string | undefined;
+  /** Reverse proxies allowed to set X-Forwarded-For (`TRUST_PROXY`, default none). */
+  trustProxy: TrustProxy;
+  /** Hello deadline for new sockets (`HELLO_TIMEOUT_MS`, 5 s). */
+  helloTimeoutMs: number;
+  /** Unhandshaken sockets per client address (`MAX_PENDING_PER_IP`, 8). */
+  maxPendingPerIp: number;
+}
+
 /** Fully resolved game server configuration. */
 export interface GameServerConfig {
   env: NodeEnv;
@@ -76,6 +100,38 @@ export interface GameServerConfig {
   link: LinkConfig | null;
   /** Enables the signed `POST /internal/kick` endpoint (`GAME_SERVER_SECRET`). */
   controlSecret: string | undefined;
+  exposure: ExposureConfig;
+}
+
+function exposure(issues: EnvIssues, env: NodeEnv, port: number): ExposureConfig {
+  const production = env === 'production';
+  const origins = issues.optional('ALLOWED_ORIGINS');
+  const publicWeb = issues.url('PUBLIC_WEB_URL', HTTP) ?? 'http://localhost:5173';
+  const metricsToken =
+    issues.optional('METRICS_TOKEN') === undefined ? undefined : issues.secret('METRICS_TOKEN', 16);
+  const internalPort =
+    issues.optional('INTERNAL_PORT') === undefined
+      ? undefined
+      : issues.int('INTERNAL_PORT', 0, { min: 1, max: 65535 });
+  if (internalPort !== undefined && internalPort === port)
+    issues.add('INTERNAL_PORT', 'must differ from PORT: the internal listener must not be the public one');
+  return {
+    debug: !production,
+    allowedOrigins: origins
+      ? origins
+          .split(',')
+          .map((o) => o.trim().replace(/\/$/, ''))
+          .filter(Boolean)
+      : production
+        ? [publicWeb]
+        : true,
+    metricsToken: metricsToken || undefined,
+    internalPort,
+    internalHost: issues.optional('INTERNAL_HOST'),
+    trustProxy: issues.trustProxy(),
+    helloTimeoutMs: issues.int('HELLO_TIMEOUT_MS', 5000, { min: 500, max: 60_000 }),
+    maxPendingPerIp: issues.int('MAX_PENDING_PER_IP', 8, { min: 1, max: 1000 }),
+  };
 }
 
 const HTTP = ['http:', 'https:'] as const;
@@ -152,6 +208,7 @@ export function loadConfig(env: Env = process.env): GameServerConfig {
     results: results(issues, nodeEnv),
     link: link(issues, port, controlSecret),
     controlSecret,
+    exposure: exposure(issues, nodeEnv, port),
   };
   issues.throwIfAny('game-server');
   return config;

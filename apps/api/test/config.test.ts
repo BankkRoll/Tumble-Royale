@@ -38,6 +38,16 @@ describe('api config', () => {
     expect(loadConfig({ ...prod, ALLOW_MEMORY_STORE: '1' }).memoryStoreInProduction).toBe(true);
   });
 
+  it('requires the Stripe webhook secret whenever a Stripe key is set', () => {
+    expect(issueNames(testEnv({ STRIPE_SECRET_KEY: 'sk_test_123' }))).toEqual(['STRIPE_WEBHOOK_SECRET']);
+    expect(issueNames(testEnv({ STRIPE_SECRET_KEY: 'sk_test_123', STRIPE_WEBHOOK_SECRET: '  ' }))).toEqual([
+      'STRIPE_WEBHOOK_SECRET',
+    ]);
+    const ok = loadConfig(testEnv({ STRIPE_SECRET_KEY: 'sk_test_123', STRIPE_WEBHOOK_SECRET: 'whsec_abc' }));
+    expect(ok.stripe).toEqual({ secretKey: 'sk_test_123', webhookSecret: 'whsec_abc' });
+    expect(loadConfig(testEnv({ STRIPE_WEBHOOK_SECRET: 'whsec_abc' })).stripe).toBeUndefined();
+  });
+
   it('keeps zero-setup memory state outside production', () => {
     expect(loadConfig(testEnv({ NODE_ENV: 'development' })).memoryStoreInProduction).toBe(false);
   });

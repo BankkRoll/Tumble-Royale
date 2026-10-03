@@ -9,6 +9,7 @@
  *   API's `{ error, message }` as {@link ApiError};
  * - typed endpoint helpers mirroring `apps/api/README.md`.
  */
+import { tokenSubject, type AuthOutcome, type LoginProvider } from './online/returnUrl.ts';
 import { loadJson, removeJson, saveJson } from './storage.ts';
 
 /** Tokens returned by `/auth/guest` and `/auth/refresh`. */
@@ -63,6 +64,24 @@ export interface ApiMe {
   wallet: { gumballs: number; gems: number; crownShards: number };
   activeLoadout: number;
   linkedProviders: string[];
+  /** When the next rename is allowed (ISO); null = now. */
+  nameChangeAvailableAt?: string | null;
+}
+
+/** `POST /auth/exchange` and `POST /auth/email/verify`: a session plus what the sign-in did. */
+export interface ApiAuthResult {
+  accessToken: string;
+  refreshToken: string;
+  user: { id: string; displayName: string; tag: string; isGuest: boolean };
+  outcome: AuthOutcome;
+  provider: LoginProvider;
+}
+
+/** `GET /auth/providers`. */
+export interface ApiAuthProviders {
+  discord: boolean;
+  google: boolean;
+  email: boolean;
 }
 
 /** API loadout body (content `CosmeticLoadout` + banner/footsteps). */
@@ -366,6 +385,51 @@ export class ApiClient {
     );
   }
 
+  /** The signed-in account's id (from the stored access token), or null. */
+  currentUserId(): string | null {
+    return tokenSubject(this.tokens?.accessToken);
+  }
+
+  /**
+   * Switches this device to a session from an OAuth/email sign-in.
+   *
+   * @param session - Tokens from `/auth/exchange` or `/auth/email/verify`.
+   * @param keepDevice - Keep the guest device token. Only for the same
+   *   account: a stale device token would otherwise sign the device back in
+   *   to the old guest the next time a refresh fails.
+   */
+  adoptSession(session: { accessToken: string; refreshToken: string }, keepDevice: boolean): void {
+    this.tokens = {
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      deviceToken: keepDevice ? (this.tokens?.deviceToken ?? '') : '',
+    };
+    saveJson('auth', this.tokens);
+  }
+
+  /** Drops the stored session without telling the server (the account is gone). */
+  forget(): void {
+    this.tokens = null;
+    removeJson('auth');
+  }
+
+  /**
+   * Revokes a session this device decided not to keep (best effort).
+   *
+   * @param refreshToken - That session's refresh token.
+   */
+  async revoke(refreshToken: string): Promise<void> {
+    await fetchJson(
+      `${this.baseUrl}/auth/logout`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      },
+      REQUEST_TIMEOUT_MS,
+    );
+  }
+
   /** Rotates the refresh token; concurrent callers share one rotation. */
   private refresh(): Promise<boolean> {
     if (this.refreshing) return this.refreshing;
@@ -473,6 +537,33 @@ export class ApiClient {
     this.request('PUT', `/loadouts/${index}`, { name, items });
   activateLoadout = (index: number): Promise<{ activeIndex: number; items: ApiLoadoutItems }> =>
     this.request('POST', `/loadouts/${index}/activate`);
+  /** Deletes the account on the server. */
+  deleteMe = (): Promise<void> => this.request('DELETE', '/me', { confirm: true });
+
+  // ---------------------------------------------------------------------------
+  // Sign-in methods
+  // ---------------------------------------------------------------------------
+
+  authProviders = (): Promise<ApiAuthProviders> =>
+    this.request('GET', '/auth/providers', undefined, { auth: false });
+  /** Trades the one-time code from `/auth/complete` for a session. */
+  exchangeCode = (code: string): Promise<ApiAuthResult> =>
+    this.request('POST', '/auth/exchange', { code }, { auth: false });
+  /** Redeems an email magic-link token for a session. */
+  verifyEmail = (token: string): Promise<ApiAuthResult> =>
+    this.request('POST', '/auth/email/verify', { token }, { auth: false });
+  /**
+   * Starts Discord/Google sign-in. With `link` the signed-in account is sent
+   * along, so a new identity is linked to it (or the device switches to the
+   * account that already owns it).
+   */
+  startOAuth = (provider: 'discord' | 'google', link: boolean): Promise<{ url: string }> =>
+    this.request('POST', `/auth/${provider}/start`, undefined, { auth: link });
+  /** Emails a magic link; `link` works as for {@link ApiClient.startOAuth}. */
+  startEmail = (email: string, link: boolean): Promise<{ sent: boolean }> =>
+    this.request('POST', '/auth/email/start', { email }, { auth: link });
+  unlinkIdentity = (provider: LoginProvider): Promise<{ linkedProviders: string[] }> =>
+    this.request('DELETE', `/me/identities/${provider}`);
 
   // ---------------------------------------------------------------------------
   // Economy & progression

@@ -31,6 +31,7 @@ import type {
   LeaderboardId,
   LeaderboardInfo,
   LeaderboardRow,
+  LobbyGamesState,
   MatchHistoryEntry,
   MenuTab,
   NavDirection,
@@ -124,6 +125,8 @@ export interface UIState {
   playlists: Playlist[];
   selectedPlaylist: string;
   localReady: boolean;
+  /** Lobby mini-games on the menu platform (picker + running game). */
+  lobbyGames: LobbyGamesState;
   customLobby: CustomLobbyState | null;
   roundCatalog: RoundCatalogEntry[];
   /** Rendered cosmetic thumbnails (data/blob URLs) by item id; cards fall back to the emoji icon. */
@@ -225,6 +228,8 @@ export interface UIState {
   setPlaylists: (playlists: Playlist[], selected?: string) => void;
   selectPlaylist: (id: string) => void;
   setLocalReady: (ready: boolean) => void;
+  /** Merges lobby mini-game state (the game publishes the HUD; the UI opens/closes the picker). */
+  setLobbyGames: (patch: Partial<LobbyGamesState>) => void;
   setCustomLobby: (lobby: CustomLobbyState | null) => void;
   setRoundCatalog: (rounds: RoundCatalogEntry[]) => void;
   /** Adds rendered thumbnails (merged into `thumbnails`). */
@@ -331,6 +336,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   playlists: [],
   selectedPlaylist: '',
   localReady: false,
+  lobbyGames: { pickerOpen: false, canStart: true, players: 1, hud: null },
   customLobby: null,
   roundCatalog: [],
   thumbnails: {},
@@ -476,6 +482,7 @@ export const ui = createStore<UIState>()((set, get) => ({
     uiEvents.emit('selectPlaylist', { playlistId: id });
   },
   setLocalReady: (localReady) => set({ localReady }),
+  setLobbyGames: (patch) => set({ lobbyGames: { ...get().lobbyGames, ...patch } }),
   setCustomLobby: (customLobby) => set({ customLobby }),
   setRoundCatalog: (roundCatalog) => set({ roundCatalog }),
   setThumbnails: (thumbs) => set({ thumbnails: { ...get().thumbnails, ...thumbs } }),

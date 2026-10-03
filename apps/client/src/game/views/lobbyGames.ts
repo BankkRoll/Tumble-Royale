@@ -3,7 +3,7 @@
  * Target Hop on the menu platform.
  *
  * Responsibilities:
- * - the catalogue ({@link LOBBY_GAME_INFO}) and shared geometry/tuning
+ * - shared geometry/tuning
  *   (goals, fuse, targets) the view builds from;
  * - {@link LobbyGameHost}: the leader's (or solo player's) authoritative game.
  *   It owns timers, scores, eliminations and the potato, turns validated
@@ -18,6 +18,7 @@
  * shows the leader's numbers, which the snapshots guarantee.
  */
 import {
+  LOBBY_GAME_INFO,
   LOBBY_GAME_LIMITS,
   type LobbyGameClaim,
   type LobbyGameEvent,
@@ -28,41 +29,8 @@ import {
 } from '@tumble/shared';
 
 // -----------------------------------------------------------------------------
-// Catalogue and tuning
+// Tuning
 // -----------------------------------------------------------------------------
-
-/** What the picker and the intro card show for a game. */
-export interface LobbyGameInfo {
-  title: string;
-  /** The rules in one line. */
-  rule: string;
-  /** Fewest players on the platform for the game to make sense. */
-  minPlayers: number;
-  /** Length of the play phase (s); 0 when the game ends on its own (Hot Potato). */
-  playS: number;
-}
-
-/** The lobby mini-games, in picker order. */
-export const LOBBY_GAME_INFO: Readonly<Record<LobbyGameKind, LobbyGameInfo>> = {
-  goal: {
-    title: 'Goal Rush',
-    rule: 'Push or dive the ball into the other goal. First to 3 wins.',
-    minPlayers: 1,
-    playS: 90,
-  },
-  potato: {
-    title: 'Hot Potato',
-    rule: 'Grab or dive into someone to pass the potato before it pops.',
-    minPlayers: 2,
-    playS: 0,
-  },
-  targets: {
-    title: 'Target Hop',
-    rule: 'Land on the glowing targets. Gold ones are worth 3.',
-    minPlayers: 1,
-    playS: 45,
-  },
-};
 
 /** 3-2-1-GO before play (s). */
 export const LOBBY_GAME_INTRO_S = 3.5;

@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { sanitizeLobbyGame, type LobbyGameWire } from '@tumble/shared';
+import { LOBBY_GAME_INFO, sanitizeLobbyGame, type LobbyGameWire } from '@tumble/shared';
 import {
   GOAL,
   LOBBY_GAME_CANCEL_S,
-  LOBBY_GAME_INFO,
   LOBBY_GAME_INTRO_S,
   LOBBY_GAME_RESULTS_S,
   LobbyGameHost,

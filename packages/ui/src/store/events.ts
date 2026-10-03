@@ -10,6 +10,7 @@ import type {
   CustomLobbyOptions,
   LeaderboardId,
   LeaderboardScope,
+  LobbyGameId,
   MenuTab,
   NavDirection,
   OverlayId,
@@ -133,6 +134,10 @@ export interface UIIntents {
   addFriend: { nameTag: string };
   copyInvite: { code: string };
   kickPartyMember: { memberId: string };
+  /** Solo player or party leader starts a lobby mini-game on the menu platform. */
+  lobbyGameStart: { game: LobbyGameId };
+  /** Solo player or party leader ends the running lobby mini-game. */
+  lobbyGameStop: undefined;
   /** Party leader hands leadership to a member. */
   promotePartyMember: { memberId: string };
   leaveParty: undefined;

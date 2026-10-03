@@ -13,6 +13,7 @@ import './theme/screens.css';
 import './theme/hud.css';
 import './theme/wall.css';
 import './theme/lobby.css';
+import './theme/lobbyGames.css';
 import './theme/menu.css';
 import './theme/account.css';
 import './theme/social.css';

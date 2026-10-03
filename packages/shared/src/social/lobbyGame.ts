@@ -21,6 +21,39 @@ export const LOBBY_GAME_KINDS = ['goal', 'potato', 'targets'] as const;
 /** A lobby mini-game. */
 export type LobbyGameKind = (typeof LOBBY_GAME_KINDS)[number];
 
+/** What the picker and the intro card show for a game. */
+export interface LobbyGameInfo {
+  title: string;
+  /** The rules in one line. */
+  rule: string;
+  /** Fewest players on the platform for the game to make sense. */
+  minPlayers: number;
+  /** Length of the play phase (s); 0 when the game ends on its own (Hot Potato). */
+  playS: number;
+}
+
+/** The lobby mini-games, in picker order. */
+export const LOBBY_GAME_INFO: Readonly<Record<LobbyGameKind, LobbyGameInfo>> = {
+  goal: {
+    title: 'Goal Rush',
+    rule: 'Push or dive the ball into the other goal. First to 3 wins.',
+    minPlayers: 1,
+    playS: 90,
+  },
+  potato: {
+    title: 'Hot Potato',
+    rule: 'Grab or dive into someone to pass the potato before it pops.',
+    minPlayers: 2,
+    playS: 0,
+  },
+  targets: {
+    title: 'Target Hop',
+    rule: 'Land on the glowing targets. Gold ones are worth 3.',
+    minPlayers: 1,
+    playS: 45,
+  },
+};
+
 /** Phases of one game. */
 export const LOBBY_GAME_PHASES = ['intro', 'play', 'results'] as const;
 /** A game phase. */

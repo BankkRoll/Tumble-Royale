@@ -23,6 +23,14 @@ export { CurrencyPanel } from './menu/CurrencyPanel.tsx';
 export { StartCluster } from './menu/PlayTab.tsx';
 export { LobbyEmotes, type LobbyEmotesProps } from './menu/LobbyEmotes.tsx';
 export {
+  LobbyGameHudSlot,
+  LobbyGameScore,
+  LobbyGamesButton,
+  LOBBY_GAME_ICONS,
+  lobbyGameBlocker,
+  type LobbyGamesButtonProps,
+} from './menu/LobbyGames.tsx';
+export {
   MatchFoundScreen,
   PreShowScreen,
   ShowIntroScreen,

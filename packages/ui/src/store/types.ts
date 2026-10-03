@@ -5,7 +5,7 @@
  * server messages, API responses or mocks. The UI never imports runtime code
  * from `@tumble/sim` or three.js; only `@tumble/shared` types.
  */
-import type { RoundType, TeamShape, ThemeId } from '@tumble/shared';
+import type { LobbyGameKind, RoundType, TeamShape, ThemeId } from '@tumble/shared';
 
 export type { RoundType, ThemeId };
 
@@ -728,6 +728,58 @@ export interface PartyState {
   code: string;
   members: PartyMember[];
   maxSize: number;
+}
+
+/** A lobby mini-game played on the menu platform. */
+export type LobbyGameId = LobbyGameKind;
+
+/** One scoreboard row: a team (Goal Rush) or a player. */
+export interface LobbyGameRow {
+  id: string;
+  label: string;
+  score: number;
+  /** Team colour or the player's main colour. */
+  color: string;
+  /** The local player (or their team). */
+  self: boolean;
+  /** Knocked out or spectating. */
+  out: boolean;
+  /** Holding the hot potato. */
+  it: boolean;
+}
+
+/** The live lobby game, as the score HUD shows it. */
+export interface LobbyGameHud {
+  kind: LobbyGameId;
+  title: string;
+  rule: string;
+  phase: 'intro' | 'play' | 'results';
+  /** Intro: whole seconds before GO (3, 2, 1), then 0. */
+  countdown: number;
+  /** Whole seconds on the game clock, or null when the game has none. */
+  clock: number | null;
+  rows: LobbyGameRow[];
+  /** Hot Potato fuse left (0..1), or null. */
+  fuse: number | null;
+  /** Short call-out (GOAL!, POP!, +3); a new `seq` replays its animation. */
+  banner: { text: string; tone: 'pink' | 'blue' | 'gold' | 'mint'; seq: number } | null;
+  /** Results line, e.g. `Pink team wins!`, `Draw`, `Game cancelled`. */
+  result: string | null;
+  /** The local player won (results only). */
+  won: boolean;
+  /** The local player is watching (switched tab or knocked out). */
+  spectating: boolean;
+}
+
+/** Lobby mini-games: the picker and the running game. */
+export interface LobbyGamesState {
+  pickerOpen: boolean;
+  /** The local player may start or stop a game (solo, or the party leader). */
+  canStart: boolean;
+  /** Tumblers on the platform (1 when solo). */
+  players: number;
+  /** The running game, or null. */
+  hud: LobbyGameHud | null;
 }
 
 /** A selectable playlist. */

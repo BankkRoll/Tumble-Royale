@@ -59,6 +59,8 @@ const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 export class ResultsOutbox implements ResultsSink {
   private readonly timers = new Map<string, NodeJS.Timeout>();
   private readonly inFlight = new Set<string>();
+  /** Match ids on disk awaiting delivery (mirrors the directory, for cheap reads). */
+  private readonly waiting = new Map<string, OutboxRecord>();
   private stopped = false;
   private readonly now: () => number;
 
@@ -75,6 +77,33 @@ export class ResultsOutbox implements ResultsSink {
     const tmp = join(this.opts.dir, `.${rec.payload.matchId}.${randomBytes(4).toString('hex')}.tmp`);
     await writeFile(tmp, JSON.stringify(rec));
     await rename(tmp, this.file(rec.payload.matchId));
+    this.waiting.set(rec.payload.matchId, rec);
+  }
+
+  /** Shows waiting for delivery (heartbeats report it to the matchmaker). */
+  get backlog(): number {
+    return this.waiting.size;
+  }
+
+  /**
+   * Retries every waiting show now, repeatedly, until all are delivered or
+   * dead-lettered or `timeoutMs` passes. Used when the server drains: what is
+   * still waiting afterwards stays on disk for the next start.
+   *
+   * @returns Shows still waiting.
+   */
+  async flush(timeoutMs: number, pauseMs = 1000): Promise<number> {
+    const deadline = this.now() + timeoutMs;
+    while (this.waiting.size > 0 && this.now() < deadline) {
+      await Promise.all(
+        [...this.waiting.values()].map(async (rec) => {
+          const res = await this.attempt(rec);
+          if (res === 'retry') this.schedule(rec, this.delay(rec.attempts));
+        }),
+      );
+      if (this.waiting.size > 0) await new Promise((r) => setTimeout(r, pauseMs));
+    }
+    return this.waiting.size;
   }
 
   /** Re-schedules every payload left on disk by a previous run. */
@@ -89,6 +118,7 @@ export class ResultsOutbox implements ResultsSink {
       try {
         const rec = JSON.parse(await readFile(join(this.opts.dir, name), 'utf8')) as OutboxRecord;
         if (!rec.payload || !SAFE_ID.test(rec.payload.matchId)) throw new Error('malformed record');
+        this.waiting.set(rec.payload.matchId, rec);
         this.schedule(rec, 0);
       } catch (err) {
         this.opts.log?.(`[outbox] cannot read ${name}: ${err instanceof Error ? err.message : String(err)}`);
@@ -159,6 +189,7 @@ export class ResultsOutbox implements ResultsSink {
       const out = await this.opts.send(rec.payload);
       if (out.kind === 'delivered') {
         await rm(this.file(id), { force: true });
+        this.waiting.delete(id);
         if (rec.attempts > 0)
           this.opts.log?.(`[outbox] ${id}: delivered after ${rec.attempts} failed attempts`);
         return out.response;
@@ -166,6 +197,7 @@ export class ResultsOutbox implements ResultsSink {
       if (out.kind === 'rejected') {
         this.opts.log?.(`[outbox] ${id}: API rejected the results (${out.status}); moved to dead/`);
         await this.deadLetter(`${id}.json`);
+        this.waiting.delete(id);
         return null;
       }
       rec.attempts++;

@@ -5,6 +5,7 @@
  *
  * HTTP:
  * - `GET /health` — liveness + Rapier version
+ * - `GET /ready` — 503 while draining for shutdown
  * - `GET /debug/determinism?steps=N` — physics determinism probe (Phase 0)
  * - `GET /metrics` — Prometheus text
  * - `GET /rooms` — JSON room list
@@ -28,6 +29,8 @@ export interface GameServerOptions extends RoomManagerOptions {
   deps: RoomDeps;
   /** Enables the signed matchmaker control endpoint (`POST /internal/kick`). */
   control?: ControlOptions;
+  /** Readiness for `/ready`; false while draining (default: always ready). */
+  ready?: () => boolean;
 }
 
 /** A running server. */
@@ -72,6 +75,12 @@ export async function startGameServer(opts: GameServerOptions): Promise<GameServ
           }),
         );
         return;
+      case '/ready': {
+        const ok = opts.ready?.() ?? true;
+        res.writeHead(ok ? 200 : 503, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(ok ? { ok } : { ok, reason: 'draining' }));
+        return;
+      }
       case '/debug/determinism': {
         const steps = Math.min(Math.max(Number(url.searchParams.get('steps') ?? 600), 1), 10_000);
         res.writeHead(200, { 'content-type': 'application/json' });

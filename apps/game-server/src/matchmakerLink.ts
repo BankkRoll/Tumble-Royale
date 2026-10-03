@@ -27,6 +27,8 @@ export interface MatchmakerLinkOptions {
   report: () => CapacityReport;
   /** Humans connected to rooms (the matchmaker's public "online" count). */
   humans?: () => number;
+  /** Show results not yet delivered to the API (reported for monitoring). */
+  outbox?: () => number;
   log?: (msg: string) => void;
   /** HTTP client (tests). */
   fetch?: typeof fetch;
@@ -91,6 +93,7 @@ export function startMatchmakerLink(opts: MatchmakerLinkOptions): MatchmakerLink
         rooms: r.rooms,
         matches: r.matches,
         ...(opts.humans ? { humans: opts.humans() } : {}),
+        ...(opts.outbox ? { outbox: opts.outbox() } : {}),
       }))
     )
       registered = false;

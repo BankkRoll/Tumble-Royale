@@ -11,9 +11,12 @@
  */
 import { resolve } from 'node:path';
 import { loadServiceConfig } from '@tumble/shared/env';
+import { installLifecycle } from '@tumble/shared/lifecycle';
 import { loadRapier } from '@tumble/sim';
 import { loadConfig } from './config.ts';
 import { createDevRoomDeps } from './devDeps.ts';
+import { drain } from './drain.ts';
+import { createLogger, lineLogger } from './logger.ts';
 import { startMatchmakerLink, type MatchmakerLink } from './matchmakerLink.ts';
 import { createRealRoomDeps } from './realDeps.ts';
 import { ResultsOutbox } from './outbox.ts';
@@ -24,9 +27,23 @@ const config = loadServiceConfig(resolve(import.meta.dirname, '..'), loadConfig)
 const production = config.env === 'production';
 const { roomCapacity: capacity, maxRooms, serverCapacity } = config.capacity;
 const resultsCfg = config.results;
+const logger = createLogger({
+  level: config.ops.logLevel,
+  ...(config.link ? { serverId: config.link.serverId, region: config.link.region } : {}),
+});
+const log = lineLogger(logger);
+// Installed before anything opens, so a signal or crash during startup is handled too.
+const life = installLifecycle({
+  service: 'game-server',
+  log: logger,
+  sentryDsn: config.ops.sentryDsn,
+  environment: config.env,
+  // The drain bounds itself; this only catches a drain that hangs.
+  shutdownTimeoutMs: config.ops.drainSettleMs + config.ops.drainTimeoutMs + config.ops.outboxFlushMs + 30_000,
+});
+let draining = false;
 
 const R = await loadRapier();
-const log = (m: string): void => console.log(m);
 const results = resultsCfg
   ? new ResultsOutbox({
       dir: resultsCfg.outboxDir,
@@ -60,9 +77,10 @@ const server = await startGameServer({
     ...(config.link ? { serverId: config.link.serverId, allowDefaultSid: !production } : {}),
   },
   ...(config.controlSecret ? { control: { secret: config.controlSecret } } : {}),
+  ready: () => !draining,
 });
 
-console.log(
+log(
   `[game-server] listening on :${server.port} (rapier ${R.version()}) ws=/ws metrics=/metrics · tickets ${config.allowUnticketed ? 'optional (dev)' : 'required'} · results ${resultsCfg ? `→ ${resultsCfg.apiUrl} (outbox ${resultsCfg.outboxDir})` : 'off'}`,
 );
 
@@ -73,14 +91,31 @@ const link: MatchmakerLink | null = config.link
       maxRooms,
       report: () => server.rooms.capacityReport(),
       humans: () => server.rooms.list().reduce((n, r) => n + r.humans, 0),
+      ...(results ? { outbox: () => results.backlog } : {}),
       log,
     })
   : null;
 
-const shutdown = (): void => {
-  console.log('[game-server] shutting down');
-  results?.stop();
-  void (link?.stop() ?? Promise.resolve()).then(() => server.close()).then(() => process.exit(0));
-};
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+if (results) {
+  const outbox = results;
+  const timer = setInterval(() => (server.metrics.outboxBacklog = outbox.backlog), 5000);
+  timer.unref();
+}
+
+life.onShutdown(async () => {
+  await drain({
+    setDraining: () => {
+      draining = true;
+      server.metrics.draining = 1;
+    },
+    link,
+    rooms: () => server.rooms.list().length,
+    closeServer: () => server.close(),
+    outbox: results,
+    log,
+    settleMs: config.ops.drainSettleMs,
+    timeoutMs: config.ops.drainTimeoutMs,
+    outboxFlushMs: config.ops.outboxFlushMs,
+  });
+  logger.flush();
+});

@@ -14,7 +14,7 @@ Build **Tumble Royale**: a browser-native, real-time multiplayer party royale wh
 1. Runs in a browser tab. Desktop (Chrome, Edge, Firefox, Safari) + mobile (iOS Safari, Android Chrome).
 2. **Three.js** rendering, **Rapier** (`@dimforge/rapier3d-compat`) physics on client and server.
 3. **Server-authoritative**. Clients send inputs only. Server decides positions, qualifications, eliminations, rewards.
-4. **100% original IP.** Never use "Fall Guys", "bean", "Mediatonic", "Epic", or any of their round names, sounds, logos, characters or art. Characters are **Tumblers**.
+4. **100% original IP.** Never use another game's names, round names, sounds, logos, characters or art. Characters are **Tumblers**.
 5. Data-driven: rounds, obstacles, cosmetics, shows, tuning live in typed config files.
 6. TypeScript strict. No `any` without a comment explaining why.
 7. Ship playable slices; never leave main unplayable.

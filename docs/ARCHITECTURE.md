@@ -80,8 +80,8 @@ remove existing fields.
 
 ## IP rule
 
-100% original. Never use "Fall Guys", "bean", "Mediatonic", "Epic", or any of
-their round, obstacle, cosmetic or character names. Our characters are
+100% original. Never use another game's names, round, obstacle, cosmetic or
+character names, sounds or art. Our characters are
 **Tumblers**. The currencies are **Gumballs** and **Gems**. The prize is **the Crown**.
 
 ## Code style

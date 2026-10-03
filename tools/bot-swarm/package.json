@@ -2,6 +2,7 @@
   "name": "@tumble/bot-swarm",
   "version": "0.0.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Headless WebSocket load tester for the game server.",
   "scripts": {

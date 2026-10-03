@@ -364,7 +364,7 @@ const ITEM_SEEDS: Record<Exclude<CosmeticSlot, 'colors' | 'pattern'>, [string, s
   face: [
     ['Goofy Grin', '😁'],
     ['Star Eyes', '🤩'],
-    ['Sleepy Bean-less', '😴'],
+    ['Sleepy Snoozer', '😴'],
     ['Disco Visor', '🕶️'],
     ['Cyclops Wink', '😉'],
   ],

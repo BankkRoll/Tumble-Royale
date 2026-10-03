@@ -58,7 +58,7 @@ const TAIL = [
   'kins',
   'face',
   'paws',
-  'beans',
+  'buns',
   'socks',
   'pants',
   'flop',

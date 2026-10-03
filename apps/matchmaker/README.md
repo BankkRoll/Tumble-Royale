@@ -20,22 +20,35 @@ Redis is optional in development (`REDIS_URL`); without it state is in-process.
 
 ## Environment
 
-| Variable                                            | Default                             | Purpose                                                                                                        |
-| --------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `PORT`                                              | `7370`                              | Listen port                                                                                                    |
-| `REDIS_URL`                                         | –                                   | Shared state + tick lock for several instances                                                                 |
-| `JWT_SECRET`                                        | dev value                           | Verifies API access tokens and party queue tickets (**same value as the API**)                                 |
-| `GAME_TICKET_SECRET`                                | dev value                           | Signs join tickets (**shared with game servers**)                                                              |
-| `GAME_SERVER_SECRET`                                | dev value                           | Bearer game servers use for `/servers/*` and `/matches/:id`                                                    |
-| `DEFAULT_GAME_SERVER_URL`                           | `ws://localhost:7350` in dev        | Used when no server has registered                                                                             |
-| `TARGET_SIZE`                                       | `40`                                | Lobby size when a ticket omits `maxPlayers`                                                                    |
-| `MAX_WAIT_MS` / `HOT_MAX_WAIT_MS` / `HOT_THRESHOLD` | `25000` / `12000` / `80`            | Release with bots after the wait; the shorter wait applies once a region has `HOT_THRESHOLD` players searching |
-| `TICK_MS`                                           | `500`                               | Release tick                                                                                                   |
-| `ALLOW_MEMORY_STORE`                                | –                                   | `1` lets production boot without `REDIS_URL` (single instance, state lost on restart)                          |
-| `ALLOWED_ORIGINS`                                   | any (dev) / `PUBLIC_WEB_URL` (prod) | Comma-separated browser origins allowed by CORS and on the `/ws` handshake                                     |
-| `PUBLIC_WEB_URL`                                    | `http://localhost:5173`             | Web client origin; the production CORS default                                                                 |
-| `RATE_LIMIT_MAX`                                    | `120`                               | Requests (and `/ws` handshakes) per minute per IP; game-server routes are exempt                               |
-| `USER_RATE_LIMIT_MAX`                               | `30`                                | Queue and lobby mutations (non-GET) per minute per player                                                      |
+| Variable                                            | Default                             | Purpose                                                                                                               |
+| --------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                                              | `7370`                              | Listen port                                                                                                           |
+| `REDIS_URL`                                         | –                                   | Shared state + tick lock for several instances                                                                        |
+| `JWT_SECRET`                                        | dev value                           | Verifies API access tokens and party queue tickets (**same value as the API**)                                        |
+| `GAME_TICKET_SECRET`                                | dev value                           | Signs join tickets (**shared with game servers**)                                                                     |
+| `GAME_SERVER_SECRET`                                | dev value                           | Bearer game servers use for `/servers/*` and `/matches/:id`                                                           |
+| `DEFAULT_GAME_SERVER_URL`                           | `ws://localhost:7350` in dev        | Used when no server has registered                                                                                    |
+| `TARGET_SIZE`                                       | `40`                                | Lobby size when a ticket omits `maxPlayers`                                                                           |
+| `MAX_WAIT_MS` / `HOT_MAX_WAIT_MS` / `HOT_THRESHOLD` | `25000` / `12000` / `80`            | Release with bots after the wait; the shorter wait applies once a region has `HOT_THRESHOLD` players searching        |
+| `TICK_MS`                                           | `500`                               | Release tick                                                                                                          |
+| `ALLOW_MEMORY_STORE`                                | –                                   | `1` lets production boot without `REDIS_URL` (single instance, state lost on restart)                                 |
+| `ALLOWED_ORIGINS`                                   | any (dev) / `PUBLIC_WEB_URL` (prod) | Comma-separated browser origins allowed by CORS and on the `/ws` handshake                                            |
+| `PUBLIC_WEB_URL`                                    | `http://localhost:5173`             | Web client origin; the production CORS default                                                                        |
+| `RATE_LIMIT_MAX`                                    | `120`                               | Requests (and `/ws` handshakes) per minute per IP; game-server routes are exempt                                      |
+| `USER_RATE_LIMIT_MAX`                               | `30`                                | Queue and lobby mutations (non-GET) per minute per player                                                             |
+| `API_URL`                                           | `http://localhost:7360` in dev      | Account API for ban lookups; unset → bans are not checked here (warned at boot)                                       |
+| `INTERNAL_HMAC_SECRET`                              | the API's dev value                 | Signs `POST {API_URL}/internal/bans/lookup` (**same value as the API**); required in production when `API_URL` is set |
+
+## Bans
+
+Access tokens are verified without calling the API, so the matchmaker asks
+the API which players are suspended (cached 15 s per player). Players with an
+`all` ban cannot queue (the whole party is refused), create or join custom
+lobbies, or open `/ws`; they are dropped from a lobby's roster when it starts.
+`ranked` bans block the ranked queue. `chat` bans set `mute: true` in the
+player's join ticket so the game server drops their chat. If the API is
+unreachable the check fails open (the API already refuses suspended accounts
+when it mints tokens and queue tickets) and the outage is logged.
 
 ## Client flow
 
@@ -66,7 +79,8 @@ arrive on the same WebSocket as `lobby_update`.
   (match id — use it as `matchId` when posting results to the API), `sid`,
   `pid` (party), `team`, `role` (`player`/`spectator`), `playlistId`, `queue`
   (`casual`/`ranked`/`custom`), `region`, `size`, `humans`, `bots`, `teamSize`,
-  `custom` (lobby settings). `verifyJoinTicket()` is the reference verifier.
+  `custom` (lobby settings), `mute` (chat-suspended; present only when true).
+  `verifyJoinTicket()` is the reference verifier.
 - `GET /matches/:id` (Bearer) returns the full roster, bot fill and settings,
   so a server can create the room on the first ticket it sees.
 

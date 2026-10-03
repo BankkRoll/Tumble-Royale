@@ -13,6 +13,7 @@ import type { Duplex } from 'node:stream';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { WebSocket, WebSocketServer } from 'ws';
 import { z } from 'zod';
+import { ApiBanLookup, NO_BANS, type BanLookup } from './bans.ts';
 import type { MatchmakerConfig } from './config.ts';
 import { DEFAULT_CUSTOM, Matchmaker, MMError, userChannel } from './matchmaker.ts';
 import { RateLimiter } from './rateLimit.ts';
@@ -24,6 +25,8 @@ export interface MatchmakerAppOptions {
   store?: MMStore;
   now?: () => number;
   logger?: boolean;
+  /** Ban lookups; defaults to the API at `API_URL`, or none without it. */
+  bans?: BanLookup;
 }
 
 /** A built matchmaker. */
@@ -97,7 +100,17 @@ export async function buildMatchmaker(
 ): Promise<MatchmakerApp> {
   const now = opts.now ?? Date.now;
   const store = opts.store ?? createStore(cfg.redisUrl, now);
-  const mm = new Matchmaker(cfg, store, now);
+  const bans =
+    opts.bans ??
+    (cfg.apiUrl
+      ? new ApiBanLookup({
+          apiUrl: cfg.apiUrl,
+          secret: cfg.internalHmacSecret,
+          now,
+          log: (m) => app.log.warn(m),
+        })
+      : NO_BANS);
+  const mm = new Matchmaker(cfg, store, now, bans);
   const app = Fastify({ logger: opts.logger === false ? false : { level: cfg.logLevel }, trustProxy: true });
 
   const ipLimiter = new RateLimiter(cfg.rateLimitMax, 60_000, now);
@@ -295,8 +308,11 @@ export async function buildMatchmaker(
     }
     void (async () => {
       const p = await verifyAccess(cfg.jwtSecret, url.searchParams.get('token') ?? '', new Date(now()));
-      if (!p) {
-        socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+      const suspended = p ? await mm.isSuspended(p.userId) : false;
+      if (!p || suspended) {
+        socket.write(
+          `HTTP/1.1 ${suspended ? '403 Forbidden' : '401 Unauthorized'}\r\nConnection: close\r\n\r\n`,
+        );
         socket.destroy();
         return;
       }

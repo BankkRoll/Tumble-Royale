@@ -4,6 +4,7 @@
  * events go out on per-user channels that the WebSocket layer relays.
  */
 import { randomInt, randomUUID } from 'node:crypto';
+import { NO_BANS, type BanLookup } from './bans.ts';
 import type { MatchmakerConfig } from './config.ts';
 import {
   DEFAULT_ENGINE,
@@ -55,6 +56,8 @@ export interface MatchRecord {
     partyId: string;
     team: number | null;
     role: 'player' | 'spectator';
+    /** Chat-suspended; carried to the game server in the join ticket. */
+    muted?: boolean;
   }[];
   custom: CustomSettings | null;
   createdAt: number;
@@ -118,10 +121,17 @@ export const DEFAULT_CUSTOM: CustomSettings = {
 export class Matchmaker {
   readonly engine: EngineConfig;
 
+  /**
+   * @param cfg - Configuration.
+   * @param store - Shared state.
+   * @param now - Clock (ms).
+   * @param bans - Ban lookups; {@link NO_BANS} skips the checks.
+   */
   constructor(
     private readonly cfg: MatchmakerConfig,
     private readonly store: MMStore,
     private readonly now: () => number = Date.now,
+    private readonly bans: BanLookup = NO_BANS,
   ) {
     this.engine = {
       ...DEFAULT_ENGINE,
@@ -133,6 +143,41 @@ export class Matchmaker {
 
   private async emit(userId: string, event: MMEvent): Promise<void> {
     await this.store.publish(userChannel(userId), JSON.stringify(event));
+  }
+
+  /**
+   * Checks players against active bans.
+   *
+   * @param userIds - Players about to queue or join a lobby together.
+   * @param ranked - True for the ranked queue, where `ranked` bans also apply.
+   * @returns The chat-suspended players among them.
+   * @throws {MMError} 403 `banned` / `ranked_banned`.
+   */
+  async checkStanding(userIds: readonly string[], ranked = false): Promise<Set<string>> {
+    const scopes = await this.bans.scopes(userIds);
+    const muted = new Set<string>();
+    const many = userIds.length > 1;
+    for (const id of userIds) {
+      const s = scopes.get(id);
+      if (!s) continue;
+      if (s.has('all'))
+        throw new MMError(403, 'banned', many ? 'A party member is suspended' : 'This account is suspended');
+      if (ranked && s.has('ranked'))
+        throw new MMError(
+          403,
+          'ranked_banned',
+          many
+            ? 'A party member is suspended from ranked play'
+            : 'This account is suspended from ranked play',
+        );
+      if (s.has('chat')) muted.add(id);
+    }
+    return muted;
+  }
+
+  /** True when the player has an active `all` ban (used to refuse the status stream). */
+  async isSuspended(userId: string): Promise<boolean> {
+    return (await this.bans.scopes([userId])).get(userId)?.has('all') ?? false;
   }
 
   // ---------------------------------------------------------------------------
@@ -170,6 +215,10 @@ export class Matchmaker {
     if (ticket.sub !== caller.userId || ticket.leaderId !== caller.userId) {
       throw new MMError(403, 'not_leader', 'Only the party leader can queue the party');
     }
+    const muted = await this.checkStanding(
+      ticket.members.map((m) => m.userId),
+      ticket.queue === 'ranked',
+    );
     for (const m of ticket.members) {
       if (await this.store.get(`lobby-user:${m.userId}`))
         throw new MMError(409, 'in_lobby', 'Leave the custom lobby before queueing');
@@ -180,7 +229,12 @@ export class Matchmaker {
       id: randomUUID(),
       partyId: ticket.pid,
       leaderId: ticket.leaderId,
-      members: ticket.members.map((m) => ({ userId: m.userId, name: m.name, ordinal: m.ordinal })),
+      members: ticket.members.map((m) => ({
+        userId: m.userId,
+        name: m.name,
+        ordinal: m.ordinal,
+        ...(muted.has(m.userId) ? { muted: true } : {}),
+      })),
       playlistId: ticket.playlistId,
       queue: ticket.queue,
       region: ticket.region,
@@ -281,6 +335,7 @@ export class Matchmaker {
           partyId: e.partyId,
           team: teamOf.get(m.userId) ?? null,
           role: 'player' as const,
+          ...(m.muted ? { muted: true } : {}),
         })),
       ),
       custom: null,
@@ -311,6 +366,7 @@ export class Matchmaker {
         bots: record.botFill,
         teamSize: record.teamSize,
         ...(record.custom ? { custom: record.custom } : {}),
+        ...(r.muted ? { mute: true } : {}),
       };
       const ticket = await signJoinTicket(this.cfg.gameTicketSecret, claims, now);
       await this.emit(r.userId, {
@@ -409,6 +465,7 @@ export class Matchmaker {
 
   /** Creates a lobby hosted by the caller. */
   async createLobby(host: Player, settings: Partial<CustomSettings>, region?: string): Promise<CustomLobby> {
+    await this.checkStanding([host.userId]);
     await this.leaveLobby(host.userId);
     await this.cancel(host.userId, 'joined_custom_lobby');
     let code = '';
@@ -444,6 +501,7 @@ export class Matchmaker {
    * @throws {MMError} 404 unknown code, 409 started/full.
    */
   async joinLobby(p: Player, code: string, spectator: boolean): Promise<CustomLobby> {
+    await this.checkStanding([p.userId]);
     const lobby = await this.loadLobby(code);
     if (lobby.status !== 'open') throw new MMError(409, 'lobby_started', 'That lobby already started');
     const current = await this.store.get(`lobby-user:${p.userId}`);
@@ -526,6 +584,13 @@ export class Matchmaker {
    */
   async startLobby(hostId: string, code: string): Promise<MatchRecord> {
     const lobby = await this.hostLobby(hostId, code);
+    // Bans can land after someone joined: suspended players are left out, chat-suspended ones muted.
+    const scopes = await this.bans.scopes([...lobby.players, ...lobby.spectators].map((p) => p.userId));
+    if (scopes.get(hostId)?.has('all')) throw new MMError(403, 'banned', 'This account is suspended');
+    const inGoodStanding = (p: { userId: string }) => !scopes.get(p.userId)?.has('all');
+    const mute = (userId: string) => (scopes.get(userId)?.has('chat') ? { muted: true } : {});
+    lobby.players = lobby.players.filter(inGoodStanding);
+    lobby.spectators = lobby.spectators.filter(inGoodStanding);
     const size = lobby.settings.maxPlayers;
     const server = await this.allocateServer(lobby.region, size + lobby.spectators.length);
     if (!server) throw new MMError(503, 'no_server', 'No game server available in this region');
@@ -547,6 +612,7 @@ export class Matchmaker {
           partyId: `custom:${code}`,
           team: null,
           role: 'player' as const,
+          ...mute(p.userId),
         })),
         ...lobby.spectators.map((p) => ({
           userId: p.userId,
@@ -554,6 +620,7 @@ export class Matchmaker {
           partyId: `custom:${code}`,
           team: null,
           role: 'spectator' as const,
+          ...mute(p.userId),
         })),
       ],
       custom: lobby.settings,

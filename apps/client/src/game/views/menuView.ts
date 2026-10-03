@@ -13,6 +13,9 @@
  *   the lobby framing after ~6 s idle), and the dressing-room close-up.
  * - Emotes: plays on the Tumbler (standing or in idle play), party joins in,
  *   confetti fires.
+ * - Online party: members stand on shared slots (leader centre) and move
+ *   live on every member's screen ({@link PartyLobbyView}); the local
+ *   Tumbler's home is its own slot and the lobby framing widens to the group.
  */
 import { Vector3 } from 'three/webgpu';
 import { getTheme } from '@tumble/content/themes';
@@ -25,12 +28,15 @@ import {
 } from '@tumble/render/scenes';
 import type { Rapier } from '@tumble/sim';
 import { CharacterState, emptyInput } from '@tumble/sim/character';
+import type { LobbyPose } from '@tumble/shared';
 import type { GameAudio } from '@tumble/audio';
 import { ui } from '@tumble/ui';
 import type { InputSystem } from '../../input/index.ts';
 import { sceneOptions } from './common.ts';
 import { IdlePlay } from './idlePlay.ts';
 import { LOBBY_WALL_RADIUS, LobbyStage } from './lobbyStage.ts';
+import { lobbyFraming, type LobbyMember, type PartyRoster } from './partyLobby.ts';
+import { PartyLobbyView, type LocalLobbyState, type PartyLobbyLink } from './partyLobbyView.ts';
 import type { GameView } from './types.ts';
 
 /** Options for {@link MenuView}. */
@@ -43,6 +49,10 @@ export interface MenuViewOptions {
   audio: GameAudio | null;
   /** Party members standing beside the player. */
   party?: readonly TumblerLoadout[];
+  /** Realtime link for the live party lobby (online accounts). */
+  lobbyLink?: PartyLobbyLink | null;
+  /** The online party, if any. */
+  roster?: PartyRoster | null;
 }
 
 /** Snapshot of the lobby Tumbler for tests and debugging. */
@@ -54,6 +64,10 @@ export interface LobbyDebugState {
   idlePlaying: boolean;
   /** Camera look-down angle in degrees (0 = level). */
   cameraPitch: number;
+  /** Local player's party slot (0 = centre/leader or solo). */
+  partySlot: number;
+  /** Tumblers on the platform, the local one included. */
+  partySize: number;
 }
 
 /** Seconds without input before idle play eases back to the lobby framing. */
@@ -94,6 +108,20 @@ export class MenuView implements GameView {
   private readonly camDir = new Vector3();
   private readonly camTarget = new Vector3();
   private readonly baseFov: number;
+  private readonly partyLobby: PartyLobbyView;
+  private readonly localPose: LobbyPose = {
+    x: 0,
+    y: 0,
+    z: 0,
+    yaw: 0,
+    state: CharacterState.Idle,
+    speed: 0,
+    vy: 0,
+    grounded: true,
+    emote: null,
+  };
+  private readonly local: LocalLobbyState = { pose: this.localPose, feet: { x: 0, y: 0, z: 0 } };
+  private readonly framing = lobbyFraming(1);
 
   constructor(private readonly opts: MenuViewOptions) {
     this.loadout = opts.loadout;
@@ -107,6 +135,14 @@ export class MenuView implements GameView {
     this.idle = new IdlePlay(opts.R, this.stage.platformRadius + 0.6, opts.input, opts.audio);
     this.idle.addRimWall(LOBBY_WALL_RADIUS);
     this.lobby = new LobbyStage(this.stage.scene, this.idle, opts.R, opts.preset);
+    this.partyLobby = new PartyLobbyView({
+      scene: this.stage.scene,
+      createTumbler: opts.createTumbler,
+      link: opts.lobbyLink ?? null,
+      poof: (at) => this.lobby.poof(at),
+    });
+    this.partyLobby.setEquippedLook(opts.loadout);
+    this.setPartyRoster(opts.roster ?? null, false);
     this.idle.onStep = (events) => {
       this.lobby.handleSimEvents(events);
       for (const e of events) if (e.type === 'emote') this.celebratePending = true;
@@ -141,7 +177,52 @@ export class MenuView implements GameView {
   setParty(members: readonly TumblerLoadout[]): void {
     this.party = members;
     if (this.dressing) return;
-    this.stage.setParty([members[0] ?? null, members[1] ?? null, members[2] ?? null]);
+    // The live party draws real members; the static stand-ins would double them.
+    if (this.partyLobby.live) this.stage.setParty([null, null, null]);
+    else this.stage.setParty([members[0] ?? null, members[1] ?? null, members[2] ?? null]);
+  }
+
+  /** Party members' looks by account (profile cards), for the live party. */
+  setPartyLooks(members: readonly { userId: string; loadout: TumblerLoadout }[]): void {
+    for (const m of members) this.partyLobby.setLook(m.userId, m.loadout);
+  }
+
+  /** The equipped look changed (not a preview): party mates re-skin live. */
+  setEquippedLook(l: TumblerLoadout): void {
+    this.partyLobby.setEquippedLook(l);
+  }
+
+  /**
+   * Applies the online party: shared slots, live members, and the local
+   * Tumbler's home moves to its own slot.
+   *
+   * @param roster - The party, or null when not in one.
+   * @param animate - Puff when the local Tumbler changes slot (off while building the view).
+   */
+  setPartyRoster(roster: PartyRoster | null, animate = true): void {
+    const before = this.partyLobby.selfHome();
+    const wasLive = this.partyLobby.live;
+    this.partyLobby.setRoster(roster);
+    const home = this.partyLobby.selfHome();
+    this.idle.setSpawn(home.x, home.z);
+    // The invisible controller would otherwise keep shoving props around the old slot.
+    if (!this.playing) this.idle.reset();
+    if (wasLive !== this.partyLobby.live) this.setParty(this.party);
+    if (!animate || home === before || this.playing || this.dressing) return;
+    // Standing Tumbler hops to its new slot (promotion, someone left).
+    this.lobby.poof({ x: before.x, y: 0, z: before.z });
+    this.lobby.poof({ x: home.x, y: 0, z: home.z });
+    this.lobby.clearArea(home.x, home.z, 1.4);
+  }
+
+  /**
+   * The party member whose Tumbler is under a screen point (opens their card).
+   *
+   * @param ndcX - Normalised device X (-1..1).
+   * @param ndcY - Normalised device Y (-1..1, up).
+   */
+  memberAt(ndcX: number, ndcY: number): LobbyMember | null {
+    return this.partyLobby.memberAt(ndcX, ndcY, this.camera);
   }
 
   /**
@@ -179,9 +260,10 @@ export class MenuView implements GameView {
       return;
     }
     const feet = this.idle.sample().feet;
-    if (Math.hypot(feet.x, feet.z) > 0.8) {
+    const home = this.partyLobby.selfHome();
+    if (Math.hypot(feet.x - home.x, feet.z - home.z) > 0.8) {
       this.lobby.poof(feet);
-      this.lobby.poof({ x: 0, y: 0, z: 0 });
+      this.lobby.poof({ x: home.x, y: 0, z: home.z });
     }
     const a = this.stage.playerAnim;
     a.state = CharacterState.Idle;
@@ -193,7 +275,7 @@ export class MenuView implements GameView {
     a.facing = 0;
     this.idle.reset();
     this.idle.driven = false;
-    this.lobby.clearArea(0, 0, 1.4);
+    this.lobby.clearArea(home.x, home.z, 1.4);
     // Keep stepping briefly so props knocked into the air land instead of freezing mid-flight.
     this.settleTime = 3;
   }
@@ -211,6 +293,8 @@ export class MenuView implements GameView {
         position: { x: feet.x, y: feet.y, z: feet.z },
         idlePlaying: true,
         cameraPitch: pitch,
+        partySlot: this.partyLobby.selfSlot,
+        partySize: this.partyLobby.memberCount,
       };
     }
     const p = this.stage.playerObject.position;
@@ -219,6 +303,8 @@ export class MenuView implements GameView {
       position: { x: p.x, y: p.y, z: p.z },
       idlePlaying: false,
       cameraPitch: pitch,
+      partySlot: this.partyLobby.selfSlot,
+      partySize: this.partyLobby.memberCount,
     };
   }
 
@@ -232,6 +318,10 @@ export class MenuView implements GameView {
 
     if (this.playing) this.updateIdlePlay(realDt);
     else {
+      // Slides to the centre for the dressing-room close-up, back to its slot after.
+      const home = this.partyLobby.selfHome();
+      const k = 1 - this.dressK;
+      this.stage.playerObject.position.set(home.x * k, 0, home.z * k);
       if (this.settleTime > 0) {
         this.settleTime -= realDt;
         this.idle.advance(realDt);
@@ -248,7 +338,43 @@ export class MenuView implements GameView {
     this.updatePartyJoin();
     this.stage.update(dt);
     this.frameCamera(realDt);
+    this.partyLobby.update(realDt, performance.now(), this.sampleLocal());
     this.lobby.update(realDt, this.camera);
+  }
+
+  /** The local Tumbler as party mates should see it (standing on its slot while dressing). */
+  private sampleLocal(): LocalLobbyState {
+    const o = this.stage.playerObject;
+    const a = this.stage.playerAnim;
+    const pose = this.localPose;
+    const f = this.local.feet;
+    f.x = o.position.x;
+    f.y = o.position.y;
+    f.z = o.position.z;
+    if (this.dressing) {
+      const home = this.partyLobby.selfHome();
+      pose.x = home.x;
+      pose.y = 0;
+      pose.z = home.z;
+      pose.yaw = this.partyLobby.selfHomeYaw();
+      pose.state = CharacterState.Idle;
+      pose.speed = 0;
+      pose.vy = 0;
+      pose.grounded = true;
+      pose.emote = null;
+      return this.local;
+    }
+    pose.x = f.x;
+    pose.y = f.y;
+    pose.z = f.z;
+    // The standing Tumbler's idle sway is cosmetic; sending it would stream frames forever.
+    pose.yaw = this.playing ? a.facing : this.partyLobby.selfHomeYaw();
+    pose.state = a.state;
+    pose.speed = a.speed;
+    pose.vy = a.verticalSpeed;
+    pose.grounded = a.grounded;
+    pose.emote = a.state === CharacterState.Emote ? a.emote : null;
+    return this.local;
   }
 
   private canIdlePlay(): boolean {
@@ -294,6 +420,8 @@ export class MenuView implements GameView {
     const p = this.stage.playerObject.position;
     this.lobby.celebrate(p);
     this.partyJoin.length = 0;
+    // Live party members emote on their own; only the stand-ins join in.
+    if (this.partyLobby.live) return;
     for (let slot = 1; slot <= 3; slot++) this.partyJoin.push({ slot, at: this.t + 0.18 * slot + 0.1, id });
   }
 
@@ -346,9 +474,11 @@ export class MenuView implements GameView {
       this.zoom = DRESS_ZOOM;
       this.idleEmoteIn = 3;
       this.stage.setParty([null, null, null]);
+      this.partyLobby.setVisible(false);
     } else {
       this.turnTarget = 0;
       this.setParty(this.party);
+      this.partyLobby.setVisible(true);
     }
   }
 
@@ -379,15 +509,26 @@ export class MenuView implements GameView {
     const wantFollow = this.playing && this.stillTime < IDLE_RETURN_S ? 1 : 0;
     this.followK += (wantFollow - this.followK) * ease(this.playing ? 2.4 : 3.5);
     this.turnYaw += (this.turnTarget - this.turnYaw) * ease(10);
-    this.stage.playerObject.rotation.y = this.dressing || this.dressK > 0.01 ? this.turnYaw : 0;
+    this.stage.playerObject.rotation.y =
+      this.dressing || this.dressK > 0.01 ? this.turnYaw : this.playing ? 0 : this.partyLobby.selfHomeYaw();
 
-    // Lobby: a slow 3/4 drift; during idle play it keeps the Tumbler in frame wherever it runs.
-    const dist = portrait ? 12.8 : 9.6;
-    const height = portrait ? 3.6 : 2.8;
+    // Lobby: a slow 3/4 drift around the party's centre (the origin solo), pulled back to fit
+    // the group; during idle play it keeps the Tumbler in frame wherever it runs.
+    const fr = lobbyFraming(this.partyLobby.memberCount, this.framing);
+    const dist = (portrait ? 12.8 : 9.6) + fr.spread * (portrait ? 1.7 : 1.1);
+    const height = (portrait ? 3.6 : 2.8) + fr.spread * 0.25;
     const yaw = Math.sin(this.t * 0.11) * 0.2;
-    this.lobbyPos.set(Math.sin(yaw) * dist, height + Math.sin(this.t * 0.23) * 0.12, Math.cos(yaw) * dist);
+    this.lobbyPos.set(
+      fr.cx + Math.sin(yaw) * dist,
+      height + Math.sin(this.t * 0.23) * 0.12,
+      fr.cz + Math.cos(yaw) * dist,
+    );
     const track = this.playing ? (portrait ? 0.85 : 0.6) : 0;
-    this.lobbyLookGoal.set(p.x * track, 1.0 + Math.max(0, p.y) * 0.4 * track, p.z * track);
+    this.lobbyLookGoal.set(
+      fr.cx + (p.x - fr.cx) * track,
+      1.0 + Math.max(0, p.y) * 0.4 * track,
+      fr.cz + (p.z - fr.cz) * track,
+    );
     this.lobbyLook.lerp(this.lobbyLookGoal, ease(3));
 
     // Follow: behind/beside the Tumbler at ~20° down, look point eased (vertical slower so jumps don't bob the view).
@@ -446,6 +587,7 @@ export class MenuView implements GameView {
 
   dispose(): void {
     this.opts.input.setMouseActions(true);
+    this.partyLobby.dispose();
     this.lobby.dispose();
     this.idle.dispose();
     this.stage.dispose();

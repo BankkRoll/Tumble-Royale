@@ -77,7 +77,9 @@ import {
 import { loadoutWithItem, profileDressing, randomizedLoadout } from '../profile.ts';
 import { SocialController } from '../social/socialController.ts';
 import { gemCheckoutMode, type GemCheckoutMode } from './gemCheckout.ts';
+import type { PartyLobbyLink } from '../views/partyLobbyView.ts';
 import { JsonSocket, type TypedMessage } from './jsonSocket.ts';
+import { partyLobbyLink } from './partyLobbyLink.ts';
 
 const LOADOUT_SLOTS = 6;
 
@@ -195,6 +197,8 @@ export interface AccountHooks {
   onPartyChanged(members: { userId: string; loadout: TumblerLoadout }[]): void;
   /** A party invite was accepted from a toast or deep link (switch to the party). */
   onJoinedParty?(): void;
+  /** The party itself changed (members, leader, ready); null when not in one. Fires before looks load. */
+  onPartyRoster?(party: ApiParty | null, selfId: string): void;
 }
 
 /**
@@ -218,6 +222,8 @@ export class OnlineAccount {
   private notifications: NotificationItem[] = [];
   /** Friends, requests, blocking, reports and party chat. */
   readonly social: SocialController;
+  /** Party members' live menu Tumblers over the realtime gateway. */
+  readonly lobbyLink: PartyLobbyLink;
   /** Last reported presence, re-sent whenever the gateway reconnects. */
   private presence: {
     status: 'online' | 'in_menu' | 'in_queue' | 'in_match';
@@ -240,6 +246,7 @@ export class OnlineAccount {
         return token ? api.wsUrl(token) : null;
       },
     });
+    this.lobbyLink = partyLobbyLink(this.realtime);
     this.social = new SocialController(api, this.realtime, {
       userId: () => this.userId,
       colorsOf: (id) => this.colorsOf(id),
@@ -1315,6 +1322,7 @@ export class OnlineAccount {
     const s = ui.getState();
     const me = this.me;
     if (!me) return;
+    this.hooks.onPartyRoster?.(party, me.userId);
     const members = party?.members ?? [
       { userId: me.userId, displayName: me.displayName, tag: me.tag, ready: true, joinedAt: 0 },
     ];

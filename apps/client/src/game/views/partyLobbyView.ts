@@ -1,0 +1,470 @@
+/**
+ * The live party on the main-menu platform: fellow members' Tumblers posed
+ * from their `party_lobby` frames, everyone's nameplate (Name#tag, leader
+ * crown, ready chip), and the local Tumbler's frames going out.
+ *
+ * Responsibilities:
+ * - roster → slots ({@link assignLobbySlots}); the local player stands on
+ *   its own slot, not always the centre;
+ * - spawn (drop-in, squash, puff) and despawn (swell, shrink, puff) as
+ *   members join, leave or are kicked; members already there when the menu
+ *   opens are simply standing;
+ * - remote poses through {@link LobbyInterpolation} plus light smoothing;
+ *   live re-skins from looks carried in frames or fetched profile cards;
+ * - the local send cadence ({@link LobbyFrameSender});
+ * - picking a member's Tumbler for the profile card.
+ *
+ * Allocation-free per frame; spawns allocate once per member.
+ */
+import {
+  encodeLobbyFrame,
+  sanitizeLobbyFrame,
+  type LobbyLook,
+  type LobbyPose,
+  type PartyLobbyFrame,
+  type PartyLobbyMessage,
+} from '@tumble/shared';
+import { CharacterState } from '@tumble/sim/character';
+import {
+  NameplateSet,
+  TumblerActor,
+  defaultLoadout,
+  tumblerFactory,
+  type CreateTumblerVisual,
+  type TumblerLoadout,
+} from '@tumble/render/scenes';
+import { Group, Raycaster, Vector2, type Camera, type Object3D, type Scene } from 'three/webgpu';
+import {
+  LOBBY_SLOT_POSITIONS,
+  LobbyFrameSender,
+  LobbyInterpolation,
+  assignLobbySlots,
+  slotFacing,
+  type LobbyMember,
+  type PartyRoster,
+} from './partyLobby.ts';
+
+/** The realtime gateway as the lobby uses it. */
+export interface PartyLobbyLink {
+  /** Sends a frame (dropped while disconnected). */
+  send(msg: PartyLobbyMessage): void;
+  /** Subscribes to fellow members' frames. */
+  onFrame(fn: (userId: string, frame: PartyLobbyFrame) => void): () => void;
+  /** Subscribes to (re)connects. */
+  onOpen(fn: () => void): () => void;
+}
+
+/** What the local Tumbler is doing this frame. */
+export interface LocalLobbyState {
+  /** Pose to send (already in platform coordinates). */
+  pose: LobbyPose;
+  /** Where the local nameplate goes (feet). */
+  feet: { x: number; y: number; z: number };
+}
+
+/** Options for {@link PartyLobbyView}. */
+export interface PartyLobbyViewOptions {
+  scene: Scene;
+  createTumbler: CreateTumblerVisual;
+  link: PartyLobbyLink | null;
+  /** Spawn/despawn puff at a feet position. */
+  poof(at: { x: number; y: number; z: number }): void;
+}
+
+const DROP_HEIGHT = 3.2;
+const GRAVITY = 24;
+const DESPAWN_S = 0.45;
+/** No frame for this long: the member is shown standing back on their slot. */
+const STALE_MS = 10_000;
+const PLATE_HEIGHT = 2.35;
+
+interface Remote {
+  userId: string;
+  slot: number;
+  actor: TumblerActor;
+  holder: Group;
+  buf: LobbyInterpolation;
+  pose: LobbyPose;
+  /** Drop-in height above the feet (m), and its fall speed. */
+  drop: number;
+  dropV: number;
+  /** Seconds into the despawn, or -1 while present. */
+  despawnT: number;
+  lastState: number;
+  look: TumblerLoadout | null;
+  seen: boolean;
+}
+
+const idlePose = (): LobbyPose => ({
+  x: 0,
+  y: 0,
+  z: 0,
+  yaw: 0,
+  state: CharacterState.Idle,
+  speed: 0,
+  vy: 0,
+  grounded: true,
+  emote: null,
+});
+
+/** Plain look for the wire (the loadout object may carry extra fields). */
+export function toLobbyLook(l: TumblerLoadout): LobbyLook {
+  return {
+    colors: [l.colors[0], l.colors[1], l.colors[2]],
+    pattern: l.pattern,
+    face: l.face,
+    upper: l.upper,
+    lower: l.lower,
+    headwear: l.headwear,
+    back: l.back,
+    emotes: [l.emotes[0], l.emotes[1], l.emotes[2], l.emotes[3]],
+    celebration: l.celebration,
+    victoryPose: l.victoryPose,
+    nameplate: l.nameplate,
+    trail: l.trail,
+  };
+}
+
+/**
+ * The live party layer of the menu lobby.
+ *
+ * @example
+ * const party = new PartyLobbyView({ scene, createTumbler, link, poof });
+ * party.setRoster(roster);
+ * party.update(dt, performance.now(), local);
+ */
+export class PartyLobbyView {
+  private readonly factory: CreateTumblerVisual;
+  private readonly remotes = new Map<string, Remote>();
+  /** Same members as {@link remotes}, for allocation-free per-frame iteration. */
+  private readonly list: Remote[] = [];
+  private readonly plates = new NameplateSet({ capacity: LOBBY_SLOT_POSITIONS.length, width: 1.9 });
+  private readonly sender = new LobbyFrameSender();
+  private readonly looks = new Map<string, TumblerLoadout>();
+  private readonly offs: (() => void)[] = [];
+  private roster: PartyRoster | null = null;
+  private self = { slot: 0, live: false };
+  private opened = false;
+  private visible = true;
+  private equipped: LobbyLook | null = null;
+  private selfLook: TumblerLoadout | null = null;
+  private readonly raycaster = new Raycaster();
+  private readonly ndc = new Vector2();
+  private readonly hits: Object3D[] = [];
+
+  constructor(private readonly opts: PartyLobbyViewOptions) {
+    this.factory = tumblerFactory(opts.createTumbler);
+    opts.scene.add(this.plates.object);
+    if (opts.link) {
+      this.offs.push(
+        opts.link.onFrame((userId, frame) => this.receive(userId, frame, performance.now())),
+        opts.link.onOpen(() => this.sender.poke()),
+      );
+    }
+  }
+
+  /** True with two or more members: the shared layout is in effect. */
+  get live(): boolean {
+    return this.self.live;
+  }
+
+  /** The local player's slot (0 when solo). */
+  get selfSlot(): number {
+    return this.self.slot;
+  }
+
+  /** Members on the platform, including the local player (1 when solo). */
+  get memberCount(): number {
+    return this.self.live ? (this.roster?.members.length ?? 1) : 1;
+  }
+
+  /**
+   * Applies the party (null = offline/solo). Joiners drop in, leavers poof;
+   * on the first roster everyone already present is simply there.
+   */
+  setRoster(roster: PartyRoster | null): void {
+    const slots = roster ? assignLobbySlots(roster.members, roster.leaderId) : [];
+    const live = !!roster && slots.length >= 2 && slots.some((s) => s.userId === roster.selfId);
+    this.roster = live ? roster : null;
+    const animate = this.opened;
+    this.opened = true;
+    const keep = new Set<string>();
+    if (live) {
+      for (const s of slots) {
+        if (s.userId === roster.selfId) {
+          this.self.slot = s.slot;
+          continue;
+        }
+        keep.add(s.userId);
+        const r = this.remotes.get(s.userId);
+        if (r && r.despawnT < 0) {
+          r.slot = s.slot;
+          if (!r.seen) this.placeHome(r);
+        } else this.spawn(s.userId, s.slot, animate);
+      }
+    } else this.self.slot = 0;
+    for (const r of this.remotes.values()) if (!keep.has(r.userId) && r.despawnT < 0) this.despawn(r);
+    this.self.live = live;
+    if (live) {
+      // Someone new needs our pose and look now, not at the next keep-alive.
+      this.sender.poke();
+      if (this.equipped) this.sender.announceLook(this.equipped);
+    }
+    this.plates.object.visible = live && this.visible;
+    this.drawPlates();
+  }
+
+  /** A member's look from their profile card (initial skin). Frames' looks win later. */
+  setLook(userId: string, look: TumblerLoadout): void {
+    if (this.looks.has(userId) && this.remotes.get(userId)?.look) return;
+    this.applyLook(userId, look);
+  }
+
+  /** The local player's equipped look changed: party mates re-skin. */
+  setEquippedLook(look: TumblerLoadout): void {
+    const next = toLobbyLook(look);
+    const prev = this.equipped;
+    this.equipped = next;
+    this.selfLook = look;
+    if (prev && JSON.stringify(prev) === JSON.stringify(next)) return;
+    if (this.self.live) this.sender.announceLook(next);
+    this.drawPlates();
+  }
+
+  /** Dressing room: party and plates step out of the close-up. */
+  setVisible(on: boolean): void {
+    if (on === this.visible) return;
+    this.visible = on;
+    for (const r of this.remotes.values()) r.holder.visible = on;
+    this.plates.object.visible = on && this.self.live;
+  }
+
+  /** Home feet position of the local player. */
+  selfHome(): { readonly x: number; readonly z: number } {
+    return LOBBY_SLOT_POSITIONS[this.self.slot] ?? LOBBY_SLOT_POSITIONS[0]!;
+  }
+
+  /** Facing for the local player standing on its slot. */
+  selfHomeYaw(): number {
+    return slotFacing(this.self.slot);
+  }
+
+  /**
+   * The party member whose Tumbler is under a screen point.
+   *
+   * @param ndcX - Normalised device X (-1..1).
+   * @param ndcY - Normalised device Y (-1..1, up).
+   * @returns The member, or null (empty stage, the local player, solo).
+   */
+  memberAt(ndcX: number, ndcY: number, camera: Camera): LobbyMember | null {
+    if (!this.self.live || !this.visible) return null;
+    this.hits.length = 0;
+    for (const r of this.remotes.values()) if (r.despawnT < 0) this.hits.push(r.holder);
+    this.raycaster.setFromCamera(this.ndc.set(ndcX, ndcY), camera);
+    const hit = this.raycaster.intersectObjects(this.hits, true)[0];
+    if (!hit) return null;
+    for (const r of this.remotes.values()) {
+      let o: Object3D | null = hit.object;
+      while (o && o !== r.holder) o = o.parent;
+      if (o) return this.roster?.members.find((m) => m.userId === r.userId) ?? null;
+    }
+    return null;
+  }
+
+  /**
+   * Advances remote members, plates and the local send.
+   *
+   * @param dt - Frame delta (s).
+   * @param now - `performance.now()` (ms).
+   * @param local - Local Tumbler state, or null while it should not be sent.
+   */
+  update(dt: number, now: number, local: LocalLobbyState | null): void {
+    for (let i = this.list.length - 1; i >= 0; i--) this.updateRemote(this.list[i]!, dt, now);
+    if (!this.self.live) return;
+    if (local) {
+      const f = local.feet;
+      this.plates.setPosition(this.self.slot, f.x, f.y + PLATE_HEIGHT, f.z);
+      const link = this.opts.link;
+      if (link && this.sender.due(now, local.pose)) {
+        const { seq, look } = this.sender.take(now, local.pose);
+        link.send(encodeLobbyFrame(local.pose, seq, look));
+      }
+    }
+  }
+
+  dispose(): void {
+    for (const off of this.offs) off();
+    for (const r of this.remotes.values()) this.free(r);
+    this.remotes.clear();
+    this.plates.dispose();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Remote members
+  // ---------------------------------------------------------------------------
+
+  private receive(userId: string, raw: PartyLobbyFrame, now: number): void {
+    const r = this.remotes.get(userId);
+    if (!r || r.despawnT >= 0) return;
+    // Already clamped by the gateway; re-checked so a bad relay can never break the scene.
+    const frame = sanitizeLobbyFrame(raw, () => true);
+    if (!frame) return;
+    if (!r.seen) {
+      r.seen = true;
+      r.buf.reset(frame, now);
+    } else r.buf.push(frame, now);
+    if (frame.look) this.applyLook(userId, frame.look);
+  }
+
+  private applyLook(userId: string, look: TumblerLoadout): void {
+    this.looks.set(userId, look);
+    const r = this.remotes.get(userId);
+    if (r) {
+      r.look = look;
+      r.actor.visual.setLoadout(look);
+    }
+    this.drawPlates();
+  }
+
+  private spawn(userId: string, slot: number, animate: boolean): void {
+    const old = this.remotes.get(userId);
+    // A leaver who rejoins mid-despawn: finish the old body at once.
+    if (old) this.free(old);
+    const look = this.looks.get(userId) ?? null;
+    const actor = new TumblerActor(this.factory, look ?? defaultLoadout());
+    const holder = new Group();
+    holder.add(actor.object);
+    holder.visible = this.visible;
+    this.opts.scene.add(holder);
+    const r: Remote = {
+      userId,
+      slot,
+      actor,
+      holder,
+      buf: new LobbyInterpolation(),
+      pose: idlePose(),
+      drop: animate ? DROP_HEIGHT : 0,
+      dropV: 0,
+      despawnT: -1,
+      lastState: -1,
+      look,
+      seen: false,
+    };
+    this.remotes.set(userId, r);
+    this.list.push(r);
+    this.placeHome(r);
+    holder.position.set(r.pose.x, 0, r.pose.z);
+    if (animate) actor.object.scale.set(0.75, 1.3, 0.75);
+  }
+
+  private placeHome(r: Remote): void {
+    const home = LOBBY_SLOT_POSITIONS[r.slot] ?? LOBBY_SLOT_POSITIONS[0]!;
+    const p = r.pose;
+    p.x = home.x;
+    p.y = 0;
+    p.z = home.z;
+    p.yaw = slotFacing(r.slot);
+    p.state = CharacterState.Idle;
+    p.speed = 0;
+    p.vy = 0;
+    p.grounded = true;
+    p.emote = null;
+    r.buf.reset(p, performance.now());
+  }
+
+  private despawn(r: Remote): void {
+    r.despawnT = 0;
+    r.buf.clear();
+    this.opts.poof(r.holder.position);
+  }
+
+  private free(r: Remote): void {
+    r.actor.dispose();
+    r.holder.removeFromParent();
+    if (this.remotes.get(r.userId) === r) this.remotes.delete(r.userId);
+    const i = this.list.indexOf(r);
+    if (i >= 0) this.list.splice(i, 1);
+  }
+
+  private updateRemote(r: Remote, dt: number, now: number): void {
+    const obj = r.actor.object;
+    if (r.despawnT >= 0) {
+      r.despawnT += dt;
+      const k = Math.min(1, r.despawnT / DESPAWN_S);
+      // Brief swell, then shrink to nothing while spinning.
+      const s = k < 0.2 ? 1 + k * 0.6 : Math.max(0.001, 1.12 * (1 - (k - 0.2) / 0.8));
+      obj.scale.setScalar(s);
+      obj.rotation.y += dt * 14 * k;
+      r.actor.update(dt);
+      if (k >= 1) this.free(r);
+      return;
+    }
+    if (r.seen && now - r.buf.newestAt > STALE_MS) {
+      r.seen = false;
+      this.placeHome(r);
+    }
+    r.buf.sample(now, r.pose);
+    const p = r.pose;
+    const h = r.holder.position;
+    const dx = p.x - h.x;
+    const dz = p.z - h.z;
+    if (dx * dx + dz * dz > 4) h.set(p.x, p.y, p.z);
+    else {
+      // Interpolated frames are already smooth; this only takes the edge off arrival jitter.
+      const k = 1 - Math.exp(-dt * 18);
+      h.x += dx * k;
+      h.y += (p.y - h.y) * k;
+      h.z += dz * k;
+    }
+
+    if (r.drop > 0) {
+      r.dropV += GRAVITY * dt;
+      r.drop = Math.max(0, r.drop - r.dropV * dt);
+      obj.position.y = r.drop;
+      if (r.drop === 0) {
+        r.actor.kick(0.9);
+        obj.scale.setScalar(1);
+        this.opts.poof(h);
+      }
+    }
+
+    const a = r.actor.anim;
+    const emoting = p.state === CharacterState.Emote && p.emote !== null;
+    const state = p.state === CharacterState.Emote && !emoting ? CharacterState.Idle : p.state;
+    if (state !== r.lastState) {
+      if (r.lastState === CharacterState.Fall && p.grounded) a.impulse = 0.6;
+      r.lastState = state;
+      a.stateTime = 0;
+    }
+    a.state = state;
+    a.speed = p.speed;
+    a.verticalSpeed = r.drop > 0 ? -r.dropV : p.vy;
+    a.facing = p.yaw;
+    a.grounded = p.grounded && r.drop === 0;
+    a.emote = emoting ? p.emote : null;
+    r.actor.update(dt);
+    this.plates.setPosition(r.slot, h.x, h.y + r.drop + PLATE_HEIGHT, h.z);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Nameplates
+  // ---------------------------------------------------------------------------
+
+  private drawPlates(): void {
+    const roster = this.roster;
+    for (let i = 0; i < LOBBY_SLOT_POSITIONS.length; i++) this.plates.setScale(i, 0);
+    if (!roster) return;
+    for (const s of assignLobbySlots(roster.members, roster.leaderId)) {
+      const m = roster.members.find((x) => x.userId === s.userId)!;
+      const look = m.userId === roster.selfId ? this.selfLook : this.looks.get(m.userId);
+      const label = `${s.leader ? '👑 ' : ''}${m.name}${m.tag ? `#${m.tag}` : ''}`;
+      this.plates.setName(
+        s.slot,
+        label,
+        look?.colors[0] ?? '#ff6fb5',
+        s.leader || m.ready ? 'READY' : 'NOT READY',
+      );
+      this.plates.setScale(s.slot, 1);
+    }
+  }
+}

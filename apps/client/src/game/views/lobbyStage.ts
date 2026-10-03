@@ -6,8 +6,10 @@
  *   unlit draw call; they flash faster when someone emotes).
  * - A bounce pad that really launches the Tumbler in idle play (a `bouncy`
  *   surface in the idle-play Rapier world) and squashes when used.
- * - Bumpable candy props (gumdrops, a cupcake, a striped beach ball) as
- *   dynamic Rapier bodies drawn with instanced toon meshes.
+ * - Bumpable candy props (gumdrops, a cupcake) and a big striped beach ball
+ *   as dynamic Rapier bodies drawn with instanced toon meshes; the ball's
+ *   state can be read and steered so a party shares one ball.
+ * - A little candy ramp to run up and launch off.
  * - A confetti cannon that fires (with a confetti shower over the Tumbler)
  *   whenever an emote plays.
  * - Giant lollipop pinwheels slowly turning in the backdrop.
@@ -102,7 +104,7 @@ const gumdrop = (x: number, z: number, r: number, color: string): PropSpec => ({
 
 const PROPS: PropSpec[] = [
   gumdrop(4.3, 0.2, 0.5, '#ff5fa8'),
-  gumdrop(-4.4, 0.7, 0.42, '#3ee6b4'),
+  gumdrop(-4.0, 2.2, 0.42, '#3ee6b4'),
   gumdrop(1.3, -4.4, 0.36, '#ffd23f'),
   {
     x: -2.7,
@@ -117,7 +119,9 @@ const PROPS: PropSpec[] = [
     ],
   },
 ];
-const BALL = { x: 2.5, z: 2.9, r: 0.42 };
+const BALL = { x: 2.6, z: 2.9, r: 0.7 };
+/** Ramp along +z on the left of the stage: low end at z0, high end at z1. */
+const RAMP = { x: -4.3, z0: -1.2, z1: 0.8, width: 1.2, rise: 0.6, thick: 0.12 };
 
 /**
  * Builds and runs the lobby set dressing.
@@ -294,7 +298,21 @@ export class LobbyStage {
     this.backdrop = back.build(false);
     for (const m of this.backdrop.meshes) this.root.add(m);
 
-    // Colliders: pad rim, cannon mount and the platform's rim posts.
+    // Ramp: a tilted candy-stripe deck propped on a gumdrop.
+    const rampLen = Math.hypot(RAMP.z1 - RAMP.z0, RAMP.rise);
+    const rampTilt = -Math.atan2(RAMP.rise, RAMP.z1 - RAMP.z0);
+    const rampZ = (RAMP.z0 + RAMP.z1) / 2;
+    const rampY = RAMP.rise / 2;
+    b.add('box', RAMP.x, rampY, rampZ, RAMP.width, RAMP.thick, rampLen, '#ff9ecb', [rampTilt, 0, 0]);
+    for (const sx of [-1, 1])
+      b.add('box', RAMP.x + sx * (RAMP.width / 2 - 0.06), rampY + 0.07, rampZ, 0.1, 0.1, rampLen, '#ffffff', [
+        rampTilt,
+        0,
+        0,
+      ]);
+    b.add('cone', RAMP.x, RAMP.rise / 2, RAMP.z1 - 0.15, 0.5, RAMP.rise, 0.5, '#5aa9ff');
+
+    // Colliders: pad rim, cannon mount, the ramp and the platform's rim posts.
     const world = this.idle.world;
     const fixed = world.createRigidBody(R.RigidBodyDesc.fixed());
     world.createCollider(
@@ -306,6 +324,14 @@ export class LobbyStage {
     world.createCollider(
       R.ColliderDesc.cylinder(0.5, 0.6)
         .setTranslation(cx, 0.5, cz)
+        .setCollisionGroups(InteractionGroups.static),
+      fixed,
+    );
+    world.createCollider(
+      R.ColliderDesc.cuboid(RAMP.width / 2, RAMP.thick / 2, rampLen / 2)
+        .setTranslation(RAMP.x, rampY, rampZ)
+        .setRotation({ x: Math.sin(rampTilt / 2), y: 0, z: 0, w: Math.cos(rampTilt / 2) })
+        .setFriction(0.6)
         .setCollisionGroups(InteractionGroups.static),
       fixed,
     );
@@ -533,6 +559,37 @@ export class LobbyStage {
   /** Dressing room: the props step out of the close-up. */
   setDressing(on: boolean): void {
     this.props.visible = !on;
+  }
+
+  /**
+   * Reads the beach ball into `out` as `[x, y, z, vx, vy, vz]`.
+   *
+   * @returns `out`.
+   */
+  readBall<T extends { [i: number]: number }>(out: T): T {
+    const t = this.ballBody.translation();
+    const v = this.ballBody.linvel();
+    out[0] = t.x;
+    out[1] = t.y;
+    out[2] = t.z;
+    out[3] = v.x;
+    out[4] = v.y;
+    out[5] = v.z;
+    return out;
+  }
+
+  /** Moves the beach ball to a state `[x, y, z, vx, vy, vz]` (the party's shared ball). */
+  writeBall(s: { readonly [i: number]: number }): void {
+    this.v.set(s[0]!, s[1]!, s[2]!);
+    this.ballBody.setTranslation(this.v, true);
+    this.v.set(s[3]!, s[4]!, s[5]!);
+    this.ballBody.setLinvel(this.v, true);
+  }
+
+  /** Sets the beach ball's velocity (a party member knocked it). */
+  kickBall(vx: number, vy: number, vz: number): void {
+    this.v.set(vx, vy, vz);
+    this.ballBody.setLinvel(this.v, true);
   }
 
   /** Puts any prop that wandered within `radius` of (x, z) back home. */

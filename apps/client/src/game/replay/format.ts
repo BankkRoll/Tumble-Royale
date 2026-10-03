@@ -172,28 +172,164 @@ const GRAB_END = ['release', 'broken', 'stamina'] as const;
  * kinds go at the end; reordering needs a format bump.
  */
 const EVENT_SCHEMA: readonly (readonly [SimEvent['type'], EventFields])[] = [
-  ['jump', [['player', 'int'], ['pos', 'pos']]],
-  ['land', [['player', 'int'], ['pos', 'pos'], ['impact', 'num']]],
-  ['dive', [['player', 'int'], ['pos', 'pos']]],
+  [
+    'jump',
+    [
+      ['player', 'int'],
+      ['pos', 'pos'],
+    ],
+  ],
+  [
+    'land',
+    [
+      ['player', 'int'],
+      ['pos', 'pos'],
+      ['impact', 'num'],
+    ],
+  ],
+  [
+    'dive',
+    [
+      ['player', 'int'],
+      ['pos', 'pos'],
+    ],
+  ],
   ['getUp', [['player', 'int']]],
-  ['stun', [['player', 'int'], ['pos', 'pos'], ['strength', 'num']]],
-  ['bounce', [['player', 'int'], ['pos', 'pos'], ['obstacle', 'optStr']]],
-  ['grabStart', [['player', 'int'], ['target', 'int'], ['targetKind', GRAB_KINDS]]],
-  ['grabEnd', [['player', 'int'], ['target', 'int'], ['reason', GRAB_END]]],
-  ['emote', [['player', 'int'], ['emote', 'int']]],
-  ['fellOut', [['player', 'int'], ['pos', 'pos']]],
-  ['respawn', [['player', 'int'], ['pos', 'pos']]],
-  ['checkpoint', [['player', 'int'], ['index', 'int']]],
-  ['finish', [['player', 'int'], ['tick', 'int'], ['subTick', 'num']]],
-  ['qualified', [['player', 'int'], ['place', 'int']]],
-  ['eliminated', [['player', 'int'], ['place', 'int']]],
-  ['tileFell', [['obstacle', 'str'], ['tile', 'int']]],
-  ['tileWarn', [['obstacle', 'str'], ['tile', 'int']]],
-  ['obstacleCue', [['obstacle', 'str'], ['cue', 'str'], ['pos', 'pos']]],
-  ['teleport', [['player', 'int'], ['from', 'pos'], ['to', 'pos']]],
-  ['score', [['team', 'int'], ['player', 'int'], ['delta', 'num'], ['total', 'num']]],
-  ['propPickup', [['player', 'int'], ['prop', 'int']]],
-  ['propDrop', [['player', 'int'], ['prop', 'int']]],
+  [
+    'stun',
+    [
+      ['player', 'int'],
+      ['pos', 'pos'],
+      ['strength', 'num'],
+    ],
+  ],
+  [
+    'bounce',
+    [
+      ['player', 'int'],
+      ['pos', 'pos'],
+      ['obstacle', 'optStr'],
+    ],
+  ],
+  [
+    'grabStart',
+    [
+      ['player', 'int'],
+      ['target', 'int'],
+      ['targetKind', GRAB_KINDS],
+    ],
+  ],
+  [
+    'grabEnd',
+    [
+      ['player', 'int'],
+      ['target', 'int'],
+      ['reason', GRAB_END],
+    ],
+  ],
+  [
+    'emote',
+    [
+      ['player', 'int'],
+      ['emote', 'int'],
+    ],
+  ],
+  [
+    'fellOut',
+    [
+      ['player', 'int'],
+      ['pos', 'pos'],
+    ],
+  ],
+  [
+    'respawn',
+    [
+      ['player', 'int'],
+      ['pos', 'pos'],
+    ],
+  ],
+  [
+    'checkpoint',
+    [
+      ['player', 'int'],
+      ['index', 'int'],
+    ],
+  ],
+  [
+    'finish',
+    [
+      ['player', 'int'],
+      ['tick', 'int'],
+      ['subTick', 'num'],
+    ],
+  ],
+  [
+    'qualified',
+    [
+      ['player', 'int'],
+      ['place', 'int'],
+    ],
+  ],
+  [
+    'eliminated',
+    [
+      ['player', 'int'],
+      ['place', 'int'],
+    ],
+  ],
+  [
+    'tileFell',
+    [
+      ['obstacle', 'str'],
+      ['tile', 'int'],
+    ],
+  ],
+  [
+    'tileWarn',
+    [
+      ['obstacle', 'str'],
+      ['tile', 'int'],
+    ],
+  ],
+  [
+    'obstacleCue',
+    [
+      ['obstacle', 'str'],
+      ['cue', 'str'],
+      ['pos', 'pos'],
+    ],
+  ],
+  [
+    'teleport',
+    [
+      ['player', 'int'],
+      ['from', 'pos'],
+      ['to', 'pos'],
+    ],
+  ],
+  [
+    'score',
+    [
+      ['team', 'int'],
+      ['player', 'int'],
+      ['delta', 'num'],
+      ['total', 'num'],
+    ],
+  ],
+  [
+    'propPickup',
+    [
+      ['player', 'int'],
+      ['prop', 'int'],
+    ],
+  ],
+  [
+    'propDrop',
+    [
+      ['player', 'int'],
+      ['prop', 'int'],
+    ],
+  ],
 ];
 
 const EVENT_CODE = new Map<string, number>(EVENT_SCHEMA.map(([type], i) => [type, i]));
@@ -365,7 +501,8 @@ export function decodeReplayFile(bytes: Uint8Array): ReplayData {
     return { header: validateReplayHeader(parsed), frames, events };
   } catch (err) {
     if (err instanceof ReplayFileError) throw err;
-    if (err instanceof ReplayDecodeError) throw new ReplayFileError('corrupt', 'The replay file is truncated');
+    if (err instanceof ReplayDecodeError)
+      throw new ReplayFileError('corrupt', 'The replay file is truncated');
     throw err;
   }
 }
@@ -435,7 +572,10 @@ export function validateReplayHeader(raw: unknown): ReplayHeader {
   if (o.outcome !== null && o.outcome !== undefined) {
     if (typeof o.outcome !== 'object') fail('outcome');
     const oc = o.outcome as Record<string, unknown>;
-    outcome = { qualified: ints(oc.qualified, 'outcome.qualified'), eliminated: ints(oc.eliminated, 'outcome.eliminated') };
+    outcome = {
+      qualified: ints(oc.qualified, 'outcome.qualified'),
+      eliminated: ints(oc.eliminated, 'outcome.eliminated'),
+    };
   }
   const frameCount = num(o, 'frameCount', true);
   if (frameCount < 1) fail('frameCount');
@@ -486,7 +626,11 @@ export function sameGameVersion(version: string): boolean {
  * @param h - Header.
  */
 export function replayFileName(h: ReplayHeader): string {
-  const slug = h.roundName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'round';
+  const slug =
+    h.roundName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || 'round';
   const stamp = h.recordedAt.replace(/[:.]/g, '-').slice(0, 19);
   return `${slug}-${stamp}${REPLAY_EXTENSION}`;
 }

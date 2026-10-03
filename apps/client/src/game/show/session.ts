@@ -38,6 +38,7 @@ import {
 } from '@tumble/ui';
 import { emoteSlots, showPlayer } from '../cosmetics.ts';
 import type { ShowResultForProfile } from '../profile.ts';
+import type { LiveRoundInfo } from '../replay/live.ts';
 import { HudMapper, type HudInput } from '../round/hud.ts';
 import { TumblerPool } from '../round/playerVisuals.ts';
 import { RoundView } from '../round/roundView.ts';
@@ -205,6 +206,8 @@ export abstract class ShowSession {
   };
   private readonly pilotState: CharacterFullState = createCharacterFullState();
   private readonly onKey = (e: KeyboardEvent): void => this.handleKey(e);
+  /** Online sessions are server-driven (recorded into replay headers). */
+  protected readonly isOnline: boolean = false;
 
   constructor(protected readonly ctx: GameContext) {
     this.pool = new TumblerPool(ctx.tumblers.create);
@@ -231,6 +234,7 @@ export abstract class ShowSession {
       }),
     );
     window.addEventListener('keydown', this.onKey);
+    ctx.replays?.showStarted();
   }
 
   // ---------------------------------------------------------------------------
@@ -371,6 +375,7 @@ export abstract class ShowSession {
     this.covered.clear();
     if (document.pointerLockElement) document.exitPointerLock();
     this.ctx.input.settings.pointerLock = false;
+    this.ctx.replays?.roundEnded(null);
     ui.setState({ cameraLock: 'off' });
     ui.getState().setEmoteWheel(false);
     ui.getState().setSpectate(null);
@@ -624,6 +629,31 @@ export abstract class ShowSession {
     };
   }
 
+  private replayInfo(r: ActiveRound): LiveRoundInfo {
+    const rs = r.start;
+    return {
+      showName: this.showName,
+      online: this.isOnline,
+      roundIndex: rs.index,
+      isFinal: rs.isFinal,
+      round: rs.round,
+      seed: rs.seed,
+      stage: rs.stage,
+      qualifyTarget: rs.qualifyTarget,
+      localId: r.inRound ? this.localId : -1,
+      players: rs.players.map((p) => {
+        const sp = this.players.get(p.id);
+        return {
+          id: p.id,
+          name: sp?.name ?? p.name,
+          isBot: p.isBot,
+          team: p.team,
+          loadout: sp?.loadout ?? null,
+        };
+      }),
+    };
+  }
+
   private loadRound(): void {
     const r = this.round;
     if (!r || this.ended) return;
@@ -763,6 +793,7 @@ export abstract class ShowSession {
         } else r.view?.followLocal();
         s.setScreen('round', { transition: 'fade' });
         if (!set.gameplay.showPing) s.setHud({ ping: -1 });
+        if (r.source) this.ctx.replays?.roundStarted(this.replayInfo(r), r.source, r.view);
         break;
       }
       case RoundPhase.Playing:
@@ -830,6 +861,7 @@ export abstract class ShowSession {
         qualified: qualified.has(id),
         place: qualified.has(id) ? place++ : 0,
       }));
+    this.ctx.replays?.roundEnded({ qualified: o.qualified, eliminated: o.eliminated });
     const s = ui.getState();
     s.clearStamps();
     s.setSpectate(null);
@@ -929,6 +961,7 @@ export abstract class ShowSession {
     const lp = this.ctx.director.listenerPos;
     for (const e of events) {
       view?.handleEvent(e);
+      this.ctx.replays?.event(e);
       if (audio) this.ctx.audio.game.handleSimEvent(e, lp);
       const mine = 'player' in e && e.player === this.localId;
       switch (e.type) {
@@ -1147,7 +1180,8 @@ export abstract class ShowSession {
       (active || spectating) &&
       !this.ctx.cfg.autoplay &&
       us.screen === 'round' &&
-      us.overlay === 'none';
+      us.overlay === 'none' &&
+      !us.replay;
     if (!input.settings.pointerLock && us.overlay !== 'none' && document.pointerLockElement)
       document.exitPointerLock();
     const lock =
@@ -1155,6 +1189,7 @@ export abstract class ShowSession {
     if (us.cameraLock !== lock) ui.setState({ cameraLock: lock });
     const look = input.readLook(realDt);
     if (!view || !r) return;
+    this.ctx.replays?.frame();
     if (active || spectating) view.rig.addLook(look.yaw, look.pitch);
 
     if (active && !this.pilot) {

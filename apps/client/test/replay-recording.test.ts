@@ -6,8 +6,18 @@
  */
 import { describe, expect, it } from 'vitest';
 import { CharacterFlag, CharacterState, type SimEvent } from '@tumble/sim';
-import { CameraModeCode, GAME_VERSION, decodeReplayFile, encodeReplayFile } from '../src/game/replay/format.ts';
-import { ReplayRecorder, type RecordableCamera, type RecordablePlayer, type ReplayMeta } from '../src/game/replay/recorder.ts';
+import {
+  CameraModeCode,
+  GAME_VERSION,
+  decodeReplayFile,
+  encodeReplayFile,
+} from '../src/game/replay/format.ts';
+import {
+  ReplayRecorder,
+  type RecordableCamera,
+  type RecordablePlayer,
+  type ReplayMeta,
+} from '../src/game/replay/recorder.ts';
 import { ReplayTimeline, createCursor } from '../src/game/replay/timeline.ts';
 
 const PLAYERS = 40;
@@ -64,10 +74,20 @@ function truth(id: number, t: number, length: number, out: RecordablePlayer): bo
   out.vz = speed;
   out.facing = Math.atan2(out.vx, out.vz);
   const diving = !airborne && (t + id) % 7 < 0.6;
-  out.state = t < 0 ? CharacterState.Idle : airborne ? (jumpT < 0.4 ? CharacterState.Jump : CharacterState.Fall) : diving ? CharacterState.DiveSlide : CharacterState.Run;
+  out.state =
+    t < 0
+      ? CharacterState.Idle
+      : airborne
+        ? jumpT < 0.4
+          ? CharacterState.Jump
+          : CharacterState.Fall
+        : diving
+          ? CharacterState.DiveSlide
+          : CharacterState.Run;
   out.stateTime = airborne ? (jumpT < 0.4 ? jumpT : jumpT - 0.4) : 0;
   out.grounded = !airborne;
-  out.flags = (id === 1 && t > 100 ? CharacterFlag.Carrying : 0) | ((t + id) % 45 < 1.5 ? CharacterFlag.Ghost : 0);
+  out.flags =
+    (id === 1 && t > 100 ? CharacterFlag.Carrying : 0) | ((t + id) % 45 < 1.5 ? CharacterFlag.Ghost : 0);
   out.emote = 0;
   return true;
 }
@@ -117,7 +137,8 @@ function record(length: number, players = PLAYERS): Run {
         const e: SimEvent = { type: 'jump', player: id, pos: { x: 0, y: 2, z: t * 6 } };
         if (t < outAt(id, length)) rec.event(t, e);
       }
-      if (Math.abs(t - outAt(id, length)) < 0.5 / FPS) rec.event(t, { type: 'eliminated', player: id, place: 40 - id });
+      if (Math.abs(t - outAt(id, length)) < 0.5 / FPS)
+        rec.event(t, { type: 'eliminated', player: id, place: 40 - id });
     }
     if (Math.abs(t - 150) < 0.5 / FPS) rec.event(t, { type: 'qualified', player: 0, place: 3 });
   }
@@ -143,7 +164,20 @@ describe('replay recording', () => {
 
   it('reproduces every player within quantisation + interpolation error', () => {
     const c = createCursor();
-    const got: RecordablePlayer = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, state: 0, stateTime: 0, facing: 0, grounded: true, flags: 0, emote: 0 };
+    const got: RecordablePlayer = {
+      x: 0,
+      y: 0,
+      z: 0,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      state: 0,
+      stateTime: 0,
+      facing: 0,
+      grounded: true,
+      flags: 0,
+      emote: 0,
+    };
     const want: RecordablePlayer = { ...got };
     let checked = 0;
     for (let k = 0; k < 400; k++) {
@@ -160,7 +194,7 @@ describe('replay recording', () => {
         expect(ok).toBe(presentAtSample);
         if (!present || !ok) continue;
         const nextKnown = truth(id, tNext, LENGTH, { ...want });
-        const edge = (t % 45) > 44.9 || (t % 45) < 0.1 || !nextKnown;
+        const edge = t % 45 > 44.9 || t % 45 < 0.1 || !nextKnown;
         const jumpT = (t + id * 0.7) % 3.2;
         // Straight-line interpolation of a jump arc is off by at most g·dt²/8 ≈ 7 mm at 20 Hz.
         if (!edge) {
@@ -179,7 +213,20 @@ describe('replay recording', () => {
 
   it('keeps discrete state, state time, flags and grounded from the sample at or before', () => {
     const c = createCursor();
-    const got: RecordablePlayer = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, state: 0, stateTime: 0, facing: 0, grounded: true, flags: 0, emote: 0 };
+    const got: RecordablePlayer = {
+      x: 0,
+      y: 0,
+      z: 0,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      state: 0,
+      stateTime: 0,
+      facing: 0,
+      grounded: true,
+      flags: 0,
+      emote: 0,
+    };
     const want = { ...got };
     for (const rel of [10, 33.05, 104.4, 150.25]) {
       tl.locate(rel, c);
@@ -195,7 +242,20 @@ describe('replay recording', () => {
 
   it('snaps teleports instead of smearing across the course', () => {
     const c = createCursor();
-    const got: RecordablePlayer = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, state: 0, stateTime: 0, facing: 0, grounded: true, flags: 0, emote: 0 };
+    const got: RecordablePlayer = {
+      x: 0,
+      y: 0,
+      z: 0,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      state: 0,
+      stateTime: 0,
+      facing: 0,
+      grounded: true,
+      flags: 0,
+      emote: 0,
+    };
     // Respawn at round time 45: 12 m backwards between the samples at rel 47.95 and 48.0.
     tl.locate(47.96, c);
     tl.samplePlayer(0, c, got);
@@ -210,7 +270,20 @@ describe('replay recording', () => {
 
   it('drops players after they leave and marks eliminations and your qualification', () => {
     const c = createCursor();
-    const got: RecordablePlayer = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, state: 0, stateTime: 0, facing: 0, grounded: true, flags: 0, emote: 0 };
+    const got: RecordablePlayer = {
+      x: 0,
+      y: 0,
+      z: 0,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      state: 0,
+      stateTime: 0,
+      facing: 0,
+      grounded: true,
+      flags: 0,
+      emote: 0,
+    };
     const gone = outAt(2, LENGTH);
     tl.locate(gone + 3 + 1, c);
     expect(tl.samplePlayer(tl.slotOf(2), c, got)).toBe(false);
@@ -220,7 +293,9 @@ describe('replay recording', () => {
     expect(local).toHaveLength(1);
     expect(local[0]!.t).toBeCloseTo(153, 1);
     const outs = tl.markers.filter((m) => m.kind === 'eliminated');
-    expect(outs.length).toBe(Array.from({ length: PLAYERS }, (_, id) => outAt(id, LENGTH)).filter(Number.isFinite).length);
+    expect(outs.length).toBe(
+      Array.from({ length: PLAYERS }, (_, id) => outAt(id, LENGTH)).filter(Number.isFinite).length,
+    );
   });
 
   it('replays the camera track and obstacle states', () => {
@@ -260,7 +335,20 @@ describe('replay recording', () => {
   it('hands out snapshots of a round still in progress', () => {
     const rec = new ReplayRecorder(meta(4));
     expect(rec.snapshot()).toBeNull();
-    const out: RecordablePlayer = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, state: 0, stateTime: 0, facing: 0, grounded: true, flags: 0, emote: 0 };
+    const out: RecordablePlayer = {
+      x: 0,
+      y: 0,
+      z: 0,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      state: 0,
+      stateTime: 0,
+      facing: 0,
+      grounded: true,
+      flags: 0,
+      emote: 0,
+    };
     for (let f = 0; f < 120; f++) {
       const t = f / FPS;
       rec.frame(t, (id, o) => truth(id, t, 100, o), null, null);
@@ -269,7 +357,9 @@ describe('replay recording', () => {
     expect(snap.header.frameCount).toBe(40);
     expect(snap.header.outcome).toBeNull();
     const tl2 = new ReplayTimeline(snap);
-    expect(tl2.sampleCamera(tl2.locate(1, createCursor()), { mode: 0, target: 0, yaw: 0, pitch: 0 })).toBe(false);
+    expect(tl2.sampleCamera(tl2.locate(1, createCursor()), { mode: 0, target: 0, yaw: 0, pitch: 0 })).toBe(
+      false,
+    );
     expect(tl2.samplePlayer(0, tl2.locate(1, createCursor()), out)).toBe(true);
     // Recording carries on after a snapshot.
     rec.frame(2.5, (id, o) => truth(id, 2.5, 100, o), null, null);

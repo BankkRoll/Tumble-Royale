@@ -128,6 +128,7 @@ class EmotingSource implements RoundSource {
 
 /** A connected show. */
 export class OnlineShowSession extends ShowSession {
+  protected override readonly isOnline = true;
   private readonly net: NetClient;
   private readonly session: NetGameSession;
   private predictSim: MatchSimHandle | null = null;

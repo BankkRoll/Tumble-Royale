@@ -201,7 +201,8 @@ export class ReplayTimeline {
           q.py[s] = (q.py[s] as number) + r.svarint();
           q.pz[s] = (q.pz[s] as number) + r.svarint();
         }
-        if (mask & PlayerField.Yaw) q.yaw[s] = ((q.yaw[s] as number) + r.svarint() + ANGLE_STEPS) % ANGLE_STEPS;
+        if (mask & PlayerField.Yaw)
+          q.yaw[s] = ((q.yaw[s] as number) + r.svarint() + ANGLE_STEPS) % ANGLE_STEPS;
         if (mask & PlayerField.State) {
           state[s] = r.u8();
           start[s] = t - r.varint() / TIME_SCALE;
@@ -401,7 +402,8 @@ export class ReplayTimeline {
     const same = this.camMode[c.j] === out.mode && this.camTarget[c.j] === out.target;
     const a = same ? c.a : 0;
     out.yaw = lerpAngle(this.camYaw[c.i] as number, this.camYaw[c.j] as number, a);
-    out.pitch = (this.camPitch[c.i] as number) + ((this.camPitch[c.j] as number) - (this.camPitch[c.i] as number)) * a;
+    out.pitch =
+      (this.camPitch[c.i] as number) + ((this.camPitch[c.j] as number) - (this.camPitch[c.i] as number)) * a;
     return true;
   }
 

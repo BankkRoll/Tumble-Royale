@@ -5,7 +5,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import { REPLAY_SPEEDS, ReplayClock } from '../src/game/replay/clock.ts';
-import { FINE_STEP, PadCommands, SEEK_STEP, keyCommand, moveKey, nextCameraMode } from '../src/game/replay/controls.ts';
+import {
+  FINE_STEP,
+  PadCommands,
+  SEEK_STEP,
+  keyCommand,
+  moveKey,
+  nextCameraMode,
+} from '../src/game/replay/controls.ts';
 import { ReplayLibrary } from '../src/game/replay/library.ts';
 import type { ReplayData } from '../src/game/replay/format.ts';
 

@@ -53,7 +53,13 @@ function header(over: Partial<ReplayHeader> = {}): ReplayHeader {
     rate: 20,
     startTime: -3,
     players: [
-      { id: 0, name: 'Sprinkles', isBot: false, team: -1, loadout: { colors: ['#fff', '#000', '#f0f'], pattern: 'plain' } },
+      {
+        id: 0,
+        name: 'Sprinkles',
+        isBot: false,
+        team: -1,
+        loadout: { colors: ['#fff', '#000', '#f0f'], pattern: 'plain' },
+      },
       { id: 1, name: 'Bot', isBot: true, team: -1, loadout: null },
     ],
     obstacles: ['tiles-1'],

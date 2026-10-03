@@ -362,7 +362,8 @@ export class ReplayRecorder {
   /** Writes one obstacle's state when it differs from the last written one. */
   private writeNet(out: ByteWriter, index: number, values: readonly number[]): boolean {
     const n = values.length;
-    if (this.netScratch.length < n) this.netScratch = new Float64Array(Math.max(n, this.netScratch.length * 2));
+    if (this.netScratch.length < n)
+      this.netScratch = new Float64Array(Math.max(n, this.netScratch.length * 2));
     const qv = this.netScratch;
     let kind: number = NetKind.Int;
     for (let i = 0; i < n; i++) {

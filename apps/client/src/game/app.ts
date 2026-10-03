@@ -61,6 +61,7 @@ import { OnlineAccount } from './online/account.ts';
 import { MatchmakerClient, gameSocketUrl, type Lobby, type MatchFound } from './online/matchmaker.ts';
 import { ProfileStore } from './profile.ts';
 import { QualityManager } from './quality.ts';
+import { ReplayController } from './replay/controller.ts';
 import type { GameContext, SessionEnd } from './show/context.ts';
 import { OfflineShowSession } from './show/offline.ts';
 import { OnlineShowSession, gameServerAvailable } from './show/online.ts';
@@ -140,6 +141,7 @@ export class GameApp {
   private pendingJoin: string | null = deepLinkCode();
   private lobby: Lobby | null = null;
   private readonly thumbs: ThumbnailRenderer;
+  private readonly replays: ReplayController;
 
   private constructor(
     private readonly cfg: GameConfig,
@@ -180,6 +182,20 @@ export class GameApp {
       },
       setFocusVignette: (a) => post.setFocusVignette(a),
     };
+    this.replays = new ReplayController({
+      R,
+      matchDeps,
+      director,
+      post: filteredPost,
+      preset: () => quality.preset,
+      createTumbler: tumblers.create,
+      input,
+      canvas: renderer.domElement,
+      logMemory: (label) => {
+        const m = renderer.info.memory;
+        this.memoryLog.push({ round: label, geometries: m.geometries, textures: m.textures });
+      },
+    });
     this.ctx = {
       R,
       cfg,
@@ -199,6 +215,7 @@ export class GameApp {
       fps: () => this.fpsSmooth,
       settings: () => ui.getState().settings,
       onEnd: (reason) => this.onSessionEnd(reason),
+      replays: this.replays.live,
     };
     this.hooks = {
       ready: false,
@@ -438,11 +455,14 @@ export class GameApp {
     const dt = realDt * this.timeScale.value;
     if (realDt > 0) this.fpsSmooth += (1 / realDt - this.fpsSmooth) * 0.05;
 
+    // An offline show is only this player: it waits while they watch a replay. Online shows run on.
+    const held = this.replays.active && this.session instanceof OfflineShowSession;
     try {
-      this.session?.frame(dt, realDt);
+      if (!held) this.session?.frame(dt, realDt);
     } catch (err) {
       console.error('[game] show frame failed', err);
     }
+    this.replays.frame(realDt);
     const warp = this.session?.timeWarp ?? 1;
     this.director.update(dt * warp, realDt);
     const d = this.director;

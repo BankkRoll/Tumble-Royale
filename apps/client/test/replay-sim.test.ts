@@ -35,7 +35,12 @@ interface Recorded {
   netTruth: Map<number, Map<string, number[]>>;
 }
 
-async function recordRound(R: Rapier, roundId: string, seconds: number, checkAt: number[]): Promise<Recorded> {
+async function recordRound(
+  R: Rapier,
+  roundId: string,
+  seconds: number,
+  checkAt: number[],
+): Promise<Recorded> {
   const round = getRound(roundId);
   if (!round) throw new Error(`no round ${roundId}`);
   const players: MatchPlayerInfo[] = Array.from({ length: 40 }, (_, id) => ({
@@ -63,7 +68,10 @@ async function recordRound(R: Rapier, roundId: string, seconds: number, checkAt:
       stage: 1,
       qualifyTarget: sim.qualifyTarget,
       localId: 0,
-      players: players.map((p) => ({ ...p, loadout: { colors: ['#fff', '#000', '#f0f'], pattern: 'plain' } })),
+      players: players.map((p) => ({
+        ...p,
+        loadout: { colors: ['#fff', '#000', '#f0f'], pattern: 'plain' },
+      })),
     },
     source,
     { cameraMode: 'follow', cameraTarget: 0, rig: { yaw: 0.5, pitch: 0.3 } },
@@ -85,9 +93,13 @@ async function recordRound(R: Rapier, roundId: string, seconds: number, checkAt:
     for (const at of checkAt) {
       if (Math.abs(t - at) < 0.1) {
         const m = new Map<number, { x: number; y: number; z: number }>();
-        for (const p of players) if (source.sample(p.id, sample)) m.set(p.id, { x: sample.x, y: sample.y, z: sample.z });
+        for (const p of players)
+          if (source.sample(p.id, sample)) m.set(p.id, { x: sample.x, y: sample.y, z: sample.z });
         truth.set(Math.round(t * 1000), m);
-        netTruth.set(Math.round(t * 1000), new Map([...sim.getObstacleNetStates()].map(([k, v]) => [k, v.slice()])));
+        netTruth.set(
+          Math.round(t * 1000),
+          new Map([...sim.getObstacleNetStates()].map(([k, v]) => [k, v.slice()])),
+        );
       }
     }
   }
@@ -128,7 +140,9 @@ describe('replays on the real sim', () => {
       const liveTime = sim.time;
       const replaySim = createReplaySim(R, deps, rec.round, tl);
       expect(replaySim.world).not.toBe(sim.world);
-      expect(replaySim.obstacleRuntimes.map((o) => o.instance.id)).toEqual(sim.obstacleRuntimes.map((o) => o.instance.id));
+      expect(replaySim.obstacleRuntimes.map((o) => o.instance.id)).toEqual(
+        sim.obstacleRuntimes.map((o) => o.instance.id),
+      );
       const src = new ReplayRoundSource(replaySim, tl);
       const out = createPlayerSample();
       for (const at of checkAt) {
@@ -156,7 +170,9 @@ describe('replays on the real sim', () => {
           expect(replayed?.length).toBe(values.length);
           // Props are floats (quantised to 1/100); everything else is exact integers.
           for (let i = 0; i < values.length; i++)
-            expect(Math.abs((replayed?.[i] ?? NaN) - (values[i] as number)), `${id}[${i}]`).toBeLessThan(0.06);
+            expect(Math.abs((replayed?.[i] ?? NaN) - (values[i] as number)), `${id}[${i}]`).toBeLessThan(
+              0.06,
+            );
         }
       }
       // Seeking backwards works too, and nothing reached the live sim.

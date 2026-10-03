@@ -92,6 +92,7 @@ import type { ShowSession } from './show/session.ts';
 import { loadJson, saveJson } from './storage.ts';
 import type { CeremonyPost } from './views/ceremonies.ts';
 import { MenuView } from './views/menuView.ts';
+import { rosterFromParty, type PartyRoster } from './views/partyLobby.ts';
 import { SceneDirector } from './views/sceneDirector.ts';
 import { ThumbnailRenderer } from './thumbnails.ts';
 import { swapUnderWipe } from './wipe.ts';
@@ -162,6 +163,8 @@ export class GameApp {
   private readonly account: OnlineAccount | null;
   private readonly mm: MatchmakerClient | null;
   private partyLooks: TumblerLoadout[] = [];
+  private partyMembers: { userId: string; loadout: TumblerLoadout }[] = [];
+  private partyRoster: PartyRoster | null = null;
   private queued = false;
   private pendingJoin: string | null = deepLinkCode();
   private lobby: Lobby | null = null;
@@ -198,10 +201,19 @@ export class GameApp {
     this.photo = new PhotoMode(renderer.domElement as HTMLCanvasElement, post, director);
     this.account = cfg.api
       ? new OnlineAccount(api, {
-          onLookChanged: () => this.menu?.setLoadout(this.look()),
+          onLookChanged: () => {
+            this.menu?.setLoadout(this.look());
+            this.menu?.setEquippedLook(this.look());
+          },
           onPartyChanged: (members) => {
+            this.partyMembers = members;
             this.partyLooks = members.map((m) => m.loadout);
+            this.menu?.setPartyLooks(members);
             this.menu?.setParty(this.partyLooks);
+          },
+          onPartyRoster: (party, selfId) => {
+            this.partyRoster = rosterFromParty(party, selfId);
+            this.menu?.setPartyRoster(this.partyRoster);
           },
         })
       : null;
@@ -634,7 +646,10 @@ export class GameApp {
       input: this.input,
       audio: this.audio.game,
       party: this.partyLooks,
+      lobbyLink: this.account?.lobbyLink ?? null,
+      roster: this.partyRoster,
     });
+    this.menu.setPartyLooks(this.partyMembers);
     this.director.show(this.menu);
   }
 
@@ -1410,7 +1425,7 @@ export class GameApp {
     });
 
     const canvas = this.renderer.domElement;
-    canvas.addEventListener('pointerdown', () => {
+    canvas.addEventListener('pointerdown', (e) => {
       const st = s();
       if (
         this.session ||
@@ -1420,6 +1435,15 @@ export class GameApp {
         !this.menu
       )
         return;
+      const rect = canvas.getBoundingClientRect();
+      const member = this.menu.memberAt(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        1 - ((e.clientY - rect.top) / rect.height) * 2,
+      );
+      if (member) {
+        uiEvents.emit('inspectPlayer', { playerId: member.userId, name: member.name });
+        return;
+      }
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       canvas.focus({ preventScroll: true });
       this.menu.setIdlePlay(true);

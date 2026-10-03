@@ -48,6 +48,7 @@ export class IdlePlay {
   private readonly input: CharacterInput = emptyInput();
   private readonly feet = { x: 0, y: 0, z: 0 };
   private readonly vel = { x: 0, y: 0, z: 0 };
+  private readonly spawn = { x: 0, z: 0 };
   yaw = Math.PI;
 
   /**
@@ -62,8 +63,10 @@ export class IdlePlay {
     radius: number,
     private readonly inputSystem: InputSystem,
     private readonly audio: GameAudio | null,
-    private readonly spawn: { x: number; z: number } = { x: 0, z: 0 },
+    spawn: { x: number; z: number } = { x: 0, z: 0 },
   ) {
+    this.spawn.x = spawn.x;
+    this.spawn.z = spawn.z;
     this.world = createWorld(R);
     const body = this.world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(0, -0.5, 0));
     this.world.createCollider(
@@ -164,6 +167,12 @@ export class IdlePlay {
     this.ctrl.getFeet(this.feet);
     this.ctrl.getVelocity(this.vel);
     return { feet: this.feet, vel: this.vel };
+  }
+
+  /** Moves the spawn point (party slot changes); takes effect on the next reset. */
+  setSpawn(x: number, z: number): void {
+    this.spawn.x = x;
+    this.spawn.z = z;
   }
 
   /** Back to the spawn point, standing. */

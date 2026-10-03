@@ -74,6 +74,7 @@ import {
   uiPatternToContent,
 } from '../cosmetics.ts';
 import { loadoutWithItem, profileDressing, randomizedLoadout } from '../profile.ts';
+import { gemCheckoutMode, type GemCheckoutMode } from './gemCheckout.ts';
 import { JsonSocket, type TypedMessage } from './jsonSocket.ts';
 
 const LOADOUT_SLOTS = 6;
@@ -178,16 +179,6 @@ const CHALLENGE_ICON: Partial<Record<ChallengeMetric | string, string>> = {
   checkpoints: '🚩',
 };
 
-/**
- * Real-money checkout is only offered with Stripe; the API's dev fake provider
- * and the production `disabled` provider both show "Gems coming soon".
- *
- * @param provider - `/gems/packs` provider id.
- */
-function gemCheckoutEnabled(provider: string | null | undefined): boolean {
-  return provider === 'stripe';
-}
-
 /** Human message for an API error. */
 function describe(err: unknown): string {
   if (err instanceof ApiError) return err.status === 0 ? 'The server could not be reached.' : err.message;
@@ -219,7 +210,7 @@ export class OnlineAccount {
   private pass: ApiPass | null = null;
   party: ApiParty | null = null;
   private readonly cards = new Map<string, TumblerLoadout>();
-  private gemProvider: string | null = null;
+  private gemCheckout: GemCheckoutMode = 'comingSoon';
   private readonly realtime: JsonSocket;
   private readonly offs: (() => void)[] = [];
   private notifications: {
@@ -472,7 +463,11 @@ export class OnlineAccount {
 
   private async refreshStore(): Promise<void> {
     try {
-      const [store, packs] = await Promise.all([this.api.store(), this.api.gemPacks().catch(() => null)]);
+      const [store, packs, shards] = await Promise.all([
+        this.api.store(),
+        this.api.gemPacks().catch(() => null),
+        this.api.shardShop().catch(() => null),
+      ]);
       const offer = (o: (typeof store.featured)[number]): StoreData['featured'][number] | null => {
         const item = getCosmetic(o.offerId);
         if (!item) return null;
@@ -485,7 +480,19 @@ export class OnlineAccount {
           ...(o.section === 'featured' ? { tag: 'FEATURED' } : {}),
         };
       };
-      this.gemProvider = packs?.provider ?? null;
+      this.gemCheckout = gemCheckoutMode(packs);
+      const shardOffers = (shards?.offers ?? []).flatMap((o) => {
+        const item = getCosmetic(o.offerId);
+        return item
+          ? [
+              {
+                id: `shards:${o.offerId}`,
+                item: uiItem(item, o.owned || this.owns(o.offerId)),
+                price: o.price.amount,
+              },
+            ]
+          : [];
+      });
       const gemPacks: GemPackOffer[] = (packs?.packs ?? []).map((p) => ({
         id: p.id,
         name: p.name,
@@ -500,7 +507,16 @@ export class OnlineAccount {
         daily: store.daily.map(offer).filter((o): o is NonNullable<typeof o> => o !== null),
         rotationEndsAt: Date.parse(store.refreshesAt),
         gemPacks,
-        gemCheckout: gemCheckoutEnabled(packs?.provider) ? 'enabled' : 'comingSoon',
+        gemCheckout: this.gemCheckout,
+        ...(shards
+          ? {
+              shardShop: {
+                offers: shardOffers,
+                rotationEndsAt: Date.parse(shards.refreshesAt),
+                shardsPerCrown: shards.shardsPerCrown,
+              },
+            }
+          : {}),
       });
     } catch (err) {
       console.warn('[account] store failed', err);
@@ -523,10 +539,24 @@ export class OnlineAccount {
     try {
       const p = await this.api.pass();
       this.pass = p;
+      for (const s of p.settled ?? []) {
+        if (s.autoGranted <= 0) continue;
+        ui.getState().pushToast({
+          kind: 'reward',
+          title: `${s.autoGranted} unclaimed ${s.name} rewards added`,
+          body: `${p.name} has begun.`,
+          icon: '🎁',
+        });
+      }
       const data: SeasonPassData = {
         seasonName: p.name,
-        seasonNumber: 1,
+        seasonNumber: p.seasonNumber ?? 1,
         endsAt: Date.parse(p.endsAt),
+        ...(p.next
+          ? {
+              nextSeason: { number: p.next.number, name: p.next.name, startsAt: Date.parse(p.next.startsAt) },
+            }
+          : {}),
         currentTier: p.tier,
         tierProgress: p.nextTierXp > 0 ? p.xpIntoTier / p.nextTierXp : 1,
         premium: p.premium,
@@ -563,6 +593,7 @@ export class OnlineAccount {
             ? { bonus: { kind: 'xp' as const, amount: x.reward.xp } }
             : {}),
           ...(x.metric ? { metric: x.metric } : {}),
+          ...(x.reward.gems ? { gems: x.reward.gems } : {}),
           claimed: x.claimed,
           canReroll: cadence === 'daily' && c.rerollsLeft > 0 && !x.completed,
         });
@@ -681,18 +712,22 @@ export class OnlineAccount {
   async purchase(offerId: string): Promise<void> {
     const key = idempotencyKey('buy');
     const s = ui.getState();
+    // `shards:<id>` offers come from the Crown Shard shop; everything else is the daily store.
+    const shard = offerId.startsWith('shards:');
+    const itemId = shard ? offerId.slice('shards:'.length) : offerId;
+    const send = () => (shard ? this.api.buyShardOffer(itemId, key) : this.api.purchase(itemId, key));
     try {
       let res;
       try {
-        res = await this.api.purchase(offerId, key);
+        res = await send();
       } catch (err) {
         // A lost response may have completed server-side; the same key replays it safely.
-        if (err instanceof ApiError && err.status === 0) res = await this.api.purchase(offerId, key);
+        if (err instanceof ApiError && err.status === 0) res = await send();
         else throw err;
       }
-      this.owned.add(offerId);
+      this.owned.add(itemId);
       if (this.me) this.me.wallet = res.wallet;
-      const item = getCosmetic(offerId);
+      const item = getCosmetic(itemId);
       s.pushToast({
         kind: 'reward',
         title: `${item?.name ?? 'Item'} is yours!`,
@@ -705,7 +740,9 @@ export class OnlineAccount {
       const code = err instanceof ApiError ? err.code : '';
       const body =
         code === 'insufficient_funds'
-          ? 'Not enough currency — play a few shows!'
+          ? shard
+            ? 'Not enough Crown Shards — reach a few more finals!'
+            : 'Not enough currency — play a few shows!'
           : code === 'already_owned'
             ? 'You already own that.'
             : describe(err);
@@ -719,10 +756,10 @@ export class OnlineAccount {
     }
   }
 
-  /** Buys a Gem pack: instant with the dev fake provider, otherwise a checkout redirect. */
+  /** Buys a Gem pack: instant test credit with the dev fake provider, otherwise a Stripe redirect. */
   async buyGems(packId: string): Promise<void> {
     const s = ui.getState();
-    if (!gemCheckoutEnabled(this.gemProvider)) {
+    if (this.gemCheckout === 'comingSoon') {
       s.pushToast({
         kind: 'info',
         title: 'Gems are coming soon',
@@ -734,7 +771,12 @@ export class OnlineAccount {
     try {
       const r = await this.api.gemCheckout(packId, idempotencyKey('gems'));
       if (r.status === 'completed') {
-        s.pushToast({ kind: 'reward', title: `+${r.gems} Gems!`, icon: '💎' });
+        s.pushToast({
+          kind: 'reward',
+          title: `+${r.gems} Gems!`,
+          ...(this.gemCheckout === 'test' ? { body: 'Test purchase (dev): no real money was taken.' } : {}),
+          icon: '💎',
+        });
         await this.refreshProgress();
       } else if (r.checkoutUrl) {
         window.location.assign(r.checkoutUrl);
@@ -778,7 +820,9 @@ export class OnlineAccount {
         id: 'pass-funds',
         kind: 'error',
         title: funds ? 'Not enough Gems' : 'Unlock failed',
-        body: funds ? 'Gems come from the store and the pass.' : describe(err),
+        body: funds
+          ? 'Earn Gems from weekly challenges, your first Crown each day, level milestones and the pass.'
+          : describe(err),
       });
     }
   }

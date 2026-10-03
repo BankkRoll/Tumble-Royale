@@ -931,7 +931,7 @@ export class GameApp {
             id: 'pass-funds',
             kind: 'error',
             title: 'Not enough Gems',
-            body: 'Gems come from the store and the pass.',
+            body: 'Earn Gems from weekly challenges, your first Crown each day, level milestones and the pass.',
           });
       },
       onClaimChallenge: ({ id }) => {

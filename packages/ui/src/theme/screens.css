@@ -91,16 +91,35 @@
   z-index: 100;
   pointer-events: auto;
   overflow: hidden;
+  contain: strict;
 }
-.tr-wipe-blob {
+/* Skewed as a group (animations own each band's transform); wider than the
+   viewport so the slanted edges still cover both sides. */
+.tr-wipe-bands {
   position: absolute;
-  left: -8vw;
-  bottom: -8vh;
-  width: 360vmax;
-  height: 360vmax;
-  border-radius: 48% 52% 46% 54% / 56% 50% 50% 44%;
-  border: 0.6em solid var(--ink);
-  transform: translate(-50%, 50%) scale(0);
+  top: 0;
+  bottom: 0;
+  left: -16vw;
+  right: -16vw;
+  display: flex;
+  transform: skewX(-14deg);
+}
+.tr-wipe-band {
+  position: relative;
+  flex: 1 1 0;
+  height: 100%;
+  /* Overlap neighbours by a hair so no seam shows between bands mid-motion. */
+  margin-right: -2px;
+  transform: translate3d(0, 112%, 0);
+  border-left: 0.45em solid var(--ink);
+  border-right: 0.45em solid var(--ink);
+  border-radius: 999px / 7em;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.18) 0 1.1em,
+    rgba(255, 255, 255, 0) 1.1em 2.2em
+  );
+  backface-visibility: hidden;
   will-change: transform;
 }
 .tr-wipe-runner {
@@ -108,7 +127,7 @@
   left: 0;
   top: 45%;
   z-index: 20;
-  filter: drop-shadow(0 0.4em 0 rgba(43, 26, 94, 0.3));
+  will-change: transform;
 }
 .tr-wipe-hold {
   position: absolute;
@@ -116,9 +135,17 @@
   z-index: 20;
   display: grid;
   place-content: center;
-  justify-items: center;
-  gap: 1em;
   animation: tr-fade-in 300ms ease-out;
+}
+.tr-wipe-hold-card {
+  display: grid;
+  justify-items: center;
+  gap: 0.8em;
+  padding: 1.2em 2em;
+  border: var(--outline) solid var(--ink);
+  border-radius: var(--rad-lg);
+  background: rgba(43, 26, 94, 0.55);
+  box-shadow: var(--shadow-hard);
 }
 .tr-gumball-spinner {
   display: inline-block;
@@ -3127,4 +3154,56 @@
   .tr-tabs-hint {
     display: none;
   }
+}
+
+/* Gem packs (online store) */
+.tr-gem-modal {
+  display: grid;
+  gap: 0.6em;
+  max-width: 34em;
+}
+.tr-gem-modal .tr-close {
+  position: absolute;
+  top: -0.8em;
+  right: -0.8em;
+}
+.tr-gem-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7em, 1fr));
+  gap: 0.6em;
+}
+.tr-gem-pack {
+  display: grid;
+  justify-items: center;
+  gap: 0.25em;
+  padding: 0.8em 0.5em;
+  border: 0.16em solid var(--ink);
+  border-radius: 1em;
+  background: linear-gradient(180deg, #f3e8ff, #e2d0ff);
+  box-shadow: 0 0.2em 0 var(--ink);
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform 120ms var(--ease-out, ease-out);
+}
+.tr-gem-pack:hover,
+.tr-gem-pack:focus-visible {
+  transform: translateY(-0.15em) rotate(-1deg);
+}
+.tr-gem-pack-icon {
+  font-size: 2em;
+}
+
+/* Rewards: the LEVEL UP! slam sits on the level panel's top edge, outside the layout flow. */
+.tr-rewards-level {
+  position: relative;
+}
+.tr-levelup-ribbon {
+  position: absolute;
+  top: -0.75em;
+  left: 50%;
+  translate: -50% 0;
+  z-index: 2;
+  white-space: nowrap;
+  pointer-events: none;
 }

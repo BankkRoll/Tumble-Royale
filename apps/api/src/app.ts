@@ -11,6 +11,7 @@ import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import { sql } from 'drizzle-orm';
 import Fastify, { type FastifyInstance } from 'fastify';
+import { registerIdentityRoutes } from './accounts/identities.ts';
 import { registerAccountRoutes } from './accounts/routes.ts';
 import { createMailer, type Mailer } from './auth/mailer.ts';
 import { registerAuthRoutes } from './auth/routes.ts';
@@ -209,6 +210,7 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
 
   registerAuthRoutes(app, ctx);
   registerAccountRoutes(app, ctx);
+  registerIdentityRoutes(app, ctx);
   registerEconomyRoutes(app, ctx);
   registerProgressionRoutes(app, ctx);
   registerMatchRoutes(app, ctx);

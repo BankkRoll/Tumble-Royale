@@ -48,6 +48,21 @@ const EmailStartBody = z.object({
 });
 const EmailVerifyBody = z.object({ token: z.string().min(20).max(200) });
 
+/**
+ * What a completed OAuth / magic-link sign-in did, so the client can say so
+ * honestly and ask before replacing the Tumbler on the device:
+ * - `linked`: the identity now belongs to the signed-in account;
+ * - `alreadyLinked`: it already did;
+ * - `switched`: the signed-in account asked to link it, but another account
+ *   owns it, so the tokens are for that other account (sign-in on a new device);
+ * - `signedIn`: no account was signed in and an existing one owns it;
+ * - `created`: no account owned it, so a new one was made.
+ */
+export type AuthOutcome = 'linked' | 'alreadyLinked' | 'switched' | 'signedIn' | 'created';
+
+/** Body of `/auth/exchange` and `/auth/email/verify`: the session plus what happened. */
+export type AuthResult = TokenPair & { outcome: AuthOutcome; provider: 'discord' | 'google' | 'email' };
+
 /** Signs in (or creates/links) the account behind an external identity. */
 async function resolveIdentity(
   tx: DbOrTx,
@@ -59,25 +74,22 @@ async function resolveIdentity(
     name: string | null;
     linkUserId: string | null;
   },
-): Promise<string> {
+): Promise<{ userId: string; outcome: AuthOutcome }> {
   const owner = await findIdentity(tx, id.provider, id.subject);
   if (id.linkUserId) {
-    if (owner && owner !== id.linkUserId) {
-      throw new ApiError(
-        409,
-        'identity_in_use',
-        'That account already has a Tumble Royale profile; sign in with it instead',
-      );
-    }
+    // The player proved they control the identity, so handing them the account
+    // that owns it is safe; the client confirms before abandoning the current one.
+    if (owner && owner !== id.linkUserId) return { userId: owner, outcome: 'switched' };
+    if (owner) return { userId: owner, outcome: 'alreadyLinked' };
     await linkIdentity(tx, id.linkUserId, id.provider, id.subject, id.email);
-    return id.linkUserId;
+    return { userId: id.linkUserId, outcome: 'linked' };
   }
-  if (owner) return owner;
+  if (owner) return { userId: owner, outcome: 'signedIn' };
   if (id.email) {
     const [byEmail] = await tx.select({ id: users.id }).from(users).where(eq(users.email, id.email));
     if (byEmail) {
       await linkIdentity(tx, byEmail.id, id.provider, id.subject, id.email);
-      return byEmail.id;
+      return { userId: byEmail.id, outcome: 'signedIn' };
     }
   }
   const account = await createAccount(tx, ctx.catalog, {
@@ -86,7 +98,7 @@ async function resolveIdentity(
     ...(id.name ? { displayName: id.name.replace(/[^A-Za-z0-9_ ]/g, '').slice(0, 16) } : {}),
     identity: { provider: id.provider, subject: id.subject },
   });
-  return account.userId;
+  return { userId: account.userId, outcome: 'created' };
 }
 
 /**
@@ -161,8 +173,8 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
   app.get('/auth/:provider/callback', async (req, reply) => {
     const { provider } = parse(ProviderParam, req.params);
     const q = parse(CallbackQuery, req.query);
-    const fail = (code: string) =>
-      reply.redirect(`${ctx.config.publicWebUrl}/auth/complete?error=${encodeURIComponent(code)}`);
+    const back = `${ctx.config.publicWebUrl}/auth/complete?provider=${provider}`;
+    const fail = (code: string) => reply.redirect(`${back}&error=${encodeURIComponent(code)}`);
     if (q.error || !q.code || !q.state) return fail(q.error ?? 'missing_code');
     try {
       const identity = await completeOAuth(
@@ -173,13 +185,14 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
         q.code,
         q.state,
       );
-      const pair = await ctx.db.transaction(async (tx) => {
-        const userId = await resolveIdentity(tx, ctx, identity);
-        return startSession(tx, secret, userId, ctx.now(), req.headers['user-agent']);
+      const result = await ctx.db.transaction(async (tx) => {
+        const { userId, outcome } = await resolveIdentity(tx, ctx, identity);
+        const pair = await startSession(tx, secret, userId, ctx.now(), req.headers['user-agent']);
+        return { ...pair, outcome, provider };
       });
       const code = randomToken(24);
-      await ctx.kv.set(`login:${code}`, JSON.stringify(pair), LOGIN_CODE_TTL_MS);
-      return reply.redirect(`${ctx.config.publicWebUrl}/auth/complete?code=${code}`);
+      await ctx.kv.set(`login:${code}`, JSON.stringify(result), LOGIN_CODE_TTL_MS);
+      return reply.redirect(`${back}&code=${code}`);
     } catch (err) {
       if (err instanceof ApiError) return fail(err.code);
       throw err;
@@ -191,7 +204,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     const { code } = parse(CodeBody, req.body);
     const raw = await ctx.kv.getDel(`login:${code}`);
     if (!raw) throw new ApiError(400, 'invalid_code', 'Login code expired or already used');
-    return JSON.parse(raw) as TokenPair;
+    return JSON.parse(raw) as AuthResult;
   });
 
   app.post('/auth/email/start', { config: AUTH_RATE }, async (req, reply) => {
@@ -232,15 +245,16 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     const raw = await ctx.kv.getDel(`magic:${sha256(token)}`);
     if (!raw) throw new ApiError(400, 'invalid_token', 'Sign-in link expired or already used');
     const { email, linkUserId } = JSON.parse(raw) as { email: string; linkUserId: string | null };
-    return ctx.db.transaction(async (tx) => {
-      const userId = await resolveIdentity(tx, ctx, {
+    return ctx.db.transaction(async (tx): Promise<AuthResult> => {
+      const { userId, outcome } = await resolveIdentity(tx, ctx, {
         provider: 'email',
         subject: email,
         email,
         name: null,
         linkUserId,
       });
-      return startSession(tx, secret, userId, ctx.now(), req.headers['user-agent']);
+      const pair = await startSession(tx, secret, userId, ctx.now(), req.headers['user-agent']);
+      return { ...pair, outcome, provider: 'email' };
     });
   });
 }

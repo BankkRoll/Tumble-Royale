@@ -64,6 +64,12 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: AppContext): vo
       },
       activeLoadout: extra?.p.activeLoadout ?? 0,
       nameChangedAt: extra?.p.nameChangedAt?.toISOString() ?? null,
+      // Null means a rename is allowed now: the first one is free of the cooldown.
+      nameChangeAvailableAt: extra?.p.nameChangedAt
+        ? new Date(
+            extra.p.nameChangedAt.getTime() + ctx.config.nameChangeCooldownDays * 86_400_000,
+          ).toISOString()
+        : null,
       linkedProviders: [...new Set(linked.map((l) => l.provider))],
     };
   });

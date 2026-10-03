@@ -18,7 +18,7 @@ const WALL = Date.parse('2026-10-02T12:00:00Z');
 const TICK_MS = 1000 / 30;
 
 class RecordingConnection extends FakeConnection {
-  closeCode = 0;
+  override closeCode = 0;
   override close(code = 1000, reason = ''): void {
     if (this.open) this.closeCode = code;
     super.close(code, reason);

@@ -90,7 +90,7 @@ async function runRoom(humans: number, playSeconds: number): Promise<RunResult> 
     const t0 = performance.now();
     manager.tick();
     if (playing && performance.now() - t0 > 2 * TICK_MS) spikes++;
-    let nowPlaying = playing;
+    let nowPlaying: boolean = playing;
     for (const [i, c] of clients.entries()) {
       c.pump(clock.now);
       for (const m of c.messages) {

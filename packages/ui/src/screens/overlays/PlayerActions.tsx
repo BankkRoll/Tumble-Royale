@@ -172,7 +172,7 @@ export function PlayerActionRow({
           variant="sky"
           onClick={() => {
             done();
-            openWhisper(uid, p.name);
+            openWhisper(uid, p.name, p.tag);
           }}
         >
           Whisper

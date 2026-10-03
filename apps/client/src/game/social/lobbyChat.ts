@@ -1,20 +1,20 @@
 /**
- * Private-show lobby chat: the widget's Lobby tab while the player sits in an
- * open private-show lobby, carried by the matchmaker WebSocket (`lobby_chat`),
- * plus System notices when members come and go.
+ * Private-show lobby chat: while the player sits in an open private-show
+ * lobby, the widget's All tab talks to the lobby members over the matchmaker
+ * WebSocket (`lobby_chat`), with System notices when members come and go.
  */
 import { social } from '@tumble/ui';
 import type { Lobby, MatchmakerClient } from '../online/matchmaker.ts';
 import type { TypedMessage } from '../online/jsonSocket.ts';
-import { setChannel, setChatRoute, systemNotice } from './chatRouter.ts';
+import { chatHint, setChatRoom, setChatRoute, systemNotice } from './chatRouter.ts';
 
-/** Chat refusals from the matchmaker, shown as System notices. */
+/** Chat refusals from the matchmaker, shown as the inline hint. */
 const LOBBY_CHAT_ERRORS = new Set(['chat_rate', 'chat_banned', 'empty_message', 'no_lobby']);
 
 const shortName = (name: string): string => name.replace(/#\d+$/, '');
 
 /**
- * Updates the Lobby tab and notices for a lobby change.
+ * Updates the lobby room and notices for a lobby change.
  *
  * @param prev - Lobby before the change.
  * @param next - Lobby after it (null = left, `started` = moved to the game server).
@@ -28,9 +28,9 @@ export function syncLobbyChat(
   mm: MatchmakerClient | null,
 ): void {
   const open = next !== null && next.status === 'open' && mm !== null;
-  if (!open || prev?.code !== next?.code) setChannel('lobby', false);
+  if (!open || prev?.code !== next?.code) setChatRoom('lobby', 'off');
   if (open) {
-    setChannel('lobby', true);
+    setChatRoom('lobby', 'write');
     setChatRoute('lobby', (text) => mm.socket.send({ type: 'lobby_chat', text }));
   } else {
     setChatRoute('lobby', null);
@@ -62,7 +62,7 @@ export function onLobbyChat(m: TypedMessage, me: string | null): void {
   if (!from?.userId || typeof m.text !== 'string') return;
   social.getState().pushChat({
     id: String(m.id ?? `l${Date.now()}`),
-    channel: 'lobby',
+    room: 'lobby',
     from: { userId: from.userId, name: shortName(from.name ?? 'Tumbler'), key: from.userId },
     text: m.text,
     ...(typeof m.masked === 'string' ? { masked: m.masked } : {}),
@@ -72,11 +72,11 @@ export function onLobbyChat(m: TypedMessage, me: string | null): void {
 }
 
 /**
- * Shows a refused lobby chat line as a System notice.
+ * Shows a refused lobby chat line as the inline hint.
  *
  * @param m - `error` event from the matchmaker socket.
  */
 export function onLobbyChatError(m: TypedMessage): void {
   if (typeof m.code === 'string' && LOBBY_CHAT_ERRORS.has(m.code))
-    systemNotice(String(m.message ?? 'Message not sent'));
+    chatHint(String(m.message ?? 'Message not sent'));
 }

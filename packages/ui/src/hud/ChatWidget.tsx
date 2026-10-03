@@ -1,10 +1,14 @@
 /**
  * The global chat widget, bottom-left, on the menu and every show screen.
  *
- * Collapsed: a faint feed of recent lines that fades after a few seconds.
- * Enter or T opens it (Enter only when no button has focus, so menu buttons
- * keep Enter); Enter sends, Esc closes, Tab cycles the channel tabs. A
- * gamepad's View button opens a quick-chat picker instead of a text field.
+ * Just type: Enter or T opens it on the All tab, Enter sends to everyone in
+ * the current room (the menu's public room, the show, or the private-show
+ * lobby), Esc closes, Tab cycles All / Party / Whispers. System notices show
+ * greyed inline in every tab; refusals show once as a short hint.
+ *
+ * Collapsed: the last few lines, fading after a few seconds. Enter only opens
+ * when no button has focus, so menu buttons keep Enter. A gamepad's View
+ * button opens a quick-chat picker instead of a text field.
  *
  * While open it emits `chatInput` so the game releases pointer lock and held
  * keys; the text field keeps every key, so gameplay and menu hotkeys never
@@ -13,20 +17,33 @@
  * Hidden in photo mode, the replay viewer and while the Tumble Wipe covers
  * the screen.
  */
-import { memo, useEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react';
 import { CHAT_MAX_LENGTH, QUICK_CHAT } from '@tumble/shared';
-import { CHANNEL_LABEL, CHANNEL_ORDER, channelOf, type ChatChannel } from '../store/chatChannels.ts';
+import {
+  CHANNEL_LABEL,
+  channelOf,
+  chatPlaceholder,
+  chatTabs,
+  feedLines,
+  linesOf,
+  nameTag,
+  publicRoom,
+  type ChatChannel,
+  type ChatLine,
+} from '../store/chatChannels.ts';
 import { uiEvents } from '../store/events.ts';
 import { social, useSocial, visibleChat, type VisibleChatLine } from '../store/social.ts';
 import type { ScreenId } from '../store/types.ts';
 import { ui, useUI } from '../store/uiStore.ts';
 
 /** Seconds a line stays visible while the widget is collapsed. */
-export const CHAT_LINE_SECONDS = 8;
+export const CHAT_LINE_SECONDS = 10;
+/** Seconds a refusal hint stays up. */
+export const CHAT_HINT_SECONDS = 5;
 /** Lines in the collapsed feed. */
-const FEED_LINES = 6;
+const FEED_LINES = 8;
 /** Lines in the open history. */
-const OPEN_LINES = 40;
+const OPEN_LINES = 100;
 /** Standard-mapping gamepad View/Back button (unused by gameplay). */
 const PAD_VIEW = 8;
 
@@ -52,7 +69,7 @@ const CHAT_SCREENS: ReadonlySet<ScreenId> = new Set<ScreenId>([
  * Opens or closes the chat input (and tells the game).
  *
  * @param open - Desired state.
- * @param opts - Channel to focus and input mode when opening.
+ * @param opts - Tab to focus and input mode when opening.
  */
 export function setChatOpen(
   open: boolean,
@@ -65,13 +82,14 @@ export function setChatOpen(
 }
 
 /**
- * Opens the Whispers tab for a friend.
+ * Opens the Whispers tab for a friend (player card "Whisper").
  *
  * @param userId - Friend's account id.
  * @param name - Display name.
+ * @param tag - Discriminator, shown as `Name#tag`.
  */
-export function openWhisper(userId: string, name: string): void {
-  social.getState().dispatchChat({ type: 'whisperTo', target: { userId, name } });
+export function openWhisper(userId: string, name: string, tag?: string): void {
+  social.getState().dispatchChat({ type: 'whisperTo', target: { userId, name, ...(tag ? { tag } : {}) } });
   setChatOpen(true, { channel: 'whisper' });
 }
 
@@ -85,39 +103,83 @@ function useNow(active: boolean): number {
   return now;
 }
 
-function useVisibleLines(): VisibleChatLine[] {
-  const lines = useSocial((s) => s.chat.lines);
+function useVisible(): (lines: readonly ChatLine[]) => VisibleChatLine[] {
   const muted = useSocial((s) => s.muted);
   const blocked = useSocial((s) => s.blocked);
   const showChat = useUI((s) => s.settings.gameplay.showChat);
   const filter = useUI((s) => s.settings.gameplay.chatFilter);
-  return visibleChat(lines, { showChat, filter, muted, blocked: blocked.map((b) => b.userId) });
+  return useMemo(() => {
+    const rules = { showChat, filter, muted, blocked: blocked.map((b) => b.userId) };
+    return (lines) => visibleChat(lines, rules);
+  }, [muted, blocked, showChat, filter]);
 }
 
-function Line({ l, interactive }: { l: VisibleChatLine; interactive: boolean }): JSX.Element {
+/** Account ids the local player knows: friends and party members. */
+function useRelations(): { friends: ReadonlySet<string>; party: ReadonlySet<string> } {
+  const friendList = useUI((s) => s.friends);
+  const members = useUI((s) => s.party?.members);
+  return useMemo(
+    () => ({
+      friends: new Set(friendList.filter((f) => !f.recent).map((f) => f.id)),
+      party: new Set((members ?? []).filter((m) => !m.isSelf).map((m) => m.id)),
+    }),
+    [friendList, members],
+  );
+}
+
+const clock = (at: number): string =>
+  new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+
+function Line({
+  l,
+  interactive,
+  rel,
+}: {
+  l: VisibleChatLine;
+  interactive: boolean;
+  rel: ReturnType<typeof useRelations>;
+}): JSX.Element {
   const ch = channelOf(l);
-  const label = l.self && ch === 'whisper' && l.to ? `To ${l.to.name}` : l.self ? 'You' : l.from.name;
+  if (ch === 'system')
+    return (
+      <div
+        className="tr-chat-line is-system"
+        data-testid="chat-line"
+        data-channel="system"
+        title={clock(l.at)}
+      >
+        <span className="tr-chat-text">{l.display}</span>
+      </div>
+    );
+  const outgoing = l.self && ch === 'whisper' && l.to ? l.to : null;
+  const who = outgoing ?? l.from;
+  const friend = !!who.userId && rel.friends.has(who.userId);
+  const partyMate = !!who.userId && rel.party.has(who.userId);
   const name = (
-    <b className="tr-chat-name" style={l.color ? { color: l.color } : undefined}>
-      {label}
+    <b
+      className={`tr-chat-name${partyMate ? ' is-party-mate' : ''}`}
+      style={l.color && !partyMate ? { color: l.color } : undefined}
+    >
+      {outgoing ? `To ${nameTag(who)}` : nameTag(who)}
+      {friend && <i className="tr-chat-friend" aria-hidden="true" />}:
     </b>
   );
-  const target = l.self && l.to ? l.to : l.from;
-  const clickable = interactive && ch !== 'system' && !(l.self && !l.to);
+  const clickable = interactive && !(l.self && !outgoing);
   return (
     <div
       className={`tr-chat-line is-${ch}${l.quick ? ' is-ping' : ''}`}
       data-testid="chat-line"
       data-channel={ch}
+      title={clock(l.at)}
     >
-      {ch !== 'show' && ch !== 'system' && <span className="tr-chat-tag">{CHANNEL_LABEL[ch]}</span>}
-      {ch === 'system' ? null : clickable ? (
+      {ch !== 'all' && <span className="tr-chat-tag">{CHANNEL_LABEL[ch]}</span>}
+      {clickable ? (
         <button
           type="button"
           className="tr-chat-who"
-          aria-label={`Actions for ${target.name}`}
+          aria-label={`Actions for ${who.name}${friend ? ' (friend)' : ''}`}
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => social.getState().openPlayerMenu(target)}
+          onClick={() => social.getState().openPlayerMenu(who)}
         >
           {name}
         </button>
@@ -130,27 +192,23 @@ function Line({ l, interactive }: { l: VisibleChatLine; interactive: boolean }):
 }
 
 function Tabs(): JSX.Element {
-  const available = useSocial((s) => s.chat.available);
-  const active = useSocial((s) => s.chat.active);
-  const unread = useSocial((s) => s.chat.unread);
-  const whisperTo = useSocial((s) => s.chat.whisperTo);
+  const chat = useSocial((s) => s.chat);
+  const tabs = chatTabs(chat);
   return (
-    <div className="tr-chat-tabs" role="tablist" aria-label="Chat channels">
-      {CHANNEL_ORDER.filter((c) => available[c]).map((c) => (
+    <div className="tr-chat-tabs" role="tablist" aria-label="Chat tabs">
+      {tabs.map((c) => (
         <button
           key={c}
           type="button"
           role="tab"
-          aria-selected={c === active}
-          className={`tr-chat-tab${c === active ? ' is-active' : ''}`}
+          aria-selected={c === chat.active}
+          className={`tr-chat-tab${c === chat.active ? ' is-active' : ''}`}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => social.getState().dispatchChat({ type: 'focus', channel: c })}
         >
-          {c === 'whisper' && whisperTo && c === active ? `To ${whisperTo.name}` : CHANNEL_LABEL[c]}
-          {unread[c] > 0 && c !== active && (
-            <span className="tr-chat-unread" aria-label={`${unread[c]} unread`}>
-              {unread[c] > 9 ? '9+' : unread[c]}
-            </span>
+          {CHANNEL_LABEL[c]}
+          {chat.unread[c] > 0 && c !== chat.active && (
+            <span className="tr-chat-unread" role="status" aria-label={`${chat.unread[c]} unread`} />
           )}
         </button>
       ))}
@@ -158,19 +216,10 @@ function Tabs(): JSX.Element {
   );
 }
 
-function placeholder(c: ChatChannel, writable: boolean, whisper: string | undefined): string {
-  if (c === 'system') return 'Type /help for commands';
-  if (c === 'whisper') return whisper ? `Whisper ${whisper}` : '/w name message';
-  if (!writable) return 'Quick pings only here. /help for commands';
-  return c === 'party' ? 'Message your party' : c === 'lobby' ? 'Message the lobby' : 'Say something nice';
-}
-
 function ChatInput(): JSX.Element {
   const [text, setText] = useState('');
   const ref = useRef<HTMLInputElement>(null);
-  const active = useSocial((s) => s.chat.active);
-  const writable = useSocial((s) => s.chat.writable[s.chat.active]);
-  const whisperTo = useSocial((s) => s.chat.whisperTo?.name);
+  const placeholder = useSocial((s) => chatPlaceholder(s.chat));
   useEffect(() => ref.current?.focus(), []);
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
     // The field owns these keys: no in-game menu, no focus hop, no menu navigation.
@@ -194,7 +243,7 @@ function ChatInput(): JSX.Element {
       className="tr-input tr-chat-input"
       value={text}
       maxLength={CHAT_MAX_LENGTH + 40}
-      placeholder={placeholder(active, writable, whisperTo)}
+      placeholder={placeholder}
       aria-label="Chat message"
       enterKeyHint="send"
       autoComplete="off"
@@ -211,12 +260,12 @@ function ChatInput(): JSX.Element {
 
 /** Gamepad quick chat: preset buttons, navigable with the D-pad. */
 function QuickPicker(): JSX.Element {
-  const active = useSocial((s) => s.chat.active);
+  const toShow = useSocial((s) => s.chat.active === 'all' && publicRoom(s.chat) === 'show');
   const presets = QUICK_CHAT.filter((p) => p.id.startsWith('ping:') || p.id.startsWith('cam:')).filter(
     (p, i, all) => all.findIndex((q) => q.text === p.text) === i,
   );
   const send = (id: string, text: string): void => {
-    if (active === 'show') uiEvents.emit('quickPing', { kind: id });
+    if (toShow) uiEvents.emit('quickPing', { kind: id });
     else uiEvents.emit('sendChat', { text });
     setChatOpen(false);
   };
@@ -303,17 +352,19 @@ function useOpenKeys(): void {
 
 /** The widget body (always rendered by {@link ChatWidgetLayer} when visible). */
 export const ChatWidget = memo(function ChatWidget(): JSX.Element | null {
-  const open = useSocial((s) => s.chat.open);
-  const mode = useSocial((s) => s.chat.mode);
-  const active = useSocial((s) => s.chat.active);
+  const chat = useSocial((s) => s.chat);
+  const { open, mode, active, hint } = chat;
   const device = useUI((s) => s.hud.device);
-  const all = useVisibleLines();
-  const now = useNow(all.length > 0 && !open);
+  const visible = useVisible();
+  const rel = useRelations();
+  const feed = useMemo(() => visible(feedLines(chat)), [visible, chat]);
+  const now = useNow((feed.length > 0 && !open) || hint !== null);
   useOpenKeys();
   const list = useRef<HTMLDivElement>(null);
   const shown = open
-    ? all.filter((l) => channelOf(l) === active).slice(-OPEN_LINES)
-    : all.filter((l) => now - l.at < CHAT_LINE_SECONDS * 1000).slice(-FEED_LINES);
+    ? visible(linesOf(chat, active)).slice(-OPEN_LINES)
+    : feed.filter((l) => now - l.at < CHAT_LINE_SECONDS * 1000).slice(-FEED_LINES);
+  const hintUp = hint !== null && now - hint.at < CHAT_HINT_SECONDS * 1000;
   useEffect(() => {
     if (list.current) list.current.scrollTop = list.current.scrollHeight;
   }, [shown.length, open, active]);
@@ -332,13 +383,18 @@ export const ChatWidget = memo(function ChatWidget(): JSX.Element | null {
               !open && now - l.at > (CHAT_LINE_SECONDS - 2) * 1000 ? 'tr-chat-fade is-faded' : 'tr-chat-fade'
             }
           >
-            <Line l={l} interactive={open} />
+            <Line l={l} interactive={open} rel={rel} />
           </div>
         ))}
-        {open && shown.length === 0 && (
-          <small className="tr-muted tr-chat-empty">Nothing here yet. Type /help for commands.</small>
+        {open && shown.length === 0 && publicRoom(chat) !== null && (
+          <small className="tr-muted tr-chat-empty">No messages yet. Say hi!</small>
         )}
       </div>
+      {hintUp && (
+        <div className="tr-chat-notice" role="status" data-testid="chat-hint">
+          {hint.text}
+        </div>
+      )}
       {open && (mode === 'quick' ? <QuickPicker /> : <ChatInput />)}
       {!open &&
         (device === 'touch' ? (

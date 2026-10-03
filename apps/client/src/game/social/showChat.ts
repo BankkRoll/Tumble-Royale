@@ -10,14 +10,14 @@
  *   answer (cosmetic only; the sim never sees it);
  * - pushes lines to the HUD feed and speech bubbles over Tumblers, hiding
  *   anything the viewer muted, blocked or switched off;
- * - owns the widget's Show tab while the show runs (typing only online with
- *   other humans).
+ * - owns the show room (the widget's All tab while the show runs; typing
+ *   only online with other humans, pings otherwise).
  */
 import type { ChatMsg } from '@tumble/netcode';
 import { quickChat, Rng, sanitizeChatText } from '@tumble/shared';
 import { bindUI, social, ui, visibleChat, type ChatLine } from '@tumble/ui';
 import { bubbleText, muteKey, planBotReplies, quickChatId } from './chatLogic.ts';
-import { setChannel, setChatRoute } from './chatRouter.ts';
+import { setChatRoom, setChatRoute } from './chatRouter.ts';
 
 /** A participant as the chat needs it. */
 export interface ChatPlayer {
@@ -63,9 +63,9 @@ export class ShowChat {
   ) {
     // Its own stream: bot chatter must never shift the sim's randomness.
     this.rng = new Rng((seed ^ 0x5c4a7) >>> 0);
-    // Offline (until a transport arrives) the Show tab carries pings only.
-    setChannel('show', false);
-    setChannel('show', true, false);
+    // Offline (until a transport arrives) the show room carries pings only.
+    setChatRoom('show', 'off');
+    setChatRoom('show', 'read');
     setChatRoute('show', (text) => this.sendText(text));
     this.offs.push(bindUI({ onQuickPing: ({ kind }) => this.quick(kind) }));
   }
@@ -88,9 +88,9 @@ export class ShowChat {
     this.send = send;
   }
 
-  /** Lets players type in the Show tab (online shows with other humans). */
+  /** Lets players type to the show (online shows with other humans). */
   setTextEnabled(on: boolean): void {
-    setChannel('show', true, on && this.send !== null);
+    setChatRoom('show', on && this.send !== null ? 'write' : 'read');
   }
 
   /**
@@ -116,7 +116,7 @@ export class ShowChat {
    * @param text - Raw input.
    */
   sendText(text: string): void {
-    if (!this.send || !social.getState().chat.writable.show) return;
+    if (!this.send || social.getState().chat.rooms.show !== 'write') return;
     const clean = sanitizeChatText(text);
     if (clean) this.send({ t: 'chat', from: -1, text: clean });
   }
@@ -139,6 +139,7 @@ export class ShowChat {
     const name = p?.name ?? 'Tumbler';
     const line: ChatLine = {
       id: `c${++this.seq}`,
+      room: 'show',
       from: {
         name,
         key: muteKey({ userId: p?.userId, name }),
@@ -186,6 +187,6 @@ export class ShowChat {
     for (const off of this.offs) off();
     this.offs.length = 0;
     setChatRoute('show', null);
-    setChannel('show', false);
+    setChatRoom('show', 'off');
   }
 }

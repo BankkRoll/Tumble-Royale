@@ -51,12 +51,13 @@
   color: var(--ink);
 }
 .tr-chat-unread {
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
   margin-left: 0.35em;
-  padding: 0 0.4em;
-  border-radius: 999px;
+  border-radius: 50%;
   background: var(--bubblegum, #ff4f9a);
-  color: #fff;
-  font-size: 0.85em;
+  vertical-align: middle;
 }
 .tr-chat-lines {
   display: grid;
@@ -65,7 +66,7 @@
   width: 100%;
 }
 .tr-chat.is-open .tr-chat-lines {
-  max-height: 14em;
+  max-height: 16em;
   min-height: 4em;
   overflow-y: auto;
 }
@@ -75,10 +76,10 @@
 .tr-chat-fade.is-faded {
   opacity: 0;
 }
+/* Block flow so long messages wrap under the name instead of in a narrow column. */
 .tr-chat-line {
-  display: flex;
-  gap: 0.35em;
-  align-items: baseline;
+  display: block;
+  max-width: 100%;
   padding: 0.18em 0.6em;
   border-radius: 0.7em;
   background: rgba(31, 18, 51, 0.5);
@@ -96,7 +97,8 @@
   background: rgba(255, 210, 63, 0.92);
   color: var(--ink);
 }
-.tr-chat-line.is-party .tr-chat-name {
+.tr-chat-line.is-party .tr-chat-name,
+.tr-chat-name.is-party-mate {
   color: #8cf3c7;
 }
 .tr-chat-line.is-whisper {
@@ -106,19 +108,39 @@
   color: #ffb3ea;
 }
 .tr-chat-line.is-system {
-  color: #d9d2ff;
+  color: #b9b2d6;
   font-size: 0.85em;
+  font-style: italic;
+  opacity: 0.85;
 }
 .tr-chat-tag {
-  flex: none;
+  margin-right: 0.35em;
   font-size: 0.75em;
   font-weight: 800;
   opacity: 0.75;
   text-transform: uppercase;
 }
 .tr-chat-name {
-  flex: none;
+  margin-right: 0.35em;
+  font-size: 0.92em;
   font-weight: 800;
+}
+.tr-chat-friend {
+  display: inline-block;
+  width: 0.4em;
+  height: 0.4em;
+  margin-left: 0.25em;
+  border-radius: 50%;
+  background: #8fd3ff;
+  vertical-align: middle;
+}
+.tr-chat-notice {
+  padding: 0.15em 0.6em;
+  border-radius: 0.7em;
+  background: rgba(31, 18, 51, 0.6);
+  color: #ffd23f;
+  font-size: 0.8em;
+  font-weight: 700;
 }
 .tr-chat-who {
   all: unset;

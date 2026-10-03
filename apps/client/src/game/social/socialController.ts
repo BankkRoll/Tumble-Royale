@@ -1,6 +1,6 @@
 /**
- * Friends, requests, blocking, reports, party chat and party joins for the
- * online account.
+ * Friends, requests, blocking, reports, global / party chat, whispers and
+ * party joins for the online account.
  *
  * Responsibilities:
  * - load `GET /friends` + `GET /friends/recent` into a {@link FriendsModel}
@@ -8,7 +8,8 @@
  * - push the projection to the UI (`ui.friends`, the social store's requests
  *   and blocked list);
  * - run the friend actions the UI emits, with clear toasts for API errors;
- * - party chat in and out, party-invite declines, joining a friend.
+ * - the menu's global chat room (All tab) while the realtime socket is up,
+ *   party chat and whispers in and out, party-invite declines, joining a friend.
  */
 import { getPlaylist } from '@tumble/content/shows';
 import {
@@ -21,7 +22,14 @@ import {
 } from '@tumble/ui';
 import { ApiError, type ApiClient, type ApiParty } from '../api.ts';
 import type { TypedMessage } from '../online/jsonSocket.ts';
-import { setChannel, setChatRoute, setWhisperRoute, systemNotice } from './chatRouter.ts';
+import {
+  chatHint,
+  setChatRoom,
+  setChatRoute,
+  setPartyChat,
+  setWhisperRoute,
+  systemNotice,
+} from './chatRouter.ts';
 import {
   EMPTY_FRIENDS,
   friendsFromApi,
@@ -60,7 +68,7 @@ export function socialErrorText(err: unknown): string {
   return err instanceof Error ? err.message : 'Something went wrong.';
 }
 
-/** Chat refusals from the gateway, shown as System notices. */
+/** Chat refusals from the gateway, shown as the inline hint. */
 const CHAT_ERRORS = new Set(['chat_rate', 'chat_banned', 'empty_message', 'not_friends', 'self_whisper']);
 
 const REALTIME_EVENTS = [
@@ -116,13 +124,28 @@ export class SocialController {
         });
       }),
       this.rt.on('whisper', (m) => this.onWhisper(m)),
+      this.rt.on('global_chat', (m) => this.onGlobalChat(m)),
+      this.rt.on('global_chat_history', (m) => {
+        if (Array.isArray(m.lines)) for (const l of m.lines) this.onGlobalChat(l as TypedMessage);
+      }),
       this.rt.on('error', (m) => {
         if (typeof m.code === 'string' && CHAT_ERRORS.has(m.code))
-          systemNotice(String(m.message ?? 'Message not sent'));
+          chatHint(String(m.message ?? 'Message not sent'));
       }),
+      this.rt.on('socket_open', () => this.setGlobalRoom(true)),
+      this.rt.on('socket_closed', () => this.setGlobalRoom(false)),
     );
-    setChannel('whisper', true);
     setWhisperRoute((to, text) => this.whisper(to.userId, text));
+    setChatRoute('global', (text) => this.sendGlobalChat(text));
+    this.setGlobalRoom(this.rt.connected);
+  }
+
+  /**
+   * The global room only exists over the realtime socket (no HTTP fallback).
+   * A drop keeps the lines: the history on reconnect dedupes against them.
+   */
+  private setGlobalRoom(up: boolean): void {
+    social.getState().dispatchChat({ type: 'room', room: 'global', access: up ? 'write' : 'off' });
   }
 
   /**
@@ -136,12 +159,12 @@ export class SocialController {
     const prev = this.lastParty;
     this.lastParty = party;
     const others = party?.members.filter((m) => m.userId !== me) ?? [];
-    if (!party || party.id !== prev?.id) setChannel('party', false);
+    if (!party || party.id !== prev?.id) setPartyChat(false);
     if (others.length > 0) {
-      setChannel('party', true);
+      setPartyChat(true);
       setChatRoute('party', (text) => this.sendPartyChat(text));
     } else {
-      setChannel('party', false);
+      setPartyChat(false);
       setChatRoute('party', null);
     }
     if (!party || !prev || party.id !== prev.id) {
@@ -356,7 +379,7 @@ export class SocialController {
     const t = text.trim();
     if (!t) return;
     if (this.rt.connected) this.rt.send({ type: 'whisper', to: userId, text: t });
-    else void this.api.whisper(userId, t).catch((err) => systemNotice(socialErrorText(err)));
+    else void this.api.whisper(userId, t).catch((err) => chatHint(socialErrorText(err)));
   }
 
   private onWhisper(m: TypedMessage): void {
@@ -381,7 +404,33 @@ export class SocialController {
     const t = text.trim();
     if (!t || !this.host.partyId()) return;
     if (this.rt.connected) this.rt.send({ type: 'party_chat', text: t });
-    else void this.api.partyChat(t).catch((err) => systemNotice(socialErrorText(err)));
+    else void this.api.partyChat(t).catch((err) => chatHint(socialErrorText(err)));
+  }
+
+  /**
+   * Says something to everyone in the menu's global room.
+   *
+   * @param text - Message.
+   */
+  sendGlobalChat(text: string): void {
+    const t = text.trim();
+    if (!t) return;
+    if (this.rt.connected) this.rt.send({ type: 'global_chat', text: t });
+    else chatHint('Chat needs the online servers');
+  }
+
+  private onGlobalChat(m: TypedMessage): void {
+    const from = m.from as SocialRef | undefined;
+    if (!from?.userId || typeof m.text !== 'string' || typeof m.id !== 'string') return;
+    social.getState().pushChat({
+      id: `g:${m.id}`,
+      room: 'global',
+      from: { userId: from.userId, name: from.name, tag: from.tag, key: from.userId },
+      text: m.text,
+      ...(typeof m.masked === 'string' ? { masked: m.masked } : {}),
+      ...(from.userId === this.host.userId() ? { self: true } : {}),
+      at: typeof m.at === 'number' ? m.at : Date.now(),
+    });
   }
 
   private onPartyChat(m: TypedMessage): void {
@@ -406,7 +455,8 @@ export class SocialController {
     this.offs.length = 0;
     setWhisperRoute(null);
     setChatRoute('party', null);
-    setChannel('whisper', false);
-    setChannel('party', false);
+    setChatRoute('global', null);
+    setPartyChat(false);
+    setChatRoom('global', 'off');
   }
 }

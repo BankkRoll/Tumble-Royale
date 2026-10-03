@@ -9,6 +9,7 @@
  *   API's `{ error, message }` as {@link ApiError};
  * - typed endpoint helpers mirroring `apps/api/README.md`.
  */
+import type { WalletLedger } from './online/checkout.ts';
 import { tokenSubject, type AuthOutcome, type LoginProvider } from './online/returnUrl.ts';
 import { loadJson, removeJson, saveJson } from './storage.ts';
 
@@ -570,6 +571,7 @@ export class ApiClient {
   // ---------------------------------------------------------------------------
 
   store = (): Promise<ApiStore> => this.request('GET', '/store');
+  wallet = (): Promise<{ wallet: ApiMe['wallet'] } & WalletLedger> => this.request('GET', '/wallet');
   purchase = (offerId: string, key: string): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> =>
     this.request('POST', '/purchase', { offerId }, { idempotencyKey: key });
   gemPacks = (): Promise<{ provider: string; packs: ApiGemPack[] }> => this.request('GET', '/gems/packs');

@@ -59,6 +59,7 @@ import {
 } from './meta.ts';
 import { OnlineAccount } from './online/account.ts';
 import { AccountAuth } from './online/auth.ts';
+import { finishCheckoutReturn } from './online/checkout.ts';
 import { MatchmakerClient, gameSocketUrl, type Lobby, type MatchFound } from './online/matchmaker.ts';
 import { ProfileStore } from './profile.ts';
 import { QualityManager } from './quality.ts';
@@ -369,6 +370,7 @@ export class GameApp {
         .finally(() => {
           app.auth.publishSession();
           void app.refreshOnlineStatus();
+          void finishCheckoutReturn(app.auth.bootReturn, api, app.account?.active ? app.account : null);
         });
     } else void app.refreshOnlineStatus();
     window.setTimeout(() => ui.getState().setScreen('splash', { transition: 'wipe' }), 350);

@@ -371,6 +371,7 @@ export abstract class ShowSession {
     this.covered.clear();
     if (document.pointerLockElement) document.exitPointerLock();
     this.ctx.input.settings.pointerLock = false;
+    ui.setState({ cameraLock: 'off' });
     ui.getState().setEmoteWheel(false);
     ui.getState().setSpectate(null);
     ui.getState().setCaption(null);
@@ -1136,8 +1137,16 @@ export abstract class ShowSession {
     const view = r?.view ?? null;
     const active = this.controlsActive;
     const spectating = r?.fate === 'spectating' || r?.fate === 'qualified';
+    const us = ui.getState();
     input.settings.pointerLock =
-      !!view && (active || spectating) && !this.ctx.cfg.autoplay && ui.getState().screen === 'round';
+      us.settings.controls.mouseLock &&
+      !!view &&
+      (active || spectating) &&
+      !this.ctx.cfg.autoplay &&
+      us.screen === 'round';
+    const lock =
+      input.settings.pointerLock && !us.isTouch ? (input.pointerLocked ? 'locked' : 'unlocked') : 'off';
+    if (us.cameraLock !== lock) ui.setState({ cameraLock: lock });
     const look = input.readLook(realDt);
     if (!view || !r) return;
     if (active || spectating) view.rig.addLook(look.yaw, look.pitch);

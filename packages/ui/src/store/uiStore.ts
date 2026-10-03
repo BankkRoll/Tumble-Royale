@@ -92,6 +92,8 @@ export interface UIState {
   /** True when the keyboard drives menus rather than the Tumbler. */
   inputMode: 'menu' | 'game';
   isTouch: boolean;
+  /** Mouse camera lock in a round: 'off' when it does not apply (menus, touch, setting off). */
+  cameraLock: 'off' | 'unlocked' | 'locked';
 
   // --- system --------------------------------------------------------------
   boot: BootState;
@@ -268,6 +270,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   overlay: 'none',
   inputMode: 'game',
   isTouch: false,
+  cameraLock: 'off',
 
   boot: { progress: 0, label: 'Inflating Tumblers…' },
   connection: { status: 'online' },

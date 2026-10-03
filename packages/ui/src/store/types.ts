@@ -982,6 +982,8 @@ export interface Settings {
   controls: {
     mouseSensitivity: number;
     invertY: boolean;
+    /** Lock the mouse to the camera during rounds (Esc releases it). */
+    mouseLock: boolean;
     toggleGrab: boolean;
     vibration: boolean;
     touchLayout: 'right' | 'left';

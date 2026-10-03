@@ -7,6 +7,7 @@ import { useUI } from '../store/uiStore.ts';
 import { EmoteWheel } from './EmoteWheel.tsx';
 import { TouchControls } from './TouchControls.tsx';
 import {
+  CameraLockHint,
   CaptionChip,
   ControlsHint,
   CountdownNumerals,
@@ -41,6 +42,7 @@ export const Hud = memo(function Hud(): JSX.Element {
         </div>
       </div>
       <ControlsHint />
+      <CameraLockHint />
       <SpectateBanner />
       <CaptionChip />
       <TouchControls />

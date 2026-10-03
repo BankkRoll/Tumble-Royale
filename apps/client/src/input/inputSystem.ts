@@ -46,6 +46,19 @@ export const DEFAULT_INPUT_SETTINGS: Readonly<InputSettings> = Object.freeze({
   pointerLock: true,
 });
 
+/** Keys that mean "I'm playing now" and may grab the mouse for the camera. */
+const LOCK_ON_ACTIONS: ReadonlySet<InputAction> = new Set<InputAction>([
+  'forward',
+  'back',
+  'left',
+  'right',
+  'jump',
+  'dive',
+]);
+
+/** HUD elements that keep their clicks instead of locking the pointer. */
+const UI_CONTROL_SELECTOR = 'button, a, input, select, textarea, [role="dialog"], [data-nav]';
+
 /** Which device produced the most recent meaningful input (for UI prompts). */
 export type InputDevice = 'keyboard' | 'gamepad' | 'touch';
 
@@ -143,6 +156,7 @@ export class InputSystem {
       if (document.hidden) this.releaseAll();
     });
     this.listen(this.element, 'mousedown', (e) => this.onMouseButton(e as MouseEvent, true));
+    this.listen(window, 'mousedown', (e) => this.onWindowMouseDown(e as MouseEvent));
     this.listen(window, 'mouseup', (e) => this.onMouseButton(e as MouseEvent, false));
     this.listen(window, 'mousemove', (e) => this.onMouseMove(e as MouseEvent));
     this.listen(this.element, 'contextmenu', (e) => e.preventDefault());
@@ -310,7 +324,10 @@ export class InputSystem {
 
   /** Requests pointer lock (must be called from a user gesture). */
   lockPointer(): void {
-    if (this.mouseActions && !this.pointerLocked) void this.element.requestPointerLock?.();
+    if (!this.mouseActions || this.pointerLocked) return;
+    // NOTE: browsers refuse a re-lock for about a second after Esc releases it; a later key or click retries.
+    const req = this.element.requestPointerLock?.() as Promise<void> | undefined;
+    req?.catch?.(() => undefined);
   }
 
   /** Removes all listeners and touch DOM. */
@@ -338,10 +355,22 @@ export class InputSystem {
       this.downCodes.add(e.code);
       for (const a of actions) this.kb.get(a)!.press();
       this.lastDevice = 'keyboard';
+      // NOTE: a keypress counts as a user gesture, so the camera grabs the
+      // mouse as soon as the player starts moving instead of waiting for a click.
+      if (this.settings.pointerLock && actions.some((a) => LOCK_ON_ACTIONS.has(a))) this.lockPointer();
     } else {
       if (!this.downCodes.delete(e.code)) return;
       for (const a of actions) this.kb.get(a)!.release();
     }
+  }
+
+  /** Clicks outside the canvas (on the HUD layer) still lock, unless they hit a real control. */
+  private onWindowMouseDown(e: MouseEvent): void {
+    if (e.target === this.element || !this.mouseActions || !this.settings.pointerLock || this.pointerLocked)
+      return;
+    const target = e.target as Element | null;
+    if (target?.closest?.(UI_CONTROL_SELECTOR)) return;
+    this.lockPointer();
   }
 
   private onMouseButton(e: MouseEvent, down: boolean): void {

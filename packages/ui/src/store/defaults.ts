@@ -56,6 +56,7 @@ export const DEFAULT_SETTINGS: Settings = {
   controls: {
     mouseSensitivity: 1,
     invertY: false,
+    mouseLock: true,
     toggleGrab: false,
     vibration: true,
     touchLayout: 'right',

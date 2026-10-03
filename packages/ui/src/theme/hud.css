@@ -653,3 +653,38 @@
     max-width: 14em;
   }
 }
+
+/* Mouse camera lock prompt: loud while the mouse is free, a quiet reminder once locked. */
+.tr-hud-camlock {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--safe-b) + 4.2em);
+  transform: translateX(-50%);
+  padding: 0.45em 1.1em;
+  border-radius: 999px;
+  border: 0.13em solid var(--ink);
+  background: var(--lemon);
+  color: var(--ink);
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 0.14em 0 var(--ink);
+  pointer-events: none;
+  animation: tr-fade-in 300ms ease-out backwards;
+}
+.tr-hud-camlock b {
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+}
+.tr-hud-camlock.is-locked {
+  bottom: calc(var(--safe-b) + 1em);
+  left: auto;
+  right: calc(var(--safe-r) + 1em);
+  transform: none;
+  padding: 0.3em 0.9em;
+  border: 0;
+  background: rgba(43, 26, 94, 0.6);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.8em;
+  box-shadow: none;
+}

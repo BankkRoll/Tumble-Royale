@@ -215,6 +215,25 @@ export const ControlsHint = memo(function ControlsHint(): JSX.Element | null {
   );
 });
 
+/** Prompt to lock the mouse to the camera while it is free; Esc reminder once locked. */
+export const CameraLockHint = memo(function CameraLockHint(): JSX.Element | null {
+  const { lock, device } = useUI(useShallow((s) => ({ lock: s.cameraLock, device: s.hud.device })));
+  if (lock === 'off' || device !== 'keyboard') return null;
+  return (
+    <div className={`tr-hud-camlock is-${lock}`} role="status" data-testid="camera-lock-hint">
+      {lock === 'unlocked' ? (
+        <>
+          <b>Click</b> or start moving to lock the camera
+        </>
+      ) : (
+        <>
+          <kbd>Esc</kbd> frees the mouse
+        </>
+      )}
+    </div>
+  );
+});
+
 /** 3 · 2 · 1 numerals. GO! is a stamp. */
 export const CountdownNumerals = memo(function CountdownNumerals(): JSX.Element | null {
   const n = useUI((s) => s.countdown);

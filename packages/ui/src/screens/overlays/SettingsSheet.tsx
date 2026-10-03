@@ -242,6 +242,13 @@ function Section({ id }: { id: SettingsSection }): JSX.Element {
               onChange={(mouseSensitivity) => up('controls', { mouseSensitivity })}
             />
           </Row>
+          <Row label="Lock mouse to camera" hint="Moving or clicking in a round grabs the mouse; Esc lets go">
+            <Toggle
+              label="Lock mouse to camera"
+              checked={s.controls.mouseLock}
+              onChange={(mouseLock) => up('controls', { mouseLock })}
+            />
+          </Row>
           <Row label="Invert camera Y">
             <Toggle
               label="Invert Y"

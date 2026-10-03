@@ -24,6 +24,13 @@ export default defineConfig({
       url: 'http://localhost:7350/health',
       reuseExistingServer: true,
       cwd: '../..',
+      // Specs join unticketed and standalone, so explicit test secrets let the
+      // server boot without a .env.
+      env: {
+        GAME_TICKET_SECRET: 'test-game-ticket-secret-0123456789',
+        INTERNAL_HMAC_SECRET: 'test-internal-hmac-secret-0123456789',
+        MATCHMAKER_URL: '',
+      },
     },
     {
       command: 'pnpm --filter @tumble/client dev --strictPort',

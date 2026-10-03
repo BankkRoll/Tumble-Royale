@@ -21,6 +21,7 @@ import {
 import { badRequest, notFound, parse } from '../http/errors.ts';
 import { BOARD_TYPES, readLeaderboard } from '../leaderboards/service.ts';
 import { maskProfanity } from '../names/profanity.ts';
+import { revokeMarks } from './ban-evasion.ts';
 import { friendIds } from '../social/friends.ts';
 
 const ReportBody = z.object({
@@ -198,7 +199,8 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
       .update(bans)
       .set({ revokedAt: ctx.now() })
       .where(eq(bans.id, id))
-      .returning({ userId: bans.userId });
+      .returning({ userId: bans.userId, evasionOf: bans.evasionOf });
+    if (row?.evasionOf) await revokeMarks(ctx.db, row.evasionOf, ctx.now());
     if (row) await invalidateBanCache(ctx, row.userId);
     return reply.code(204).send();
   });

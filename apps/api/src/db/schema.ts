@@ -592,9 +592,42 @@ export const bans = pgTable(
     reason: text('reason').notNull(),
     expiresAt: ts('expires_at'),
     revokedAt: ts('revoked_at'),
+    /**
+     * For a ban re-applied because the player came back after deleting a
+     * banned account: the `ban_evasion_marks.ban_id` it was copied from.
+     */
+    evasionOf: uuid('evasion_of'),
     createdAt: createdAt(),
   },
-  (t) => [index('bans_user_idx').on(t.userId)],
+  (t) => [index('bans_user_idx').on(t.userId), uniqueIndex('bans_user_evasion_uq').on(t.userId, t.evasionOf)],
+);
+
+/**
+ * Bans that outlive account deletion. When a banned account is erased, each
+ * active ban is stored once per stable identifier of the account (OAuth
+ * subject, email address, guest device secret), as a keyed hash only; a later
+ * account that presents a matching identifier gets the ban re-applied.
+ * No user id is kept, so the row identifies nobody on its own.
+ */
+export const banEvasionMarks = pgTable(
+  'ban_evasion_marks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Id of the ban that was active at deletion; groups the identifier rows. */
+    banId: uuid('ban_id').notNull(),
+    /** Hex HMAC-SHA256 of the identifier, keyed with `INTERNAL_HMAC_SECRET`. */
+    identifierHash: text('identifier_hash').notNull(),
+    scope: text('scope').notNull(),
+    reason: text('reason').notNull(),
+    expiresAt: ts('expires_at'),
+    /** Set when an admin lifts a ban re-applied from this mark (a pardon). */
+    revokedAt: ts('revoked_at'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('ban_evasion_marks_ban_identifier_uq').on(t.banId, t.identifierHash),
+    index('ban_evasion_marks_identifier_idx').on(t.identifierHash),
+  ],
 );
 
 /** Feature flags with percentage rollout. */

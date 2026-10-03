@@ -10,7 +10,7 @@ import type { BitReader, BitWriter } from './bits.ts';
 import type { Bounds } from './quantize.ts';
 
 /** Bumped on any incompatible wire change; peers with different versions are rejected in the handshake. */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /** First byte of every binary message. Values are stable wire ids. */
 export const MsgType = {
@@ -274,6 +274,33 @@ export interface RoundResultEntry {
   score: number;
 }
 
+/**
+ * Client → server, about every 500 ms while the client builds a round. It is
+ * a heartbeat as much as a progress report: the server keeps waiting for a
+ * player while these arrive and gives up on one that goes quiet.
+ */
+export interface LoadProgressMsg {
+  t: 'loadProgress';
+  roundId: string;
+  /** Local build progress, 0..1. */
+  pct: number;
+}
+
+/** Most player ids a {@link LoadingStatusMsg} lists. */
+export const LOADING_STATUS_MAX_WAITING = 8;
+
+/** Server → client, at most 2 Hz while the round is in LOADING. */
+export interface LoadingStatusMsg {
+  t: 'loadingStatus';
+  roundId: string;
+  /** Human entrants who finished loading. */
+  loaded: number;
+  /** Human entrants still in the show. */
+  total: number;
+  /** Connected players the round is still waiting for (at most {@link LOADING_STATUS_MAX_WAITING}). */
+  waitingOn: number[];
+}
+
 /** Union of low-frequency messages. `t` is the discriminant. */
 export type LowFreqMessage =
   | JoinRoundMsg
@@ -281,8 +308,10 @@ export type LowFreqMessage =
   | { t: 'roundResults'; roundId: string; results: RoundResultEntry[] }
   | { t: 'showSummary'; winners: number[]; rounds: { roundId: string; qualified: number[] }[] }
   | { t: 'chat'; from: number; text: string }
-  /** Client → server: finished loading the round. */
+  /** Client → server: finished loading the round (scene built and shaders compiled). */
   | { t: 'loaded'; roundId: string }
+  | LoadProgressMsg
+  | LoadingStatusMsg
   /** Client → server: who to spectate (drives interest management). */
   | { t: 'spectate'; target: number }
   /** Server → client: lobby countdown before the show fills with bots. */

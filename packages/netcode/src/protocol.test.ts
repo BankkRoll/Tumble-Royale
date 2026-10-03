@@ -10,7 +10,7 @@ import {
   type LowFreqMessage,
 } from './protocol.ts';
 
-describe('protocol v2', () => {
+describe('protocol v3', () => {
   it('round-trips a Hello with a join ticket', () => {
     const ticket = `${'a'.repeat(40)}.${'b'.repeat(700)}.${'c'.repeat(43)}`;
     const w = new BitWriter(64);
@@ -47,5 +47,22 @@ describe('protocol v2', () => {
     expect(unpackLowFreq(packLowFreq(join))).toEqual(join);
     const rewards: LowFreqMessage = { t: 'showRewards', matchId: 'm_1234567', reward: null };
     expect(unpackLowFreq(packLowFreq(rewards))).toEqual(rewards);
+  });
+
+  it('carries load progress and the loading roster (v3)', () => {
+    expect(PROTOCOL_VERSION).toBe(3);
+    const progress: LowFreqMessage = { t: 'loadProgress', roundId: 'tilt-town', pct: 0.42 };
+    expect(unpackLowFreq(packLowFreq(progress))).toEqual(progress);
+    const status: LowFreqMessage = {
+      t: 'loadingStatus',
+      roundId: 'tilt-town',
+      loaded: 37,
+      total: 40,
+      waitingOn: [3, 17, 29],
+    };
+    expect(unpackLowFreq(packLowFreq(status))).toEqual(status);
+    // Low-frequency means small: a full roster stays well under one reliable packet.
+    const full: LowFreqMessage = { ...status, waitingOn: [1, 2, 3, 4, 5, 6, 7, 8] };
+    expect(packLowFreq(full).byteLength).toBeLessThan(80);
   });
 });

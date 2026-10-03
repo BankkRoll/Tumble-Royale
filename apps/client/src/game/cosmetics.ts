@@ -353,8 +353,14 @@ export function emoteSlots(emotes: readonly string[]): EmoteSlot[] {
  * @returns A catalog item, or null when everything is owned.
  */
 export function levelUpUnlock(owned: ReadonlySet<string>, level: number): ContentItem | null {
+  // Crown Shard exclusives are only ever sold in the shard shop.
   const pool = COSMETICS.filter(
-    (c) => c.source !== 'default' && !owned.has(c.id) && c.rarity !== 'mythic' && c.rarity !== 'legendary',
+    (c) =>
+      c.source !== 'default' &&
+      c.source !== 'shards' &&
+      !owned.has(c.id) &&
+      c.rarity !== 'mythic' &&
+      c.rarity !== 'legendary',
   );
   if (pool.length === 0) return null;
   const rng = new Rng(hashString(`level-${level}`));

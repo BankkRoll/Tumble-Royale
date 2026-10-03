@@ -220,6 +220,8 @@ let crossfadeTimer: ReturnType<typeof setInterval> | null = null;
 
 const captionBox = el('div', { class: 'captions idle' }, 'Captions appear here');
 let captionTimer: ReturnType<typeof setTimeout> | null = null;
+// The lab previews the opt-in spoken announcer; in game it stays captions-only unless enabled in Accessibility.
+audio.announcer.setEnabled(true);
 audio.announcer.onCaption((text, ms) => {
   captionBox.textContent = text;
   captionBox.classList.remove('idle');

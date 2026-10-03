@@ -1,5 +1,7 @@
 /**
- * The show announcer: speaks lines through the Web Speech API with a cheerful
+ * The show announcer. By default it only emits captions: spoken lines are an
+ * opt-in accessibility setting (`setEnabled(true)`), never on automatically.
+ * When enabled it speaks through the Web Speech API with a cheerful
  * voice, ducks the music while talking, and always emits captions. When speech
  * synthesis is unavailable (or disabled, or silently broken — common on
  * Linux/Android), it falls back to a synthesized vocal "blip" babble on the
@@ -18,6 +20,8 @@ export type CaptionListener = (text: string, durationMs: number) => void;
 
 /** Options for {@link Announcer}. */
 export interface AnnouncerOptions {
+  /** Speak lines aloud. Default false: captions only, voice is an accessibility opt-in. */
+  voice?: boolean;
   /** Use Web Speech when available. Default true. */
   speech?: boolean;
   /** Speech rate (Web Speech scale). Default 1.08. */
@@ -69,7 +73,7 @@ export class Announcer {
   private speaking: QueuedLine | null = null;
   private voice: SpeechSynthesisVoice | null = null;
   private speechOk: boolean;
-  private enabled = true;
+  private enabled: boolean;
   private readonly opts: Required<AnnouncerOptions>;
   private readonly rng = new Rng(0xa110);
   private doneTimer: ReturnType<typeof setTimeout> | null = null;
@@ -84,7 +88,8 @@ export class Announcer {
     private readonly engine: AudioEngine,
     opts: AnnouncerOptions = {},
   ) {
-    this.opts = { speech: true, rate: 1.08, pitch: 1.25, speechTimeout: 0.8, ...opts };
+    this.opts = { voice: false, speech: true, rate: 1.08, pitch: 1.25, speechTimeout: 0.8, ...opts };
+    this.enabled = this.opts.voice;
     this.speechOk = this.opts.speech && getSpeech() !== null;
     const sp = getSpeech();
     if (sp) {
@@ -104,7 +109,7 @@ export class Announcer {
     return () => this.listeners.delete(cb);
   }
 
-  /** @param on - Enable/disable announcer audio (captions still fire). */
+  /** @param on - Speak lines aloud (accessibility opt-in; captions always fire). */
   setEnabled(on: boolean): void {
     this.enabled = on;
     if (!on) this.cancel();

@@ -864,6 +864,8 @@ export interface Settings {
     reduceFlashing: boolean;
     reduceShake: boolean;
     captions: boolean;
+    /** Read announcer lines aloud (text-to-speech). Off by default; never enabled automatically. */
+    spokenAnnouncer: boolean;
     /** 0.8..1.4 multiplier on every UI size. */
     uiScale: number;
     highContrastHud: boolean;

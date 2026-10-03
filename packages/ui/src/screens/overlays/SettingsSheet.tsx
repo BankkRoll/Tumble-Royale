@@ -381,6 +381,13 @@ function Section({ id }: { id: SettingsSection }): JSX.Element {
               onChange={(captions) => up('accessibility', { captions })}
             />
           </Row>
+          <Row label="Spoken announcer" hint="Read announcer lines aloud">
+            <Toggle
+              label="Spoken announcer"
+              checked={s.accessibility.spokenAnnouncer}
+              onChange={(spokenAnnouncer) => up('accessibility', { spokenAnnouncer })}
+            />
+          </Row>
           <Row label="UI scale">
             <Slider
               label="UI scale"

@@ -69,6 +69,7 @@ export const DEFAULT_SETTINGS: Settings = {
     reduceFlashing: false,
     reduceShake: false,
     captions: false,
+    spokenAnnouncer: false,
     uiScale: 1,
     highContrastHud: false,
   },

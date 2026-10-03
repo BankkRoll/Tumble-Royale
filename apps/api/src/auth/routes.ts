@@ -10,6 +10,7 @@ import type { DbOrTx } from '../db/client.ts';
 import { users } from '../db/schema.ts';
 import { optionalUser, requireUser } from '../http/auth.ts';
 import { ApiError, parse } from '../http/errors.ts';
+import { AUTH_RATE } from '../http/rate-limit.ts';
 import { completeOAuth, startOAuth, type OAuthProviderId } from './oauth.ts';
 import {
   revokeByRefreshToken,
@@ -21,7 +22,6 @@ import {
 import { randomToken, sha256 } from './tokens.ts';
 import { eq } from 'drizzle-orm';
 
-const AUTH_RATE = { rateLimit: { max: 20, timeWindow: '1 minute' } };
 const LOGIN_CODE_TTL_MS = 60_000;
 const MAGIC_LINK_TTL_MS = 15 * 60_000;
 

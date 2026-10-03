@@ -44,8 +44,12 @@ export interface TestApi extends BuiltApp {
  * Builds a fresh isolated API.
  *
  * @param startIso - Initial clock time.
+ * @param env - Extra environment variables (override the test defaults).
  */
-export async function createTestApi(startIso = '2026-10-02T12:00:00.000Z'): Promise<TestApi> {
+export async function createTestApi(
+  startIso = '2026-10-02T12:00:00.000Z',
+  env: Record<string, string> = {},
+): Promise<TestApi> {
   let nowMs = Date.parse(startIso);
   const clock = {
     now: () => new Date(nowMs),
@@ -56,7 +60,13 @@ export async function createTestApi(startIso = '2026-10-02T12:00:00.000Z'): Prom
       nowMs = Date.parse(iso);
     },
   };
-  const config = loadConfig({ NODE_ENV: 'test', RATE_LIMIT_MAX: '100000', ADMIN_TOKEN, LOG_LEVEL: 'silent' });
+  const config = loadConfig({
+    NODE_ENV: 'test',
+    RATE_LIMIT_MAX: '100000',
+    ADMIN_TOKEN,
+    LOG_LEVEL: 'silent',
+    ...env,
+  });
   const mailer = new MemoryMailer();
   const built = await buildApp(config, { now: clock.now, mailer, logger: false });
 

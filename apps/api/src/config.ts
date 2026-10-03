@@ -23,6 +23,7 @@ const EnvSchema = z.object({
   DATABASE_URL: optionalString,
   PGLITE_DIR: z.string().default('./.data/pglite'),
   REDIS_URL: optionalString,
+  ALLOW_MEMORY_STORE: optionalString,
   JWT_SECRET: z.string().min(32).default(DEV_JWT_SECRET),
   INTERNAL_HMAC_SECRET: z.string().min(16).default(DEV_INTERNAL_SECRET),
   ADMIN_TOKEN: optionalString,
@@ -58,6 +59,12 @@ export interface ApiConfig {
   pgliteDir: string;
   /** Redis connection string; absent → in-process KV. */
   redisUrl: string | undefined;
+  /**
+   * True when production runs on the in-process KV because `ALLOW_MEMORY_STORE=1`
+   * was set explicitly; parties, presence and leaderboards are then lost on
+   * restart and not shared between instances.
+   */
+  memoryStoreInProduction: boolean;
   /** HS256 secret for access tokens. Shared with the matchmaker, which verifies them. */
   jwtSecret: string;
   /** HMAC secret shared with game servers for `/internal/*` calls. */
@@ -88,7 +95,8 @@ function pair(id: string | undefined, secret: string | undefined): OAuthClientCo
  *
  * @param env - Usually `process.env`; tests pass a literal map.
  * @returns The validated configuration.
- * @throws If a variable is malformed, or production runs with development secrets.
+ * @throws If a variable is malformed, or production runs with development
+ *   secrets, or without `REDIS_URL` unless `ALLOW_MEMORY_STORE=1`.
  */
 export function loadConfig(env: Record<string, string | undefined> = process.env): ApiConfig {
   const e = EnvSchema.parse(env);
@@ -96,6 +104,13 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     if (e.JWT_SECRET === DEV_JWT_SECRET) throw new Error('JWT_SECRET must be set in production');
     if (e.INTERNAL_HMAC_SECRET === DEV_INTERNAL_SECRET) {
       throw new Error('INTERNAL_HMAC_SECRET must be set in production');
+    }
+    if (!e.REDIS_URL && e.ALLOW_MEMORY_STORE !== '1') {
+      throw new Error(
+        'REDIS_URL must be set in production: parties, presence, leaderboards and nonces would live in ' +
+          'process memory, vanish on restart and not be shared between instances. ' +
+          'Set ALLOW_MEMORY_STORE=1 to run a single instance on memory anyway.',
+      );
     }
   }
   const corsOrigins: string[] | true = e.CORS_ORIGINS
@@ -112,6 +127,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     databaseUrl: e.DATABASE_URL,
     pgliteDir: e.NODE_ENV === 'test' ? 'memory://' : e.PGLITE_DIR,
     redisUrl: e.REDIS_URL,
+    memoryStoreInProduction: e.NODE_ENV === 'production' && !e.REDIS_URL,
     jwtSecret: e.JWT_SECRET,
     internalHmacSecret: e.INTERNAL_HMAC_SECRET,
     adminToken: e.ADMIN_TOKEN,

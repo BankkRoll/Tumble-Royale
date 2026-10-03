@@ -258,14 +258,14 @@ describe('GET /stats', () => {
     await registerServer('gs-a');
     await registerServer('gs-b');
     await call('POST', '/servers/heartbeat', SERVER_SECRET, { serverId: 'gs-a', load: 30, humans: 12 });
-    // A server that predates `humans` reports its load (its connected humans).
+    // Without `humans` a server adds nothing: its load also counts bots.
     await call('POST', '/servers/heartbeat', SERVER_SECRET, { serverId: 'gs-b', load: 5 });
     await call('POST', '/queue', await access('alice'), {
       ticket: await queueTicket('alice', ['alice', 'bob']),
     });
     const res = await call('GET', '/stats');
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ queued: 2, inGame: 17, servers: 2 });
+    expect(res.json()).toEqual({ queued: 2, inGame: 12, servers: 2 });
   });
 
   it('drops servers that stopped heartbeating', async () => {

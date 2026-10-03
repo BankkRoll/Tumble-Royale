@@ -27,6 +27,7 @@ import {
 } from './economy/payments.ts';
 import { registerEconomyRoutes } from './economy/routes.ts';
 import { ApiError } from './http/errors.ts';
+import { rateLimitKey } from './http/rate-limit.ts';
 import { createKV, type KV } from './kv/index.ts';
 import { registerMatchRoutes } from './matches/routes.ts';
 import { registerModerationRoutes } from './moderation/routes.ts';
@@ -161,11 +162,7 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     global: true,
     max: config.rateLimitMax,
     timeWindow: '1 minute',
-    keyGenerator: (req) => {
-      const auth = req.headers.authorization;
-      // Per-token buckets for signed-in calls so players behind one NAT do not share a limit.
-      return auth?.startsWith('Bearer ') ? `t:${auth.slice(-24)}` : `ip:${req.ip}`;
-    },
+    keyGenerator: (req) => rateLimitKey(config.jwtSecret, req, now),
     errorResponseBuilder: (_req, c) => ({
       statusCode: 429,
       error: 'rate_limited',

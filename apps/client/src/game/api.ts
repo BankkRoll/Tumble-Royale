@@ -703,6 +703,8 @@ export class ApiClient {
   declinePartyInvite = (userId: string): Promise<void> =>
     this.request('POST', '/party/invite/decline', { userId });
   partyChat = (text: string): Promise<unknown> => this.request('POST', '/party/chat', { text });
+  whisper = (userId: string, text: string): Promise<unknown> =>
+    this.request('POST', '/whisper', { userId, text });
   party = (): Promise<{ party: ApiParty | null }> => this.request('GET', '/party');
   createParty = (): Promise<{ party: ApiParty }> => this.request('POST', '/party');
   joinParty = (code: string): Promise<{ party: ApiParty }> => this.request('POST', '/party/join', { code });

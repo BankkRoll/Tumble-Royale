@@ -18,6 +18,7 @@ import { SafeImg } from '../../components/SafeImg.tsx';
 import { Icon, challengeIcon, type IconName } from '../../components/icons/index.tsx';
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
 import { uiEvents } from '../../store/events.ts';
+import { social } from '../../store/social.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { OnlineStatus, PassReward, PlayMode, Playlist, SeasonPassData } from '../../store/types.ts';
 import { LobbyEmotes } from './LobbyEmotes.tsx';
@@ -416,7 +417,27 @@ function PartyRow(): JSX.Element {
               className={`tr-party-slot${m.ready ? ' is-ready' : ''}${m.isSelf ? ' is-self' : ''}`}
               title={`${m.name}${m.isLeader ? ' (leader)' : ''}${m.ready ? ' · ready' : ''}`}
             >
-              <TumblerAvatar colors={m.colors} size="2.3em" blink={false} noShadow />
+              {m.isSelf ? (
+                <TumblerAvatar colors={m.colors} size="2.3em" blink={false} noShadow />
+              ) : (
+                <button
+                  type="button"
+                  className="tr-party-slot-who"
+                  data-nav=""
+                  data-testid="party-member"
+                  aria-label={`Player card for ${m.name}`}
+                  onClick={() =>
+                    social.getState().openPlayerMenu({
+                      userId: m.id,
+                      name: m.name,
+                      ...(m.tag ? { tag: m.tag } : {}),
+                      key: m.id,
+                    })
+                  }
+                >
+                  <TumblerAvatar colors={m.colors} size="2.3em" blink={false} noShadow />
+                </button>
+              )}
               {m.isLeader && (
                 <span className="tr-party-crown">
                   <Icon name="crown" size="1em" />

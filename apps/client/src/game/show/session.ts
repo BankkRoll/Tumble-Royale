@@ -272,7 +272,6 @@ export abstract class ShowSession {
         },
         botIds: () => [...this.players.values()].filter((p) => p.isBot).map((p) => p.id),
         bubble: (id, text) => this.round?.view?.players.say(id, text),
-        releaseKeys: () => ctx.input.releaseKeys(),
       },
       0,
     );
@@ -660,6 +659,7 @@ export abstract class ShowSession {
       isBot: p.isBot,
       isLocal: id === this.localId,
       ...(this.isPartyMate(id) ? { isParty: true } : {}),
+      ...(p.userId ? { userId: p.userId } : {}),
     });
   }
 
@@ -1577,7 +1577,7 @@ export abstract class ShowSession {
       us.screen === 'round' &&
       us.overlay === 'none' &&
       !us.replay &&
-      !social.getState().chatOpen &&
+      !social.getState().chat.open &&
       !us.photo.active;
     if (
       !input.settings.pointerLock &&

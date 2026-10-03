@@ -185,7 +185,7 @@ export function showPlayer(
   id: number,
   name: string,
   loadout: TumblerLoadout,
-  extra: { isBot: boolean; isLocal?: boolean; isParty?: boolean; team?: number },
+  extra: { isBot: boolean; isLocal?: boolean; isParty?: boolean; team?: number; userId?: string },
 ): ShowPlayer {
   return { id, name, colors: tumblerColors(loadout), hat: avatarHat(loadout.headwear), ...extra };
 }

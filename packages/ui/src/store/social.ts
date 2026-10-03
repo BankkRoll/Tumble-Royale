@@ -1,7 +1,7 @@
 /**
  * Social UI state that the main store does not carry: friend requests, the
- * blocked list, local mutes, player search, the in-show and party chat feeds,
- * and the player action menu / report dialog.
+ * blocked list, local mutes, player search, the global chat (channels, unread,
+ * input; see `chatChannels.ts`), and the player card / report dialog.
  *
  * Kept in its own Zustand store so chat traffic never re-renders the menus,
  * and so the game can push it without touching the main `UIState` shape.
@@ -10,7 +10,10 @@
  */
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
+import { INITIAL_CHAT, reduceChat, type ChatAction, type ChatLine, type ChatState } from './chatChannels.ts';
 import type { Presence, Relation, TumblerColors } from './types.ts';
+
+export type { ChatLine } from './chatChannels.ts';
 
 /** Another player as the social UI refers to them. */
 export interface PlayerRef {
@@ -49,24 +52,6 @@ export interface PlayerSearchResult {
   relation: Relation | 'self';
 }
 
-/** One chat line (in-show or party). */
-export interface ChatLine {
-  id: string;
-  from: PlayerRef;
-  /** Text with slurs masked (filter off). */
-  text: string;
-  /** Fully masked text, when it differs (filter on). */
-  masked?: string;
-  /** Quick-chat preset id; such lines are pings, not typed text. */
-  quick?: string;
-  /** Sent by the local player. */
-  self?: boolean;
-  /** Epoch ms received. */
-  at: number;
-  /** Accent colour (the sender's Tumbler). */
-  color?: string;
-}
-
 /** Where the friends features stand. */
 export type SocialAvailability = 'online' | 'offline' | 'connecting';
 
@@ -80,14 +65,8 @@ export interface SocialState {
   /** Muted keys (see {@link PlayerRef.key}). */
   muted: string[];
   search: { query: string; results: PlayerSearchResult[]; loading: boolean };
-  /** In-show feed, oldest first. */
-  showChat: ChatLine[];
-  /** Party feed, oldest first. */
-  partyChat: ChatLine[];
-  /** Text chat is possible in this show (online with other humans). */
-  chatEnabled: boolean;
-  /** The in-show chat input is open. */
-  chatOpen: boolean;
+  /** Global chat: every channel's lines, tabs, unread counts, input state. */
+  chat: ChatState;
   /** Player action menu target. */
   playerMenu: PlayerRef | null;
   /** Report dialog target. */
@@ -98,21 +77,13 @@ export interface SocialState {
   setBlocked(blocked: BlockedPlayer[]): void;
   setMuted(keys: string[]): void;
   setSearch(search: Partial<SocialState['search']>): void;
-  pushShowChat(line: ChatLine): void;
-  pushPartyChat(line: ChatLine): void;
-  clearShowChat(): void;
-  clearPartyChat(): void;
-  setChatEnabled(on: boolean): void;
-  setChatOpen(open: boolean): void;
+  /** Applies a chat action (see `reduceChat`). */
+  dispatchChat(action: ChatAction): void;
+  /** Shorthand for a `receive` action. */
+  pushChat(line: ChatLine): void;
   openPlayerMenu(p: PlayerRef | null): void;
   openReport(p: PlayerRef | null): void;
 }
-
-/** Lines kept per feed. */
-export const CHAT_HISTORY = 50;
-
-const push = (list: ChatLine[], line: ChatLine): ChatLine[] =>
-  list.some((l) => l.id === line.id) ? list : [...list.slice(-(CHAT_HISTORY - 1)), line];
 
 /** The social store (vanilla; read with {@link useSocial}). */
 export const social = createStore<SocialState>()((set) => ({
@@ -122,10 +93,7 @@ export const social = createStore<SocialState>()((set) => ({
   blocked: [],
   muted: [],
   search: { query: '', results: [], loading: false },
-  showChat: [],
-  partyChat: [],
-  chatEnabled: false,
-  chatOpen: false,
+  chat: INITIAL_CHAT,
   playerMenu: null,
   reportTarget: null,
 
@@ -134,12 +102,16 @@ export const social = createStore<SocialState>()((set) => ({
   setBlocked: (blocked) => set({ blocked }),
   setMuted: (muted) => set({ muted }),
   setSearch: (search) => set((s) => ({ search: { ...s.search, ...search } })),
-  pushShowChat: (line) => set((s) => ({ showChat: push(s.showChat, line) })),
-  pushPartyChat: (line) => set((s) => ({ partyChat: push(s.partyChat, line) })),
-  clearShowChat: () => set({ showChat: [], chatOpen: false }),
-  clearPartyChat: () => set({ partyChat: [] }),
-  setChatEnabled: (chatEnabled) => set((s) => ({ chatEnabled, chatOpen: chatEnabled && s.chatOpen })),
-  setChatOpen: (chatOpen) => set({ chatOpen }),
+  dispatchChat: (action) =>
+    set((s) => {
+      const chat = reduceChat(s.chat, action);
+      return chat === s.chat ? s : { chat };
+    }),
+  pushChat: (line) =>
+    set((s) => {
+      const chat = reduceChat(s.chat, { type: 'receive', line });
+      return chat === s.chat ? s : { chat };
+    }),
   openPlayerMenu: (playerMenu) => set({ playerMenu }),
   openReport: (reportTarget) => set({ reportTarget, playerMenu: null }),
 }));
@@ -173,7 +145,7 @@ export interface VisibleChatLine extends ChatLine {
 
 /**
  * Applies "Show chat", the chat filter, mutes and blocks to a feed. The local
- * player's own lines always show.
+ * player's own lines and System notices always show.
  *
  * @param lines - Feed, oldest first.
  * @param rules - Current settings and lists.
@@ -186,7 +158,7 @@ export function visibleChat(lines: readonly ChatLine[], rules: ChatVisibility): 
   const blocked = new Set(rules.blocked);
   const out: VisibleChatLine[] = [];
   for (const l of lines) {
-    if (!l.self) {
+    if (!l.self && l.channel !== 'system') {
       if (!rules.showChat) continue;
       if (muted.has(l.from.key)) continue;
       if (l.from.userId && blocked.has(l.from.userId)) continue;

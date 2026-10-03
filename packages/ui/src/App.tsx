@@ -5,7 +5,7 @@
  */
 import { useEffect, useRef, type JSX } from 'react';
 import { ConnectionLayer, DialogLayer, ToastLayer } from './components/system.tsx';
-import { ShowChatLayer } from './hud/ChatFeed.tsx';
+import { ChatWidgetLayer } from './hud/ChatWidget.tsx';
 import { Hud } from './hud/Hud.tsx';
 import { SettingsSheet } from './screens/overlays/SettingsSheet.tsx';
 import { InGameMenu } from './screens/overlays/InGameMenu.tsx';
@@ -84,7 +84,7 @@ export function App(): JSX.Element {
         <div className="tr-stage">
           <ScreenLayer />
           <HudLayer />
-          <ShowChatLayer />
+          <ChatWidgetLayer />
           <StampLayer />
         </div>
         <ConfettiLayer />

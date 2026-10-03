@@ -326,8 +326,6 @@ export async function issueQueueTicket(
   const party = await parties.current(auth.userId);
   if (party && party.leaderId !== auth.userId)
     throw forbidden('not_leader', 'Only the party leader can start matchmaking');
-  if (party && party.members.some((m) => !m.ready))
-    throw conflict('not_ready', 'Not every party member is ready');
   const playlistId = opts.playlistId ?? party?.playlistId ?? ctx.catalog.playlists[0]?.id ?? 'main_show';
   const playlist = ctx.catalog.playlists.find((p) => p.id === playlistId);
   if (!playlist) throw badRequest('unknown_playlist', `Unknown playlist ${playlistId}`);
@@ -348,6 +346,9 @@ export async function issueQueueTicket(
       throw forbidden('ranked_banned', 'A party member is suspended from ranked play');
     }
   }
+  // After the ban checks: a suspended member can never ready up, so "not ready" would hide the real reason.
+  if (party && party.members.some((m) => !m.ready))
+    throw conflict('not_ready', 'Not every party member is ready');
   const names = await ctx.db
     .select({ id: profiles.userId, displayName: profiles.displayName, tag: profiles.tag })
     .from(profiles)

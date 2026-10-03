@@ -3,7 +3,8 @@
  * docs/design/SCREENS.md §5.8, §12.5.
  *
  * Responsibilities:
- * - party: invite code/link, members, party chat;
+ * - party: invite code/link, members (click for the player card), a button to
+ *   open the chat widget on the Party tab;
  * - add friends by `name#tag` or by searching names;
  * - requests (accept / decline incoming, cancel outgoing), friends grouped by
  *   presence with invite / join / profile / remove / block, recent players
@@ -13,7 +14,6 @@
  * - notifications with inline Accept/Decline and Join/Decline.
  */
 import { useEffect, useRef, useState, type JSX } from 'react';
-import { CHAT_MAX_LENGTH } from '@tumble/shared';
 import { playCue } from '../../audio-cues.ts';
 import { Button } from '../../components/controls.tsx';
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
@@ -23,13 +23,13 @@ import {
   PRESENCE_LABEL,
   social,
   useSocial,
-  visibleChat,
   type PlayerRef,
   type PlayerSearchResult,
 } from '../../store/social.ts';
 import type { Friend, NotificationItem, Presence } from '../../store/types.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
-import { confirmBlock, confirmRemoveFriend } from './PlayerActions.tsx';
+import { setChatOpen } from '../../hud/ChatWidget.tsx';
+import { confirmBlock, confirmRemoveFriend, PlayerButton } from './PlayerActions.tsx';
 import { openJoinCode } from './PrivateShow.tsx';
 
 const PRESENCE_CLS: Record<Presence, string> = {
@@ -73,11 +73,13 @@ function FriendRow({ f, inParty }: { f: Friend; inParty: boolean }): JSX.Element
   return (
     <div className="tr-friend-wrap">
       <div className="tr-friend">
-        <TumblerAvatar colors={f.colors} size="2.4em" blink={false} noShadow />
-        <div className="tr-col tr-grow" style={{ gap: 0, minWidth: 0 }}>
-          <Name name={f.name} tag={f.tag} />
-          <span className={`tr-presence ${PRESENCE_CLS[f.presence]}`}>{presenceText(f)}</span>
-        </div>
+        <PlayerButton player={refOf(f)}>
+          <TumblerAvatar colors={f.colors} size="2.4em" blink={false} noShadow />
+          <div className="tr-col tr-grow" style={{ gap: 0, minWidth: 0 }}>
+            <Name name={f.name} tag={f.tag} />
+            <span className={`tr-presence ${PRESENCE_CLS[f.presence]}`}>{presenceText(f)}</span>
+          </div>
+        </PlayerButton>
         {f.joinable && !inParty && (
           <Button size="sm" variant="go" onClick={() => uiEvents.emit('joinFriend', { userId: f.id })}>
             Join
@@ -176,15 +178,17 @@ function RecentRow({ f }: { f: Friend }): JSX.Element {
   const friend = f.relation === 'friend';
   return (
     <div className="tr-friend">
-      <TumblerAvatar colors={f.colors} size="2.4em" blink={false} noShadow />
-      <div className="tr-col tr-grow" style={{ gap: 0, minWidth: 0 }}>
-        <Name name={f.name} tag={f.tag} />
-        {friend ? (
-          <span className={`tr-presence ${PRESENCE_CLS[f.presence]}`}>{presenceText(f)}</span>
-        ) : (
-          <small className="tr-muted">Played together recently</small>
-        )}
-      </div>
+      <PlayerButton player={refOf(f)}>
+        <TumblerAvatar colors={f.colors} size="2.4em" blink={false} noShadow />
+        <div className="tr-col tr-grow" style={{ gap: 0, minWidth: 0 }}>
+          <Name name={f.name} tag={f.tag} />
+          {friend ? (
+            <span className={`tr-presence ${PRESENCE_CLS[f.presence]}`}>{presenceText(f)}</span>
+          ) : (
+            <small className="tr-muted">Played together recently</small>
+          )}
+        </div>
+      </PlayerButton>
       <RelationButton userId={f.id} name={f.name} relation={f.relation ?? 'none'} />
       <Button
         size="sm"
@@ -368,71 +372,6 @@ function Blocked(): JSX.Element | null {
   );
 }
 
-/** Party chat panel (shown when the party has other members). */
-export function PartyChat(): JSX.Element {
-  const lines = useSocial((s) => s.partyChat);
-  const muted = useSocial((s) => s.muted);
-  const blocked = useSocial((s) => s.blocked);
-  const showChat = useUI((s) => s.settings.gameplay.showChat);
-  const filter = useUI((s) => s.settings.gameplay.chatFilter);
-  const [text, setText] = useState('');
-  const shown = visibleChat(lines, { showChat, filter, muted, blocked: blocked.map((b) => b.userId) }).slice(
-    -30,
-  );
-  const list = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (list.current) list.current.scrollTop = list.current.scrollHeight;
-  }, [shown.length]);
-  return (
-    <div className="tr-party-chat" data-testid="party-chat">
-      <span className="tr-label">Party chat</span>
-      <div ref={list} className="tr-party-chat-lines tr-scroll" aria-live="polite">
-        {shown.length === 0 && <small className="tr-muted">Say hi to your party.</small>}
-        {shown.map((l) => (
-          <div key={l.id} className="tr-chat-line">
-            {l.self ? (
-              <b className="tr-chat-name">You</b>
-            ) : (
-              <button
-                type="button"
-                className="tr-chat-who"
-                aria-label={`Actions for ${l.from.name}`}
-                onClick={() => social.getState().openPlayerMenu(l.from)}
-              >
-                <b className="tr-chat-name">{l.from.name}</b>
-              </button>
-            )}
-            <span className="tr-chat-text">{l.display}</span>
-          </div>
-        ))}
-      </div>
-      <form
-        className="tr-row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const t = text.trim();
-          if (!t) return;
-          uiEvents.emit('sendPartyChat', { text: t });
-          setText('');
-        }}
-      >
-        <input
-          className="tr-input"
-          placeholder="Message your party"
-          value={text}
-          maxLength={CHAT_MAX_LENGTH}
-          data-nav=""
-          onChange={(e) => setText(e.target.value)}
-          aria-label="Party chat message"
-        />
-        <Button type="submit" size="sm" variant="sky">
-          Send
-        </Button>
-      </form>
-    </div>
-  );
-}
-
 /** Friends sheet body when the account servers are unreachable. */
 /** Your Name#tag with a copy button: friends need the tag to find you. */
 function MyTag({ masked }: { masked: boolean }): JSX.Element | null {
@@ -595,13 +534,20 @@ export function FriendsSheet(): JSX.Element {
                   </span>
                   {party.members.map((m) => (
                     <div key={m.id} className="tr-friend">
-                      <TumblerAvatar colors={m.colors} size="2.4em" blink={false} noShadow />
-                      <b className="tr-grow tr-ellipsis">
-                        {m.isLeader ? <Icon name="crown" size="0.9em" /> : null}
-                        {m.name}
-                        {m.tag && <small className="tr-muted">#{streamer && !reveal ? '••••' : m.tag}</small>}
-                        {m.isSelf ? ' (you)' : ''}
-                      </b>
+                      <PlayerButton
+                        player={{ userId: m.id, name: m.name, ...(m.tag ? { tag: m.tag } : {}), key: m.id }}
+                        disabled={m.isSelf}
+                      >
+                        <TumblerAvatar colors={m.colors} size="2.4em" blink={false} noShadow />
+                        <b className="tr-grow tr-ellipsis">
+                          {m.isLeader ? <Icon name="crown" size="0.9em" /> : null}
+                          {m.name}
+                          {m.tag && (
+                            <small className="tr-muted">#{streamer && !reveal ? '••••' : m.tag}</small>
+                          )}
+                          {m.isSelf ? ' (you)' : ''}
+                        </b>
+                      </PlayerButton>
                       {m.isLeader ? (
                         <span
                           className="tr-chip tr-chip--lemon"
@@ -663,7 +609,19 @@ export function FriendsSheet(): JSX.Element {
                       )}
                     </div>
                   ))}
-                  {party.members.length > 1 && <PartyChat />}
+                  {party.members.length > 1 && (
+                    <Button
+                      size="sm"
+                      variant="sky"
+                      data-testid="party-chat-open"
+                      onClick={() => {
+                        ui.getState().setOverlay('none');
+                        setChatOpen(true, { channel: 'party' });
+                      }}
+                    >
+                      Chat with your party
+                    </Button>
+                  )}
                   {party.members.length > 1 && (
                     <Button size="sm" variant="secondary" onClick={() => uiEvents.emit('leaveParty')}>
                       Leave party

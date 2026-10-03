@@ -22,13 +22,16 @@ import {
   DEFAULT_KEYBINDS,
   bindUI,
   mountUI,
+  social,
   ui,
   uiEvents,
   type BindAction,
   type CustomLobbyState,
   type Settings,
 } from '@tumble/ui';
+import { bindChatRouter } from './social/chatRouter.ts';
 import { loadMutes, publishSocialAvailability, socialIntents } from './social/intents.ts';
+import { onLobbyChat, onLobbyChatError, syncLobbyChat } from './social/lobbyChat.ts';
 import { createRenderer, setTeamColorMode } from '@tumble/render';
 import { createPostPipeline, type PostPipeline } from '@tumble/render/post';
 import type { TumblerLoadout } from '@tumble/render/scenes';
@@ -869,6 +872,8 @@ export class GameApp {
     mm.on('match_found', (m) => this.startMatchmadeShow(m as unknown as MatchFound));
     mm.on('lobby_update', (m) => this.onLobbyEvent({ type: 'lobby_update', lobby: m.lobby as Lobby }));
     mm.on('lobby_closed', (m) => this.onLobbyEvent({ type: 'lobby_closed', code: String(m.code ?? '') }));
+    mm.on('lobby_chat', (m) => onLobbyChat(m, this.account?.userId ?? null));
+    mm.on('error', (m) => onLobbyChatError(m));
     mm.on('lobby_kicked', (m) =>
       this.onLobbyEvent({
         type: 'lobby_kicked',
@@ -960,6 +965,7 @@ export class GameApp {
 
   private applyLobby(lobby: Lobby | null): void {
     const joined = lobby !== null && this.lobby === null;
+    syncLobbyChat(this.lobby, lobby, this.account?.userId ?? null, this.mm);
     this.lobby = lobby;
     if (!lobby || lobby.status === 'started') {
       this.lobbyRevealPending = false;
@@ -1022,6 +1028,16 @@ export class GameApp {
 
   private bindIntents(): void {
     const s = (): ReturnType<typeof ui.getState> => ui.getState();
+    bindChatRouter();
+    bindUI({
+      onChatInput: ({ open }) => {
+        if (!open) return;
+        // Typing must not steer the Tumbler: drop held keys (their keyup goes to the
+        // text field) and free the mouse for the widget.
+        this.ctx.input.releaseKeys();
+        if (document.pointerLockElement) document.exitPointerLock();
+      },
+    });
     const refreshLook = (): void => this.menu?.setLoadout(this.look());
     const online = (): OnlineAccount | null => (this.account?.active ? this.account : null);
     bindUI({
@@ -1201,7 +1217,18 @@ export class GameApp {
         const show = privateShow(options);
         this.startOfflineShow(show.playlist, show.roundTimeScale);
       },
-      onInspectPlayer: ({ playerId, name }) => {
+      onInspectPlayer: ({ playerId, name, direct }) => {
+        // Party members (slots, the 3D party lobby) open the player card first.
+        const member = !direct ? s().party?.members.find((m) => m.id === playerId && !m.isSelf) : undefined;
+        if (member) {
+          social.getState().openPlayerMenu({
+            userId: member.id,
+            name: member.name,
+            ...(member.tag ? { tag: member.tag } : {}),
+            key: member.id,
+          });
+          return;
+        }
         const local = localPlayerCard(this.profile, playerId);
         if (local) {
           s().setInspectedProfile(local);

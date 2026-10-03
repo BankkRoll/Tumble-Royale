@@ -1312,6 +1312,7 @@ export class OnlineAccount {
   /** Pushes the party (or a solo slot) into the UI and the menu stage. */
   private applyParty(party: ApiParty | null): void {
     this.party = party;
+    this.social.onParty(party);
     const s = ui.getState();
     const me = this.me;
     if (!me) return;

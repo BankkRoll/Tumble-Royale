@@ -5,7 +5,8 @@
  */
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ChatLayer } from '../src/hud/ChatFeed.tsx';
+import { ChatWidget } from '../src/hud/ChatWidget.tsx';
+import { INITIAL_CHAT } from '../src/store/chatChannels.ts';
 import { ProfileOverlay } from '../src/screens/menu/ProfileTab.tsx';
 import { PlayerMenu, ReportDialog } from '../src/screens/overlays/PlayerActions.tsx';
 import { FriendsSheet, NotificationsPanel } from '../src/screens/overlays/SocialSheets.tsx';
@@ -66,10 +67,7 @@ beforeEach(() => {
     outgoing: [],
     blocked: [],
     muted: [],
-    showChat: [],
-    partyChat: [],
-    chatEnabled: false,
-    chatOpen: false,
+    chat: INITIAL_CHAT,
     playerMenu: null,
     reportTarget: null,
     search: { query: '', results: [], loading: false },
@@ -107,30 +105,68 @@ describe('visibleChat', () => {
   });
 });
 
-describe('ChatLayer', () => {
+describe('ChatWidget', () => {
+  const ChatLayer = ChatWidget;
   it('renders masked lines with the filter on and raw ones with it off', () => {
-    social.getState().pushShowChat(line({ text: 'what the fuck', masked: 'what the ****' }));
+    social.getState().pushChat(line({ text: 'what the fuck', masked: 'what the ****' }));
     expect(renderToStaticMarkup(<ChatLayer />)).toContain('what the ****');
     settings({ chatFilter: false });
     expect(renderToStaticMarkup(<ChatLayer />)).toContain('what the fuck');
   });
 
-  it('shows pings, hides other players when chat is off, and offers Enter only when enabled', () => {
-    social.getState().pushShowChat(line({ text: 'Go here!', quick: 'ping:go' }));
+  it('shows pings in the collapsed feed and hides other players when chat is off', () => {
+    social.getState().pushChat(line({ text: 'Go here!', quick: 'ping:go' }));
+    ui.getState().setHud({ device: 'keyboard' });
     let html = renderToStaticMarkup(<ChatLayer />);
     expect(html).toContain('is-ping');
-    expect(html).not.toContain('Enter');
-    social.getState().setChatEnabled(true);
-    ui.getState().setHud({ device: 'keyboard' });
-    expect(renderToStaticMarkup(<ChatLayer />)).toContain('Enter');
+    expect(html).toContain('Enter');
     settings({ showChat: false });
     html = renderToStaticMarkup(<ChatLayer />);
     expect(html).not.toContain('Go here!');
   });
 
-  it('opens an input when chat is open', () => {
-    social.setState({ chatEnabled: true, chatOpen: true });
-    expect(renderToStaticMarkup(<ChatLayer />)).toContain('aria-label="Chat message"');
+  it('open: tabs for available channels with unread badges, and the input', () => {
+    const s = social.getState();
+    s.dispatchChat({ type: 'available', channel: 'party', on: true });
+    s.dispatchChat({ type: 'available', channel: 'show', on: true });
+    s.pushChat(line({ text: 'ready?', channel: 'party', from: { userId: PAL, name: 'Pal', key: PAL } }));
+    s.dispatchChat({ type: 'open', channel: 'show' });
+    const html = renderToStaticMarkup(<ChatLayer />);
+    const tabs = [...html.matchAll(/role="tab"[^>]*>(.*?)<\/button>/g)].map((m) =>
+      m[1]!.replace(/<[^>]+>/g, ''),
+    );
+    expect(tabs).toEqual(['Show', 'Party1', 'System']);
+    expect(html).toContain('aria-label="Chat message"');
+    expect(html).not.toContain('ready?');
+    for (const t of tabs) expect(t).not.toMatch(EMOJI);
+  });
+
+  it('gamepad quick chat shows preset buttons instead of a text field', () => {
+    social.getState().dispatchChat({ type: 'available', channel: 'show', on: true });
+    social.getState().dispatchChat({ type: 'open', mode: 'quick' });
+    const html = renderToStaticMarkup(<ChatLayer />);
+    expect(buttons(html)).toEqual(expect.arrayContaining(['Go here!', 'Watch out!', 'GG!', 'Wow!', 'Close']));
+    expect(html).not.toContain('aria-label="Chat message"');
+  });
+
+  it('labels outgoing whispers and system notices', () => {
+    const s = social.getState();
+    s.pushChat(
+      line({
+        text: 'see you there',
+        channel: 'whisper',
+        self: true,
+        from: { name: 'Sprinkles', key: me.id },
+        to: { userId: PAL, name: 'Pal', key: PAL },
+      }),
+    );
+    s.pushChat(
+      line({ text: 'Pal joined the party', channel: 'system', from: { name: 'System', key: 'system' } }),
+    );
+    settings({ showChat: false });
+    const html = renderToStaticMarkup(<ChatLayer />);
+    expect(html).toContain('To Pal');
+    expect(html).toContain('Pal joined the party');
   });
 });
 
@@ -178,19 +214,20 @@ describe('FriendsSheet', () => {
     for (const b of labels) expect(b).not.toMatch(EMOJI);
   });
 
-  it('shows party chat once someone joined', () => {
+  it('moves party chat to the widget and makes members clickable', () => {
     ui.getState().setParty({
       code: 'ABC234',
       maxSize: 4,
       members: [
         { id: me.id, name: me.name, colors, ready: true, isLeader: true, isSelf: true },
-        { id: PAL, name: 'Pal', colors, ready: false, isLeader: false, isSelf: false },
+        { id: PAL, name: 'Pal', tag: '0001', colors, ready: false, isLeader: false, isSelf: false },
       ],
     });
-    social.getState().pushPartyChat(line({ text: 'ready?', from: { userId: PAL, name: 'Pal', key: PAL } }));
     const html = renderToStaticMarkup(<FriendsSheet />);
-    expect(html).toContain('data-testid="party-chat"');
-    expect(html).toContain('ready?');
+    expect(html).not.toContain('data-testid="party-chat"');
+    expect(html).toContain('data-testid="party-chat-open"');
+    expect(html).toContain('aria-label="Player card for Pal"');
+    expect(html).not.toContain('aria-label="Player card for Sprinkles"');
   });
 });
 
@@ -249,6 +286,54 @@ describe('player actions', () => {
     const labels = buttons(renderToStaticMarkup(<PlayerMenu />));
     expect(labels).toEqual(expect.arrayContaining(['View profile', 'Unmute', 'Unblock', 'Report']));
     expect(labels).not.toContain('Add friend');
+  });
+
+  it('player card for a friend in your party, as leader: whisper, promote, kick', () => {
+    ui.getState().setFriends([{ id: PAL, name: 'Pal', tag: '0001', presence: 'inMenu', colors }]);
+    ui.getState().setParty({
+      code: 'ABC234',
+      maxSize: 4,
+      members: [
+        { id: me.id, name: me.name, colors, ready: true, isLeader: true, isSelf: true },
+        { id: PAL, name: 'Pal', tag: '0001', colors, ready: false, isLeader: false, isSelf: false },
+      ],
+    });
+    social.getState().openPlayerMenu({ userId: PAL, name: 'Pal', key: PAL });
+    const html = renderToStaticMarkup(<PlayerMenu />);
+    const labels = buttons(html);
+    expect(html).toContain('#0001');
+    expect(html).toContain('In the menu');
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        'View profile',
+        'Whisper',
+        'Make leader',
+        'Kick from party',
+        'Mute',
+        'Block',
+        'Report',
+      ]),
+    );
+    expect(labels).not.toContain('Add friend');
+    expect(labels).not.toContain('Invite to party');
+    for (const b of labels) expect(b).not.toMatch(EMOJI);
+  });
+
+  it('player card for a joinable friend offers Join and Invite; strangers get Add friend', () => {
+    ui.getState().setFriends([
+      { id: PAL, name: 'Pal', tag: '0001', presence: 'inMenu', joinable: true, colors },
+    ]);
+    social.getState().openPlayerMenu({ userId: PAL, name: 'Pal', key: PAL });
+    expect(buttons(renderToStaticMarkup(<PlayerMenu />))).toEqual(
+      expect.arrayContaining(['Join party', 'Invite to party', 'Whisper']),
+    );
+    social.getState().openPlayerMenu({ userId: RIVAL, name: 'Rival', key: RIVAL });
+    let labels = buttons(renderToStaticMarkup(<PlayerMenu />));
+    expect(labels).toContain('Add friend');
+    expect(labels).not.toContain('Whisper');
+    social.getState().setRequests([{ userId: RIVAL, name: 'Rival', tag: '0002', at: 1, colors }], []);
+    labels = buttons(renderToStaticMarkup(<PlayerMenu />));
+    expect(labels).toContain('Accept friend');
   });
 
   it('report dialog lists every reason and starts disabled', () => {

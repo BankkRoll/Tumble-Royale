@@ -23,7 +23,6 @@ export {
   social,
   useSocial,
   visibleChat,
-  CHAT_HISTORY,
   PRESENCE_LABEL,
   type SocialState,
   type SocialAvailability,
@@ -35,3 +34,20 @@ export {
   type ChatVisibility,
   type VisibleChatLine,
 } from './social.ts';
+export {
+  CHANNEL_LABEL,
+  CHANNEL_ORDER,
+  CHAT_HELP,
+  CHAT_KEEP,
+  INITIAL_CHAT,
+  channelOf,
+  linesOf,
+  parseChatInput,
+  reduceChat,
+  type ChatAction,
+  type ChatChannel,
+  type ChatCommand,
+  type ChatState,
+  type CommandContext,
+  type WhisperTarget,
+} from './chatChannels.ts';

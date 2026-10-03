@@ -1,0 +1,298 @@
+/* UI preview harness: fake 3D backdrop + dev menu. Not shipped with the game. */
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #5aa9ff;
+}
+#fake3d {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+#ui {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+}
+#dev {
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+}
+
+/* Fake world */
+.fw {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.fw-sky {
+  position: absolute;
+  inset: -20%;
+  background: linear-gradient(180deg, #4f9dff 0%, #8cc6ff 40%, #ffd6f2 75%, #ffe9c7 100%);
+  animation: fw-hue 30s ease-in-out infinite alternate;
+}
+@keyframes fw-hue {
+  to {
+    filter: hue-rotate(-25deg) saturate(1.15);
+  }
+}
+.fw--playerWall .fw-sky,
+.fw--victory .fw-sky,
+.fw--winnerCam .fw-sky {
+  background: linear-gradient(180deg, #2b1a5e, #5b3ab0 60%, #ff9ad5);
+}
+.fw-island {
+  position: absolute;
+  width: 14vmin;
+  height: 6vmin;
+  border-radius: 50% 50% 45% 45% / 40% 40% 60% 60%;
+  background: linear-gradient(180deg, #9be34f 0 35%, #c98b5a 36%);
+  box-shadow: 0 1.2vmin 0 rgba(43, 26, 94, 0.15);
+  animation: fw-float 9s ease-in-out infinite;
+  opacity: 0.85;
+}
+@keyframes fw-float {
+  50% {
+    translate: 0 -2.4vmin;
+  }
+}
+.fw-lobby {
+  position: absolute;
+  left: 50%;
+  bottom: 12%;
+  width: min(60vmin, 520px);
+  height: 40vmin;
+  transform: translateX(-50%);
+  transition: transform 800ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+.fw-lobby--locker,
+.fw-lobby--store,
+.fw-lobby--pass {
+  transform: translateX(-80%) scale(1.25);
+}
+.fw-lobby--profile {
+  transform: translateX(-20%) scale(1.1);
+}
+.fw-platform {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 9vmin;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 30%, #fff 0 20%, #ffd6f2 60%, #ff9ad5);
+  border: 0.5vmin solid #2b1a5e;
+  box-shadow: 0 1.6vmin 0 #2b1a5e;
+}
+.fw-me,
+.fw-mate,
+.fw-crowd {
+  position: absolute;
+  bottom: 4.5vmin;
+  animation: fw-idle 1.6s ease-in-out infinite;
+}
+.fw-me {
+  left: 50%;
+  translate: -50% 0;
+}
+.fw-mate {
+  translate: -50% 0;
+}
+.fw-crowd {
+  translate: -50% 0;
+  animation-duration: 0.7s;
+}
+@keyframes fw-idle {
+  50% {
+    transform: translateY(-1.2vmin) scale(0.97, 1.03);
+  }
+}
+.fw-course {
+  position: absolute;
+  inset: 0;
+  perspective: 60vmin;
+}
+.fw-floor {
+  position: absolute;
+  left: -50%;
+  right: -50%;
+  bottom: -30%;
+  height: 120%;
+  transform: rotateX(72deg);
+  transform-origin: bottom;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.35) 0 8vmin, transparent 8vmin 16vmin),
+    repeating-linear-gradient(0deg, #ff9ad5 0 10vmin, #ffd23f 10vmin 20vmin);
+  animation: fw-scroll 1.2s linear infinite;
+}
+@keyframes fw-scroll {
+  to {
+    background-position:
+      0 0,
+      0 20vmin;
+  }
+}
+.fw-runner {
+  position: absolute;
+  left: 50%;
+  bottom: 14%;
+  translate: -50% 0;
+  animation: fw-run 0.45s ease-in-out infinite;
+}
+@keyframes fw-run {
+  50% {
+    transform: translateY(-2vmin) rotate(-4deg);
+  }
+}
+
+/* Dev menu */
+.dev-menu {
+  position: fixed;
+  left: 8px;
+  top: 8px;
+  bottom: 8px;
+  width: 290px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 12px;
+  background: rgba(20, 14, 44, 0.9);
+  color: #f3eeff;
+  font:
+    12px/1.3 ui-sans-serif,
+    system-ui,
+    sans-serif;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(6px);
+}
+.dev-menu button,
+.dev-menu select,
+.dev-menu input {
+  font: inherit;
+}
+.dev-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dev-head b {
+  flex: 1;
+}
+.dev-screen {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: #ffd23f;
+  color: #2b1a5e;
+  font-weight: 700;
+}
+.dev-head button,
+.dev-row button {
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: #3a2c72;
+  color: #fff;
+  cursor: pointer;
+}
+.dev-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.dev-go {
+  background: #ff4f9a !important;
+  font-weight: 700;
+}
+.dev-fast {
+  background: #8a5cff !important;
+}
+.dev-toggles label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 4px;
+  border-radius: 5px;
+  background: #2a2058;
+}
+.dev-toggles input[type='range'] {
+  width: 70px;
+}
+.dev-search {
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid #4a3a86;
+  background: #1c1440;
+  color: #fff;
+}
+.dev-list {
+  flex: 1;
+  overflow: auto;
+}
+.dev-list h4,
+.dev-log h4 {
+  margin: 8px 0 3px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #b8a8ff;
+}
+.dev-list button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 4px 8px;
+  margin: 1px 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #f3eeff;
+  cursor: pointer;
+}
+.dev-list button:hover {
+  background: #3a2c72;
+}
+.dev-list button.is-active {
+  background: #ffd23f;
+  color: #2b1a5e;
+  font-weight: 700;
+}
+.dev-log {
+  max-height: 150px;
+  overflow: auto;
+  font-family: ui-monospace, monospace;
+  font-size: 10.5px;
+  color: #c9f7e6;
+  border-top: 1px solid #3a2c72;
+}
+.dev-log div {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dev-fab {
+  position: fixed;
+  left: 8px;
+  bottom: 8px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 0;
+  background: rgba(20, 14, 44, 0.85);
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+}
+@media (max-width: 760px) {
+  .dev-menu {
+    width: auto;
+    right: 8px;
+    top: auto;
+    height: 45vh;
+  }
+}

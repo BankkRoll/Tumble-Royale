@@ -1,0 +1,78 @@
+/**
+ * Root overlay component: stacks every layer (screen, HUD, stamps, confetti,
+ * toasts, sheets, dialogs, connection curtain, wipe) and mirrors accessibility
+ * settings onto the root element as data attributes / CSS variables.
+ */
+import { useEffect, useRef, type JSX } from 'react';
+import { ConnectionLayer, DialogLayer, ToastLayer } from './components/system.tsx';
+import { Hud } from './hud/Hud.tsx';
+import { SettingsSheet } from './screens/overlays/SettingsSheet.tsx';
+import { FriendsSheet, NotificationsPanel } from './screens/overlays/SocialSheets.tsx';
+import { ScreenLayer } from './screens/ScreenLayer.tsx';
+import { useUI } from './store/uiStore.ts';
+import { installEasingVars } from './theme/motion.ts';
+import { ConfettiLayer } from './transitions/Confetti.tsx';
+import { StampLayer } from './transitions/StampLayer.tsx';
+import { TumbleWipe } from './transitions/TumbleWipe.tsx';
+
+function OverlayLayer(): JSX.Element | null {
+  const overlay = useUI((s) => s.overlay);
+  switch (overlay) {
+    case 'settings':
+      return <SettingsSheet />;
+    case 'friends':
+      return <FriendsSheet />;
+    case 'notifications':
+      return <NotificationsPanel />;
+    default:
+      return null;
+  }
+}
+
+function HudLayer(): JSX.Element | null {
+  const inRound = useUI((s) => s.screen === 'round');
+  return inRound ? <Hud /> : null;
+}
+
+/** The whole overlay. Rendered by `mountUI`. */
+export function App(): JSX.Element {
+  const a = useUI((s) => s.settings.accessibility);
+  const streamer = useUI((s) => s.settings.gameplay.streamerMode);
+  const screen = useUI((s) => s.screen);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (ref.current) installEasingVars(ref.current);
+  }, []);
+
+  return (
+    <div
+      ref={ref}
+      className="tr-root"
+      onScroll={(e) => {
+        // Focus changes can scroll even overflow:hidden boxes; the overlay must never drift.
+        e.currentTarget.scrollTop = 0;
+        e.currentTarget.scrollLeft = 0;
+      }}
+      data-cb={a.colorBlind}
+      data-reduce-motion={String(a.reduceMotion)}
+      data-reduce-flashing={String(a.reduceFlashing)}
+      data-reduce-shake={String(a.reduceShake)}
+      data-streamer={String(streamer)}
+      data-screen={screen}
+      style={{ ['--ui-scale' as string]: String(a.uiScale) }}
+    >
+      <div className="tr-stage">
+        <ScreenLayer />
+        <HudLayer />
+        <StampLayer />
+      </div>
+      <ConfettiLayer />
+      <ToastLayer />
+      <OverlayLayer />
+      <DialogLayer />
+      <ConnectionLayer />
+      <TumbleWipe />
+    </div>
+  );
+}

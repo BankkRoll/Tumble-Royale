@@ -1,0 +1,655 @@
+/*
+ * Tumble Royale UI — in-round HUD, countdown, spectate bar, eliminated sheet,
+ * emote wheel and touch controls.
+ */
+
+.tr-hud {
+  position: absolute;
+  inset: 0;
+  padding: calc(var(--safe-t) + 0.8em) calc(var(--safe-r) + 1em) calc(var(--safe-b) + 0.8em)
+    calc(var(--safe-l) + 1em);
+  transition: opacity 300ms;
+  animation: tr-fade-in 300ms ease-out;
+}
+.tr-hud.is-countdown .tr-hud-top {
+  opacity: 0.6;
+}
+.tr-hud-top {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
+  gap: 1em;
+  transition: opacity 300ms;
+}
+.tr-hud-tl {
+  display: grid;
+  justify-items: start;
+  gap: 0.5em;
+}
+.tr-hud-tc {
+  display: grid;
+  justify-items: center;
+  gap: 0.5em;
+}
+.tr-hud-tr {
+  display: grid;
+  justify-items: end;
+  gap: 0.5em;
+}
+
+/* Timer */
+.tr-hud-timer {
+  --t: var(--cloud);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.2em 0.9em 0.2em 0.25em;
+  border-radius: 999px;
+  border: 0.16em solid var(--ink);
+  background: var(--t);
+  box-shadow: 0 0.2em 0 var(--ink);
+  animation: tr-spring-up 500ms var(--ease-spring) backwards;
+}
+.tr-hud-timer-ring {
+  display: grid;
+  place-items: center;
+  width: 2.2em;
+  height: 2.2em;
+  border-radius: 50%;
+  border: 0.13em solid var(--ink);
+  background:
+    radial-gradient(circle, #fff 0 52%, transparent 53%),
+    conic-gradient(var(--sky) var(--p), rgba(43, 26, 94, 0.15) 0);
+  font-size: 0.85em;
+}
+.tr-hud-timer-val {
+  display: inline-block;
+  font-family: var(--font-display);
+  font-size: 1.6em;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+}
+.tr-hud-timer.is-warn {
+  --t: color-mix(in srgb, var(--warn) 45%, white);
+}
+.tr-hud-timer.is-crit {
+  --t: var(--bad);
+  color: #fff;
+}
+.tr-hud-timer.is-crit .tr-hud-timer-val {
+  -webkit-text-stroke: 0.08em var(--ink);
+  paint-order: stroke fill;
+  animation: tr-tick-pop 1s ease-out;
+}
+@keyframes tr-tick-pop {
+  0% {
+    transform: scale(1.45);
+  }
+  30% {
+    transform: scale(0.95);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.tr-hud-timer.is-over {
+  --t: var(--warn);
+  animation: tr-pulse 0.7s ease-in-out infinite;
+}
+.tr-root[data-reduce-flashing='true'] .tr-hud-timer.is-over {
+  animation: none;
+}
+
+/* Qualified counter */
+.tr-hud-qual {
+  display: grid;
+  justify-items: center;
+  padding: 0.25em 1.1em 0.35em;
+  border-radius: 0.9em;
+  border: 0.18em solid var(--ink);
+  background: linear-gradient(180deg, #fff, var(--cream));
+  box-shadow: 0 0.24em 0 var(--ink);
+  transform: rotate(-1.5deg);
+  animation: tr-drop-in 600ms var(--ease-spring-wobbly) backwards;
+}
+.tr-hud-qual-label {
+  font-family: var(--font-display);
+  font-size: 0.85em;
+  letter-spacing: 0.1em;
+  color: var(--ink-soft);
+}
+.tr-hud-qual-num {
+  font-family: var(--font-display);
+  font-size: 2.1em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.tr-hud-qual-cur {
+  display: inline-block;
+  color: var(--bubblegum);
+  -webkit-text-stroke: 0.06em var(--ink);
+  paint-order: stroke fill;
+}
+.tr-hud-qual-of {
+  font-size: 0.6em;
+  margin-left: 0.15em;
+}
+.tr-hud-qual.is-full {
+  background: linear-gradient(180deg, #fff, color-mix(in srgb, var(--good) 55%, white));
+}
+.tr-hud-qual.is-full .tr-hud-qual-cur {
+  color: var(--good);
+}
+
+/* Objective */
+.tr-hud-objective {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  max-width: 22em;
+  padding: 0.3em 0.9em 0.3em 0.5em;
+  border-radius: 999px;
+  border: 0.14em solid var(--ink);
+  background: var(--lemon);
+  box-shadow: 0 0.16em 0 var(--ink);
+  font-weight: 700;
+  overflow: hidden;
+  transition:
+    max-width 400ms var(--ease-back-out),
+    padding 400ms;
+  animation: tr-slide-in-left 500ms var(--ease-spring) 200ms backwards;
+}
+.tr-hud-objective-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tr-hud-objective.is-collapsed {
+  max-width: 2.6em;
+  padding-right: 0.5em;
+}
+.tr-hud-objective.is-collapsed .tr-hud-objective-text {
+  opacity: 0;
+}
+
+/* Race progress */
+.tr-hud-race {
+  width: min(28em, 60vw);
+}
+.tr-hud-race-track {
+  position: relative;
+  height: 1.1em;
+  border-radius: 999px;
+  border: 0.14em solid var(--ink);
+  background: rgba(255, 255, 255, 0.75);
+  box-shadow: 0 0.14em 0 var(--ink);
+}
+.tr-hud-race-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  opacity: 0.55;
+  transition: width 300ms linear;
+}
+.tr-hud-race-leader {
+  position: absolute;
+  top: 50%;
+  width: 1.5em;
+  height: 1.5em;
+  margin-left: -0.75em;
+  margin-top: -0.75em;
+  border-radius: 50%;
+  border: 0.12em solid var(--ink);
+  display: grid;
+  place-items: center;
+  font-size: 0.7em;
+  font-weight: 800;
+  color: #fff;
+  -webkit-text-stroke: 0.04em var(--ink);
+  transition: left 300ms linear;
+}
+.tr-hud-race-you {
+  position: absolute;
+  top: 50%;
+  width: 1.3em;
+  height: 1.3em;
+  margin-left: -0.65em;
+  margin-top: -0.65em;
+  border: 0.16em solid var(--ink);
+  border-radius: 0.25em;
+  transform: rotate(45deg);
+  box-shadow: 0 0 0 0.14em #fff;
+  transition: left 300ms linear;
+  animation: tr-you-bob 900ms ease-in-out infinite;
+  z-index: 2;
+}
+@keyframes tr-you-bob {
+  50% {
+    transform: rotate(45deg) translate(-0.12em, -0.12em) scale(1.12);
+  }
+}
+.tr-hud-race-flag {
+  position: absolute;
+  right: -0.6em;
+  top: 50%;
+  transform: translateY(-60%);
+  font-size: 1.3em;
+}
+
+/* Team scores */
+.tr-hud-teams {
+  display: grid;
+  gap: 0.35em;
+  justify-items: end;
+}
+.tr-hud-team {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6em;
+  min-width: 9em;
+  padding: 0.25em 0.4em 0.25em 0.9em;
+  border-radius: 999px;
+  border: 0.15em solid var(--ink);
+  background: var(--team);
+  box-shadow: 0 0.16em 0 var(--ink);
+  color: #fff;
+  font-weight: 700;
+  -webkit-text-stroke: 0.04em var(--ink);
+  paint-order: stroke fill;
+}
+.tr-hud-team.is-mine {
+  box-shadow:
+    0 0 0 0.16em #fff,
+    0 0 0 0.3em var(--ink);
+  transform: scale(1.06);
+}
+.tr-hud-team-name {
+  flex: 1;
+}
+.tr-hud-team-score {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2em;
+  padding: 0.05em 0.4em;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  -webkit-text-stroke: 0;
+  font-family: var(--font-display);
+  font-size: 1.1em;
+  animation: tr-pop-in 300ms var(--ease-spring);
+}
+.tr-hud-team-crown {
+  position: absolute;
+  left: -0.6em;
+  top: -0.7em;
+  -webkit-text-stroke: 0;
+}
+
+/* Net stats */
+.tr-hud-net {
+  display: inline-flex;
+  gap: 0.6em;
+  padding: 0.15em 0.6em;
+  border-radius: 999px;
+  background: rgba(43, 26, 94, 0.55);
+  color: #fff;
+  font-size: 0.72em;
+  font-variant-numeric: tabular-nums;
+}
+.tr-hud-net .is-good {
+  color: #8ff5d0;
+}
+.tr-hud-net .is-warn {
+  color: #ffe08a;
+}
+.tr-hud-net .is-bad {
+  color: #ff9ab8;
+}
+
+/* Controls hint */
+.tr-hud-hint {
+  left: calc(var(--safe-l) + 1em);
+  transform: none;
+  display: flex;
+  gap: 0.8em;
+  animation: tr-fade-in 400ms 600ms backwards;
+}
+.tr-hud-hint-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2em;
+}
+
+/* High-contrast HUD */
+.tr-hud.is-contrast .tr-hud-qual,
+.tr-hud.is-contrast .tr-hud-timer,
+.tr-hud.is-contrast .tr-hud-objective {
+  background: var(--ink);
+  color: #fff;
+}
+.tr-hud.is-contrast .tr-hud-qual-label {
+  color: var(--lemon);
+}
+.tr-hud.is-contrast .tr-hud-race-track {
+  background: var(--ink);
+}
+
+/* Countdown */
+.tr-countdown {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 20;
+}
+.tr-countdown-num {
+  font-family: var(--font-display);
+  font-size: clamp(7em, 30vh, 16em);
+  line-height: 1;
+  color: var(--lemon);
+  -webkit-text-stroke: 0.08em var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 0 0.06em 0 var(--ink);
+  animation: tr-count 1000ms linear both;
+}
+.tr-countdown-num--2 {
+  color: var(--warn);
+}
+.tr-countdown-num--1 {
+  color: var(--bubblegum);
+}
+@keyframes tr-count {
+  0% {
+    transform: scale(0) rotate(-20deg);
+    opacity: 0;
+    animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  30% {
+    transform: scale(1.25) rotate(4deg);
+    opacity: 1;
+  }
+  42% {
+    transform: scale(1) rotate(0);
+  }
+  80% {
+    transform: scale(1);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.36, 0, 0.66, -0.56);
+  }
+  100% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+}
+
+/* Spectate */
+.tr-spectate {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--safe-b) + 1em);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  animation: tr-spring-up 520ms var(--ease-spring) backwards;
+}
+.tr-spectate-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  min-width: 16em;
+  max-width: 60vw;
+  padding: 0.35em 1em 0.35em 0.5em;
+  border-radius: 1.1em;
+  border: 0.16em solid var(--ink);
+  background: var(--cream);
+  box-shadow: var(--shadow-hard);
+  animation: tr-flip-in 420ms var(--ease-spring);
+}
+.tr-spectate-label {
+  position: absolute;
+  top: -1.1em;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.05em 0.7em;
+  border-radius: 999px;
+  border: 0.12em solid var(--ink);
+  background: var(--grape);
+  color: #fff;
+}
+
+/* Eliminated choice sheet */
+.tr-elim-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  place-items: center;
+  padding: 1em 1em calc(var(--safe-b) + 1.2em);
+  background: linear-gradient(180deg, transparent, rgba(43, 26, 94, 0.55));
+  animation: tr-sheet-up 620ms var(--ease-spring) backwards;
+  z-index: 22;
+}
+@keyframes tr-sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+.tr-elim-panel {
+  display: grid;
+  justify-items: center;
+  gap: 0.8em;
+  --tilt: -1deg;
+}
+
+/* Captions */
+.tr-caption {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--safe-b) + 5.5em);
+  transform: translateX(-50%);
+  max-width: 80vw;
+  padding: 0.4em 1em;
+  border-radius: 0.8em;
+  background: rgba(20, 12, 50, 0.85);
+  color: #fff;
+  text-align: center;
+  animation: tr-fade-in 200ms;
+}
+
+/* Emote wheel */
+.tr-emote-wheel {
+  position: absolute;
+  inset: 0;
+  z-index: 24;
+  background: radial-gradient(circle, rgba(43, 26, 94, 0.35), rgba(43, 26, 94, 0) 60%);
+  animation: tr-fade-in 150ms;
+}
+.tr-emote-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 17em;
+  height: 17em;
+  margin: -8.5em 0 0 -8.5em;
+  border-radius: 50%;
+  border: 0.2em solid var(--ink);
+  background: radial-gradient(circle, transparent 0 32%, rgba(255, 247, 234, 0.92) 33%);
+  animation: tr-pop-in 260ms var(--ease-spring);
+}
+.tr-emote-slot {
+  position: absolute;
+  display: grid;
+  justify-items: center;
+  width: 4em;
+  margin: -2em 0 0 -2em;
+  animation: tr-pop-in 300ms var(--ease-spring) backwards;
+  transition: transform 160ms var(--ease-back-out);
+}
+.tr-emote-icon {
+  display: grid;
+  place-items: center;
+  width: 2.4em;
+  height: 2.4em;
+  border-radius: 50%;
+  border: 0.14em solid var(--ink);
+  background: var(--cloud);
+  font-size: 1.3em;
+  box-shadow: 0 0.14em 0 var(--ink);
+}
+.tr-emote-slot.is-ping .tr-emote-icon {
+  background: color-mix(in srgb, var(--sky) 35%, white);
+}
+.tr-emote-label {
+  margin-top: 0.15em;
+  font-size: 0.7em;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.tr-emote-slot.is-hover {
+  transform: scale(1.25);
+  z-index: 2;
+}
+.tr-emote-slot.is-hover .tr-emote-icon {
+  background: var(--lemon);
+}
+.tr-emote-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-display);
+  color: #fff;
+  -webkit-text-stroke: 0.08em var(--ink);
+  paint-order: stroke fill;
+  font-size: 1.1em;
+  text-transform: uppercase;
+}
+
+/* Touch controls */
+.tr-touch {
+  --tb: 1;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.tr-touch-stick-zone {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 42%;
+  height: 60%;
+  touch-action: none;
+}
+.tr-touch.is-left .tr-touch-stick-zone {
+  left: auto;
+  right: 0;
+}
+.tr-touch-stick {
+  position: fixed;
+  width: 8em;
+  height: 8em;
+  margin: -4em 0 0 -4em;
+  border-radius: 50%;
+  border: 0.18em solid rgba(43, 26, 94, 0.7);
+  background: rgba(255, 255, 255, 0.25);
+  display: grid;
+  place-items: center;
+}
+.tr-touch-stick--idle {
+  position: absolute;
+  left: calc(var(--safe-l) + 6em);
+  top: auto;
+  bottom: calc(var(--safe-b) + 2.5em);
+  margin: 0 0 0 -4em;
+  opacity: 0.55;
+}
+.tr-touch-knob {
+  width: 3.4em;
+  height: 3.4em;
+  border-radius: 50%;
+  border: 0.18em solid var(--ink);
+  background: radial-gradient(circle at 35% 30%, #fff, var(--cream));
+  box-shadow: 0 0.18em 0 var(--ink);
+}
+.tr-touch-buttons {
+  position: absolute;
+  right: calc(var(--safe-r) + 1em);
+  bottom: calc(var(--safe-b) + 1em);
+  width: calc(12em * var(--tb));
+  height: calc(12em * var(--tb));
+}
+.tr-touch.is-left .tr-touch-buttons {
+  right: auto;
+  left: calc(var(--safe-l) + 1em);
+}
+.tr-touch-btn {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  border-radius: 50%;
+  border: 0.18em solid var(--ink) !important;
+  background: rgba(255, 247, 234, 0.9) !important;
+  box-shadow: 0 0.2em 0 var(--ink);
+  font-size: calc(1em * var(--tb));
+  touch-action: none;
+  pointer-events: auto;
+}
+.tr-touch-btn > span {
+  font-size: 1.6em;
+  line-height: 1;
+}
+.tr-touch-btn > small {
+  font-size: 0.65em;
+  font-weight: 700;
+}
+.tr-touch-btn:active {
+  transform: scale(0.92);
+  background: var(--lemon) !important;
+}
+.tr-touch-btn--jump {
+  right: 0;
+  bottom: 0;
+  width: 5.6em;
+  height: 5.6em;
+  background: var(--lemon) !important;
+}
+.tr-touch-btn--dive {
+  right: 6.2em;
+  bottom: 0.4em;
+  width: 4.2em;
+  height: 4.2em;
+}
+.tr-touch-btn--grab {
+  right: 0.6em;
+  bottom: 6.2em;
+  width: 4.2em;
+  height: 4.2em;
+}
+.tr-touch-btn--emote {
+  right: 6em;
+  bottom: 6em;
+  width: 3em;
+  height: 3em;
+}
+@media (max-width: 760px) {
+  .tr-hud-top {
+    grid-template-columns: auto 1fr;
+  }
+  .tr-hud-tc {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .tr-hud-qual-num {
+    font-size: 1.6em;
+  }
+  .tr-hud-objective {
+    max-width: 14em;
+  }
+}

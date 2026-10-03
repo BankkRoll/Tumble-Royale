@@ -46,3 +46,13 @@ they work on both backends.
 Controllers take feet positions; the body sits at the capsule centre. Round
 data authors floor points, so spawn/respawn only add a few centimetres of
 clearance (`SPAWN_LIFT`).
+
+## Bloom only above rim light; no screen-space edge outline
+
+The toon material's rim light is written to the emissive target that feeds
+selective bloom, so with a low threshold every silhouette glowed and the
+image looked hazy. Themes now bloom above 0.75, which is brighter than any
+rim, so only real emissives (telegraphs, lights, VFX) glow. The screen-space
+edge outline is off in every preset: it traced blob-shadow decals as squares
+under each Tumbler and fringed edges, while characters already carry an
+inverted-hull outline.

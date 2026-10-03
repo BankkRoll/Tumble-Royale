@@ -44,7 +44,7 @@ const candy: ThemeDefinitionInput = {
     gain: [1.02, 1, 1.02],
     vignette: 0.22,
   },
-  bloom: { strength: 0.77, threshold: 0.32, radius: 0.45 },
+  bloom: { strength: 0.42, threshold: 0.75, radius: 0.45 },
   weather: { default: 'clear', allowed: ['clear', 'windy', 'sunset', 'night', 'stormy'], wind: 0.2 },
 };
 
@@ -85,7 +85,7 @@ const factory: ThemeDefinitionInput = {
     gain: [1.03, 1.01, 0.98],
     vignette: 0.28,
   },
-  bloom: { strength: 0.66, threshold: 0.33, radius: 0.4 },
+  bloom: { strength: 0.36, threshold: 0.75, radius: 0.4 },
   weather: { default: 'clear', allowed: ['clear', 'windy', 'night', 'stormy'], wind: 0.15 },
 };
 
@@ -126,7 +126,7 @@ const frosty: ThemeDefinitionInput = {
     gain: [0.98, 1, 1.04],
     vignette: 0.2,
   },
-  bloom: { strength: 0.99, threshold: 0.31, radius: 0.5 },
+  bloom: { strength: 0.54, threshold: 0.75, radius: 0.45 },
   weather: { default: 'snow', allowed: ['snow', 'clear', 'windy', 'night', 'stormy'], wind: 0.35 },
 };
 
@@ -167,7 +167,7 @@ const jungle: ThemeDefinitionInput = {
     gain: [1.02, 1.03, 0.97],
     vignette: 0.26,
   },
-  bloom: { strength: 0.66, threshold: 0.33, radius: 0.45 },
+  bloom: { strength: 0.36, threshold: 0.75, radius: 0.45 },
   weather: { default: 'clear', allowed: ['clear', 'windy', 'stormy', 'sunset'], wind: 0.25 },
 };
 
@@ -215,7 +215,7 @@ const sunset: ThemeDefinitionInput = {
     gain: [1.05, 0.99, 0.96],
     vignette: 0.3,
   },
-  bloom: { strength: 1.1, threshold: 0.3, radius: 0.55 },
+  bloom: { strength: 0.61, threshold: 0.75, radius: 0.45 },
   weather: { default: 'sunset', allowed: ['sunset', 'clear', 'windy'], wind: 0.2 },
 };
 
@@ -256,7 +256,7 @@ const space: ThemeDefinitionInput = {
     gain: [1, 0.99, 1.05],
     vignette: 0.35,
   },
-  bloom: { strength: 1.76, threshold: 0.25, radius: 0.6 },
+  bloom: { strength: 0.85, threshold: 0.75, radius: 0.45 },
   weather: { default: 'night', allowed: ['night', 'clear'], wind: 0.05 },
 };
 
@@ -297,7 +297,7 @@ const beach: ThemeDefinitionInput = {
     gain: [1.02, 1.01, 0.99],
     vignette: 0.2,
   },
-  bloom: { strength: 0.66, threshold: 0.33, radius: 0.45 },
+  bloom: { strength: 0.36, threshold: 0.75, radius: 0.45 },
   weather: { default: 'clear', allowed: ['clear', 'windy', 'sunset', 'stormy'], wind: 0.3 },
 };
 
@@ -345,7 +345,7 @@ const neon: ThemeDefinitionInput = {
     gain: [1.02, 0.98, 1.05],
     vignette: 0.38,
   },
-  bloom: { strength: 1.5, threshold: 0.3, radius: 0.6 },
+  bloom: { strength: 0.83, threshold: 0.75, radius: 0.45 },
   weather: { default: 'night', allowed: ['night', 'stormy'], wind: 0.1 },
 };
 
@@ -386,7 +386,7 @@ const castle: ThemeDefinitionInput = {
     gain: [1.02, 1, 0.99],
     vignette: 0.26,
   },
-  bloom: { strength: 0.7, threshold: 0.33, radius: 0.45 },
+  bloom: { strength: 0.39, threshold: 0.75, radius: 0.45 },
   weather: { default: 'clear', allowed: ['clear', 'night', 'stormy', 'windy', 'sunset'], wind: 0.2 },
 };
 
@@ -427,7 +427,7 @@ const goo: ThemeDefinitionInput = {
     gain: [1.01, 1.02, 1.01],
     vignette: 0.27,
   },
-  bloom: { strength: 0.99, threshold: 0.3, radius: 0.5 },
+  bloom: { strength: 0.54, threshold: 0.75, radius: 0.45 },
   weather: { default: 'clear', allowed: ['clear', 'stormy', 'night', 'sunset'], wind: 0.15 },
 };
 

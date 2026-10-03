@@ -104,7 +104,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityTier, QualityPreset>> = {
     shadowMapSize: 2048,
     cascades: 3,
     shadowDistance: 160,
-    post: { enabled: true, aa: 'smaa', bloom: true, outline: true, chromatic: true, resolutionScale: 1 },
+    post: { enabled: true, aa: 'smaa', bloom: true, outline: false, chromatic: true, resolutionScale: 1 },
     geometryDetail: 1,
     environment: {
       clouds: 40,
@@ -129,7 +129,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityTier, QualityPreset>> = {
     shadowMapSize: 4096,
     cascades: 3,
     shadowDistance: 220,
-    post: { enabled: true, aa: 'smaa', bloom: true, outline: true, chromatic: true, resolutionScale: 1 },
+    post: { enabled: true, aa: 'smaa', bloom: true, outline: false, chromatic: true, resolutionScale: 1 },
     geometryDetail: 2,
     environment: {
       clouds: 52,

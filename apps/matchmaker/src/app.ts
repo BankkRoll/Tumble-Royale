@@ -40,8 +40,14 @@ const RegisterBody = z.object({
   region: z.string().min(2).max(8),
   capacity: z.number().int().min(1).max(100_000),
   load: z.number().int().min(0).default(0),
+  humans: z.number().int().min(0).optional(),
 });
-const HeartbeatBody = z.object({ serverId: z.string().min(1).max(64), load: z.number().int().min(0) });
+const HeartbeatBody = z.object({
+  serverId: z.string().min(1).max(64),
+  load: z.number().int().min(0),
+  /** Humans connected to the server's rooms (older servers omit it). */
+  humans: z.number().int().min(0).optional(),
+});
 const SettingsSchema = z
   .object({
     playlistId: z.string().min(1).max(64),
@@ -140,6 +146,12 @@ export async function buildMatchmaker(
     servers: (await mm.servers()).length,
   }));
 
+  // Public and unauthenticated: the Play tab shows these counts before sign-in.
+  app.get('/stats', async (_req, reply) => {
+    reply.header('cache-control', 'public, max-age=5');
+    return mm.stats();
+  });
+
   // --- Queue -----------------------------------------------------------------
   app.post('/queue', async (req) => {
     const p = await player(req);
@@ -176,13 +188,14 @@ export async function buildMatchmaker(
       region: b.region,
       capacity: b.capacity,
       load: b.load,
+      ...(b.humans !== undefined ? { humans: b.humans } : {}),
     });
   });
 
   app.post('/servers/heartbeat', async (req) => {
     gameServer(req);
     const b = parse(HeartbeatBody, req.body);
-    return mm.heartbeat(b.serverId, b.load);
+    return mm.heartbeat(b.serverId, b.load, b.humans);
   });
 
   app.delete('/servers/:id', async (req, reply) => {

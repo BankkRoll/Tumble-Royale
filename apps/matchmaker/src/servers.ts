@@ -13,12 +13,29 @@ export interface GameServer {
   capacity: number;
   /** Players currently hosted or reserved. */
   load: number;
+  /** Humans connected to its rooms at the last heartbeat (unlike `load`, never includes reservations). */
+  humans?: number;
   /** Epoch ms of the last heartbeat. */
   lastSeen: number;
 }
 
 /** A server is considered dead after this long without a heartbeat. */
 export const SERVER_TTL_MS = 15_000;
+
+/**
+ * Humans in game-server rooms right now, from live servers' heartbeats.
+ * Servers that predate the `humans` field report their load instead (the
+ * game server's load is its connected humans).
+ *
+ * @param servers - Registry snapshot.
+ * @param now - Current time (epoch ms).
+ * @returns Player count.
+ */
+export function humansInRooms(servers: readonly GameServer[], now: number): number {
+  let n = 0;
+  for (const s of servers) if (now - s.lastSeen <= SERVER_TTL_MS) n += s.humans ?? s.load;
+  return n;
+}
 
 /**
  * Picks the least-loaded live server in a region with room for `seats`.

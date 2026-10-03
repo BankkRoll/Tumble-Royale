@@ -196,7 +196,9 @@ export class OnlineShowSession extends ShowSession {
         status: 'searching',
         startedAt: Date.now(),
         playersFound: 1,
-        playersNeeded: 40,
+        playersNeeded:
+          (this.opts.playlistId ? getPlaylist(this.opts.playlistId) : undefined)?.maxPlayers ??
+          MAIN.maxPlayers,
         etaSec: -1,
         region: 'Local server',
       });

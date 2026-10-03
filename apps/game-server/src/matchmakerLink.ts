@@ -16,6 +16,8 @@ export interface MatchmakerLinkOptions {
   capacity: number;
   /** Current player load. */
   load: () => number;
+  /** Humans connected to rooms (the matchmaker's public "online" count). */
+  humans?: () => number;
   log?: (msg: string) => void;
 }
 
@@ -55,13 +57,18 @@ export function startMatchmakerLink(opts: MatchmakerLinkOptions): MatchmakerLink
         region: opts.region,
         capacity: opts.capacity,
         load: opts.load(),
+        ...(opts.humans ? { humans: opts.humans() } : {}),
       });
       if (registered) opts.log?.(`[matchmaker] registered ${opts.serverId} at ${opts.publicUrl}`);
       return;
     }
     // A matchmaker restart forgets us; re-register when the heartbeat is refused.
-    if (!(await call('/servers/heartbeat', 'POST', { serverId: opts.serverId, load: opts.load() })))
-      registered = false;
+    const beatBody = {
+      serverId: opts.serverId,
+      load: opts.load(),
+      ...(opts.humans ? { humans: opts.humans() } : {}),
+    };
+    if (!(await call('/servers/heartbeat', 'POST', beatBody))) registered = false;
   };
   void beat();
   const timer = setInterval(() => void beat(), 5000);

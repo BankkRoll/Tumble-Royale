@@ -85,6 +85,7 @@ if (mmUrl && serverSecret) {
     region: process.env.REGION ?? 'na',
     capacity: env('SERVER_CAPACITY', 400),
     load: () => server.rooms.list().reduce((n, r) => n + r.humans, 0),
+    humans: () => server.rooms.list().reduce((n, r) => n + r.humans, 0),
     log,
   });
 }

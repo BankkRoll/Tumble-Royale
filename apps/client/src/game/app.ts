@@ -59,6 +59,7 @@ import {
   resolvePlaylist,
 } from './meta.ts';
 import { OnlineAccount } from './online/account.ts';
+import { onlineCounts, queueTarget } from './online/playerCounts.ts';
 import { MatchmakerClient, gameSocketUrl, type Lobby, type MatchFound } from './online/matchmaker.ts';
 import { ProfileStore } from './profile.ts';
 import { QualityManager } from './quality.ts';
@@ -535,12 +536,11 @@ export class GameApp {
     let up = false;
     if (this.cfg.online) up = await gameServerAvailable();
     else if (this.account?.active && this.mm) up = await this.mm.probe();
+    const mm = up && !this.cfg.online ? this.mm : null;
+    const counts = mm ? onlineCounts(await mm.stats(), mm.searching) : {};
     s.setOnlineStatus(
       up
-        ? {
-            state: 'online',
-            ...(this.mm && this.mm.searching > 0 ? { playersOnline: this.mm.searching } : {}),
-          }
+        ? { state: 'online', ...counts }
         : { state: 'offline', message: 'The game servers are offline right now.' },
     );
     if (up && !this.modePicked) s.setPlayMode('online');
@@ -645,7 +645,7 @@ export class GameApp {
       });
       return;
     }
-    this.showSearching(account.party?.members.length ?? 1);
+    this.showSearching(account.party?.members.length ?? 1, playlistId);
     try {
       const { ticket } = await this.api.queueTicket(playlistId);
       await mm.queue(ticket);
@@ -666,13 +666,13 @@ export class GameApp {
     }
   }
 
-  private showSearching(partySize: number): void {
+  private showSearching(partySize: number, playlistId: string | null): void {
     const s = ui.getState();
     s.setQueue({
       status: 'searching',
       startedAt: Date.now(),
       playersFound: partySize,
-      playersNeeded: 40,
+      playersNeeded: queueTarget(s.playlists, playlistId ?? s.selectedPlaylist),
       etaSec: -1,
       region: (this.account?.me?.region ?? 'na').toUpperCase(),
     });
@@ -683,9 +683,10 @@ export class GameApp {
   private bindMatchmaker(): void {
     const mm = this.mm;
     if (!mm) return;
-    mm.on('queued', () => {
+    mm.on('queued', (m) => {
       this.queued = true;
-      if (!this.session) this.showSearching(this.account?.party?.members.length ?? 1);
+      const playlistId = typeof m.playlistId === 'string' ? m.playlistId : null;
+      if (!this.session) this.showSearching(this.account?.party?.members.length ?? 1, playlistId);
     });
     mm.on('status', (m) => {
       if (this.session) return;

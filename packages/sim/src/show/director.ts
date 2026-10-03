@@ -30,6 +30,7 @@ import { ShowPlaylistSchema, type ShowPlaylist, type ShowPlaylistInput } from '.
 import { selectRound } from './selector.ts';
 import {
   DEFAULT_SHOW_TIMINGS,
+  type LoadingRoster,
   type RoundDriver,
   type RoundOutcome,
   type ShowEvent,
@@ -53,9 +54,15 @@ export interface ShowDirectorOptions {
   participants: readonly ShowParticipant[];
   host: ShowRoundHost;
   timings?: Partial<ShowTimings>;
-  /** Humans who have not acked LOADING in time are eliminated (spec default: true). */
+  /**
+   * Humans still loading when LOADING ends (stalled, over the hard cap or
+   * disconnected) are eliminated (spec default: true).
+   */
   lateLoadersEliminated?: boolean;
 }
+
+/** Most players a {@link LoadingRoster} names. */
+const MAX_WAITING_ON = 8;
 
 interface CurrentRound {
   round: RoundDefinition;
@@ -65,6 +72,8 @@ interface CurrentRound {
   entrants: number[];
   qualifyTarget: number | null;
   loaded: Set<number>;
+  /** LOADING time (s) each human was last heard from (load progress or reconnect). */
+  lastSeen: Map<number, number>;
   playingLimit: number;
 }
 
@@ -92,6 +101,8 @@ export class ShowDirector {
   private live: CurrentRound | null = null;
   private alive: number[];
   private readonly left = new Set<number>();
+  /** Humans whose connection dropped (they may still resume). */
+  private readonly offline = new Set<number>();
   private readonly used = new Set<string>();
   private previousType: RoundType | null = null;
   private readonly outcomes: RoundOutcome[] = [];
@@ -159,6 +170,58 @@ export class ShowDirector {
     this.live?.loaded.add(playerId);
   }
 
+  /**
+   * A human's client is still building the current round. Each report keeps
+   * them from being given up on for another `loadingStall` seconds.
+   *
+   * @param playerId - Reporting player.
+   */
+  onPlayerLoadProgress(playerId: number): void {
+    const cur = this.live;
+    if (!cur || this.roundPhase !== RoundPhase.Loading || !cur.entrants.includes(playerId)) return;
+    cur.lastSeen.set(playerId, this.elapsed);
+  }
+
+  /**
+   * A human's connection dropped or came back. Disconnected players never
+   * hold a round in LOADING; a reconnect gets a fresh stall window to resume
+   * loading in.
+   *
+   * @param playerId - The player.
+   * @param connected - New connection state.
+   */
+  onPlayerConnection(playerId: number, connected: boolean): void {
+    if (!this.byId.has(playerId)) return;
+    if (!connected) {
+      this.offline.add(playerId);
+      return;
+    }
+    this.offline.delete(playerId);
+    const cur = this.live;
+    if (cur && this.roundPhase === RoundPhase.Loading) cur.lastSeen.set(playerId, this.elapsed);
+  }
+
+  /**
+   * Who the round is waiting on while it is in LOADING (allocates; call at
+   * network rates).
+   *
+   * @returns The roster, or null outside LOADING.
+   */
+  loadingRoster(): LoadingRoster | null {
+    const cur = this.live;
+    if (!cur || this.roundPhase !== RoundPhase.Loading) return null;
+    let loaded = 0;
+    let total = 0;
+    const waitingOn: number[] = [];
+    for (const id of cur.entrants) {
+      if (this.byId.get(id)?.isBot || this.left.has(id)) continue;
+      total++;
+      if (cur.loaded.has(id)) loaded++;
+      else if (waitingOn.length < MAX_WAITING_ON && this.isBlocking(cur, id)) waitingOn.push(id);
+    }
+    return { roundId: cur.round.id, loaded, total, waitingOn };
+  }
+
   /** A participant disconnected or quit. They are out of the show. */
   onPlayerLeft(playerId: number): void {
     if (this.left.has(playerId) || !this.byId.has(playerId)) return;
@@ -218,16 +281,14 @@ export class ShowDirector {
     const t = this.timings;
     switch (this.roundPhase) {
       case RoundPhase.Loading: {
-        const allLoaded = cur.entrants.every(
-          (id) => this.byId.get(id)?.isBot || cur.loaded.has(id) || this.left.has(id),
-        );
-        if (!allLoaded && this.elapsed < this.duration) return false;
+        const capped = this.elapsed >= this.duration;
+        if (!capped && cur.entrants.some((id) => this.isBlocking(cur, id))) return false;
         if (this.lateLoadersEliminated) {
           for (const id of cur.entrants) {
             if (!this.byId.get(id)?.isBot && !cur.loaded.has(id)) cur.driver.forfeit?.(id);
           }
         }
-        this.elapsed = allLoaded ? 0 : this.elapsed - this.duration;
+        this.elapsed = capped ? this.elapsed - this.duration : 0;
         this.setRoundPhase(RoundPhase.IntroFlyover, cur.round.flyover.duration || t.introFlyover);
         return true;
       }
@@ -281,6 +342,16 @@ export class ShowDirector {
       default:
         return false;
     }
+  }
+
+  /**
+   * True while LOADING must keep waiting for this entrant: a connected human
+   * who has not acked and was heard from within the stall window.
+   */
+  private isBlocking(cur: CurrentRound, id: number): boolean {
+    if (this.byId.get(id)?.isBot || cur.loaded.has(id) || this.left.has(id) || this.offline.has(id))
+      return false;
+    return this.elapsed - (cur.lastSeen.get(id) ?? 0) < this.timings.loadingStall;
   }
 
   private timed(next: RoundPhaseId, nextDuration: number, matchTime?: number): boolean {
@@ -337,12 +408,13 @@ export class ShowDirector {
       entrants: players.map((x) => x.id),
       qualifyTarget,
       loaded: new Set(),
+      lastSeen: new Map(),
       playingLimit: Infinity,
     };
     for (const id of this.left) if (this.live.entrants.includes(id)) driver.forfeit?.(id);
     this.setShowPhase(ShowPhase.InRound, -1);
     this.emit({ type: 'roundSelected', roundIndex: index, roundId: round.id, isFinal });
-    this.setRoundPhase(RoundPhase.Loading, this.timings.loadingMax);
+    this.setRoundPhase(RoundPhase.Loading, this.timings.loadingHardCap);
   }
 
   /**

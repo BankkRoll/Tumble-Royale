@@ -24,6 +24,14 @@ export interface OfflineShowOptions {
   /** Total seats including the human. Defaults to the playlist's `maxPlayers`. */
   players?: number;
   timings?: Partial<ShowTimings>;
+  /**
+   * `auto` (default) acks the human's load the moment a round is selected
+   * (tests, headless shows). `manual` leaves LOADING open until the host
+   * calls `director.onPlayerLoaded(humanId)` once its round is built; there is
+   * nobody to wait for but the local machine, so the stall/hard-cap timers are
+   * off unless `timings` sets them.
+   */
+  localLoad?: 'auto' | 'manual';
 }
 
 /** A single-player show against bots, running entirely in the browser (or a test). */
@@ -77,6 +85,7 @@ export function createOfflineShow(opts: OfflineShowOptions): OfflineShow {
     });
   }
 
+  const manual = opts.localLoad === 'manual';
   let match: MatchSimHandle | null = null;
   const stepper = new FixedStepper(() => match?.step());
   const director = new ShowDirector({
@@ -84,7 +93,7 @@ export function createOfflineShow(opts: OfflineShowOptions): OfflineShow {
     playlist,
     rounds: opts.rounds,
     participants,
-    timings: opts.timings,
+    timings: manual ? { loadingStall: Infinity, loadingHardCap: Infinity, ...opts.timings } : opts.timings,
     host: {
       startRound(info) {
         const sim = createMatchSim(
@@ -115,7 +124,7 @@ export function createOfflineShow(opts: OfflineShowOptions): OfflineShow {
   });
   director.on((e) => {
     // Offline there is nothing to download: the human is ready the moment a round loads.
-    if (e.type === 'roundSelected' && humanId >= 0) director.onPlayerLoaded(humanId);
+    if (e.type === 'roundSelected' && humanId >= 0 && !manual) director.onPlayerLoaded(humanId);
   });
 
   return {

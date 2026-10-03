@@ -10,7 +10,7 @@ by a zod schema, so bad data fails tests rather than a live show.
 | `@tumble/content/rounds`      | `ROUNDS`, `getRound(id)`, `roundCatalog()`, `showRoundCatalog()` (excludes dev rounds such as `test-arena`). One folder per round; builders register rounds in `group-1.ts` to `group-4.ts`. |
 | `@tumble/content/shows`       | Playlists: Main Show, Duos, Squads, Chaos Mode, Ranked, First Show. Each lists its round pool, weights and qualification curve.                                                              |
 | `@tumble/content/themes`      | `getTheme(id)` for the 10 themes: palette, sky, fog, lighting, decor, colour grade, weather.                                                                                                 |
-| `@tumble/content/cosmetics`   | 108-item catalog with rarities and prices, `DEFAULT_LOADOUT`, seeded `randomLoadout`, `validateLoadout`.                                                                                     |
+| `@tumble/content/cosmetics`   | 225-item catalog with rarities and prices, `DEFAULT_LOADOUT`, seeded `randomLoadout`, `validateLoadout`.                                                                                     |
 | `@tumble/content/progression` | XP curve and levels, show rewards, challenges, the 100-tier season pass.                                                                                                                     |
 | `@tumble/content/tuning`      | `CHARACTER_TUNING` and `SURFACE_TUNING`, with a rationale per value. Keep in sync with `DEFAULT_TUNING` in `@tumble/sim/character`.                                                          |
 

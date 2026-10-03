@@ -1,15 +1,48 @@
+<div align="center">
+
 # Tumble Royale
 
-A browser-native, physics-driven party royale. Up to 40 Tumblers (humans and
-bots) compete through a show of 3–5 randomly drawn rounds (races, survivals,
-team games, a logic round and a final) until one player takes the Crown.
-No install, no plugins: it runs in a browser tab on desktop and mobile.
+**A 40-player physics party royale that runs in a browser tab.**
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-ff4f9a.svg)](LICENSE)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6.svg)
+![three.js](https://img.shields.io/badge/three.js-WebGPU-8a5cff.svg)
+![Rapier](https://img.shields.io/badge/physics-Rapier-3ee6b4.svg)
+
+<img src="docs/media/trailer.gif" alt="Tumble Royale gameplay: a race through Tilt Town, Paint the Plaza, a beach survival round, Bounce Ball Blitz, the hex final and the end-of-show player wall" width="800">
+
+[Watch the full trailer (MP4)](docs/media/trailer.mp4)
+
+</div>
+
+Up to 40 Tumblers (humans and bots) compete through a show of 3–5 randomly
+drawn rounds (races, survivals, team games, a logic round and a final) until
+one player takes the Crown. No install, no plugins: it runs in a browser tab
+on desktop and mobile.
+
+<table>
+  <tr>
+    <td><img src="docs/media/menu.webp" alt="Main menu with the 3D lobby and the play card"></td>
+    <td><img src="docs/media/race.webp" alt="A race round with the qualification counter"></td>
+    <td><img src="docs/media/paint-the-plaza.webp" alt="Paint the Plaza, a four-team territory round"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/survival.webp" alt="A beach survival round"></td>
+    <td><img src="docs/media/bounce-ball-blitz.webp" alt="Bounce Ball Blitz, team ball soccer"></td>
+    <td><img src="docs/media/goo-peak.webp" alt="Goo Peak Final: hex rings in a rising sea of goo"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/player-wall.webp" alt="The end-of-show player wall"></td>
+    <td><img src="docs/media/victory.webp" alt="The winner on the victory podium"></td>
+    <td><img src="docs/media/rewards.webp" alt="The rewards screen"></td>
+  </tr>
+</table>
 
 - **Rendering:** three.js `WebGPURenderer` with automatic WebGL2 fallback and TSL node materials
 - **Physics:** Rapier (WASM), the same pinned build on client and server
 - **Multiplayer:** server-authoritative 30 Hz rooms, binary delta snapshots, client prediction
 - **UI:** React 19 + Zustand overlay on top of the canvas
-- **Content:** 20 rounds, 36 obstacle types, 108 cosmetics, 10 themes, all procedural (zero external art assets)
+- **Content:** 20 rounds plus a tutorial island, 36 obstacle types, 225 cosmetics, 10 themes, all procedural (zero external art assets)
 
 All characters, rounds, obstacles and cosmetics are original IP.
 
@@ -186,16 +219,16 @@ the same pose with zero bandwidth.
 
 ## Status
 
-| Phase | Scope                       | State                                                                                |
-| ----- | --------------------------- | ------------------------------------------------------------------------------------ |
-| 0     | Foundations                 | Done: both GPU backends verified, client/server Rapier bit-identical after 600 steps |
-| 1     | The Tumbler                 | Built and tested; needs a human playtest for feel                                    |
-| 2     | Netcode slice               | Done: ~3 ms ticks at 40 players, no steady-state corrections at 150 ms + 2% loss     |
-| 3     | First show                  | Done: full 40-player shows play end to end in the browser                            |
-| 4     | Meta & accounts             | Backend done; client wiring in progress                                              |
-| 5     | Content MVP                 | 20 rounds built; tutorial island in progress                                         |
-| 6     | Ranked, store, pass, social | Backend done (40-player ranked update unit-tested); client wiring in progress        |
-| 7     | Launch hardening            | Not started: soak and 2,000-client load tests, observability, deploy                 |
+| Phase | Scope                       | State                                                                                 |
+| ----- | --------------------------- | ------------------------------------------------------------------------------------- |
+| 0     | Foundations                 | Done: both GPU backends verified, client/server Rapier bit-identical after 600 steps  |
+| 1     | The Tumbler                 | Done; tuning benefits from human playtesting                                          |
+| 2     | Netcode slice               | Done: ~3 ms ticks at 40 players, no steady-state corrections at 150 ms + 2% loss      |
+| 3     | First show                  | Done: full 40-player shows play end to end in the browser on both backends            |
+| 4     | Meta & accounts             | Done: guest accounts, locker, parties, matchmaking and server-granted rewards (e2e)   |
+| 5     | Content MVP                 | Done: 20 rounds, tutorial island, procedural audio; touch controls untested on phones |
+| 6     | Ranked, store, pass, social | Done: OpenSkill ranked, store, season pass, challenges, friends, custom lobbies       |
+| 7     | Launch hardening            | Partly: perf budgets met, reconnect, metrics; soak/load tests and deployment not run  |
 
 Production still needs Discord/Google OAuth credentials, Stripe keys and
 hosting. Everything else runs locally on the fallbacks described above.

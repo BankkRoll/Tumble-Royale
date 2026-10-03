@@ -23,6 +23,10 @@ trap 'rm -rf "$work"' EXIT
 
 video=$(ls "$capture"/video/*.webm | head -n1)
 fade=0.4
+# README GIF size knobs; the MP4 keeps full quality.
+gif_width=${GIF_WIDTH:-640}
+gif_fps=${GIF_FPS:-12}
+gif_colors=${GIF_COLORS:-128}
 width=1280
 
 # Cut each segment to a constant frame rate so xfade offsets line up.
@@ -59,11 +63,11 @@ ffmpeg -v error -y -i "$work/joined.mp4" -c:v libx264 -crf 27 -preset slow -pix_
   -movflags +faststart "$out/trailer.mp4"
 
 # Two-pass palette GIF. Ordered (bayer) dithering compresses far better than
-# error diffusion on 3D gradients; 640 px at 12 fps keeps it README-sized.
+# error diffusion on 3D gradients.
 ffmpeg -v error -y -i "$work/joined.mp4" \
-  -vf "fps=12,scale=640:-1:flags=lanczos,palettegen=stats_mode=diff:max_colors=128" "$work/palette.png"
+  -vf "fps=$gif_fps,scale=$gif_width:-1:flags=lanczos,palettegen=stats_mode=diff:max_colors=$gif_colors" "$work/palette.png"
 ffmpeg -v error -y -i "$work/joined.mp4" -i "$work/palette.png" \
-  -lavfi "fps=12,scale=640:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle" \
+  -lavfi "fps=$gif_fps,scale=$gif_width:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle" \
   "$out/trailer.gif"
 
 for png in "$capture"/*.png; do

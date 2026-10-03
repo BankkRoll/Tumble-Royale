@@ -285,6 +285,16 @@ export class PartyService {
   }
 
   /**
+   * Clears every member's ready flag except the leader's (whose ready is
+   * pressing Play). Called once the party's queue ticket is issued.
+   */
+  async resetReady(userId: string): Promise<void> {
+    await this.mutate(userId, (party) => {
+      for (const m of party.members) m.ready = m.userId === party.leaderId;
+    });
+  }
+
+  /**
    * Hands leadership to another member (leader only). Every member receives
    * the new party through `party_update`.
    *
@@ -546,6 +556,9 @@ export function registerPartyRoutes(app: FastifyInstance, ctx: AppContext): void
   app.post('/party/queue-ticket', async (req) => {
     const auth = await requireUser(ctx, req);
     const body = parse(TicketBody, req.body) ?? {};
-    return issueQueueTicket(ctx, parties, auth, body);
+    const ticket = await issueQueueTicket(ctx, parties, auth, body);
+    // Ready is a vote for one show: members confirm again before the next queue.
+    if (!ticket.claims.pid.startsWith('solo:')) await parties.resetReady(auth.userId);
+    return ticket;
   });
 }

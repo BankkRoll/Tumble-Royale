@@ -76,8 +76,11 @@ export const RESPAWN_DELAY_SECONDS = 1.2;
 export const RESPAWN_GHOST_SECONDS = 1;
 /** Countdown length; the match clock runs from −this to 0 during COUNTDOWN. */
 export const COUNTDOWN_SECONDS = 3;
-/** Lift from an authored floor point (spawn, respawn) to the capsule centre. */
-export const SPAWN_LIFT = 1;
+/**
+ * Clearance above an authored floor point (spawn, respawn). Controllers take FEET
+ * positions, so this only keeps the capsule from starting in contact with the floor.
+ */
+export const SPAWN_LIFT = 0.05;
 /** Lateral random spread around a respawn point, metres. */
 const RESPAWN_SPREAD = 0.75;
 /** Progress is re-measured every N ticks per player (staggered). */

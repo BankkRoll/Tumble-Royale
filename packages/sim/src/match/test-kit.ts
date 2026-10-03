@@ -61,6 +61,7 @@ const RADIUS = 0.45;
 const HALF_HEIGHT = 0.45;
 /** Centre-to-sole distance plus a little slack for ground probing. */
 const GROUND_PROBE = RADIUS + HALF_HEIGHT + 0.12;
+const FEET_TO_CENTRE = RADIUS + HALF_HEIGHT;
 const DIVE_SECONDS = 0.55;
 
 /**
@@ -103,7 +104,8 @@ export class SimpleController implements TumblerControllerLike {
     const R = opts.R;
     this.body = opts.world.createRigidBody(
       R.RigidBodyDesc.dynamic()
-        .setTranslation(opts.position.x, opts.position.y, opts.position.z)
+        // Positions are feet, matching the real controller; the body sits at the capsule centre.
+        .setTranslation(opts.position.x, opts.position.y + FEET_TO_CENTRE, opts.position.z)
         .lockRotations()
         .setCcdEnabled(true),
     );
@@ -279,7 +281,10 @@ export class SimpleController implements TumblerControllerLike {
   }
 
   teleport(pos: Vec3, yaw?: number): void {
-    this.body.setTranslation(pos, true);
+    this.v.x = pos.x;
+    this.v.y = pos.y + FEET_TO_CENTRE;
+    this.v.z = pos.z;
+    this.body.setTranslation(this.v, true);
     this.v.x = 0;
     this.v.y = 0;
     this.v.z = 0;

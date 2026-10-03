@@ -23,7 +23,11 @@ export interface CharacterInput {
   moveX: number;
   /** Forward axis, -1 (back) … 1 (forward), relative to camera yaw. */
   moveZ: number;
-  /** Camera yaw in radians; movement is resolved relative to this. */
+  /**
+   * Camera yaw in radians; movement is resolved relative to this. Forward
+   * (`moveZ = 1`) is world `(sin yaw, 0, cos yaw)`, the same convention as
+   * `quatFromYaw` and the controller's facing.
+   */
   yaw: number;
   /** {@link Button} bitfield of currently held buttons. */
   buttons: number;
@@ -91,6 +95,36 @@ export interface CharacterFullState {
   emote: number;
   /** Bitfield of {@link CharacterFlag}. */
   flags: number;
+  /**
+   * Controller-internal state needed for exact rewind/replay but not for
+   * rendering remote players. Netcode snapshots may omit it; local prediction
+   * must keep it. `getState` allocates it on first use if absent.
+   */
+  ext?: CharacterExtState;
+}
+
+/** Internal controller state carried by {@link CharacterFullState.ext}. */
+export interface CharacterExtState {
+  /** Planar momentum inherited from the last supporting surface, decaying in the air. */
+  carryVel: Vec3;
+  /** Accumulated external pushes (fans, wind), decaying over time. */
+  extVel: Vec3;
+  /** Top of the ledge being hung from / climbed (world space). */
+  ledgePoint: Vec3;
+  /** Outward wall normal of that ledge (horizontal). */
+  ledgeNormal: Vec3;
+  /** Controller latch bitfield (frozen, dive used, ghost locked, …). Opaque to callers. */
+  latches: number;
+  /** 0 none, 1 player, 2 prop, 3 ledge. */
+  grabKind: number;
+  /** Collider handle of the grab partner (grabbed/grabbing player or carried prop), or -1. */
+  partnerCollider: number;
+  grabCooldown: number;
+  /** Break-free mash progress while grabbed. */
+  breakFree: number;
+  /** Remaining reduced-control time after a knock. */
+  knockTimer: number;
+  bounceCooldown: number;
 }
 
 /** Misc character flags replicated alongside state. */
@@ -117,6 +151,11 @@ export interface CharacterStepContext {
   events: EventSink;
   /** Resolves a collider handle to the controller that owns it (player-on-player grabs, dive hits). */
   controllerByCollider(handle: number): TumblerControllerLike | undefined;
+  /**
+   * Resolves a collider handle to a carryable prop id (eggs, balls, crowns…).
+   * Colliders it does not resolve cannot be picked up. Omit when a round has no props.
+   */
+  propIdByCollider?(handle: number): number | undefined;
 }
 
 /**

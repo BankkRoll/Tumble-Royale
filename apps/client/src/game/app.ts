@@ -646,6 +646,16 @@ export class GameApp {
     window.location.reload();
   }
 
+  /**
+   * Back from the queue card to the menu. The menu never left the screen
+   * (matchmaking only swaps the start card), so there is nothing to cover
+   * with a wipe.
+   */
+  private leaveQueueScreen(): void {
+    if (ui.getState().screen === 'matchmaking') ui.getState().setScreen('menu', { transition: 'none' });
+    else this.goMenu();
+  }
+
   private goMenu(): void {
     // Nothing reaches the menu without a named Tumbler.
     if (!this.profile.exists) {
@@ -807,7 +817,7 @@ export class GameApp {
         ...(err instanceof ApiError ? { code: err.code } : {}),
       });
       s.setQueue({ status: 'idle' });
-      this.goMenu();
+      this.leaveQueueScreen();
     }
   }
 
@@ -847,7 +857,7 @@ export class GameApp {
       this.queued = false;
       if (this.session) return;
       ui.getState().setQueue({ status: 'idle' });
-      if (ui.getState().screen === 'matchmaking') this.goMenu();
+      if (ui.getState().screen === 'matchmaking') this.leaveQueueScreen();
       if (m.reason && m.reason !== 'cancelled')
         ui.getState().pushToast({
           kind: 'warning',
@@ -1245,12 +1255,14 @@ export class GameApp {
           void this.mm.cancel().catch(() => undefined);
           this.account?.setPresence('in_menu');
         }
+        const hadSession = this.session !== null;
         if (this.session) {
           this.session.quit();
           this.session = null;
         }
         s().setQueue({ status: 'idle' });
-        this.goMenu();
+        if (hadSession) this.goMenu();
+        else this.leaveQueueScreen();
       },
       onPlayAgain: () => {
         if (this.session) {

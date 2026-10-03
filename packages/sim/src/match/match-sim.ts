@@ -475,6 +475,23 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
     }
   }
 
+  /**
+   * Jumps match time and snaps every kinematic obstacle to its pose at `time`.
+   * Prediction rewinds rely on this: reaching the new pose through next-kinematic
+   * targets would give those bodies a huge one-step velocity and fling riders.
+   */
+  setTime(time: number): void {
+    this.time = time;
+    this.octx.t = time;
+    this.oracle.poseTime = time;
+    for (const o of this.obstacleRuntimes) o.update(this.octx);
+    this.world.forEachRigidBody((b) => {
+      if (!b.isKinematic()) return;
+      b.setTranslation(b.nextTranslation(), false);
+      b.setRotation(b.nextRotation(), false);
+    });
+  }
+
   step(): void {
     if (this.disposed) return;
     const tick = this.tick;

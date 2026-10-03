@@ -7,7 +7,9 @@
  * - `ROOM_CAPACITY` (40) — show size including bots
  * - `FILL_WAIT_MS` (25000) — wait after the first human before bot fill
  * - `START_AT_HUMANS` (= capacity) — start early once this many humans joined
- * - `PLAY_SECONDS` (120) — dev show loop round length
+ * - `PLAY_SECONDS` (120) — dev show loop round length (GS_DEV=1 only)
+ * - `GS_DEV` — `1` uses the capsule stand-in sim instead of the real game
+ * - `PLAYLIST` — playlist id for real shows (default Main Show)
  *
  * Integration: `createDevRoomDeps` is the standalone wiring (capsule sim,
  * dev arena, single-round loop, random-walk bots). The real game swaps in
@@ -18,6 +20,7 @@
  */
 import { loadRapier } from '@tumble/sim';
 import { createDevRoomDeps } from './devDeps.ts';
+import { createRealRoomDeps } from './realDeps.ts';
 import { startGameServer } from './server.ts';
 
 const env = (k: string, d: number): number => {
@@ -27,7 +30,12 @@ const env = (k: string, d: number): number => {
 
 const R = await loadRapier();
 const capacity = env('ROOM_CAPACITY', 40);
-const deps = createDevRoomDeps(R, { playSeconds: env('PLAY_SECONDS', 120), log: (m) => console.log(m) });
+const log = (m: string): void => console.log(m);
+// GS_DEV=1 swaps in the capsule stand-in sim for load tests that should not depend on content.
+const deps =
+  process.env.GS_DEV === '1'
+    ? createDevRoomDeps(R, { playSeconds: env('PLAY_SECONDS', 120), log })
+    : createRealRoomDeps(R, { ...(process.env.PLAYLIST ? { playlistId: process.env.PLAYLIST } : {}), log });
 
 const server = await startGameServer({
   port: env('PORT', 7350),

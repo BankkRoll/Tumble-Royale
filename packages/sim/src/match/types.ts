@@ -107,6 +107,8 @@ export interface MatchSim {
   step(): void;
   /** Force phase (server drives LOADING→…→RESULTS; client mirrors from the wire). */
   setPhase(phase: RoundPhaseId, time?: number): void;
+  /** Jump match time, snapping kinematic obstacles straight to `pose(time)` (prediction rewind). */
+  setTime?(time: number): void;
 
   getPlayerState(playerId: number, out: CharacterFullState): boolean;
   setPlayerState(playerId: number, state: CharacterFullState): void;

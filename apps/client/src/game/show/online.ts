@@ -226,6 +226,7 @@ export class OnlineShowSession extends ShowSession {
         if (m.t === 'showInfo') this.onShowInfo(m);
         else if (m.t === 'showRewards') this.apiReward = m.reward;
       }),
+      net.on('chat', (m) => this.chat.receive(m)),
       net.on('showPhase', (p) => this.onServerShowPhase(p)),
       net.on('joinRound', (j) => this.onJoin(j)),
       net.on('roundPhase', ({ phase }) => this.onRoundPhase(phase as RoundPhaseId)),
@@ -243,6 +244,7 @@ export class OnlineShowSession extends ShowSession {
         },
       }),
     );
+    this.chat.setTransport((m) => this.net.sendLowFreq(m));
     this.ctx.account?.markShowStart();
     net.connect();
   }
@@ -316,9 +318,12 @@ export class OnlineShowSession extends ShowSession {
         prev?.loadout ??
         botLoadout(this.roomSeed, p.id, p.name);
       const sp: SessionPlayer = { id: p.id, name: p.name, isBot: p.isBot, loadout };
+      if (p.userId) sp.userId = p.userId;
       this.players.set(p.id, sp);
       if (!this.order.includes(p.id)) this.order.push(p.id);
     }
+    // Typed chat only makes sense with another human in the show.
+    this.chat.setTextEnabled(list.some((p) => !p.isBot && p.id !== this.net.playerId));
   }
 
   private onServerShowPhase(phase: number): void {

@@ -34,6 +34,7 @@ import {
   type DecodedSnapshot,
   type InputHistory,
   type JoinRoundMsg,
+  type ChatMsg,
   type LowFreqMessage,
   type NetPlayerInfo,
   type RoundResultEntry,
@@ -61,7 +62,8 @@ export interface NetClientEvents extends Record<string, unknown> {
   roundResults: { roundId: string; results: RoundResultEntry[] };
   showSummary: { winners: number[]; rounds: { roundId: string; qualified: number[] }[] };
   lobby: { humans: number; capacity: number; startsInMs: number };
-  chat: { from: number; text: string };
+  /** Relayed in-show chat (text with `masked` variant, or a quick-chat preset). */
+  chat: Omit<ChatMsg, 't'>;
   /** Every low-frequency message, including the ones above. */
   message: LowFreqMessage;
   kicked: { reason: number; detail: string };
@@ -481,7 +483,12 @@ export class NetClient extends TypedEmitter<NetClientEvents> {
         this.emit('lobby', { humans: msg.humans, capacity: msg.capacity, startsInMs: msg.startsInMs });
         break;
       case 'chat':
-        this.emit('chat', { from: msg.from, text: msg.text });
+        this.emit('chat', {
+          from: msg.from,
+          text: msg.text,
+          ...(msg.masked ? { masked: msg.masked } : {}),
+          ...(msg.quick ? { quick: msg.quick } : {}),
+        });
         break;
     }
     this.emit('message', msg);

@@ -37,6 +37,8 @@ export interface TumblerAnimInput {
   lookAt?: { x: number; y: number; z: number };
   /** One-shot squash/stretch kick (landing impact, bounce). Consumed by the visual. */
   impulse?: number;
+  /** Respawn-grace ghost: rendered with screen-door transparency. */
+  ghost?: boolean;
 }
 
 /**

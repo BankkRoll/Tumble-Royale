@@ -17,6 +17,7 @@
 import type { Collider, EventQueue, World } from '@dimforge/rapier3d-compat';
 import {
   CollisionGroup,
+  GRAVITY_Y,
   Rng,
   RoundDefinitionSchema,
   RoundPhase,
@@ -41,7 +42,9 @@ import {
   type CharacterStepContext,
   type TumblerControllerLike,
 } from '../character/types.ts';
+import { resolveTuning } from '../character/tuning.ts';
 import { EventSink, type SimEvent } from '../events.ts';
+import { applyMutatorTuning, getMutator, mutatorWindAt, type MutatorDefinition } from '../mutators/index.ts';
 import type { ObstacleActor, ObstacleRuntime, ObstacleStepContext } from '../obstacles/types.ts';
 import { PROP_SPECS, PropMode, type PropSpawnerRuntime } from '../obstacles/propSpawner.ts';
 import type { Rapier } from '../physics/rapier.ts';
@@ -57,6 +60,7 @@ import { buildStaticGeometry } from './geometry.ts';
 import { chooseVariation, resolveObstacles, spawnSlots, type SpawnSlot } from './layout.ts';
 import { ObstacleOracle } from './oracle.ts';
 import { RemoteProxy } from './proxy.ts';
+import { clampRoundTimeScale, scaleRoundTimer } from './round-time.ts';
 import { RoundTriggers } from './triggers.ts';
 import {
   PlayerRoundStatus,
@@ -100,6 +104,7 @@ const RULES_SALT = 0x0e1e_5a17;
 export interface MatchSimHandle extends MatchSim {
   readonly phase: RoundPhaseId;
   readonly variationId: string | null;
+  readonly mutatorId: string | null;
   /** Players expected to qualify. */
   readonly qualifyTarget: number;
   /** Non-fatal load problems (unknown obstacle types, bad params). */
@@ -234,6 +239,7 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
   readonly surfaces = new SurfaceRegistry();
   readonly warnings: string[] = [];
   readonly variationId: string | null;
+  readonly mutatorId: string | null;
   readonly rules: RoundRules | null;
   readonly rng: Rng;
   readonly entrants: number;
@@ -268,6 +274,10 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
   private readonly standings: number[] = [];
   private readonly standingScratch: RulesPlayer[] = [];
   private readonly netStates = new Map<string, number[]>();
+  private readonly mutator: Readonly<MutatorDefinition> | null;
+  private readonly roundSeed: number;
+  private readonly wind = { x: 0, z: 0 };
+  private readonly windDv = vec3();
   private qualifiedCount = 0;
   private eliminatedCount = 0;
   private started = false;
@@ -300,11 +310,19 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
     this.R = R;
     this.mode = opts.mode;
     // Accept authored input too: defaults are applied here so callers may pass raw content.
-    this.round = RoundDefinitionSchema.parse(opts.round);
+    this.round = scaleRoundTimer(
+      RoundDefinitionSchema.parse(opts.round),
+      clampRoundTimeScale(opts.roundTimeScale),
+    );
     const round = this.round;
-    this.world = createWorld(R);
+    const mutator = getMutator(opts.mutatorId);
+    if (opts.mutatorId && !mutator) this.warnings.push(`unknown mutator "${opts.mutatorId}"`);
+    this.mutator = mutator;
+    this.mutatorId = mutator?.id ?? null;
+    this.world = createWorld(R, { gravityY: GRAVITY_Y * (mutator?.gravityScale ?? 1) });
     this.eventQueue = new R.EventQueue(true);
     const roundSeed = (opts.seed ^ hashString(round.id)) >>> 0;
+    this.roundSeed = roundSeed;
     this.rng = new Rng((roundSeed ^ RULES_SALT) >>> 0);
     this.oracle = new ObstacleOracle(R, this.world);
 
@@ -318,9 +336,9 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
     this.variationId = variation?.id ?? null;
     const stageScales = round.speedScaleByStage;
     const speedScale =
-      stageScales.length > 0
+      (stageScales.length > 0
         ? (stageScales[Math.max(0, Math.min(opts.stage, stageScales.length - 1))] ?? 1)
-        : 1;
+        : 1) + (mutator?.speedScaleBonus ?? 0);
     for (const inst of resolveObstacles(round, variation)) {
       const mod = deps.obstacles.get(inst.type);
       if (!mod) {
@@ -356,6 +374,9 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
     const spawns = spawnSlots(round, opts.seed, teams);
     this.entrants = opts.players.length;
     const brainFactory = deps.createBotBrain ?? createBotBrain;
+    const controllerTuning = mutator
+      ? applyMutatorTuning(resolveTuning(deps.controllerTuning), mutator)
+      : deps.controllerTuning;
     const simulateAll = opts.mode !== 'predict';
     opts.players.forEach((info, index) => {
       const spawn = spawns[index] as SpawnSlot;
@@ -370,7 +391,7 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
           id: info.id,
           position: pos,
           yaw: spawn.yaw,
-          tuning: deps.controllerTuning,
+          tuning: controllerTuning as Record<string, unknown> | undefined,
         });
       if (!proxy)
         ctrl.collider.setActiveEvents(ctrl.collider.activeEvents() | R.ActiveEvents.COLLISION_EVENTS);
@@ -506,7 +527,9 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
 
   setInput(playerId: number, input: CharacterInput): void {
     const s = this.slotById.get(playerId);
-    if (s && !s.brain) copyInput(input, s.input);
+    if (!s || s.brain) return;
+    copyInput(input, s.input);
+    if (this.mutator?.mirrorSteering) s.input.moveX = -s.input.moveX;
   }
 
   setPhase(phase: RoundPhaseId, time?: number): void {
@@ -555,6 +578,7 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
 
     this.cctx.tick = tick;
     this.cctx.time = this.time;
+    const gust = live && this.mutator?.wind ? this.gustDv() : null;
     for (const s of this.slots) {
       if (!s.active || s.proxy) continue;
       const p = s.ctrl.body.translation(this.scratchVec);
@@ -562,6 +586,7 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
       s.prevPos.y = p.y;
       s.prevPos.z = p.z;
       if (s.brain) this.thinkBot(s);
+      if (gust) s.ctrl.push(gust);
       s.ctrl.step(s.input, this.cctx);
     }
 
@@ -669,6 +694,16 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
     for (const s of this.slots) s.ctrl.dispose();
     this.eventQueue.free();
     this.world.free();
+  }
+
+  /** This step's wind push (Δv) from the mutator's gust schedule, or null when calm. */
+  private gustDv(): Vec3 | null {
+    const wind = this.mutator?.wind;
+    if (!wind || !mutatorWindAt(wind, this.roundSeed, this.time, this.wind)) return null;
+    this.windDv.x = this.wind.x * this.dt;
+    this.windDv.y = 0;
+    this.windDv.z = this.wind.z * this.dt;
+    return this.windDv;
   }
 
   // ---------------------------------------------------------------------------

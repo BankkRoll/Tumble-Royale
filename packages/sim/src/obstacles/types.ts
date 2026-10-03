@@ -134,6 +134,8 @@ export interface ObstacleModule<P = Record<string, unknown>> {
    * instance origin. Must not read anything but its arguments.
    */
   pose?(t: number, params: P, out: PoseSample[], speedScale: number): void;
+  /** Number of samples `pose()` writes for these params (size of the `out` buffer to allocate). */
+  poseCount?(params: P, speedScale: number): number;
   create(instance: ObstacleInstance<P>, ctx: ObstacleBuildContext): ObstacleRuntime;
   /** Named audio cues this obstacle can emit via `obstacleCue` events. */
   audioCues?: readonly string[];

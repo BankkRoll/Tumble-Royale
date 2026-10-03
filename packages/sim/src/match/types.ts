@@ -3,6 +3,7 @@ import type { Quat, RoundDefinition, RoundPhaseId, Vec3 } from '@tumble/shared';
 import type { CharacterFullState, CharacterInput } from '../character/types.ts';
 import type { EventSink } from '../events.ts';
 import type { Rapier } from '../physics/rapier.ts';
+import type { RoundRulesOptions } from '../rounds/types.ts';
 
 /** A participant in a match. */
 export interface MatchPlayerInfo {
@@ -40,7 +41,19 @@ export interface RoundStatus {
   /** Team scores for team rounds, else empty. */
   teamScores: number[];
   /** Per-player status keyed by player id. */
-  players: Map<number, { status: PlayerRoundStatusId; score: number; progress: number; place: number }>;
+  players: Map<
+    number,
+    {
+      status: PlayerRoundStatusId;
+      score: number;
+      progress: number;
+      place: number;
+      /** Team index (team rounds), else -1. */
+      team?: number;
+      /** Holding the hunt item (tail). */
+      hasItem?: boolean;
+    }
+  >;
   /** True once the round has decided everyone's fate. */
   finished: boolean;
 }
@@ -62,6 +75,12 @@ export interface MatchSimOptions {
    */
   mode: 'authority' | 'predict' | 'offline';
   localPlayerId?: number;
+  /** Overrides the qualification target (show director shrink curve). Ignored by finals. */
+  qualifyTarget?: number;
+  /** Forces a variation id instead of the seeded weighted pick (custom lobbies, tests). */
+  variationId?: string;
+  /** Rule variants not expressed in the round definition. */
+  rules?: RoundRulesOptions;
 }
 
 /**
@@ -77,6 +96,10 @@ export interface MatchSim {
   readonly tick: number;
   /** Match time in seconds (0 = PLAYING starts). */
   readonly time: number;
+  /** Current round phase. */
+  readonly phase?: RoundPhaseId;
+  /** Seeded variation applied to this round, or null when the round has none. */
+  readonly variationId?: string | null;
 
   /** Feed the input to use for `playerId` on the next `step()`. Bots generate their own. */
   setInput(playerId: number, input: CharacterInput): void;

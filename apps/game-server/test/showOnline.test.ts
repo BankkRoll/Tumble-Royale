@@ -15,9 +15,9 @@ import type { RoomDeps, ShowController } from '../src/room/types.ts';
 import { ShowDirectorController } from '../src/show/ShowDirectorController.ts';
 import { SimpleShowController } from '../src/show/SimpleShowController.ts';
 import { signJoinTicket, type JoinTicketClaims } from '../src/tickets.ts';
-import { FakeConnection, FakeMatchSim, TestClient, testDeps } from './helpers.ts';
+import { FakeConnection, FakeMatchSim, TEST_SECRETS, TestClient, testDeps } from './helpers.ts';
 
-const SECRET = 'test-ticket-secret-0123456789';
+const SECRET = TEST_SECRETS.GAME_TICKET_SECRET;
 const TICK_MS = 1000 / 30;
 const WALL = Date.parse('2026-10-02T12:00:00Z');
 

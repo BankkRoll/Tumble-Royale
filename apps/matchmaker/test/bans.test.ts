@@ -4,13 +4,14 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildMatchmaker, type MatchmakerApp } from '../src/app.ts';
 import { ApiBanLookup, type BanLookup } from '../src/bans.ts';
 import { loadConfig } from '../src/config.ts';
+import { TEST_SECRETS, testEnv } from './helpers.ts';
 import { userChannel, type MMEvent } from '../src/matchmaker.ts';
 import { verifyJoinTicket } from '../src/tickets.ts';
 
-const JWT_SECRET = 'test-jwt-secret-0123456789-abcdefghijkl';
-const TICKET_SECRET = 'test-ticket-secret-0123456789';
-const SERVER_SECRET = 'test-server-secret-0123456789';
-const HMAC_SECRET = 'test-internal-hmac-secret-0123';
+const JWT_SECRET = TEST_SECRETS.JWT_SECRET;
+const TICKET_SECRET = TEST_SECRETS.GAME_TICKET_SECRET;
+const SERVER_SECRET = TEST_SECRETS.GAME_SERVER_SECRET;
+const HMAC_SECRET = TEST_SECRETS.INTERNAL_HMAC_SECRET;
 const enc = (s: string) => new TextEncoder().encode(s);
 
 describe('ApiBanLookup', () => {
@@ -78,16 +79,7 @@ describe('matchmaker ban enforcement', () => {
   beforeEach(async () => {
     banned.clear();
     clock = start;
-    mm = await buildMatchmaker(
-      loadConfig({
-        NODE_ENV: 'test',
-        JWT_SECRET,
-        GAME_TICKET_SECRET: TICKET_SECRET,
-        GAME_SERVER_SECRET: SERVER_SECRET,
-        LOG_LEVEL: 'silent',
-      }),
-      { now: () => clock, logger: false, bans },
-    );
+    mm = await buildMatchmaker(loadConfig(testEnv()), { now: () => clock, logger: false, bans });
     await call('POST', '/servers/register', SERVER_SECRET, {
       serverId: 'gs-1',
       url: 'wss://gs-1.test',

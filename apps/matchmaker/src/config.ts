@@ -2,19 +2,16 @@
  * Environment configuration for the matchmaker.
  *
  * Responsibilities:
- * - Parse and validate every environment variable once, at boot.
- * - Provide development defaults that line up with the API and game server so
- *   `pnpm dev` works with zero setup.
- * - Refuse to boot in production with development secrets, or on the
- *   in-process store unless that is explicitly allowed.
+ * - Parse and validate every environment variable once, at boot, reporting
+ *   every problem together.
+ * - Provide development defaults that line up with the API and game server;
+ *   secrets have none and come from the environment or the `.env` files
+ *   `pnpm setup:env` writes.
+ * - Refuse to boot without secrets, with placeholder secrets, or in
+ *   production on the in-process store unless that is explicitly allowed.
  */
+import { EnvIssues, type Env } from '@tumble/shared/env';
 import { z } from 'zod';
-
-const DEV_JWT_SECRET = 'dev-only-jwt-secret-change-me-0123456789abcdef';
-const DEV_TICKET_SECRET = 'dev-only-game-ticket-secret-change-me-0123';
-const DEV_SERVER_SECRET = 'dev-only-game-server-secret';
-/** The API's development `INTERNAL_HMAC_SECRET`. */
-const DEV_INTERNAL_SECRET = 'dev-only-internal-hmac-secret-change-me';
 
 const optional = z
   .string()
@@ -27,11 +24,7 @@ const EnvSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(7370),
   REDIS_URL: optional,
   ALLOW_MEMORY_STORE: optional,
-  JWT_SECRET: z.string().min(32).default(DEV_JWT_SECRET),
-  GAME_TICKET_SECRET: z.string().min(16).default(DEV_TICKET_SECRET),
-  GAME_SERVER_SECRET: z.string().min(16).default(DEV_SERVER_SECRET),
   API_URL: optional,
-  INTERNAL_HMAC_SECRET: z.string().min(16).default(DEV_INTERNAL_SECRET),
   PUBLIC_WEB_URL: z.string().url().default('http://localhost:5173'),
   ALLOWED_ORIGINS: optional,
   DEFAULT_GAME_SERVER_URL: optional,
@@ -66,8 +59,8 @@ export interface MatchmakerConfig {
   gameServerSecret: string;
   /** Account API base URL for ban lookups; absent → bans are not checked here. */
   apiUrl: string | undefined;
-  /** Signs internal calls to the API (`INTERNAL_HMAC_SECRET`, shared with the API). */
-  internalHmacSecret: string;
+  /** Signs internal calls to the API (`INTERNAL_HMAC_SECRET`, shared with the API); set whenever `apiUrl` is. */
+  internalHmacSecret: string | undefined;
   /** Origins allowed to call from a browser; `true` reflects any origin (development only). */
   allowedOrigins: string[] | true;
   /** Fallback game server when none has registered (local dev). */
@@ -101,43 +94,43 @@ const splitList = (v: string): string[] =>
  * Parses environment variables.
  *
  * @param env - Usually `process.env`; tests pass a literal map.
- * @throws When malformed, in production with development secrets, or in
- *   production without `REDIS_URL` unless `ALLOW_MEMORY_STORE=1`.
+ * @throws {EnvConfigError} Listing every malformed variable and missing or
+ *   placeholder secret (`INTERNAL_HMAC_SECRET` only when the API is used), and
+ *   `REDIS_URL` in production unless `ALLOW_MEMORY_STORE=1`.
  */
-export function loadConfig(env: Record<string, string | undefined> = process.env): MatchmakerConfig {
-  const e = EnvSchema.parse(env);
+export function loadConfig(env: Env = process.env): MatchmakerConfig {
+  const issues = new EnvIssues(env);
+  const jwtSecret = issues.secret('JWT_SECRET', 32);
+  const gameTicketSecret = issues.secret('GAME_TICKET_SECRET', 16);
+  const gameServerSecret = issues.secret('GAME_SERVER_SECRET', 16);
+  const parsed = EnvSchema.safeParse(env);
+  if (!parsed.success) issues.addSchemaIssues(parsed.error.issues);
+  // Every field has a default, so parsing {} lets the remaining checks run and
+  // report alongside the schema issues.
+  const e = parsed.success ? parsed.data : EnvSchema.parse({});
   const production = e.NODE_ENV === 'production';
-  if (production) {
-    for (const [name, value, dev] of [
-      ['JWT_SECRET', e.JWT_SECRET, DEV_JWT_SECRET],
-      ['GAME_TICKET_SECRET', e.GAME_TICKET_SECRET, DEV_TICKET_SECRET],
-      ['GAME_SERVER_SECRET', e.GAME_SERVER_SECRET, DEV_SERVER_SECRET],
-    ] as const) {
-      if (value === dev) throw new Error(`${name} must be set in production`);
-    }
-    if (e.API_URL && e.INTERNAL_HMAC_SECRET === DEV_INTERNAL_SECRET) {
-      throw new Error('INTERNAL_HMAC_SECRET must be set in production when API_URL is set');
-    }
-    if (!e.REDIS_URL && e.ALLOW_MEMORY_STORE !== '1') {
-      throw new Error(
-        'REDIS_URL must be set in production: queues, lobbies and the server registry would live in ' +
-          'process memory, vanish on restart and not be shared between instances. ' +
-          'Set ALLOW_MEMORY_STORE=1 to run a single instance on memory anyway.',
-      );
-    }
-  }
   const apiUrl = e.API_URL ?? (e.NODE_ENV === 'development' ? 'http://localhost:7360' : undefined);
+  const internalHmacSecret = apiUrl ? issues.secret('INTERNAL_HMAC_SECRET', 16) : undefined;
+  if (production && !e.REDIS_URL && e.ALLOW_MEMORY_STORE !== '1') {
+    issues.add(
+      'REDIS_URL',
+      'is required in production: queues, lobbies and the server registry would live in ' +
+        'process memory, vanish on restart and not be shared between instances. ' +
+        'Set ALLOW_MEMORY_STORE=1 to run a single instance on memory anyway.',
+    );
+  }
+  issues.throwIfAny('matchmaker');
   return {
     env: e.NODE_ENV,
     host: e.HOST,
     port: e.PORT,
     redisUrl: e.REDIS_URL,
     memoryStoreInProduction: production && !e.REDIS_URL,
-    jwtSecret: e.JWT_SECRET,
-    gameTicketSecret: e.GAME_TICKET_SECRET,
-    gameServerSecret: e.GAME_SERVER_SECRET,
+    jwtSecret,
+    gameTicketSecret,
+    gameServerSecret,
     apiUrl: apiUrl?.replace(/\/$/, ''),
-    internalHmacSecret: e.INTERNAL_HMAC_SECRET,
+    internalHmacSecret,
     allowedOrigins: e.ALLOWED_ORIGINS
       ? splitList(e.ALLOWED_ORIGINS)
       : production

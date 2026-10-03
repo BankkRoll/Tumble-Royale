@@ -2,11 +2,12 @@ import { SignJWT } from 'jose';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildMatchmaker, type MatchmakerApp } from '../src/app.ts';
 import { loadConfig } from '../src/config.ts';
+import { TEST_SECRETS, testEnv } from './helpers.ts';
 import { RESERVATION_TTL_MS, userChannel, type MMEvent } from '../src/matchmaker.ts';
 import { candidateRegions, pickServer, type GameServer } from '../src/servers.ts';
 
-const JWT_SECRET = 'test-jwt-secret-0123456789-abcdefghijkl';
-const SERVER_SECRET = 'test-server-secret-0123456789';
+const JWT_SECRET = TEST_SECRETS.JWT_SECRET;
+const SERVER_SECRET = TEST_SECRETS.GAME_SERVER_SECRET;
 const enc = (s: string) => new TextEncoder().encode(s);
 
 describe('pickServer', () => {
@@ -50,10 +51,7 @@ describe('placement', () => {
   beforeEach(async () => {
     clock = Date.parse('2026-10-02T12:00:00Z');
     reports.clear();
-    mm = await buildMatchmaker(
-      loadConfig({ NODE_ENV: 'test', JWT_SECRET, GAME_SERVER_SECRET: SERVER_SECRET, LOG_LEVEL: 'silent' }),
-      { now: () => clock, logger: false },
-    );
+    mm = await buildMatchmaker(loadConfig(testEnv()), { now: () => clock, logger: false });
   });
   afterEach(async () => {
     await mm.close();

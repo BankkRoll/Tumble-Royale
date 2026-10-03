@@ -1,11 +1,13 @@
 /**
  * API entry point: `pnpm --filter @tumble/api dev` (port 7360 by default).
  */
+import { resolve } from 'node:path';
+import { loadServiceConfig } from '@tumble/shared/env';
 import { buildApp } from './app.ts';
 import { SmtpMailer } from './auth/mailer.ts';
 import { loadConfig } from './config.ts';
 
-const config = loadConfig();
+const config = loadServiceConfig(resolve(import.meta.dirname, '..'), loadConfig);
 const built = await buildApp(config);
 const { app } = built;
 

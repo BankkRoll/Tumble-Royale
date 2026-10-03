@@ -121,7 +121,7 @@ export async function buildMatchmaker(
   const store = opts.store ?? createStore(cfg.redisUrl, now);
   const bans =
     opts.bans ??
-    (cfg.apiUrl
+    (cfg.apiUrl && cfg.internalHmacSecret
       ? new ApiBanLookup({
           apiUrl: cfg.apiUrl,
           secret: cfg.internalHmacSecret,

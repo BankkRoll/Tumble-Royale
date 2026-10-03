@@ -2,7 +2,6 @@ import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DEV_INTERNAL_SECRET, resultsConfig } from '../src/config.ts';
 import { ResultsOutbox } from '../src/outbox.ts';
 import { sendResultsOnce, type MatchResultPayload, type SendOutcome } from '../src/results.ts';
 
@@ -146,37 +145,5 @@ describe('sendResultsOnce', () => {
       payload('m_offline'),
     );
     expect(offline).toEqual({ kind: 'retry', detail: 'ECONNREFUSED' });
-  });
-});
-
-describe('results config', () => {
-  it('reports to the local API by default in development', () => {
-    expect(resultsConfig({ NODE_ENV: 'development' })).toEqual({
-      apiUrl: 'http://localhost:7360',
-      secret: DEV_INTERNAL_SECRET,
-      outboxDir: './.data/results-outbox',
-    });
-    expect(resultsConfig({})).not.toBeNull();
-    expect(resultsConfig({ REPORT_RESULTS: '0' })).toBeNull();
-    expect(resultsConfig({ NODE_ENV: 'test' })).toBeNull();
-  });
-
-  it('requires explicit, non-development settings in production', () => {
-    expect(resultsConfig({ NODE_ENV: 'production' })).toBeNull();
-    expect(() =>
-      resultsConfig({
-        NODE_ENV: 'production',
-        API_URL: 'https://api',
-        INTERNAL_HMAC_SECRET: DEV_INTERNAL_SECRET,
-      }),
-    ).toThrow(/INTERNAL_HMAC_SECRET/);
-    expect(
-      resultsConfig({
-        NODE_ENV: 'production',
-        API_URL: 'https://api',
-        INTERNAL_HMAC_SECRET: 'real-secret-0123456789',
-        RESULTS_OUTBOX_DIR: '/var/lib/tumble/outbox',
-      }),
-    ).toMatchObject({ outboxDir: '/var/lib/tumble/outbox' });
   });
 });

@@ -1038,5 +1038,15 @@ export interface Settings {
   };
 }
 
+/** Region probe results shown in Settings → Gameplay → Region. */
+export interface RegionStatus {
+  /** Measured round trip (ms) per region id; missing = not measurable. */
+  pings: Record<string, number>;
+  /** What Auto resolves to, null before the first probe. */
+  auto: string | null;
+  /** A probe is running. */
+  probing: boolean;
+}
+
 /** Settings section ids. */
 export type SettingsSection = keyof Settings | 'account';

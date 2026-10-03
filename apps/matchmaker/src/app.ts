@@ -140,6 +140,14 @@ export async function buildMatchmaker(
     servers: (await mm.servers()).length,
   }));
 
+  // Clients time this round trip to pick a region (Settings → Region → Auto).
+  // Kept free of store lookups beyond the server list so RTT stays network-bound.
+  app.get('/ping', async (_req, reply) => {
+    void reply.header('cache-control', 'no-store');
+    const regions = [...new Set((await mm.servers()).map((s) => s.region))].sort();
+    return { ok: true, regions };
+  });
+
   // --- Queue -----------------------------------------------------------------
   app.post('/queue', async (req) => {
     const p = await player(req);

@@ -60,6 +60,13 @@ import {
 } from './meta.ts';
 import { OnlineAccount } from './online/account.ts';
 import { MatchmakerClient, gameSocketUrl, type Lobby, type MatchFound } from './online/matchmaker.ts';
+import {
+  chooseRegion,
+  deviceTimezoneRegion,
+  probeRegions,
+  type Region,
+  type RegionProbe,
+} from './online/region.ts';
 import { ProfileStore } from './profile.ts';
 import { QualityManager } from './quality.ts';
 import type { GameContext, SessionEnd } from './show/context.ts';
@@ -143,6 +150,9 @@ export class GameApp {
   private lobby: Lobby | null = null;
   private readonly thumbs: ThumbnailRenderer;
   private readonly padNav = new GamepadNavigator();
+  private regionProbe: RegionProbe = { pings: {}, available: [], matchmakerMs: null };
+  private regionProbing: Promise<void> | null = null;
+  private regionProbedAt = -Infinity;
 
   private constructor(
     private readonly cfg: GameConfig,
@@ -387,6 +397,7 @@ export class GameApp {
     if (!ok || !(await account.load())) return;
     if (welcome && fresh) await account.adoptWelcomeColors(welcome.colors);
     account.startRealtime();
+    void this.probeRegions();
     if (this.mm) {
       void this.mm.probe().then((up) => {
         if (up) this.mm?.socket.start();
@@ -676,7 +687,7 @@ export class GameApp {
     }
     this.showSearching(account.party?.members.length ?? 1);
     try {
-      const { ticket } = await this.api.queueTicket(playlistId);
+      const { ticket } = await this.api.queueTicket(playlistId, this.region());
       await mm.queue(ticket);
       this.queued = true;
       account.setPresence('in_queue');
@@ -703,7 +714,7 @@ export class GameApp {
       playersFound: partySize,
       playersNeeded: 40,
       etaSec: -1,
-      region: (this.account?.me?.region ?? 'na').toUpperCase(),
+      region: this.region().toUpperCase(),
     });
     if (s.screen !== 'matchmaking') s.setScreen('matchmaking');
   }
@@ -1044,10 +1055,12 @@ export class GameApp {
         if (a) void a.history();
         else s().setMatchHistory(this.profile.uiHistory());
       },
-      onSettingsChange: ({ settings }) => {
+      onSettingsChange: ({ settings, section }) => {
         saveJson('settings', settings);
         this.applySettings(settings);
+        if (section === 'gameplay') this.publishRegion();
       },
+      onProbeRegions: () => void this.probeRegions(),
       onAccountAction: ({ action, value }) => {
         const a = online();
         if (action === 'signOut' || action === 'deleteAccount') {
@@ -1134,13 +1147,16 @@ export class GameApp {
       onCreateCustom: ({ options }) => {
         if (this.customUnavailable() || !this.mm) return;
         void this.mm
-          .createLobby({
-            rounds: options.rounds,
-            bots: options.bots,
-            maxPlayers: options.maxPlayers,
-            roundTimeScale: Math.min(2, Math.max(0.5, options.timerScale)),
-            spectatorSlots: options.spectators ? 2 : 0,
-          })
+          .createLobby(
+            {
+              rounds: options.rounds,
+              bots: options.bots,
+              maxPlayers: options.maxPlayers,
+              roundTimeScale: Math.min(2, Math.max(0.5, options.timerScale)),
+              spectatorSlots: options.spectators ? 2 : 0,
+            },
+            this.region(),
+          )
           .then(
             ({ lobby }) => this.applyLobby(lobby),
             (err) =>
@@ -1245,6 +1261,58 @@ export class GameApp {
     }
     if (this.account?.active) this.account.setPresence('in_menu');
     this.goMenu();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Region
+  // ---------------------------------------------------------------------------
+
+  /** The region to matchmake in: the manual pick, or what Auto chose. */
+  private region(): Region {
+    return chooseRegion(ui.getState().settings.gameplay.region, this.regionProbe, deviceTimezoneRegion());
+  }
+
+  /**
+   * Measures region pings against the matchmaker (at most once a minute;
+   * concurrent callers share one probe), then publishes the result.
+   */
+  private probeRegions(): Promise<void> {
+    if (this.regionProbing) return this.regionProbing;
+    if (!this.mm || performance.now() - this.regionProbedAt < 60_000) {
+      this.publishRegion();
+      return Promise.resolve();
+    }
+    ui.getState().setRegionStatus({ probing: true });
+    this.regionProbing = probeRegions(this.cfg.mmUrl, {
+      fetch: (url, init) => fetch(url, init),
+      now: () => performance.now(),
+    })
+      .then((probe) => {
+        this.regionProbe = probe;
+        this.regionProbedAt = performance.now();
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        this.regionProbing = null;
+        ui.getState().setRegionStatus({ probing: false });
+        this.publishRegion();
+      });
+    return this.regionProbing;
+  }
+
+  /** Shows pings and the Auto pick, remembers the region and tells the account API when it changed. */
+  private publishRegion(): void {
+    const region = this.region();
+    ui.getState().setRegionStatus({
+      pings: { ...this.regionProbe.pings },
+      auto: chooseRegion('auto', this.regionProbe, deviceTimezoneRegion()),
+    });
+    saveJson('region', region);
+    const me = this.account?.active ? this.account.me : null;
+    if (me && me.region !== region) {
+      me.region = region;
+      void this.api.patchMe({ region }).catch(() => undefined);
+    }
   }
 
   // ---------------------------------------------------------------------------

@@ -127,8 +127,8 @@ export class MatchmakerClient {
   queue = (ticket: string): Promise<{ entryId: string }> => this.call('POST', '/queue', { ticket });
   /** Cancels the search for the whole party. */
   cancel = (): Promise<void> => this.call('DELETE', '/queue');
-  createLobby = (settings: Partial<LobbySettings>): Promise<{ lobby: Lobby }> =>
-    this.call('POST', '/lobbies', { settings });
+  createLobby = (settings: Partial<LobbySettings>, region?: string): Promise<{ lobby: Lobby }> =>
+    this.call('POST', '/lobbies', region ? { settings, region } : { settings });
   joinLobby = (code: string): Promise<{ lobby: Lobby }> => this.call('POST', `/lobbies/${code}/join`, {});
   updateLobby = (code: string, settings: Partial<LobbySettings>): Promise<{ lobby: Lobby }> =>
     this.call('PATCH', `/lobbies/${code}`, settings);

@@ -106,6 +106,8 @@ export interface UIIntents {
   dialogResult: { dialogId: string; buttonId: string };
   toastAction: { toastId: number; actionId: string };
   retryConnection: undefined;
+  /** Settings → Region is on screen: re-measure region pings. */
+  probeRegions: undefined;
   /**
    * Mobile touch controls, emitted synchronously on every change so a tap is
    * never coalesced away. `move` is a unit-disc vector, y = forward.

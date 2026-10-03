@@ -44,6 +44,7 @@ import type {
   PreShowInfo,
   ProfileData,
   QueueState,
+  RegionStatus,
   RewardsSummary,
   RoundCatalogEntry,
   RoundIntroInfo,
@@ -136,6 +137,8 @@ export interface UIState {
 
   // --- show ----------------------------------------------------------------
   queue: QueueState;
+  /** Region pings and the Auto pick (Settings → Region). */
+  regionStatus: RegionStatus;
   preShow: PreShowInfo | null;
   showIntro: ShowIntroInfo | null;
   roundIntro: RoundIntroInfo | null;
@@ -214,6 +217,7 @@ export interface UIState {
 
   // --- actions: show -------------------------------------------------------
   setQueue: (queue: Partial<QueueState>) => void;
+  setRegionStatus: (patch: Partial<RegionStatus>) => void;
   setPreShow: (info: PreShowInfo | null) => void;
   setShowIntro: (info: ShowIntroInfo | null) => void;
   setRoundIntro: (info: RoundIntroInfo | null) => void;
@@ -303,6 +307,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   lockerSlot: null,
 
   queue: { status: 'idle', startedAt: 0, playersFound: 0, playersNeeded: 40, etaSec: -1, region: 'auto' },
+  regionStatus: { pings: {}, auto: null, probing: false },
   preShow: null,
   showIntro: null,
   roundIntro: null,
@@ -446,6 +451,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   },
 
   setQueue: (queue) => set({ queue: { ...get().queue, ...queue } }),
+  setRegionStatus: (patch) => set({ regionStatus: { ...get().regionStatus, ...patch } }),
   setPreShow: (preShow) => set({ preShow }),
   setShowIntro: (showIntro) => set({ showIntro }),
   setRoundIntro: (roundIntro) => set({ roundIntro }),

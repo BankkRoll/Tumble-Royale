@@ -455,20 +455,7 @@ function Section({ id }: { id: SettingsSection }): JSX.Element {
               onChange={(chatFilter) => up('gameplay', { chatFilter })}
             />
           </Row>
-          <Row label="Region">
-            <Segmented
-              label="Region"
-              value={s.gameplay.region}
-              options={[
-                { value: 'auto', label: 'Auto' },
-                { value: 'eu', label: 'EU' },
-                { value: 'na', label: 'NA' },
-                { value: 'asia', label: 'Asia' },
-                { value: 'oce', label: 'OCE' },
-              ]}
-              onChange={(region) => up('gameplay', { region })}
-            />
-          </Row>
+          <RegionRow />
         </>
       );
     case 'account':
@@ -512,6 +499,43 @@ function Section({ id }: { id: SettingsSection }): JSX.Element {
         </>
       );
   }
+}
+
+const REGION_LABELS: [string, string][] = [
+  ['eu', 'EU'],
+  ['na', 'NA'],
+  ['sa', 'SA'],
+  ['asia', 'Asia'],
+  ['oce', 'OCE'],
+];
+
+/** Region picker with the measured ping next to each region; Auto shows what it picked. */
+export function RegionRow(): JSX.Element {
+  const region = useUI((s) => s.settings.gameplay.region);
+  const status = useUI((s) => s.regionStatus);
+  useEffect(() => uiEvents.emit('probeRegions'), []);
+  const ms = (id: string): string => {
+    const v = status.pings[id];
+    return v === undefined ? '' : ` ${v} ms`;
+  };
+  const autoName = REGION_LABELS.find(([id]) => id === status.auto)?.[1] ?? status.auto?.toUpperCase();
+  const autoLabel = autoName ? `Auto (${autoName})` : 'Auto';
+  return (
+    <Row
+      label="Region"
+      hint={status.probing ? 'Measuring ping…' : 'Auto picks the lowest ping, or guesses from your time zone'}
+    >
+      <Segmented
+        label="Region"
+        value={region}
+        options={[
+          { value: 'auto', label: autoLabel },
+          ...REGION_LABELS.map(([value, label]) => ({ value, label: label + ms(value) })),
+        ]}
+        onChange={(next) => ui.getState().updateSettings('gameplay', { region: next })}
+      />
+    </Row>
+  );
 }
 
 /** Opened from the in-round menu, Settings closes back to it. */

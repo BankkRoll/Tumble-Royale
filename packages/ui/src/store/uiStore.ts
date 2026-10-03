@@ -27,6 +27,7 @@ import type {
   HudState,
   InventoryData,
   CosmeticSlot,
+  StoreSection,
   LeaderboardId,
   LeaderboardInfo,
   LeaderboardRow,
@@ -139,6 +140,8 @@ export interface UIState {
   inspectedProfile: ProfileData | null;
   /** Slot the Locker should open on (set by deep links such as Profile → banner). */
   lockerSlot: CosmeticSlot | null;
+  /** Section the Store should open on (set by deep links such as the Locker's empty state). */
+  storeSection: StoreSection | null;
 
   // --- show ----------------------------------------------------------------
   queue: QueueState;
@@ -233,6 +236,8 @@ export interface UIState {
   setInspectedProfile: (profile: ProfileData | null) => void;
   /** Opens the Locker tab on a slot. */
   openLocker: (slot: CosmeticSlot | null) => void;
+  /** Opens the Store tab on a section. */
+  openStore: (section: StoreSection | null) => void;
 
   // --- actions: show -------------------------------------------------------
   setQueue: (queue: Partial<QueueState>) => void;
@@ -335,6 +340,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   leaderboardInfo: {},
   inspectedProfile: null,
   lockerSlot: null,
+  storeSection: null,
 
   queue: { status: 'idle', startedAt: 0, playersFound: 0, playersNeeded: 40, etaSec: -1, region: 'auto' },
   regionStatus: { pings: {}, auto: null, probing: false },
@@ -484,6 +490,10 @@ export const ui = createStore<UIState>()((set, get) => ({
   openLocker: (lockerSlot) => {
     set({ lockerSlot });
     get().setMenuTab('locker');
+  },
+  openStore: (storeSection) => {
+    set({ storeSection });
+    get().setMenuTab('store');
   },
 
   setQueue: (queue) => set({ queue: { ...get().queue, ...queue } }),

@@ -36,12 +36,12 @@ import {
   type ChallengesData,
   type CosmeticItem as UiItem,
   type CosmeticSlot as UiSlot,
-  type Friend,
   type GemPackOffer,
   type LeaderboardId,
   type LeaderboardScope,
   type Loadout as UiLoadout,
   type MatchHistoryEntry,
+  type NotificationItem,
   type PartyState,
   type PassReward,
   type ProfileData,
@@ -75,6 +75,7 @@ import {
   uiPatternToContent,
 } from '../cosmetics.ts';
 import { loadoutWithItem, profileDressing, randomizedLoadout } from '../profile.ts';
+import { SocialController } from '../social/socialController.ts';
 import { JsonSocket, type TypedMessage } from './jsonSocket.ts';
 
 const LOADOUT_SLOTS = 6;
@@ -223,14 +224,16 @@ export class OnlineAccount {
   private gemProvider: string | null = null;
   private readonly realtime: JsonSocket;
   private readonly offs: (() => void)[] = [];
-  private notifications: {
-    id: string;
-    kind: 'invite' | 'friendRequest' | 'news' | 'reward';
-    title: string;
-    body?: string;
-    time: number;
-    read?: boolean;
-  }[] = [];
+  private notifications: NotificationItem[] = [];
+  /** Friends, requests, blocking, reports and party chat. */
+  readonly social: SocialController;
+  /** Last reported presence, re-sent whenever the gateway reconnects. */
+  private presence: {
+    status: 'online' | 'in_menu' | 'in_queue' | 'in_match';
+    playlistId?: string;
+    lobbyCode?: string;
+  } = { status: 'in_menu' };
+  private realtimeOpened = false;
   /** Account XP and season XP before the current show, for the rewards bars. */
   private snapshotBefore: { xp: number; passXp: number } | null = null;
 
@@ -245,6 +248,12 @@ export class OnlineAccount {
         const token = await api.accessToken();
         return token ? api.wsUrl(token) : null;
       },
+    });
+    this.social = new SocialController(api, this.realtime, {
+      userId: () => this.userId,
+      colorsOf: (id) => this.colorsOf(id),
+      applyParty: (p) => this.applyParty(p),
+      partyId: () => this.party?.id ?? null,
     });
   }
 
@@ -1014,6 +1023,7 @@ export class OnlineAccount {
   /** Connects the realtime gateway and wires its events. */
   startRealtime(): void {
     const rt = this.realtime;
+    this.social.bind();
     this.offs.push(
       rt.on('wallet', (m) => {
         if (!this.me) return;
@@ -1025,7 +1035,6 @@ export class OnlineAccount {
         ui.getState().setWallet({ gumballs: this.me.wallet.gumballs, gems: this.me.wallet.gems });
         this.pushProfile();
       }),
-      rt.on('presence', () => void this.refreshFriends()),
       rt.on('friend_accepted', (m) => {
         const by = m.by as { name?: string } | undefined;
         ui.getState().pushToast({
@@ -1033,9 +1042,9 @@ export class OnlineAccount {
           title: `${by?.name ?? 'Someone'} is now your friend!`,
           icon: '🤝',
         });
-        void this.refreshFriends();
       }),
       rt.on('friend_request', (m) => this.onFriendRequest(m)),
+      rt.on('friend_request_removed', (m) => this.resolveNotifications(String(m.userId ?? ''), 'Withdrawn')),
       rt.on('party_update', (m) => {
         const next = (m.party as ApiParty | null) ?? null;
         const promoted =
@@ -1052,6 +1061,7 @@ export class OnlineAccount {
         ui.getState().pushToast({ kind: 'warning', title: 'You were removed from the party', icon: '👋' });
         this.applyParty(null);
       }),
+      rt.on('party_disbanded', () => this.applyParty(null)),
       rt.on('party_invite', (m) => this.onPartyInvite(m)),
       rt.on('notification', (m) => {
         this.addNotification(
@@ -1066,7 +1076,12 @@ export class OnlineAccount {
           icon: '🎁',
         });
       }),
-      rt.on('socket_open', () => rt.send({ type: 'presence', status: 'in_menu' })),
+      rt.on('socket_open', () => {
+        rt.send({ type: 'presence', ...this.presence });
+        // Events sent while the socket was down are lost; resync once per reconnect.
+        if (this.realtimeOpened) void Promise.all([this.refreshFriends(), this.refreshParty()]);
+        this.realtimeOpened = true;
+      }),
       ui.subscribe((s, prev) => {
         if (s.notifications !== prev.notifications) this.notifications = s.notifications.slice();
       }),
@@ -1074,16 +1089,24 @@ export class OnlineAccount {
     rt.start();
   }
 
-  /** Reports presence (menu, queue, match). */
-  setPresence(status: 'online' | 'in_menu' | 'in_queue' | 'in_match'): void {
-    if (this.realtime.connected) this.realtime.send({ type: 'presence', status });
-    else void this.api.presence(status).catch(() => undefined);
+  /**
+   * Reports presence (menu, queue, match), with the playlist while queued or
+   * playing and a private show code when one is shared.
+   */
+  setPresence(
+    status: 'online' | 'in_menu' | 'in_queue' | 'in_match',
+    details: { playlistId?: string; lobbyCode?: string } = {},
+  ): void {
+    this.presence = { status, ...details };
+    if (this.realtime.connected) this.realtime.send({ type: 'presence', ...this.presence });
+    else void this.api.presence(status, details).catch(() => undefined);
   }
 
   private addNotification(
     kind: 'invite' | 'friendRequest' | 'news' | 'reward',
     title: string,
     body?: string,
+    action?: NotificationItem['action'],
   ): void {
     this.notifications = [
       {
@@ -1091,6 +1114,7 @@ export class OnlineAccount {
         kind,
         title,
         ...(body ? { body } : {}),
+        ...(action ? { action } : {}),
         time: Date.now(),
       },
       ...this.notifications,
@@ -1098,10 +1122,29 @@ export class OnlineAccount {
     ui.getState().setNotifications(this.notifications);
   }
 
+  /** Marks a player's open friend-request / invite notifications as handled. */
+  private resolveNotifications(userId: string, label: string, kind?: 'friendRequest' | 'partyInvite'): void {
+    let changed = false;
+    this.notifications = this.notifications.map((n) => {
+      if (!n.action || n.resolved || n.action.userId !== userId || (kind && n.action.kind !== kind)) return n;
+      changed = true;
+      return { ...n, resolved: label, read: true };
+    });
+    if (changed) ui.getState().setNotifications(this.notifications);
+    // The toast for a resolved request is stale now.
+    const s = ui.getState();
+    for (const t of s.toasts)
+      if (t.actions?.some((a) => a.id.endsWith(`:${userId}`) && a.id.startsWith('friend-')))
+        s.dismissToast(t.id);
+  }
+
   private onFriendRequest(m: TypedMessage): void {
     const from = m.from as { userId: string; name: string; tag: string } | undefined;
     if (!from) return;
-    this.addNotification('friendRequest', `${from.name}#${from.tag} wants to be friends`);
+    this.addNotification('friendRequest', `${from.name}#${from.tag} wants to be friends`, undefined, {
+      kind: 'friendRequest',
+      userId: from.userId,
+    });
     ui.getState().pushToast({
       kind: 'social',
       title: `${from.name}#${from.tag} wants to be friends`,
@@ -1112,22 +1155,25 @@ export class OnlineAccount {
         { id: `friend-decline:${from.userId}`, label: 'Decline' },
       ],
     });
-    void this.refreshFriends();
   }
 
   private onPartyInvite(m: TypedMessage): void {
-    const from = m.from as { name: string; tag: string } | undefined;
+    const from = m.from as { userId: string; name: string; tag: string } | undefined;
     const code = String(m.code ?? '');
-    if (!code) return;
-    this.addNotification('invite', `${from?.name ?? 'A friend'} invited you to their party`);
+    if (!code || !from) return;
+    this.addNotification('invite', `${from.name} invited you to their party`, undefined, {
+      kind: 'partyInvite',
+      userId: from.userId,
+      code,
+    });
     ui.getState().pushToast({
       kind: 'social',
-      title: `${from?.name ?? 'A friend'} invited you to their party`,
+      title: `${from.name} invited you to their party`,
       icon: '💌',
       durationMs: 0,
       actions: [
         { id: `party-join:${code}`, label: 'Join' },
-        { id: 'party-ignore', label: 'Not now' },
+        { id: `party-decline:${from.userId}`, label: 'Not now' },
       ],
     });
   }
@@ -1139,89 +1185,55 @@ export class OnlineAccount {
    */
   handleToastAction(actionId: string): boolean {
     const [kind, arg] = actionId.split(':') as [string, string | undefined];
-    if (kind === 'friend-accept' && arg) {
-      void this.api.acceptFriend(arg).then(
-        () => this.refreshFriends(),
-        (err) => ui.getState().pushToast({ kind: 'error', title: "Couldn't accept", body: describe(err) }),
-      );
-      return true;
-    }
-    if (kind === 'friend-decline' && arg) {
-      void this.api.declineFriend(arg).then(
-        () => this.refreshFriends(),
-        () => undefined,
-      );
+    if ((kind === 'friend-accept' || kind === 'friend-decline') && arg) {
+      void this.answerFriendRequest(arg, kind === 'friend-accept' ? 'accept' : 'decline');
       return true;
     }
     if (kind === 'party-join' && arg) {
       void this.joinParty(arg);
       return true;
     }
+    if (kind === 'party-decline' && arg) {
+      this.resolveNotifications(arg, 'Declined', 'partyInvite');
+      this.social.declineInvite(arg);
+      return true;
+    }
     return kind === 'party-ignore';
+  }
+
+  /** Accepts, declines or cancels a friend request (sheet, notification or toast). */
+  async answerFriendRequest(userId: string, action: 'accept' | 'decline' | 'cancel'): Promise<void> {
+    if (action !== 'cancel')
+      this.resolveNotifications(userId, action === 'accept' ? 'Accepted' : 'Declined', 'friendRequest');
+    await this.social.answer(userId, action);
+  }
+
+  /** Answers a party invite from the notifications panel. */
+  async answerPartyInvite(userId: string, code: string, action: 'join' | 'decline'): Promise<void> {
+    this.resolveNotifications(userId, action === 'join' ? 'Joined' : 'Declined', 'partyInvite');
+    if (action === 'join') await this.joinParty(code);
+    else this.social.declineInvite(userId);
+  }
+
+  /** Joins a friend's party from their row. */
+  async joinFriend(userId: string): Promise<void> {
+    if (await this.social.joinFriend(userId)) {
+      ui.getState().pushToast({
+        kind: 'social',
+        title: 'Joined the party!',
+        body: 'Hit Ready when you are.',
+      });
+      this.hooks.onJoinedParty?.();
+    }
   }
 
   /** Sends a friend request by `name#1234`. */
   async addFriend(nameTag: string): Promise<void> {
-    try {
-      const r = await this.api.friendRequest(nameTag);
-      ui.getState().pushToast({
-        kind: 'social',
-        title:
-          r.status === 'accepted'
-            ? `${r.user.displayName} is now your friend!`
-            : `Request sent to ${r.user.displayName}`,
-        icon: '👥',
-      });
-      await this.refreshFriends();
-    } catch (err) {
-      ui.getState().pushToast({
-        kind: 'warning',
-        title: "Couldn't add that friend",
-        body: describe(err),
-        icon: '👥',
-      });
-    }
+    await this.social.request(nameTag);
   }
 
   private async refreshFriends(): Promise<void> {
-    try {
-      const [f, recent] = await Promise.all([
-        this.api.friends(),
-        this.api.recentPlayers().catch(() => ({ players: [] })),
-      ]);
-      const presence = (p: string): Friend['presence'] =>
-        p === 'in_match'
-          ? 'inShow'
-          : p === 'in_menu' || p === 'in_queue'
-            ? 'inMenu'
-            : p === 'online'
-              ? 'online'
-              : 'offline';
-      const known = new Set(f.friends.map((x) => x.userId));
-      const list: Friend[] = [
-        ...f.friends.map((x) => ({
-          id: x.userId,
-          name: x.displayName,
-          tag: x.tag,
-          presence: presence(x.presence),
-          colors: this.colorsOf(x.userId),
-        })),
-        ...recent.players
-          .filter((x) => !known.has(x.userId))
-          .slice(0, 10)
-          .map((x) => ({
-            id: x.userId,
-            name: x.displayName,
-            tag: x.tag,
-            presence: 'offline' as const,
-            colors: this.colorsOf(x.userId),
-            recent: true,
-          })),
-      ];
-      ui.getState().setFriends(list);
-    } catch (err) {
-      console.warn('[account] friends failed', err);
-    }
+    await this.social.refresh();
   }
 
   private colorsOf(userId: string): TumblerColors {
@@ -1296,6 +1308,7 @@ export class OnlineAccount {
       );
       // Member colours arrive with their looks; repaint the slots.
       if (looks.some((x) => x.loadout)) {
+        this.social.publish();
         const cur = ui.getState().party;
         if (cur)
           ui.getState().setParty({
@@ -1418,6 +1431,7 @@ export class OnlineAccount {
   dispose(): void {
     for (const off of this.offs) off();
     this.offs.length = 0;
+    this.social.dispose();
     this.realtime.stop();
   }
 }

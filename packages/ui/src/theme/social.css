@@ -1,0 +1,202 @@
+/*
+ * Tumble Royale UI — chat feed and input, party chat, friend rows, requests,
+ * player action menu and report dialog.
+ */
+
+/* In-show chat (bottom-left, above touch controls) */
+.tr-chat-wrap {
+  position: absolute;
+  left: calc(var(--safe-l) + 1em);
+  bottom: calc(var(--safe-b) + 7em);
+  width: min(24em, 70vw);
+  display: grid;
+  justify-items: start;
+  gap: 0.35em;
+  pointer-events: none;
+  z-index: 6;
+}
+.tr-chat {
+  display: grid;
+  gap: 0.35em;
+  width: 100%;
+}
+.tr-chat.is-open {
+  pointer-events: auto;
+}
+.tr-chat-lines {
+  display: grid;
+  gap: 0.2em;
+}
+.tr-chat-line {
+  display: flex;
+  gap: 0.35em;
+  align-items: baseline;
+  padding: 0.18em 0.6em;
+  border-radius: 0.7em;
+  background: rgba(31, 18, 51, 0.62);
+  color: #fff;
+  font-size: 0.9em;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  transition: opacity 1.5s;
+  animation: tr-fade-in 200ms ease-out;
+}
+.tr-chat-line.is-ping {
+  background: rgba(255, 210, 63, 0.92);
+  color: var(--ink);
+}
+.tr-chat-line.is-faded {
+  opacity: 0;
+}
+.tr-chat-name {
+  flex: none;
+  font-weight: 800;
+}
+.tr-chat-who {
+  all: unset;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.tr-chat-who:hover .tr-chat-name,
+.tr-chat-who:focus-visible .tr-chat-name {
+  text-decoration: underline;
+}
+.tr-chat-input {
+  width: 100%;
+  pointer-events: auto;
+}
+.tr-chat-hint {
+  font-size: 0.78em;
+  padding: 0.15em 0.6em;
+  border-radius: 999px;
+  background: rgba(31, 18, 51, 0.55);
+  color: #fff;
+  opacity: 0.8;
+}
+button.tr-chat-hint {
+  border: 0.12em solid var(--ink);
+  background: var(--cloud);
+  color: var(--ink);
+  font-weight: 800;
+  pointer-events: auto;
+  opacity: 1;
+}
+.tr-chat-hint kbd {
+  font-family: inherit;
+  font-weight: 800;
+  padding: 0 0.35em;
+  border-radius: 0.3em;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Party chat inside the friends sheet */
+.tr-party-chat {
+  display: grid;
+  gap: 0.35em;
+  padding: 0.6em;
+  border-radius: 1em;
+  border: 0.14em solid var(--ink);
+  background: #fff;
+}
+.tr-party-chat-lines {
+  display: grid;
+  align-content: start;
+  gap: 0.2em;
+  max-height: 11em;
+  min-height: 3em;
+}
+.tr-party-chat .tr-chat-line {
+  background: #f1ecfb;
+  color: var(--ink);
+}
+
+/* Friend rows, requests, blocked */
+.tr-friend-wrap {
+  display: grid;
+  gap: 0.2em;
+}
+.tr-friend-more,
+.tr-player-actions,
+.tr-notif-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35em;
+}
+.tr-friend-more {
+  padding: 0 0.4em 0.3em 3.2em;
+}
+.tr-section-toggle {
+  all: unset;
+  cursor: pointer;
+}
+.tr-section-toggle::after {
+  content: ' +';
+}
+.tr-section-toggle[aria-expanded='true']::after {
+  content: ' −';
+}
+.tr-friends-empty {
+  margin: 0;
+  font-size: 0.9em;
+}
+.tr-friends-offline {
+  display: grid;
+  justify-items: center;
+  gap: 0.7em;
+  padding: 1.5em 0.5em;
+  text-align: center;
+}
+.tr-friends-offline p {
+  margin: 0;
+  max-width: 24em;
+}
+
+/* Player action menu + report dialog */
+.tr-player-menu,
+.tr-report {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 0.7em;
+  width: min(26em, 94vw);
+  text-align: center;
+}
+.tr-player-actions {
+  justify-content: center;
+}
+.tr-report-reasons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10em, 1fr));
+  gap: 0.4em;
+  width: 100%;
+}
+.tr-report-reason {
+  display: grid;
+  gap: 0.1em;
+  text-align: left;
+  padding: 0.5em 0.7em;
+  border-radius: 0.8em;
+  border: 0.13em solid var(--ink);
+  background: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+.tr-report-reason small {
+  opacity: 0.7;
+}
+.tr-report-reason.is-picked {
+  background: var(--lemon);
+  box-shadow: 0 0.15em 0 var(--ink);
+}
+.tr-report-details {
+  width: 100%;
+  resize: vertical;
+}
+.tr-inspect .tr-player-actions {
+  margin-bottom: 0.4em;
+}
+
+[data-reduce-motion='true'] .tr-chat-line {
+  animation: none;
+  transition: none;
+}

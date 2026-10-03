@@ -19,3 +19,19 @@ export {
   type PlayerWallTimeline,
   type PlayerWallTimingOptions,
 } from './playerWallTimeline.ts';
+export {
+  social,
+  useSocial,
+  visibleChat,
+  CHAT_HISTORY,
+  PRESENCE_LABEL,
+  type SocialState,
+  type SocialAvailability,
+  type PlayerRef,
+  type FriendRequest,
+  type BlockedPlayer,
+  type PlayerSearchResult,
+  type ChatLine,
+  type ChatVisibility,
+  type VisibleChatLine,
+} from './social.ts';

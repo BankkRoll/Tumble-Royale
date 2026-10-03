@@ -7,7 +7,7 @@
 const PREFIX = 'tumble.v1.';
 
 /** Keys the client persists. */
-export type StorageKey = 'profile' | 'settings' | 'quality' | 'auth' | 'newsRead';
+export type StorageKey = 'profile' | 'settings' | 'quality' | 'auth' | 'newsRead' | 'mutes';
 
 /**
  * The raw `localStorage` key behind a {@link StorageKey}, for matching

@@ -9,7 +9,13 @@
 import { Vector3, type Camera, type Object3D } from 'three/webgpu';
 import type { GameAudio } from '@tumble/audio';
 import { getCosmetic } from '@tumble/content/cosmetics';
-import { NameplateLayer, Tumbler, TumblerCrowd, type Nameplate } from '@tumble/render/character';
+import {
+  NameplateLayer,
+  Tumbler,
+  TumblerCrowd,
+  type Nameplate,
+  type NameplateStyle,
+} from '@tumble/render/character';
 import type { QualityPreset } from '@tumble/render/quality';
 import type {
   CreateTumblerVisual,
@@ -98,6 +104,16 @@ export class TumblerPool {
   }
 }
 
+/** Speech bubble look for chat and quick pings. */
+const BUBBLE_STYLE: NameplateStyle = {
+  style: 'bubble',
+  bg: '#fff6d6',
+  bg2: '#ffffff',
+  text: '#2b1d3a',
+  border: '#2b1d3a',
+};
+/** Seconds a speech bubble stays up. */
+const BUBBLE_SECONDS = 3.5;
 /** Nameplate chip that marks computer-controlled players. */
 const BOT_TAG = 'BOT';
 
@@ -147,6 +163,9 @@ export interface PlayerVisualsOptions {
 /** All entrants' visuals for one round. */
 export class PlayerVisuals {
   readonly plates: NameplateLayer;
+  /** Speech bubbles (chat, quick pings): a second layer so they never steal nameplate slots. */
+  private readonly bubbles: NameplateLayer;
+  private readonly bubbleOf = new Map<number, { plate: Nameplate; left: number }>();
   private readonly entries: Entry[] = [];
   private readonly byId = new Map<number, Entry>();
   private readonly sample: PlayerSample = createPlayerSample();
@@ -166,6 +185,10 @@ export class PlayerVisuals {
     this.plates = new NameplateLayer();
     this.plates.setStreamerMode(opts.streamerMode);
     opts.parent.add(this.plates.mesh);
+    this.bubbles = new NameplateLayer();
+    this.bubbles.fadeStart = 30;
+    this.bubbles.fadeEnd = 55;
+    opts.parent.add(this.bubbles.mesh);
     this.lod1 = opts.preset.lodDistances[0];
     this.lod2 = opts.preset.lodDistances[1];
     this.showPlates = opts.nameplates;
@@ -244,6 +267,41 @@ export class PlayerVisuals {
   setNameplates(on: boolean, streamer: boolean): void {
     this.showPlates = on;
     this.plates.setStreamerMode(streamer);
+  }
+
+  /**
+   * Shows a speech bubble over a player (replacing their previous one).
+   *
+   * @param id - Player id.
+   * @param text - Short text (already trimmed for a bubble).
+   */
+  say(id: number, text: string): void {
+    const e = this.byId.get(id);
+    if (!e) return;
+    const cur = this.bubbleOf.get(id);
+    if (cur) {
+      cur.plate.setName(text);
+      cur.left = BUBBLE_SECONDS;
+      return;
+    }
+    const plate = this.bubbles.create(text, { plate: BUBBLE_STYLE, height: e.plate ? 2.85 : 2.4 });
+    if (!plate) return;
+    plate.target = e.visual.object;
+    this.bubbleOf.set(id, { plate, left: BUBBLE_SECONDS });
+  }
+
+  private updateBubbles(dt: number, camera: Camera): void {
+    for (const [id, b] of this.bubbleOf) {
+      b.left -= dt;
+      const e = this.byId.get(id);
+      if (b.left <= 0 || !e) {
+        b.plate.dispose();
+        this.bubbleOf.delete(id);
+        continue;
+      }
+      b.plate.visible = e.visible;
+    }
+    this.bubbles.update(camera);
   }
 
   /** Shows or hides the BOT chip on bots' nameplates. */
@@ -399,6 +457,7 @@ export class PlayerVisuals {
     vfx.setShadowCount(shadows);
     this.cullPlates();
     this.plates.update(camera);
+    this.updateBubbles(dt, camera);
   }
 
   private cullPlates(): void {
@@ -425,6 +484,8 @@ export class PlayerVisuals {
     this.entries.length = 0;
     this.byId.clear();
     this.plates.dispose();
+    this.bubbleOf.clear();
+    this.bubbles.dispose();
     this.crowd?.object.removeFromParent();
   }
 }

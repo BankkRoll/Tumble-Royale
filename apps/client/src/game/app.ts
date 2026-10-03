@@ -28,6 +28,7 @@ import {
   type CustomLobbyState,
   type Settings,
 } from '@tumble/ui';
+import { loadMutes, publishSocialAvailability, socialIntents } from './social/intents.ts';
 import { createRenderer } from '@tumble/render';
 import { createPostPipeline, type PostPipeline } from '@tumble/render/post';
 import type { TumblerLoadout } from '@tumble/render/scenes';
@@ -392,6 +393,7 @@ export class GameApp {
     if (cfg.debug)
       createDebugPanel({ renderer, quality, stats, session: () => app.session, timeScale: app.timeScale });
     if (cfg.autoplay) installAutoplay(cfg.autoShows);
+    loadMutes();
     if (cfg.api) {
       // OAuth/email returns settle which session to resume before the normal connect.
       void app.auth
@@ -399,10 +401,14 @@ export class GameApp {
         .then(() => app.connectAccount(null))
         .finally(() => {
           app.auth.publishSession();
+          publishSocialAvailability(app.account?.active ?? false);
           void app.refreshOnlineStatus();
           void finishCheckoutReturn(app.auth.bootReturn, api, app.account?.active ? app.account : null);
         });
-    } else void app.refreshOnlineStatus();
+    } else {
+      publishSocialAvailability(false);
+      void app.refreshOnlineStatus();
+    }
     window.setTimeout(() => ui.getState().setScreen('splash', { transition: 'wipe' }), 350);
     return app;
   }
@@ -431,6 +437,7 @@ export class GameApp {
     if (!ok || !(await account.load())) return;
     if (welcome && fresh) await account.adoptWelcomeColors(welcome.colors);
     account.startRealtime();
+    publishSocialAvailability(true);
     if (this.mm) {
       void this.mm.probe().then((up) => {
         if (up) this.mm?.socket.start();
@@ -699,7 +706,7 @@ export class GameApp {
       const { ticket } = await this.api.queueTicket(playlistId);
       await mm.queue(ticket);
       this.queued = true;
-      account.setPresence('in_queue');
+      account.setPresence('in_queue', { playlistId });
     } catch (err) {
       this.queued = false;
       const notReady = err instanceof ApiError && err.code === 'not_ready';
@@ -786,7 +793,7 @@ export class GameApp {
       playlistId: m.playlistId,
     });
     this.session = session;
-    this.account?.setPresence('in_match');
+    this.account?.setPresence('in_match', { playlistId: m.playlistId });
     session.start();
   }
 
@@ -859,9 +866,12 @@ export class GameApp {
       this.lobbyRevealPending = false;
       const started = this.startedLobby;
       ui.getState().setCustomLobby(started ? { ...this.lobbyView(started), started: true } : null);
+      if (!lobby && this.account?.active && !this.session) this.account.setPresence('in_menu');
       return;
     }
     this.startedLobby = null;
+    // Friends see the code on our row and can hop into the private show.
+    if (this.account?.active) this.account.setPresence('in_menu', { lobbyCode: lobby.code });
     ui.getState().setCustomLobby(this.lobbyView(lobby));
     // Only a fresh join opens the dialog; live updates must not reopen it after the player closed it.
     if (!joined) return;
@@ -1081,6 +1091,7 @@ export class GameApp {
           () => {
             this.auth.publishSession();
             if (this.cfg.api) void this.auth.refreshProviders();
+            publishSocialAvailability(this.account?.active ?? false);
             void this.refreshOnlineStatus();
           },
         );
@@ -1235,6 +1246,7 @@ export class GameApp {
         this.applyLobby(null);
         if (lobby && this.mm) void this.mm.leaveLobby(lobby.code).catch(() => undefined);
       },
+      ...socialIntents(online),
       onInviteFriend: ({ friendId }) => {
         const a = online();
         if (a) void a.invite(friendId);

@@ -3,9 +3,22 @@
  *
  * Browsers cannot set headers on a WebSocket handshake, so the access token
  * travels in the query string. Each connection subscribes to its user's KV
- * channel (see `Notifier`) and maintains presence. Client → server messages:
- * `{type:'ping'}` and `{type:'presence', status}`; server → client messages are
- * `RealtimeEvent`s plus `{type:'hello'}` and `{type:'pong'}`.
+ * channel (see `Notifier`) and maintains presence.
+ *
+ * Client → server: `{type:'ping'}`, `{type:'presence', status, playlistId?,
+ * lobbyCode?}` and `{type:'party_chat', text}`. Server → client:
+ * `RealtimeEvent`s plus `{type:'hello'}`, `{type:'pong'}` and
+ * `{type:'error', code, message}` for refused client messages.
+ *
+ * Presence:
+ * - every tab reports its own status; friends see the most engaged one
+ *   (`in_match` > `in_queue` > `in_menu` > `online`);
+ * - a new connection gets a `presence_snapshot` of its friends;
+ * - closing the last tab starts a grace period (`presenceGraceMs`) before the
+ *   user is shown offline, so reloads and network blips don't flicker.
+ *
+ * NOTE: tab bookkeeping is per API instance. Behind several instances a user's
+ * tabs may land on different ones; the presence key's TTL is the backstop.
  */
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
@@ -16,17 +29,42 @@ import { isErased } from '../accounts/tombstone.ts';
 import { verifyAccessToken } from '../auth/tokens.ts';
 import type { AppContext } from '../context.ts';
 import { activeBans } from '../http/auth.ts';
-import { friendIds } from '../social/friends.ts';
-import { PRESENCE_TTL_MS, setPresence } from '../social/presence.ts';
-import { userChannel, type PresenceStatus } from './notifier.ts';
+import { ApiError } from '../http/errors.ts';
+import { broadcastPresence, friendIds } from '../social/friends.ts';
+import { sendPartyChat } from '../social/partyChat.ts';
+import { PartyService } from '../social/party.ts';
+import { PRESENCE_TTL_MS, presenceViews, setPresence } from '../social/presence.ts';
+import { REPORTABLE_PRESENCE, userChannel, type PresenceStatus } from './notifier.ts';
 
 const ClientMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ping') }),
-  z.object({ type: z.literal('presence'), status: z.enum(['online', 'in_menu', 'in_queue', 'in_match']) }),
+  z.object({
+    type: z.literal('presence'),
+    status: z.enum(REPORTABLE_PRESENCE),
+    playlistId: z.string().min(1).max(64).optional(),
+    lobbyCode: z
+      .string()
+      .regex(/^[A-Z0-9]{4,8}$/)
+      .optional(),
+  }),
+  z.object({ type: z.literal('party_chat'), text: z.string().max(500) }),
 ]);
 
 const HEARTBEAT_MS = 30_000;
 const MAX_MESSAGE_BYTES = 4096;
+
+const ENGAGEMENT: Record<Exclude<PresenceStatus, 'offline'>, number> = {
+  online: 0,
+  in_menu: 1,
+  in_queue: 2,
+  in_match: 3,
+};
+
+interface TabState {
+  status: Exclude<PresenceStatus, 'offline'>;
+  playlistId?: string | undefined;
+  lobbyCode?: string | undefined;
+}
 
 /** Handle for shutting the gateway down. */
 export interface Gateway {
@@ -44,10 +82,31 @@ export interface Gateway {
 export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
   const alive = new WeakMap<WebSocket, boolean>();
-  const byUser = new Map<string, Set<WebSocket>>();
+  const byUser = new Map<string, Map<WebSocket, TabState>>();
+  const offlineTimers = new Map<string, NodeJS.Timeout>();
+  const parties = new PartyService(ctx);
+  /** Last presence each user's friends were told about (skips duplicate broadcasts). */
+  const lastBroadcast = new Map<string, string>();
 
-  const broadcastPresence = async (userId: string, status: PresenceStatus) => {
-    await ctx.notifier.notifyMany(await friendIds(ctx.db, userId), { type: 'presence', userId, status });
+  /** Stores the most engaged tab's state; returns true when friends should hear about it. */
+  const storePresence = async (userId: string): Promise<boolean> => {
+    const tabs = byUser.get(userId);
+    if (!tabs || tabs.size === 0) return false;
+    let best: TabState | null = null;
+    for (const t of tabs.values()) if (!best || ENGAGEMENT[t.status] > ENGAGEMENT[best.status]) best = t;
+    const key = JSON.stringify(best);
+    const changed = lastBroadcast.get(userId) !== key;
+    lastBroadcast.set(userId, key);
+    await setPresence(ctx.kv, userId, best!.status, ctx.now().getTime(), best!);
+    return changed;
+  };
+
+  const goOffline = async (userId: string) => {
+    offlineTimers.delete(userId);
+    if (byUser.has(userId)) return;
+    lastBroadcast.delete(userId);
+    await setPresence(ctx.kv, userId, 'offline', ctx.now().getTime());
+    await broadcastPresence(ctx, userId);
   };
 
   const onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
@@ -75,21 +134,34 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
     })().catch(() => socket.destroy());
   };
 
+  const send = (ws: WebSocket, msg: unknown) => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+  };
+
   const onConnection = async (ws: WebSocket, userId: string) => {
     alive.set(ws, true);
-    let set = byUser.get(userId);
-    const firstConnection = !set;
-    if (!set) {
-      set = new Set();
-      byUser.set(userId, set);
+    const pendingOffline = offlineTimers.get(userId);
+    if (pendingOffline) {
+      clearTimeout(pendingOffline);
+      offlineTimers.delete(userId);
     }
-    set.add(ws);
+    let tabs = byUser.get(userId);
+    if (!tabs) {
+      tabs = new Map();
+      byUser.set(userId, tabs);
+    }
+    tabs.set(ws, { status: 'online' });
     const unsubscribe = await ctx.kv.subscribe(userChannel(userId), (msg) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(msg);
     });
-    await setPresence(ctx.kv, userId, 'online', ctx.now().getTime());
-    if (firstConnection) await broadcastPresence(userId, 'online');
-    ws.send(JSON.stringify({ type: 'hello', userId, presenceTtlMs: PRESENCE_TTL_MS }));
+    if (await storePresence(userId)) await broadcastPresence(ctx, userId);
+    send(ws, { type: 'hello', userId, presenceTtlMs: PRESENCE_TTL_MS });
+    const ids = await friendIds(ctx.db, userId);
+    const views = await presenceViews(ctx.kv, ids);
+    send(ws, {
+      type: 'presence_snapshot',
+      friends: ids.map((id) => ({ userId: id, ...(views.get(id) ?? { status: 'offline' }) })),
+    });
 
     ws.on('pong', () => alive.set(ws, true));
     ws.on('message', (data) => {
@@ -101,23 +173,36 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
       }
       void (async () => {
         if (parsed.type === 'ping') {
-          await setPresence(ctx.kv, userId, 'online', ctx.now().getTime());
-          ws.send(JSON.stringify({ type: 'pong', at: ctx.now().getTime() }));
+          // Refreshes the TTL with the tab's real status; a ping is not a status report.
+          await storePresence(userId);
+          send(ws, { type: 'pong', at: ctx.now().getTime() });
+        } else if (parsed.type === 'presence') {
+          tabs.set(ws, { status: parsed.status, playlistId: parsed.playlistId, lobbyCode: parsed.lobbyCode });
+          if (await storePresence(userId)) await broadcastPresence(ctx, userId);
         } else {
-          await setPresence(ctx.kv, userId, parsed.status, ctx.now().getTime());
-          await broadcastPresence(userId, parsed.status);
+          try {
+            await sendPartyChat(ctx, parties, userId, parsed.text);
+          } catch (err) {
+            if (err instanceof ApiError) send(ws, { type: 'error', code: err.code, message: err.message });
+            else throw err;
+          }
         }
       })().catch(() => undefined);
     });
     ws.on('close', () => {
       void (async () => {
         await unsubscribe();
-        set.delete(ws);
-        if (set.size === 0) {
-          byUser.delete(userId);
-          await setPresence(ctx.kv, userId, 'offline', ctx.now().getTime());
-          await broadcastPresence(userId, 'offline');
+        tabs.delete(ws);
+        if (tabs.size > 0) {
+          if (await storePresence(userId)) await broadcastPresence(ctx, userId);
+          return;
         }
+        byUser.delete(userId);
+        const grace = ctx.config.presenceGraceMs;
+        if (grace <= 0) return void (await goOffline(userId));
+        const t = setTimeout(() => void goOffline(userId).catch(() => undefined), grace);
+        t.unref();
+        offlineTimers.set(userId, t);
       })().catch(() => undefined);
     });
   };
@@ -139,6 +224,8 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
     connections: () => wss.clients.size,
     close: async () => {
       clearInterval(heartbeat);
+      for (const t of offlineTimers.values()) clearTimeout(t);
+      offlineTimers.clear();
       app.server.off('upgrade', onUpgrade);
       for (const ws of wss.clients) ws.close(1001, 'server shutting down');
       await new Promise<void>((r) => wss.close(() => r()));

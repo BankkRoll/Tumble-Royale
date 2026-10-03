@@ -230,6 +230,10 @@ export interface NotificationItem {
   /** Epoch ms. */
   time: number;
   read?: boolean;
+  /** Inline Accept/Decline (friend request) or Join/Decline (party invite) buttons. */
+  action?: { kind: 'friendRequest'; userId: string } | { kind: 'partyInvite'; userId: string; code: string };
+  /** Set once the action was taken ("Accepted", "Declined"…); hides the buttons. */
+  resolved?: string;
 }
 
 // -----------------------------------------------------------------------------
@@ -621,7 +625,13 @@ export interface OnlineStatus {
 // -----------------------------------------------------------------------------
 
 /** Friend presence. */
-export type Presence = 'online' | 'inShow' | 'inMenu' | 'offline';
+export type Presence = 'online' | 'inShow' | 'inMenu' | 'inQueue' | 'offline';
+
+/** Reasons offered by the report dialog (the API's report reasons). */
+export type ReportReason = 'cheating' | 'harassment' | 'offensive_name' | 'griefing' | 'spam' | 'other';
+
+/** How the local player relates to another player. */
+export type Relation = 'friend' | 'incoming' | 'outgoing' | 'none';
 
 /** A friend / recent player. */
 export interface Friend {
@@ -631,6 +641,14 @@ export interface Friend {
   presence: Presence;
   colors: TumblerColors;
   recent?: boolean;
+  /** Recent players: whether they are already a friend or a request is pending. */
+  relation?: Relation;
+  /** Playlist name while queued or in a show. */
+  playlist?: string;
+  /** Their party has room and they are in the menu: "Join" works. */
+  joinable?: boolean;
+  /** Private show code they are sharing with friends. */
+  lobbyCode?: string;
 }
 
 /** A party member slot. */
@@ -1107,7 +1125,10 @@ export interface Settings {
     autoSpectate: boolean;
     /** Small "BOT" tag beside bot names (nameplates, results, wall, spectate). */
     botTags: boolean;
+    /** Masks swearing in chat (slurs are always masked). */
     chatFilter: boolean;
+    /** Off hides every chat line and quick ping from other players. */
+    showChat: boolean;
     region: string;
   };
 }

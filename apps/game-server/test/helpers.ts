@@ -291,6 +291,11 @@ export class TestClient {
     return seq;
   }
 
+  /** Queues a low-frequency message; it goes out on the next `pump`. */
+  send(msg: LowFreqMessage): void {
+    this.reliable.send(encodeReliableMessage({ kind: 'msg', msg }));
+  }
+
   /** Queues a chat line on the reliable channel; it goes out on the next {@link pump}. */
   chat(text: string): void {
     this.reliable.send(encodeReliableMessage({ kind: 'msg', msg: { t: 'chat', from: 0, text } }));

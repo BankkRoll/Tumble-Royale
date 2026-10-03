@@ -293,6 +293,13 @@ export function VictoryScreen(): JSX.Element | null {
   );
 }
 
+/** Winner-cam quick chat: preset ids (`@tumble/shared` QUICK_CHAT) and their labels. */
+const WINNER_CAM_LINES: readonly [string, string][] = [
+  ['cam:gg', 'GG!'],
+  ['cam:wow', 'Wow!'],
+  ['cam:next', 'Next time…'],
+];
+
 /** Someone else won: winner banner over the 3D winner cam. */
 export function WinnerCamScreen(): JSX.Element | null {
   const v = useUI((s) => s.victory);
@@ -311,12 +318,12 @@ export function WinnerCamScreen(): JSX.Element | null {
         </span>
       </div>
       <div className="tr-winnercam-actions tr-interactive" data-nav-scope="1">
-        {['GG!', 'Wow!', 'Next time…'].map((t) => (
+        {WINNER_CAM_LINES.map(([kind, t]) => (
           <Button
-            key={t}
+            key={kind}
             size="sm"
             variant="secondary"
-            onClick={() => uiEvents.emit('quickPing', { kind: `chat:${t}` })}
+            onClick={() => uiEvents.emit('quickPing', { kind })}
           >
             {t}
           </Button>

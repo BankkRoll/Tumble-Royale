@@ -189,6 +189,11 @@ export interface NetPlayerInfo {
   /** Opaque loadout blob from Hello (bots: generated). */
   loadout: string;
   connected: boolean;
+  /**
+   * Account id from the join ticket, for profile cards, friend requests,
+   * reports and client-side block/mute. Absent for bots and dev joins.
+   */
+  userId?: string;
 }
 
 /** Everything a client needs to build the round locally and decode its snapshots. */
@@ -283,13 +288,28 @@ export interface RoundResultEntry {
   score: number;
 }
 
+/**
+ * In-show chat. Client → server: either `text` or a quick-chat preset id in
+ * `quick` (`from` is ignored). Server → client: the relayed message; `text` has
+ * slurs masked, `masked` (when present) is the fully filtered variant for
+ * players with the chat filter on.
+ */
+export interface ChatMsg {
+  t: 'chat';
+  from: number;
+  text: string;
+  masked?: string;
+  /** Quick-chat preset id (`@tumble/shared` QUICK_CHAT). */
+  quick?: string;
+}
+
 /** Union of low-frequency messages. `t` is the discriminant. */
 export type LowFreqMessage =
   | JoinRoundMsg
   | { t: 'playerList'; players: NetPlayerInfo[] }
   | { t: 'roundResults'; roundId: string; results: RoundResultEntry[] }
   | { t: 'showSummary'; winners: number[]; rounds: { roundId: string; qualified: number[] }[] }
-  | { t: 'chat'; from: number; text: string }
+  | ChatMsg
   /** Client → server: finished loading the round. */
   | { t: 'loaded'; roundId: string }
   /** Client → server: who to spectate (drives interest management). */

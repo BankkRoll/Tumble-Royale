@@ -60,6 +60,8 @@ const DEFAULT_STYLE: NameplateStyle = {
 export interface NameplateOptions {
   /** Nameplate cosmetic id (`nameplate.*`). */
   style?: string;
+  /** Explicit look; wins over `style` (speech bubbles use this). */
+  plate?: NameplateStyle;
   /** Team or party colour shown as a dot before the name. */
   teamColor?: string | null;
   /** Height above the target's origin. Default 2.3 m. */
@@ -259,7 +261,7 @@ export class NameplateLayer {
       this,
       slot,
       name,
-      resolveStyle(opts.style),
+      opts.plate ?? resolveStyle(opts.style),
       opts.teamColor ?? null,
       opts.height ?? 2.3,
       opts.tag ?? null,

@@ -9,11 +9,13 @@ import { lobbyStartState } from '../src/screens/overlays/PrivateLobby.tsx';
 import { PrivateShowDialog } from '../src/screens/overlays/PrivateShow.tsx';
 import { ShowHostTools } from '../src/screens/overlays/ShowHostTools.tsx';
 import { FriendsSheet } from '../src/screens/overlays/SocialSheets.tsx';
+import { social } from '../src/store/social.ts';
 import { ui } from '../src/store/uiStore.ts';
 import type { CustomLobbyMember, CustomLobbyState, PartyMember } from '../src/store/types.ts';
 
 // NOTE: zustand's useStore renders the store's *initial* state on the server; point it at the live state.
 (ui as unknown as { getInitialState: () => unknown }).getInitialState = ui.getState;
+(social as unknown as { getInitialState: () => unknown }).getInitialState = social.getState;
 
 const colors = { primary: '#ff4f9a', secondary: '#ffd23f', pattern: 'dots' as const };
 const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]|\u{FE0F}/u;
@@ -187,6 +189,9 @@ describe('lobbyStartState', () => {
 });
 
 describe('party leader tools', () => {
+  // Parties only exist online; offline the sheet shows its empty state instead.
+  beforeEach(() => social.getState().setAvailability('online'));
+
   const party = (selfLeads: boolean): PartyMember[] => [
     { id: 'me', name: 'Me', colors, ready: true, isLeader: selfLeads, isSelf: true },
     { id: 'ann', name: 'Ann', colors, ready: false, isLeader: !selfLeads, isSelf: false },

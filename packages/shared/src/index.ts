@@ -8,3 +8,5 @@ export * from './rng.ts';
 export * from './math.ts';
 export * from './game.ts';
 export * from './schema/round.ts';
+export * from './chat/profanity.ts';
+export * from './chat/chat.ts';

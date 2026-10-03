@@ -62,6 +62,8 @@ export interface SessionPlayer {
   isBot: boolean;
   loadout: TumblerLoadout;
   partyId?: number;
+  /** Account id (online humans), for profile cards, friend requests, reports and mutes. */
+  userId?: string;
 }
 
 /** A round about to load (normalised from the director or a `joinRound` message). */

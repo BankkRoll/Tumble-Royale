@@ -5,9 +5,11 @@
  */
 import { useEffect, useRef, type JSX } from 'react';
 import { ConnectionLayer, DialogLayer, ToastLayer } from './components/system.tsx';
+import { ShowChatLayer } from './hud/ChatFeed.tsx';
 import { Hud } from './hud/Hud.tsx';
 import { SettingsSheet } from './screens/overlays/SettingsSheet.tsx';
 import { InGameMenu } from './screens/overlays/InGameMenu.tsx';
+import { SocialLayer } from './screens/overlays/PlayerActions.tsx';
 import { JoinCodeDialog, PrivateShowDialog } from './screens/overlays/PrivateShow.tsx';
 import { FriendsSheet, NotificationsPanel } from './screens/overlays/SocialSheets.tsx';
 import { WatchChoiceLayer } from './screens/overlays/WatchChoice.tsx';
@@ -77,6 +79,7 @@ export function App(): JSX.Element {
       <div className="tr-stage">
         <ScreenLayer />
         <HudLayer />
+        <ShowChatLayer />
         <StampLayer />
       </div>
       <ConfettiLayer />
@@ -84,6 +87,7 @@ export function App(): JSX.Element {
       <ToastLayer />
       <ReplayLayer />
       <OverlayLayer />
+      <SocialLayer />
       <DialogLayer />
       <ConnectionLayer />
       <TumbleWipe />

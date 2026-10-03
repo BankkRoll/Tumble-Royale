@@ -18,6 +18,8 @@ import { Icon, type IconName } from '../../components/icons/index.tsx';
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
+import { PlayerActionRow } from '../overlays/PlayerActions.tsx';
+import type { PlayerRef } from '../../store/social.ts';
 import type {
   MatchHistoryEntry,
   MetOfflineInfo,
@@ -533,6 +535,15 @@ export function ProfileTab(): JSX.Element {
   );
 }
 
+const ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Local cards (bots, offline players) have no account id, so only mute applies to them. */
+function inspectRef(p: ProfileData): PlayerRef {
+  return ACCOUNT_ID.test(p.id)
+    ? { userId: p.id, name: p.name, tag: p.tag, key: p.id }
+    : { name: p.name, key: `name:${p.name}`, isBot: true };
+}
+
 /**
  * Card for a Tumbler only met in offline shows: just the shows played
  * together, with no level, XP, rank or lifetime stats (this device can't know them).
@@ -575,6 +586,7 @@ export function MetOfflineCard({ p, info }: { p: ProfileData; info: MetOfflineIn
 /** Another player's profile card (opened from Ranks / results via `inspectPlayer`). */
 export function ProfileOverlay(): JSX.Element | null {
   const p = useUI((s) => s.inspectedProfile);
+  const selfId = useUI((s) => s.profile?.id);
   if (!p) return null;
   const close = (): void => {
     playCue('ui.back');
@@ -600,6 +612,7 @@ export function ProfileOverlay(): JSX.Element | null {
             </>
           )}
         </div>
+        {p.id !== selfId && <PlayerActionRow p={inspectRef(p)} compact />}
         <Button
           variant="secondary"
           data-nav-back=""

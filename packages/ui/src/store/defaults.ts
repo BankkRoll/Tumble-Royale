@@ -81,6 +81,7 @@ export const DEFAULT_SETTINGS: Settings = {
     autoSpectate: true,
     botTags: true,
     chatFilter: true,
+    showChat: true,
     region: 'auto',
   },
 };

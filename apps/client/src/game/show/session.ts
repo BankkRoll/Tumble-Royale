@@ -28,6 +28,7 @@ import { getMutator } from '@tumble/sim/mutators';
 import type { ShowPlaylist } from '@tumble/sim/show';
 import {
   bindUI,
+  social,
   ui,
   type HudGrab,
   type PlayerWallEvent,
@@ -44,6 +45,7 @@ import type { LiveRoundInfo } from '../replay/live.ts';
 import { HudMapper, type HudInput } from '../round/hud.ts';
 import { TumblerPool } from '../round/playerVisuals.ts';
 import { RoundView } from '../round/roundView.ts';
+import { ShowChat } from '../social/showChat.ts';
 import type { RoundSource } from '../round/source.ts';
 import {
   createPodiumView,
@@ -204,6 +206,8 @@ export abstract class ShowSession {
   /** Latest show phase seen. */
   protected showPhaseId: number = ShowPhase.PreShow;
   protected readonly pool: TumblerPool;
+  /** Quick pings and text chat (feed, bubbles, offline bot replies). */
+  protected readonly chat: ShowChat;
   protected readonly outcomes: RoundOutcomeInfo[] = [];
   protected summary: SessionSummary | null = null;
   protected readonly counters: Partial<Record<ChallengeMetric, number>> = {};
@@ -247,6 +251,25 @@ export abstract class ShowSession {
 
   constructor(protected readonly ctx: GameContext) {
     this.pool = new TumblerPool(ctx.tumblers.create);
+    this.chat = new ShowChat(
+      {
+        localId: () => this.localId,
+        player: (id) => {
+          const p = this.players.get(id);
+          if (!p) return undefined;
+          return {
+            name: p.name,
+            isBot: p.isBot,
+            color: p.loadout.colors[0],
+            ...(p.userId ? { userId: p.userId } : {}),
+          };
+        },
+        botIds: () => [...this.players.values()].filter((p) => p.isBot).map((p) => p.id),
+        bubble: (id, text) => this.round?.view?.players.say(id, text),
+        releaseKeys: () => ctx.input.releaseKeys(),
+      },
+      0,
+    );
     ui.getState().setShowSeat({ online: this.isOnline(), outOfShow: false });
     ui.getState().setWatchChoice(null);
     this.offs.push(
@@ -482,6 +505,7 @@ export abstract class ShowSession {
     if (this.ended) return;
     this.ended = true;
     window.removeEventListener('keydown', this.onKey);
+    this.chat.dispose();
     for (const off of this.offs) off();
     this.offs.length = 0;
     this.timers.length = 0;
@@ -1451,7 +1475,8 @@ export abstract class ShowSession {
       !this.ctx.cfg.autoplay &&
       us.screen === 'round' &&
       us.overlay === 'none' &&
-      !us.replay;
+      !us.replay &&
+      !social.getState().chatOpen;
     if (!input.settings.pointerLock && us.overlay !== 'none' && document.pointerLockElement)
       document.exitPointerLock();
     const lock =

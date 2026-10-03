@@ -73,6 +73,8 @@ export async function createTestApi(
     RATE_LIMIT_MAX: '100000',
     ADMIN_TOKEN,
     LOG_LEVEL: 'silent',
+    // Short enough for tests to watch a disconnect turn into "offline".
+    PRESENCE_GRACE_MS: '150',
     ...env,
   });
   const mailer = new MemoryMailer();

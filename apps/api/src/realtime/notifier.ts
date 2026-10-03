@@ -7,16 +7,57 @@ import type { KV } from '../kv/index.ts';
 /** Presence states shown in friends lists. */
 export type PresenceStatus = 'online' | 'in_menu' | 'in_queue' | 'in_match' | 'offline';
 
+/** Presence states that a client may report (the gateway derives `offline`). */
+export const REPORTABLE_PRESENCE = ['online', 'in_menu', 'in_queue', 'in_match'] as const;
+
+/** What friends see about a user's presence. */
+export interface PresenceView {
+  status: PresenceStatus;
+  /** Playlist being queued for or played (`in_queue` / `in_match`). */
+  playlistId?: string;
+  /** Code of a private show the user is hosting or sitting in, shared with friends. */
+  lobbyCode?: string;
+  /** Friends may join this user's party right now (menu, party not full). */
+  joinable?: boolean;
+}
+
+/** A user as named in social events. */
+export interface SocialRef {
+  userId: string;
+  name: string;
+  tag: string;
+}
+
+/** A relayed party chat line. */
+export interface PartyChatLine {
+  /** Unique id (dedupe across reconnects). */
+  id: string;
+  partyId: string;
+  from: SocialRef;
+  /** Slurs masked; shown with the chat filter off. */
+  text: string;
+  /** Fully masked copy, when it differs from `text`. */
+  masked?: string;
+  /** Epoch ms. */
+  at: number;
+}
+
 /** Every event the gateway pushes to clients. `type` is the discriminator. */
 export type RealtimeEvent =
-  | { type: 'presence'; userId: string; status: PresenceStatus }
-  | { type: 'friend_request'; from: { userId: string; name: string; tag: string } }
-  | { type: 'friend_accepted'; by: { userId: string; name: string; tag: string } }
+  | ({ type: 'presence'; userId: string } & PresenceView)
+  /** Sent once per connection: the current presence of every friend. */
+  | { type: 'presence_snapshot'; friends: ({ userId: string } & PresenceView)[] }
+  | { type: 'friend_request'; from: SocialRef }
+  | { type: 'friend_accepted'; by: SocialRef }
   | { type: 'friend_removed'; userId: string }
+  /** A pending request between you and `userId` is gone (declined, cancelled, blocked). */
+  | { type: 'friend_request_removed'; userId: string }
+  | { type: 'party_invite_declined'; by: SocialRef }
+  | ({ type: 'party_chat' } & PartyChatLine)
   | { type: 'party_update'; party: unknown }
   | {
       type: 'party_invite';
-      from: { userId: string; name: string; tag: string };
+      from: SocialRef;
       code: string;
       partyId: string;
     }

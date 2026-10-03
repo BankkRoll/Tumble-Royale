@@ -5,7 +5,8 @@
  * Keys: `party:<id>` (JSON, 6 h TTL refreshed on change), `party-code:<code>`
  * → id, `user-party:<userId>` → id. Every mutation runs under a KV lock on the
  * party so concurrent joins cannot overfill it, then pushes `party_update` to
- * all members through the realtime gateway.
+ * all members through the realtime gateway. Membership changes also re-push
+ * each member's presence to their friends, since "joinable" depends on size.
  */
 import { randomInt, randomUUID } from 'node:crypto';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -20,7 +21,9 @@ import { badRequest, conflict, forbidden, notFound, parse } from '../http/errors
 import { withLock } from '../kv/index.ts';
 import { RANKED_QUEUE } from '../leaderboards/service.ts';
 import { DEFAULT_RATING, skillOrdinal } from '../ranked/rating.ts';
-import { friendIds } from './friends.ts';
+import { broadcastPresence, friendIds, socialRef } from './friends.ts';
+import { sendPartyChat } from './partyChat.ts';
+import { getPresence } from './presence.ts';
 
 /** Maximum party size. */
 export const MAX_PARTY_SIZE = 4;
@@ -78,6 +81,7 @@ const CodeBody = z.object({
     .regex(/^[A-Z2-9]{6}$/),
 });
 const UserBody = z.object({ userId: z.string().uuid() });
+const ChatBody = z.object({ text: z.string().max(500) });
 const ReadyBody = z.object({ ready: z.boolean() });
 const PlaylistBody = z.object({ playlistId: z.string().min(1).max(64) });
 const TicketBody = z
@@ -111,6 +115,11 @@ export class PartyService {
       p.members.map((m) => m.userId),
       { type: 'party_update', party: this.view(p) },
     );
+  }
+
+  /** Friends of these users learn the new party size (joinable flag). */
+  private async presenceChanged(userIds: Iterable<string>): Promise<void> {
+    await Promise.all([...new Set(userIds)].map((id) => broadcastPresence(this.ctx, id)));
   }
 
   /** Client-facing view including the invite link. */
@@ -183,6 +192,7 @@ export class PartyService {
       return p;
     });
     await this.broadcast(joined);
+    await this.presenceChanged(joined.members.map((m) => m.userId));
     return joined;
   }
 
@@ -215,6 +225,10 @@ export class PartyService {
     if (after === 'empty')
       await this.ctx.notifier.notifyUser(userId, { type: 'party_disbanded', partyId: cur.id });
     else if (after) await this.broadcast(after);
+    await this.presenceChanged([
+      userId,
+      ...(after && after !== 'empty' ? after.members.map((m) => m.userId) : []),
+    ]);
   }
 
   /**
@@ -237,6 +251,7 @@ export class PartyService {
       return p.members.map((m) => m.userId);
     });
     await this.ctx.notifier.notifyMany(members, { type: 'party_disbanded', partyId: cur.id });
+    await this.presenceChanged(members);
   }
 
   /** Mutates the caller's party under the lock and broadcasts the result. */
@@ -265,6 +280,7 @@ export class PartyService {
     });
     await this.ctx.kv.del(`user-party:${targetId}`);
     await this.ctx.notifier.notifyUser(targetId, { type: 'party_kicked', partyId: p.id });
+    await this.presenceChanged([targetId, ...p.members.map((m) => m.userId)]);
     return p;
   }
 
@@ -468,9 +484,13 @@ export function registerPartyRoutes(app: FastifyInstance, ctx: AppContext): void
   app.post('/party/invite', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req) => {
     const auth = await requireUser(ctx, req);
     const { userId } = parse(UserBody, req.body);
+    // Blocking removes the friendship, so this also refuses blocked pairs.
     if (!(await friendIds(ctx.db, auth.userId)).includes(userId))
       throw forbidden('not_friends', 'You can only invite friends');
     const p = (await parties.current(auth.userId)) ?? (await parties.create(auth.userId));
+    if (p.members.some((m) => m.userId === userId))
+      throw conflict('already_in_party', 'They are already in your party');
+    if (p.members.length >= MAX_PARTY_SIZE) throw conflict('party_full', 'Party is full');
     const me = p.members.find((m) => m.userId === auth.userId)!;
     await ctx.notifier.notifyUser(userId, {
       type: 'party_invite',
@@ -479,6 +499,48 @@ export function registerPartyRoutes(app: FastifyInstance, ctx: AppContext): void
       partyId: p.id,
     });
     return { party: parties.view(p), invited: userId };
+  });
+
+  /** The invitee says no; the inviter gets a notice instead of waiting. */
+  app.post(
+    '/party/invite/decline',
+    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const auth = await requireUser(ctx, req);
+      const { userId } = parse(UserBody, req.body);
+      if ((await friendIds(ctx.db, auth.userId)).includes(userId))
+        await ctx.notifier.notifyUser(userId, {
+          type: 'party_invite_declined',
+          by: await socialRef(ctx.db, auth.userId),
+        });
+      return reply.code(204).send();
+    },
+  );
+
+  /** Joins a friend's party from their row (creates it if they are solo in the menu). */
+  app.post(
+    '/party/join-friend',
+    { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
+    async (req) => {
+      const auth = await requireUser(ctx, req);
+      const { userId } = parse(UserBody, req.body);
+      if (userId === auth.userId) throw badRequest('self_join', 'That is you');
+      if (!(await friendIds(ctx.db, auth.userId)).includes(userId))
+        throw forbidden('not_friends', 'You can only join friends');
+      const presence = await getPresence(ctx.kv, userId);
+      if (presence.status === 'offline') throw conflict('friend_offline', 'They are offline');
+      if (presence.status === 'in_queue' || presence.status === 'in_match')
+        throw conflict('friend_busy', 'They are in a show right now');
+      const theirs = (await parties.current(userId)) ?? (await parties.create(userId));
+      if (theirs.members.some((m) => m.userId === auth.userId)) return { party: parties.view(theirs) };
+      return { party: parties.view(await parties.join(auth.userId, theirs.code)) };
+    },
+  );
+
+  app.post('/party/chat', async (req) => {
+    const auth = await requireUser(ctx, req);
+    const { text } = parse(ChatBody, req.body);
+    return { message: await sendPartyChat(ctx, parties, auth.userId, text) };
   });
 
   app.post('/party/queue-ticket', async (req) => {

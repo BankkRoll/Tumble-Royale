@@ -453,7 +453,14 @@ function Section({ id }: { id: SettingsSection }): JSX.Element {
               onChange={(botTags) => up('gameplay', { botTags })}
             />
           </Row>
-          <Row label="Chat filter">
+          <Row label="Show chat" hint="Off hides chat and quick pings from other players">
+            <Toggle
+              label="Show chat"
+              checked={s.gameplay.showChat}
+              onChange={(showChat) => up('gameplay', { showChat })}
+            />
+          </Row>
+          <Row label="Chat filter" hint="Masks swearing. Slurs are always hidden">
             <Toggle
               label="Chat filter"
               checked={s.gameplay.chatFilter}

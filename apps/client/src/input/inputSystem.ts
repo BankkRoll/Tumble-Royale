@@ -322,6 +322,14 @@ export class InputSystem {
     return this.look;
   }
 
+  /**
+   * Releases every held key and button. Call when focus moves to a text field
+   * (chat): its keyup never reaches the game, so a held W would stay pressed.
+   */
+  releaseKeys(): void {
+    this.releaseAll();
+  }
+
   /** Requests pointer lock (must be called from a user gesture). */
   lockPointer(): void {
     if (!this.mouseActions || this.pointerLocked) return;

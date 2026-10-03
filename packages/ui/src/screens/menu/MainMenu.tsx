@@ -158,7 +158,7 @@ function TopBar(): JSX.Element {
     useShallow((s) => ({ gumballs: s.profile?.gumballs ?? 0, gems: s.profile?.gems ?? 0 })),
   );
   const unread = useUI((s) => s.notifications.filter((n) => !n.read).length);
-  const online = useUI((s) => s.friends.filter((f) => f.presence !== 'offline').length);
+  const online = useUI((s) => s.friends.filter((f) => !f.recent && f.presence !== 'offline').length);
   const overlay = useUI((s) => s.overlay);
   const panel = useUI((s) => s.currencyPanel);
   const toggle = (o: 'friends' | 'notifications' | 'settings'): void => {

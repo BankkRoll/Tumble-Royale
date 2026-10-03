@@ -6,7 +6,7 @@
  * channel (see `Notifier`) and maintains presence.
  *
  * Client → server: `{type:'ping'}`, `{type:'presence', status, playlistId?,
- * lobbyCode?}` and `{type:'party_chat', text}`. Server → client:
+ * lobbyCode?}`, `{type:'party_chat', text}` and `{type:'whisper', to, text}`. Server → client:
  * `RealtimeEvent`s plus `{type:'hello'}`, `{type:'pong'}` and
  * `{type:'error', code, message}` for refused client messages.
  *
@@ -32,6 +32,7 @@ import { activeBans } from '../http/auth.ts';
 import { ApiError } from '../http/errors.ts';
 import { broadcastPresence, friendIds } from '../social/friends.ts';
 import { sendPartyChat } from '../social/partyChat.ts';
+import { sendWhisper } from '../social/whisper.ts';
 import { PartyService } from '../social/party.ts';
 import { PRESENCE_TTL_MS, presenceViews, setPresence } from '../social/presence.ts';
 import { REPORTABLE_PRESENCE, userChannel, type PresenceStatus } from './notifier.ts';
@@ -48,6 +49,7 @@ const ClientMessage = z.discriminatedUnion('type', [
       .optional(),
   }),
   z.object({ type: z.literal('party_chat'), text: z.string().max(500) }),
+  z.object({ type: z.literal('whisper'), to: z.string().uuid(), text: z.string().max(500) }),
 ]);
 
 const HEARTBEAT_MS = 30_000;
@@ -181,7 +183,8 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
           if (await storePresence(userId)) await broadcastPresence(ctx, userId);
         } else {
           try {
-            await sendPartyChat(ctx, parties, userId, parsed.text);
+            if (parsed.type === 'whisper') await sendWhisper(ctx, userId, parsed.to, parsed.text);
+            else await sendPartyChat(ctx, parties, userId, parsed.text);
           } catch (err) {
             if (err instanceof ApiError) send(ws, { type: 'error', code: err.code, message: err.message });
             else throw err;

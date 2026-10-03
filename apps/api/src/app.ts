@@ -41,6 +41,7 @@ import { ensureRankedSeason } from './ranked/season.ts';
 import { attachGateway, type Gateway } from './realtime/gateway.ts';
 import { Notifier } from './realtime/notifier.ts';
 import { registerFriendRoutes } from './social/friends.ts';
+import { registerWhisperRoutes } from './social/whisper.ts';
 import { registerPartyRoutes } from './social/party.ts';
 
 /** Optional dependency overrides (tests). */
@@ -243,6 +244,7 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
   registerTutorialRoutes(app, ctx);
   registerMatchRoutes(app, ctx);
   registerFriendRoutes(app, ctx);
+  registerWhisperRoutes(app, ctx);
   registerPartyRoutes(app, ctx);
   registerModerationRoutes(app, ctx);
   registerNewsRoutes(app, ctx);

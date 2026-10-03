@@ -54,6 +54,8 @@ export type RealtimeEvent =
   | { type: 'friend_request_removed'; userId: string }
   | { type: 'party_invite_declined'; by: SocialRef }
   | ({ type: 'party_chat' } & PartyChatLine)
+  /** A whisper to or from this user (both sides receive it). */
+  | { type: 'whisper'; id: string; from: SocialRef; to: SocialRef; text: string; masked?: string; at: number }
   | { type: 'party_update'; party: unknown }
   | {
       type: 'party_invite';

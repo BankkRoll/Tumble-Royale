@@ -237,6 +237,7 @@ export class OnlineShowSession extends ShowSession {
 
   private onConnection(st: ConnectionState): void {
     const s = ui.getState();
+    if (this.summary) return;
     if (st === 'reconnecting') s.setConnection({ status: 'reconnecting', attempt: 1, maxAttempts: 5, message: 'Hold tight, wobbling back in…' });
     else if (st === 'connected') s.setConnection({ status: 'online' });
     else if (st === 'connecting') s.setConnection({ status: 'connecting' });
@@ -246,7 +247,8 @@ export class OnlineShowSession extends ShowSession {
   private failed = false;
 
   private fail(message: string): void {
-    if (this.failed) return;
+    // After the show summary the server winds the room down; the wall and rewards don't need the socket.
+    if (this.failed || this.summary) return;
     this.failed = true;
     const s = ui.getState();
     s.setConnection({ status: 'offline', message });

@@ -40,6 +40,7 @@ import {
   type MatchSim,
   type NetPlayerInfo,
   type NetRoundStatus,
+  type PlayerRewardMsg,
   type RoundStatus,
   type SnapshotFrame,
 } from '@tumble/netcode';
@@ -48,8 +49,10 @@ import { MAX_PLAYERS, SERVER_TICK_HZ, SIM_STEPS_PER_TICK, type RoundDefinition }
 import { InputSequenceGuard, sanitizeChat, sanitizeName } from '../antiCheat.ts';
 import { LagCompensator } from '../lagcomp.ts';
 import type { ServerMetrics } from '../metrics.ts';
+import { computePlacements, type MatchResultPayload, type PlayerStatsCounters, type ResultRound } from '../results.ts';
+import type { JoinTicketClaims } from '../tickets.ts';
 import type { ClientSession } from './session.ts';
-import type { RoomConfig, RoomDeps, ServerBotBrain, ShowController, ShowEvent, ShowRoundPlan } from './types.ts';
+import type { MatchSettings, RoomConfig, RoomDeps, ServerBotBrain, ShowController, ShowEvent, ShowRoundPlan } from './types.ts';
 
 
 /** Lifecycle of a room. */
@@ -72,7 +75,29 @@ interface PlayerSlot {
   seqGuard: InputSequenceGuard;
   brain: ServerBotBrain | null;
   lastYaw: number;
+  /** Account id from the join ticket (null for bots and unticketed dev joins). */
+  userId: string | null;
+  /** Action counters for challenge progress. */
+  stats: PlayerStatsCounters;
 }
+
+/** A finished round as reported to the API. */
+interface RoundRecord extends ResultRound {
+  entrants: number[];
+  qualifiedIds: number[];
+}
+
+const newStats = (): PlayerStatsCounters => ({ jumps: 0, dives: 0, grabs: 0, checkpoints: 0, bounces: 0, emotes: 0 });
+
+/** Sim events that count toward a player's challenge stats. */
+const STAT_EVENTS: Partial<Record<SimEvent['type'], keyof PlayerStatsCounters>> = {
+  jump: 'jumps',
+  dive: 'dives',
+  grabStart: 'grabs',
+  checkpoint: 'checkpoints',
+  bounce: 'bounces',
+  emote: 'emotes',
+};
 
 /** Summary for `/rooms`. */
 export interface RoomInfo {
@@ -139,6 +164,15 @@ export class Room {
   private readonly batchHeader: InputBatchHeader = { newestSeq: 0, clientTick: 0, ackSnapshotId: -1, count: 0 };
   private readonly presentPlayers = new Set<number>();
   private readonly log: (msg: string) => void;
+  private readonly config: RoomConfig;
+  private roundIndex = -1;
+  private roundStartedAt = 0;
+  private showStartedAtWall = 0;
+  private readonly roundRecords: RoundRecord[] = [];
+  private currentPlan: ShowRoundPlan | null = null;
+  /** Rewards per user id once the API answered (replayed to late reconnects). */
+  private readonly rewardsByUser = new Map<string, Record<string, unknown> | null>();
+  private rewardsDone = false;
 
   /**
    * @param id - Room id.
@@ -146,15 +180,25 @@ export class Room {
    * @param config - Tuning.
    * @param metrics - Process metrics.
    * @param tickEpochMs - Server clock (ms) at which this room's tick 0 was due.
+   * @param match - Matchmade show settings from the join tickets; null for an unticketed dev room.
    */
   constructor(
     readonly id: string,
     private readonly deps: RoomDeps,
-    private readonly config: RoomConfig,
+    config: RoomConfig,
     private readonly metrics: ServerMetrics,
     private readonly tickEpochMs: () => number,
+    readonly match: MatchSettings | null = null,
   ) {
-    this.show = deps.createShowController({ roomId: id });
+    this.config = match
+      ? {
+          ...config,
+          capacity: Math.max(1, Math.min(MAX_PLAYERS, match.humans + match.bots)),
+          startAtHumans: Math.max(1, match.humans),
+          fillWaitMs: config.ticketedFillWaitMs,
+        }
+      : config;
+    this.show = deps.createShowController({ roomId: id, match });
     this.log = deps.log ?? (() => {});
     this.frame = {
       snapshotId: 0,
@@ -191,9 +235,27 @@ export class Room {
     return n;
   }
 
-  /** True when a new human can join as a player. */
+  /** True when a new unticketed human can join as a player (dev rooms only). */
   canAcceptPlayer(): boolean {
-    return this.state === 'lobby' && this.humanCount < this.config.capacity;
+    return this.match === null && this.state === 'lobby' && this.humanCount < this.config.capacity;
+  }
+
+  /** The slot id a ticketed account already holds here (rejoin after a reload), or -1. */
+  slotOfUser(userId: string): number {
+    for (const s of this.slots.values()) if (s.userId === userId && !s.left) return s.id;
+    return -1;
+  }
+
+  /**
+   * Reattaches a ticketed account to its existing slot (a reload lost the
+   * resume token, but the ticket still proves who it is).
+   *
+   * @returns False when the account has no live slot here.
+   */
+  rejoinUser(session: ClientSession, userId: string): boolean {
+    const id = this.slotOfUser(userId);
+    const slot = id >= 0 ? this.slots.get(id) : undefined;
+    return slot ? this.resume(session, slot.token) : false;
   }
 
   /** True when the room can take a spectator. */
@@ -252,12 +314,16 @@ export class Room {
    *
    * @returns The assigned player id.
    */
-  join(session: ClientSession, hello: HelloMsg, now: number): number {
-    const spectator = this.state !== 'lobby';
+  join(session: ClientSession, hello: HelloMsg, now: number, ticket: JoinTicketClaims | null = null): number {
+    const spectator = this.state !== 'lobby' || ticket?.role === 'spectator';
     const id = this.allocateId(spectator);
+    // Ticketed names come from the account (`name#tag`); the tag stays off the nameplate.
+    const name = ticket ? sanitizeName(ticket.name.replace(/#\d+$/, '')) : sanitizeName(hello.name);
     const slot: PlayerSlot = {
       id,
-      name: sanitizeName(hello.name),
+      name,
+      userId: ticket?.sub ?? null,
+      stats: newStats(),
       isBot: false,
       loadout: hello.loadout.slice(0, 255),
       token: randomBytes(18).toString('base64url'),
@@ -464,6 +530,8 @@ export class Room {
       const slot: PlayerSlot = {
         id,
         name,
+        userId: null,
+        stats: newStats(),
         isBot: true,
         loadout: '',
         token: '',
@@ -485,7 +553,9 @@ export class Room {
       if (slot.isBot && this.deps.createBot) slot.brain = this.deps.createBot(info, seed);
     }
     this.log(`[room ${this.id}] show starting: ${this.humanCount} humans + ${botIndex} bots`);
+    this.showStartedAtWall = Date.now();
     this.broadcastPlayerList();
+    this.broadcastShowInfo();
     this.show.start(roster, seed);
   }
 
@@ -532,6 +602,11 @@ export class Room {
     for (const e of events) {
       if (e.type === 'qualified') this.show.onPlayerFate(e.player, 1, e.place);
       else if (e.type === 'eliminated') this.show.onPlayerFate(e.player, 2, e.place);
+      const stat = STAT_EVENTS[e.type];
+      if (stat && 'player' in e) {
+        const slot = this.slots.get(e.player);
+        if (slot && !slot.isBot) slot.stats[stat]++;
+      }
       this.broadcastEvent(e, simTick);
     }
   }
@@ -606,11 +681,13 @@ export class Room {
           break;
         case 'roundEnd':
           this.broadcast({ t: 'roundResults', roundId: e.roundId, results: e.results });
+          this.recordRound(e.roundId, e.results, now);
           break;
         case 'showEnd':
           this.broadcast({ t: 'showSummary', winners: e.winners, rounds: e.rounds });
           this.state = 'ended';
           this.endedAt = now;
+          this.reportResults(e.winners);
           break;
       }
     }
@@ -638,6 +715,9 @@ export class Room {
     });
     this.sim = sim;
     this.round = round;
+    this.currentPlan = plan;
+    this.roundIndex = plan.index ?? this.roundIndex + 1;
+    this.roundStartedAt = this.deps.now();
     this.roundPlayers = players.map((p) => p.id);
     this.quantizer = new PositionQuantizer(round.bounds);
     const ids = new Set<string>(round.obstacles.map((o) => o.id));
@@ -722,7 +802,9 @@ export class Room {
     slot.session = session;
     this.sessions.add(session);
     this.sendWelcome(session, slot, resumed);
+    if (this.state !== 'lobby' || this.match) session.sendLowFreq(this.showInfo());
     if (this.sim) this.sendJoinRound(session);
+    this.sendRewards(session);
     this.broadcastPlayerList();
     if (this.sim && this.status) session.sendLowFreq({ t: 'roundPhase', phase: this.status.phase, time: this.sim.time });
     this.flushSession(session, performance.now());
@@ -761,7 +843,128 @@ export class Room {
       bounds: this.round.bounds,
       epoch: this.epoch,
       startTick: this.serverTick,
+      roundIndex: Math.max(0, this.roundIndex),
+      isFinal: this.currentPlan?.isFinal ?? this.round.type === 'final',
+      qualifyTarget: this.currentPlan?.qualifyTarget ?? this.sim.getStatus().qualifyTarget,
+      variationId: this.sim.variationId ?? null,
     });
+  }
+
+  private showInfo(): LowFreqMessage {
+    const m = this.match;
+    const players = this.roster().length || this.config.capacity;
+    const desc = this.deps.describePlaylist?.(m?.custom?.playlistId ?? m?.playlistId ?? null, players);
+    return {
+      t: 'showInfo',
+      matchId: m?.matchId ?? null,
+      playlistId: desc?.id ?? m?.playlistId ?? 'main-show',
+      showName: desc?.name ?? 'Main Show',
+      queue: m?.queue ?? 'dev',
+      roundCount: desc?.roundCount ?? 3,
+    };
+  }
+
+  private broadcastShowInfo(): void {
+    this.broadcast(this.showInfo());
+  }
+
+  // ---------------------------------------------------------------------------
+  // Results → account API
+  // ---------------------------------------------------------------------------
+
+  private recordRound(roundId: string, results: readonly { id: number; status: number; place: number; score: number }[], now: number): void {
+    const round = this.round?.id === roundId ? this.round : null;
+    const entrants = this.currentPlan?.roundId === roundId ? [...this.currentPlan.playerIds] : results.map((r) => r.id);
+    const qualifiedIds = results.filter((r) => r.status === 1).map((r) => r.id);
+    const isRace = round?.type === 'race' || round?.qualification.mode === 'finish';
+    this.roundRecords.push({
+      roundId,
+      roundType: this.currentPlan?.isFinal ? 'final' : (round?.type ?? 'race'),
+      durationMs: Math.max(0, Math.round(now - this.roundStartedAt)),
+      entrants,
+      qualifiedIds,
+      results: entrants.map((id) => {
+        const r = results.find((x) => x.id === id);
+        const qualified = r?.status === 1;
+        return {
+          key: String(id),
+          qualified,
+          ...(isRace && qualified && r ? { position: Math.min(100, Math.max(1, r.place)) } : {}),
+          ...(r && Number.isFinite(r.score) ? { score: Math.round(r.score) } : {}),
+        };
+      }),
+    });
+  }
+
+  /** Builds the API payload for a finished matchmade show. */
+  buildResults(winners: readonly number[]): MatchResultPayload | null {
+    const m = this.match;
+    if (!m || this.roundRecords.length === 0) return null;
+    const players = [...this.slots.values()].filter((s) => !s.spectator && (s.isBot || s.userId));
+    const keys = new Set(players.map((s) => String(s.id)));
+    const placements = computePlacements(
+      players.map((s) => String(s.id)),
+      this.roundRecords.map((r) => ({ entrants: r.entrants.map(String).filter((k) => keys.has(k)), qualified: r.qualifiedIds.map(String).filter((k) => keys.has(k)) })),
+      winners.map(String).filter((k) => keys.has(k)),
+    );
+    return {
+      matchId: m.matchId,
+      queue: m.queue,
+      playlistId: m.custom?.playlistId ?? m.playlistId,
+      region: m.region.slice(0, 8) || 'na',
+      startedAt: new Date(this.showStartedAtWall || Date.now()).toISOString(),
+      endedAt: new Date().toISOString(),
+      participants: players.map((s) => ({
+        key: String(s.id),
+        userId: s.isBot ? null : s.userId,
+        isBot: s.isBot,
+        name: s.name.slice(0, 32) || 'Tumbler',
+        ...(s.left ? { quit: true } : {}),
+        ...(s.isBot ? {} : { stats: { ...s.stats } }),
+      })),
+      rounds: this.roundRecords.slice(0, 10).map((r) => ({
+        roundId: r.roundId,
+        roundType: r.roundType,
+        durationMs: Math.min(r.durationMs, 30 * 60_000),
+        results: r.results.filter((x) => keys.has(x.key)),
+      })),
+      placements,
+    };
+  }
+
+  private reportResults(winners: readonly number[]): void {
+    const sink = this.deps.results;
+    const payload = sink ? this.buildResults(winners) : null;
+    if (!sink || !payload) {
+      this.finishRewards(null);
+      return;
+    }
+    void sink
+      .post(payload)
+      .then((res) => {
+        this.log(`[room ${this.id}] results for ${payload.matchId} ${res ? `recorded (${res.rewards.length} rewards${res.alreadyProcessed ? ', replayed' : ''})` : 'not recorded'}`);
+        this.finishRewards(res?.rewards ?? null);
+      })
+      .catch(() => this.finishRewards(null));
+  }
+
+  private finishRewards(rewards: readonly { userId: string; [k: string]: unknown }[] | null): void {
+    if (this.state === 'closed') return;
+    this.rewardsDone = true;
+    for (const s of this.slots.values()) {
+      if (s.isBot || !s.userId) continue;
+      this.rewardsByUser.set(s.userId, rewards?.find((r) => r.userId === s.userId) ?? null);
+    }
+    for (const session of this.sessions) this.sendRewards(session);
+  }
+
+  private sendRewards(session: ClientSession): void {
+    const m = this.match;
+    const slot = this.slots.get(session.playerId);
+    if (!m || !this.rewardsDone || !slot?.userId) return;
+    const reward = this.rewardsByUser.get(slot.userId) ?? null;
+    // The API's PlayerRewardSummary is a superset of PlayerRewardMsg; it is forwarded untouched.
+    session.sendLowFreq({ t: 'showRewards', matchId: m.matchId, reward: reward as PlayerRewardMsg | null });
   }
 
   private broadcastPlayerList(): void {

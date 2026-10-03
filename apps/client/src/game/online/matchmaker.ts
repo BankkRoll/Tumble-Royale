@@ -63,6 +63,8 @@ const PROBE_TIMEOUT_MS = 900;
 export class MatchmakerClient {
   /** True after a successful health probe. */
   online = false;
+  /** Players searching right now (from the last probe). */
+  searching = 0;
   readonly socket: JsonSocket;
 
   constructor(
@@ -83,7 +85,9 @@ export class MatchmakerClient {
     const ctrl = new AbortController();
     const t = window.setTimeout(() => ctrl.abort(), PROBE_TIMEOUT_MS);
     try {
-      this.online = (await fetch(`${this.baseUrl}/health`, { signal: ctrl.signal })).ok;
+      const res = await fetch(`${this.baseUrl}/health`, { signal: ctrl.signal });
+      this.online = res.ok;
+      if (res.ok) this.searching = Number(((await res.json()) as { queued?: number }).queued ?? 0);
     } catch {
       this.online = false;
     } finally {

@@ -229,8 +229,8 @@ export class TestClient {
 
   constructor(readonly conn: FakeConnection) {}
 
-  hello(name = 'tester', resumeToken = ''): void {
-    writeHello(this.w.reset(), { version: PROTOCOL_VERSION, name, resumeToken, loadout: 'blue' });
+  hello(name = 'tester', resumeToken = '', ticket = ''): void {
+    writeHello(this.w.reset(), { version: PROTOCOL_VERSION, name, resumeToken, loadout: 'blue', ticket });
     this.conn.receive(this.w.finish());
   }
 

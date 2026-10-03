@@ -10,7 +10,7 @@ import type { BitReader, BitWriter } from './bits.ts';
 import type { Bounds } from './quantize.ts';
 
 /** Bumped on any incompatible wire change; peers with different versions are rejected in the handshake. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /** First byte of every binary message. Values are stable wire ids. */
 export const MsgType = {
@@ -35,6 +35,8 @@ export const KickReason = {
   ServerFull: 4,
   ResumeExpired: 5,
   Shutdown: 6,
+  /** Missing, invalid or expired join ticket. */
+  BadTicket: 7,
 } as const;
 
 /** Numeric kick reason. */
@@ -57,6 +59,11 @@ export interface HelloMsg {
   resumeToken: string;
   /** Opaque cosmetic loadout id/blob forwarded to other players (≤ 255 bytes). */
   loadout: string;
+  /**
+   * Matchmaker join ticket (HS256 JWT) placing the player into a specific
+   * match. Empty/absent for unticketed dev joins; ignored when resuming.
+   */
+  ticket?: string;
 }
 
 /** Server → client: session accepted. */
@@ -77,6 +84,9 @@ export interface WelcomeMsg {
   resumed: boolean;
 }
 
+/** Longest join ticket a Hello carries; longer ones are truncated (and then fail verification). */
+export const MAX_TICKET_BYTES = 2048;
+
 /** Writes a Hello. */
 export function writeHello(w: BitWriter, m: HelloMsg): void {
   w.writeBits(MsgType.Hello, 8);
@@ -84,11 +94,12 @@ export function writeHello(w: BitWriter, m: HelloMsg): void {
   w.writeString(m.name, 32);
   w.writeString(m.resumeToken, 64);
   w.writeString(m.loadout, 255);
+  w.writeString(m.ticket ?? '', MAX_TICKET_BYTES);
 }
 
 /** Reads a Hello after its type byte. */
 export function readHello(r: BitReader): HelloMsg {
-  return { version: r.readBits(16), name: r.readString(), resumeToken: r.readString(), loadout: r.readString() };
+  return { version: r.readBits(16), name: r.readString(), resumeToken: r.readString(), loadout: r.readString(), ticket: r.readString() };
 }
 
 /** Writes a Welcome. */
@@ -186,6 +197,61 @@ export interface JoinRoundMsg {
   epoch: number;
   /** Server network tick at which the round's sim was created. */
   startTick: number;
+  /** 0-based round index within the show. */
+  roundIndex: number;
+  /** The show's final round (one winner). */
+  isFinal: boolean;
+  /** Players the round qualifies (1 in a final). */
+  qualifyTarget: number;
+  /** Seeded (or forced) layout variation id; null when the round has none. */
+  variationId: string | null;
+}
+
+/** Show context, sent once per connection right after Welcome. */
+export interface ShowInfoMsg {
+  t: 'showInfo';
+  /** Matchmaker match id; null in an unticketed dev room. */
+  matchId: string | null;
+  playlistId: string;
+  /** Playlist display name. */
+  showName: string;
+  queue: 'casual' | 'ranked' | 'custom' | 'dev';
+  /** Estimated rounds (the real count depends on results). */
+  roundCount: number;
+}
+
+/** One labelled reward line (the API's `RewardLine`). */
+export interface RewardLineMsg {
+  label: string;
+  amount: number;
+}
+
+/** The parts of the API's `PlayerRewardSummary` the client renders. */
+export interface PlayerRewardMsg {
+  placement: number;
+  crowned: boolean;
+  roundsQualified: number;
+  xp: { total: number; lines: RewardLineMsg[] };
+  level: { before: number; after: number };
+  gumballs: { total: number; lines: RewardLineMsg[] };
+  crownShards: number;
+  crownsFromShards: number;
+  pass: { xp: number; tierBefore: number; tierAfter: number };
+  challenges: { title: string; before: number; progress: number; target: number; completed: boolean }[];
+  ranked: { rpBefore: number; rpAfter: number; rpDelta: number; label: string; placementsLeft: number } | null;
+  wallet: { gumballs: number; gems: number };
+}
+
+/**
+ * Server → client after the show: the account API's grant for this player,
+ * forwarded once the game server posted the results. `reward` is null when
+ * nothing was recorded (API unreachable, spectator); the client then falls
+ * back to its local estimate.
+ */
+export interface ShowRewardsMsg {
+  t: 'showRewards';
+  matchId: string;
+  reward: PlayerRewardMsg | null;
 }
 
 /** Per-player outcome of a round. */
@@ -210,7 +276,9 @@ export type LowFreqMessage =
   /** Server → client: lobby countdown before the show fills with bots. */
   | { t: 'lobby'; humans: number; capacity: number; startsInMs: number }
   | { t: 'showPhase'; phase: ShowPhaseId }
-  | { t: 'roundPhase'; phase: RoundPhaseId; time: number };
+  | { t: 'roundPhase'; phase: RoundPhaseId; time: number }
+  | ShowInfoMsg
+  | ShowRewardsMsg;
 
 /** Low-frequency message type discriminant. */
 export type LowFreqType = LowFreqMessage['t'];

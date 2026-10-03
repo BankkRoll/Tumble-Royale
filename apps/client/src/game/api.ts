@@ -200,6 +200,10 @@ export interface ApiProfileCard {
   displayName: string;
   tag: string;
   level: number;
+  xp?: { total: number; intoLevel: number; toNext: number };
+  crowns?: number;
+  stats?: { showsPlayed: number; wins: number; finals: number; roundsPlayed: number; roundsQualified: number; currentWinStreak: number; bestWinStreak: number };
+  ranked?: { queue: string; tier: string; division: number; rp: number; placementsLeft: number }[];
   loadout: ApiLoadoutItems | null;
 }
 

@@ -20,7 +20,7 @@
  * writes to it except the display name.
  */
 import { COSMETICS, DEFAULT_LOADOUT, getCosmetic } from '@tumble/content/cosmetics';
-import { levelForXp, passTierForXp, type ChallengeMetric } from '@tumble/content/progression';
+import { SHARDS_PER_CROWN, levelForXp, passTierForXp, type ChallengeMetric } from '@tumble/content/progression';
 import { getRound } from '@tumble/content/rounds';
 import { getPlaylist } from '@tumble/content/shows';
 import type { PlayerRewardMsg } from '@tumble/netcode';
@@ -34,6 +34,7 @@ import {
   type Friend,
   type GemPackOffer,
   type LeaderboardId,
+  type LeaderboardScope,
   type Loadout as UiLoadout,
   type MatchHistoryEntry,
   type PartyState,
@@ -57,7 +58,7 @@ import {
   type ApiPassReward,
 } from '../api.ts';
 import { avatarHat, botLoadout, contentPatternToUi, defaultUiLoadout, lockerItems, tumblerColors, uiItem, uiLoadoutToTumbler, uiPatternToContent } from '../cosmetics.ts';
-import { loadoutWithItem, randomizedLoadout } from '../profile.ts';
+import { loadoutWithItem, profileDressing, randomizedLoadout } from '../profile.ts';
 import { JsonSocket, type TypedMessage } from './jsonSocket.ts';
 
 const LOADOUT_SLOTS = 6;
@@ -270,7 +271,7 @@ export class OnlineAccount {
     this.pushProfile();
     this.pushInventory();
     this.hooks.onLookChanged();
-    await Promise.all([this.refreshStore(), this.refreshPass(), this.refreshChallenges(), this.refreshFriends(), this.refreshParty()]);
+    await Promise.all([this.refreshStore(), this.refreshPass(), this.refreshChallenges(), this.refreshFriends(), this.refreshParty(), this.history()]);
     return true;
   }
 
@@ -286,7 +287,7 @@ export class OnlineAccount {
     }
     this.pushProfile();
     this.pushInventory();
-    await Promise.all([this.refreshStore(), this.refreshPass(), this.refreshChallenges()]);
+    await Promise.all([this.refreshStore(), this.refreshPass(), this.refreshChallenges(), this.history()]);
   }
 
   private applyLoadouts(slots: readonly ({ name: string; items: ApiLoadoutItems } | null)[], active: number): void {
@@ -320,10 +321,70 @@ export class OnlineAccount {
       ...(ranked && tier
         ? { rank: { tier, division: Math.max(1, ranked.division), rp: ranked.rp, rpToNext: 400 - (ranked.rp % 400), ...(ranked.placementsLeft > 0 ? { placementsLeft: ranked.placementsLeft } : {}) } }
         : {}),
-      stats: { shows: m.stats.showsPlayed, finals: m.stats.finals, roundsQualified: m.stats.roundsQualified, bestStreak: m.stats.bestWinStreak },
+      stats: {
+        shows: m.stats.showsPlayed,
+        finals: m.stats.finals,
+        roundsQualified: m.stats.roundsQualified,
+        bestStreak: m.stats.bestWinStreak,
+        wins: m.stats.wins,
+        roundsPlayed: m.stats.roundsPlayed,
+        ...(this.recentForm.length > 0 ? { recentForm: this.recentForm } : {}),
+        ...(this.roundTally.length > 0 ? { rounds: this.roundTally } : {}),
+      },
+      crownShards: m.wallet.crownShards,
+      shardsPerCrown: SHARDS_PER_CROWN,
+      ...profileDressing(this.loadout),
       showcase: owned.slice(-3).map((c) => uiItem(c, true)),
       linkedProviders: m.linkedProviders.filter((p): p is 'discord' | 'google' | 'email' => p === 'discord' || p === 'google' || p === 'email'),
     };
+  }
+
+  /** Last shows' results, newest first (from `/me/matches`). */
+  private recentForm: ('crown' | 'final' | 'eliminated')[] = [];
+  /** Most played rounds over the recent shows. */
+  private roundTally: { name: string; type: RoundType; played: number; qualified: number }[] = [];
+
+  /**
+   * Another player's public card (`/profile/:id`) as profile data.
+   *
+   * @param playerId - Account id.
+   */
+  async inspect(playerId: string): Promise<ProfileData | null> {
+    try {
+      const c = await this.api.profileCard(playerId);
+      const look = c.loadout ? apiLoadoutToUi(c.displayName, c.loadout) : null;
+      if (look) this.cards.set(c.userId, uiLoadoutToTumbler(look));
+      const ranked = c.ranked?.find((r) => r.queue === 'ranked' || r.queue.includes('rank'));
+      const tier = ranked ? RANK_TIERS[ranked.tier] : undefined;
+      const colors = look?.colors ?? guessColors(c.userId);
+      return {
+        id: c.userId,
+        name: c.displayName,
+        tag: c.tag,
+        level: c.level,
+        xp: c.xp?.intoLevel ?? 0,
+        xpToNext: Math.max(1, c.xp?.toNext ?? 1),
+        gumballs: 0,
+        gems: 0,
+        crowns: c.crowns ?? 0,
+        colors,
+        hat: avatarHat(look?.items.headwear ?? null),
+        isGuest: false,
+        ...(ranked && tier ? { rank: { tier, division: Math.max(1, ranked.division), rp: ranked.rp, rpToNext: 400 - (ranked.rp % 400) } } : {}),
+        stats: {
+          shows: c.stats?.showsPlayed ?? 0,
+          finals: c.stats?.finals ?? 0,
+          roundsQualified: c.stats?.roundsQualified ?? 0,
+          bestStreak: c.stats?.bestWinStreak ?? 0,
+          wins: c.stats?.wins ?? 0,
+          roundsPlayed: c.stats?.roundsPlayed ?? 0,
+        },
+        ...(look ? profileDressing(look) : {}),
+      };
+    } catch (err) {
+      console.warn('[account] profile card failed', err);
+      return null;
+    }
   }
 
   private pushProfile(): void {
@@ -418,6 +479,8 @@ export class OnlineAccount {
         progress: Math.min(x.progress, x.target),
         goal: x.target,
         reward: x.reward.gumballs > 0 ? { kind: 'gumballs', amount: x.reward.gumballs } : { kind: 'xp', amount: x.reward.xp },
+        ...(x.reward.gumballs > 0 && x.reward.xp > 0 ? { bonus: { kind: 'xp' as const, amount: x.reward.xp } } : {}),
+        ...(x.metric ? { metric: x.metric } : {}),
         claimed: x.claimed,
         canReroll: cadence === 'daily' && c.rerollsLeft > 0 && !x.completed,
       });
@@ -425,6 +488,8 @@ export class OnlineAccount {
         list: [...c.daily.map(row('daily')), ...c.weekly.map(row('weekly'))],
         dailyResetsAt: Date.parse(c.dailyRefreshesAt),
         weeklyResetsAt: Date.parse(c.weeklyRefreshesAt),
+        rerollsLeft: c.rerollsLeft,
+        rerollsPerDay: 1,
       });
     } catch (err) {
       console.warn('[account] challenges failed', err);
@@ -605,11 +670,11 @@ export class OnlineAccount {
   }
 
   /** Answers a leaderboard query. */
-  async leaderboard(board: LeaderboardId): Promise<void> {
-    const [type, scope] =
-      board === 'ranked' ? ['ranked', 'global'] : board === 'weekly' ? ['crowns_weekly', 'global'] : board === 'friends' ? ['crowns', 'friends'] : ['crowns', 'global'];
+  async leaderboard(board: LeaderboardId, requested?: LeaderboardScope): Promise<void> {
+    const type = board === 'weekly' ? 'crowns_weekly' : board === 'friends' ? 'crowns' : board;
+    const scope: LeaderboardScope = board === 'friends' ? 'friends' : (requested ?? 'global');
     try {
-      const r = await this.api.leaderboard(type as string, scope as 'global' | 'friends');
+      const r = await this.api.leaderboard(type, scope);
       const me = this.userId;
       const rows = r.entries.map((e) => ({
         rank: e.rank,
@@ -623,7 +688,7 @@ export class OnlineAccount {
         rows.push({ rank: r.me.rank, playerId: r.me.userId, name: `${r.me.displayName}#${r.me.tag}`, value: r.me.score, colors: this.loadout.colors, isSelf: true });
       }
       if (rows.length === 0 && this.me) rows.push({ rank: 1, playerId: this.me.userId, name: `${this.me.displayName}#${this.me.tag}`, value: 0, colors: this.loadout.colors, isSelf: true });
-      ui.getState().setLeaderboard(board, rows);
+      ui.getState().setLeaderboard(board, rows, { scope, source: 'api', updatedAt: Date.now() });
     } catch (err) {
       console.warn('[account] leaderboard failed', err);
     }
@@ -646,9 +711,26 @@ export class OnlineAccount {
         };
       });
       ui.getState().setMatchHistory(entries);
+      this.applyHistoryStats(entries);
     } catch (err) {
       console.warn('[account] history failed', err);
     }
+  }
+
+  /** Recent form and most-played rounds for the profile card. */
+  private applyHistoryStats(entries: readonly MatchHistoryEntry[]): void {
+    this.recentForm = entries.slice(0, 10).map((e) => e.result);
+    const tally = new Map<string, { name: string; type: RoundType; played: number; qualified: number }>();
+    for (const e of entries) {
+      for (const r of e.rounds) {
+        const t = tally.get(r.name) ?? { name: r.name, type: r.type, played: 0, qualified: 0 };
+        t.played++;
+        if (r.qualified) t.qualified++;
+        tally.set(r.name, t);
+      }
+    }
+    this.roundTally = [...tally.values()].sort((a, b) => b.played - a.played).slice(0, 6);
+    this.pushProfile();
   }
 
   /** Renames the account (first rename free, then a cooldown). */

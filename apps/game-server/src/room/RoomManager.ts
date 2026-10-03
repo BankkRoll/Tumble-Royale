@@ -18,9 +18,10 @@ import { DEFAULT_LIMITS, type ConnectionLimits } from '../antiCheat.ts';
 import type { ServerMetrics } from '../metrics.ts';
 import { TickScheduler } from '../scheduler.ts';
 import type { Connection, Transport } from '../transport/types.ts';
+import { verifyJoinTicket, type JoinTicketClaims } from '../tickets.ts';
 import { Room, type RoomInfo } from './Room.ts';
 import { ClientSession } from './session.ts';
-import { DEFAULT_ROOM_CONFIG, type RoomConfig, type RoomDeps } from './types.ts';
+import { DEFAULT_ROOM_CONFIG, type MatchSettings, type RoomConfig, type RoomDeps } from './types.ts';
 
 /** Options for {@link RoomManager}. */
 export interface RoomManagerOptions {
@@ -32,6 +33,18 @@ export interface RoomManagerOptions {
   profileLogMs?: number;
   /** Cap on concurrent rooms. */
   maxRooms?: number;
+  /** Join ticket policy; absent = unticketed joins only (tests, old tools). */
+  tickets?: TicketPolicy;
+}
+
+/** How Hello tickets are checked. */
+export interface TicketPolicy {
+  /** `GAME_TICKET_SECRET` shared with the matchmaker. */
+  secret: string;
+  /** Accept Hellos without a ticket into public dev rooms (never in production). */
+  allowUnticketed: boolean;
+  /** Wall clock for ticket expiry (tests). */
+  now?: () => number;
 }
 
 /**
@@ -45,6 +58,9 @@ export class RoomManager {
   readonly config: RoomConfig;
   readonly scheduler: TickScheduler;
   private readonly rooms = new Map<string, Room>();
+  /** Match id → room id for ticketed rooms. */
+  private readonly matchRooms = new Map<string, string>();
+  private readonly tickets: TicketPolicy | null;
   private readonly pending = new Set<ClientSession>();
   private readonly limits: ConnectionLimits;
   private readonly helloTimeoutMs: number;
@@ -73,6 +89,7 @@ export class RoomManager {
     this.helloTimeoutMs = opts.helloTimeoutMs ?? 10_000;
     this.profileLogMs = opts.profileLogMs ?? 5000;
     this.maxRooms = opts.maxRooms ?? 64;
+    this.tickets = opts.tickets ?? null;
     this.scheduler = new TickScheduler({ hz: SERVER_TICK_HZ, now: deps.now }, () => this.tick());
     if (transport) transport.onConnection = (conn) => this.accept(conn);
   }
@@ -123,20 +140,38 @@ export class RoomManager {
       }
       clearTimeout(timer);
       this.pending.delete(session);
-      const room = this.place(session, hello.resumeToken, hello, t);
-      if (!room) return this.reject(conn, hello.resumeToken ? KickReason.ResumeExpired : KickReason.ServerFull, 'no room');
+      const placed = this.place(session, hello.resumeToken, hello, t);
+      if (!(placed instanceof Room)) {
+        const reason = placed ?? (hello.resumeToken ? KickReason.ResumeExpired : KickReason.ServerFull);
+        return this.reject(conn, reason, reason === KickReason.BadTicket ? 'join ticket missing, invalid or expired' : 'no room');
+      }
+      const room = placed;
       conn.onMessage = (d) => room.onMessage(session, d, this.deps.now());
       conn.onClose = () => room.onClose(session, this.deps.now());
     };
   }
 
-  private place(session: ClientSession, token: string, hello: Parameters<Room['join']>[1], now: number): Room | null {
+  /**
+   * Finds the session a room: resume token first, then the join ticket's
+   * match (created on the first ticket seen), then — dev only — any public room.
+   *
+   * @returns The room, or a kick reason / null (no room) on failure.
+   */
+  private place(session: ClientSession, token: string, hello: Parameters<Room['join']>[1], now: number): Room | KickReasonId | null {
     if (token) {
       for (const room of this.rooms.values()) {
         if (room.state !== 'closed' && room.hasToken(token) && room.resume(session, token)) return room;
       }
       // An expired token falls through to a fresh join rather than failing the player.
     }
+    const policy = this.tickets;
+    if (hello.ticket && policy) {
+      // SECURITY: the ticket is the only proof of which account and match this connection belongs to.
+      const claims = verifyJoinTicket(policy.secret, hello.ticket, (policy.now ?? Date.now)());
+      if (!claims) return KickReason.BadTicket;
+      return this.placeTicketed(session, hello, claims, now);
+    }
+    if (policy && !policy.allowUnticketed) return KickReason.BadTicket;
     let target: Room | null = null;
     for (const room of this.rooms.values()) {
       if (room.canAcceptPlayer()) {
@@ -154,6 +189,36 @@ export class RoomManager {
     }
     target.join(session, hello, now);
     return target;
+  }
+
+  private placeTicketed(session: ClientSession, hello: Parameters<Room['join']>[1], claims: JoinTicketClaims, now: number): Room | null {
+    const existingId = this.matchRooms.get(claims.mid);
+    let room = existingId ? this.rooms.get(existingId) : undefined;
+    if (room && room.state === 'closed') room = undefined;
+    if (room) {
+      if (room.rejoinUser(session, claims.sub)) return room;
+      if (room.state === 'ended') return null;
+      room.join(session, hello, now, claims);
+      return room;
+    }
+    if (this.rooms.size >= this.maxRooms) return null;
+    const id = `r${this.nextRoomId++}`;
+    const createdAtTick = this.scheduler.tick;
+    const match: MatchSettings = {
+      matchId: claims.mid,
+      playlistId: claims.playlistId,
+      queue: claims.queue,
+      region: claims.region,
+      humans: Math.max(1, claims.humans),
+      bots: claims.custom && !claims.custom.bots ? 0 : Math.max(0, claims.bots),
+      custom: claims.custom ?? null,
+    };
+    room = new Room(id, this.deps, this.config, this.metrics, () => this.scheduler.dueTime(createdAtTick), match);
+    this.rooms.set(id, room);
+    this.matchRooms.set(claims.mid, id);
+    this.deps.log?.(`[rooms] created ${id} for match ${claims.mid} (${claims.playlistId}, ${match.humans} humans + ${match.bots} bots)`);
+    room.join(session, hello, now, claims);
+    return room;
   }
 
   private reject(conn: Connection, reason: KickReasonId, detail: string): void {
@@ -182,6 +247,7 @@ export class RoomManager {
       }
       if (room.state === 'closed') {
         this.rooms.delete(id);
+        if (room.match && this.matchRooms.get(room.match.matchId) === id) this.matchRooms.delete(room.match.matchId);
         this.deps.log?.(`[rooms] removed ${id}`);
       }
     }

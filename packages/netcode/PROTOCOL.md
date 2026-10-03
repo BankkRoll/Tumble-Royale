@@ -1,6 +1,6 @@
-# Tumble Royale wire protocol — v1
+# Tumble Royale wire protocol — v2
 
-`PROTOCOL_VERSION = 1` (`src/protocol.ts`). Any incompatible change bumps it;
+`PROTOCOL_VERSION = 2` (`src/protocol.ts`). Any incompatible change bumps it;
 the server rejects a Hello with a different version (`Kick{VersionMismatch}`).
 
 Transport: binary WebSocket frames (`/ws`; `/gs/ws` is also accepted for the
@@ -42,6 +42,7 @@ Clients quantise their own input **before** predicting with it
 
 ```
 Hello    type:8 version:16 name:str(≤32B) resumeToken:str(≤64B) loadout:str(≤255B)
+         ticket:str(≤2048B)
 Welcome  type:8 version:16 playerId:8 resumeToken:str roomId:str serverTick:32
          tickEpochMs:f64 tickMs:f64 resumed:1
 Kick     type:8 reason:8 detail:str
@@ -54,6 +55,16 @@ server time `tickEpochMs + T × tickMs`.
 player (the character idles server-side meanwhile; inputs are neutral). The new
 connection gets a fresh reliable channel, `joinRound` and a **full** snapshot.
 An expired token falls through to a normal join.
+
+**Join tickets (v2):** `ticket` is the matchmaker's HS256 join ticket
+(`GAME_TICKET_SECRET`, `iss` tumble-matchmaker, `aud` tumble-game-server, 90 s).
+The server verifies it and places the player into the room for the ticket's
+`mid` (created on the first ticket seen, sized `humans + bots`, started once
+every ticketed human joined or after `TICKET_FILL_WAIT_MS`). A ticket whose
+account already holds a slot in that match reattaches to it (page reload).
+Invalid/expired tickets get `Kick{BadTicket=7}`. Hellos without a ticket are
+accepted into public rooms only when `ALLOW_UNTICKETED` (default outside
+production).
 
 ## InputBatch (C→S, 60 Hz)
 
@@ -139,7 +150,11 @@ larger message is sent alone). Payloads:
   type id 8 bits, positions as 3 × f32; unknown/new union members fall back to
   id 255 + msgpack.
 - `0x01 msgpack(LowFreqMessage)` — `joinRound` (round id, seed, stage, players,
-  obstacle id table, bounds, epoch), `playerList`, `roundPhase`, `showPhase`,
+  obstacle id table, bounds, epoch; v2 adds `roundIndex`, `isFinal`,
+  `qualifyTarget` and `variationId` so clients never estimate them),
+  `showInfo` (match id, playlist, show name, queue, round estimate — once per
+  connection), `showRewards` (the account API's `PlayerRewardSummary` for
+  this player, forwarded after the server posted the results), `playerList`, `roundPhase`, `showPhase`,
   `roundResults`, `showSummary`, `lobby`, `chat`; client→server: `chat`,
   `loaded`, `spectate`. Clients may never send SimEvents.
 

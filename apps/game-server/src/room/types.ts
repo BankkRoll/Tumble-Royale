@@ -7,11 +7,32 @@
 import type { MatchPlayerInfo, MatchSim, MatchSimOptions, PlayerRoundStatusId, RoundResultEntry, RoundStatus } from '@tumble/netcode';
 import type { CharacterInput, Rapier } from '@tumble/sim';
 import type { RoundDefinition, RoundPhaseId, ShowPhaseId } from '@tumble/shared';
+import type { ResultsSink } from '../results.ts';
+import type { TicketCustomSettings } from '../tickets.ts';
+
+/** A matchmade show: what the join tickets said about it. */
+export interface MatchSettings {
+  /** Matchmaker match id (the API's results idempotency key). */
+  matchId: string;
+  playlistId: string;
+  queue: 'casual' | 'ranked' | 'custom';
+  region: string;
+  /** Humans the matchmaker placed in this match. */
+  humans: number;
+  /** Bots to fill with. */
+  bots: number;
+  /** Custom lobby settings (host-picked rounds, bots on/off). */
+  custom: TicketCustomSettings | null;
+}
 
 /** One round the show wants played. */
 export interface ShowRoundPlan {
   roundId: string;
-  /** 0-based index within the show. */
+  /** 0-based round index within the show. */
+  index?: number;
+  /** The show's final round. */
+  isFinal?: boolean;
+  /** Difficulty stage (round index + playlist offset). */
   stage: number;
   /** Show seed for this round. */
   seed: number;
@@ -69,8 +90,8 @@ export interface ShowController {
   drainEvents(): ShowEvent[];
 }
 
-/** Creates a show controller for a room. */
-export type ShowControllerFactory = (ctx: { roomId: string }) => ShowController;
+/** Creates a show controller for a room (`match` is null for unticketed dev rooms). */
+export type ShowControllerFactory = (ctx: { roomId: string; match?: MatchSettings | null }) => ShowController;
 
 /** Produces inputs for one server-driven bot through the same path as human inputs. */
 export interface ServerBotBrain {
@@ -106,6 +127,10 @@ export interface RoomDeps {
   randomSeed: () => number;
   /** Logger. */
   log?: (msg: string) => void;
+  /** Posts matchmade show results to the account API; null/absent disables reporting. */
+  results?: ResultsSink | null;
+  /** Playlist display name and round estimate for the `showInfo` message. */
+  describePlaylist?: (playlistId: string | null, players: number) => { id: string; name: string; roundCount: number };
 }
 
 /** Room tuning. */
@@ -124,6 +149,8 @@ export interface RoomConfig {
   snapshotEvery: number;
   /** Close the room this long after the show ends or the last human leaves. */
   idleCloseMs: number;
+  /** Matchmade rooms start once every ticketed human joined, or after this long. */
+  ticketedFillWaitMs: number;
 }
 
 /** Defaults per SPEC §3.1. */
@@ -135,4 +162,5 @@ export const DEFAULT_ROOM_CONFIG: RoomConfig = {
   snapshotByteBudget: 1200,
   snapshotEvery: 1,
   idleCloseMs: 30_000,
+  ticketedFillWaitMs: 15_000,
 };

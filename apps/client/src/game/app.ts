@@ -40,7 +40,7 @@ import { botLoadout, tumblerColors } from './cosmetics.ts';
 import { createDebugPanel } from './debugPanel.ts';
 import type { TumbleHooks } from './hooks.ts';
 import { customPlaylist, localPlayerCard, markNewsRead, pushLeaderboard, pushMeta, pushStaticMeta, resolvePlaylist } from './meta.ts';
-import { OnlineAccount, apiLoadoutToUi } from './online/account.ts';
+import { OnlineAccount } from './online/account.ts';
 import { MatchmakerClient, gameSocketUrl, type Lobby, type MatchFound } from './online/matchmaker.ts';
 import { ProfileStore } from './profile.ts';
 import { QualityManager } from './quality.ts';
@@ -338,6 +338,8 @@ export class GameApp {
       });
       this.bindMatchmaker();
     }
+    // The boot-time check ran before this sign-in (welcome screen); publish the real online state now.
+    void this.refreshOnlineStatus();
     ui.getState().pushToast({ kind: 'success', title: `Signed in as ${account.name}`, body: 'Progress now saves to your account.', icon: '☁️' });
     if (this.pendingJoin) {
       const code = this.pendingJoin;
@@ -451,8 +453,8 @@ export class GameApp {
     s.setOnlineStatus({ state: 'checking' });
     let up = false;
     if (this.cfg.online) up = await gameServerAvailable();
-    else if (this.account?.active && this.mm) up = this.mm.online || (await this.mm.probe());
-    s.setOnlineStatus(up ? { state: 'online' } : { state: 'offline', message: 'The game servers are offline right now.' });
+    else if (this.account?.active && this.mm) up = await this.mm.probe();
+    s.setOnlineStatus(up ? { state: 'online', ...(this.mm && this.mm.searching > 0 ? { playersOnline: this.mm.searching } : {}) } : { state: 'offline', message: 'The game servers are offline right now.' });
     if (up && !this.modePicked) s.setPlayMode('online');
     if (!up && s.playMode === 'online') ui.setState({ playMode: 'offline' });
   }
@@ -808,31 +810,15 @@ export class GameApp {
           s().pushToast({ kind: 'info', title: `${name ?? 'That Tumbler'} has no public card yet` });
           return;
         }
-        void this.api.profileCard(playerId).then(
-          (c) => {
-            const look = c.loadout ? apiLoadoutToUi(c.displayName, c.loadout) : null;
-            s().setInspectedProfile({
-              id: c.userId,
-              name: c.displayName,
-              tag: c.tag,
-              level: c.level,
-              xp: 0,
-              xpToNext: 1,
-              gumballs: 0,
-              gems: 0,
-              crowns: 0,
-              colors: look?.colors ?? { primary: '#ff6fb5', secondary: '#ffd23f', pattern: 'plain' },
-              isGuest: false,
-              stats: { shows: 0, finals: 0, roundsQualified: 0, bestStreak: 0 },
-            });
-          },
-          () => s().pushToast({ kind: 'info', title: "Couldn't load that profile" }),
-        );
+        void online()!.inspect(playerId).then((card) => {
+          if (card) s().setInspectedProfile(card);
+          else s().pushToast({ kind: 'info', title: "Couldn't load that profile" });
+        });
       },
       onNewsRead: ({ ids }) => markNewsRead(ids),
-      onLeaderboardQuery: ({ board }) => {
+      onLeaderboardQuery: ({ board, scope }) => {
         const a = online();
-        if (a) void a.leaderboard(board);
+        if (a) void a.leaderboard(board, scope);
         else pushLeaderboard(this.profile, board);
       },
       onRequestMatchHistory: () => {

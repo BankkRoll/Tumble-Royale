@@ -95,6 +95,8 @@ export class ShowDirectorController implements ShowController {
     this.plan = {
       roundId: info.round.id,
       round: info.round,
+      index: info.roundIndex,
+      isFinal: info.isFinal,
       stage: info.stage,
       seed: info.seed,
       playerIds: info.players.map((p) => p.id),

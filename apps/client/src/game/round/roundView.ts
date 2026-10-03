@@ -4,8 +4,8 @@
  * Tumbler, VFX, cosmetic ragdolls and the gameplay camera (intro flyover,
  * follow with collision against the level, celebration orbit, spectate).
  *
- * Built behind the Tumble Wipe when a round loads and disposed in full when
- * the next view replaces it.
+ * Built behind the loading screen in time-sliced steps ({@link RoundView.loadSteps})
+ * and disposed in full when the next view replaces it.
  */
 import { PerspectiveCamera, Quaternion, Scene, Vector3 } from 'three/webgpu';
 import type { GameAudio, LoopEmitter } from '@tumble/audio';
@@ -24,6 +24,7 @@ import { CollisionGroup, InteractionGroups, groups, type RoundDefinition } from 
 import type { ObstacleRuntime, Rapier, SimEvent } from '@tumble/sim';
 import type { CeremonyPost } from '../views/ceremonies.ts';
 import type { GameView } from '../views/types.ts';
+import { runLoadStepsSync, type LoadStep } from './loadPipeline.ts';
 import { PlayerVisuals, type TumblerPool } from './playerVisuals.ts';
 import type { RoundSource } from './source.ts';
 
@@ -68,17 +69,19 @@ export class RoundView implements GameView {
   readonly camera = new PerspectiveCamera(60, 16 / 9, 0.1, 1600);
   readonly grade: GradeParams;
   readonly theme: ThemeDefinition;
-  readonly rig: ThirdPersonCamera;
-  readonly players: PlayerVisuals;
-  readonly vfx: VfxSystem;
-  private readonly level: LevelVisuals;
-  private readonly env: Environment;
+  // Assigned by the load steps; nothing outside sees the view before they all ran.
+  private rigRef: ThirdPersonCamera | undefined;
+  private playersRef: PlayerVisuals | undefined;
+  private vfxRef: VfxSystem | undefined;
+  private level: LevelVisuals | undefined;
+  private env: Environment | undefined;
   private readonly obstacles: { visual: ObstacleVisual; runtime: ObstacleRuntime }[] = [];
   /** Instances render-identical obstacle parts across the whole course (hundreds of draws → dozens). */
   private readonly batcher = new MeshBatcher();
   private readonly loops: LoopEmitter[] = [];
-  private readonly ragdollMgr: RagdollManager | null = null;
-  private readonly ragdollWorld: RagdollWorld | null = null;
+  private loopsStarted = false;
+  private ragdollMgr: RagdollManager | null = null;
+  private ragdollWorld: RagdollWorld | null = null;
   private mode: RoundCameraMode = 'follow';
   private targetId: number;
   private flyoverDone: (() => void) | null = null;
@@ -95,109 +98,221 @@ export class RoundView implements GameView {
   private readonly obstaclePos = new Map<string, CameraVec3>();
   private disposed = false;
 
+  /**
+   * Cheap setup only. Call {@link loadSteps} (time-sliced) or {@link build}
+   * (all at once) before showing the view.
+   */
   constructor(private readonly opts: RoundViewOptions) {
-    const { round, source, preset, R } = opts;
+    const { round, source, R } = opts;
     this.theme = getTheme(round.theme);
     this.grade = gradeFromTheme(this.theme);
     this.targetId = source.localId;
     this.ray = new R.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
     this.camBall = new R.Ball(0.2);
+  }
 
-    this.level = buildLevelVisuals(round, this.theme, { detail: preset.geometryDetail });
-    this.scene.add(this.level.object);
-    const b = this.level.bounds;
-    this.env = createEnvironment(this.theme, {
-      weather: roundWeather(round, source.sim.variationId, this.theme),
-      courseBounds: Number.isFinite(b.min.x) ? { min: b.min, max: b.max } : round.bounds,
-      seed: round.decorSeed,
-      detail: preset.environment,
-      lighting: {
-        shadows: preset.shadows,
-        mapSize: preset.shadowMapSize,
-        cascades: preset.cascades,
-        shadowDistance: preset.shadowDistance,
+  /** Builds a view synchronously (flows that need it in the same call). */
+  static build(opts: RoundViewOptions): RoundView {
+    const view = new RoundView(opts);
+    runLoadStepsSync(view.loadSteps());
+    view.startLoops();
+    return view;
+  }
+
+  /** Gameplay camera rig. */
+  get rig(): ThirdPersonCamera {
+    return this.rigRef as ThirdPersonCamera;
+  }
+
+  /** Every entrant's Tumbler. */
+  get players(): PlayerVisuals {
+    return this.playersRef as PlayerVisuals;
+  }
+
+  /** Round VFX. */
+  get vfx(): VfxSystem {
+    return this.vfxRef as VfxSystem;
+  }
+
+  /**
+   * The view's construction, split where the main thread may pause. Weights
+   * are estimated relative costs for the progress bar (obstacles and the
+   * first round's Tumblers are expected to dominate); retune them from
+   * `window.__tumble.loadTimings`.
+   *
+   * @returns Steps for {@link runLoadPipeline}, in order.
+   */
+  loadSteps(): LoadStep[] {
+    const { round, source, preset, R } = this.opts;
+    return [
+      {
+        name: 'level',
+        weight: 3,
+        run: () => {
+          this.level = buildLevelVisuals(round, this.theme, { detail: preset.geometryDetail });
+          this.scene.add(this.level.object);
+        },
       },
-    });
-    this.env.attach(this.scene);
-    const level = this.level;
-    this.env.onAtmosphere = (a) => level.setNight(a.night);
-    level.setNight(this.env.atmosphere.night);
+      {
+        name: 'environment',
+        weight: 3,
+        run: () => {
+          const level = this.level as LevelVisuals;
+          const b = level.bounds;
+          const env = createEnvironment(this.theme, {
+            weather: roundWeather(round, source.sim.variationId, this.theme),
+            courseBounds: Number.isFinite(b.min.x) ? { min: b.min, max: b.max } : round.bounds,
+            seed: round.decorSeed,
+            detail: preset.environment,
+            lighting: {
+              shadows: preset.shadows,
+              mapSize: preset.shadowMapSize,
+              cascades: preset.cascades,
+              shadowDistance: preset.shadowDistance,
+            },
+          });
+          this.env = env;
+          env.attach(this.scene);
+          env.onAtmosphere = (a) => level.setNight(a.night);
+          level.setNight(env.atmosphere.night);
+        },
+      },
+      {
+        name: 'vfx',
+        weight: 1,
+        run: () => {
+          this.vfxRef = createVfxSystem({
+            budget: preset.vfx,
+            groundProbe: (x, y, z, out) => this.probe(x, y, z, out),
+            voidStyle: this.theme.void.style,
+          });
+          this.scene.add(this.vfxRef.object);
+        },
+      },
+      { name: 'obstacles', weight: 5, run: () => this.buildObstacles() },
+      {
+        name: 'batching',
+        weight: 1,
+        run: () => {
+          for (const o of this.obstacles) this.batcher.add(o.visual.object);
+          this.batcher.build();
+          this.scene.add(this.batcher.object);
+        },
+      },
+      { name: 'tumblers', weight: 4, run: () => this.warmTumblers() },
+      {
+        name: 'players',
+        weight: 1,
+        run: () => {
+          this.playersRef = new PlayerVisuals(source, {
+            parent: this.scene,
+            pool: this.opts.pool,
+            loadouts: this.opts.loadouts,
+            vfx: this.vfx,
+            preset,
+            audio: this.opts.audio,
+            nameplates: this.opts.nameplates,
+            streamerMode: this.opts.streamerMode,
+          });
+        },
+      },
+      {
+        name: 'camera',
+        weight: 1,
+        run: () => {
+          this.rigRef = new ThirdPersonCamera(this.camera, {
+            yaw: round.spawn.yaw,
+            collide: (o, d, max) => this.collide(o, d, max),
+            settings: { shakeScale: this.opts.reduceShake ? 0 : 1 },
+          });
+          this.placeAtSpawn();
+          this.hookAudio();
+        },
+      },
+      {
+        name: 'ragdolls',
+        weight: 1,
+        run: () => (this.opts.ragdolls && preset.maxRagdolls > 0 ? this.buildRagdolls(R) : undefined),
+      },
+    ];
+  }
 
-    this.vfx = createVfxSystem({
-      budget: preset.vfx,
-      groundProbe: (x, y, z, out) => this.probe(x, y, z, out),
-      voidStyle: this.theme.void.style,
-    });
-    this.scene.add(this.vfx.object);
-
+  private *buildObstacles(): Generator<number> {
+    const { round, source, stage, seed } = this.opts;
     const scales = round.speedScaleByStage;
-    const speedScale =
-      scales.length > 0 ? (scales[Math.max(0, Math.min(opts.stage, scales.length - 1))] ?? 1) : 1;
-    for (const runtime of source.sim.obstacleRuntimes) {
+    const speedScale = scales.length > 0 ? (scales[Math.max(0, Math.min(stage, scales.length - 1))] ?? 1) : 1;
+    const runtimes = source.sim.obstacleRuntimes;
+    let i = 0;
+    for (const runtime of runtimes) {
       const inst = runtime.instance;
       this.obstaclePos.set(inst.id, inst.position);
       const factory = getObstacleVisual(inst.type);
-      if (!factory) continue;
-      try {
-        const visual = factory(inst, { theme: round.theme, speedScale, seed: opts.seed });
-        this.scene.add(visual.object);
-        this.obstacles.push({ visual, runtime });
-      } catch (err) {
-        console.warn(`[round] obstacle visual ${inst.id} (${inst.type}) failed`, err);
+      if (factory) {
+        try {
+          const visual = factory(inst, { theme: round.theme, speedScale, seed });
+          this.scene.add(visual.object);
+          this.obstacles.push({ visual, runtime });
+        } catch (err) {
+          console.warn(`[round] obstacle visual ${inst.id} (${inst.type}) failed`, err);
+        }
       }
-      const loop = opts.audio?.createObstacleLoop(inst.type, inst.position);
-      if (loop) {
-        loop.start();
-        this.loops.push(loop);
-      }
+      // Created now, started on reveal: a 60 s wait for other players must stay silent.
+      const loop = this.opts.audio?.createObstacleLoop(inst.type, inst.position);
+      if (loop) this.loops.push(loop);
+      yield ++i / Math.max(1, runtimes.length);
     }
+  }
 
-    for (const o of this.obstacles) this.batcher.add(o.visual.object);
-    this.batcher.build();
-    this.scene.add(this.batcher.object);
+  /**
+   * Builds (first round) or re-skins (later rounds) every entrant's pooled
+   * Tumbler one at a time, so {@link PlayerVisuals} only has to place them.
+   */
+  private *warmTumblers(): Generator<number> {
+    const players = this.opts.source.players;
+    let i = 0;
+    for (const info of players) {
+      const loadout = this.opts.loadouts.get(info.id);
+      if (loadout) this.opts.pool.get(info.id, loadout).setLoadout(loadout);
+      yield ++i / Math.max(1, players.length);
+    }
+  }
 
-    this.players = new PlayerVisuals(source, {
-      parent: this.scene,
-      pool: opts.pool,
-      loadouts: opts.loadouts,
-      vfx: this.vfx,
-      preset,
-      audio: opts.audio,
-      nameplates: opts.nameplates,
-      streamerMode: opts.streamerMode,
+  private *buildRagdolls(R: Rapier): Generator<number> {
+    const world = new RagdollWorld(R);
+    this.ragdollWorld = world;
+    const q = new Quaternion();
+    const pieces = this.opts.round.geometry;
+    let i = 0;
+    for (const piece of pieces) {
+      i++;
+      if (piece.decorative || (piece.shape !== 'box' && piece.shape !== 'ramp')) continue;
+      quaternionFromRotation(piece.rotation, q);
+      world.addBox(
+        new Vector3(piece.position.x, piece.position.y, piece.position.z),
+        new Vector3(piece.size.x / 2, piece.size.y / 2, piece.size.z / 2),
+        q,
+      );
+      yield i / Math.max(1, pieces.length);
+    }
+    this.ragdollMgr = new RagdollManager(world, this.opts.preset.maxRagdolls).install();
+  }
+
+  private hookAudio(): void {
+    const { audio, source } = this.opts;
+    if (!audio) return;
+    const feet = { x: 0, y: 0, z: 0 };
+    audio.setPlayerPositionResolver((id) => (this.players.feetOf(id, feet) ? feet : undefined));
+    audio.setObstacleResolver((id) => {
+      const rt = source.sim.obstacle(id);
+      return rt ? { type: rt.instance.type, pos: rt.instance.position } : undefined;
     });
+  }
 
-    this.rig = new ThirdPersonCamera(this.camera, {
-      yaw: round.spawn.yaw,
-      collide: (o, d, max) => this.collide(o, d, max),
-      settings: { shakeScale: opts.reduceShake ? 0 : 1 },
-    });
-    this.placeAtSpawn();
-
-    if (opts.ragdolls && preset.maxRagdolls > 0) {
-      const world = new RagdollWorld(R);
-      const q = new Quaternion();
-      for (const piece of round.geometry) {
-        if (piece.decorative || (piece.shape !== 'box' && piece.shape !== 'ramp')) continue;
-        quaternionFromRotation(piece.rotation, q);
-        world.addBox(
-          new Vector3(piece.position.x, piece.position.y, piece.position.z),
-          new Vector3(piece.size.x / 2, piece.size.y / 2, piece.size.z / 2),
-          q,
-        );
-      }
-      this.ragdollWorld = world;
-      this.ragdollMgr = new RagdollManager(world, preset.maxRagdolls).install();
-    }
-
-    if (opts.audio) {
-      const feet = { x: 0, y: 0, z: 0 };
-      opts.audio.setPlayerPositionResolver((id) => (this.players.feetOf(id, feet) ? feet : undefined));
-      opts.audio.setObstacleResolver((id) => {
-        const rt = source.sim.obstacle(id);
-        return rt ? { type: rt.instance.type, pos: rt.instance.position } : undefined;
-      });
-    }
+  /** Starts the obstacle sound loops (once, when the round is revealed). */
+  startLoops(): void {
+    if (this.loopsStarted || this.disposed) return;
+    this.loopsStarted = true;
+    for (const l of this.loops) l.start();
   }
 
   // ---------------------------------------------------------------------------
@@ -414,13 +529,14 @@ export class RoundView implements GameView {
 
   update(dt: number): void {
     const src = this.opts.source;
+    const level = this.level as LevelVisuals;
     this.players.update(dt, this.camera);
 
     const t = src.renderTime();
     if (src.alive) {
       for (const o of this.obstacles) o.visual.update(t, dt, o.runtime);
     }
-    this.level.update(t, dt);
+    level.update(t, dt);
 
     if (this.targetId >= 0 && this.players.followTarget(this.targetId, this.follow)) {
       const p = this.follow.position;
@@ -431,7 +547,7 @@ export class RoundView implements GameView {
     this.camera.getWorldPosition(this.camPos);
     this.ragdollMgr?.update(dt, this.camPos);
     this.vfx.update(dt, this.camera);
-    this.env.update(dt, this.camera, this.focus);
+    (this.env as Environment).update(dt, this.camera, this.focus);
   }
 
   resize(width: number, height: number): void {
@@ -448,15 +564,16 @@ export class RoundView implements GameView {
     }
     for (const l of this.loops) l.dispose();
     this.loops.length = 0;
+    // A build cancelled halfway leaves later parts unset.
     this.ragdollMgr?.uninstall();
     this.ragdollWorld?.dispose();
-    this.players.dispose();
+    this.playersRef?.dispose();
     this.batcher.dispose();
     for (const o of this.obstacles) o.visual.dispose();
     this.obstacles.length = 0;
-    this.vfx.dispose();
-    this.level.dispose();
-    this.env.dispose();
+    this.vfxRef?.dispose();
+    this.level?.dispose();
+    this.env?.dispose();
     this.scene.clear();
   }
 }

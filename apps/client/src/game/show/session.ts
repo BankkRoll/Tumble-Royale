@@ -40,7 +40,8 @@ import { emoteSlots, showPlayer } from '../cosmetics.ts';
 import type { ShowResultForProfile } from '../profile.ts';
 import { HudMapper, type HudInput } from '../round/hud.ts';
 import { TumblerPool } from '../round/playerVisuals.ts';
-import { RoundView } from '../round/roundView.ts';
+import { runLoadPipeline, throttleProgress, type LoadStep } from '../round/loadPipeline.ts';
+import { RoundView, type RoundViewOptions } from '../round/roundView.ts';
 import type { RoundSource } from '../round/source.ts';
 import {
   createPodiumView,
@@ -63,6 +64,14 @@ interface ActiveRound {
   inRound: boolean;
   /** The loading wipe is up: the 3D round may be built now. */
   loadRequested: boolean;
+  /** The chunked build is running. */
+  building: boolean;
+  /** This machine's build progress (0..1), for the loading screen and the server. */
+  loadPct: number;
+  /** This machine finished building while the round was still waiting on others (online). */
+  waited: boolean;
+  /** The "Everyone's in!" beat already played. */
+  everyoneIn: boolean;
   introShown: boolean;
   loadMinDone: boolean;
   outcome: RoundOutcomeInfo | null;
@@ -77,6 +86,10 @@ interface ActiveRound {
 const SLOWMO_SCALE = 0.3;
 const SLOWMO_SECONDS = 1.5;
 const WIPE_FALLBACK_S = 1.6;
+/** Loading screen progress refresh: each one re-renders the screen, so keep it to ~4 Hz. */
+const LOAD_UI_INTERVAL_MS = 250;
+/** "Everyone's in!" stays up this long before the intro wipe. */
+const EVERYONE_IN_S = 0.8;
 
 /**
  * Estimated rounds in a show, replaying the director's final-round rule with
@@ -563,6 +576,10 @@ export abstract class ShowSession {
       fate: 'playing',
       inRound: rs.players.some((p) => p.id === this.localId),
       loadRequested: false,
+      building: false,
+      loadPct: 0,
+      waited: false,
+      everyoneIn: false,
       introShown: false,
       loadMinDone: false,
       outcome: null,
@@ -629,10 +646,16 @@ export abstract class ShowSession {
     if (!r || this.ended) return;
     const s = ui.getState();
     s.setRoundIntro(this.introInfo(r.start));
+    s.setRoundLoading(null);
+    s.setRoundLoading({ progress: 0 });
     this.ctx.audio.game.onRoundPhase(RoundPhase.Loading, r.start.round.type, { theme: r.start.round.theme });
-    this.swapUnder('roundLoading', { transition: 'wipe', hold: true }, () => {
+    // The loading screen is opaque and shows real progress, so the wipe reveals it rather than holding.
+    this.swapUnder('roundLoading', { transition: 'wipe' }, () => {
       r.loadRequested = true;
-      this.buildRoundView();
+      // Free the previous view's GPU memory before the new round starts allocating.
+      this.preShow = null;
+      this.ctx.director.showLoading();
+      this.requestRoundBuild();
       this.after(0.9, () => {
         r.loadMinDone = true;
         this.maybeShowIntro();
@@ -640,20 +663,15 @@ export abstract class ShowSession {
     });
   }
 
-  /** Builds the round's 3D view (retried when the source appears later online). */
-  protected buildRoundView(): void {
-    const r = this.round;
-    if (!r || r.view || !r.loadRequested) return;
-    const source = this.createSource(r.start);
-    if (!source) return;
-    r.source = source;
+  /** Round view options for the active round. */
+  private roundViewOptions(r: ActiveRound, source: RoundSource): RoundViewOptions {
     const set = this.ctx.settings();
     const loadouts = new Map<number, TumblerLoadout>();
     for (const p of r.start.players) {
       const sp = this.players.get(p.id);
       if (sp) loadouts.set(p.id, sp.loadout);
     }
-    const view = new RoundView({
+    return {
       R: this.ctx.R,
       source,
       round: r.start.round,
@@ -668,10 +686,93 @@ export abstract class ShowSession {
       reduceShake: set.accessibility.reduceShake,
       nameplates: set.gameplay.nameplates,
       streamerMode: set.gameplay.streamerMode,
-    });
-    r.view = view;
+    };
+  }
+
+  /**
+   * Builds the round's 3D view in one go and shows it (Practice Island, which
+   * needs the view in the same call). Shows use {@link requestRoundBuild}.
+   */
+  protected buildRoundView(): void {
+    const r = this.round;
+    if (!r || r.view || r.building || !r.loadRequested) return;
+    const source = this.createSource(r.start);
+    if (!source) return;
+    const view = RoundView.build(this.roundViewOptions(r, source));
     this.preShow = null;
     this.ctx.director.show(view);
+    this.attachRoundView(r, view, source);
+  }
+
+  /**
+   * Starts the time-sliced build of the round's view behind the loading
+   * screen (retried when the source appears later online): scene steps, then
+   * shader/pipeline compilation and one hidden warm-up frame. When it is done
+   * the local player counts as loaded ({@link onRoundBuilt}).
+   */
+  protected requestRoundBuild(): void {
+    const r = this.round;
+    if (!r || r.view || r.building || !r.loadRequested || this.ended) return;
+    const source = this.createSource(r.start);
+    if (!source) return;
+    r.building = true;
+    this.buildRoundAsync(r, source).catch((err: unknown) => {
+      r.building = false;
+      console.error('[show] round build failed', err);
+    });
+  }
+
+  private async buildRoundAsync(r: ActiveRound, source: RoundSource): Promise<void> {
+    const view = new RoundView(this.roundViewOptions(r, source));
+    const stale = (): boolean => this.ended || this.round !== r;
+    let handedOver = false;
+    const steps: LoadStep[] = [
+      ...view.loadSteps(),
+      {
+        // A cold shader cache can make compiling cost as much as building; an estimate, see loadTimings.
+        name: 'compile',
+        weight: 8,
+        run: async (ctx) => {
+          handedOver = true;
+          try {
+            await this.ctx.director.precompile(view, (f) => ctx.report(f));
+          } catch (err) {
+            // Not fatal: the round still renders, it just compiles on its first frames.
+            console.warn('[show] shader precompile failed', err);
+          }
+        },
+      },
+    ];
+    const showProgress = throttleProgress(LOAD_UI_INTERVAL_MS, (pct) => {
+      if (!stale()) ui.getState().setRoundLoading({ progress: pct });
+    });
+    const timings = await runLoadPipeline(steps, {
+      label: r.start.round.id,
+      isCancelled: stale,
+      onProgress: (pct) => {
+        r.loadPct = pct;
+        showProgress(pct);
+      },
+    });
+    r.building = false;
+    if (timings.cancelled || stale()) {
+      // Once handed to the director, its next swap disposes the view.
+      if (!handedOver) view.dispose();
+      return;
+    }
+    if (this.ctx.cfg.debug)
+      console.info(
+        `[load] ${timings.label}: ${timings.totalMs.toFixed(0)} ms, longest block ${timings.longestSliceMs.toFixed(1)} ms`,
+        timings.steps,
+      );
+    this.attachRoundView(r, view, source);
+  }
+
+  /** Wires a built view into the round (HUD, audio, autoplay) and reports the local load. */
+  private attachRoundView(r: ActiveRound, view: RoundView, source: RoundSource): void {
+    r.source = source;
+    r.view = view;
+    r.loadPct = 1;
     r.hud = new HudMapper(
       r.start.round,
       r.start.players.length,
@@ -693,14 +794,47 @@ export abstract class ShowSession {
       });
       this.pilotSelf.checkpoint = 0;
     } else this.pilot = null;
+    r.waited = this.waitsForOthers && this.phase === RoundPhase.Loading;
+    ui.getState().setRoundLoading({ progress: 1, ready: true });
+    this.onRoundBuilt(r.start);
     this.maybeShowIntro();
+  }
+
+  /**
+   * Online: other machines load the round too, so finishing first means
+   * waiting on the loading screen (and an "Everyone's in!" beat at the end).
+   */
+  protected get waitsForOthers(): boolean {
+    return false;
+  }
+
+  /**
+   * The local machine finished building (and compiling) the round: tell the
+   * authority the player is ready.
+   *
+   * @param _rs - The round.
+   */
+  protected onRoundBuilt(_rs: RoundStart): void {}
+
+  /** This machine's progress building the current round (0..1), or 0 before it starts. */
+  protected localLoadProgress(): number {
+    return this.round?.loadPct ?? 0;
   }
 
   private maybeShowIntro(): void {
     const r = this.round;
     if (!r || r.introShown || !r.view || !r.loadMinDone) return;
     if (this.phase === null || this.phase < RoundPhase.IntroFlyover) return;
+    // Only a player who actually watched the roster gets the beat; a late catch-up skips it.
+    if (r.waited && !r.everyoneIn && this.phase === RoundPhase.IntroFlyover) {
+      r.everyoneIn = true;
+      ui.getState().setRoundLoading({ everyoneIn: true, waiting: [] });
+      this.after(EVERYONE_IN_S, () => this.maybeShowIntro());
+      return;
+    }
     r.introShown = true;
+    this.ctx.director.reveal();
+    r.view.startLoops();
     ui.getState().setScreen('roundIntro', { transition: 'wipe' });
     ui.getState().releaseWipe();
     r.view.playFlyover();

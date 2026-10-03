@@ -398,6 +398,8 @@ export class TutorialSession extends ShowSession {
   // ---------------------------------------------------------------------------
 
   private loadingInfo(name: string, tips: string[]): RoundIntroInfo {
+    // A show's last loading state must not leak onto the island's loading screen.
+    ui.getState().setRoundLoading(null);
     return {
       roundId: this.practiceRound.id,
       name,
@@ -437,6 +439,10 @@ export class TutorialSession extends ShowSession {
       fate: 'playing',
       inRound: true,
       loadRequested: true,
+      building: false,
+      loadPct: 0,
+      waited: false,
+      everyoneIn: false,
       introShown: true,
       loadMinDone: false,
       outcome: null,

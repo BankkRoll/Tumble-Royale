@@ -175,7 +175,7 @@ describe('purchases', () => {
 
 describe('gems & premium pass', () => {
   it('completes a fake checkout once per key', async () => {
-    const u = await api.guest();
+    const u = await api.account();
     const headers = { 'idempotency-key': 'gems-checkout-1' };
     const res = await api.req('POST', '/gems/checkout', {
       token: u.accessToken,

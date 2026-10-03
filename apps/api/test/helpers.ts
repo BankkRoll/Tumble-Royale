@@ -48,8 +48,15 @@ export interface TestApi extends BuiltApp {
   req(
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     url: string,
-    opts?: { token?: string; body?: unknown; headers?: Record<string, string> },
+    opts?: { token?: string; body?: unknown; headers?: Record<string, string>; ip?: string },
   ): Promise<LightMyRequestResponse>;
+  /**
+   * A guest upgraded to a full account through an email magic link (each call
+   * from a fresh address so the auth rate limit stays out of the way).
+   */
+  account(email?: string): Promise<TestUser & { email: string }>;
+  /** Completes an email magic-link sign-in, linking to `token`'s account when given. */
+  emailSignIn(email: string, token?: string): Promise<LightMyRequestResponse>;
   grant(userId: string, currency: 'gumballs' | 'gems' | 'crown_shards', amount: number): Promise<void>;
   postMatch(
     payload: MatchResultInput,
@@ -75,7 +82,7 @@ export interface TestApi extends BuiltApp {
 export async function createTestApi(
   startIso = '2026-10-02T12:00:00.000Z',
   env: Record<string, string> = {},
-  extra: Pick<BuildOptions, 'seasonListeners'> = {},
+  extra: Pick<BuildOptions, 'seasonListeners' | 'payments' | 'kv' | 'database' | 'fetch'> = {},
 ): Promise<TestApi> {
   let nowMs = Date.parse(startIso);
   const clock = {
@@ -103,6 +110,7 @@ export async function createTestApi(
     built.app.inject({
       method,
       url,
+      ...(opts.ip ? { remoteAddress: opts.ip } : {}),
       headers: {
         ...(opts.token ? { authorization: `Bearer ${opts.token}` } : {}),
         ...(opts.body !== undefined ? { 'content-type': 'application/json' } : {}),
@@ -130,26 +138,45 @@ export async function createTestApi(
   };
 
   let guestNo = 0;
+  const freshIp = () =>
+    `10.${guestNo % 250}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`;
+  const emailSignIn: TestApi['emailSignIn'] = async (email, token) => {
+    const start = await req('POST', '/auth/email/start', { token, body: { email }, ip: freshIp() });
+    if (start.statusCode !== 202) throw new Error(`email start failed: ${start.statusCode} ${start.body}`);
+    const magic = /token=([A-Za-z0-9_-]+)/.exec(mailer.sent.at(-1)!.text)![1]!;
+    return req('POST', '/auth/email/verify', { body: { token: magic }, ip: freshIp() });
+  };
+  const guest: TestApi['guest'] = async (displayName) => {
+    guestNo++;
+    const res = await req('POST', '/auth/guest', {
+      body: { displayName: displayName ?? `Tester_${guestNo}` },
+      ip: freshIp(),
+    });
+    if (res.statusCode !== 200) throw new Error(`guest signup failed: ${res.statusCode} ${res.body}`);
+    const j = res.json();
+    return {
+      id: j.user.id,
+      accessToken: j.accessToken,
+      refreshToken: j.refreshToken,
+      deviceToken: j.deviceToken,
+      displayName: j.user.displayName,
+      tag: j.user.tag,
+    };
+  };
   return {
     ...built,
     mailer,
     clock,
     req,
-    async guest(displayName) {
-      guestNo++;
-      const res = await req('POST', '/auth/guest', {
-        body: { displayName: displayName ?? `Tester_${guestNo}` },
-      });
-      if (res.statusCode !== 200) throw new Error(`guest signup failed: ${res.statusCode} ${res.body}`);
+    emailSignIn,
+    guest,
+    async account(email) {
+      const g = await guest();
+      const address = email ?? `player-${randomUUID()}@example.com`;
+      const res = await emailSignIn(address, g.accessToken);
+      if (res.statusCode !== 200) throw new Error(`email link failed: ${res.statusCode} ${res.body}`);
       const j = res.json();
-      return {
-        id: j.user.id,
-        accessToken: j.accessToken,
-        refreshToken: j.refreshToken,
-        deviceToken: j.deviceToken,
-        displayName: j.user.displayName,
-        tag: j.user.tag,
-      };
+      return { ...g, accessToken: j.accessToken, refreshToken: j.refreshToken, email: address };
     },
     async grant(userId, currency, amount) {
       await built.ctx.db.transaction((tx) =>

@@ -29,6 +29,20 @@
       "when": 1791051110026,
       "tag": "0003_season_rollover_news",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791061147499,
+      "tag": "0004_stripe_reversals",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791061789792,
+      "tag": "0005_ban_evasion_marks",
+      "breakpoints": true
     }
   ]
 }

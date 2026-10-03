@@ -36,15 +36,50 @@ export interface ActiveBan {
 }
 
 const BAN_CACHE_MS = 15_000;
-const banCache = new Map<string, { at: number; bans: ActiveBan[] }>();
+
+/** KV channel carrying user ids whose cached ban state every API instance must drop. */
+export const BAN_INVALIDATION_CHANNEL = 'bans:invalidate';
+
+interface BanCache {
+  entries: Map<string, { at: number; bans: ActiveBan[] }>;
+  /** Resolves once this instance listens for invalidations. */
+  subscribed: Promise<void>;
+}
+
+// One cache per app instance (context), so instances in one process, like
+// tests running two APIs, behave like separate servers.
+const banCaches = new WeakMap<AppContext, BanCache>();
+
+/**
+ * The instance's ban cache, subscribing to cluster-wide invalidations on first
+ * use. Nothing is cached before the subscription is live, so no invalidation
+ * can be missed; the KV's `close()` drops the subscription with the app.
+ */
+async function banCache(ctx: AppContext): Promise<BanCache> {
+  let cache = banCaches.get(ctx);
+  if (!cache) {
+    const entries = new Map<string, { at: number; bans: ActiveBan[] }>();
+    const subscribed = ctx.kv
+      .subscribe(BAN_INVALIDATION_CHANNEL, (userId) => {
+        entries.delete(userId);
+      })
+      .then(() => undefined);
+    cache = { entries, subscribed };
+    banCaches.set(ctx, cache);
+  }
+  await cache.subscribed;
+  return cache;
+}
 
 /**
  * Active bans for a user, cached briefly so authenticated hot paths do not hit
- * the database on every request.
+ * the database on every request. Every ban change goes through
+ * {@link invalidateBanCache}, which clears this cache on every instance.
  */
 export async function activeBans(ctx: AppContext, userId: string, fresh = false): Promise<ActiveBan[]> {
   const now = ctx.now();
-  const hit = banCache.get(userId);
+  const { entries } = await banCache(ctx);
+  const hit = entries.get(userId);
   if (!fresh && hit && now.getTime() - hit.at < BAN_CACHE_MS) return hit.bans;
   const rows = await ctx.db
     .select({ scope: bans.scope, reason: bans.reason, expiresAt: bans.expiresAt })
@@ -56,14 +91,22 @@ export async function activeBans(ctx: AppContext, userId: string, fresh = false)
         or(isNull(bans.expiresAt), gt(bans.expiresAt, now)),
       ),
     );
-  banCache.set(userId, { at: now.getTime(), bans: rows });
-  if (banCache.size > 50_000) banCache.clear();
+  entries.set(userId, { at: now.getTime(), bans: rows });
+  if (entries.size > 50_000) entries.clear();
   return rows;
 }
 
-/** Drops a user's cached ban state (after an admin bans/unbans). */
-export function invalidateBanCache(userId: string): void {
-  banCache.delete(userId);
+/**
+ * Drops a user's cached ban state on every API instance, after a ban is
+ * created, lifted or re-applied. Call it after the change is committed, or
+ * another instance may re-cache the old state before it becomes visible.
+ *
+ * @param ctx - Shared services (the KV fans the invalidation out).
+ * @param userId - Whose bans changed.
+ */
+export async function invalidateBanCache(ctx: AppContext, userId: string): Promise<void> {
+  banCaches.get(ctx)?.entries.delete(userId);
+  await ctx.kv.publish(BAN_INVALIDATION_CHANNEL, userId);
 }
 
 /** Extracts the bearer token from an Authorization header. */

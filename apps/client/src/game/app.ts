@@ -53,6 +53,7 @@ import {
   localPlayerCard,
   markNewsRead,
   pushLeaderboard,
+  pushLiveNews,
   pushMeta,
   pushStaticMeta,
   resolvePlaylist,
@@ -353,6 +354,7 @@ export class GameApp {
     if (cfg.debug)
       createDebugPanel({ renderer, quality, stats, session: () => app.session, timeScale: app.timeScale });
     if (cfg.autoplay) installAutoplay(cfg.autoShows);
+    if (cfg.api) void pushLiveNews(api.news);
     if (cfg.api) void app.connectAccount(null).finally(() => void app.refreshOnlineStatus());
     else void app.refreshOnlineStatus();
     window.setTimeout(() => ui.getState().setScreen('splash', { transition: 'wipe' }), 350);

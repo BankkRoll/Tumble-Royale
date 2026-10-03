@@ -16,8 +16,11 @@ KB of code and the game is never silent.
   16 original tracks authored as data, split into 6 stems that fade with
   intensity and final-30. Track changes crossfade on the bar line, and 15
   stingers land on the next beat in the playing key.
-- **Announcer**: Web Speech with a cheerful voice and music ducking. Falls back
-  to a formant "babble" voice when speech isn't available. Captions always fire.
+- **Announcer**: captions only by default. Speech is an opt-in accessibility
+  setting (`setEnabled(true)`, the game's **Spoken announcer** toggle): Web
+  Speech with a cheerful voice and music ducking, falling back to a formant
+  "babble" voice when speech isn't available. Caption events always fire; the
+  game shows them only when the player turns **Captions** on (off by default).
 - **Bindings**: `createGameAudio(engine)` maps `SimEvent`s, cue names, round
   and show phases, and footsteps to sound.
 
@@ -93,7 +96,8 @@ Stem levels from `stemLevels()`:
 ### `Announcer` (`audio.announcer`)
 
 `say(lineId, vars?, { priority?, interrupt?, silent? })`, `sayText(text, opts)`,
-`onCaption(cb)`, `setEnabled()`, `setSpeechEnabled()`, `cancel()`.
+`onCaption(cb)`, `setEnabled()` (spoken lines on/off; off by default),
+`setSpeechEnabled()` (Web Speech vs babble), `cancel()`.
 A higher priority interrupts a lower one. Countdown lines use priority 3.
 
 ### `GameAudio` (`createGameAudio(engine, opts)`)

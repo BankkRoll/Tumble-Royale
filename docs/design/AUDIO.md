@@ -10,6 +10,13 @@ and buildable with the Web Audio API alone (oscillators, noise buffers, biquads,
 envelopes, FM/AM, delay/convolver, waveshaper). Sampled replacements may come
 later but MUST keep the same ids.
 
+> **Built vs designed.** The engine ships four user buses (`music`, `sfx`,
+> `voice`, `ui` → `master`); there is no `ambience` bus and none of the §4
+> ambience beds are built. The announcer is captions-only unless the player
+> turns on **Spoken announcer**. §7.8 lists the settings that actually exist;
+> everything else in this bible is design intent. The sound board is
+> `apps/client/audio.html`.
+
 Related: `docs/SPEC.md` §3, §4, §8, §14, §15 · `docs/ARCHITECTURE.md` ·
 `packages/sim/src/events.ts` · `packages/sim/src/obstacles/types.ts` ·
 `packages/sim/src/physics/surfaces.ts` · `packages/shared/src/game.ts`.
@@ -129,9 +136,9 @@ User sliders (Settings → Audio) map 0–100 to gain with a squared curve
 | sfxLocal                         | 0 dB (relative to sfx)    | local player                                                               |
 | sfxWorld                         | -3 dB (relative to sfx)   | everything else                                                            |
 | ui                               | -8 dB                     | user UI slider (shares SFX slider if UI slider hidden on mobile)           |
-| announcer                        | -2 dB                     | user Announcer slider; "Announcer: On/Captions only/Off" option            |
-| ambience                         | -16 dB                    | user Ambience slider                                                       |
-| ambWeather / ambTheme / ambCrowd | 0 / -3 / -6 dB            | relative                                                                   |
+| announcer                        | -2 dB                     | user Announcer slider (engine `voice` bus); speech is an opt-in toggle     |
+| ambience                         | -16 dB                    | not built (no bus, no slider)                                              |
+| ambWeather / ambTheme / ambCrowd | 0 / -3 / -6 dB            | not built                                                                  |
 | reverbReturn                     | -14 dB                    | per-theme override ±4 dB (castle +3, space +4, factory +1, beach -3)       |
 
 ### 1.4 Ducking rules
@@ -1154,7 +1161,7 @@ in whole/half notes, brass in octaves, choir on top.
 | In-round pause menu                                                               | round track continues                                          | §1.4 pause duck                                                          |                                                                                     |
 | Rewards screen                                                                    | lobby intro → Loop A                                           | LP 6 kHz                                                                 | XP fill loop and level-ups on UI bus are tuned to F major                           |
 | Modal dialog (error / confirm)                                                    | —                                                              | music -4 dB extra while open                                             |                                                                                     |
-| Window blurred (not hidden)                                                       | —                                                              | music -6 dB, ambience -6 dB (optional setting "Mute when unfocused")     |                                                                                     |
+| Tab hidden                                                                        | —                                                              | fades out and suspends the context ("Mute when unfocused", default on)   | the blurred-window -6 dB dip is not built                                           |
 
 UI sound tuning rule: in menus all pitched UI sounds are in **F major**
 (lobby key). In rounds, pitched UI sounds (countdown, qualify counter tick,
@@ -1163,6 +1170,8 @@ toasts) are transposed to the current track key via `transposeTo()`.
 ---
 
 ## 4. Ambience beds
+
+> **Not built.** Nothing in this section exists in `@tumble/audio` yet.
 
 All beds are **live loops** on `ambience` bus, stereo, non-spatial except where
 noted ("emitters"). Each bed = 1–3 continuous layers + randomised one-shot
@@ -1559,7 +1568,9 @@ Phase 1 (ships now) — **procedural babble + caption**:
   `?` = rise +7 st at the end. Random ±1.5 st per syllable.
 - Env per syllable: 8/40/0.8/30 ms. Line ends with 200 ms release.
 - Deterministic: seed = hash(line id) so a line always "sounds" the same.
-- Settings → Audio → Announcer: **On (voice + captions)**, **Captions only**, **Off**.
+- Built: Settings → Accessibility → **Spoken announcer** (off by default)
+  turns speech on; **Captions** shows lines as text. There is no three-way
+  On / Captions only / Off option.
 
 Phase 2 — TTS bake: offline TTS (licensed voice) rendered to Opus files per
 line id, same ids, loaded lazily per round; babble remains the fallback when a
@@ -1582,9 +1593,8 @@ file is missing or fails to decode.
 
 ### 6.4 Caption style rules & accessibility
 
-- **Captions are ON by default** for the announcer (accessibility setting
-  "Announcer captions": default On; separate "Sound captions" for SFX like
-  "[crowd cheers]", default Off).
+- Announcer captions are one accessibility toggle, **Captions**, off by
+  default. "Sound captions" for SFX ("[crowd cheers]") are not built.
 - Caption ≤ 60 characters, single line on desktop, may wrap to 2 lines on
   mobile. Sentence case, max one exclamation mark, no ALL CAPS except the
   stamp words (QUALIFIED, ELIMINATED, GO).
@@ -1886,10 +1896,10 @@ Total: **182 lines** (including alternates).
 | `synth/`     | recipe DSL (§0) → node graph builders; noise buffers; formant voice; IR generator                                                      |
 | `bank/`      | SFX recipe table keyed by id; pre-render scheduler; fallback archetypes (§7.7)                                                         |
 | `music/`     | sequencer, instruments (multisample render), drum kit, `tracks/<trackId>.ts` data, stem/layer controller, adaptive param mapper (§2.5) |
-| `ambience/`  | weather/theme/crowd beds, Poisson detail scheduler, crowd excitement model                                                             |
+| `ambience/`  | not built: weather/theme/crowd beds, Poisson detail scheduler, crowd excitement model                                                  |
 | `announcer/` | line table (§6.5), queue/priorities/cooldowns, babble synth, caption events out to UI                                                  |
 | `bridge/`    | `SimEvent` → sound router (§7.2), cue router (§7.3), state-diff watcher for character states                                           |
-| `debug/`     | audio board for `tumbler.html` (play any id, voice meter, LUFS meter, bus faders)                                                      |
+| `debug/`     | the sound board lives in `apps/client/audio.html` (`src/audio-lab/`), not in this package                                              |
 
 Sub-path imports per ARCHITECTURE.md (`@tumble/audio/engine`, …). The UI
 receives captions via a small typed event (`onCaption({ id, text, speaker, durationMs, priority })`);
@@ -1904,7 +1914,7 @@ audio.setMusic(trackId, { phase, stage }): void;
 audio.setAdaptive(state: AdaptiveMusicState): void; // §2.5 inputs, called at 10 Hz
 audio.stinger(kind): void;                          // go | qualify | eliminate | last_player | overtime | round_over
 audio.announce(lineId, vars?): void;
-audio.setAmbience({ theme, weather }): void;
+audio.setAmbience({ theme, weather }): void;        // not built
 audio.handleSimEvents(events: readonly SimEvent[], ctx: ListenerContext): void;
 ```
 
@@ -2166,19 +2176,20 @@ so every theme has _some_ music from day one. Announcer fallback: babble voice
 
 ### 7.8 Settings (Settings → Audio, Accessibility)
 
-| Setting                                                  | Default                     | Effect                                                           |
-| -------------------------------------------------------- | --------------------------- | ---------------------------------------------------------------- |
-| Master / Music / SFX / UI / Announcer / Ambience volume  | 80 / 70 / 80 / 70 / 80 / 70 | slider → squared gain × §1.3 defaults                            |
-| Audio quality                                            | Auto                        | Low / Medium / High / Ultra (§1.5)                               |
-| Spatial audio (HRTF / headphones mode)                   | Auto (on for High+)         | forces HRTF on/off                                               |
-| Announcer                                                | On                          | On / Captions only / Off                                         |
-| Announcer captions                                       | On                          | accessibility; independent of announcer voice                    |
-| Sound captions ("[crowd cheers]", "[cannon fires left]") | Off                         | shows directional SFX captions for P0–P2 events                  |
-| Mono audio                                               | Off                         | collapses master to mono (accessibility)                         |
-| Dynamic range                                            | Normal                      | Normal / Night (limiter threshold -10 dB, ratio 4, makeup +4 dB) |
-| Mute when unfocused                                      | Off                         | §3                                                               |
-| Respect silent switch (iOS)                              | On                          | §1.8                                                             |
-| Footstep pack                                            | (cosmetic)                  | §5.1                                                             |
+Built (`packages/ui/src/store/defaults.ts`, wired in
+`apps/client/src/game/audioBridge.ts`):
+
+| Setting (tab)                                                    | Default                  | Effect                                                   |
+| ---------------------------------------------------------------- | ------------------------ | -------------------------------------------------------- |
+| Master / Music / Sound effects / Menu sounds / Announcer (Audio) | 90 / 70 / 90 / 80 / 90 % | bus gains: `master`, `music`, `sfx`, `ui`, `voice`       |
+| Mute when unfocused (Audio)                                      | On                       | fades out and suspends audio while the tab is hidden     |
+| Captions (Accessibility)                                         | Off                      | announcer lines as on-screen text                        |
+| Spoken announcer (Accessibility)                                 | Off                      | reads announcer lines aloud; never enabled automatically |
+
+Not built: Ambience volume, Audio quality, Spatial audio (HRTF) toggle,
+Sound captions, Dynamic range (Night), Respect silent switch. Mono audio
+exists in the engine (`monoAudio`) but has no setting yet. The footstep pack
+is a cosmetic slot, not a setting.
 
 ### 7.9 Testing
 
@@ -2190,7 +2201,7 @@ so every theme has _some_ music from day one. Announcer fallback: babble voice
   40-player event storm; stealing respects priority order.
 - Offline render tests: render 2 s of each recipe in `OfflineAudioContext`
   (where available in test env, else skip) and assert non-silence and peak ≤ 0 dBFS.
-- Manual: `tumbler.html` audio board — play any id, scrub adaptive state sliders
+- Manual: `audio.html` sound board — play any id, scrub adaptive state sliders
   (qualified %, timer, alive), toggle stems, LUFS meter, voice meter per class.
 
 ---

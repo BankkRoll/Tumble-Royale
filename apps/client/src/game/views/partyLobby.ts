@@ -9,13 +9,17 @@
  * - {@link LobbyInterpolation}: per-member snapshot buffer rendered a little
  *   in the past, allocation-free after construction;
  * - {@link LobbyFrameSender}: when the local Tumbler's pose is worth sending
- *   (10 Hz while moving, at once on a discrete change, a slow keep-alive).
+ *   (10 Hz while moving, at once on a discrete change, a slow keep-alive);
+ * - hangout rules: menu status chips, group framing from live positions,
+ *   breaking free of a grab ({@link GrabStruggle}) and steering a
+ *   non-leader's copy of the shared ball ({@link steerBall}).
  */
 import {
   PARTY_LOBBY_LIMITS,
   PARTY_LOBBY_RATE,
   isNewerLobbySeq,
   type LobbyLook,
+  type LobbyStatus,
   type LobbyPose,
   type PartyLobbyFrame,
 } from '@tumble/shared';
@@ -389,4 +393,186 @@ export class LobbyFrameSender {
     this.lookAt = now;
     return { seq: this.seq, look };
   }
+}
+
+// -----------------------------------------------------------------------------
+// Hangout
+// -----------------------------------------------------------------------------
+
+/** Seconds without input before a member sits down. */
+export const AFK_SIT_S = 20;
+
+/**
+ * A member's menu status from the UI state: queueing, Locker, Store, away
+ * (another tab or an overlay), else in the lobby.
+ *
+ * @param screen - Current screen id.
+ * @param menuTab - Current menu tab.
+ * @param overlay - Open overlay (`none` when closed).
+ */
+export function menuStatus(screen: string, menuTab: string, overlay: string): LobbyStatus {
+  if (screen === 'matchmaking') return 'queue';
+  if (screen !== 'menu') return 'away';
+  if (menuTab === 'locker') return 'locker';
+  if (menuTab === 'store') return 'store';
+  if (menuTab !== 'play' || (overlay !== 'none' && overlay !== 'friends')) return 'away';
+  return 'menu';
+}
+
+/**
+ * The chip above a member's Tumbler: where they are in the menu first, then
+ * their party role or ready state.
+ *
+ * @param status - Menu status.
+ * @param leader - Leads the party.
+ * @param ready - Ready flag (leaders are always ready).
+ */
+export function statusChip(status: LobbyStatus, leader: boolean, ready: boolean): string {
+  switch (status) {
+    case 'locker':
+      return 'IN LOCKER';
+    case 'store':
+      return 'IN STORE';
+    case 'queue':
+      return 'SEARCHING';
+    case 'away':
+      return 'AWAY';
+    default:
+      return leader ? 'LEADER' : ready ? 'READY' : 'NOT READY';
+  }
+}
+
+/**
+ * Centre and spread of points on the platform (the members' feet), for a
+ * camera that keeps the whole party in frame.
+ *
+ * @param xs - X coordinates.
+ * @param zs - Z coordinates.
+ * @param n - Points to use.
+ * @param out - Reused result.
+ */
+export function framePoints(
+  xs: ArrayLike<number>,
+  zs: ArrayLike<number>,
+  n: number,
+  out: LobbyFraming,
+): LobbyFraming {
+  if (n <= 0) {
+    out.cx = out.cz = out.spread = 0;
+    return out;
+  }
+  let cx = 0;
+  let cz = 0;
+  for (let i = 0; i < n; i++) {
+    cx += xs[i]!;
+    cz += zs[i]!;
+  }
+  cx /= n;
+  cz /= n;
+  let spread = 0;
+  for (let i = 0; i < n; i++) spread = Math.max(spread, Math.hypot(xs[i]! - cx, zs[i]! - cz));
+  out.cx = cx;
+  out.cz = cz;
+  out.spread = spread;
+  return out;
+}
+
+/** Jump presses that break a grab. */
+export const GRAB_MASH_PRESSES = 5;
+/** A grab lets go on its own after this long (s). */
+export const GRAB_MAX_S = 3;
+
+/**
+ * Being held by a party member: mash jump to break free, or wait it out.
+ *
+ * @example
+ * if (frame.grab === selfId) struggle.start(senderId);
+ * if (jumpPressed) struggle.press();
+ * if (struggle.update(dt)) release();
+ */
+export class GrabStruggle {
+  /** Member holding us, or null. */
+  by: string | null = null;
+  private presses = 0;
+  private t = 0;
+  /** Seconds after breaking free during which the same grab is ignored (no instant re-grab). */
+  private cooldown = 0;
+
+  /**
+   * Starts being held.
+   *
+   * @returns False while still shaking off the previous grab.
+   */
+  start(by: string): boolean {
+    if (this.by || this.cooldown > 0) return false;
+    this.by = by;
+    this.presses = 0;
+    this.t = 0;
+    return true;
+  }
+
+  /** One jump press while held. */
+  press(): void {
+    if (this.by) this.presses++;
+  }
+
+  /** The holder let go (their frames stopped naming us). */
+  release(): void {
+    if (!this.by) return;
+    this.by = null;
+    this.cooldown = 1;
+  }
+
+  /**
+   * Advances time.
+   *
+   * @returns True on the frame the grab breaks (mashed free or timed out).
+   */
+  update(dt: number): boolean {
+    if (!this.by) {
+      this.cooldown = Math.max(0, this.cooldown - dt);
+      return false;
+    }
+    this.t += dt;
+    if (this.presses < GRAB_MASH_PRESSES && this.t < GRAB_MAX_S) return false;
+    this.release();
+    return true;
+  }
+}
+
+/** A ball state `[x, y, z, vx, vy, vz]`. */
+export type BallState = [number, number, number, number, number, number];
+
+/**
+ * Non-leader ball correction: where the local ball should be after `dt`,
+ * steering toward the leader's last state extrapolated by its age. Snaps
+ * when far off (a reset, a missed bounce), otherwise eases so the ball never
+ * visibly teleports.
+ *
+ * @param local - Local ball state, updated in place.
+ * @param target - Leader's last relayed state.
+ * @param age - Seconds since that state arrived (capped for extrapolation).
+ * @param dt - Frame delta (s).
+ */
+export function steerBall(local: BallState, target: Readonly<BallState>, age: number, dt: number): void {
+  const a = Math.min(age, 0.25);
+  const tx = target[0] + target[3] * a;
+  const ty = Math.max(target[1], target[1] + target[4] * a);
+  const tz = target[2] + target[5] * a;
+  const dx = tx - local[0];
+  const dy = ty - local[1];
+  const dz = tz - local[2];
+  if (dx * dx + dy * dy + dz * dz > 2.25) {
+    local[0] = tx;
+    local[1] = ty;
+    local[2] = tz;
+  } else {
+    const k = 1 - Math.exp(-dt * 8);
+    local[0] += dx * k;
+    local[1] += dy * k;
+    local[2] += dz * k;
+  }
+  local[3] = target[3];
+  local[4] = target[4];
+  local[5] = target[5];
 }

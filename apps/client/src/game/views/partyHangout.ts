@@ -51,6 +51,7 @@ const BUMP_GRACE_S = 0.6;
 export class PartyHangout {
   readonly struggle = new GrabStruggle();
   private holding: string | null = null;
+  private freedFrom: string | null = null;
   private holdT = 0;
   private afk = 0;
   private prevJump = false;
@@ -91,10 +92,16 @@ export class PartyHangout {
    */
   updateHeld(dt: number, playing: boolean): boolean {
     const p = this.d.party;
-    const by = p.live ? p.holderOfSelf() : null;
     const s = this.struggle;
+    let by = p.live ? p.holderOfSelf() : null;
+    // Broke free while their frames still name us: that grab is spent until they let go.
+    if (by && by === this.freedFrom) by = null;
+    else if (by !== this.freedFrom) this.freedFrom = null;
     if (by && !s.by) {
-      if (!s.start(by)) return false;
+      if (!s.start(by)) {
+        s.update(dt);
+        return false;
+      }
       this.wake();
       this.prevJump = true;
     } else if (!by && s.by) {
@@ -106,12 +113,14 @@ export class PartyHangout {
       s.update(dt);
       return false;
     }
+    const holder = s.by;
     this.d.input.sample(this.d.idle.yaw, this.input);
     const jump = (this.input.buttons & Button.Jump) !== 0;
     if (jump && !this.prevJump) s.press();
     this.prevJump = jump;
-    if (s.update(dt) || !p.holdPoint(s.by ?? by!, this.pin)) {
+    if (s.update(dt) || !p.holdPoint(holder, this.pin)) {
       s.release();
+      this.freedFrom = holder;
       this.free(playing);
       return false;
     }

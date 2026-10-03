@@ -109,6 +109,8 @@ const PLATE_HEIGHT = 2.35;
 const BALL_SEND_MS = 150;
 const DIVE_HIT_RADIUS = 1.1;
 const GRAB_HOLD_OFFSET = 0.85;
+/** A holder sends at least every 100 ms while holding; this much silence means they are gone. */
+const HOLD_STALE_MS = 1000;
 
 interface Remote {
   userId: string;
@@ -336,9 +338,11 @@ export class PartyLobbyView {
   holderOfSelf(): string | null {
     const self = this.roster?.selfId;
     if (!self) return null;
+    const now = performance.now();
     for (let i = 0; i < this.list.length; i++) {
       const r = this.list[i]!;
-      if (r.despawnT < 0 && r.grab === self) return r.userId;
+      // A holder whose frames stopped (closed the menu mid-grab) no longer holds anyone.
+      if (r.despawnT < 0 && r.grab === self && now - r.buf.newestAt < HOLD_STALE_MS) return r.userId;
     }
     return null;
   }

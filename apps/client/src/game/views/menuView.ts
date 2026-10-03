@@ -366,7 +366,14 @@ export class MenuView implements GameView {
       const id = this.emoteOverride ?? this.loadout.emotes[slot - 1] ?? 'emote.wave';
       this.celebrate(id);
     }
-    if (live) this.hangout.afterMove(realDt, now, this.playing, this.playing && this.stillTime === 0);
+    // Dressing counts as activity: nobody should sit down in the Locker close-up.
+    if (live)
+      this.hangout.afterMove(
+        realDt,
+        now,
+        this.playing,
+        this.dressing || (this.playing && this.stillTime === 0),
+      );
     this.updatePartyJoin();
     this.stage.update(dt);
     this.frameCamera(realDt);

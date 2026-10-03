@@ -8,6 +8,7 @@ import { ConnectionLayer, DialogLayer, ToastLayer } from './components/system.ts
 import { Hud } from './hud/Hud.tsx';
 import { SettingsSheet } from './screens/overlays/SettingsSheet.tsx';
 import { InGameMenu } from './screens/overlays/InGameMenu.tsx';
+import { PhotoModeBar } from './screens/overlays/PhotoMode.tsx';
 import { JoinCodeDialog, PrivateShowDialog } from './screens/overlays/PrivateShow.tsx';
 import { FriendsSheet, NotificationsPanel } from './screens/overlays/SocialSheets.tsx';
 import { ScreenLayer } from './screens/ScreenLayer.tsx';
@@ -47,6 +48,7 @@ export function App(): JSX.Element {
   const a = useUI((s) => s.settings.accessibility);
   const streamer = useUI((s) => s.settings.gameplay.streamerMode);
   const screen = useUI((s) => s.screen);
+  const photo = useUI((s) => s.photo.active);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -68,16 +70,20 @@ export function App(): JSX.Element {
       data-reduce-shake={String(a.reduceShake)}
       data-streamer={String(streamer)}
       data-screen={screen}
+      data-photo={String(photo)}
       style={{ ['--ui-scale' as string]: String(a.uiScale) }}
     >
-      <div className="tr-stage">
-        <ScreenLayer />
-        <HudLayer />
-        <StampLayer />
+      {/* Photo mode hides the UI without unmounting it, so screens don't replay their entrances. */}
+      <div className="tr-photo-hidable" aria-hidden={photo || undefined}>
+        <div className="tr-stage">
+          <ScreenLayer />
+          <HudLayer />
+          <StampLayer />
+        </div>
+        <ConfettiLayer />
       </div>
-      <ConfettiLayer />
       <ToastLayer />
-      <OverlayLayer />
+      {photo ? <PhotoModeBar /> : <OverlayLayer />}
       <DialogLayer />
       <ConnectionLayer />
       <TumbleWipe />

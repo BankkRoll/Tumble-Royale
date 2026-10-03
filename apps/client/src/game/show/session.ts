@@ -1235,8 +1235,13 @@ export abstract class ShowSession {
       (active || spectating) &&
       !this.ctx.cfg.autoplay &&
       us.screen === 'round' &&
-      us.overlay === 'none';
-    if (!input.settings.pointerLock && us.overlay !== 'none' && document.pointerLockElement)
+      us.overlay === 'none' &&
+      !us.photo.active;
+    if (
+      !input.settings.pointerLock &&
+      (us.overlay !== 'none' || us.photo.active) &&
+      document.pointerLockElement
+    )
       document.exitPointerLock();
     const lock =
       input.settings.pointerLock && !us.isTouch ? (input.pointerLocked ? 'locked' : 'unlocked') : 'off';

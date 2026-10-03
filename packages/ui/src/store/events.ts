@@ -82,7 +82,12 @@ export interface UIIntents {
   backToLobby: undefined;
   emote: { slot: number; id: string };
   quickPing: { kind: string };
+  /** Enter photo mode (victory / winner cam / in-round menu while out of play). */
   photoMode: undefined;
+  /** Photo mode: save the current frame as a PNG. */
+  photoCapture: undefined;
+  /** Photo mode: back to the game. */
+  photoExit: undefined;
   /** Leave the current show (pause menu / reconnect curtain). */
   leaveShow: undefined;
   createCustom: { options: CustomLobbyOptions };

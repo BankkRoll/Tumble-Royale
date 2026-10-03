@@ -795,3 +795,53 @@
 .tr-hud-grab.is-held .tr-hud-grab-bar i {
   background: var(--mint);
 }
+
+/* Photo mode ---------------------------------------------------------------- */
+.tr-photo-hidable {
+  display: contents;
+}
+.tr-root[data-photo='true'] .tr-photo-hidable {
+  visibility: hidden;
+}
+.tr-photo {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--safe-b) + 1em);
+  display: grid;
+  justify-items: center;
+  gap: 0.5em;
+  padding: 0 calc(var(--safe-r) + 1em) 0 calc(var(--safe-l) + 1em);
+  animation: tr-fade-in 200ms ease-out;
+}
+.tr-photo-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.8em 1.4em;
+  padding: 0.8em 1.2em;
+  max-width: min(100%, 62em);
+}
+.tr-photo-field {
+  display: grid;
+  gap: 0.3em;
+  min-width: 11em;
+}
+.tr-photo-field--toggle {
+  min-width: 0;
+}
+.tr-photo-hint {
+  margin: 0;
+  color: #fff;
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+@media (max-width: 760px) {
+  .tr-photo-bar {
+    padding: 0.6em 0.8em;
+  }
+  .tr-photo-field {
+    flex: 1 1 12em;
+    min-width: 0;
+  }
+}

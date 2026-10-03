@@ -312,6 +312,9 @@ export function WinnerCamScreen(): JSX.Element | null {
             {t}
           </Button>
         ))}
+        <Button variant="secondary" size="sm" onClick={() => uiEvents.emit('photoMode')}>
+          <Icon name="camera" size="1em" /> Photo mode
+        </Button>
         <Button
           variant="go"
           size="lg"

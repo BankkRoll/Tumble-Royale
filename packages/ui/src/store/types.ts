@@ -1038,6 +1038,19 @@ export interface Settings {
   };
 }
 
+/** Photo mode look filters. */
+export type PhotoFilter = 'none' | 'warm' | 'mono' | 'vivid';
+
+/** Photo mode: the game hides the UI and frees the camera while `active`. */
+export interface PhotoModeState {
+  active: boolean;
+  /** Vertical field of view (degrees); the slider and pad bumpers both change it. */
+  fov: number;
+  filter: PhotoFilter;
+  /** Stamp the game logo on saved photos. */
+  watermark: boolean;
+}
+
 /** Region probe results shown in Settings → Gameplay → Region. */
 export interface RegionStatus {
   /** Measured round trip (ms) per region id; missing = not measurable. */

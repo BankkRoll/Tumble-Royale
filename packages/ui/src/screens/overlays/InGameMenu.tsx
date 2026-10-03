@@ -146,6 +146,19 @@ export function InGameMenu(): JSX.Element {
           >
             <Icon name="gear" size="1.1em" /> Settings
           </Button>
+          {hud.status !== 'playing' && (
+            <Button
+              variant="secondary"
+              block
+              data-testid="igm-photo"
+              onClick={() => {
+                ui.getState().setOverlay('none');
+                uiEvents.emit('photoMode');
+              }}
+            >
+              <Icon name="camera" size="1.1em" /> Photo mode
+            </Button>
+          )}
           <Button variant="danger" block data-testid="igm-leave" onClick={confirmLeave}>
             Leave show
           </Button>

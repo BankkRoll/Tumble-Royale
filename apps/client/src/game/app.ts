@@ -59,6 +59,7 @@ import {
   resolvePlaylist,
 } from './meta.ts';
 import { OnlineAccount } from './online/account.ts';
+import { PhotoMode } from './photo/photoMode.ts';
 import { MatchmakerClient, gameSocketUrl, type Lobby, type MatchFound } from './online/matchmaker.ts';
 import {
   chooseRegion,
@@ -150,6 +151,7 @@ export class GameApp {
   private lobby: Lobby | null = null;
   private readonly thumbs: ThumbnailRenderer;
   private readonly padNav = new GamepadNavigator();
+  private readonly photo: PhotoMode;
   private regionProbe: RegionProbe = { pings: {}, available: [], matchmakerMs: null };
   private regionProbing: Promise<void> | null = null;
   private regionProbedAt = -Infinity;
@@ -171,6 +173,7 @@ export class GameApp {
   ) {
     this.timeScale = { value: cfg.timeScale };
     this.thumbs = new ThumbnailRenderer(renderer, tumblers.create);
+    this.photo = new PhotoMode(renderer.domElement as HTMLCanvasElement, post, director);
     this.account = cfg.api
       ? new OnlineAccount(api, {
           onLookChanged: () => this.menu?.setLoadout(this.look()),
@@ -464,11 +467,13 @@ export class GameApp {
     }
     const warp = this.session?.timeWarp ?? 1;
     this.director.update(dt * warp, realDt);
+    this.photo.update(realDt);
     const d = this.director;
     this.audio.setListener(d.listenerPos, d.listenerFwd, d.listenerUp);
     this.audio.update();
     this.post.update(realDt);
     this.post.render();
+    this.photo.afterRender();
     // Thumbnails only render in the menus, one per frame, so shows never hitch.
     if (!this.session) this.thumbs.pump(realDt * 1000);
     this.quality.sample(realDt * 1000);
@@ -488,8 +493,10 @@ export class GameApp {
   private pollPadNav(now: number): void {
     const s = ui.getState();
     const idle = this.menu?.idlePlaying ?? false;
+    const photo = s.photo.active;
     const menuOwnsPad =
-      !idle && (s.inputMode === 'menu' || s.dialog !== null || s.overlay !== 'none' || s.eliminatedSheet);
+      photo ||
+      (!idle && (s.inputMode === 'menu' || s.dialog !== null || s.overlay !== 'none' || s.eliminatedSheet));
     this.input.setGamepadGameplay(!menuOwnsPad);
     const pad =
       typeof navigator.getGamepads === 'function' ? firstStandardPad(navigator.getGamepads()) : null;
@@ -497,7 +504,10 @@ export class GameApp {
     for (const a of actions) {
       this.input.lastDevice = 'gamepad';
       if (a === 'start') this.onPadStart();
-      else if (menuOwnsPad) ui.getState().navigate(a);
+      // Photo mode flies the camera with the sticks and bumpers; only A (Take photo) and B (Exit) navigate.
+      else if (photo) {
+        if (a === 'accept' || a === 'back') ui.getState().navigate(a);
+      } else if (menuOwnsPad) ui.getState().navigate(a);
       else if (
         (a === 'tabPrev' || a === 'tabNext') &&
         s.screen === 'round' &&
@@ -511,6 +521,10 @@ export class GameApp {
   private onPadStart(): void {
     const s = ui.getState();
     if (s.dialog) return;
+    if (s.photo.active) {
+      this.photo.exit();
+      return;
+    }
     if (this.menu?.idlePlaying) {
       this.menu.setIdlePlay(false);
       return;
@@ -1137,13 +1151,12 @@ export class GameApp {
       onEmote: ({ id }) => {
         if (!this.session) this.menu?.emote(id);
       },
-      onPhotoMode: () =>
-        s().pushToast({
-          kind: 'info',
-          title: 'Say cheese!',
-          body: 'Press F12 for a screenshot — photo mode controls are coming soon.',
-          icon: '📸',
-        }),
+      onPhotoMode: () => {
+        if (!this.photo.enter())
+          s().pushToast({ kind: 'info', title: 'Nothing to photograph right now', icon: '📸' });
+      },
+      onPhotoCapture: () => this.photo.capture(),
+      onPhotoExit: () => this.photo.exit(),
       onCreateCustom: ({ options }) => {
         if (this.customUnavailable() || !this.mm) return;
         void this.mm

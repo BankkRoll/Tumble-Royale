@@ -56,3 +56,31 @@ rim, so only real emissives (telegraphs, lights, VFX) glow. The screen-space
 edge outline is off in every preset: it traced blob-shadow decals as squares
 under each Tumbler and fringed edges, while characters already carry an
 inverted-hull outline.
+
+## Lag compensation as a server hit assist, not a rewind inside the sim
+
+The spec promises ≤ 150 ms rewind for grab and dive hits. Rewinding Rapier
+bodies inside `MatchSim.step` would make every step depend on per-client RTTs,
+break the prediction contract (client and server stepping the same function)
+and cost a world snapshot/restore per check. Instead the room records one pose
+per network tick (`LagCompensator`) and, after each authoritative step, checks
+each human's fresh grab press or ongoing dive against the other players'
+poses rewound to that client's view time (RTT/2 + 100 ms render delay, capped
+at 150 ms). When the client's view connected and the target is still within a
+small present-day distance, the room calls `assistGrab` / `assistTackle` on
+the sim, which run the controller's own grab/tackle path with every normal
+eligibility rule. The assist can only add a hit the client saw, never move a
+body back in time, so the sim stays a deterministic function of its inputs
+plus these explicit, counted commands (`tumble_lagcomp_assists_total`).
+Replays that re-simulate from inputs alone must record assists as events.
+
+## The pre-show platform is a live lobby sim
+
+Online, the waiting platform runs as a rule-less match sim (`lobby: true`)
+on `PRE_SHOW_LOBBY_ROUND`, streamed through the same snapshot, prediction and
+reliable-event pipeline as rounds (at half the snapshot rate). Using the real
+Tumbler controller keeps grabs, dives, bumps and emotes identical to rounds;
+`addPlayer`/`removePlayer` let people drop in and leave without rebuilding the
+world (a rebuild would pop every Tumbler back to a spawn grid). A dropped
+connection keeps its Tumbler idling until the resume window ends, so resumes
+never flash a despawn. Offline shows keep the local pre-show.

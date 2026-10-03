@@ -2533,11 +2533,13 @@ export class TumblerController implements TumblerControllerLike {
     if (!(other instanceof TumblerController) || other === this) return false;
     const ext = this.ext;
     const s = this._state;
+    // Grab with nothing held is the empty-handed reach pose.
     const free =
       s === CharacterState.Idle ||
       s === CharacterState.Run ||
       s === CharacterState.Jump ||
-      s === CharacterState.Fall;
+      s === CharacterState.Fall ||
+      s === CharacterState.Grab;
     if (
       !free ||
       ext.grabKind !== GrabKind.None ||

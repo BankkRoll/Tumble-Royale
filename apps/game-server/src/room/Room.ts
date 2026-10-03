@@ -45,8 +45,20 @@ import {
   type SnapshotFrame,
 } from '@tumble/netcode';
 import type { CharacterInput, SimEvent } from '@tumble/sim';
-import { MAX_PLAYERS, SERVER_TICK_HZ, SIM_STEPS_PER_TICK, type RoundDefinition } from '@tumble/shared';
+import { assignBotSkills, assignShowParties, lobbySpawnPoint } from '@tumble/sim/show';
+import {
+  MAX_PLAYERS,
+  RoundPhase,
+  SERVER_TICK_HZ,
+  SIM_STEPS_PER_TICK,
+  ShowPhase,
+  type RoundDefinition,
+  type Vec3,
+} from '@tumble/shared';
+import { BodyMonitor, InputRateMonitor, type AnomalyKind } from '../anomaly.ts';
 import { InputSequenceGuard, sanitizeChat, sanitizeName } from '../antiCheat.ts';
+import { createLobbyWanderBot } from '../bots/lobbyWanderBot.ts';
+import { HitAssist } from '../hitAssist.ts';
 import { LagCompensator } from '../lagcomp.ts';
 import type { ServerMetrics } from '../metrics.ts';
 import {
@@ -91,6 +103,20 @@ interface PlayerSlot {
   userId: string | null;
   /** Action counters for challenge progress. */
   stats: PlayerStatsCounters;
+  /** Who this human queued with: matchmaker team, else party id (null for solos and bots). */
+  partyKey: string | null;
+  /** Show party (duos/squads), -1 when solo. Fixed when the show starts. */
+  partyId: number;
+  /** Bot skill tier (bots only). */
+  botSkill: 'clumsy' | 'average' | 'sharp' | undefined;
+  /** A seat held for a ticketed human who has not arrived yet (see {@link RoomConfig.lateJoinGraceMs}). */
+  reserved: boolean;
+  /** Bot brain on the pre-show platform. */
+  lobbyBrain: ServerBotBrain | null;
+  /** The input the sim consumed for this player on the latest step (hit assist). */
+  lastInput: CharacterInput;
+  /** Input-flood / sequence anomaly tracking. */
+  inputRate: InputRateMonitor;
 }
 
 /** A finished round as reported to the API. */
@@ -98,6 +124,39 @@ interface RoundRecord extends ResultRound {
   entrants: number[];
   qualifiedIds: number[];
 }
+
+/** A fresh slot with every per-player helper allocated. */
+function newSlot(
+  init: Pick<PlayerSlot, 'id' | 'name' | 'isBot' | 'userId' | 'loadout' | 'token' | 'session' | 'spectator'>,
+): PlayerSlot {
+  return {
+    ...init,
+    stats: newStats(),
+    disconnectedAt: -1,
+    left: false,
+    jitter: new InputJitterBuffer(),
+    seqGuard: new InputSequenceGuard(),
+    brain: null,
+    lastYaw: 0,
+    partyKey: null,
+    partyId: -1,
+    botSkill: undefined,
+    reserved: false,
+    lobbyBrain: null,
+    lastInput: { moveX: 0, moveZ: 0, yaw: 0, buttons: 0, emote: 0 },
+    inputRate: new InputRateMonitor(),
+  };
+}
+
+/** Party key for a ticketed human: the matchmaker's in-show team, else their queue party. */
+function partyKeyOf(ticket: JoinTicketClaims | null): string | null {
+  if (!ticket) return null;
+  if (ticket.team !== null) return `team:${ticket.team}`;
+  return ticket.pid && !ticket.pid.startsWith('solo:') ? `party:${ticket.pid}` : null;
+}
+
+/** Drop-in height above the lobby platform for joiners (they fall onto it). */
+const LOBBY_DROP_HEIGHT = 4;
 
 const newStats = (): PlayerStatsCounters => ({
   jumps: 0,
@@ -223,6 +282,17 @@ export class Room {
   /** Rewards per user id once the API answered (replayed to late reconnects). */
   private readonly rewardsByUser = new Map<string, Record<string, unknown> | null>();
   private rewardsDone = false;
+  /** The running sim is the pre-show platform, not a show round. */
+  private lobbyActive = false;
+  /** Server tick at which the pre-show countdown ends (-1 before the show starts). */
+  private preShowEndTick = -1;
+  /** Held seats of absent ticketed humans forfeit after this time (ms); -1 while round 1 has not started. */
+  private reservedUntil = -1;
+  /** Lag-compensated grab/dive assist (see hitAssist.ts). */
+  readonly hitAssist = new HitAssist(this.lagComp, createCharacterFullState);
+  private readonly bodies = new BodyMonitor();
+  private readonly lastAnomalyLog = new Map<AnomalyKind, number>();
+  private readonly lobbyFeet: Vec3 = { x: 0, y: 0, z: 0 };
 
   /**
    * @param id - Room id.
@@ -365,32 +435,54 @@ export class Room {
    * @returns The assigned player id.
    */
   join(session: ClientSession, hello: HelloMsg, now: number, ticket: JoinTicketClaims | null = null): number {
-    const spectator = this.state !== 'lobby' || ticket?.role === 'spectator';
-    const id = this.allocateId(spectator);
     // Ticketed names come from the account (`name#tag`); the tag stays off the nameplate.
     const name = ticket ? sanitizeName(ticket.name.replace(/#\d+$/, '')) : sanitizeName(hello.name);
-    const slot: PlayerSlot = {
+    const held = this.state === 'show' && ticket?.role === 'player' ? this.heldSeatFor(ticket) : null;
+    if (held) {
+      held.reserved = false;
+      held.name = name;
+      held.userId = ticket!.sub;
+      held.loadout = hello.loadout.slice(0, 255);
+      held.session = session;
+      this.enterLobby(held);
+      this.attach(session, held, false);
+      this.log(`[room ${this.id}] ${name} took held seat ${held.id} after the show started`);
+      return held.id;
+    }
+    const spectator = this.state !== 'lobby' || ticket?.role === 'spectator';
+    const id = this.allocateId(spectator);
+    const slot = newSlot({
       id,
       name,
       userId: ticket?.sub ?? null,
-      stats: newStats(),
       isBot: false,
       loadout: hello.loadout.slice(0, 255),
       token: randomBytes(18).toString('base64url'),
       session,
-      disconnectedAt: -1,
-      left: false,
       spectator,
-      jitter: new InputJitterBuffer(),
-      seqGuard: new InputSequenceGuard(),
-      brain: null,
-      lastYaw: 0,
-    };
+    });
+    slot.partyKey = partyKeyOf(ticket);
     this.slots.set(id, slot);
     if (this.firstJoinAt < 0) this.firstJoinAt = now;
+    if (!spectator) this.enterLobby(slot);
     this.attach(session, slot, false);
     this.log(`[room ${this.id}] ${slot.name} joined as ${spectator ? 'spectator' : 'player'} ${id}`);
     return id;
+  }
+
+  /**
+   * A seat held for this ticketed human: one reserved for their matchmaker
+   * party first, else any. Only until the late-join grace runs out.
+   */
+  private heldSeatFor(ticket: JoinTicketClaims): PlayerSlot | null {
+    const key = partyKeyOf(ticket);
+    let any: PlayerSlot | null = null;
+    for (const s of this.slots.values()) {
+      if (!s.reserved || s.left) continue;
+      if (key !== null && s.partyKey === key) return s;
+      if (!any && (s.partyKey === null || key === null)) any = s;
+    }
+    return any;
   }
 
   /**
@@ -404,6 +496,7 @@ export class Room {
       if (slot.session && slot.session !== session) this.detach(slot.session, 'replaced');
       slot.jitter.reset();
       slot.seqGuard.reset();
+      slot.inputRate.resetSeq();
       slot.disconnectedAt = -1;
       this.attach(session, slot, true);
       this.log(`[room ${this.id}] ${slot.name} resumed player ${slot.id}`);
@@ -486,12 +579,16 @@ export class Room {
     if (this.sim) {
       const ts = performance.now();
       for (let s = 0; s < SIM_STEPS_PER_TICK; s++) {
+        const simTick = simTickOf(this.serverTick - 1) + s + 1;
         this.applyInputs(this.sim);
         this.sim.step();
-        this.routeSimEvents(this.sim, simTickOf(this.serverTick - 1) + s + 1);
+        this.routeSimEvents(this.sim, simTick);
+        this.assistHits(this.sim, simTick);
       }
       simMs = performance.now() - ts;
-      this.status = this.sim.getStatus();
+      this.recordHistory(this.sim, now);
+      // The director runs on round status; the lobby platform has none to report.
+      this.status = this.lobbyActive ? null : this.sim.getStatus();
     } else {
       this.status = null;
     }
@@ -502,7 +599,8 @@ export class Room {
     this.applyShowEvents(this.show.drainEvents(), now);
 
     const tSnap = performance.now();
-    if (this.sim && this.serverTick % this.config.snapshotEvery === 0) this.sendSnapshots(this.sim, now);
+    const every = this.config.snapshotEvery * (this.lobbyActive ? this.config.lobbySnapshotDivisor : 1);
+    if (this.sim && this.serverTick % Math.max(1, every) === 0) this.sendSnapshots(this.sim, now);
     const tSend = performance.now();
     this.flushReliable(now);
     const tEnd = performance.now();
@@ -531,6 +629,8 @@ export class Room {
     for (const slot of this.slots.values()) {
       if (slot.isBot || slot.left || slot.session || slot.disconnectedAt < 0) continue;
       if (now - slot.disconnectedAt < this.config.resumeWindowMs) continue;
+      // Until then the Tumbler idles on the platform, so a resume never flashes a despawn.
+      this.leaveLobby(slot.id);
       if (this.state === 'lobby') {
         this.slots.delete(slot.id);
       } else {
@@ -540,6 +640,20 @@ export class Room {
         this.show.onPlayerLeft(slot.id);
       }
       this.log(`[room ${this.id}] player ${slot.id} resume window expired`);
+      this.broadcastPlayerList();
+    }
+
+    if (this.reservedUntil >= 0 && now >= this.reservedUntil) {
+      this.reservedUntil = -1;
+      for (const slot of this.slots.values()) {
+        if (!slot.reserved || slot.left) continue;
+        // Never showed up: the seat forfeits like a quitter (the director eliminates it).
+        slot.left = true;
+        slot.reserved = false;
+        (this.sim as { forfeit?: (id: number) => void } | null)?.forfeit?.(slot.id);
+        this.show.onPlayerLeft(slot.id);
+        this.log(`[room ${this.id}] held seat ${slot.id} released (ticketed player never arrived)`);
+      }
       this.broadcastPlayerList();
     }
 
@@ -583,55 +697,177 @@ export class Room {
 
   private startShow(): void {
     this.state = 'show';
-    let botIndex = 0;
     const seed = this.deps.randomSeed();
+    const partySize = Math.max(1, this.show.partySize ?? this.match?.teamSize ?? 1);
+    const held = this.holdSeats(partySize);
+    let botIndex = 0;
+    const bots: PlayerSlot[] = [];
     while (this.humanCount + botIndex < this.config.capacity) {
       const id = this.allocateId(false);
       if (id < 0) break;
       const name = `${BOT_NAMES_A[(seed + botIndex * 7) % BOT_NAMES_A.length]} ${BOT_NAMES_B[(seed >>> 3) % BOT_NAMES_B.length]!.slice(0, 1)}${botIndex}`;
-      const slot: PlayerSlot = {
+      const slot = newSlot({
         id,
         name,
         userId: null,
-        stats: newStats(),
         isBot: true,
         loadout: '',
         token: '',
         session: null,
-        disconnectedAt: -1,
-        left: false,
         spectator: false,
-        jitter: new InputJitterBuffer(),
-        seqGuard: new InputSequenceGuard(),
-        brain: null,
-        lastYaw: 0,
-      };
+      });
       this.slots.set(id, slot);
+      bots.push(slot);
       botIndex++;
     }
+    // Same seeded tiers from the playlist's mix as the offline runner (Chaos Mode, First Show…).
+    const skills = assignBotSkills(
+      seed,
+      bots.length,
+      this.show.botSkillMix ?? { clumsy: 1, average: 2, sharp: 1 },
+    );
+    bots.forEach((b, i) => (b.botSkill = skills[i]));
+    const seats = [...this.slots.values()]
+      .filter((s) => !s.spectator && !s.left)
+      .map((s) => ({ id: s.id, isBot: s.isBot, partyKey: s.partyKey }));
+    const parties = assignShowParties(seats, partySize);
+    for (const s of this.slots.values()) s.partyId = parties.get(s.id) ?? -1;
     const roster = this.roster();
     for (const info of roster) {
       const slot = this.slots.get(info.id)!;
       if (slot.isBot && this.deps.createBot) slot.brain = this.deps.createBot(info, seed);
+      if (slot.isBot) {
+        slot.lobbyBrain = createLobbyWanderBot(info, seed);
+        this.enterLobby(slot);
+      }
     }
-    this.log(`[room ${this.id}] show starting: ${this.humanCount} humans + ${botIndex} bots`);
+    this.log(
+      `[room ${this.id}] show starting: ${this.humanCount - held} humans (+${held} held seats) + ${botIndex} bots`,
+    );
     this.showStartedAtWall = Date.now();
+    this.preShowEndTick = this.serverTick + Math.round((this.show.preShowSeconds ?? 10) * SERVER_TICK_HZ);
     this.broadcastPlayerList();
     this.broadcastShowInfo();
+    this.broadcast(this.preShowPhase());
     this.show.start(roster, seed);
+  }
+
+  /**
+   * Holds seats for ticketed humans the matchmaker placed here who have not
+   * connected yet (slow loads, a reload during matchmaking), so the show does
+   * not fill them with bots and they can still walk in before round 1.
+   * A held seat inherits the party of a queued group that is a member short.
+   *
+   * @returns Seats held.
+   */
+  private holdSeats(partySize: number): number {
+    const m = this.match;
+    if (!m) return 0;
+    const missing = Math.min(this.config.capacity, m.humans) - this.humanCount;
+    if (missing <= 0) return 0;
+    const short: string[] = [];
+    if (partySize > 1) {
+      const sizes = new Map<string, number>();
+      for (const s of this.slots.values())
+        if (!s.isBot && !s.spectator && s.partyKey) sizes.set(s.partyKey, (sizes.get(s.partyKey) ?? 0) + 1);
+      for (const [key, n] of sizes) for (let k = n; k < partySize; k++) short.push(key);
+    }
+    let held = 0;
+    for (let i = 0; i < missing; i++) {
+      const id = this.allocateId(false);
+      if (id < 0) break;
+      const slot = newSlot({
+        id,
+        name: 'Tumbler',
+        userId: null,
+        isBot: false,
+        loadout: '',
+        token: randomBytes(18).toString('base64url'),
+        session: null,
+        spectator: false,
+      });
+      slot.reserved = true;
+      slot.partyKey = short.shift() ?? null;
+      this.slots.set(id, slot);
+      held++;
+    }
+    return held;
+  }
+
+  /** The pre-show phase with the countdown left (for the show start and late joiners). */
+  private preShowPhase(): LowFreqMessage {
+    const ticks = Math.max(0, this.preShowEndTick - this.serverTick);
+    return {
+      t: 'showPhase',
+      phase: ShowPhase.PreShow,
+      startsInMs: Math.round((ticks * 1000) / SERVER_TICK_HZ),
+    };
   }
 
   private roster(): MatchPlayerInfo[] {
     const out: MatchPlayerInfo[] = [];
     for (const s of this.slots.values()) {
       if (s.spectator) continue;
-      out.push(
-        s.isBot
-          ? { id: s.id, name: s.name, isBot: true, team: -1, botSkill: 'average' }
-          : { id: s.id, name: s.name, isBot: false, team: -1 },
-      );
+      const info: MatchPlayerInfo = { id: s.id, name: s.name, isBot: s.isBot, team: -1 };
+      if (s.isBot) info.botSkill = s.botSkill ?? 'average';
+      if (s.partyId >= 0) info.partyId = s.partyId;
+      out.push(info);
     }
     return out.sort((a, b) => a.id - b.id);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pre-show platform
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Puts a player on the live pre-show platform, starting the lobby sim with
+   * the first one. They drop in from above at a spot fixed by their id.
+   */
+  private enterLobby(slot: PlayerSlot): void {
+    const round = this.deps.lobbyRound;
+    if (!round || slot.spectator || slot.reserved) return;
+    if (this.sim && !this.lobbyActive) return;
+    if (!this.sim) {
+      if (this.roundIndex >= 0) return;
+      this.startLobby(round);
+    }
+    const sim = this.sim!;
+    if (this.roundPlayers.includes(slot.id)) return;
+    const feet = lobbySpawnPoint(slot.id, this.lobbyFeet);
+    feet.y += LOBBY_DROP_HEIGHT;
+    // The server sim drives bots through lobby brains, so everyone enters it as a "human".
+    const info: MatchPlayerInfo = { id: slot.id, name: slot.name, isBot: false, team: -1 };
+    if (!sim.addPlayer?.(info, feet, Math.atan2(-feet.x, -feet.z))) return;
+    this.roundPlayers.push(slot.id);
+    this.bodies.forget(slot.id);
+  }
+
+  /** Takes a player off the platform (left for good); grabs involving them break. */
+  private leaveLobby(id: number): void {
+    if (!this.lobbyActive || !this.sim) return;
+    const i = this.roundPlayers.indexOf(id);
+    if (i < 0) return;
+    this.sim.removePlayer?.(id);
+    this.roundPlayers.splice(i, 1);
+    this.bodies.forget(id);
+  }
+
+  private startLobby(round: RoundDefinition): void {
+    const sim = this.deps.createMatchSim({
+      R: this.deps.R,
+      round,
+      seed: 0,
+      stage: 0,
+      players: [],
+      mode: 'authority',
+      lobby: true,
+    });
+    sim.setPhase(RoundPhase.Playing, 0);
+    this.lobbyActive = true;
+    this.installSim(sim, round, []);
+    this.currentPlan = null;
+    this.log(`[room ${this.id}] pre-show platform live, epoch ${this.epoch}`);
   }
 
   private allocateId(spectator: boolean): number {
@@ -651,8 +887,9 @@ export class Room {
       const slot = this.slots.get(id);
       if (!slot) continue;
       if (slot.isBot) {
-        if (slot.brain) {
-          slot.brain.think(sim, id, input);
+        const brain = this.lobbyActive ? slot.lobbyBrain : slot.brain;
+        if (brain) {
+          brain.think(sim, id, input);
           sim.setInput(id, input);
         }
         continue;
@@ -660,7 +897,60 @@ export class Room {
       const seq = slot.jitter.next(input);
       if (seq >= 0) slot.lastYaw = input.yaw;
       sim.setInput(id, input);
+      const last = slot.lastInput;
+      last.moveX = input.moveX;
+      last.moveZ = input.moveZ;
+      last.yaw = input.yaw;
+      last.buttons = input.buttons;
+      last.emote = input.emote;
     }
+  }
+
+  /** Lag-compensated grab/dive assist for every connected human after a step. */
+  private assistHits(sim: MatchSim, simTick: number): void {
+    if (!sim.assistGrab && !sim.assistTackle) return;
+    const c = this.hitAssist.counters;
+    const grabs = c.grabs;
+    const tackles = c.tackles;
+    for (const id of this.roundPlayers) {
+      const slot = this.slots.get(id);
+      if (!slot || slot.isBot || !slot.session) continue;
+      this.hitAssist.afterStep(sim, id, slot.lastInput, this.roundPlayers, simTick, slot.session.rttMs);
+    }
+    if (c.grabs === grabs && c.tackles === tackles) return;
+    this.metrics.lagCompGrabs += c.grabs - grabs;
+    this.metrics.lagCompTackles += c.tackles - tackles;
+    // Assisted grabs emit grabStart on the sim; route it with this step.
+    this.routeSimEvents(sim, simTick);
+  }
+
+  /**
+   * Once per network tick: pose history for lag compensation and the body
+   * sanity check (both after the tick's sim steps).
+   */
+  private recordHistory(sim: MatchSim, now: number): void {
+    const st = this.scratchState;
+    this.lagComp.begin(simTickOf(this.serverTick));
+    for (const id of this.roundPlayers) {
+      if (!sim.getPlayerState(id, st)) continue;
+      this.lagComp.add(id, st.pos, st.rot);
+      const kind = this.bodies.observe(id, st.pos, 1 / SERVER_TICK_HZ);
+      if (kind)
+        this.anomaly(
+          kind,
+          now,
+          `player ${id} at (${st.pos.x.toFixed(1)}, ${st.pos.y.toFixed(1)}, ${st.pos.z.toFixed(1)})`,
+        );
+    }
+  }
+
+  /** Counts an anomaly and logs it (at most once per kind per 10 s per room). */
+  private anomaly(kind: AnomalyKind, now: number, detail: string): void {
+    this.metrics.anomalies[kind]++;
+    const last = this.lastAnomalyLog.get(kind) ?? -Infinity;
+    if (now - last < 10_000) return;
+    this.lastAnomalyLog.set(kind, now);
+    this.log(`[room ${this.id}] anomaly ${kind}: ${detail} (round ${this.round?.id ?? '-'})`);
   }
 
   private routeSimEvents(sim: MatchSim, simTick: number): void {
@@ -668,8 +958,11 @@ export class Room {
     for (const e of events) {
       if (e.type === 'qualified') this.show.onPlayerFate(e.player, 1, e.place);
       else if (e.type === 'eliminated') this.show.onPlayerFate(e.player, 2, e.place);
+      else if (e.type === 'teleport' || e.type === 'respawn' || e.type === 'fellOut')
+        this.bodies.exempt(e.player);
       const stat = STAT_EVENTS[e.type];
-      if (stat && 'player' in e) {
+      // Warm-up antics on the pre-show platform don't count toward challenges.
+      if (stat && 'player' in e && !this.lobbyActive) {
         const slot = this.slots.get(e.player);
         if (slot && !slot.isBot) slot.stats[stat]++;
       }
@@ -687,15 +980,27 @@ export class Room {
     const h = readInputBatch(r, this.batchInputs, this.batchHeader);
     if (r.overflow) return this.violation(session, now);
     session.onSnapshotAck(h.ackSnapshotId, now);
+    if (slot.inputRate.note(now))
+      this.anomaly('input_flood', now, `player ${slot.id} sent > 120 input batches/s`);
     if (h.count === 0 || slot.spectator) return;
+    if (slot.inputRate.noteSeq(h.newestSeq)) {
+      // Clients keep one sequence for the whole session; a rewind means a restarted or forged stream.
+      this.anomaly('input_seq_rewind', now, `player ${slot.id} input seq rewound to ${h.newestSeq}`);
+      slot.jitter.reset();
+      slot.seqGuard.reset();
+    }
     if (!slot.seqGuard.check(h.newestSeq, now)) {
       this.metrics.rateLimited++;
+      this.anomaly('input_seq_ahead', now, `player ${slot.id} input seq ${h.newestSeq} ahead of the clock`);
       return this.violation(session, now);
     }
     // Oldest first, so arrival-time jitter tracking sees sequences in order.
     for (let i = h.count - 1; i >= 0; i--) {
       const input = this.batchInputs[i]!;
-      if (input.emote > 4) input.emote = 0;
+      if (input.emote > 4) {
+        this.anomaly('input_bad_emote', now, `player ${slot.id} sent emote slot ${input.emote}`);
+        input.emote = 0;
+      }
       slot.jitter.push(h.newestSeq - i, input, now);
     }
   }
@@ -720,7 +1025,8 @@ export class Room {
           typeof msg.target === 'number' && this.roundPlayers.includes(msg.target) ? msg.target : -1;
         return;
       case 'loaded':
-        if (this.round && msg.roundId === this.round.id) this.show.onPlayerLoaded?.(slot.id);
+        if (this.round && msg.roundId === this.round.id && !this.lobbyActive)
+          this.show.onPlayerLoaded?.(slot.id);
         return;
       default:
         this.violation(session, now);
@@ -763,13 +1069,19 @@ export class Room {
   private startRound(plan: ShowRoundPlan): void {
     this.sim?.dispose();
     this.sim = null;
+    this.lobbyActive = false;
     const round = plan.round ?? this.deps.loadRound(plan.roundId);
     const players: MatchPlayerInfo[] = [];
     const roster = this.roster();
     for (const id of plan.playerIds) {
       const info = roster.find((p) => p.id === id);
-      if (info) players.push(info);
+      if (!info) continue;
+      // The show's own entry carries its team assignment (parties kept together in team rounds).
+      const planned = plan.players?.find((p) => p.id === id);
+      players.push(planned ? { ...info, team: planned.team } : info);
     }
+    if (this.roundIndex < 0 && this.reservedUntil < 0 && this.hasHeldSeats())
+      this.reservedUntil = this.deps.now() + this.config.lateJoinGraceMs;
     const sim = this.deps.createMatchSim({
       R: this.deps.R,
       round,
@@ -780,25 +1092,41 @@ export class Room {
       ...(plan.qualifyTarget !== undefined ? { qualifyTarget: plan.qualifyTarget } : {}),
       ...(plan.variationId !== undefined ? { variationId: plan.variationId } : {}),
     });
-    this.sim = sim;
-    this.round = round;
     this.currentPlan = plan;
     this.roundIndex = plan.index ?? this.roundIndex + 1;
     this.roundStartedAt = this.deps.now();
-    this.roundPlayers = players.map((p) => p.id);
+    this.installSim(
+      sim,
+      round,
+      players.map((p) => p.id),
+    );
+    this.log(
+      `[room ${this.id}] round ${round.id} (stage ${plan.stage}) with ${players.length} players, epoch ${this.epoch}`,
+    );
+  }
+
+  private hasHeldSeats(): boolean {
+    for (const s of this.slots.values()) if (s.reserved && !s.left) return true;
+    return false;
+  }
+
+  /** Makes `sim` the room's running sim: new snapshot epoch, fresh history, joinRound to everyone. */
+  private installSim(sim: MatchSim, round: RoundDefinition, playerIds: number[]): void {
+    this.sim = sim;
+    this.round = round;
+    this.roundPlayers = playerIds;
     this.quantizer = new PositionQuantizer(round.bounds);
     const ids = new Set<string>(round.obstacles.map((o) => o.id));
     for (const k of sim.getObstacleNetStates().keys()) ids.add(k);
     this.obstacles = new ObstacleTable([...ids]);
     this.epoch = (this.epoch + 1) & 0xff;
     this.lagComp.reset();
+    this.hitAssist.reset();
+    this.bodies.reset();
     this.frame.obstacles = this.obstacles;
     this.frame.quantizer = this.quantizer;
     this.frame.epoch = this.epoch;
     for (const s of this.sessions) this.sendJoinRound(s);
-    this.log(
-      `[room ${this.id}] round ${round.id} (stage ${plan.stage}) with ${players.length} players, epoch ${this.epoch}`,
-    );
   }
 
   // ---------------------------------------------------------------------------
@@ -810,11 +1138,9 @@ export class Room {
     const simTick = simTickOf(this.serverTick);
     const st = this.scratchState;
     this.entities.clear();
-    this.lagComp.begin(simTick);
     for (const id of this.roundPlayers) {
       if (!sim.getPlayerState(id, st)) continue;
       this.entities.set(id, st, q, simTick);
-      this.lagComp.add(id, st.pos, st.rot);
     }
     this.obstacles.update(sim.getObstacleNetStates());
     this.fillStatus(this.status);
@@ -872,10 +1198,12 @@ export class Room {
     this.sessions.add(session);
     this.sendWelcome(session, slot, resumed);
     if (this.state !== 'lobby' || this.match) session.sendLowFreq(this.showInfo());
+    if (this.state === 'show' && this.roundIndex < 0 && this.preShowEndTick >= 0)
+      session.sendLowFreq(this.preShowPhase());
     if (this.sim) this.sendJoinRound(session);
     this.sendRewards(session);
     this.broadcastPlayerList();
-    if (this.sim && this.status)
+    if (this.sim && this.status && !this.lobbyActive)
       session.sendLowFreq({ t: 'roundPhase', phase: this.status.phase, time: this.sim.time });
     this.flushSession(session, performance.now());
   }
@@ -902,21 +1230,46 @@ export class Room {
 
   private sendJoinRound(session: ClientSession): void {
     if (!this.sim || !this.round) return;
-    const roster = this.roster();
+    const plan = this.currentPlan;
+    const players = this.roster().filter((p) => this.roundPlayers.includes(p.id));
+    if (plan?.players)
+      for (const p of players) p.team = plan.players.find((x) => x.id === p.id)?.team ?? p.team;
+    if (this.lobbyActive) {
+      session.sendLowFreq({
+        t: 'joinRound',
+        roundId: this.round.id,
+        seed: 0,
+        stage: 0,
+        players,
+        obstacleIds: [...this.obstacles.ids],
+        bounds: this.round.bounds,
+        epoch: this.epoch,
+        startTick: this.serverTick,
+        roundIndex: -1,
+        isFinal: false,
+        qualifyTarget: 0,
+        variationId: null,
+        lobby: true,
+      });
+      return;
+    }
     session.sendLowFreq({
       t: 'joinRound',
       roundId: this.round.id,
       seed: this.show.currentRound()?.seed ?? 0,
       stage: this.show.currentRound()?.stage ?? 0,
-      players: roster.filter((p) => this.roundPlayers.includes(p.id)),
+      players,
       obstacleIds: [...this.obstacles.ids],
       bounds: this.round.bounds,
       epoch: this.epoch,
       startTick: this.serverTick,
       roundIndex: Math.max(0, this.roundIndex),
-      isFinal: this.currentPlan?.isFinal ?? this.round.type === 'final',
-      qualifyTarget: this.currentPlan?.qualifyTarget ?? this.sim.getStatus().qualifyTarget,
+      isFinal: plan?.isFinal ?? this.round.type === 'final',
+      qualifyTarget: plan?.qualifyTarget ?? this.sim.getStatus().qualifyTarget,
       variationId: this.sim.variationId ?? null,
+      ...(plan?.durationScale !== undefined && plan.durationScale !== 1
+        ? { durationScale: plan.durationScale }
+        : {}),
     });
   }
 
@@ -1050,13 +1403,15 @@ export class Room {
   private broadcastPlayerList(): void {
     const players: NetPlayerInfo[] = [];
     for (const s of this.slots.values()) {
-      if (s.spectator) continue;
+      // Held seats appear once their player walks in (the join feed counts real arrivals).
+      if (s.spectator || s.reserved) continue;
       players.push({
         id: s.id,
         name: s.name,
         isBot: s.isBot,
         loadout: s.loadout,
         connected: s.isBot || s.session !== null,
+        ...(s.partyId >= 0 ? { partyId: s.partyId } : {}),
       });
     }
     this.broadcast({ t: 'playerList', players });

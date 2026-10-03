@@ -108,7 +108,7 @@ describe('director online options', () => {
     id: 'f1',
     name: 'f1',
     type: 'final',
-    qualification: { mode: 'lastStanding' },
+    qualification: { mode: 'lastStanding', ratio: 0, teamsEliminated: 0, teams: 0 },
   });
 
   it('scales round time limits and forwards party ids to match players', () => {

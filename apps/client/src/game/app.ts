@@ -48,15 +48,8 @@ import type { GameConfig } from './config.ts';
 import { botLoadout, tumblerColors } from './cosmetics.ts';
 import { createDebugPanel } from './debugPanel.ts';
 import type { TumbleHooks } from './hooks.ts';
-import {
-  customPlaylist,
-  localPlayerCard,
-  markNewsRead,
-  pushLeaderboard,
-  pushMeta,
-  pushStaticMeta,
-  resolvePlaylist,
-} from './meta.ts';
+import { localPlayerCard, markNewsRead, pushLeaderboard, pushMeta, pushStaticMeta } from './meta.ts';
+import { playlistIdForPlay, privateShow, resolvePlaylist } from './playlists.ts';
 import { OnlineAccount } from './online/account.ts';
 import { MatchmakerClient, gameSocketUrl, type Lobby, type MatchFound } from './online/matchmaker.ts';
 import { ProfileStore } from './profile.ts';
@@ -247,8 +240,14 @@ export class GameApp {
 
   /** Pushes menu data: the account's when signed in, else the local profile's. */
   private pushMeta(): void {
-    if (this.account?.active) pushStaticMeta();
+    if (this.account?.active) pushStaticMeta(this.showsPlayed());
     else pushMeta(this.profile);
+  }
+
+  /** Finished shows for First Show selection: the account's when signed in, else this device's; null while unknown. */
+  private showsPlayed(): number | null {
+    if (this.account?.active) return ui.getState().profile?.stats.shows ?? null;
+    return this.profile.showsPlayed;
   }
 
   // ---------------------------------------------------------------------------
@@ -546,12 +545,12 @@ export class GameApp {
   }
 
   /** Starts an offline show vs bots right away (Vs Bots, private show with bots). */
-  private startOfflineShow(playlist: ShowPlaylist): void {
+  private startOfflineShow(playlist: ShowPlaylist, roundTimeScale?: number): void {
     if (this.session) return;
     this.menu?.setIdlePlay(false);
     this.lastSummary = null;
     const seed = this.cfg.seed ?? (Math.floor(Math.random() * 0x7fffffff) ^ Date.now()) >>> 0;
-    const session = new OfflineShowSession(this.ctx, playlist, seed);
+    const session = new OfflineShowSession(this.ctx, playlist, seed, roundTimeScale);
     this.session = session;
     session.start();
   }
@@ -567,7 +566,10 @@ export class GameApp {
     this.lastPlaylist = playlistId;
     this.lastSummary = null;
     if (this.canMatchmake) {
-      await this.queue(playlistId ?? ui.getState().selectedPlaylist);
+      const selected = playlistId ?? ui.getState().selectedPlaylist;
+      // A newcomer's own Play gets the First Show; a mixed party keeps what the leader picked.
+      const solo = (this.account?.party?.members.length ?? 1) <= 1;
+      await this.queue(solo ? playlistIdForPlay(selected, this.showsPlayed()) : selected);
       return;
     }
     let session: ShowSession | null = null;
@@ -589,10 +591,7 @@ export class GameApp {
       });
     }
     if (!session) {
-      const playlist = resolvePlaylist(
-        this.cfg.playlist ?? playlistId,
-        this.profile.showsPlayed === 0 && !this.cfg.playlist && !this.account?.active,
-      );
+      const playlist = resolvePlaylist(playlistId, this.showsPlayed(), this.cfg.playlist ?? null);
       const seed = this.cfg.seed ?? (Math.floor(Math.random() * 0x7fffffff) ^ Date.now()) >>> 0;
       session = new OfflineShowSession(this.ctx, playlist, seed);
     }
@@ -955,7 +954,8 @@ export class GameApp {
       onPlayCustomOffline: ({ options }) => {
         if (options.rounds.length === 0) return;
         this.lastPlaylist = null;
-        this.startOfflineShow(customPlaylist(options));
+        const show = privateShow(options);
+        this.startOfflineShow(show.playlist, show.roundTimeScale);
       },
       onInspectPlayer: ({ playerId, name }) => {
         const local = localPlayerCard(this.profile, playerId);
@@ -1028,12 +1028,7 @@ export class GameApp {
       onPlay: ({ playlistId, mode }) => {
         if (mode === 'offline' && !this.cfg.online) {
           this.lastPlaylist = playlistId;
-          this.startOfflineShow(
-            resolvePlaylist(
-              this.cfg.playlist ?? playlistId,
-              this.profile.showsPlayed === 0 && !this.cfg.playlist && !this.account?.active,
-            ),
-          );
+          this.startOfflineShow(resolvePlaylist(playlistId, this.showsPlayed(), this.cfg.playlist ?? null));
           return;
         }
         void this.startShow(playlistId);

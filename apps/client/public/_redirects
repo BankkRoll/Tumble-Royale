@@ -1,0 +1,7 @@
+# Netlify / Cloudflare Pages: client-routed paths are served by the game's
+# index.html (party invites, OAuth and email sign-in returns, Stripe returns).
+# Listed explicitly rather than /* so real files and the sandbox pages win
+# and Cloudflare does not reject the rule as a loop.
+/join/*        /index.html   200
+/auth/*        /index.html   200
+/store         /index.html   200

@@ -52,6 +52,8 @@ import { playAgainAction, type LastShow } from './lastShow.ts';
 import { localPlayerCard, markNewsRead, pushLeaderboard, pushMeta, pushStaticMeta } from './meta.ts';
 import { playlistIdForPlay, privateShow, resolvePlaylist } from './playlists.ts';
 import { OnlineAccount } from './online/account.ts';
+import { AccountAuth } from './online/auth.ts';
+import { finishCheckoutReturn } from './online/checkout.ts';
 import { onlineCounts, queueTarget } from './online/playerCounts.ts';
 import { MatchmakerClient, gameSocketUrl, type Lobby, type MatchFound } from './online/matchmaker.ts';
 import { ProfileStore } from './profile.ts';
@@ -137,6 +139,7 @@ export class GameApp {
   private pendingJoin: string | null = deepLinkCode();
   private lobby: Lobby | null = null;
   private readonly thumbs: ThumbnailRenderer;
+  private readonly auth: AccountAuth;
   private readonly replays: ReplayController;
 
   private constructor(
@@ -166,6 +169,12 @@ export class GameApp {
         })
       : null;
     this.mm = cfg.api && cfg.matchmaking ? new MatchmakerClient(cfg.mmUrl, api) : null;
+    this.auth = new AccountAuth({
+      api,
+      profile,
+      account: this.account,
+      onLocalProfileChanged: () => this.pushMeta(),
+    });
     if (this.pendingJoin) {
       // Keep the query string (test flags) but drop the invite path so a reload doesn't rejoin.
       history.replaceState(null, '', `/${location.search}`);
@@ -373,8 +382,17 @@ export class GameApp {
     if (cfg.debug)
       createDebugPanel({ renderer, quality, stats, session: () => app.session, timeScale: app.timeScale });
     if (cfg.autoplay) installAutoplay(cfg.autoShows);
-    if (cfg.api) void app.connectAccount(null).finally(() => void app.refreshOnlineStatus());
-    else void app.refreshOnlineStatus();
+    if (cfg.api) {
+      // OAuth/email returns settle which session to resume before the normal connect.
+      void app.auth
+        .boot()
+        .then(() => app.connectAccount(null))
+        .finally(() => {
+          app.auth.publishSession();
+          void app.refreshOnlineStatus();
+          void finishCheckoutReturn(app.auth.bootReturn, api, app.account?.active ? app.account : null);
+        });
+    } else void app.refreshOnlineStatus();
     window.setTimeout(() => ui.getState().setScreen('splash', { transition: 'wipe' }), 350);
     return app;
   }
@@ -848,7 +866,7 @@ export class GameApp {
         this.profile.create(name, colors);
         this.pushMeta();
         refreshLook();
-        if (this.cfg.api) void this.connectAccount({ name, colors });
+        if (this.cfg.api) void this.connectAccount({ name, colors }).then(() => this.auth.publishSession());
         if (!this.profile.tutorialAnswered) s().setScreen('tutorialPrompt', { transition: 'fade' });
         else this.goMenu();
       },
@@ -999,7 +1017,11 @@ export class GameApp {
       },
       onRetryOnline: () => {
         void (this.account && !this.account.active ? this.connectAccount(null) : Promise.resolve()).finally(
-          () => void this.refreshOnlineStatus(),
+          () => {
+            this.auth.publishSession();
+            if (this.cfg.api) void this.auth.refreshProviders();
+            void this.refreshOnlineStatus();
+          },
         );
       },
       onPlayCustomOffline: ({ options }) => {
@@ -1041,40 +1063,9 @@ export class GameApp {
         this.applySettings(settings);
       },
       onAccountAction: ({ action, value }) => {
-        const a = online();
-        if (action === 'signOut' || action === 'deleteAccount') {
-          void this.signOut();
-          return;
-        }
-        if (action === 'rename' && value) {
-          this.profile.rename(value);
-          if (a) void a.rename(value);
-          else this.pushMeta();
-        } else if (a && (action === 'link-discord' || action === 'link-google')) {
-          const provider = action === 'link-discord' ? 'discord' : 'google';
-          void this.api.request<{ url: string }>('POST', `/auth/${provider}/start`).then(
-            (r) => window.location.assign(r.url),
-            (err) =>
-              s().pushToast({
-                kind: 'info',
-                title:
-                  err instanceof ApiError && err.code === 'provider_disabled'
-                    ? `${provider === 'discord' ? 'Discord' : 'Google'} sign-in isn't set up on this server`
-                    : "Couldn't start sign-in",
-                body:
-                  err instanceof ApiError && err.code === 'provider_disabled'
-                    ? 'Your guest account keeps saving progress.'
-                    : errorText(err),
-                icon: '🔒',
-              }),
-          );
-        } else
-          s().pushToast({
-            kind: 'info',
-            title: a ? 'That needs a linked account' : 'Accounts are offline right now',
-            body: 'Your guest Tumbler is saved.',
-            icon: '🔒',
-          });
+        if (action === 'signOut') void this.signOut();
+        else if (action === 'deleteAccount') void this.auth.deleteAccount(() => this.signOut());
+        else void this.auth.handle(action, value);
       },
       onPlay: ({ playlistId, mode }) => {
         if (mode === 'offline' && !this.cfg.online) {

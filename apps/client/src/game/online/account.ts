@@ -916,25 +916,21 @@ export class OnlineAccount {
     this.pushProfile();
   }
 
-  /** Renames the account (first rename free, then a cooldown). */
-  async rename(name: string): Promise<boolean> {
-    try {
-      const r = await this.api.patchMe({ displayName: name });
-      if (this.me && r.displayName) {
-        this.me.displayName = r.displayName;
-        if (r.tag) this.me.tag = r.tag;
-      }
-      this.pushProfile();
-      return true;
-    } catch (err) {
-      ui.getState().showDialog({
-        id: 'rename-failed',
-        kind: 'error',
-        title: "Couldn't rename",
-        body: describe(err),
-      });
-      return false;
+  /**
+   * Renames the account (first rename free, then a cooldown) and re-reads
+   * `/me` for the new tag and next allowed rename.
+   *
+   * @throws {ApiError} `invalid_name`, `name_cooldown` or a network failure;
+   *   the rename UI shows the reason inline.
+   */
+  async rename(name: string): Promise<void> {
+    const r = await this.api.patchMe({ displayName: name });
+    if (this.me && r.displayName) {
+      this.me.displayName = r.displayName;
+      if (r.tag) this.me.tag = r.tag;
     }
+    this.me = await this.api.me().catch(() => this.me);
+    this.pushProfile();
   }
 
   // ---------------------------------------------------------------------------

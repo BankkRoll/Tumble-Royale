@@ -10,6 +10,16 @@ const PREFIX = 'tumble.v1.';
 export type StorageKey = 'profile' | 'settings' | 'quality' | 'auth' | 'newsRead';
 
 /**
+ * The raw `localStorage` key behind a {@link StorageKey}, for matching
+ * cross-tab `storage` events.
+ *
+ * @param key - Storage key.
+ */
+export function storageKeyName(key: StorageKey): string {
+  return PREFIX + key;
+}
+
+/**
  * Reads and JSON-parses a stored value.
  *
  * @param key - Storage key.

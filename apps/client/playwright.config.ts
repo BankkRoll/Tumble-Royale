@@ -1,21 +1,37 @@
 import { defineConfig } from '@playwright/test';
 
-const PORT = 5173;
+/**
+ * `PW_PREVIEW=1` serves a prebuilt sandbox bundle (`build:sandbox`) with
+ * `vite preview` instead of the dev server; CI uses it so the run tests what
+ * was built and skips dev-server cold starts.
+ */
+const PREVIEW = process.env.PW_PREVIEW === '1';
+const PORT = PREVIEW ? 4173 : 5173;
+const WINDOWS = process.platform === 'win32';
+
+// NOTE: locally this drives the installed Edge so dev machines need no browser
+// download. `PW_CHANNEL=chromium` uses Playwright's bundled Chromium (CI).
+const channelEnv = process.env.PW_CHANNEL ?? 'msedge';
+const channel = channelEnv === 'chromium' || channelEnv === '' ? undefined : channelEnv;
 
 export default defineConfig({
   testDir: './e2e',
   timeout: 90_000,
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: `http://localhost:${PORT}`,
-    // NOTE: uses the locally installed Edge/Chrome so CI and dev machines need no browser download.
-    channel: process.env.PW_CHANNEL ?? 'msedge',
+    channel,
     launchOptions: {
-      args: [
-        '--enable-unsafe-webgpu',
-        '--enable-features=Vulkan',
-        '--use-angle=d3d11',
-        '--ignore-gpu-blocklist',
-      ],
+      // COMPAT: the ANGLE/Vulkan flags pick a real GPU on Windows; GPU-less
+      // Linux runners have no WebGPU and need SwiftShader for WebGL2.
+      args: WINDOWS
+        ? [
+            '--enable-unsafe-webgpu',
+            '--enable-features=Vulkan',
+            '--use-angle=d3d11',
+            '--ignore-gpu-blocklist',
+          ]
+        : ['--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
     },
   },
   webServer: [
@@ -26,9 +42,11 @@ export default defineConfig({
       cwd: '../..',
     },
     {
-      command: 'pnpm --filter @tumble/client dev --strictPort',
+      command: PREVIEW
+        ? `pnpm --filter @tumble/client preview --port ${PORT} --strictPort`
+        : 'pnpm --filter @tumble/client dev --strictPort',
       url: `http://localhost:${PORT}`,
-      reuseExistingServer: true,
+      reuseExistingServer: !process.env.CI,
       cwd: '../..',
     },
   ],

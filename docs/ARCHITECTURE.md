@@ -7,16 +7,17 @@ shared contracts that let several people (and agents) build in parallel.
 
 | Package            | Runs on         | Purpose                                                                                                                                                               |
 | ------------------ | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@tumble/shared`   | everywhere      | constants, math, seeded `Rng`, collision groups, `RoundPhase`/`ShowPhase`, themes                                                                                     |
+| `@tumble/shared`   | everywhere      | constants, math, seeded `Rng`, collision groups, `RoundPhase`/`ShowPhase`, the `ThemeId` union (theme data lives in `content`)                                        |
 | `@tumble/sim`      | server + client | Rapier world, character controller, obstacle runtimes, round rules, match sim, bots. **Headless** — no DOM, no three, no `Date.now`, no `Math.random` (lint-enforced) |
 | `@tumble/content`  | everywhere      | data: round definitions, show playlists, cosmetics, themes, tuning — all zod-validated                                                                                |
 | `@tumble/netcode`  | server + client | bit packer, input/snapshot codecs, delta compression, clock sync, jitter buffers                                                                                      |
 | `@tumble/render`   | client          | three.js WebGPU renderer, TSL toon materials, obstacle visuals, level builder, Tumbler character mesh + procedural animation, VFX, camera helpers                     |
 | `@tumble/audio`    | client          | Web Audio engine, procedural SFX, adaptive music, announcer                                                                                                           |
-| `@tumble/ui`       | client          | React 19 + Zustand + Tailwind overlay: every screen, HUD, transitions                                                                                                 |
+| `@tumble/ui`       | client          | React 19 + Zustand overlay styled by its own CSS (`src/theme/*.css`): every screen, HUD, transitions. Tailwind is only set up in `apps/client/src/styles.css`         |
 | `apps/client`      | browser         | composition root: boots renderer + sim + net + UI, game loop                                                                                                          |
-| `apps/game-server` | Node 22         | authoritative rooms, show flow, bots                                                                                                                                  |
-| `apps/api`         | Node 22         | accounts, inventory, store, ranking (Fastify + Drizzle)                                                                                                               |
+| `apps/game-server` | Node 22         | authoritative rooms, show flow, bots, lag-compensated hit assist, results outbox, metrics                                                                             |
+| `apps/api`         | Node 22         | accounts, inventory, store, ranking, social, news (Fastify + Drizzle)                                                                                                 |
+| `apps/matchmaker`  | Node 22         | queues, parties, private shows, server registry, region fallback, join tickets, bans                                                                                  |
 
 Dependency direction (no cycles): `shared ← sim ← content ← render/audio/netcode ← ui ← client`. Full spec: `docs/SPEC.md`. Game design: `docs/design/`.
 `netcode` may import `sim` types; `ui` must NOT import three or sim runtime (types only).
@@ -67,16 +68,21 @@ remove existing fields.
 
 ## Client dev pages
 
-`apps/client/*.html` are all Vite entries. Each team owns its sandbox page:
+Every `apps/client/*.html` is a Vite entry (`vite.config.ts` globs them). Dev
+serves all of them; `build:sandbox` builds all of them; a production build
+ships only `index.html`. Each team owns its sandbox page:
 
-| Page              | Owner       | Purpose                                                            |
-| ----------------- | ----------- | ------------------------------------------------------------------ |
-| `index.html`      | integration | the real game                                                      |
-| `playground.html` | character   | Tumbler controller + camera + obstacle test course                 |
-| `obstacles.html`  | obstacles   | gallery of every obstacle animating                                |
-| `ui.html`         | ui          | every screen previewable via `?screen=` with mock data             |
-| `tumbler.html`    | art         | character model, animation states, customization, VFX, audio board |
-| `level.html`      | levels      | load any round by `?round=<id>` and fly/play it                    |
+| Page              | Owner       | Purpose                                                              |
+| ----------------- | ----------- | -------------------------------------------------------------------- |
+| `index.html`      | integration | the real game                                                        |
+| `playground.html` | character   | Tumbler controller + camera + obstacle test course                   |
+| `obstacles.html`  | obstacles   | gallery of every obstacle animating                                  |
+| `ui.html`         | ui          | every screen previewable via `?screen=` with mock data               |
+| `tumbler.html`    | art         | character model, animation states, customization, ragdolls, crowd    |
+| `level.html`      | levels      | load any round by `?round=<id>` and fly/play it                      |
+| `world.html`      | art         | themes, weather, VFX, post/quality presets, menu and ceremony scenes |
+| `audio.html`      | audio       | sound board: SFX, adaptive music, stingers, spatial demo             |
+| `tutorial.html`   | integration | Practice Island without the splash/menu flow                         |
 
 ## IP rule
 

@@ -65,6 +65,8 @@ describe('ban enforcement', () => {
       200,
     );
 
+    // Each queue uses up the members' ready; ready again so only the ban can refuse.
+    await api.req('POST', '/party/ready', { token: member.accessToken, body: { ready: true } });
     await api.ban(member.id);
     const res = await api.req('POST', '/party/queue-ticket', { token: leader.accessToken });
     expect(res.statusCode).toBe(403);

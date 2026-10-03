@@ -7,6 +7,8 @@ export default tseslint.config(
     ignores: [
       '**/dist/**',
       '.media-build/**',
+      // Parallel agent worktrees are full repo copies; each is linted on its own.
+      '.claude/**',
       '**/node_modules/**',
       '**/.turbo/**',
       '**/test-results/**',

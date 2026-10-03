@@ -19,7 +19,12 @@ import type { ApiConfig } from './config.ts';
 import type { AppContext } from './context.ts';
 import { openDatabase, type Database } from './db/client.ts';
 import { challenges, cosmeticsCatalog } from './db/schema.ts';
-import { FakePaymentProvider, StripePaymentProvider, type PaymentProvider } from './economy/payments.ts';
+import {
+  DisabledPaymentProvider,
+  FakePaymentProvider,
+  StripePaymentProvider,
+  type PaymentProvider,
+} from './economy/payments.ts';
 import { registerEconomyRoutes } from './economy/routes.ts';
 import { ApiError } from './http/errors.ts';
 import { createKV, type KV } from './kv/index.ts';
@@ -71,11 +76,25 @@ export async function syncCatalog(ctx: AppContext): Promise<void> {
       data: {},
       updatedAt: now,
     };
-    await ctx.db.insert(cosmeticsCatalog).values({ id: c.id, ...values }).onConflictDoUpdate({ target: cosmeticsCatalog.id, set: values });
+    await ctx.db
+      .insert(cosmeticsCatalog)
+      .values({ id: c.id, ...values })
+      .onConflictDoUpdate({ target: cosmeticsCatalog.id, set: values });
   }
   for (const c of ctx.catalog.challenges) {
-    const values = { period: c.period, title: c.title, metric: c.metric, target: c.target, rewardXp: c.rewardXp, rewardGumballs: c.rewardGumballs, active: true };
-    await ctx.db.insert(challenges).values({ id: c.id, ...values }).onConflictDoUpdate({ target: challenges.id, set: values });
+    const values = {
+      period: c.period,
+      title: c.title,
+      metric: c.metric,
+      target: c.target,
+      rewardXp: c.rewardXp,
+      rewardGumballs: c.rewardGumballs,
+      active: true,
+    };
+    await ctx.db
+      .insert(challenges)
+      .values({ id: c.id, ...values })
+      .onConflictDoUpdate({ target: challenges.id, set: values });
   }
 }
 
@@ -86,14 +105,19 @@ export async function syncCatalog(ctx: AppContext): Promise<void> {
  * @param opts - Overrides for tests.
  */
 export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Promise<BuiltApp> {
-  const database = opts.database ?? (await openDatabase({ databaseUrl: config.databaseUrl, pgliteDir: config.pgliteDir }));
+  const database =
+    opts.database ?? (await openDatabase({ databaseUrl: config.databaseUrl, pgliteDir: config.pgliteDir }));
   await database.migrate();
   const now = opts.now ?? (() => new Date());
   const kv = opts.kv ?? createKV(config.redisUrl, () => now().getTime());
   const catalog = opts.catalog ?? loadCatalog();
   const payments =
     opts.payments ??
-    (config.stripe ? new StripePaymentProvider(config.stripe.secretKey, config.stripe.webhookSecret) : new FakePaymentProvider());
+    (config.stripe
+      ? new StripePaymentProvider(config.stripe.secretKey, config.stripe.webhookSecret)
+      : config.env === 'production'
+        ? new DisabledPaymentProvider()
+        : new FakePaymentProvider());
 
   const ctx: AppContext = {
     config,
@@ -151,21 +175,38 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof ApiError) {
-      return reply.code(err.status).send({ error: err.code, message: err.message, ...(err.details !== undefined ? { details: err.details } : {}) });
+      return reply
+        .code(err.status)
+        .send({
+          error: err.code,
+          message: err.message,
+          ...(err.details !== undefined ? { details: err.details } : {}),
+        });
     }
     const e = err as { statusCode?: number; code?: string; message?: string; error?: string };
-    if (e.statusCode === 429) return reply.code(429).send({ error: 'rate_limited', message: e.message ?? 'Too many requests' });
+    if (e.statusCode === 429)
+      return reply.code(429).send({ error: 'rate_limited', message: e.message ?? 'Too many requests' });
     if (e.statusCode && e.statusCode >= 400 && e.statusCode < 500) {
-      return reply.code(e.statusCode).send({ error: e.code ?? 'bad_request', message: e.message ?? 'Bad request' });
+      return reply
+        .code(e.statusCode)
+        .send({ error: e.code ?? 'bad_request', message: e.message ?? 'Bad request' });
     }
     req.log.error({ err }, 'unhandled error');
     return reply.code(500).send({ error: 'internal', message: 'Something went wrong' });
   });
-  app.setNotFoundHandler((req, reply) => reply.code(404).send({ error: 'not_found', message: `No route ${req.method} ${req.url}` }));
+  app.setNotFoundHandler((req, reply) =>
+    reply.code(404).send({ error: 'not_found', message: `No route ${req.method} ${req.url}` }),
+  );
 
   app.get('/health', { config: { rateLimit: false } }, async () => {
     await ctx.db.execute(sql`select 1`);
-    return { ok: true, db: database.driver, kv: config.redisUrl ? 'redis' : 'memory', payments: payments.id, season: catalog.season.id };
+    return {
+      ok: true,
+      db: database.driver,
+      kv: config.redisUrl ? 'redis' : 'memory',
+      payments: payments.id,
+      season: catalog.season.id,
+    };
   });
 
   registerAuthRoutes(app, ctx);

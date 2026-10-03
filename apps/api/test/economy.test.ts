@@ -1,8 +1,10 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CONTENT_CATALOG as CATALOG } from '../src/catalog.ts';
 import { addPassXp } from '../src/progression/xp.ts';
 import { verifyLedger } from '../src/economy/ledger.ts';
+import { DisabledPaymentProvider } from '../src/economy/payments.ts';
+import { purchases } from '../src/db/schema.ts';
 import { DAILY_COUNT, FEATURED_COUNT, rotationForDay } from '../src/economy/store.ts';
 import { createTestApi, type TestApi } from './helpers.ts';
 
@@ -16,7 +18,9 @@ afterAll(async () => {
 
 async function todaysGumballOffer() {
   const store = (await api.req('GET', '/store')).json();
-  const offer = [...store.featured, ...store.daily].find((o: { price: { currency: string } }) => o.price.currency === 'gumballs');
+  const offer = [...store.featured, ...store.daily].find(
+    (o: { price: { currency: string } }) => o.price.currency === 'gumballs',
+  );
   if (!offer) throw new Error('no gumball offer today');
   return offer as { offerId: string; price: { currency: 'gumballs'; amount: number } };
 }
@@ -59,10 +63,22 @@ describe('purchases', () => {
     const offer = await todaysGumballOffer();
     await api.grant(u.id, 'gumballs', offer.price.amount * 3);
     const headers = { 'idempotency-key': 'buy-once-123456' };
-    const first = await api.req('POST', '/purchase', { token: u.accessToken, headers, body: { offerId: offer.offerId } });
+    const first = await api.req('POST', '/purchase', {
+      token: u.accessToken,
+      headers,
+      body: { offerId: offer.offerId },
+    });
     expect(first.statusCode).toBe(200);
-    expect(first.json()).toMatchObject({ offerId: offer.offerId, replayed: false, wallet: { gumballs: offer.price.amount * 2 } });
-    const second = await api.req('POST', '/purchase', { token: u.accessToken, headers, body: { offerId: offer.offerId } });
+    expect(first.json()).toMatchObject({
+      offerId: offer.offerId,
+      replayed: false,
+      wallet: { gumballs: offer.price.amount * 2 },
+    });
+    const second = await api.req('POST', '/purchase', {
+      token: u.accessToken,
+      headers,
+      body: { offerId: offer.offerId },
+    });
     expect(second.statusCode).toBe(200);
     expect(second.json()).toMatchObject({ purchaseId: first.json().purchaseId, replayed: true });
 
@@ -96,8 +112,20 @@ describe('purchases', () => {
     await api.grant(u.id, 'gumballs', 100_000);
     await api.grant(u.id, 'gems', 100_000);
     const headers = { 'idempotency-key': 'reuse-key-abc' };
-    expect((await api.req('POST', '/purchase', { token: u.accessToken, headers, body: { offerId: offers[0].offerId } })).statusCode).toBe(200);
-    const other = await api.req('POST', '/purchase', { token: u.accessToken, headers, body: { offerId: offers[1].offerId } });
+    expect(
+      (
+        await api.req('POST', '/purchase', {
+          token: u.accessToken,
+          headers,
+          body: { offerId: offers[0].offerId },
+        })
+      ).statusCode,
+    ).toBe(200);
+    const other = await api.req('POST', '/purchase', {
+      token: u.accessToken,
+      headers,
+      body: { offerId: offers[1].offerId },
+    });
     expect(other.statusCode).toBe(409);
     expect(other.json().error).toBe('idempotency_key_reused');
   });
@@ -106,10 +134,16 @@ describe('purchases', () => {
     const u = await api.guest();
     const offer = await todaysGumballOffer();
     await api.grant(u.id, 'gumballs', offer.price.amount - 1);
-    const res = await api.req('POST', '/purchase', { token: u.accessToken, headers: { 'idempotency-key': 'poor-player-1' }, body: { offerId: offer.offerId } });
+    const res = await api.req('POST', '/purchase', {
+      token: u.accessToken,
+      headers: { 'idempotency-key': 'poor-player-1' },
+      body: { offerId: offer.offerId },
+    });
     expect(res.statusCode).toBe(402);
     expect(res.json()).toMatchObject({ error: 'insufficient_funds', details: { missing: 1 } });
-    expect((await api.req('GET', '/wallet', { token: u.accessToken })).json().wallet.gumballs).toBe(offer.price.amount - 1);
+    expect((await api.req('GET', '/wallet', { token: u.accessToken })).json().wallet.gumballs).toBe(
+      offer.price.amount - 1,
+    );
     const inv = (await api.req('GET', '/inventory', { token: u.accessToken })).json();
     expect(inv.items.some((i: { id: string }) => i.id === offer.offerId)).toBe(false);
     expect((await verifyLedger(api.ctx.db, u.id)).ok).toBe(true);
@@ -118,8 +152,14 @@ describe('purchases', () => {
   it('requires an Idempotency-Key and refuses items not on sale today', async () => {
     const u = await api.guest();
     const passItem = CATALOG.cosmetics.find((c) => c.source === 'pass')!.id;
-    expect((await api.req('POST', '/purchase', { token: u.accessToken, body: { offerId: passItem } })).statusCode).toBe(400);
-    const notSold = await api.req('POST', '/purchase', { token: u.accessToken, headers: { 'idempotency-key': 'pass-item-key' }, body: { offerId: passItem } });
+    expect(
+      (await api.req('POST', '/purchase', { token: u.accessToken, body: { offerId: passItem } })).statusCode,
+    ).toBe(400);
+    const notSold = await api.req('POST', '/purchase', {
+      token: u.accessToken,
+      headers: { 'idempotency-key': 'pass-item-key' },
+      body: { offerId: passItem },
+    });
     expect(notSold.statusCode).toBe(404);
   });
 
@@ -135,32 +175,76 @@ describe('gems & premium pass', () => {
   it('completes a fake checkout once per key', async () => {
     const u = await api.guest();
     const headers = { 'idempotency-key': 'gems-checkout-1' };
-    const res = await api.req('POST', '/gems/checkout', { token: u.accessToken, headers, body: { packId: 'gems.1100' } });
+    const res = await api.req('POST', '/gems/checkout', {
+      token: u.accessToken,
+      headers,
+      body: { packId: 'gems.1100' },
+    });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ status: 'completed', provider: 'fake', gems: 1100 });
-    const again = await api.req('POST', '/gems/checkout', { token: u.accessToken, headers, body: { packId: 'gems.1100' } });
+    const again = await api.req('POST', '/gems/checkout', {
+      token: u.accessToken,
+      headers,
+      body: { packId: 'gems.1100' },
+    });
     expect(again.json()).toMatchObject({ status: 'completed', replayed: true });
     expect((await api.req('GET', '/wallet', { token: u.accessToken })).json().wallet.gems).toBe(1100);
   });
 
+  it('refuses gem checkout without recording a purchase when payments are disabled', async () => {
+    const u = await api.guest();
+    const original = api.ctx.payments;
+    api.ctx.payments = new DisabledPaymentProvider();
+    try {
+      const res = await api.req('POST', '/gems/checkout', {
+        token: u.accessToken,
+        headers: { 'idempotency-key': 'gems-disabled-1' },
+        body: { packId: 'gems.1100' },
+      });
+      expect(res.statusCode).toBe(503);
+      expect(res.json()).toMatchObject({ error: 'payments_unavailable' });
+      const rows = await api.ctx.db.select().from(purchases).where(eq(purchases.userId, u.id));
+      expect(rows).toHaveLength(0);
+    } finally {
+      api.ctx.payments = original;
+    }
+  });
+
   it('unlocks the premium pass with gems and claims tier rewards', async () => {
     const u = await api.guest();
-    const noGems = await api.req('POST', '/pass/premium', { token: u.accessToken, headers: { 'idempotency-key': 'premium-poor' } });
+    const noGems = await api.req('POST', '/pass/premium', {
+      token: u.accessToken,
+      headers: { 'idempotency-key': 'premium-poor' },
+    });
     expect(noGems.statusCode).toBe(402);
     await api.grant(u.id, 'gems', 1000);
-    const unlock = await api.req('POST', '/pass/premium', { token: u.accessToken, headers: { 'idempotency-key': 'premium-1' } });
+    const unlock = await api.req('POST', '/pass/premium', {
+      token: u.accessToken,
+      headers: { 'idempotency-key': 'premium-1' },
+    });
     expect(unlock.statusCode).toBe(200);
     expect(unlock.json().wallet.gems).toBe(1000 - CATALOG.season.premiumPriceGems);
 
-    expect((await api.req('POST', '/pass/claim', { token: u.accessToken, body: { tier: 1, track: 'premium' } })).json().error).toBe('tier_locked');
+    expect(
+      (
+        await api.req('POST', '/pass/claim', { token: u.accessToken, body: { tier: 1, track: 'premium' } })
+      ).json().error,
+    ).toBe('tier_locked');
     const tier1 = CATALOG.season.tiers[0]!;
     await api.ctx.db.transaction((tx) => addPassXp(tx, CATALOG, u.id, tier1.xp));
     const pass = (await api.req('GET', '/pass', { token: u.accessToken })).json();
     expect(pass).toMatchObject({ tier: 1, premium: true });
-    const premiumClaim = await api.req('POST', '/pass/claim', { token: u.accessToken, body: { tier: 1, track: 'premium' } });
+    const premiumClaim = await api.req('POST', '/pass/claim', {
+      token: u.accessToken,
+      body: { tier: 1, track: 'premium' },
+    });
     expect(premiumClaim.statusCode).toBe(200);
     expect(premiumClaim.json().rewards).toHaveLength(tier1.premium.length);
     expect(premiumClaim.json().rewards.every((r: { granted: boolean }) => r.granted)).toBe(true);
-    expect((await api.req('POST', '/pass/claim', { token: u.accessToken, body: { tier: 1, track: 'premium' } })).json().error).toBe('already_claimed');
+    expect(
+      (
+        await api.req('POST', '/pass/claim', { token: u.accessToken, body: { tier: 1, track: 'premium' } })
+      ).json().error,
+    ).toBe('already_claimed');
   });
 });

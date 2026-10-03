@@ -38,7 +38,7 @@ export interface PaymentEvent {
 
 /** Payment provider contract. */
 export interface PaymentProvider {
-  readonly id: 'stripe' | 'fake';
+  readonly id: 'stripe' | 'fake' | 'disabled';
   createCheckout(req: CheckoutRequest): Promise<CheckoutSession>;
   /**
    * Verifies and decodes a webhook delivery.
@@ -57,7 +57,10 @@ export class StripePaymentProvider implements PaymentProvider {
    * @param secretKey - `STRIPE_SECRET_KEY`.
    * @param webhookSecret - `STRIPE_WEBHOOK_SECRET`; webhooks are rejected without it.
    */
-  constructor(secretKey: string, private readonly webhookSecret: string | undefined) {
+  constructor(
+    secretKey: string,
+    private readonly webhookSecret: string | undefined,
+  ) {
     this.stripe = new Stripe(secretKey);
   }
 
@@ -96,7 +99,10 @@ export class StripePaymentProvider implements PaymentProvider {
     } catch {
       throw new ApiError(400, 'bad_signature', 'Invalid Stripe signature');
     }
-    if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
+    if (
+      event.type === 'checkout.session.completed' ||
+      event.type === 'checkout.session.async_payment_succeeded'
+    ) {
       const s = event.data.object;
       if (s.payment_status !== 'paid') return { type: 'ignored', purchaseId: null, providerRef: s.id };
       return { type: 'checkout_completed', purchaseId: s.metadata?.purchaseId ?? null, providerRef: s.id };
@@ -119,5 +125,22 @@ export class FakePaymentProvider implements PaymentProvider {
 
   parseWebhook(): PaymentEvent {
     throw new ApiError(404, 'not_found', 'Webhooks are not used by the fake payment provider');
+  }
+}
+
+/**
+ * Production provider when Stripe isn't configured: Gem checkout is refused
+ * rather than silently falling back to the fake provider, which would grant
+ * Gems for free on a public deployment.
+ */
+export class DisabledPaymentProvider implements PaymentProvider {
+  readonly id = 'disabled' as const;
+
+  async createCheckout(): Promise<CheckoutSession> {
+    throw new ApiError(503, 'payments_unavailable', 'Gem purchases are coming soon');
+  }
+
+  parseWebhook(): PaymentEvent {
+    throw new ApiError(404, 'not_found', 'Payments are not configured');
   }
 }

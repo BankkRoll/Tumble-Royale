@@ -24,12 +24,15 @@ const PurchaseBody = z.object({
   currency: z.enum(['gumballs', 'gems']).optional(),
 });
 const CheckoutBody = z.object({ packId: z.string().min(1).max(64) });
-const KeySchema = z.string().regex(/^[A-Za-z0-9_\-:.]{8,128}$/, 'Idempotency-Key must be 8–128 URL-safe characters');
+const KeySchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_\-:.]{8,128}$/, 'Idempotency-Key must be 8–128 URL-safe characters');
 
 /** Reads and validates the `Idempotency-Key` header. */
 export function idempotencyKey(req: FastifyRequest): string {
   const raw = req.headers['idempotency-key'];
-  if (typeof raw !== 'string') throw badRequest('idempotency_key_required', 'Idempotency-Key header is required');
+  if (typeof raw !== 'string')
+    throw badRequest('idempotency_key_required', 'Idempotency-Key header is required');
   return parse(KeySchema, raw);
 }
 
@@ -65,7 +68,12 @@ export async function purchaseOffer(
   currency: 'gumballs' | 'gems' | undefined,
 ): Promise<PurchaseResult> {
   const findExisting = async (db: DbOrTx) =>
-    (await db.select().from(purchases).where(and(eq(purchases.userId, userId), eq(purchases.idempotencyKey, key))))[0];
+    (
+      await db
+        .select()
+        .from(purchases)
+        .where(and(eq(purchases.userId, userId), eq(purchases.idempotencyKey, key)))
+    )[0];
   try {
     return await ctx.db.transaction(async (tx) => {
       const existing = await findExisting(tx);
@@ -93,9 +101,21 @@ export async function purchaseOffer(
         price: offer.price.amount,
         status: 'pending',
       });
-      await applyLedger(tx, { userId, currency: offer.price.currency, delta: -offer.price.amount, reason: 'purchase', ref: purchaseId });
+      await applyLedger(tx, {
+        userId,
+        currency: offer.price.currency,
+        delta: -offer.price.amount,
+        reason: 'purchase',
+        ref: purchaseId,
+      });
       await grantCosmetic(tx, userId, offerId, 'store');
-      const result: PurchaseResult = { purchaseId, offerId, price: offer.price, wallet: await readWallet(tx, userId), replayed: false };
+      const result: PurchaseResult = {
+        purchaseId,
+        offerId,
+        price: offer.price,
+        wallet: await readWallet(tx, userId),
+        replayed: false,
+      };
       await tx
         .update(purchases)
         .set({ status: 'completed', response: result, completedAt: ctx.now() })
@@ -116,14 +136,24 @@ export async function purchaseOffer(
  *
  * @returns True when Gems were granted by this call.
  */
-export async function completeGemPurchase(ctx: AppContext, purchaseId: string, providerRef: string | null): Promise<boolean> {
+export async function completeGemPurchase(
+  ctx: AppContext,
+  purchaseId: string,
+  providerRef: string | null,
+): Promise<boolean> {
   const granted = await ctx.db.transaction(async (tx) => {
     const [row] = await tx.select().from(purchases).where(eq(purchases.id, purchaseId)).for('update');
     if (!row || row.kind !== 'gem_pack') return null;
     if (row.status === 'completed') return null;
     const pack = ctx.catalog.gemPacks.find((p) => p.id === row.itemId);
     if (!pack) throw new Error(`gem pack ${row.itemId} vanished from the catalog`);
-    await applyLedger(tx, { userId: row.userId, currency: 'gems', delta: pack.gems, reason: 'gem_pack', ref: purchaseId });
+    await applyLedger(tx, {
+      userId: row.userId,
+      currency: 'gems',
+      delta: pack.gems,
+      reason: 'gem_pack',
+      ref: purchaseId,
+    });
     await tx
       .update(purchases)
       .set({ status: 'completed', completedAt: ctx.now(), ...(providerRef ? { providerRef } : {}) })
@@ -148,7 +178,10 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
     const rotation = await currentRotation(ctx.db, ctx.catalog, now);
     let owned = new Set<string>();
     if (auth) {
-      const rows = await ctx.db.select({ id: inventoryItems.cosmeticId }).from(inventoryItems).where(eq(inventoryItems.userId, auth.userId));
+      const rows = await ctx.db
+        .select({ id: inventoryItems.cosmeticId })
+        .from(inventoryItems)
+        .where(eq(inventoryItems.userId, auth.userId));
       owned = new Set(rows.map((r) => r.id));
     }
     const mark = <T extends { offerId: string }>(o: T) => ({ ...o, owned: owned.has(o.offerId) });
@@ -199,6 +232,8 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
     const { packId } = parse(CheckoutBody, req.body);
     const pack = ctx.catalog.gemPacks.find((p) => p.id === packId);
     if (!pack) throw notFound('Gem pack');
+    if (ctx.payments.id === 'disabled')
+      throw new ApiError(503, 'payments_unavailable', 'Gem purchases are coming soon');
 
     const [existing] = await ctx.db
       .select()
@@ -206,7 +241,10 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
       .where(and(eq(purchases.userId, auth.userId), eq(purchases.idempotencyKey, key)));
     if (existing) {
       if (existing.kind !== 'gem_pack' || existing.itemId !== packId) {
-        throw conflict('idempotency_key_reused', 'This Idempotency-Key was already used for a different request');
+        throw conflict(
+          'idempotency_key_reused',
+          'This Idempotency-Key was already used for a different request',
+        );
       }
       return { ...(existing.response as object), status: existing.status, replayed: true };
     }
@@ -225,7 +263,8 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
         provider: ctx.payments.id,
       });
     } catch (err) {
-      if (isUniqueViolation(err)) throw conflict('purchase_in_progress', 'A checkout with this key is already being created');
+      if (isUniqueViolation(err))
+        throw conflict('purchase_in_progress', 'A checkout with this key is already being created');
       throw err;
     }
     const base = ctx.config.publicWebUrl;
@@ -236,8 +275,17 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
       successUrl: `${base}/store?checkout=success&purchase=${purchaseId}`,
       cancelUrl: `${base}/store?checkout=cancel&purchase=${purchaseId}`,
     });
-    const response = { purchaseId, packId: pack.id, gems: pack.gems, checkoutUrl: session.url, provider: ctx.payments.id };
-    await ctx.db.update(purchases).set({ providerRef: session.providerRef, response }).where(eq(purchases.id, purchaseId));
+    const response = {
+      purchaseId,
+      packId: pack.id,
+      gems: pack.gems,
+      checkoutUrl: session.url,
+      provider: ctx.payments.id,
+    };
+    await ctx.db
+      .update(purchases)
+      .set({ providerRef: session.providerRef, response })
+      .where(eq(purchases.id, purchaseId));
     if (session.completed) await completeGemPurchase(ctx, purchaseId, session.providerRef);
     return { ...response, status: session.completed ? 'completed' : 'pending', replayed: false };
   });
@@ -248,7 +296,10 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
     if (event.type === 'checkout_completed') {
       let purchaseId = event.purchaseId;
       if (!purchaseId && event.providerRef) {
-        const [row] = await ctx.db.select({ id: purchases.id }).from(purchases).where(eq(purchases.providerRef, event.providerRef));
+        const [row] = await ctx.db
+          .select({ id: purchases.id })
+          .from(purchases)
+          .where(eq(purchases.providerRef, event.providerRef));
         purchaseId = row?.id ?? null;
       }
       if (purchaseId) await completeGemPurchase(ctx, purchaseId, event.providerRef);

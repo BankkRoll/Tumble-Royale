@@ -1319,6 +1319,10 @@ export class GameApp {
         if (!this.session) this.menu?.emote(id);
         else this.session.emoteById(id);
       },
+      onLobbyGameStart: ({ game }) => {
+        if (!this.session) this.menu?.startLobbyGame(game);
+      },
+      onLobbyGameStop: () => this.menu?.stopLobbyGame(),
       onPhotoMode: () => {
         if (!this.photo.enter())
           s().pushToast({ kind: 'info', title: 'Nothing to photograph right now', icon: '📸' });
@@ -1436,10 +1440,13 @@ export class GameApp {
       )
         return;
       const rect = canvas.getBoundingClientRect();
-      const member = this.menu.memberAt(
-        ((e.clientX - rect.left) / rect.width) * 2 - 1,
-        1 - ((e.clientY - rect.top) / rect.height) * 2,
-      );
+      const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      const ny = 1 - ((e.clientY - rect.top) / rect.height) * 2;
+      if (this.menu.signAt(nx, ny)) {
+        st.setLobbyGames({ pickerOpen: true });
+        return;
+      }
+      const member = this.menu.memberAt(nx, ny);
       if (member) {
         uiEvents.emit('inspectPlayer', { playerId: member.userId, name: member.name });
         return;

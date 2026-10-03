@@ -368,8 +368,15 @@ export class GameApp {
   private frame(): void {
     const now = performance.now();
     const cap = ui.getState().settings.graphics.fpsCap;
-    if (cap > 0 && now - this.lastRender < 1000 / cap - 1.5) return;
-    this.lastRender = now;
+    if (cap > 0) {
+      const interval = 1000 / cap;
+      if (now - this.lastRender < interval - 1.5) return;
+      // Advance on the cap's own grid: resetting to `now` drops a frame every time
+      // the display's refresh beats against the cap (144 Hz capped to 60 ran at ~48).
+      this.lastRender = now - this.lastRender > interval * 2 ? now : this.lastRender + interval;
+    } else {
+      this.lastRender = now;
+    }
     const realDt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     const dt = realDt * this.timeScale.value;

@@ -53,6 +53,8 @@ export interface RoundViewOptions {
   reduceShake: boolean;
   nameplates: boolean;
   streamerMode: boolean;
+  /** BOT chip on bots' nameplates. */
+  botTags?: boolean;
 }
 
 /** Weather for a round: the seeded variation's, else the theme default. */
@@ -165,6 +167,7 @@ export class RoundView implements GameView {
       audio: opts.audio,
       nameplates: opts.nameplates,
       streamerMode: opts.streamerMode,
+      ...(opts.botTags !== undefined ? { botTags: opts.botTags } : {}),
     });
 
     this.rig = new ThirdPersonCamera(this.camera, {
@@ -351,6 +354,11 @@ export class RoundView implements GameView {
   setAccessibility(reduceShake: boolean, nameplates: boolean, streamer: boolean): void {
     this.rig.settings.shakeScale = reduceShake ? 0 : 1;
     this.players.setNameplates(nameplates, streamer);
+  }
+
+  /** Shows or hides the BOT chip on bots' nameplates mid-round. */
+  setBotTags(on: boolean): void {
+    this.players.setBotTags(on);
   }
 
   /** Quality tier changed mid-round (LOD distances, budgets). */

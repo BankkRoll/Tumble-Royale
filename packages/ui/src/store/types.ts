@@ -587,8 +587,10 @@ export type PlayMode = 'online' | 'offline';
 /** Whether online play (account API + matchmaker) is reachable. */
 export interface OnlineStatus {
   state: 'checking' | 'online' | 'offline' | 'disabled';
-  /** Players online / in queue, when the server reports it. */
+  /** Humans online in shows right now (matchmaker `GET /stats`), when reported. */
   playersOnline?: number;
+  /** Players waiting in the matchmaking queue, when reported. */
+  inQueue?: number;
   /** Short human explanation for the offline state. */
   message?: string;
 }

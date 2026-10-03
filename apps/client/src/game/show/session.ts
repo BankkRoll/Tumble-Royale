@@ -740,6 +740,7 @@ export abstract class ShowSession {
       reduceShake: set.accessibility.reduceShake,
       nameplates: set.gameplay.nameplates,
       streamerMode: set.gameplay.streamerMode,
+      botTags: set.gameplay.botTags,
     });
     r.view = view;
     this.preShow = null;
@@ -917,10 +918,11 @@ export abstract class ShowSession {
     });
     if (r.inRound) this.recordLocalRound(qualified.has(this.localId));
     this.afterResults(r, qualified.has(this.localId), o.qualified.length);
+    const botTags = this.ctx.settings().gameplay.botTags;
     const wallPlayers = rs.players
       .map((p) => this.players.get(p.id))
       .filter((p): p is SessionPlayer => !!p)
-      .map((p) => ({ id: String(p.id), name: p.name, loadout: p.loadout }));
+      .map((p) => ({ id: String(p.id), name: p.name, loadout: p.loadout, isBot: p.isBot && botTags }));
     const eliminated = o.eliminated.filter((id) => entrants.has(id)).map(String);
     this.swapUnder('roundResults', { transition: 'wipe' }, () => {
       this.ctx.director.show(
@@ -1495,10 +1497,11 @@ export abstract class ShowSession {
     const s = ui.getState();
     s.setPlayerWall(uiSummary, { render3D: true, autoContinueMs: this.ctx.cfg.autoplay ? 2500 : 9000 });
     this.swapUnder('playerWall', { transition: 'wipe' }, () => {
+      const botTags = this.ctx.settings().gameplay.botTags;
       const wall3d = {
         players: this.order.map((id) => {
           const p = this.players.get(id) as SessionPlayer;
-          return { id: String(id), name: p.name, loadout: p.loadout };
+          return { id: String(id), name: p.name, loadout: p.loadout, isBot: p.isBot && botTags };
         }),
         rounds: uiSummary.rounds.map((r) => ({ name: r.name, eliminatedIds: r.eliminatedIds.map(String) })),
         winnerId: summary.winnerId !== null ? String(summary.winnerId) : null,

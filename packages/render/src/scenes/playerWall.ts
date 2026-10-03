@@ -55,6 +55,8 @@ export interface PlayerWallPlayer {
   id: string;
   name: string;
   loadout: TumblerLoadout;
+  /** Computer-controlled: the plate gets a small BOT chip. */
+  isBot?: boolean;
 }
 
 /** One round of the recap. */
@@ -699,7 +701,7 @@ export function createPlayerWallScene(opts: PlayerWallOptions): PlayerWallScene 
         c.playerId = p.id;
         byPlayer.set(p.id, c);
         writeLight(c, baseLight);
-        plates.setName(i, p.name, p.loadout.colors[0]);
+        plates.setName(i, p.name, p.loadout.colors[0], p.isBot ? 'BOT' : undefined);
         plates.setPosition(i, c.center.x, c.floorY - 0.32, 0.45);
         plates.setScale(i, 1);
       });

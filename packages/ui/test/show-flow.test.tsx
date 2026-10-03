@@ -7,7 +7,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ConnectionLayer, reconnectStatusLine } from '../src/components/system.tsx';
 import { EliminatedSheet, SpectateBanner } from '../src/hud/widgets.tsx';
+import { onlineTileSub } from '../src/screens/menu/PlayTab.tsx';
 import { InGameMenu, leaveShowBody } from '../src/screens/overlays/InGameMenu.tsx';
+import { FinalHypeScreen, RoundResultsScreen } from '../src/screens/Results.tsx';
 import { WatchChoiceLayer, watchChoiceRewardsNote } from '../src/screens/overlays/WatchChoice.tsx';
 import { DEFAULT_SETTINGS } from '../src/store/defaults.ts';
 import { ui } from '../src/store/uiStore.ts';
@@ -115,6 +117,50 @@ describe('leave show copy', () => {
     });
     const html = renderToStaticMarkup(<InGameMenu />);
     expect(html).toContain('Eliminated · Spectating');
+  });
+});
+
+describe('bot tags', () => {
+  it('marks bots (not humans) on round results', () => {
+    ui.setState({
+      results: {
+        roundName: 'Gumdrop Gauntlet',
+        roundType: 'race',
+        roundIndex: 0,
+        render3D: false,
+        entries: [
+          { player: { id: 1, name: 'Bolt', colors, isBot: true }, qualified: true, place: 1 },
+          { player: { id: 2, name: 'Human', colors, isBot: false }, qualified: false, place: 0 },
+        ],
+      },
+    });
+    const html = renderToStaticMarkup(<RoundResultsScreen />);
+    expect(html.match(/tr-bot-tag/g)).toHaveLength(1);
+  });
+
+  it('marks bots in the final lineup', () => {
+    ui.setState({
+      finalHype: {
+        roundName: 'Crown Climb',
+        finalists: [
+          { id: 1, name: 'Bolt', colors, isBot: true },
+          { id: 2, name: 'Human', colors, isBot: false },
+        ],
+      },
+    });
+    expect(renderToStaticMarkup(<FinalHypeScreen />).match(/>BOT</g)).toHaveLength(1);
+  });
+});
+
+describe('Play Online tile', () => {
+  it('shows only counts the servers report', () => {
+    expect(onlineTileSub({ state: 'online', playersOnline: 1234, inQueue: 7 })).toBe(
+      '1,234 online · 7 in queue',
+    );
+    expect(onlineTileSub({ state: 'online', inQueue: 3 })).toBe('3 in queue');
+    expect(onlineTileSub({ state: 'online' })).toBe('Real players + bot fill');
+    expect(onlineTileSub({ state: 'offline' })).toBe('Servers offline');
+    expect(onlineTileSub({ state: 'checking' })).toBe('Checking servers…');
   });
 });
 

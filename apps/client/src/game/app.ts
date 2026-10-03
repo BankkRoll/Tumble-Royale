@@ -1234,6 +1234,7 @@ export class GameApp {
     }
     const view = this.session?.roundView;
     view?.setAccessibility(st.accessibility.reduceShake, st.gameplay.nameplates, st.gameplay.streamerMode);
+    view?.setBotTags(st.gameplay.botTags);
     if (view) view.setPreset(this.quality.preset);
     this.stats.setVisible(this.cfg.debug || st.graphics.showFps);
   }

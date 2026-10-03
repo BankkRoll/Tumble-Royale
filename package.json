@@ -31,6 +31,7 @@
   },
   "scripts": {
     "setup:env": "node scripts/setup-env.mjs",
+    "admin": "node scripts/admin.mjs",
     "predev": "node scripts/setup-env.mjs --if-missing",
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",

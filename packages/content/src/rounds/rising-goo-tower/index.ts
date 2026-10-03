@@ -16,7 +16,17 @@
  *   arcs that avoid staircases and stray pads.
  */
 import { defineRound } from '@tumble/shared';
-import { hash01, polar, r3, round3, v3, yawTowardCentre, type ObstacleInput, type PieceInput, type WaypointInput } from '../tile-panic/kit.ts';
+import {
+  hash01,
+  polar,
+  r3,
+  round3,
+  v3,
+  yawTowardCentre,
+  type ObstacleInput,
+  type PieceInput,
+  type WaypointInput,
+} from '../tile-panic/kit.ts';
 
 const DEG = Math.PI / 180;
 /** Tier radii T0…T6. */
@@ -32,7 +42,14 @@ const topAt = (i: number): number => TOP[i] as number;
 /** Staircase base angles (degrees) per transition Ti → Ti+1. */
 const STAIR_BASES: readonly (readonly number[])[] = [[0, 180], [60, 240], [120, 300], [180, 0], [240], [300]];
 /** Bounce pad polar angles (degrees) per transition, ids `pad-<i><a|b>`. */
-const PAD_ANGLES: readonly (readonly number[])[] = [[90, 270], [150, 330], [210, 30], [270, 90], [60, 180], [210]];
+const PAD_ANGLES: readonly (readonly number[])[] = [
+  [90, 270],
+  [150, 330],
+  [210, 30],
+  [270, 90],
+  [60, 180],
+  [210],
+];
 
 /** Radial depth of transition i's staircase: min(3, ring − 0.5). */
 const depthOf = (i: number): number => Math.min(3, rAt(i) - rAt(i + 1) - 0.5);
@@ -62,7 +79,12 @@ for (let i = 0; i < STAIR_BASES.length; i++) {
       const h = STEP_RISE * k;
       steps.push({ centre: polar(rho, a, topAt(i) + h / 2), height: h, yaw: -a, angle: a });
     }
-    stairs.push({ transition: i, base, steps, span: [base + dA - 1.5 / rho / DEG - 2, base + STEP_COUNT * dA + 1.5 / rho / DEG + 2] });
+    stairs.push({
+      transition: i,
+      base,
+      steps,
+      span: [base + dA - 1.5 / rho / DEG - 2, base + STEP_COUNT * dA + 1.5 / rho / DEG + 2],
+    });
   }
 }
 
@@ -81,7 +103,13 @@ for (let i = 0; i < R.length; i++) {
     bevel: 0.3,
   });
   // Frosting band on the rim (deco).
-  geometry.push({ shape: 'torus', position: v3(0, topAt(i) + 0.02, 0), size: v3(rAt(i) - 0.15, 0.3, 0), color: 'safe', decorative: true });
+  geometry.push({
+    shape: 'torus',
+    position: v3(0, topAt(i) + 0.02, 0),
+    size: v3(rAt(i) - 0.15, 0.3, 0),
+    color: 'safe',
+    decorative: true,
+  });
 }
 for (const s of stairs) {
   for (const st of s.steps) {
@@ -96,26 +124,58 @@ for (const s of stairs) {
   }
 }
 // Cherry on top, at the very centre of T6 (stand-on-able bump, 0.5 m).
-geometry.push({ shape: 'sphere', position: v3(0, topAt(6) - 0.4, 0), size: v3(0.9, 0.9, 0.9), color: 'danger', decorative: true });
+geometry.push({
+  shape: 'sphere',
+  position: v3(0, topAt(6) - 0.4, 0),
+  size: v3(0.9, 0.9, 0.9),
+  color: 'danger',
+  decorative: true,
+});
 // The giant spoon the drips fall from (deco).
 geometry.push(
   { shape: 'sphere', position: v3(0, 53.5, 0), size: v3(4.2, 4.2, 4.2), color: '#d9dff2', decorative: true },
-  { shape: 'cylinder', position: v3(9, 58, 6), size: v3(0.7, 16, 0), rotation: { yaw: 56, pitch: 0, roll: -55 }, color: '#d9dff2', decorative: true },
+  {
+    shape: 'cylinder',
+    position: v3(9, 58, 6),
+    size: v3(0.7, 16, 0),
+    rotation: { yaw: 56, pitch: 0, roll: -55 },
+    color: '#d9dff2',
+    decorative: true,
+  },
 );
 // Fruit-slice islands in the goo lake and bubbling beaker spires (deco).
 for (let i = 0; i < 10; i++) {
   const p = polar(33 + hash01(2301, i) * 5, i * 36 + 12, -2.5);
   const s = 2 + hash01(5, i) * 2;
   geometry.push(
-    { shape: 'cylinder', position: r3(p), size: v3(s, 0.8, 0), color: i % 2 ? 'accent' : '#ffb347', pattern: 'stripes', decorative: true },
-    { shape: 'sphere', position: r3(v3(p.x, p.y + 1, p.z)), size: v3(s * 0.45, s * 0.45, s * 0.45), color: 'neutral', decorative: true },
+    {
+      shape: 'cylinder',
+      position: r3(p),
+      size: v3(s, 0.8, 0),
+      color: i % 2 ? 'accent' : '#ffb347',
+      pattern: 'stripes',
+      decorative: true,
+    },
+    {
+      shape: 'sphere',
+      position: r3(v3(p.x, p.y + 1, p.z)),
+      size: v3(s * 0.45, s * 0.45, s * 0.45),
+      color: 'neutral',
+      decorative: true,
+    },
   );
 }
 for (let i = 0; i < 4; i++) {
   const p = polar(37, i * 90 + 45, 6);
   geometry.push(
     { shape: 'cylinder', position: r3(p), size: v3(1.6, 16, 0), color: 'secondary', decorative: true },
-    { shape: 'sphere', position: r3(v3(p.x, 15, p.z)), size: v3(2.2, 2.2, 2.2), color: 'accent', decorative: true },
+    {
+      shape: 'sphere',
+      position: r3(v3(p.x, 15, p.z)),
+      size: v3(2.2, 2.2, 2.2),
+      color: 'accent',
+      decorative: true,
+    },
   );
 }
 
@@ -127,9 +187,6 @@ for (let i = 0; i < 4; i++) {
 const PAD_LAUNCH = { x: 0, y: 20.8, z: 3.2 };
 /**
  * Pads are sunk into the tier so only 0.12 m stands proud.
- * NOTE: the controller turns any steep bouncy contact into a sideways bumper
- * kick at the pad's full launch speed (21 m/s), which flung climbers off the
- * cake; a 0.12 m lip keeps the walk-on contact reading as floor.
  */
 const PAD_HEIGHT = 0.2;
 const PAD_SINK = 0.08;
@@ -165,7 +222,12 @@ function clearPadAngle(i: number, design: number, avoid: readonly number[] = [])
   for (let d = 0; d <= 180; d += 2) {
     for (const a of [design + d, design - d]) {
       const apart = avoid.every((b) => Math.abs(normDeg(a - b + 180) - 180) >= padClear);
-      if (apart && own.every((s) => spanGap(a, s) >= ownClear) && next.every((s) => spanGap(a, s) >= nextClear)) return normDeg(a);
+      if (
+        apart &&
+        own.every((s) => spanGap(a, s) >= ownClear) &&
+        next.every((s) => spanGap(a, s) >= nextClear)
+      )
+        return normDeg(a);
     }
   }
   return undefined;
@@ -176,7 +238,12 @@ PAD_ANGLES.forEach((angles, i) => {
   angles.forEach((design, k) => {
     const a = clearPadAngle(i, design);
     if (a === undefined) throw new Error(`rising-goo-tower: no clear pad angle for transition ${i}`);
-    pads.push({ id: `pad-${i}${k === 0 ? 'a' : 'b'}`, transition: i, angle: a, pos: r3(polar(rhoOf(i), a, topAt(i))) });
+    pads.push({
+      id: `pad-${i}${k === 0 ? 'a' : 'b'}`,
+      transition: i,
+      angle: a,
+      pos: r3(polar(rhoOf(i), a, topAt(i))),
+    });
   });
 });
 /** `bouncy-cake`: a second pad ~45° on from each pad where one fits clear of stairs and other pads. */
@@ -262,7 +329,11 @@ const drips: ObstacleInput[] = [0, 72, 144, 216, 288].map((yaw, i) => {
 function buildNav(): WaypointInput[] {
   const nav: WaypointInput[] = [];
   let nextId = 0;
-  const add = (pos: { x: number; y: number; z: number }, radius: number, action: WaypointInput['action'] = 'run'): WaypointInput => {
+  const add = (
+    pos: { x: number; y: number; z: number },
+    radius: number,
+    action: WaypointInput['action'] = 'run',
+  ): WaypointInput => {
     const w: WaypointInput = { id: nextId++, position: r3(pos), radius, next: [], action };
     nav.push(w);
     return w;
@@ -307,7 +378,11 @@ function buildNav(): WaypointInput[] {
       const entry = add(polar(rho, entryAngle, topAt(i)), 1.0, 'jump');
       let prev = entry;
       s.steps.forEach((st, k) => {
-        const w = add(v3(st.centre.x, topAt(i) + st.height, st.centre.z), 1.0, k < STEP_COUNT - 1 ? 'jump' : 'run');
+        const w = add(
+          v3(st.centre.x, topAt(i) + st.height, st.centre.z),
+          1.0,
+          k < STEP_COUNT - 1 ? 'jump' : 'run',
+        );
         link(prev, w);
         if (k === 0) firstStep.set(s, w);
         prev = w;
@@ -323,16 +398,31 @@ function buildNav(): WaypointInput[] {
         link(prev, landing);
         (sources[i + 1] as { w: WaypointInput; angle: number }[]).push({ w: landing, angle: landAngle });
       }
-      const blockedBy = [...tierStairs.filter((o) => o !== s).map((o) => o.span), ...(i === 0 ? [] : tierPads.map(padSpan)), s.span];
-      (targets[i] as { w: WaypointInput; angle: number; blockedBy: [number, number][] }[]).push({ w: entry, angle: entryAngle, blockedBy });
+      const blockedBy = [
+        ...tierStairs.filter((o) => o !== s).map((o) => o.span),
+        ...(i === 0 ? [] : tierPads.map(padSpan)),
+        s.span,
+      ];
+      (targets[i] as { w: WaypointInput; angle: number; blockedBy: [number, number][] }[]).push({
+        w: entry,
+        angle: entryAngle,
+        blockedBy,
+      });
     }
     for (const p of tierPads) {
       const approach = add(polar(Math.min(rho + 1.6, rAt(i) - 0.5), p.angle, topAt(i)), 0.9);
       const landing = add(polar(Math.max(rAt(i + 1) - 1.9, 1.5), p.angle, topAt(i + 1)), 1.6);
       link(approach, landing);
       (sources[i + 1] as { w: WaypointInput; angle: number }[]).push({ w: landing, angle: p.angle });
-      const blockedBy = [...tierStairs.map((o) => o.span), ...(i === 0 ? [] : tierPads.filter((o) => o !== p).map(padSpan))];
-      (targets[i] as { w: WaypointInput; angle: number; blockedBy: [number, number][] }[]).push({ w: approach, angle: p.angle, blockedBy });
+      const blockedBy = [
+        ...tierStairs.map((o) => o.span),
+        ...(i === 0 ? [] : tierPads.filter((o) => o !== p).map(padSpan)),
+      ];
+      (targets[i] as { w: WaypointInput; angle: number; blockedBy: [number, number][] }[]).push({
+        w: approach,
+        angle: p.angle,
+        blockedBy,
+      });
     }
   }
   for (const src of sources[6] as { w: WaypointInput; angle: number }[]) link(src.w, top);
@@ -438,7 +528,13 @@ export default defineRound({
             type: 'stickyGoo',
             position: r3(v3(st.centre.x, topAt(s.transition) + st.height, st.centre.z)),
             rotation: { yaw: round3(st.yaw) },
-            params: { shape: 'box', sizeX: depthOf(s.transition) - 0.2, sizeZ: 2.8, thickness: 0.12, surface: 'sticky' },
+            params: {
+              shape: 'box',
+              sizeX: depthOf(s.transition) - 0.2,
+              sizeZ: 2.8,
+              thickness: 0.12,
+              surface: 'sticky',
+            },
           })),
         ),
     },
@@ -456,7 +552,7 @@ export default defineRound({
     'Seven solid cake tiers (r 28→5, top 0→42 in 7 m steps), 10 generated staircases (5 × 1.4 m jumps) and 11 bounce pads (apex ~9 m, ~3.5 m inward).',
     'Goo keyframes −3 → 38.5 (T0 floods at 25 s, then a tier per 15 s; T5 at 100 s leaves only the 10 m top disc).',
     'speedScaleByStage compresses the goo curve and cannon timing. No wave amplitude in risingSlime.',
-    'Spoon drips from 60 s onto T5 (knock only). Pads slide off the design angles where those would land on the next tier\'s staircase; bouncy-cake duplicates likewise.',
+    "Spoon drips from 60 s onto T5 (knock only). Pads slide off the design angles where those would land on the next tier's staircase; bouncy-cake duplicates likewise.",
     'sticky-steps stickyGoo pads sit on step tops (0.12 m proud). Bots: Sharp take pads more often via the greedy shortest route.',
   ].join(' '),
 });

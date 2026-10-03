@@ -5,7 +5,7 @@
  * the pose is exact at any match time (no accumulated drift between peers).
  */
 import type { Collider, RigidBody } from '@dimforge/rapier3d-compat';
-import { InteractionGroups, quatFromAxisAngle, quatFromYaw, quatMul, vec3 } from '@tumble/shared';
+import { InteractionGroups, quatFromAxisAngle, quatFromYaw, quatMul, rotateVec, vec3, type Quat, type Vec3 } from '@tumble/shared';
 import { z } from 'zod';
 import {
   ActorCooldowns,
@@ -17,7 +17,13 @@ import {
   instanceFrame,
   writeSample,
 } from './helpers-b.ts';
-import type { ObstacleModule, ObstacleRuntime, PoseSample } from './types.ts';
+import type { ObstacleActor, ObstacleModule, ObstacleRuntime, ObstacleStepContext, PoseSample } from './types.ts';
+
+// Trip response as fractions of `knockImpulse`: a hop plus a shove back against the sweep. The
+// backward part is what makes the rim risky (it slides you tangentially, i.e. slightly outward);
+// tuned so 40 bots reach a 65% cut in ~55–90 s instead of the 8–13 s a forward knock gave.
+const TRIP_UP = 0.5;
+const TRIP_BACK = 0.6;
 
 /** Jump Rope Beam parameters. Metres, degrees, seconds. Origin = hub base on the floor. */
 export const JumpRopeBeamSchema = z.object({
@@ -47,7 +53,10 @@ export const JumpRopeBeamSchema = z.object({
   startDelay: z.number().default(0),
   beamRadius: z.number().positive().default(0.3),
   hubRadius: z.number().positive().default(1.1),
-  /** Knock impulse along the sweep (N·s ≈ Δv). */
+  /**
+   * Trip strength (Δv, m/s). A hit splits it into a hop up and a push back against the sweep,
+   * so a missed jump costs a tumble behind the rope, not the round.
+   */
   knockImpulse: z.number().min(0).default(8),
   stunOnHit: z.boolean().default(true),
 });
@@ -106,6 +115,66 @@ export function jumpRopeBeamPose(t: number, p: JumpRopeBeamParams, out: PoseSamp
   }
 }
 
+/** Rim speed (m/s) above which chasing the beam is pointless; bots hold their ground and time the jump. */
+const ROPE_CHASE_MAX_SPEED = 4.5;
+/** How far behind the beam the bot hint sits (radians). */
+const ROPE_TRAIL = 0.45;
+const ropeLocal = vec3();
+const ropeConj: Quat = { x: 0, y: 0, z: 0, w: 1 };
+
+/**
+ * Bot hint for a jump rope: the point just behind the nearest beam (in its
+ * sweep) at the hint's distance from the hub, where the next pass is furthest
+ * off. Once the beam's rim outruns a running Tumbler the hint's own bearing
+ * comes back instead, so bots stand their ground and time the jump.
+ *
+ * @param out - On entry the bot's hint point; receives the spot.
+ * @returns False when the hint is on another level than the hub.
+ */
+function ropeSafeSpot(t: number, p: JumpRopeBeamParams, scale: number, frame: { pos: Vec3; rot: Quat }, out: Vec3): boolean {
+  ropeConj.x = -frame.rot.x;
+  ropeConj.y = -frame.rot.y;
+  ropeConj.z = -frame.rot.z;
+  ropeConj.w = frame.rot.w;
+  ropeLocal.x = out.x - frame.pos.x;
+  ropeLocal.y = out.y - frame.pos.y;
+  ropeLocal.z = out.z - frame.pos.z;
+  rotateVec(ropeConj, ropeLocal, ropeLocal);
+  if (!(ropeLocal.y > -1.5 && ropeLocal.y < 4)) return false;
+  const r = Math.min(p.radius - 1, Math.max(p.hubRadius + 1.2, Math.hypot(ropeLocal.x, ropeLocal.z)));
+  // Local angle convention of the beams: a point at angle ψ is (cos ψ, −sin ψ).
+  const hintAngle = Math.atan2(-ropeLocal.z, ropeLocal.x);
+  let angle = hintAngle;
+  const omega = jumpRopeSpeed(t, p, scale) * DEG;
+  if (omega * r <= ROPE_CHASE_MAX_SPEED) {
+    const layer = jumpRopeLayers(p)[0];
+    if (layer) {
+      const theta = (layer.offset + layer.sign * jumpRopeSweptDegrees(t * scale - p.startDelay, p)) * DEG;
+      const arms = p.beamsPerLayer * (p.mode === 'full' ? 2 : 1);
+      let bestGap = Infinity;
+      for (let k = 0; k < arms; k++) {
+        // Matches the build: beam b at yaw 2πb/n, and `full` beams also reach out the opposite side.
+        const b = k % p.beamsPerLayer;
+        const side = k >= p.beamsPerLayer ? Math.PI : 0;
+        const behind = theta + (b / p.beamsPerLayer) * Math.PI * 2 + side - layer.sign * ROPE_TRAIL;
+        const gap = Math.abs(Math.atan2(Math.sin(behind - hintAngle), Math.cos(behind - hintAngle)));
+        if (gap < bestGap) {
+          bestGap = gap;
+          angle = behind;
+        }
+      }
+    }
+  }
+  ropeLocal.x = Math.cos(angle) * r;
+  ropeLocal.y = 0;
+  ropeLocal.z = -Math.sin(angle) * r;
+  rotateVec(frame.rot, ropeLocal, out);
+  out.x += frame.pos.x;
+  out.y += frame.pos.y;
+  out.z += frame.pos.z;
+  return true;
+}
+
 /** Jump Rope Beam obstacle module. */
 export const jumpRopeBeam: ObstacleModule<JumpRopeBeamParams> = {
   type: 'jumpRopeBeam',
@@ -140,12 +209,15 @@ export const jumpRopeBeam: ObstacleModule<JumpRopeBeamParams> = {
         const sides = p.mode === 'full' ? [1, -1] : [1];
         for (const side of sides) {
           // Segments start at the hub surface so beams never overlap the static hub collider.
+          // Beams are hazard sensors, not solid: a solid kinematic beam shoved missed Tumblers ahead of
+          // the sweep (often off the edge), and pinching against a still beam launched them ~30 m up.
           const c = p.hubRadius + reach / 2;
           const col = bag.collider(
             R.ColliderDesc.capsule(Math.max(0.05, reach / 2 - p.beamRadius), p.beamRadius)
               .setTranslation(side * Math.cos(yaw) * c, 0, -side * Math.sin(yaw) * c)
               .setRotation(rot)
-              .setCollisionGroups(InteractionGroups.kinematic)
+              .setSensor(true)
+              .setCollisionGroups(InteractionGroups.hazard)
               .setActiveEvents(R.ActiveEvents.COLLISION_EVENTS),
             rotor,
             { kind: 'normal', ownerId: instance.id },
@@ -159,9 +231,33 @@ export const jumpRopeBeam: ObstacleModule<JumpRopeBeamParams> = {
     const rig = new KinematicRig(frame, rotors, (t, out) => jumpRopeBeamPose(t, p, out, scale));
     const hits = new ActorCooldowns();
     const impulse = vec3();
+    /** Actors inside a beam that was still when they entered; tripped once it starts moving. */
+    const waiting = new Map<number, { actor: ObstacleActor; sign: number }>();
     let lastLap = 0;
 
-    return {
+    /**
+     * The trip: a stun with a short hop up and back against the sweep, so the
+     * beam passes over the tumbling Tumbler and it gets up behind the rope
+     * instead of being carried ahead of it and off the sandbar.
+     */
+    const trip = (actor: ObstacleActor, sign: number, sctx: ObstacleStepContext): void => {
+      if (actor.isGhost || !hits.ready(actor.id, sctx.t)) return;
+      hits.arm(actor.id, sctx.t, 0.8);
+      const a = actor.body.translation();
+      let rx = a.x - frame.pos.x;
+      let rz = a.z - frame.pos.z;
+      const len = Math.hypot(rx, rz) || 1;
+      rx /= len;
+      rz /= len;
+      const k = p.knockImpulse;
+      impulse.x = -rz * sign * k * TRIP_BACK;
+      impulse.y = k * TRIP_UP;
+      impulse.z = rx * sign * k * TRIP_BACK;
+      actor.knock(impulse, p.stunOnHit);
+      emitCue(sctx.events, instance.id, 'ropeHit', a);
+    };
+
+    const runtime: ObstacleRuntime & { botSafeSpot(t: number, out: Vec3): boolean } = {
       instance,
       colliders: bag.colliders,
       update(sctx) {
@@ -172,25 +268,24 @@ export const jumpRopeBeam: ObstacleModule<JumpRopeBeamParams> = {
           if (lap === lastLap + 1) emitCue(sctx.events, instance.id, 'ropeWhoosh', frame.pos);
           lastLap = lap;
         }
+        if (waiting.size > 0 && jumpRopeSpeed(sctx.t, p, scale) > 0) {
+          for (const w of waiting.values()) trip(w.actor, w.sign, sctx);
+          waiting.clear();
+        }
       },
-      onContact(actor, collider: Collider, sctx) {
+      onTrigger(actor, collider: Collider, entered, sctx) {
         const sign = signOf.get(collider.handle);
-        if (sign === undefined || actor.isGhost || !hits.ready(actor.id, sctx.t)) return;
-        if (jumpRopeSpeed(sctx.t, p, scale) <= 0) return;
-        hits.arm(actor.id, sctx.t, 0.8);
-        const a = actor.body.translation();
-        let rx = a.x - frame.pos.x;
-        let rz = a.z - frame.pos.z;
-        const len = Math.hypot(rx, rz) || 1;
-        rx /= len;
-        rz /= len;
-        impulse.x = rz * sign * p.knockImpulse;
-        impulse.y = p.knockImpulse * 0.45;
-        impulse.z = -rx * sign * p.knockImpulse;
-        actor.knock(impulse, p.stunOnHit);
-        emitCue(sctx.events, instance.id, 'ropeHit', a);
+        if (sign === undefined) return;
+        if (!entered) {
+          waiting.delete(actor.id);
+          return;
+        }
+        if (jumpRopeSpeed(sctx.t, p, scale) <= 0) waiting.set(actor.id, { actor, sign });
+        else trip(actor, sign, sctx);
       },
+      botSafeSpot: (t: number, out: Vec3): boolean => ropeSafeSpot(t, p, scale, frame, out),
       dispose: () => bag.dispose(),
     };
+    return runtime;
   },
 };

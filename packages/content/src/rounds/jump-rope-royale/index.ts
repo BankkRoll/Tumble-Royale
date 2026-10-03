@@ -13,15 +13,20 @@
  * - Low/high switching → fixed layers. The outer rope's dive phases become a
  *   dedicated striped dive rope that creeps from the start and reaches the
  *   design's 1.0 rad/s at 35 s ("The Switch"), 1.5 by 57 s.
- * - Every rope moves from t = 0. A rope waiting on `startDelay` stands still
- *   across the sandbar, and a Tumbler pushed into it by a moving rope is
- *   pinched and launched (seen in testing: bots thrown 30 m up). So the inner
- *   rope runs from 0 s instead of 10 s, and the 50 s "Double Dutch" second
- *   outer rope is not in the base layout (low-tide runs three evenly spaced
- *   outer ropes from the start instead).
+ * - Every rope moves from t = 0: the inner rope runs from 0 s instead of 10 s,
+ *   and the 50 s "Double Dutch" second outer rope is not in the base layout
+ *   (low-tide runs three evenly spaced outer ropes from the start instead).
  */
 import { defineRound } from '@tumble/shared';
-import { hash01, polar, r3, v3, type ObstacleInput, type PieceInput, type WaypointInput } from '../tile-panic/kit.ts';
+import {
+  hash01,
+  polar,
+  r3,
+  v3,
+  type ObstacleInput,
+  type PieceInput,
+  type WaypointInput,
+} from '../tile-panic/kit.ts';
 
 const HUB_R = 1.5;
 const LOW = 0.55;
@@ -120,23 +125,69 @@ const geometry: PieceInput[] = [
   { shape: 'cylinder', position: v3(0, -2.2, 0), size: v3(19.2, 2.4, 0), color: '#d9b77e', decorative: true },
   // Dead-ring paint (r 9.5–10.5) and the hazard edge band, sunk so only a stripe shows.
   { shape: 'torus', position: v3(0, -0.42, 0), size: v3(10, 0.5, 0), color: 'safe', decorative: true },
-  { shape: 'torus', position: v3(0, -0.12, 0), size: v3(19.75, 0.2, 0), color: 'danger', pattern: 'hazard', decorative: true },
+  {
+    shape: 'torus',
+    position: v3(0, -0.12, 0),
+    size: v3(19.75, 0.2, 0),
+    color: 'danger',
+    pattern: 'hazard',
+    decorative: true,
+  },
   // Lagoon.
   { shape: 'cylinder', position: v3(0, -3, 0), size: v3(45, 0.2, 0), color: '#4fd1ff', decorative: true },
   { shape: 'torus', position: v3(0, -2.85, 0), size: v3(21, 0.25, 0), color: '#ffffff', decorative: true },
   // Palm tree over the hub (trunk + fronds), clear of the ropes' sweep.
-  { shape: 'cylinder', position: v3(0, 4.5, 0), size: v3(0.45, 4, 0), color: '#b8956a', pattern: 'stripes', decorative: true },
+  {
+    shape: 'cylinder',
+    position: v3(0, 4.5, 0),
+    size: v3(0.45, 4, 0),
+    color: '#b8956a',
+    pattern: 'stripes',
+    decorative: true,
+  },
   { shape: 'sphere', position: v3(0, 7, 0), size: v3(2.4, 2.4, 2.4), color: 'accent', decorative: true },
-  { shape: 'sphere', position: v3(0.9, 6.5, 0.6), size: v3(0.45, 0.45, 0.45), color: '#8a5a2b', decorative: true },
-  { shape: 'sphere', position: v3(-0.7, 6.4, -0.8), size: v3(0.45, 0.45, 0.45), color: '#8a5a2b', decorative: true },
+  {
+    shape: 'sphere',
+    position: v3(0.9, 6.5, 0.6),
+    size: v3(0.45, 0.45, 0.45),
+    color: '#8a5a2b',
+    decorative: true,
+  },
+  {
+    shape: 'sphere',
+    position: v3(-0.7, 6.4, -0.8),
+    size: v3(0.45, 0.45, 0.45),
+    color: '#8a5a2b',
+    decorative: true,
+  },
 ];
 // Tiki crowd towers with sun umbrellas.
 for (let i = 0; i < 6; i++) {
   const p = polar(30, i * 60 + 30, 4);
   geometry.push(
-    { shape: 'cylinder', position: r3(p), size: v3(2, 8, 0), color: 'secondary', pattern: 'stripes', decorative: true },
-    { shape: 'cylinder', position: r3(v3(p.x, 8.3, p.z)), size: v3(3.4, 0.5, 0), color: i % 2 ? 'danger' : 'accent', pattern: 'stripes', decorative: true },
-    { shape: 'cylinder', position: r3(v3(p.x, -2, p.z)), size: v3(3, 2, 0), color: 'primary', decorative: true },
+    {
+      shape: 'cylinder',
+      position: r3(p),
+      size: v3(2, 8, 0),
+      color: 'secondary',
+      pattern: 'stripes',
+      decorative: true,
+    },
+    {
+      shape: 'cylinder',
+      position: r3(v3(p.x, 8.3, p.z)),
+      size: v3(3.4, 0.5, 0),
+      color: i % 2 ? 'danger' : 'accent',
+      pattern: 'stripes',
+      decorative: true,
+    },
+    {
+      shape: 'cylinder',
+      position: r3(v3(p.x, -2, p.z)),
+      size: v3(3, 2, 0),
+      color: 'primary',
+      decorative: true,
+    },
   );
 }
 // Inflatable flamingos, beach balls and a DJ booth boat out in the lagoon.
@@ -153,8 +204,24 @@ for (let i = 0; i < 8; i++) {
 }
 const boat = polar(38, 200, -2.2);
 geometry.push(
-  { shape: 'box', position: r3(boat), size: v3(9, 1.6, 4), rotation: { yaw: 70 }, color: 'neutral', bevel: 0.5, decorative: true },
-  { shape: 'box', position: r3(v3(boat.x, 0.2, boat.z)), size: v3(3, 2.4, 2.4), rotation: { yaw: 70 }, color: 'danger', pattern: 'stripes', decorative: true },
+  {
+    shape: 'box',
+    position: r3(boat),
+    size: v3(9, 1.6, 4),
+    rotation: { yaw: 70 },
+    color: 'neutral',
+    bevel: 0.5,
+    decorative: true,
+  },
+  {
+    shape: 'box',
+    position: r3(v3(boat.x, 0.2, boat.z)),
+    size: v3(3, 2.4, 2.4),
+    rotation: { yaw: 70 },
+    color: 'danger',
+    pattern: 'stripes',
+    decorative: true,
+  },
 );
 
 // -----------------------------------------------------------------------------
@@ -245,7 +312,16 @@ export default defineRound({
           type: 'fanZone',
           position: v3(-23, 2, 0),
           rotation: { yaw: 90 },
-          params: { width: 40, height: 4, length: 44, strength: 4, falloff: 0, onTime: 5, offTime: 0, telegraphLead: 0.8 },
+          params: {
+            width: 40,
+            height: 4,
+            length: 44,
+            strength: 4,
+            falloff: 0,
+            onTime: 5,
+            offTime: 0,
+            telegraphLead: 0.8,
+          },
         },
       ],
     },
@@ -253,10 +329,10 @@ export default defineRound({
   decorSeed: 2401,
   designNotes: [
     'Sandbar r 20 (top 0) with a bouncy palm hub. rope-out (low, r 20, 0.7→1.5 rad/s), rope-in (low, r 9.5, opposite, 0.7→1.5),',
-    'rope-dive (striped high bar 1.75, r 20, creeping 0.2 → 1.0 rad/s at 35 s → 1.5). All ropes run from t = 0 (parked ropes pinch).',
+    'rope-dive (striped high bar 1.75, r 20, creeping 0.2 → 1.0 rad/s at 35 s → 1.5). All ropes run from t = 0.',
     'jumpRopeBeam lacks innerRadius/heightSchedule/speedSchedule/activeFrom: ropes span hub→radius, layers are fixed, speeds ramp linearly;',
     'the 50 s Double Dutch rope is dropped from the base layout; low-tide runs three outer ropes a third of a turn apart.',
-    'A missed rope pushes the Tumbler ahead of the beam (knock is along the sweep) and off the edge, so bot lobbies end early.',
+    'A missed rope trips the Tumbler (stun, hop and a push back behind the beam); the rim is where trips turn into falls.',
     'Expected (humans): 30 → ~20 between 60 and 90 s.',
   ].join(' '),
 });

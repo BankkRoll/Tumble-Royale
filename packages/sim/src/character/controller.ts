@@ -98,6 +98,10 @@ const STEP_FORWARD = 0.3;
 const STEP_CLEARANCE = 0.02;
 /** Sideways speed (m/s) used to squirt a Tumbler out from under a crushing obstacle. */
 const CRUSH_ESCAPE_SPEED = 10;
+/** Contact normals within ~45° of a bounce pad's up axis count as landing on its top. */
+const PAD_TOP_DOT = 0.7;
+/** Speed (m/s) of the nudge from touching a bounce pad's side or rim. */
+const PAD_SIDE_BUMP = 2.5;
 
 const LOCOMOTION_STATES: ReadonlySet<number> = new Set<number>([
   CharacterState.Idle,
@@ -294,6 +298,8 @@ export class TumblerController implements TumblerControllerLike {
   private contactBumper = 0;
   private readonly contactBumperDir = { x: 0, y: 0, z: 0 };
   private contactBumperOwner: string | undefined = undefined;
+  /** Bounce pad whose (tilted) top we touched this step. */
+  private contactPad: SurfaceInfo | undefined = undefined;
   private contactTackle = 0;
   private contactCrush = false;
   private readonly contactCrushDir = { x: 0, y: 0, z: 0 };
@@ -1613,23 +1619,20 @@ export class TumblerController implements TumblerControllerLike {
     // Bounce pads under our feet
     const bouncy = grounded && g.info !== undefined && (g.info.kind === 'bouncy' || (g.info.bounceImpulse ?? 0) > 0);
     if (bouncy && ext.bounceCooldown <= 0 && g.walkable) {
-      const speed = g.info?.bounceImpulse ?? t.bounceSpeed;
-      this.vel.x += g.nx * speed;
-      this.vel.y = g.vy + g.ny * speed;
-      this.vel.z += g.nz * speed;
-      this.body.setLinvel(this.vel, true);
-      ext.bounceCooldown = t.bounceCooldown;
-      ext.latches &= ~Latch.DiveUsed;
+      const pad = g.info?.bounceVelocity;
+      if (pad) {
+        this.setPadLaunch(pad);
+      } else {
+        const speed = g.info?.bounceImpulse ?? t.bounceSpeed;
+        this.vel.x += g.nx * speed;
+        this.vel.y = g.vy + g.ny * speed;
+        this.vel.z += g.nz * speed;
+        this.body.setLinvel(this.vel, true);
+      }
       ext.carryVel.x = g.vx;
       ext.carryVel.z = g.vz;
-      this.jumpHeld = false;
-      this.coyoteTimer = 0;
       grounded = false;
-      if (this._state !== CharacterState.Stunned) {
-        if (ext.grabKind === GrabKind.Player && this._state !== CharacterState.Grabbed) this.endHoldPlayer('broken', ctx);
-        if (this._state !== CharacterState.Grabbed) this.setStateId(CharacterState.Bounce);
-      }
-      ctx.events.push({ type: 'bounce', player: this.id, pos: this.feetCopy(), obstacle: g.info?.ownerId });
+      this.enterBounce(g.info?.ownerId, ctx);
     }
 
     if (grounded) {
@@ -1758,6 +1761,7 @@ export class TumblerController implements TumblerControllerLike {
     this.contactHazard = false;
     this.contactBumper = 0;
     this.contactBumperOwner = undefined;
+    this.contactPad = undefined;
     this.contactTackle = 0;
     this.contactCrush = false;
     this.world.contactPairsWith(this.collider, this.onContactPair);
@@ -1796,7 +1800,13 @@ export class TumblerController implements TumblerControllerLike {
       this.ext.knockTimer = t.knockControlTime;
     }
 
-    if (this.contactBumper > 0 && this.ext.bounceCooldown <= 0) {
+    // Set from the contact-pair callback above, which TS control flow cannot see.
+    const pad = this.contactPad as SurfaceInfo | undefined;
+    if (pad?.bounceVelocity && this.ext.bounceCooldown <= 0 && s !== CharacterState.Finished && s !== CharacterState.Respawning) {
+      // Tilted pad top: too steep for the ground probe, but still a landing on the pad face.
+      this.setPadLaunch(pad.bounceVelocity);
+      this.enterBounce(pad.ownerId, ctx);
+    } else if (this.contactBumper > 0 && this.ext.bounceCooldown <= 0) {
       const d = this.contactBumperDir;
       const into = this.vel.x * d.x + this.vel.y * d.y + this.vel.z * d.z;
       const add = this.contactBumper - Math.min(0, into);
@@ -1837,7 +1847,24 @@ export class TumblerController implements TumblerControllerLike {
     }
     // Floors are handled by the ground probe; only walls and ceilings count as bumpers and impacts.
     if (ny >= 0.7) return;
-    if (info && (info.kind === 'bouncy' || (info.bounceImpulse ?? 0) > 0)) {
+    if (info?.bounceVelocity) {
+      const up = info.bounceUp;
+      const facing = up ? nx * up.x + ny * up.y + nz * up.z : ny;
+      if (facing >= PAD_TOP_DOT) {
+        this.contactPad = info;
+      } else {
+        // Pad rim or side: launching here would fire the authored vertical launch sideways at full
+        // speed and fling climbers off the level, so it is only a soft nudge away from the pad.
+        const h = Math.hypot(nx, nz);
+        if (h > 1e-3 && PAD_SIDE_BUMP > this.contactBumper) {
+          this.contactBumper = PAD_SIDE_BUMP;
+          this.contactBumperDir.x = nx / h;
+          this.contactBumperDir.y = 0;
+          this.contactBumperDir.z = nz / h;
+          this.contactBumperOwner = info.ownerId;
+        }
+      }
+    } else if (info && (info.kind === 'bouncy' || (info.bounceImpulse ?? 0) > 0)) {
       const imp = info.bounceImpulse ?? this.tuning.bounceSpeed * 0.75;
       if (imp > this.contactBumper) {
         this.contactBumper = imp;
@@ -2147,6 +2174,37 @@ export class TumblerController implements TumblerControllerLike {
       this.grabBallRadius = t.grabRadius;
       this.grabBall = new this.R.Ball(t.grabRadius);
     }
+  }
+
+  /**
+   * Leaves a bounce pad with exactly its authored velocity. The change is also
+   * booked as an external push, the same way the pad module applies it, so air
+   * control does not immediately fight the launch's horizontal component and
+   * the pad's own (later) launch call sees nothing left to add.
+   */
+  private setPadLaunch(v: Vec3): void {
+    const e = this.ext.extVel;
+    e.x += v.x - this.vel.x;
+    e.y += v.y - this.vel.y;
+    e.z += v.z - this.vel.z;
+    this.vel.x = v.x;
+    this.vel.y = v.y;
+    this.vel.z = v.z;
+    this.body.setLinvel(this.vel, true);
+  }
+
+  /** State bookkeeping shared by every launch off a bouncy surface. */
+  private enterBounce(owner: string | undefined, ctx: CharacterStepContext): void {
+    const ext = this.ext;
+    ext.bounceCooldown = this.tuning.bounceCooldown;
+    ext.latches &= ~Latch.DiveUsed;
+    this.jumpHeld = false;
+    this.coyoteTimer = 0;
+    if (this._state !== CharacterState.Stunned) {
+      if (ext.grabKind === GrabKind.Player && this._state !== CharacterState.Grabbed) this.endHoldPlayer('broken', ctx);
+      if (this._state !== CharacterState.Grabbed) this.setStateId(CharacterState.Bounce);
+    }
+    ctx.events.push({ type: 'bounce', player: this.id, pos: this.feetCopy(), obstacle: owner });
   }
 
   private feetCopy(): Vec3 {

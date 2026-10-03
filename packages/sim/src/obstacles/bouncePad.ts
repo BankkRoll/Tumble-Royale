@@ -1,12 +1,13 @@
 /**
- * Bounce Pad — a springy disc that launches players along an authored local
- * velocity vector. The velocity component along the launch direction is
- * replaced (so repeated bounces are consistent); sideways momentum is kept.
+ * Bounce Pad — a springy disc that launches players who land on its top with
+ * exactly the authored local velocity vector, so designed arcs land where the
+ * level expects. Touching the side or rim is only a soft bump (handled by the
+ * character controller through the surface's `bounceVelocity`).
  */
 import { z } from 'zod';
 import type { Collider } from '@dimforge/rapier3d-compat';
 import { rotateVec, vec3, type Vec3 } from '@tumble/shared';
-import { ActorCooldown, ObstacleGroups, RuntimeBase } from './helpers-a.ts';
+import { ActorCooldown, ObstacleGroups, RuntimeBase, toLocalPoint } from './helpers-a.ts';
 import type {
   ObstacleActor,
   ObstacleBuildContext,
@@ -17,6 +18,9 @@ import type {
 } from './types.ts';
 
 const Vec3Param = z.object({ x: z.number(), y: z.number(), z: z.number() });
+
+/** Horizontal slack (m) past the pad radius that still counts as over the top (rim landings). */
+const TOP_RIM_SLACK = 0.15;
 
 /** Bounce pad parameters. Origin = centre of the pad's base. */
 export const bouncePadSchema = z.object({
@@ -42,9 +46,9 @@ class BouncePadRuntime extends RuntimeBase implements BouncePadView {
   lastBounceTime = Number.NEGATIVE_INFINITY;
   private readonly cooldown = new ActorCooldown();
   private readonly launchWorld: Vec3;
-  private readonly launchDir: Vec3;
   private readonly launchSpeed: number;
   private readonly dv = vec3();
+  private readonly local = vec3();
 
   constructor(
     instance: ObstacleInstance<BouncePadParams>,
@@ -55,8 +59,6 @@ class BouncePadRuntime extends RuntimeBase implements BouncePadView {
     const { R } = ctx;
     this.launchWorld = rotateVec(this.frame.rot, vec3(p.launch.x, p.launch.y, p.launch.z), vec3());
     this.launchSpeed = Math.hypot(this.launchWorld.x, this.launchWorld.y, this.launchWorld.z);
-    const inv = this.launchSpeed > 0 ? 1 / this.launchSpeed : 0;
-    this.launchDir = vec3(this.launchWorld.x * inv, this.launchWorld.y * inv, this.launchWorld.z * inv);
 
     const body = this.addBody(R.RigidBodyDesc.fixed());
     this.addCollider(
@@ -64,7 +66,12 @@ class BouncePadRuntime extends RuntimeBase implements BouncePadView {
         .setTranslation(0, p.height / 2, 0)
         .setCollisionGroups(ObstacleGroups.static),
       body,
-      { kind: 'bouncy', bounceImpulse: this.launchSpeed },
+      {
+        kind: 'bouncy',
+        bounceImpulse: this.launchSpeed,
+        bounceVelocity: this.launchWorld,
+        bounceUp: rotateVec(this.frame.rot, vec3(0, 1, 0), vec3()),
+      },
     );
     this.addCollider(
       R.ColliderDesc.cylinder(0.3, p.radius * 0.95)
@@ -79,16 +86,25 @@ class BouncePadRuntime extends RuntimeBase implements BouncePadView {
     this.endStep(ctx);
   }
 
-  /** Launches `actor` if its cooldown allows. Shared by trigger and contact routing. */
+  /**
+   * Launches `actor` with exactly the authored velocity if it is over the pad
+   * top and its cooldown allows. Shared by trigger and contact routing.
+   *
+   * Side contacts (walking or climbing into the pad) are rejected by requiring
+   * the actor's centre to sit above the top face and inside its rim: a body
+   * pressed against the side has its centre a full body radius outside.
+   */
   private launch(actor: ObstacleActor, ctx: ObstacleStepContext): void {
-    if (this.launchSpeed <= 0 || !this.cooldown.ready(actor.id, ctx.t, this.p.cooldown)) return;
+    if (this.launchSpeed <= 0) return;
+    const l = toLocalPoint(this.frame, actor.body.translation(), this.local);
+    if (l.y < this.p.height || Math.hypot(l.x, l.z) > this.p.radius + TOP_RIM_SLACK) return;
+    if (!this.cooldown.ready(actor.id, ctx.t, this.p.cooldown)) return;
     const v = actor.body.linvel();
-    const n = this.launchDir;
-    const along = v.x * n.x + v.y * n.y + v.z * n.z;
-    this.dv.x = this.launchWorld.x - along * n.x;
-    this.dv.y = this.launchWorld.y - along * n.y;
-    this.dv.z = this.launchWorld.z - along * n.z;
-    actor.push(this.dv);
+    this.dv.x = this.launchWorld.x - v.x;
+    this.dv.y = this.launchWorld.y - v.y;
+    this.dv.z = this.launchWorld.z - v.z;
+    // The controller usually launched this step already (feet on the pad); then there is nothing to add.
+    if (this.dv.x * this.dv.x + this.dv.y * this.dv.y + this.dv.z * this.dv.z > 1e-6) actor.push(this.dv);
     this.lastBounceTime = ctx.t;
     const pos = actor.body.translation();
     ctx.events.push({ type: 'bounce', player: actor.id, pos: { x: pos.x, y: pos.y, z: pos.z }, obstacle: this.instance.id });

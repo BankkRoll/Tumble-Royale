@@ -1,7 +1,8 @@
-import { Rng, type RoundDefinition, type TriggerDef } from '@tumble/shared';
+import { Rng, RoundPhase, type RoundDefinition, type TriggerDef } from '@tumble/shared';
 import { describe, expect, it } from 'vitest';
 import { EventSink } from '../src/events.ts';
-import { PlayerRoundStatus, createTestArenaRound } from '../src/match/index.ts';
+import { PlayerRoundStatus, createMatchSim, createSimpleController, createTestArenaRound, testObstacleModules } from '../src/match/index.ts';
+import { loadRapier } from '../src/index.ts';
 import {
   computeQualifyTarget,
   createRoundRules,
@@ -304,8 +305,11 @@ describe('finals', () => {
       duration: { seconds: 5, overtimeSeconds: 0 },
     });
     const host = new FakeHost(round, 4);
-    expect(host.rules.onFellOut(host.players[0]!)).toBe('eliminate');
-    host.eliminate(host.players[0]!);
+    // The fall is parked for the step and eliminated when the rules update.
+    expect(host.rules.onFellOut(host.players[0]!)).toBe('respawn');
+    host.run(1 / 60);
+    expect(host.status(0)).toBe(PlayerRoundStatus.Eliminated);
+    expect(host.players[0]!.place).toBe(4);
     host.eliminate(host.players[2]!);
     host.eliminate(host.players[3]!);
     host.run(0.05);
@@ -315,5 +319,131 @@ describe('finals', () => {
     timeout.run(6);
     expect(timeout.status(3)).toBe(PlayerRoundStatus.Qualified);
     expect(timeout.qualifiedCount).toBe(1);
+  });
+
+  const lastStanding = (overtimeSeconds = 0) =>
+    createTestArenaRound({
+      type: 'final',
+      qualification: { mode: 'lastStanding', ratio: 0, teams: 0, teamsEliminated: 1 },
+      duration: { seconds: 5, overtimeSeconds },
+      fallBehavior: 'eliminate',
+    });
+
+  /** Every remaining player falls in one step, in slot order, with the given heights. */
+  const fallTogether = (host: FakeHost, ids: number[], heights: number[]) => {
+    ids.forEach((id, i) => {
+      host.players[id]!.pos.y = heights[i]!;
+      host.rules.onFellOut(host.players[id]!);
+    });
+    host.run(1 / 60);
+  };
+
+  it('last standing: the last players falling on the same tick still crown exactly one (highest at the fall)', () => {
+    const host = new FakeHost(lastStanding(), 5);
+    host.eliminate(host.players[4]!);
+    host.run(0.5);
+    // Slot order would hand it to player 3; player 1 was highest when they dropped.
+    fallTogether(host, [0, 1, 2, 3], [-10.4, -10.1, -10.9, -10.3]);
+    expect(host.rules.finished).toBe(true);
+    expect(host.qualifiedCount).toBe(1);
+    expect(host.status(1)).toBe(PlayerRoundStatus.Qualified);
+    expect(host.players[1]!.place).toBe(1);
+    // Losers are placed by the same tiebreak: 3 (−10.3) second, 0 third, 2 fourth.
+    expect([host.players[3]!.place, host.players[0]!.place, host.players[2]!.place]).toEqual([2, 3, 4]);
+    expect(host.eliminatedCount).toBe(4);
+  });
+
+  it('last standing: same-tick height ties fall back to progress, then lowest id', () => {
+    const byProgress = new FakeHost(lastStanding(), 3);
+    byProgress.players[0]!.progress = 0.2;
+    byProgress.players[1]!.progress = 0.9;
+    byProgress.players[2]!.progress = 0.2;
+    fallTogether(byProgress, [0, 1, 2], [-10, -10, -10]);
+    expect(byProgress.status(1)).toBe(PlayerRoundStatus.Qualified);
+
+    const byId = new FakeHost(lastStanding(), 3);
+    for (const p of byId.players) p.progress = 0.5;
+    fallTogether(byId, [2, 1, 0], [-10, -10, -10]);
+    expect(byId.status(0)).toBe(PlayerRoundStatus.Qualified);
+    expect(byId.qualifiedCount).toBe(1);
+  });
+
+  it('last standing: a same-tick fall while others still stand eliminates every faller', () => {
+    const host = new FakeHost(lastStanding(), 4);
+    fallTogether(host, [0, 1], [-10, -9]);
+    expect(host.status(0)).toBe(PlayerRoundStatus.Eliminated);
+    expect(host.status(1)).toBe(PlayerRoundStatus.Eliminated);
+    expect(host.rules.finished).toBe(false);
+    fallTogether(host, [2], [-10]);
+    expect(host.rules.finished).toBe(true);
+    expect(host.status(3)).toBe(PlayerRoundStatus.Qualified);
+  });
+
+  it('last standing: the hard cap (after overtime) crowns one survivor by height', () => {
+    const host = new FakeHost(lastStanding(3), 4);
+    host.players[1]!.pos.y = 50;
+    host.run(5.5);
+    expect(host.inOvertime).toBe(true);
+    expect(host.rules.finished).toBe(false);
+    host.run(3);
+    expect(host.rules.finished).toBe(true);
+    expect(host.qualifiedCount).toBe(1);
+    expect(host.status(1)).toBe(PlayerRoundStatus.Qualified);
+  });
+
+  it('crown grab with eliminating falls: a simultaneous last fall still crowns one', () => {
+    const round = createTestArenaRound({
+      type: 'final',
+      qualification: { mode: 'crownGrab', ratio: 0, teams: 0, teamsEliminated: 1 },
+      fallBehavior: 'eliminate',
+    });
+    const host = new FakeHost(round, 3);
+    fallTogether(host, [0, 1, 2], [-12, -11, -11.5]);
+    expect(host.rules.finished).toBe(true);
+    expect(host.qualifiedCount).toBe(1);
+    expect(host.status(1)).toBe(PlayerRoundStatus.Qualified);
+
+    const respawning = new FakeHost(createTestArenaRound({
+      type: 'final',
+      qualification: { mode: 'crownGrab', ratio: 0, teams: 0, teamsEliminated: 1 },
+      fallBehavior: 'respawnCheckpoint',
+    }), 3);
+    expect(respawning.rules.onFellOut(respawning.players[0]!)).toBe('respawn');
+    respawning.run(1 / 60);
+    expect(respawning.status(0)).toBe(PlayerRoundStatus.Playing);
+  });
+});
+
+describe('finals in a real match sim', () => {
+  it('two finalists falling past killY on the same step: the higher one is crowned', async () => {
+    const R = await loadRapier();
+    const round = createTestArenaRound({
+      type: 'final',
+      qualification: { mode: 'lastStanding', ratio: 0, teams: 0, teamsEliminated: 1 },
+      fallBehavior: 'eliminate',
+    });
+    const players = [0, 1, 2].map((id) => ({ id, name: `P${id}`, isBot: false, team: -1 }));
+    const sim = createMatchSim(
+      { R, round, seed: 4, stage: 0, players, mode: 'authority' },
+      { createController: createSimpleController, obstacles: testObstacleModules() },
+    );
+    sim.setPhase(RoundPhase.Countdown);
+    for (let i = 0; i < 180; i++) sim.step();
+    sim.setPhase(RoundPhase.Playing, 0);
+    sim.controller(2)!.teleport({ x: 0, y: -40, z: 0 });
+    sim.step();
+    expect(sim.getStatus().players.get(2)?.status).toBe(PlayerRoundStatus.Eliminated);
+    // Slot 0 is processed first, but slot 1 is higher when both cross killY (−10).
+    sim.controller(0)!.teleport({ x: 0, y: -30, z: 0 });
+    sim.controller(1)!.teleport({ x: 2, y: -20, z: 0 });
+    sim.step();
+    const st = sim.getStatus();
+    expect(st.qualifiedCount).toBe(1);
+    expect(st.players.get(1)?.status).toBe(PlayerRoundStatus.Qualified);
+    expect(st.players.get(1)?.place).toBe(1);
+    expect(st.players.get(0)?.status).toBe(PlayerRoundStatus.Eliminated);
+    expect(st.players.get(0)?.place).toBe(2);
+    expect(sim.rules?.finished).toBe(true);
+    sim.dispose();
   });
 });

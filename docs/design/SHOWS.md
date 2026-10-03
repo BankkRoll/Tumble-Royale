@@ -250,14 +250,26 @@ Limited-time / rotating playlist. Everything louder.
 | Weather            | random from the round's allowed list, `stormy`/`windy` ×2                                                                                                                                     |
 | Mutators           | one per show, announced on the intro card                                                                                                                                                     |
 
-| Mutator              | Effect                                                                                                                   |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| **Moon Bounce**      | Global low-G (fanZone lowG gravityFraction 0.3 over the whole bounds) — design gaps all become easy, falls become comedy |
-| **Mirror Mirror**    | Mirror every round across x (x ↦ −x, yaw ↦ −yaw); pure data transform                                                    |
-| **Bouncy Castle**    | All `normal` floors become `bouncy` at 30 % strength                                                                     |
-| **Giant Mode**       | Balls, boulders, cannonballs ×1.4 radius                                                                                 |
-| **Sticky Situation** | Every 20 s a random 10 × 10 m patch of goo appears (telegraphed)                                                         |
-| **Speed Demons**     | +20 % run speed for everyone, +0.2 speedScale on top                                                                     |
+Mutators are plain data in `@tumble/sim/mutators` (multipliers on character
+tuning, surface response, world gravity and obstacle speed, plus mirrored
+steering and a seeded wind schedule). The director picks one per show from the
+seed with its own Rng stream, so adding mutators never changes round selection;
+it rides in `RoundStartInfo.mutatorId` to every match sim (server, predicting
+clients via `joinRound.mutatorId`, offline) and is shown on the round intro card
+and the HUD objective chip.
+
+| Mutator             | Effect                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Moon Bounce**     | World gravity ×0.5, jump speed ×0.85 → jumps ~1.45× higher and ~1.7× longer; falls become comedy        |
+| **Mirror Mirror**   | Human steering mirrored left ↔ right (bots unaffected)                                                  |
+| **Speed Demons**    | +20 % run speed (and snappier acceleration/dives) for everyone, +0.2 obstacle speedScale on top         |
+| **Slippery Floors** | Normal, conveyor and bouncy floors respond like ice-lite (accel ×0.3, decel ×0.12, turn ×0.6)           |
+| **Gusty**           | From 4 s in, a 3.5 s gust every 9 s from a seeded direction (9 m/s² push, 0.8 s ramp so it reads first) |
+| **Bouncy Castle**   | Jump speed ×1.18, bounce pads ×1.35, ground-dive lift ×1.2                                              |
+
+Not shipped yet (they need level transforms rather than tuning): a true
+mirrored course, Giant Mode (×1.4 balls/boulders), Sticky Situation (timed goo
+patches).
 
 ### 4.5 Ranked (`ranked`)
 

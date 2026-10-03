@@ -22,6 +22,8 @@ export interface QueueMember {
   name: string;
   /** Conservative skill (OpenSkill ordinal) used for ranked bands. */
   ordinal: number;
+  /** Chat-suspended: the join ticket tells the game server to drop this player's chat. */
+  muted?: boolean;
 }
 
 /** A party (or solo) waiting in the queue. */

@@ -1166,8 +1166,14 @@ export class TutorialSession extends ShowSession {
     if (this.stage !== 'raceOver') return;
     this.stage = 'ready';
     if (!this.completed.includes('race')) this.completed.push('race');
-    const reward = grantTutorialReward(this.ctx.profile);
-    pushMeta(this.ctx.profile);
+    void grantTutorialReward(this.ctx).then((reward) => {
+      if (this.stage !== 'ready') return;
+      if (!this.ctx.account?.active) pushMeta(this.ctx.profile);
+      this.presentReady(reward);
+    });
+  }
+
+  private presentReady(reward: Awaited<ReturnType<typeof grantTutorialReward>>): void {
     const res = this.raceResult;
     const raceLine =
       res === 'timeUp' || !res

@@ -411,3 +411,31 @@ export function TipCarousel({
     </div>
   );
 }
+
+/**
+ * Small "BOT" chip next to a bot's name (results, player wall, spectate
+ * banner, profile cards). Hidden when Settings → Gameplay → Show bot tags is
+ * off; renders nothing for humans.
+ *
+ * @example
+ * <b>{name}</b> <BotTag isBot={player.isBot} />
+ */
+export function BotTag({
+  isBot,
+  className,
+}: {
+  isBot: boolean | undefined;
+  className?: string;
+}): JSX.Element | null {
+  const show = useUI((s) => s.settings.gameplay.botTags);
+  if (!isBot || !show) return null;
+  return (
+    <span
+      className={`tr-bot-tag${className ? ` ${className}` : ''}`}
+      aria-label="Bot"
+      title="Computer-controlled player"
+    >
+      BOT
+    </span>
+  );
+}

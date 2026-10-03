@@ -51,6 +51,10 @@ export interface ShowRoundPlan {
   variationId?: string;
   /** The round definition when the controller already has it (skips {@link RoomDeps.loadRound}). */
   round?: RoundDefinition;
+  /** Show mutator id (`@tumble/sim/mutators`); forwarded to the sim and to clients in `joinRound`. */
+  mutatorId?: string | null;
+  /** Round timer multiplier (0.5–2); forwarded to the sim and to clients in `joinRound`. */
+  roundTimeScale?: number;
 }
 
 /** Things the show director asks the room to do, drained once per tick. */

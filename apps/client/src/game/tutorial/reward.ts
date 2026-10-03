@@ -1,49 +1,51 @@
 /**
  * Practice Island completion reward: a little XP and the Fresh Mint nameplate,
- * granted once per profile and remembered with a `tutorialCompleted` flag.
+ * granted once. Signed-in accounts claim it from the API
+ * (`POST /me/tutorial-complete`, idempotent per account); offline profiles
+ * record it locally.
  */
 import { getCosmetic } from '@tumble/content/cosmetics';
+import { TUTORIAL_REWARD } from '@tumble/content/progression';
 import type { TutorialReadyInfo } from '@tumble/ui/tutorial';
+import type { ApiTutorialComplete } from '../api.ts';
 import type { ProfileStore } from '../profile.ts';
 
 /** XP for finishing the tutorial the first time. */
-export const TUTORIAL_XP = 150;
+export const TUTORIAL_XP = TUTORIAL_REWARD.xp;
 /** Cosmetic unlocked by finishing the tutorial. */
-export const TUTORIAL_UNLOCK = 'nameplate.mint';
+export const TUTORIAL_UNLOCK = TUTORIAL_REWARD.cosmeticId;
 
-/** The saved-profile fields this reward touches (a subset of `ProfileStore`'s private data). */
-interface RewardableProfile {
-  totalXp: number;
-  seasonXp: number;
-  owned: string[];
-  tutorialCompleted?: boolean;
+/** Where the reward goes: the signed-in account when there is one, else the local profile. */
+export interface TutorialRewardTarget {
+  profile: ProfileStore;
+  account: { readonly active: boolean; completeTutorial(): Promise<ApiTutorialComplete | null> } | null;
+}
+
+type ReadyReward = Omit<TutorialReadyInfo, 'raceLine'>;
+
+const NOTHING: ReadyReward = { xp: 0, unlock: null, repeat: true };
+
+function unlockCard(cosmeticId: string | null): TutorialReadyInfo['unlock'] {
+  const item = cosmeticId ? getCosmetic(cosmeticId) : undefined;
+  return item ? { name: item.name, icon: 'nameplate', kind: 'nameplate' } : null;
 }
 
 /**
- * Grants the reward (first completion only) and saves the profile.
+ * Grants the reward (first completion only).
  *
- * @param profile - The local profile.
- * @returns What the ready card shows (zero XP and no unlock on repeats).
+ * @param target - Local profile and the online account (if any).
+ * @returns What the ready card shows (zero XP and no unlock on repeats, or
+ *   when the API could not be reached: the account can finish the tutorial
+ *   again later to claim it).
  */
-export function grantTutorialReward(profile: ProfileStore): Omit<TutorialReadyInfo, 'raceLine'> {
-  // HACK: ProfileStore has no generic grant API yet and profile.ts belongs to
-  // the meta/profile owner. The saved shape is additive-only by contract
-  // (see SavedProfile), so writing XP/owned plus one new flag is safe; the
-  // public `answerTutorial()` call below persists it.
-  // TODO: replace with `profile.grantTutorialReward()` once ProfileStore exposes one.
-  const data = (profile as unknown as { data: RewardableProfile | null }).data;
-  if (!data || typeof data.totalXp !== 'number' || !Array.isArray(data.owned))
-    return { xp: 0, unlock: null, repeat: true };
-  if (data.tutorialCompleted) return { xp: 0, unlock: null, repeat: true };
-  data.tutorialCompleted = true;
-  data.totalXp += TUTORIAL_XP;
-  data.seasonXp = (data.seasonXp ?? 0) + TUTORIAL_XP;
-  const item = getCosmetic(TUTORIAL_UNLOCK);
-  let unlock: TutorialReadyInfo['unlock'] = null;
-  if (item && !data.owned.includes(item.id)) {
-    data.owned.push(item.id);
-    unlock = { name: item.name, icon: 'nameplate', kind: 'nameplate' };
+export async function grantTutorialReward(target: TutorialRewardTarget): Promise<ReadyReward> {
+  target.profile.answerTutorial();
+  if (target.account?.active) {
+    const r = await target.account.completeTutorial();
+    if (!r?.granted) return NOTHING;
+    return { xp: r.xp, unlock: unlockCard(r.unlock), repeat: false };
   }
-  profile.answerTutorial();
-  return { xp: TUTORIAL_XP, unlock, repeat: false };
+  const r = target.profile.completeTutorial(TUTORIAL_XP, TUTORIAL_UNLOCK);
+  if (!r.granted) return NOTHING;
+  return { xp: TUTORIAL_XP, unlock: r.unlocked ? unlockCard(TUTORIAL_UNLOCK) : null, repeat: false };
 }

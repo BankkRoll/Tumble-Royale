@@ -189,6 +189,17 @@ export interface ApiChallenges {
   weeklyRefreshesAt: string;
 }
 
+/** `POST /me/tutorial-complete`. */
+export interface ApiTutorialComplete {
+  /** True when this call granted the reward; false on repeats. */
+  granted: boolean;
+  xp: number;
+  /** Cosmetic id unlocked by this call, or null. */
+  unlock: string | null;
+  level: number;
+  totalXp: number;
+}
+
 /** `GET /leaderboards/:type`. */
 export interface ApiLeaderboard {
   entries: { rank: number; userId: string; score: number; displayName: string; tag: string }[];
@@ -525,6 +536,7 @@ export class ApiClient {
   challenges = (): Promise<ApiChallenges> => this.request('GET', '/challenges');
   rerollChallenge = (id: string): Promise<unknown> => this.request('POST', '/challenges/reroll', { id });
   claimChallenge = (id: string): Promise<unknown> => this.request('POST', '/challenges/claim', { id });
+  tutorialComplete = (): Promise<ApiTutorialComplete> => this.request('POST', '/me/tutorial-complete');
   leaderboard = (type: string, scope: 'global' | 'regional' | 'friends'): Promise<ApiLeaderboard> =>
     this.request('GET', `/leaderboards/${type}?scope=${scope}&limit=50`);
   myMatches = (): Promise<{ matches: ApiMatch[] }> => this.request('GET', '/me/matches');

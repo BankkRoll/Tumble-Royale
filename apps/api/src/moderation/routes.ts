@@ -5,10 +5,19 @@ import { createHash } from 'node:crypto';
 import { and, asc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { accountRegion, RegionSchema } from '../accounts/accounts.ts';
+import { isErased } from '../accounts/tombstone.ts';
 import type { AppContext } from '../context.ts';
 import { bans, events, featureFlags, reports, users } from '../db/schema.ts';
 import { verifyLedger } from '../economy/ledger.ts';
-import { invalidateBanCache, optionalUser, requireAdmin, requireUser } from '../http/auth.ts';
+import {
+  activeBans,
+  invalidateBanCache,
+  optionalUser,
+  requireAdmin,
+  requireInternalSignature,
+  requireUser,
+} from '../http/auth.ts';
 import { badRequest, notFound, parse } from '../http/errors.ts';
 import { BOARD_TYPES, readLeaderboard } from '../leaderboards/service.ts';
 import { maskProfanity } from '../names/profanity.ts';
@@ -34,7 +43,7 @@ const EventsBody = z.object({
 const BoardParams = z.object({ type: z.enum(BOARD_TYPES) });
 const BoardQuery = z.object({
   scope: z.enum(['global', 'regional', 'friends']).default('global'),
-  region: z.string().min(2).max(8).optional(),
+  region: RegionSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).max(10_000).default(0),
 });
@@ -49,6 +58,8 @@ const BanBody = z.object({
     .max(24 * 365 * 10)
     .optional(),
 });
+const BanLookupBody = z.object({ userIds: z.array(z.string().min(1).max(64)).min(1).max(64) });
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FlagBody = z.object({
   enabled: z.boolean(),
   rolloutPercent: z.number().int().min(0).max(100).default(100),
@@ -119,12 +130,31 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
     return readLeaderboard(ctx, {
       type,
       scope: q.scope,
-      region: q.region ?? auth.region,
+      region: q.region ?? (q.scope === 'regional' ? await accountRegion(ctx.db, auth.userId) : auth.region),
       userId: auth.userId,
       friendIds: q.scope === 'friends' ? await friendIds(ctx.db, auth.userId) : [],
       limit: q.limit,
       offset: q.offset,
     });
+  });
+
+  // Matchmaker → API (HMAC): which of these players are suspended, and from what.
+  app.post('/internal/bans/lookup', { config: { rateLimit: false } }, async (req) => {
+    await requireInternalSignature(ctx, req);
+    const { userIds } = parse(BanLookupBody, req.body);
+    const out: Record<string, { scope: string; reason: string; expiresAt: string | null }[]> = {};
+    for (const id of new Set(userIds)) {
+      // Ids that are not account ids (bots, forged slots) cannot carry bans.
+      const rows = UUID_RE.test(id) ? [...(await activeBans(ctx, id, true))] : [];
+      // Tokens of a just-deleted account are still unexpired; treat it as suspended.
+      if (await isErased(ctx.kv, id)) rows.push({ scope: 'all', reason: 'account deleted', expiresAt: null });
+      out[id] = rows.map((b) => ({
+        scope: b.scope,
+        reason: b.reason,
+        expiresAt: b.expiresAt?.toISOString() ?? null,
+      }));
+    }
+    return { bans: out };
   });
 
   // --- Admin (ADMIN_TOKEN) -------------------------------------------------

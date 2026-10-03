@@ -211,6 +211,13 @@ export interface JoinRoundMsg {
   qualifyTarget: number;
   /** Seeded (or forced) layout variation id; null when the round has none. */
   variationId: string | null;
+  /**
+   * Show mutator (`@tumble/sim/mutators` id) the server applies; predicting
+   * clients must pass it to their sim. Absent or null: none.
+   */
+  mutatorId?: string | null;
+  /** Round timer multiplier the server applies (0.5–2). Absent: 1. */
+  roundTimeScale?: number;
 }
 
 /** Show context, sent once per connection right after Welcome. */

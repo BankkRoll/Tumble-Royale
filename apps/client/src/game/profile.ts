@@ -110,6 +110,8 @@ interface SavedProfile {
   opponents?: Record<string, OpponentRecord>;
   history: MatchHistoryEntry[];
   tutorialAnswered: boolean;
+  /** Added later: the Practice Island reward was granted. Optional for old saves. */
+  tutorialCompleted?: boolean;
   lastShowDay: string;
   daily: ChallengeCounters;
   weekly: ChallengeCounters;
@@ -149,6 +151,8 @@ export interface OpponentRecord {
   /** Best final placement (1 = Crown). */
   best: number;
   lastSeen: number;
+  /** Shows where they placed better than the local player (absent in records from older builds). */
+  ahead?: number;
 }
 
 export interface ShowResultForProfile {
@@ -343,6 +347,27 @@ export class ProfileStore {
     if (!this.data) return;
     this.data.tutorialAnswered = true;
     this.save();
+  }
+
+  /**
+   * Grants the offline Practice Island reward once per profile (online
+   * accounts claim it from the API instead) and marks the tutorial answered.
+   *
+   * @param xp - XP to add (account and season).
+   * @param cosmeticId - Cosmetic to unlock.
+   * @returns Whether this call granted it, and whether the cosmetic was new.
+   */
+  completeTutorial(xp: number, cosmeticId: string): { granted: boolean; unlocked: boolean } {
+    const d = this.data;
+    if (!d || d.tutorialCompleted) return { granted: false, unlocked: false };
+    d.tutorialCompleted = true;
+    d.tutorialAnswered = true;
+    d.totalXp += xp;
+    d.seasonXp += xp;
+    const unlocked = !d.owned.includes(cosmeticId);
+    if (unlocked) d.owned.push(cosmeticId);
+    this.save();
+    return { granted: true, unlocked };
   }
 
   /**
@@ -967,7 +992,10 @@ export class ProfileStore {
           crowns: 0,
           best: o.place,
           lastSeen: 0,
+          ahead: 0,
         });
+        // Older records never counted this; start counting from now rather than guess.
+        if (o.place < r.place) rec.ahead = (rec.ahead ?? 0) + 1;
         rec.faced++;
         rec.colors = o.colors;
         if (o.crowned) rec.crowns++;

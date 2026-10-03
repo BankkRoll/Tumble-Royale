@@ -984,3 +984,20 @@
     transform: translateX(130vw);
   }
 }
+
+/* Bot tag: a quiet text chip beside bot names. */
+.tr-bot-tag {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 0.05em 0.4em;
+  border-radius: 0.4em;
+  border: 0.1em solid currentColor;
+  font-size: 0.62em;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  opacity: 0.72;
+  vertical-align: middle;
+  white-space: nowrap;
+}

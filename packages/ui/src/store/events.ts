@@ -16,6 +16,7 @@ import type {
   PlayMode,
   PatternId,
   PlayerWallEvent,
+  ReplayCommand,
   ScreenId,
   Settings,
   SettingsSection,
@@ -112,6 +113,14 @@ export interface UIIntents {
   navUnhandled: { dir: NavDirection };
   /** Colour preview while the welcome screen is open. */
   previewColors: { colors: TumblerColors; pattern: PatternId };
+  /** Watch a recorded round of this show (`ReplayRoundEntry.key`). */
+  replayOpen: { key: string };
+  /** Watch the round in progress from the start (after being knocked out). */
+  replayOpenLive: undefined;
+  /** Load a saved replay file and play it. */
+  replayOpenFile: { name: string; bytes: ArrayBuffer };
+  /** Replay viewer control. */
+  replayCommand: ReplayCommand;
 }
 
 /** Intent name. */

@@ -6,6 +6,14 @@ import { loadConfig } from './config.ts';
 
 const config = loadConfig();
 const built = await buildMatchmaker(config);
+if (config.memoryStoreInProduction) {
+  built.app.log.warn(
+    '!!! REDIS_URL is unset (ALLOW_MEMORY_STORE=1): queues, lobbies and the game-server registry are in ' +
+      'process memory. They are lost on every restart and NOT shared between matchmaker instances. Run one instance only. !!!',
+  );
+}
+if (!config.apiUrl)
+  built.app.log.warn('API_URL is unset: bans are not checked when players queue or join lobbies');
 await built.app.listen({ host: config.host, port: config.port });
 built.app.log.info(
   `[matchmaker] ${config.redisUrl ? 'redis' : 'memory'} store | lobby ${config.targetSize} | max wait ${config.maxWaitMs} ms | :${config.port}`,

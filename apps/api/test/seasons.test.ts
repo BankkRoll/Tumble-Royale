@@ -9,13 +9,17 @@ import { buildShow, createTestApi, type TestApi, type TestUser } from './helpers
 const changes: SeasonChange[] = [];
 let api: TestApi;
 beforeAll(async () => {
-  api = await createTestApi('2026-11-28T12:00:00.000Z', {
-    seasonListeners: [
-      (c) => {
-        changes.push(c);
-      },
-    ],
-  });
+  api = await createTestApi(
+    '2026-11-28T12:00:00.000Z',
+    {},
+    {
+      seasonListeners: [
+        (c) => {
+          changes.push(c);
+        },
+      ],
+    },
+  );
 });
 afterAll(async () => {
   await api.close();

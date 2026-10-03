@@ -64,6 +64,8 @@ export interface NameplateOptions {
   teamColor?: string | null;
   /** Height above the target's origin. Default 2.3 m. */
   height?: number;
+  /** Small text chip after the name (e.g. `BOT`), or null for none. */
+  tag?: string | null;
 }
 
 /** A handle to one plate in a {@link NameplateLayer}. */
@@ -83,8 +85,16 @@ export class Nameplate {
     private style: NameplateStyle,
     private teamColor: string | null,
     height: number,
+    private tag: string | null = null,
   ) {
     this.height = height;
+  }
+
+  /** Sets (or clears) the text chip after the name. */
+  setTag(tag: string | null): void {
+    if (tag === this.tag) return;
+    this.tag = tag;
+    this.redraw();
   }
 
   /** Renames the plate (redraws its atlas slot). */
@@ -108,7 +118,7 @@ export class Nameplate {
 
   /** @internal */
   redraw(): void {
-    this.layer.draw(this.slot, this.name, this.style, this.teamColor);
+    this.layer.draw(this.slot, this.name, this.style, this.teamColor, this.tag);
   }
 
   /** Frees the slot. */
@@ -252,6 +262,7 @@ export class NameplateLayer {
       resolveStyle(opts.style),
       opts.teamColor ?? null,
       opts.height ?? 2.3,
+      opts.tag ?? null,
     );
     this.plates[slot] = p;
     p.redraw();
@@ -269,7 +280,13 @@ export class NameplateLayer {
   }
 
   /** @internal Paints one atlas slot. */
-  draw(slot: number, name: string, style: NameplateStyle, team: string | null): void {
+  draw(
+    slot: number,
+    name: string,
+    style: NameplateStyle,
+    team: string | null,
+    tag: string | null = null,
+  ): void {
     const ctx = this.ctx;
     const x0 = (slot % COLS) * SLOT_W;
     const y0 = Math.floor(slot / COLS) * SLOT_H;
@@ -313,6 +330,26 @@ export class NameplateLayer {
       ctx.stroke();
       tx += 12;
       maxW -= 24;
+    }
+    if (tag) {
+      ctx.font = `800 15px 'Trebuchet MS', system-ui, sans-serif`;
+      const tw = ctx.measureText(tag).width + 12;
+      const th = 20;
+      const cx = x + w - 14 - tw;
+      const cy = y + (h - th) / 2;
+      roundRect(ctx, cx, cy, tw, th, 6);
+      ctx.globalAlpha = 0.7;
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = style.text;
+      ctx.stroke();
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = style.text;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(tag, cx + tw / 2, cy + th / 2 + 1);
+      ctx.globalAlpha = 1;
+      tx -= (tw + 8) / 2;
+      maxW -= tw + 8;
     }
     let size = 30;
     ctx.font = `800 ${size}px 'Trebuchet MS', system-ui, sans-serif`;

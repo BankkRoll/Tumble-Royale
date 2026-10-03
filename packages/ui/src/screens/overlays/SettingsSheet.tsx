@@ -441,11 +441,18 @@ function Section({ id }: { id: SettingsSection }): JSX.Element {
               onChange={(showPing) => up('gameplay', { showPing })}
             />
           </Row>
-          <Row label="Auto-spectate after qualifying">
+          <Row label="Auto-spectate" hint="Keep watching the show after you qualify or get knocked out">
             <Toggle
               label="Auto-spectate"
               checked={s.gameplay.autoSpectate}
               onChange={(autoSpectate) => up('gameplay', { autoSpectate })}
+            />
+          </Row>
+          <Row label="Show bot tags" hint="Marks computer-controlled players with a small BOT tag">
+            <Toggle
+              label="Show bot tags"
+              checked={s.gameplay.botTags}
+              onChange={(botTags) => up('gameplay', { botTags })}
             />
           </Row>
           <Row label="Chat filter">

@@ -52,6 +52,15 @@ export interface TumbleHooks {
   emit?: (name: UIIntentName, payload?: unknown) => void;
   /** Main-menu lobby Tumbler (state, feet, idle play, camera pitch); null outside the menu (game only). */
   lobbyState?: () => LobbyDebugState | null;
+  /** Local Tumbler in the current round: character state id, grab target, feet position (game only). */
+  localPlayer?: () => {
+    state: number;
+    grabTarget: number;
+    x: number;
+    y: number;
+    z: number;
+    grabs: number;
+  } | null;
   /** True while queued with the matchmaker (game only). */
   queued?: () => boolean;
 }

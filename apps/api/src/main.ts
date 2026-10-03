@@ -8,6 +8,12 @@ const config = loadConfig();
 const built = await buildApp(config);
 const { app } = built;
 
+if (config.memoryStoreInProduction) {
+  app.log.warn(
+    '!!! REDIS_URL is unset (ALLOW_MEMORY_STORE=1): parties, presence, leaderboards and replay nonces are ' +
+      'in process memory. They are lost on every restart and NOT shared between API instances. Run one instance only. !!!',
+  );
+}
 if (!config.discord) app.log.info('Discord sign-in disabled (DISCORD_CLIENT_ID/SECRET unset)');
 if (!config.google) app.log.info('Google sign-in disabled (GOOGLE_CLIENT_ID/SECRET unset)');
 if (!config.stripe) app.log.info('Stripe disabled: Gem checkouts complete instantly via the fake provider');

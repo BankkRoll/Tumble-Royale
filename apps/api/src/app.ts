@@ -2,7 +2,8 @@
  * Composition root for the API.
  *
  * Responsibilities:
- * - Open the database (Postgres or PGlite), run migrations, sync the content catalog.
+ * - Open the database (Postgres or PGlite), run migrations, sync the content catalog,
+ *   soft-reset ranked ratings when the active season is new.
  * - Pick the KV (Redis or memory), payment provider (Stripe or fake) and mailer.
  * - Configure Fastify: CORS, rate limits, raw-body JSON parsing, error mapping.
  * - Register every route module and the realtime gateway.
@@ -27,12 +28,15 @@ import {
 } from './economy/payments.ts';
 import { registerEconomyRoutes } from './economy/routes.ts';
 import { ApiError } from './http/errors.ts';
+import { rateLimitKey } from './http/rate-limit.ts';
 import { createKV, type KV } from './kv/index.ts';
 import { registerMatchRoutes } from './matches/routes.ts';
 import { registerModerationRoutes } from './moderation/routes.ts';
 import { registerNewsRoutes } from './news/routes.ts';
 import { registerProgressionRoutes } from './progression/routes.ts';
 import { ensureSeason, onSeasonChanged, type SeasonChangeListener } from './progression/seasons.ts';
+import { registerTutorialRoutes } from './progression/tutorial.ts';
+import { ensureRankedSeason } from './ranked/season.ts';
 import { attachGateway, type Gateway } from './realtime/gateway.ts';
 import { Notifier } from './realtime/notifier.ts';
 import { registerFriendRoutes } from './social/friends.ts';
@@ -139,10 +143,15 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     notifier: new Notifier(kv),
   };
   await syncCatalog(ctx);
-  // Listeners must be registered before the boot check so a rollover that
-  // happened while the API was down still reaches them.
+  // The ranked soft reset follows every season change; listeners must be
+  // registered before the boot check so a rollover that happened while the
+  // API was down still reaches them.
+  onSeasonChanged(ctx, async ({ current }) => {
+    await ensureRankedSeason(ctx, current.id);
+  });
   for (const listener of opts.seasonListeners ?? []) onSeasonChanged(ctx, listener);
   await ensureSeason(ctx);
+  await ensureRankedSeason(ctx);
   // Idle servers still notice a rollover; requests also check (cheaply) below.
   const seasonTimer = setInterval(() => void ensureSeason(ctx).catch(() => undefined), 60_000);
   seasonTimer.unref();
@@ -175,11 +184,7 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     global: true,
     max: config.rateLimitMax,
     timeWindow: '1 minute',
-    keyGenerator: (req) => {
-      const auth = req.headers.authorization;
-      // Per-token buckets for signed-in calls so players behind one NAT do not share a limit.
-      return auth?.startsWith('Bearer ') ? `t:${auth.slice(-24)}` : `ip:${req.ip}`;
-    },
+    keyGenerator: (req) => rateLimitKey(config.jwtSecret, req, now),
     errorResponseBuilder: (_req, c) => ({
       statusCode: 429,
       error: 'rate_limited',
@@ -233,6 +238,7 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
   registerAccountRoutes(app, ctx);
   registerEconomyRoutes(app, ctx);
   registerProgressionRoutes(app, ctx);
+  registerTutorialRoutes(app, ctx);
   registerMatchRoutes(app, ctx);
   registerFriendRoutes(app, ctx);
   registerPartyRoutes(app, ctx);

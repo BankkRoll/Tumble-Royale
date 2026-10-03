@@ -48,6 +48,7 @@ import type { GameConfig } from './config.ts';
 import { botLoadout, tumblerColors } from './cosmetics.ts';
 import { createDebugPanel } from './debugPanel.ts';
 import type { TumbleHooks } from './hooks.ts';
+import { playAgainAction, type LastShow } from './lastShow.ts';
 import {
   customPlaylist,
   localPlayerCard,
@@ -124,7 +125,8 @@ type Progress = (fraction: number, label: string) => void;
 export class GameApp {
   private session: ShowSession | null = null;
   private menu: MenuView | null = null;
-  private lastPlaylist: string | null = null;
+  /** How the last show was started, for Play again. */
+  private lastShow: LastShow | null = null;
   private fpsSmooth = 60;
   private last = performance.now();
   private lastRender = 0;
@@ -556,6 +558,34 @@ export class GameApp {
     session.start();
   }
 
+  /** Vs Bots on a playlist (the first-ever show uses the gentler starter playlist). */
+  private startBotShow(playlistId: string | null): void {
+    this.lastShow = { kind: 'offline', playlistId };
+    this.startOfflineShow(
+      resolvePlaylist(
+        this.cfg.playlist ?? playlistId,
+        this.profile.showsPlayed === 0 && !this.cfg.playlist && !this.account?.active,
+      ),
+    );
+  }
+
+  /** Play again: the same kind of show as last time (mode, playlist, private-show options). */
+  private replayLastShow(): void {
+    const next = playAgainAction(this.lastShow);
+    switch (next.action) {
+      case 'offline':
+        this.startBotShow(next.playlistId);
+        break;
+      case 'custom':
+        this.lastShow = { kind: 'custom', options: next.options };
+        this.startOfflineShow(customPlaylist(next.options));
+        break;
+      case 'play':
+        void this.startShow(next.playlistId);
+        break;
+    }
+  }
+
   /** True when Play should go through the matchmaker. */
   private get canMatchmake(): boolean {
     return !this.cfg.online && !!this.mm?.online && !!this.account?.active;
@@ -564,7 +594,7 @@ export class GameApp {
   private async startShow(playlistId: string | null): Promise<void> {
     if (this.session) return;
     this.menu?.setIdlePlay(false);
-    this.lastPlaylist = playlistId;
+    this.lastShow = { kind: 'auto', playlistId };
     this.lastSummary = null;
     if (this.canMatchmake) {
       await this.queue(playlistId ?? ui.getState().selectedPlaylist);
@@ -697,7 +727,7 @@ export class GameApp {
     if (this.session) return;
     this.menu?.setIdlePlay(false);
     this.lastSummary = null;
-    this.lastPlaylist = m.playlistId;
+    this.lastShow = { kind: 'matchmade', playlistId: m.playlistId };
     this.applyLobby(null);
     const session = new OnlineShowSession(this.ctx, {
       url: gameSocketUrl(m.server.url),
@@ -729,7 +759,7 @@ export class GameApp {
       swapUnderWipe('rewards', { transition: 'wipe' }, () => this.showMenuScene());
     } else if (reason === 'playAgain') {
       this.showMenuScene();
-      void this.startShow(this.lastPlaylist);
+      this.replayLastShow();
     } else this.goMenu();
   }
 
@@ -954,7 +984,7 @@ export class GameApp {
       },
       onPlayCustomOffline: ({ options }) => {
         if (options.rounds.length === 0) return;
-        this.lastPlaylist = null;
+        this.lastShow = { kind: 'custom', options };
         this.startOfflineShow(customPlaylist(options));
       },
       onInspectPlayer: ({ playerId, name }) => {
@@ -1027,13 +1057,7 @@ export class GameApp {
       },
       onPlay: ({ playlistId, mode }) => {
         if (mode === 'offline' && !this.cfg.online) {
-          this.lastPlaylist = playlistId;
-          this.startOfflineShow(
-            resolvePlaylist(
-              this.cfg.playlist ?? playlistId,
-              this.profile.showsPlayed === 0 && !this.cfg.playlist && !this.account?.active,
-            ),
-          );
+          this.startBotShow(playlistId);
           return;
         }
         void this.startShow(playlistId);
@@ -1058,7 +1082,7 @@ export class GameApp {
           this.session.quit();
           this.session = null;
         }
-        void this.startShow(this.lastPlaylist);
+        this.replayLastShow();
       },
       onBackToLobby: () => this.leaveToMenu(),
       onLeaveShow: () => this.leaveToMenu(),

@@ -316,6 +316,13 @@ export function LinkedAccounts(): JSX.Element {
       </p>
     );
   }
+  if (shown.length === 0 && providers === null) {
+    return (
+      <p className="tr-small tr-muted" data-testid="linked-unknown">
+        Couldn't check which logins this server offers. Try again in a moment.
+      </p>
+    );
+  }
   if (shown.length === 0) {
     return (
       <p className="tr-small tr-muted" data-testid="linked-none">

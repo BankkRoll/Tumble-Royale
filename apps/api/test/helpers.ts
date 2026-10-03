@@ -82,7 +82,10 @@ export interface TestApi extends BuiltApp {
 export async function createTestApi(
   startIso = '2026-10-02T12:00:00.000Z',
   env: Record<string, string> = {},
-  extra: Pick<BuildOptions, 'seasonListeners' | 'payments' | 'kv' | 'database' | 'fetch'> = {},
+  extra: Pick<
+    BuildOptions,
+    'seasonListeners' | 'payments' | 'kv' | 'database' | 'fetch' | 'sharedRateLimit'
+  > = {},
 ): Promise<TestApi> {
   let nowMs = Date.parse(startIso);
   const clock = {

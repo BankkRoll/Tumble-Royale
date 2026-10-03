@@ -11,6 +11,7 @@
  *   explicitly allowed.
  */
 import { EnvIssues, type Env } from '@tumble/shared/env';
+import type { TrustProxy } from '@tumble/shared/proxy';
 import { z } from 'zod';
 
 const optionalString = z
@@ -90,7 +91,13 @@ export interface ApiConfig {
   /** SMTP relay for sign-in emails; absent → console (dev) or email sign-in disabled (production). */
   smtp: { url: string; from: string } | undefined;
   nameChangeCooldownDays: number;
-  /** Requests per minute per client for the global rate limiter. */
+  /**
+   * Reverse proxies allowed to set X-Forwarded-For (TRUST_PROXY): false
+   * (default, the socket address is the client), a hop count or proxy
+   * addresses/CIDRs.
+   */
+  trustProxy: TrustProxy;
+  /** Requests per minute per client for the global rate limiter (shared across instances with Redis). */
   rateLimitMax: number;
   /** How long a user stays "online" after their last realtime connection closes. */
   presenceGraceMs: number;
@@ -137,6 +144,7 @@ export function loadConfig(env: Env = process.env): ApiConfig {
         'arrive only through signed webhooks.',
     );
   }
+  const trustProxy = issues.trustProxy();
   issues.throwIfAny('api');
   const corsOrigins: string[] | true = e.CORS_ORIGINS
     ? e.CORS_ORIGINS.split(',')
@@ -172,6 +180,7 @@ export function loadConfig(env: Env = process.env): ApiConfig {
         }
       : undefined,
     nameChangeCooldownDays: e.NAME_CHANGE_COOLDOWN_DAYS,
+    trustProxy,
     rateLimitMax: e.RATE_LIMIT_MAX,
     presenceGraceMs: e.PRESENCE_GRACE_MS,
     logLevel: e.LOG_LEVEL,

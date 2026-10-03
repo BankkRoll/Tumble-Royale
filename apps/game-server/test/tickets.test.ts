@@ -199,3 +199,17 @@ describe('ticketed rooms', () => {
     expect(again.welcome?.playerId).toBe(a.welcome?.playerId);
   });
 });
+
+describe('chat-ban claim', () => {
+  it('carries chatBanned through verification', () => {
+    const sub = '22222222-2222-4222-8222-222222222222';
+    const banned = verifyJoinTicket(
+      SECRET,
+      signJoinTicket(SECRET, claims(sub, { chatBanned: true }), WALL),
+      WALL,
+    );
+    expect(banned?.chatBanned).toBe(true);
+    const clean = verifyJoinTicket(SECRET, signJoinTicket(SECRET, claims(sub), WALL), WALL);
+    expect(clean?.chatBanned).toBeUndefined();
+  });
+});

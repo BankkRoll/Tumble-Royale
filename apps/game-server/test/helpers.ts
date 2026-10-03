@@ -14,6 +14,7 @@ import {
   copyState,
   createDecodedSnapshot,
   decodeReliableMessage,
+  encodeReliableMessage,
   readWelcome,
   writeHello,
   writeInputBatch,
@@ -288,6 +289,11 @@ export class TestClient {
     );
     this.conn.receive(this.w.finish());
     return seq;
+  }
+
+  /** Queues a low-frequency message; it goes out on the next `pump`. */
+  send(msg: LowFreqMessage): void {
+    this.reliable.send(encodeReliableMessage({ kind: 'msg', msg }));
   }
 
   lowFreq(t: LowFreqMessage['t']): LowFreqMessage[] {

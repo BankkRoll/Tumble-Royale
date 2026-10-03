@@ -46,7 +46,8 @@ import {
 } from '@tumble/netcode';
 import type { CharacterInput, SimEvent } from '@tumble/sim';
 import { MAX_PLAYERS, SERVER_TICK_HZ, SIM_STEPS_PER_TICK, type RoundDefinition } from '@tumble/shared';
-import { InputSequenceGuard, sanitizeChat, sanitizeName } from '../antiCheat.ts';
+import { InputSequenceGuard, sanitizeName } from '../antiCheat.ts';
+import { ChatRelay } from '../chat.ts';
 import { LagCompensator } from '../lagcomp.ts';
 import type { ServerMetrics } from '../metrics.ts';
 import {
@@ -176,6 +177,7 @@ export class Room {
   readonly lagComp = new LagCompensator();
 
   private readonly slots = new Map<number, PlayerSlot>();
+  private readonly chat = new ChatRelay();
   private readonly sessions = new Set<ClientSession>();
   private readonly show: ShowController;
   private sim: MatchSim | null = null;
@@ -387,6 +389,7 @@ export class Room {
       lastYaw: 0,
     };
     this.slots.set(id, slot);
+    this.chat.register(id, { chatBanned: ticket?.chatBanned ?? false }, now);
     if (this.firstJoinAt < 0) this.firstJoinAt = now;
     this.attach(session, slot, false);
     this.log(`[room ${this.id}] ${slot.name} joined as ${spectator ? 'spectator' : 'player'} ${id}`);
@@ -456,6 +459,7 @@ export class Room {
     slot.session = null;
     if (slot.spectator) {
       this.slots.delete(slot.id);
+      this.chat.remove(slot.id);
       return;
     }
     slot.disconnectedAt = now;
@@ -710,9 +714,14 @@ export class Room {
   private onLowFreq(session: ClientSession, slot: PlayerSlot, msg: LowFreqMessage, now: number): void {
     switch (msg.t) {
       case 'chat': {
-        const text = sanitizeChat(msg.text);
-        if (!text || !session.guard.admitChat(now)) return;
-        this.broadcast({ t: 'chat', from: slot.id, text });
+        if (!session.guard.admitChat(now)) {
+          this.metrics.rateLimited++;
+          return;
+        }
+        const out = this.chat.handle(slot.id, msg, now);
+        if (out.kind === 'violation') return this.violation(session, now);
+        if (out.kind === 'relay') this.broadcast(out.msg);
+        else if (out.reason === 'rate') this.metrics.rateLimited++;
         return;
       }
       case 'spectate':
@@ -1057,6 +1066,7 @@ export class Room {
         isBot: s.isBot,
         loadout: s.loadout,
         connected: s.isBot || s.session !== null,
+        ...(s.userId ? { userId: s.userId } : {}),
       });
     }
     this.broadcast({ t: 'playerList', players });

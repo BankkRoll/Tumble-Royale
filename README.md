@@ -9,7 +9,7 @@
 ![three.js](https://img.shields.io/badge/three.js-WebGPU-8a5cff.svg)
 ![Rapier](https://img.shields.io/badge/physics-Rapier-3ee6b4.svg)
 
-<img src="docs/media/trailer.gif" alt="Tumble Royale gameplay: a race through Tilt Town, Paint the Plaza, a beach survival round, Bounce Ball Blitz, the hex final and the end-of-show player wall" width="800">
+<img src="docs/media/trailer.webp" alt="Tumble Royale gameplay: the pre-show platform, a race through Tilt Town, the round-results wall, Paint the Plaza, Jump Rope Royale, Bounce Ball Blitz, the Goo Peak final, the winner podium and the crowned player wall" width="960">
 
 [Watch the full trailer (MP4)](docs/media/trailer.mp4)
 
@@ -23,16 +23,16 @@ on desktop and mobile.
 <table>
   <tr>
     <td><img src="docs/media/menu.webp" alt="Main menu with the 3D lobby and the play card"></td>
-    <td><img src="docs/media/race.webp" alt="A race round with the qualification counter"></td>
+    <td><img src="docs/media/race.webp" alt="Tilt Town, a race over tipping platforms with the qualification counter"></td>
     <td><img src="docs/media/paint-the-plaza.webp" alt="Paint the Plaza, a four-team territory round"></td>
   </tr>
   <tr>
-    <td><img src="docs/media/survival.webp" alt="A beach survival round"></td>
+    <td><img src="docs/media/survival.webp" alt="Jump Rope Royale, a beach survival round"></td>
     <td><img src="docs/media/bounce-ball-blitz.webp" alt="Bounce Ball Blitz, team ball soccer"></td>
     <td><img src="docs/media/goo-peak.webp" alt="Goo Peak Final: hex rings in a rising sea of goo"></td>
   </tr>
   <tr>
-    <td><img src="docs/media/player-wall.webp" alt="The end-of-show player wall"></td>
+    <td><img src="docs/media/player-wall.webp" alt="The end-of-show player wall replaying each round"></td>
     <td><img src="docs/media/victory.webp" alt="The winner on the victory podium"></td>
     <td><img src="docs/media/rewards.webp" alt="The rewards screen"></td>
   </tr>

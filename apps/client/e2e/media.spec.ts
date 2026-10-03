@@ -1,69 +1,81 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * Captures README media: stills of the main moments of a show, themed level
- * shots, and a screen recording of an autoplayed show for the trailer.
+ * Captures README media from an autoplayed show: stills of the main moments
+ * and a full-HD frame-by-frame screencast for the trailer.
  *
- *   npx playwright test e2e/media.spec.ts --workers=1
+ *   MEDIA_URL=http://localhost:5173 npx playwright test e2e/media.spec.ts --workers=1
  *
- * Output lands in test-results/media/ (stills, video and a timeline of when
- * each screen appeared); tools/media/build.sh turns it into docs/media/.
+ * Serve a sandbox build (`pnpm build:sandbox`, then `vite preview`): the spec
+ * relies on dev URL options, and the shared dev server hot-reloads mid-capture.
+ * Output: stills, `frames/` (JPEG per compositor frame), `frames.json` and
+ * `timeline.json` (when each screen appeared, on the same clock as the frames).
+ * `tools/media/frames-to-video.mjs` then `tools/media/build.sh` turn it into
+ * docs/media/.
  */
 /** Output dir; other test runs clear test-results/, so long captures can point elsewhere. */
 const OUT = process.env.MEDIA_OUT ?? 'test-results/media';
-/** Base URL of a private `vite preview` build; the shared dev server hot-reloads mid-capture. */
+/** Base URL of a private preview of a sandbox build. */
 const BASE = process.env.MEDIA_URL ?? '';
-const SIZE = { width: 1600, height: 900 };
-const LEVELS = [
-  'gumdrop-gauntlet',
-  'slip-n-spiral',
-  'paint-the-plaza',
-  'wind-tunnel-peaks',
-  'goo-peak-final',
-  'tile-panic',
-];
+const SIZE = { width: 1920, height: 1080 };
 
-mkdirSync(OUT, { recursive: true });
+mkdirSync(`${OUT}/frames`, { recursive: true });
 
 async function screenOf(page: Page): Promise<string> {
   return page.evaluate(() => window.__tumble?.screen?.() ?? '');
 }
 
-test('show stills and trailer recording', async ({ browser }) => {
-  test.setTimeout(15 * 60_000);
-  const context = await browser.newContext({
-    viewport: SIZE,
-    recordVideo: { dir: `${OUT}/video`, size: SIZE },
-  });
+test('show stills and HD screencast', async ({ browser }) => {
+  test.setTimeout(30 * 60_000);
+  const context = await browser.newContext({ viewport: SIZE });
   const page = await context.newPage();
-  const t0 = Date.now();
+
+  // NOTE: Playwright's own video recorder encodes at a low bitrate; the CDP
+  // screencast hands over every compositor frame as a high-quality JPEG instead.
+  const cdp = await context.newCDPSession(page);
+  const frames: { file: string; t: number }[] = [];
+  const writes: Promise<void>[] = [];
+  cdp.on('Page.screencastFrame', (f) => {
+    const file = `${String(frames.length).padStart(6, '0')}.jpg`;
+    frames.push({ file, t: f.metadata.timestamp ?? Date.now() / 1000 });
+    writes.push(writeFile(`${OUT}/frames/${file}`, Buffer.from(f.data, 'base64')));
+    void cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId });
+  });
+
   const timeline: { t: number; screen: string }[] = [];
   const shot = new Set<string>();
+  await page.goto(`${BASE}/?autoplay=1&ts=1&tier=high&api=0&fresh=1&seed=12`);
+  await cdp.send('Page.startScreencast', {
+    format: 'jpeg',
+    quality: 92,
+    maxWidth: SIZE.width,
+    maxHeight: SIZE.height,
+  });
 
-  await page.goto(`${BASE}/?autoplay=1&ts=1.5&tier=high&api=0&fresh=1&seed=12`);
+  const settle: Record<string, number> = {
+    menu: 2000,
+    preShow: 3500,
+    roundIntro: 1200,
+    victory: 2500,
+    winnerCam: 2500,
+    rewards: 2500,
+  };
   let last = '';
   let roundSeen = 0;
   let roundShotAt = 0;
+  const t0 = Date.now();
   for (;;) {
     const s = await screenOf(page);
-    const now = Date.now() - t0;
+    const now = Date.now();
     if (s !== last) {
       timeline.push({ t: now / 1000, screen: s });
       last = s;
       if (s === 'round') {
         roundSeen++;
-        roundShotAt = now + 9000;
+        roundShotAt = now + 12_000;
       }
-      // Let entrance animations settle before taking the still.
-      const settle: Record<string, number> = {
-        menu: 1500,
-        preShow: 3500,
-        roundIntro: 1200,
-        victory: 2500,
-        winnerCam: 2500,
-        rewards: 2500,
-      };
       if (s in settle && !shot.has(s)) {
         shot.add(s);
         await page.waitForTimeout(settle[s]!);
@@ -74,36 +86,21 @@ test('show stills and trailer recording', async ({ browser }) => {
       shot.add(`round-${roundSeen}`);
       await page.screenshot({ path: `${OUT}/round-${roundSeen}.png` });
     }
-    if (s === 'playerWall' && !shot.has('wall-a')) {
-      shot.add('wall-a');
-      await page.waitForTimeout(2500);
-      await page.screenshot({ path: `${OUT}/playerWall-a.png` });
-      await page.waitForTimeout(4500);
-      await page.screenshot({ path: `${OUT}/playerWall-b.png` });
+    if (s === 'playerWall' && !shot.has('wall')) {
+      shot.add('wall');
+      await page.waitForTimeout(7000);
+      await page.screenshot({ path: `${OUT}/playerWall.png` });
     }
     if (s === 'rewards' && shot.has('rewards')) break;
-    if (now > 14 * 60_000) break;
+    if (now - t0 > 25 * 60_000) break;
     await page.waitForTimeout(150);
   }
+
+  await cdp.send('Page.stopScreencast');
+  await Promise.all(writes);
+  writeFileSync(`${OUT}/frames.json`, JSON.stringify(frames));
   writeFileSync(`${OUT}/timeline.json`, JSON.stringify(timeline, null, 1));
   await context.close();
   expect(shot.has('rewards')).toBe(true);
+  expect(frames.length).toBeGreaterThan(1000);
 });
-
-for (const id of LEVELS) {
-  test(`level still ${id}`, async ({ page }) => {
-    test.setTimeout(120_000);
-    await page.setViewportSize(SIZE);
-    await page.goto(`${BASE}/level.html?round=${id}&bots=30&seed=4`);
-    await page.waitForFunction(() => window.__level?.ready === true, undefined, { timeout: 60_000 });
-    await page.addStyleTag({
-      content: '#hud, div[style*="position:fixed;left:8px"] { display: none !important; }',
-    });
-    await page.evaluate(() => window.__level!.setCamera('flyover', 0.35));
-    await page.waitForTimeout(400);
-    await page.screenshot({ path: `${OUT}/level-${id}-fly.png` });
-    await page.evaluate(() => window.__level!.setCamera('follow'));
-    await page.waitForTimeout(14_000);
-    await page.screenshot({ path: `${OUT}/level-${id}-follow.png` });
-  });
-}

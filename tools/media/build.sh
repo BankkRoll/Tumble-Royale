@@ -8,6 +8,9 @@
 # looping docs/media/trailer.gif sized for the README. Stills in the capture
 # directory are re-encoded as WebP into docs/media/.
 #
+# The README hero is an animated WebP: full colour at HD for a fraction of a
+# GIF's size. A GIF is still written for places that only take GIFs.
+#
 # Requires ffmpeg with libx264 and libwebp.
 set -euo pipefail
 
@@ -21,13 +24,15 @@ mkdir -p "$out"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-video=$(ls "$capture"/video/*.webm | head -n1)
+# NOTE: one of the two globs never matches, so ls exits non-zero; pipefail must not abort on it.
+video=$(ls "$capture"/video/*.mp4 "$capture"/video/*.webm 2>/dev/null | head -n1 || true)
+[ -n "$video" ] || { echo "no video in $capture/video" >&2; exit 1; }
 fade=0.4
 # README GIF size knobs; the MP4 keeps full quality.
-gif_width=${GIF_WIDTH:-640}
+gif_width=${GIF_WIDTH:-720}
 gif_fps=${GIF_FPS:-12}
 gif_colors=${GIF_COLORS:-128}
-width=1280
+width=${TRAILER_WIDTH:-1920}
 
 # Cut each segment to a constant frame rate so xfade offsets line up.
 i=0
@@ -67,8 +72,16 @@ ffmpeg -v error -y -i "$work/joined.mp4" -c:v libx264 -crf 27 -preset slow -pix_
 ffmpeg -v error -y -i "$work/joined.mp4" \
   -vf "fps=$gif_fps,scale=$gif_width:-1:flags=lanczos,palettegen=stats_mode=diff:max_colors=$gif_colors" "$work/palette.png"
 ffmpeg -v error -y -i "$work/joined.mp4" -i "$work/palette.png" \
-  -lavfi "fps=$gif_fps,scale=$gif_width:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle" \
+  -lavfi "fps=$gif_fps,scale=$gif_width:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" \
   "$out/trailer.gif"
+
+# Animated WebP hero: full colour, so gradients stay smooth where a GIF bands.
+# PERF: libwebp_anim takes several minutes but is about 20% smaller than
+# libwebp at the same quality, which matters for a README hero.
+ffmpeg -v error -y -i "$work/joined.mp4" \
+  -vf "fps=${HERO_FPS:-15},scale=${HERO_WIDTH:-1280}:-1:flags=lanczos" \
+  -c:v libwebp_anim -lossless 0 -quality "${HERO_QUALITY:-62}" -compression_level 6 -loop 0 -an \
+  "$out/trailer.webp"
 
 for png in "$capture"/*.png; do
   [ -e "$png" ] || continue

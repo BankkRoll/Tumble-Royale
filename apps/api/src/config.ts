@@ -6,8 +6,9 @@
  *   boot, reporting every problem together.
  * - Provide development defaults for everything except secrets, which come
  *   from the environment or the `.env` files `pnpm setup:env` writes.
- * - Refuse to boot without secrets, with placeholder secrets, or in
- *   production without Redis unless that is explicitly allowed.
+ * - Refuse to boot without secrets, with placeholder secrets, with a Stripe
+ *   key but no webhook secret, or in production without Redis unless that is
+ *   explicitly allowed.
  */
 import { EnvIssues, type Env } from '@tumble/shared/env';
 import { z } from 'zod';
@@ -81,7 +82,11 @@ export interface ApiConfig {
   corsOrigins: string[] | true;
   discord: OAuthClientConfig | undefined;
   google: OAuthClientConfig | undefined;
-  stripe: { secretKey: string; webhookSecret: string | undefined } | undefined;
+  /**
+   * Stripe credentials. The webhook secret is mandatory alongside the key:
+   * without it refunds and chargebacks could never reach the ledger.
+   */
+  stripe: { secretKey: string; webhookSecret: string } | undefined;
   /** SMTP relay for sign-in emails; absent → console (dev) or email sign-in disabled (production). */
   smtp: { url: string; from: string } | undefined;
   nameChangeCooldownDays: number;
@@ -102,7 +107,8 @@ function pair(id: string | undefined, secret: string | undefined): OAuthClientCo
  * @param env - Usually `process.env`; tests pass a literal map.
  * @returns The validated configuration.
  * @throws {EnvConfigError} Listing every malformed variable and missing or
- *   placeholder secret, and `REDIS_URL` in production unless `ALLOW_MEMORY_STORE=1`.
+ *   placeholder secret, `REDIS_URL` in production unless `ALLOW_MEMORY_STORE=1`,
+ *   and `STRIPE_WEBHOOK_SECRET` whenever `STRIPE_SECRET_KEY` is set.
  */
 export function loadConfig(env: Env = process.env): ApiConfig {
   const issues = new EnvIssues(env);
@@ -119,6 +125,16 @@ export function loadConfig(env: Env = process.env): ApiConfig {
       'is required in production: parties, presence, leaderboards and nonces would live in ' +
         'process memory, vanish on restart and not be shared between instances. ' +
         'Set ALLOW_MEMORY_STORE=1 to run a single instance on memory anyway.',
+    );
+  }
+  // WARNING: a live Stripe key without a webhook secret takes real money but
+  // never hears about completions, refunds or chargebacks: paid Gems would
+  // never arrive and refunded Gems would never be revoked.
+  if (e.STRIPE_SECRET_KEY && !e.STRIPE_WEBHOOK_SECRET) {
+    issues.add(
+      'STRIPE_WEBHOOK_SECRET',
+      'is required when STRIPE_SECRET_KEY is set: checkout completions, refunds and disputes ' +
+        'arrive only through signed webhooks.',
     );
   }
   issues.throwIfAny('api');
@@ -145,9 +161,10 @@ export function loadConfig(env: Env = process.env): ApiConfig {
     corsOrigins,
     discord: pair(e.DISCORD_CLIENT_ID, e.DISCORD_CLIENT_SECRET),
     google: pair(e.GOOGLE_CLIENT_ID, e.GOOGLE_CLIENT_SECRET),
-    stripe: e.STRIPE_SECRET_KEY
-      ? { secretKey: e.STRIPE_SECRET_KEY, webhookSecret: e.STRIPE_WEBHOOK_SECRET }
-      : undefined,
+    stripe:
+      e.STRIPE_SECRET_KEY && e.STRIPE_WEBHOOK_SECRET
+        ? { secretKey: e.STRIPE_SECRET_KEY, webhookSecret: e.STRIPE_WEBHOOK_SECRET }
+        : undefined,
     smtp: e.SMTP_URL
       ? {
           url: e.SMTP_URL,

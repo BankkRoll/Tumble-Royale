@@ -22,6 +22,10 @@ export type LedgerReason =
   | 'pass_premium'
   | 'challenge_reward'
   | 'shard_conversion'
+  /** Free Gems for the first Crown of a UTC day (ref `day:<YYYY-MM-DD>`). */
+  | 'daily_crown'
+  /** Crown Shards spent in the shard shop (ref = purchase id). */
+  | 'shard_shop'
   | 'admin_adjust';
 
 /** One balance change. */

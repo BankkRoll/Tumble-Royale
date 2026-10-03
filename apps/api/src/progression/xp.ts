@@ -1,12 +1,15 @@
 /**
- * XP, level-ups, season pass XP and generic reward grants.
+ * XP, level-ups (Gumballs, milestone Gems), season pass XP and generic reward
+ * grants.
  */
+import { levelMilestoneGems } from '@tumble/content/progression';
 import { and, eq, sql } from 'drizzle-orm';
 import { passProgress, type Catalog, type CatalogReward } from '../catalog.ts';
 import type { DbOrTx } from '../db/client.ts';
 import { profiles, seasonPassProgress } from '../db/schema.ts';
 import { applyLedger, type LedgerReason } from '../economy/ledger.ts';
 import { grantCosmetic } from '../economy/wallet.ts';
+import { settleEndedSeasons } from './seasons.ts';
 
 /** Result of {@link addXp}. */
 export interface XpResult {
@@ -16,6 +19,8 @@ export interface XpResult {
   levelAfter: number;
   /** Gumballs granted for level-ups. */
   levelGumballs: number;
+  /** Gems granted for level milestones (every `gemEarn.levelMilestoneEvery` levels). */
+  levelGems: number;
   passXp: number;
   /** Pass tiers cleared before/after. */
   passTierBefore: number;
@@ -48,6 +53,7 @@ export async function addXp(tx: DbOrTx, catalog: Catalog, userId: string, amount
     .set({ xp: xpAfter, level: levelAfter, updatedAt: sql`now()` })
     .where(eq(profiles.userId, userId));
   let levelGumballs = 0;
+  let levelGems = 0;
   for (let lv = levelBefore + 1; lv <= levelAfter; lv++) {
     const r = await applyLedger(tx, {
       userId,
@@ -57,18 +63,34 @@ export async function addXp(tx: DbOrTx, catalog: Catalog, userId: string, amount
       ref: `level:${lv}`,
     });
     if (r.applied) levelGumballs += catalog.gumballsPerLevel;
+    const gems = levelMilestoneGems(lv, catalog.gemEarn);
+    if (gems > 0) {
+      const g = await applyLedger(tx, {
+        userId,
+        currency: 'gems',
+        delta: gems,
+        reason: 'level_reward',
+        ref: `level:${lv}`,
+      });
+      if (g.applied) levelGems += gems;
+    }
   }
   const pass = await addPassXp(tx, catalog, userId, gain);
-  return { xpBefore, xpAfter, levelBefore, levelAfter, levelGumballs, passXp: gain, ...pass };
+  return { xpBefore, xpAfter, levelBefore, levelAfter, levelGumballs, levelGems, passXp: gain, ...pass };
 }
 
-/** Adds pass XP for the active season, creating the progress row on first use. */
+/**
+ * Adds pass XP for the active season, creating the progress row on first use.
+ * Settles any ended season first, so players who never open the pass still
+ * receive last season's unclaimed rewards.
+ */
 export async function addPassXp(
   tx: DbOrTx,
   catalog: Catalog,
   userId: string,
   amount: number,
 ): Promise<{ passTierBefore: number; passTierAfter: number }> {
+  await settleEndedSeasons(tx, { catalog }, userId);
   const seasonId = catalog.season.id;
   await tx.insert(seasonPassProgress).values({ userId, seasonId }).onConflictDoNothing();
   const where = and(eq(seasonPassProgress.userId, userId), eq(seasonPassProgress.seasonId, seasonId));

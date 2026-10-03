@@ -1,5 +1,5 @@
 /**
- * Store, purchases, wallet, Gem checkout and the Stripe webhook.
+ * Store, purchases, wallet, Gem checkout, the Crown Shard shop and the Stripe webhook.
  *
  * Purchases are idempotent per `(user, Idempotency-Key)`: the purchase row is
  * inserted first inside the transaction, so a concurrent retry with the same
@@ -16,6 +16,7 @@ import { currenciesLedger, inventoryItems, purchases } from '../db/schema.ts';
 import { optionalUser, requireUser } from '../http/auth.ts';
 import { ApiError, badRequest, conflict, isUniqueViolation, notFound, parse } from '../http/errors.ts';
 import { applyLedger, type Wallet } from './ledger.ts';
+import { registerShardShopRoutes } from './shards.ts';
 import { grantCosmetic, readWallet } from './wallet.ts';
 import { currentRotation } from './store.ts';
 
@@ -224,7 +225,21 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
     };
   });
 
-  app.get('/gems/packs', async () => ({ provider: ctx.payments.id, packs: ctx.catalog.gemPacks }));
+  app.get('/gems/packs', async () => ({
+    provider: ctx.payments.id,
+    /**
+     * What a checkout would do: `live` charges real money (Stripe), `test`
+     * credits instantly (the fake provider, never selected in production),
+     * `unavailable` refuses (production without Stripe keys).
+     */
+    checkout:
+      ctx.payments.id === 'stripe'
+        ? 'live'
+        : ctx.payments.id === 'fake' && ctx.config.env !== 'production'
+          ? 'test'
+          : 'unavailable',
+    packs: ctx.catalog.gemPacks,
+  }));
 
   app.post('/gems/checkout', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
     const auth = await requireUser(ctx, req);
@@ -289,6 +304,8 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
     if (session.completed) await completeGemPurchase(ctx, purchaseId, session.providerRef);
     return { ...response, status: session.completed ? 'completed' : 'pending', replayed: false };
   });
+
+  registerShardShopRoutes(app, ctx, idempotencyKey);
 
   app.post('/webhooks/stripe', { config: { rateLimit: false } }, async (req) => {
     const sig = req.headers['stripe-signature'];

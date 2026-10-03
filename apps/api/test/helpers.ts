@@ -3,7 +3,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { LightMyRequestResponse } from 'fastify';
-import { buildApp, type BuiltApp } from '../src/app.ts';
+import { buildApp, type BuildOptions, type BuiltApp } from '../src/app.ts';
 import { MemoryMailer } from '../src/auth/mailer.ts';
 import { loadConfig } from '../src/config.ts';
 import { applyLedger } from '../src/economy/ledger.ts';
@@ -44,8 +44,12 @@ export interface TestApi extends BuiltApp {
  * Builds a fresh isolated API.
  *
  * @param startIso - Initial clock time.
+ * @param extra - Extra build options (e.g. season-change listeners).
  */
-export async function createTestApi(startIso = '2026-10-02T12:00:00.000Z'): Promise<TestApi> {
+export async function createTestApi(
+  startIso = '2026-10-02T12:00:00.000Z',
+  extra: Pick<BuildOptions, 'seasonListeners'> = {},
+): Promise<TestApi> {
   let nowMs = Date.parse(startIso);
   const clock = {
     now: () => new Date(nowMs),
@@ -58,7 +62,7 @@ export async function createTestApi(startIso = '2026-10-02T12:00:00.000Z'): Prom
   };
   const config = loadConfig({ NODE_ENV: 'test', RATE_LIMIT_MAX: '100000', ADMIN_TOKEN, LOG_LEVEL: 'silent' });
   const mailer = new MemoryMailer();
-  const built = await buildApp(config, { now: clock.now, mailer, logger: false });
+  const built = await buildApp(config, { now: clock.now, mailer, logger: false, ...extra });
 
   const req: TestApi['req'] = (method, url, opts = {}) =>
     built.app.inject({

@@ -150,7 +150,11 @@ export async function challengesView(tx: DbOrTx, catalog: Catalog, userId: strin
       target: r.target,
       completed: r.completedAt !== null,
       claimed: r.claimedAt !== null,
-      reward: { xp: d?.rewardXp ?? 0, gumballs: d?.rewardGumballs ?? 0 },
+      reward: {
+        xp: d?.rewardXp ?? 0,
+        gumballs: d?.rewardGumballs ?? 0,
+        gems: r.period === 'weekly' ? catalog.gemEarn.weeklyChallenge : 0,
+      },
       rerolled: r.rerolled,
     };
   };
@@ -228,5 +232,8 @@ export async function claimChallenge(tx: DbOrTx, catalog: Catalog, userId: strin
       `challenge:${row.id}`,
     );
   }
-  return { id: row.id, xp, gumballs: def?.rewardGumballs ?? 0, wallet: await readWallet(tx, userId) };
+  const gems = def?.period === 'weekly' ? catalog.gemEarn.weeklyChallenge : 0;
+  if (gems > 0)
+    await grantReward(tx, userId, { type: 'gems', amount: gems }, 'challenge_reward', `challenge:${row.id}`);
+  return { id: row.id, xp, gumballs: def?.rewardGumballs ?? 0, gems, wallet: await readWallet(tx, userId) };
 }

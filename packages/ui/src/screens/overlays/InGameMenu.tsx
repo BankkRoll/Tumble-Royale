@@ -95,6 +95,7 @@ export function InGameMenu(): JSX.Element {
   );
   const binds = useUI((s) => s.settings.controls.keybinds);
   const outOfShow = useUI((s) => s.showSeat?.outOfShow ?? false);
+  const replayLive = useUI((s) => s.replayLive);
   const status = outOfShow ? OUT_OF_SHOW : STATUS[hud.status];
   return (
     <div
@@ -151,6 +152,17 @@ export function InGameMenu(): JSX.Element {
           <Button variant="go" size="lg" block autoFocusNav cue="ui.confirm" data-nav-back="" onClick={close}>
             Resume
           </Button>
+          {replayLive && (hud.status === 'eliminated' || hud.status === 'spectating') && (
+            <Button
+              variant="secondary"
+              block
+              data-testid="igm-replay"
+              // The game closes this menu while the replay plays and reopens it on exit.
+              onClick={() => uiEvents.emit('replayOpenLive')}
+            >
+              <Icon name="film" size="1.1em" /> Watch replay
+            </Button>
+          )}
           <Button
             variant="secondary"
             block

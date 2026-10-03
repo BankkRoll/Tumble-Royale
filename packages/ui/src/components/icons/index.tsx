@@ -60,7 +60,11 @@ export type IconName =
   | 'eye'
   | 'dice'
   | 'access'
-  | 'megaphone';
+  | 'megaphone'
+  | 'pause'
+  | 'film'
+  | 'download'
+  | 'upload';
 
 const INK = 'currentColor';
 const S = {
@@ -346,6 +350,35 @@ function paths(name: IconName): JSX.Element {
           fill="#ff8a3d"
           {...S}
         />
+      );
+    case 'pause':
+      return (
+        <>
+          <rect x="6" y="4.5" width="4.2" height="15" rx="1.2" fill="#ff4f9a" {...S} />
+          <rect x="13.8" y="4.5" width="4.2" height="15" rx="1.2" fill="#ff4f9a" {...S} />
+        </>
+      );
+    case 'film':
+      return (
+        <>
+          <rect x="3.5" y="5" width="17" height="14" rx="2" fill="#c7b8ff" {...S} />
+          <path d="M7 5v14M17 5v14M3.5 9.5H7M3.5 14.5H7M17 9.5h3.5M17 14.5h3.5" fill="none" {...S} />
+          <path d="m10.3 9.4 4 2.6-4 2.6z" fill="#ff4f9a" {...S} />
+        </>
+      );
+    case 'download':
+      return (
+        <>
+          <path d="M4.5 15.5v3.5h15v-3.5" fill="none" {...S} />
+          <path d="M12 4v10M7.5 10l4.5 4.5 4.5-4.5" fill="none" {...S} strokeWidth={2.6} />
+        </>
+      );
+    case 'upload':
+      return (
+        <>
+          <path d="M4.5 15.5v3.5h15v-3.5" fill="none" {...S} />
+          <path d="M12 15V5M7.5 9.5 12 5l4.5 4.5" fill="none" {...S} strokeWidth={2.6} />
+        </>
       );
     case 'plus':
       return <path d="M12 5v14M5 12h14" fill="none" {...S} strokeWidth={3} />;

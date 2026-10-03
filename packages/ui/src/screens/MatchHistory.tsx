@@ -15,6 +15,7 @@ export function closeMatchHistory(): void {
   s.setMenuTab('profile');
   s.setScreen('menu', { transition: 'fade' });
 }
+import { OpenReplayButton } from './Replay.tsx';
 
 /** Last 20 shows. */
 export function MatchHistoryScreen(): JSX.Element {
@@ -33,8 +34,9 @@ export function MatchHistoryScreen(): JSX.Element {
         >
           <Icon name="chevron-left" size="0.9em" /> Back
         </Button>
-        <h1 className="tr-title tr-h2">Match history</h1>
+        <h1 className="tr-title tr-h2 tr-grow">Match history</h1>
         <small className="tr-muted">Last {Math.min(20, history.length)} shows</small>
+        <OpenReplayButton />
       </div>
       <Panel className="tr-scroll">
         <HistoryList entries={history.slice(0, 20)} />

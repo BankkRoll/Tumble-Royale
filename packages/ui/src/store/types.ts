@@ -1085,3 +1085,67 @@ export interface Settings {
 
 /** Settings section ids. */
 export type SettingsSection = keyof Settings | 'account';
+
+// -----------------------------------------------------------------------------
+// Replays
+// -----------------------------------------------------------------------------
+
+/** Replay viewer camera: follow a player, orbit freely, or the recorded live view. */
+export type ReplayCameraMode = 'follow' | 'free' | 'pov';
+
+/** Viewer controls the UI (buttons, scrub bar) sends to the game. */
+export type ReplayCommand =
+  | { type: 'toggle' }
+  /** Absolute seek, seconds from the start of the recording. */
+  | { type: 'seek'; t: number }
+  | { type: 'seekBy'; seconds: number }
+  | { type: 'speed'; speed: number }
+  | { type: 'speedStep'; dir: 1 | -1 }
+  | { type: 'camera'; mode: ReplayCameraMode | 'next' }
+  /** Follow the previous/next player. */
+  | { type: 'player'; dir: 1 | -1 }
+  | { type: 'save' }
+  | { type: 'exit' };
+
+/** A recorded round of the current show the player can rewatch. */
+export interface ReplayRoundEntry {
+  key: string;
+  /** 0-based round index within the show. */
+  roundIndex: number;
+  name: string;
+  type: RoundType;
+  isFinal: boolean;
+  /** The local player's fate in that round. */
+  outcome: 'qualified' | 'eliminated' | 'spectated';
+  /** Seconds. */
+  duration: number;
+}
+
+/** A point of interest on the replay scrub bar. */
+export interface ReplayMarkerInfo {
+  /** Seconds from the start of the recording. */
+  t: number;
+  kind: 'eliminated' | 'qualified' | 'localEliminated' | 'localQualified';
+  label: string;
+}
+
+/** Live state of the open replay viewer. */
+export interface ReplayViewerState {
+  title: string;
+  subtitle: string;
+  /** Playhead, seconds. */
+  time: number;
+  duration: number;
+  playing: boolean;
+  speed: number;
+  camera: ReplayCameraMode;
+  /** The recording carries the local player's camera ("Your view"). */
+  povAvailable: boolean;
+  /** Followed player (follow / your view cameras). */
+  target: { name: string; color: string; index: number; count: number } | null;
+  markers: ReplayMarkerInfo[];
+  /** Offer "Save replay" (recordings made in this session). */
+  canSave: boolean;
+  /** Where the recording came from. */
+  origin: 'show' | 'file';
+}

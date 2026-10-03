@@ -440,6 +440,12 @@ export interface RankInfo {
 
 /** Profile + stats for the profile card and top bar. */
 export interface ProfileData {
+  /**
+   * Set for a Tumbler only met in offline shows: just what this device saw.
+   * The card shows these facts and hides level, XP, rank and lifetime stats,
+   * which are unknown for them.
+   */
+  metOffline?: MetOfflineInfo;
   id: string;
   name: string;
   tag: string;
@@ -481,6 +487,21 @@ export interface ProfileData {
   banner?: ProfileBanner;
   /** Equipped nameplate styling. */
   nameplate?: ProfileNameplate;
+}
+
+/** What this device knows about a Tumbler met in offline shows. */
+export interface MetOfflineInfo {
+  isBot: boolean;
+  /** Shows played together. */
+  showsTogether: number;
+  /** Their best final place in those shows (1 = Crown). */
+  bestPlace: number;
+  /** Crowns they won in those shows. */
+  crownsTogether: number;
+  /** Shows where they finished ahead of you, when tracked. */
+  aheadOfYou?: number;
+  /** Epoch ms of the last show together. */
+  lastSeen: number;
 }
 
 /** Profile banner art (from the equipped banner cosmetic). */

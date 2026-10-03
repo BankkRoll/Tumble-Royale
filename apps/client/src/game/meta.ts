@@ -17,6 +17,7 @@ import {
   type Playlist,
   type ProfileData,
 } from '@tumble/ui';
+import { facedCard } from './facedCard.ts';
 import type { ProfileStore } from './profile.ts';
 import { loadJson, saveJson } from './storage.ts';
 
@@ -222,19 +223,5 @@ export function localPlayerCard(profile: ProfileStore, playerId: string): Profil
   if (playerId === me.id) return me;
   const name = playerId.replace(/^faced:/, '');
   const o = profile.opponents()[name];
-  if (!o) return null;
-  return {
-    id: playerId,
-    name,
-    tag: o.isBot ? 'BOT' : '0000',
-    level: 1,
-    xp: 0,
-    xpToNext: 1,
-    gumballs: 0,
-    gems: 0,
-    crowns: o.crowns,
-    colors: o.colors,
-    isGuest: false,
-    stats: { shows: o.faced, finals: 0, roundsQualified: 0, bestStreak: 0, wins: o.crowns },
-  };
+  return o ? facedCard(playerId, name, o) : null;
 }

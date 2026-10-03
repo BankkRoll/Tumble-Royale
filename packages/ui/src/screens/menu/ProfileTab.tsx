@@ -9,15 +9,16 @@
  */
 import { useState, type CSSProperties, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
-import { Bar, ItemArt, TypeBadge } from '../../components/bits.tsx';
+import { Bar, BotTag, ItemArt, TypeBadge } from '../../components/bits.tsx';
 import { confirmSignOut } from '../../components/account.ts';
 import { Button } from '../../components/controls.tsx';
-import { formatNumber, ordinal } from '../../components/hooks.ts';
+import { formatNumber, ordinal, useDisplayName } from '../../components/hooks.ts';
 import { Icon, type IconName } from '../../components/icons/index.tsx';
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type {
   MatchHistoryEntry,
+  MetOfflineInfo,
   ProfileBanner,
   ProfileData,
   ProfileNameplate,
@@ -517,6 +518,45 @@ export function ProfileTab(): JSX.Element {
   );
 }
 
+/**
+ * Card for a Tumbler only met in offline shows: just the shows played
+ * together, with no level, XP, rank or lifetime stats (this device can't know them).
+ */
+export function MetOfflineCard({ p, info }: { p: ProfileData; info: MetOfflineInfo }): JSX.Element {
+  const name = useDisplayName();
+  return (
+    <div className="tr-panel tr-profile-card" data-testid="met-offline-card">
+      <div className="tr-profile-banner" style={bannerStyle(p.banner)}>
+        <span className="tr-profile-avatar">
+          <TumblerAvatar colors={p.colors} hat={p.hat} expression="grin" size="5.5em" />
+        </span>
+      </div>
+      <div className="tr-profile-id">
+        <div className="tr-row" style={{ gap: '0.5em', minWidth: 0 }}>
+          <b className="tr-title tr-h3 tr-ellipsis">{name({ id: -1, name: p.name, isBot: info.isBot })}</b>
+          <BotTag isBot={info.isBot} />
+        </div>
+      </div>
+      <small className="tr-muted">
+        {info.isBot ? 'A bot' : 'A Tumbler'} from your offline shows
+        {info.lastSeen > 0 && ` · last seen ${new Date(info.lastSeen).toLocaleDateString()}`}
+      </small>
+      <div className="tr-stat-grid">
+        <Stat icon="ticket" label="Shows together" value={formatNumber(info.showsTogether)} />
+        <Stat icon="medal" label="Best finish vs you" value={ordinal(info.bestPlace)} />
+        <Stat icon="crown" label="Crowns in your shows" value={formatNumber(info.crownsTogether)} />
+        {info.aheadOfYou !== undefined && (
+          <Stat
+            icon="flag"
+            label="Finished ahead of you"
+            value={`${info.aheadOfYou}/${info.showsTogether}`}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** Another player's profile card (opened from Ranks / results via `inspectPlayer`). */
 export function ProfileOverlay(): JSX.Element | null {
   const p = useUI((s) => s.inspectedProfile);
@@ -536,8 +576,14 @@ export function ProfileOverlay(): JSX.Element | null {
       <div className="tr-dim" onClick={close} />
       <div className="tr-inspect tr-enter-pop" data-testid="inspect-profile">
         <div className="tr-inspect-body">
-          <ProfileCard p={p} self={false} />
-          {p.stats.shows > 0 && <Stats p={p} />}
+          {p.metOffline ? (
+            <MetOfflineCard p={p} info={p.metOffline} />
+          ) : (
+            <>
+              <ProfileCard p={p} self={false} />
+              {p.stats.shows > 0 && <Stats p={p} />}
+            </>
+          )}
         </div>
         <Button
           variant="secondary"

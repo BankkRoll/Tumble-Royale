@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { ConnectionLayer, reconnectStatusLine } from '../src/components/system.tsx';
 import { EliminatedSheet, SpectateBanner } from '../src/hud/widgets.tsx';
 import { onlineTileSub } from '../src/screens/menu/PlayTab.tsx';
+import { MetOfflineCard } from '../src/screens/menu/ProfileTab.tsx';
 import { InGameMenu, leaveShowBody } from '../src/screens/overlays/InGameMenu.tsx';
 import { FinalHypeScreen, RoundResultsScreen } from '../src/screens/Results.tsx';
 import { WatchChoiceLayer, watchChoiceRewardsNote } from '../src/screens/overlays/WatchChoice.tsx';
@@ -149,6 +150,36 @@ describe('bot tags', () => {
       },
     });
     expect(renderToStaticMarkup(<FinalHypeScreen />).match(/>BOT</g)).toHaveLength(1);
+  });
+});
+
+describe('met-offline profile card', () => {
+  it('shows shows together and a BOT tag, never level or rank', () => {
+    const html = renderToStaticMarkup(
+      <MetOfflineCard
+        p={{
+          id: 'faced:Gizmo',
+          name: 'Gizmo',
+          tag: '',
+          level: 0,
+          xp: 0,
+          xpToNext: 0,
+          gumballs: 0,
+          gems: 0,
+          crowns: 1,
+          colors,
+          isGuest: false,
+          stats: { shows: 0, finals: 0, roundsQualified: 0, bestStreak: 0 },
+        }}
+        info={{ isBot: true, showsTogether: 6, bestPlace: 2, crownsTogether: 1, aheadOfYou: 3, lastSeen: 0 }}
+      />,
+    );
+    expect(html).toContain('Shows together');
+    expect(html).toContain('2nd');
+    expect(html).toContain('3/6');
+    expect(html).toContain('BOT');
+    expect(html).not.toContain('XP');
+    expect(html).not.toContain('Unranked');
   });
 });
 

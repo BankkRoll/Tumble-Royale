@@ -716,6 +716,8 @@ export interface RoundIntroInfo {
   playerCount: number;
   /** How many qualify (or survive); 1 for finals. */
   qualifyTarget: number;
+  /** The show's mutator (Chaos Mode), announced on the card. */
+  mutator?: { name: string; description: string; icon: string };
 }
 
 /** Local player's fate this round. */

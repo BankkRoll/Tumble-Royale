@@ -71,6 +71,8 @@ export interface RoundStart {
   stage: number;
   /** Expected qualifiers (1 in a final). */
   qualifyTarget: number;
+  /** Show mutator id (`@tumble/sim/mutators`), or null. */
+  mutatorId?: string | null;
 }
 
 /** One finished round (best first in each list). */

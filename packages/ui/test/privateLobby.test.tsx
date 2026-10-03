@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { PlayTab } from '../src/screens/menu/PlayTab.tsx';
 import { lobbyStartState } from '../src/screens/overlays/PrivateLobby.tsx';
 import { PrivateShowDialog } from '../src/screens/overlays/PrivateShow.tsx';
+import { ShowHostTools } from '../src/screens/overlays/ShowHostTools.tsx';
 import { FriendsSheet } from '../src/screens/overlays/SocialSheets.tsx';
 import { ui } from '../src/store/uiStore.ts';
 import type { CustomLobbyMember, CustomLobbyState, PartyMember } from '../src/store/types.ts';
@@ -153,6 +154,21 @@ describe('private lobby: member view', () => {
     );
     expect(html).not.toContain('data-testid="custom-role"');
     expect(html).not.toContain('data-testid="lobby-spectators"');
+  });
+});
+
+describe('in-show host tools', () => {
+  it('let only the host of a started show remove players', () => {
+    ui.setState({ customLobby: lobby({ started: true }) });
+    const host = renderToStaticMarkup(<ShowHostTools />);
+    expect(count(host, 'data-testid="show-kick"')).toBe(3);
+    expect(host).toContain('aria-label="Remove Sam"');
+    // The lobby dialog no longer shows a started lobby.
+    expect(renderToStaticMarkup(<PrivateShowDialog />)).not.toContain('data-testid="lobby-code"');
+    ui.setState({ customLobby: lobby({ started: true, isHost: false }) });
+    expect(renderToStaticMarkup(<ShowHostTools />)).toBe('');
+    ui.setState({ customLobby: lobby() });
+    expect(renderToStaticMarkup(<ShowHostTools />)).toBe('');
   });
 });
 

@@ -679,6 +679,8 @@ export interface CustomLobbyState {
   locked: boolean;
   /** Players the host removed; they cannot rejoin with the code until unbanned. */
   banned: { id: string; name: string }[];
+  /** The show moved to the game server; only the host keeps this (for in-show kicks). */
+  started?: boolean;
 }
 
 /** A selectable round for the custom lobby picker. */

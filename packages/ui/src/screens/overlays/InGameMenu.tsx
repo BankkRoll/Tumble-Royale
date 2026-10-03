@@ -14,6 +14,7 @@ import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { BindAction, LocalStatus } from '../../store/types.ts';
 import { keyLabel } from './SettingsSheet.tsx';
+import { ShowHostTools } from './ShowHostTools.tsx';
 
 const STATUS: Record<LocalStatus, { label: string; tone: string }> = {
   playing: { label: 'Still in it', tone: 'is-playing' },
@@ -121,6 +122,7 @@ export function InGameMenu(): JSX.Element {
             Free the mouse
           </span>
         </div>
+        <ShowHostTools />
         <div className="tr-igm-actions">
           <Button variant="go" size="lg" block autoFocusNav cue="ui.confirm" data-nav-back="" onClick={close}>
             Resume

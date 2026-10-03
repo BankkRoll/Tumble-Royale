@@ -251,7 +251,8 @@ function SetupView(): JSX.Element {
 
 /** Private show setup, or the lobby once one is created or joined. */
 export function PrivateShowDialog(): JSX.Element {
-  const lobby = useUI((s) => s.customLobby);
+  // A started lobby lives on the game server now; the in-show host tools cover it.
+  const lobby = useUI((s) => (s.customLobby?.started ? null : s.customLobby));
   // Closing keeps a joined lobby; Leave is the explicit way out.
   return (
     <DialogShell

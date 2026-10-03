@@ -407,29 +407,18 @@ export function createPostPipeline(
       view = { scene: s, camera: cam };
       if (current.enabled) build();
     },
-    compileAsync(onProgress?: (fraction: number) => void): Promise<void> {
+    async compileAsync(onProgress?: (fraction: number) => void): Promise<void> {
       const progress = onProgress
         ? (e: ProgressEvent): void => onProgress(e.total > 0 ? e.loaded / e.total : 1)
         : null;
-      const passNode = current.enabled ? scenePassNode : null;
-      const prevTarget = renderer.getRenderTarget();
-      const prevMrt = renderer.getMRT();
-      // IMPORTANT: renderer.compileAsync picks its render context and culls the
-      // scene synchronously before its first await, so the target, MRT and
-      // culling overrides only need to hold for this call, not for the whole
-      // compile (frames keep rendering in between).
+      // WARNING: compiling against the scene pass's MRT target fails on WebGPU
+      // ("color target has no corresponding fragment stage output") and the
+      // failed pipelines never settle the promise. Compile for the default
+      // target; the hidden warm-up render that follows builds the MRT ones.
       const restoreCulling = disableFrustumCulling(view.scene);
       try {
-        if (passNode) {
-          // PassNode.setup() sets this on the pass's first render; pipelines must be built for the same MSAA count.
-          passNode.renderTarget.samples = passNode.options.samples ?? renderer.samples;
-          renderer.setRenderTarget(passNode.renderTarget);
-          renderer.setMRT(passNode.getMRT());
-        }
-        return renderer.compileAsync(view.scene, view.camera, null, progress);
+        await renderer.compileAsync(view.scene, view.camera, null, progress);
       } finally {
-        renderer.setRenderTarget(prevTarget);
-        renderer.setMRT(prevMrt);
         restoreCulling();
       }
     },

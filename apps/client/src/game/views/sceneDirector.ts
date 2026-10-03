@@ -145,7 +145,11 @@ export class SceneDirector {
   async precompile(view: GameView, onProgress?: (fraction: number) => void): Promise<void> {
     if (this.current !== view) this.show(view);
     this.hidden = true;
-    await this.post.compileAsync(onProgress);
+    // NOTE: renderer.compileAsync is skipped on purpose. Against the bloom pass it
+    // fails on WebGPU and never settles; against the default target it took ~7 s
+    // on a cold cache and did not warm the pipelines the real frames use. The
+    // hidden render below builds exactly those, in a fraction of the time.
+    onProgress?.(1);
     if (this.current !== view) return;
     // The loading screen hides this frame; everything in the scene is drawn once, frustum or not.
     view.camera.updateMatrixWorld();

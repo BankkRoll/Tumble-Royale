@@ -17,14 +17,33 @@ MIT license allows it.
 - Keep the simulation deterministic. `packages/sim`, `shared`, `netcode` and
   `content` must not use the DOM, three.js, `Date.now()` or `Math.random()`;
   lint enforces this.
-- Run the checks CI runs:
+- Run the checks CI runs on every pull request and push to main
+  (`.github/workflows/ci.yml`, job `check`, Node 22):
 
   ```sh
+  pnpm install --frozen-lockfile
   pnpm lint
   pnpm format:check
   pnpm typecheck
   pnpm test
+  pnpm build
   ```
+
+- Pushes to main also run the `e2e` job: Playwright's bundled Chromium
+  against a sandbox build served by `vite preview` (the config starts the
+  game server too), WebGL2 only since the runner has no WebGPU. To run the
+  same thing locally:
+
+  ```sh
+  cd apps/client
+  npx playwright install chromium            # once
+  pnpm build:sandbox
+  PW_CHANNEL=chromium PW_PREVIEW=1 npx playwright test e2e/menu.spec.ts e2e/phase0.spec.ts --workers=1
+  ```
+
+  Without the two variables Playwright uses your installed Edge and the Vite
+  dev server instead. The other specs (`game`, `level`, `online`, …) are
+  slower and run only by hand.
 
 - For gameplay or rendering changes, include a screenshot or short clip. The
   sandbox pages (`/playground.html`, `/level.html`, `/obstacles.html`, …) are

@@ -205,7 +205,10 @@ export function storeShelfAt<T extends StoreItemLike>(at: Date, items: readonly 
  * @param shelf - The day's shelves.
  * @param item - Item to price.
  */
-export function storePriceOnShelf(shelf: StoreShelf, item: StoreItemLike): StorePrice | null {
+export function storePriceOnShelf(
+  shelf: Readonly<Record<StoreSection, readonly { offerId: string; price: StorePrice }[]>>,
+  item: StoreItemLike,
+): StorePrice | null {
   if (item.source !== 'store' || !item.price) return null;
   const hit = [...shelf.featured, ...shelf.daily, ...shelf.weekly].find((o) => o.offerId === item.id);
   return hit ? { ...hit.price } : { ...item.price };

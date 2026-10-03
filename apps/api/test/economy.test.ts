@@ -6,6 +6,8 @@ import { verifyLedger } from '../src/economy/ledger.ts';
 import { DisabledPaymentProvider } from '../src/economy/payments.ts';
 import { purchases } from '../src/db/schema.ts';
 import { DAILY_COUNT, FEATURED_COUNT, rotationForDay } from '../src/economy/store.ts';
+import { STORE_SETS } from '@tumble/content/cosmetics';
+import { storeShelfForDay } from '@tumble/content/progression';
 import { createTestApi, type TestApi } from './helpers.ts';
 
 let api: TestApi;
@@ -246,5 +248,64 @@ describe('gems & premium pass', () => {
         await api.req('POST', '/pass/claim', { token: u.accessToken, body: { tier: 1, track: 'premium' } })
       ).json().error,
     ).toBe('already_claimed');
+  });
+});
+
+describe('item shop catalog, deals and bundles', () => {
+  type Offer = { offerId: string; price: { currency: string; amount: number }; owned: boolean };
+  const buy = (token: string, key: string, offerId: string) =>
+    api.req('POST', '/purchase', { token, headers: { 'idempotency-key': key }, body: { offerId } });
+
+  it('serves the same shelves as the shared content rotation', async () => {
+    const store = (await api.req('GET', '/store')).json();
+    const shelf = storeShelfForDay('2026-10-02', CATALOG.cosmetics);
+    expect(store.weekly.map((o: Offer) => o.offerId)).toEqual(shelf.weekly.map((o) => o.offerId));
+    expect(store.daily.map((o: Offer) => o.price)).toEqual(shelf.daily.map((o) => o.price));
+    expect(store.heroBundle).toBe(`bundle:${shelf.heroBundleId}`);
+    expect(store.weeklyRefreshesAt).toBe(shelf.weeklyEndsAt);
+    expect(store.catalog.length).toBe(CATALOG.cosmetics.filter((c) => c.source === 'store').length);
+    expect(store.bundles.length).toBe(STORE_SETS.length);
+  });
+
+  it('sells catalog items off the shelf at list price and deals at their discount', async () => {
+    const u = await api.guest();
+    const store = (await api.req('GET', '/store')).json();
+    const onShelf = new Set(
+      [...store.featured, ...store.daily, ...store.weekly].map((o: Offer) => o.offerId),
+    );
+    const off = (store.catalog as Offer[]).find(
+      (o) => !onShelf.has(o.offerId) && o.price.currency === 'gumballs',
+    )!;
+    const deal = store.daily[0] as Offer & { listPrice: { amount: number } };
+    expect(deal.price.amount).toBeLessThan(deal.listPrice.amount);
+    await api.grant(u.id, 'gumballs', 100_000);
+    await api.grant(u.id, 'gems', 100_000);
+    const a = await buy(u.accessToken, 'catalog-buy-1', off.offerId);
+    expect(a.statusCode).toBe(200);
+    expect(a.json()).toMatchObject({ price: off.price, items: [off.offerId] });
+    const b = await buy(u.accessToken, 'deal-buy-1', deal.offerId);
+    expect(b.json().price).toEqual(deal.price);
+    expect((await buy(u.accessToken, 'catalog-buy-2', off.offerId)).json().error).toBe('already_owned');
+  });
+
+  it('sells a bundle for the missing items only', async () => {
+    const u = await api.guest();
+    const set = STORE_SETS[0]!;
+    await api.grant(u.id, 'gumballs', 100_000);
+    const first = set.itemIds[0]!;
+    expect((await buy(u.accessToken, 'bundle-part-1', first)).statusCode).toBe(200);
+    const store = (await api.req('GET', '/store', { token: u.accessToken })).json();
+    const quote = store.bundles.find((b: Offer) => b.offerId === `bundle:${set.id}`);
+    expect(quote.missing).not.toContain(first);
+    expect(quote.price.amount).toBeLessThan(quote.listPrice.amount);
+    const before = (await api.req('GET', '/wallet', { token: u.accessToken })).json().wallet.gumballs;
+    const res = await buy(u.accessToken, 'bundle-buy-1', quote.offerId);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().items.sort()).toEqual([...quote.missing].sort());
+    expect(res.json().wallet.gumballs).toBe(before - quote.price.amount);
+    const inv = (await api.req('GET', '/inventory', { token: u.accessToken })).json();
+    for (const id of set.itemIds) expect(inv.items.some((i: { id: string }) => i.id === id)).toBe(true);
+    expect((await buy(u.accessToken, 'bundle-buy-2', quote.offerId)).json().error).toBe('already_owned');
+    expect((await verifyLedger(api.ctx.db, u.id)).ok).toBe(true);
   });
 });

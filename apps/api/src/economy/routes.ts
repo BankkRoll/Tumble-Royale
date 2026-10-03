@@ -18,7 +18,7 @@ import { ApiError, badRequest, conflict, isUniqueViolation, notFound, parse } fr
 import { applyLedger, type Wallet } from './ledger.ts';
 import { registerShardShopRoutes } from './shards.ts';
 import { grantCosmetic, readWallet } from './wallet.ts';
-import { currentRotation } from './store.ts';
+import { bundleQuotes, currentRotation, priceOffer, storeCatalog } from './store.ts';
 
 const PurchaseBody = z.object({
   offerId: z.string().min(3).max(64),
@@ -41,6 +41,8 @@ export function idempotencyKey(req: FastifyRequest): string {
 export interface PurchaseResult {
   purchaseId: string;
   offerId: string;
+  /** Cosmetic ids granted (one for an item, the missing ones for a bundle). */
+  items: string[];
   price: { currency: 'gumballs' | 'gems'; amount: number };
   wallet: Wallet;
   replayed: boolean;
@@ -57,7 +59,8 @@ function replay(row: typeof purchases.$inferSelect, kind: string, itemId: string
 }
 
 /**
- * Buys a store offer with Gumballs or Gems.
+ * Buys a store item (at today's shelf price or its list price) or a bundle (the
+ * items still missing, discounted) with Gumballs or Gems.
  *
  * @throws {ApiError} 404 offer unavailable, 409 already owned / key reuse, 402 insufficient funds.
  */
@@ -80,16 +83,22 @@ export async function purchaseOffer(
       const existing = await findExisting(tx);
       if (existing) return replay(existing, 'cosmetic', offerId);
       const rotation = await currentRotation(tx, ctx.catalog, ctx.now());
-      const offer = [...rotation.featured, ...rotation.daily].find((o) => o.offerId === offerId);
-      if (!offer) throw new ApiError(404, 'offer_not_available', 'That item is not in the store today');
+      const owned = new Set(
+        (
+          await tx
+            .select({ id: inventoryItems.cosmeticId })
+            .from(inventoryItems)
+            .where(eq(inventoryItems.userId, userId))
+        ).map((r) => r.id),
+      );
+      const offer = priceOffer(ctx.catalog, rotation, offerId, (id) => owned.has(id));
+      if (!offer) throw new ApiError(404, 'offer_not_available', 'That item is not sold in the store');
       if (currency && currency !== offer.price.currency) {
         throw badRequest('currency_mismatch', `This item costs ${offer.price.currency}`);
       }
-      const [owned] = await tx
-        .select({ id: inventoryItems.id })
-        .from(inventoryItems)
-        .where(and(eq(inventoryItems.userId, userId), eq(inventoryItems.cosmeticId, offerId)));
-      if (owned) throw conflict('already_owned', 'You already own this item');
+      const grants = offer.kind === 'bundle' ? offer.quote.missing : [offer.item.id];
+      if (grants.length === 0 || (offer.kind === 'item' && owned.has(offerId)))
+        throw conflict('already_owned', 'You already own this item');
 
       const purchaseId = randomUUID();
       await tx.insert(purchases).values({
@@ -109,10 +118,11 @@ export async function purchaseOffer(
         reason: 'purchase',
         ref: purchaseId,
       });
-      await grantCosmetic(tx, userId, offerId, 'store');
+      for (const id of grants) await grantCosmetic(tx, userId, id, 'store');
       const result: PurchaseResult = {
         purchaseId,
         offerId,
+        items: grants,
         price: offer.price,
         wallet: await readWallet(tx, userId),
         replayed: false,
@@ -186,10 +196,29 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
       owned = new Set(rows.map((r) => r.id));
     }
     const mark = <T extends { offerId: string }>(o: T) => ({ ...o, owned: owned.has(o.offerId) });
+    const owns = (id: string): boolean => owned.has(id);
     return {
       day: rotation.day,
       featured: rotation.featured.map(mark),
       daily: rotation.daily.map(mark),
+      weekly: rotation.weekly.map(mark),
+      heroBundle: rotation.heroBundle,
+      bundles: bundleQuotes(ctx.catalog, owns).map((q) => ({
+        offerId: q.offerId,
+        name: q.set.name,
+        description: q.set.description,
+        itemIds: [...q.set.itemIds],
+        missing: q.missing,
+        price: q.price,
+        listPrice: q.listPrice,
+        owned: q.missing.length === 0,
+      })),
+      catalog: storeCatalog(ctx.catalog).map((item) => ({
+        offerId: item.id,
+        price: item.price!,
+        owned: owns(item.id),
+      })),
+      weeklyRefreshesAt: rotation.weeklyRefreshesAt,
       refreshesAt: rotation.refreshesAt,
       secondsRemaining: Math.max(0, Math.floor((Date.parse(rotation.refreshesAt) - now.getTime()) / 1000)),
     };

@@ -49,7 +49,6 @@ import {
   type RewardsSummary,
   type RoundType,
   type SeasonPassData,
-  type StoreData,
   type TumblerColors,
 } from '@tumble/ui';
 import {
@@ -76,6 +75,7 @@ import {
 } from '../cosmetics.ts';
 import { loadoutWithItem, profileDressing, randomizedLoadout } from '../profile.ts';
 import { SocialController } from '../social/socialController.ts';
+import { onlineStoreShelves } from '../storeOffers.ts';
 import { gemCheckoutMode, type GemCheckoutMode } from './gemCheckout.ts';
 import { JsonSocket, type TypedMessage } from './jsonSocket.ts';
 
@@ -478,18 +478,6 @@ export class OnlineAccount {
         this.api.gemPacks().catch(() => null),
         this.api.shardShop().catch(() => null),
       ]);
-      const offer = (o: (typeof store.featured)[number]): StoreData['featured'][number] | null => {
-        const item = getCosmetic(o.offerId);
-        if (!item) return null;
-        return {
-          id: o.offerId,
-          item: uiItem(item, o.owned || this.owns(o.offerId)),
-          currency: o.price.currency,
-          price: o.price.amount,
-          featured: o.section === 'featured',
-          ...(o.section === 'featured' ? { tag: 'FEATURED' } : {}),
-        };
-      };
       this.gemCheckout = gemCheckoutMode(packs);
       const shardOffers = (shards?.offers ?? []).flatMap((o) => {
         const item = getCosmetic(o.offerId);
@@ -513,9 +501,7 @@ export class OnlineAccount {
         }).format(p.priceCents / 100),
       }));
       ui.getState().setStoreData({
-        featured: store.featured.map(offer).filter((o): o is NonNullable<typeof o> => o !== null),
-        daily: store.daily.map(offer).filter((o): o is NonNullable<typeof o> => o !== null),
-        rotationEndsAt: Date.parse(store.refreshesAt),
+        ...onlineStoreShelves(store, (id) => this.owns(id)),
         gemPacks,
         gemCheckout: this.gemCheckout,
         ...(shards
@@ -541,7 +527,7 @@ export class OnlineAccount {
         ? { item: uiItem(item, this.owns(item.id)), claimed }
         : { currency: { kind: 'gumballs', amount: 100 }, claimed };
     }
-    if (r.type === 'crown_shards') return { currency: { kind: 'xp', amount: r.amount * 100 }, claimed };
+    if (r.type === 'crown_shards') return { currency: { kind: 'crownShards', amount: r.amount }, claimed };
     return { currency: { kind: r.type, amount: r.amount }, claimed };
   }
 

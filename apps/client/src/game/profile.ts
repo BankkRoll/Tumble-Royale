@@ -32,6 +32,11 @@ import {
   seasonAt,
   seasonById,
   shardShopAt,
+  BUNDLE_OFFER_PREFIX,
+  quoteBundle,
+  storePriceOnShelf,
+  storeSetById,
+  storeShelfAt,
   unclaimedPassRewards,
   type ChallengeDef,
   type ChallengeMetric,
@@ -54,7 +59,6 @@ import type {
   SeasonPassData,
   ShardShopData,
   StoreData,
-  StoreOffer,
   TumblerColors,
 } from '@tumble/ui';
 import {
@@ -67,6 +71,7 @@ import {
   uiLoadoutToTumbler,
 } from './cosmetics.ts';
 import { loadJson, removeJson, saveJson } from './storage.ts';
+import { offlineStoreShelves } from './storeOffers.ts';
 
 // -----------------------------------------------------------------------------
 // Persisted shape
@@ -588,32 +593,15 @@ export class ProfileStore {
     };
   }
 
-  /** Today's store rotation (seeded by date so it is stable all day). */
+  /** Today's store: the shared content rotation, bundles and the full catalog. */
   uiStore(): StoreData {
-    const owned = new Set(this.data?.owned ?? []);
-    const forSale = COSMETICS.filter((c) => c.price !== null);
-    const rng = new Rng(hashString(`store:${today(this.clock())}`));
-    const shuffled = rng.shuffle([...forSale]);
-    const offer = (c: (typeof forSale)[number], featured: boolean): StoreOffer => ({
-      id: `offer:${c.id}`,
-      item: uiItem(c, owned.has(c.id)),
-      currency: c.price?.currency ?? 'gumballs',
-      price: c.price?.amount ?? 0,
-      featured,
-      ...(featured ? { tag: 'FEATURED' } : {}),
-    });
-    const featured = shuffled.filter((c) => c.rarity === 'legendary' || c.rarity === 'epic').slice(0, 3);
-    const daily = shuffled.filter((c) => !featured.includes(c)).slice(0, 8);
     return {
-      featured: featured.map((c) => offer(c, true)),
-      daily: daily.map((c) => offer(c, false)),
-      rotationEndsAt: nextMidnight(this.clock()),
+      ...offlineStoreShelves(new Date(this.clock()), (id) => this.owns(id)),
       shardShop: this.uiShardShop(),
       // Gem packs need the account API; offline the Gems popover explains that.
       gemCheckout: 'comingSoon',
     };
   }
-
   /** This week's Crown Shard shelf (the same one the API serves). */
   uiShardShop(): ShardShopData {
     const shelf = shardShopAt(new Date(this.clock()));
@@ -630,24 +618,40 @@ export class ProfileStore {
   }
 
   /**
-   * Buys a store offer (`offer:<id>`) or a Crown Shard offer (`shards:<id>`)
-   * with the local wallet.
+   * Buys a store item (`offer:<id>`, at today's shelf or list price), a bundle
+   * (`bundle:<id>`) or a Crown Shard offer (`shards:<id>`) with the local wallet.
    *
    * @returns The bought item, or an error code.
    */
   purchase(offerId: string): { item: UiItem } | { error: 'unknown' | 'owned' | 'funds' } {
     if (offerId.startsWith('shards:')) return this.buyShardOffer(offerId.slice('shards:'.length));
+    if (offerId.startsWith(BUNDLE_OFFER_PREFIX)) return this.buyBundle(offerId);
     const d = this.data;
     const id = offerId.replace(/^offer:/, '');
     const item = getCosmetic(id);
-    if (!d || !item || !item.price) return { error: 'unknown' };
+    const price = item ? storePriceOnShelf(storeShelfAt(new Date(this.clock()), COSMETICS), item) : null;
+    if (!d || !item || !price) return { error: 'unknown' };
     if (this.owns(id)) return { error: 'owned' };
-    const key = item.price.currency;
-    if (d[key] < item.price.amount) return { error: 'funds' };
-    d[key] -= item.price.amount;
+    if (d[price.currency] < price.amount) return { error: 'funds' };
+    d[price.currency] -= price.amount;
     d.owned.push(id);
     this.save();
     return { item: uiItem(item, true) };
+  }
+
+  /** Buys the items of a bundle the player is missing, at the bundle price. */
+  private buyBundle(offerId: string): { item: UiItem } | { error: 'unknown' | 'owned' | 'funds' } {
+    const d = this.data;
+    const set = storeSetById(offerId);
+    const quote = set ? quoteBundle(set, COSMETICS, (id) => this.owns(id)) : null;
+    const hero = set ? getCosmetic(set.itemIds[0]!) : undefined;
+    if (!d || !quote || !hero) return { error: 'unknown' };
+    if (quote.missing.length === 0) return { error: 'owned' };
+    if (d[quote.price.currency] < quote.price.amount) return { error: 'funds' };
+    d[quote.price.currency] -= quote.price.amount;
+    d.owned.push(...quote.missing);
+    this.save();
+    return { item: uiItem(hero, true) };
   }
 
   private buyShardOffer(itemId: string): { item: UiItem } | { error: 'unknown' | 'owned' | 'funds' } {
@@ -755,7 +759,7 @@ export class ProfileStore {
         return { currency: { kind: 'gumballs', amount: 100 }, claimed: claimed.has(key) };
       }
       if (r.kind === 'crownShards')
-        return { currency: { kind: 'xp', amount: r.amount * 100 }, claimed: claimed.has(key) };
+        return { currency: { kind: 'crownShards', amount: r.amount }, claimed: claimed.has(key) };
       return { currency: { kind: r.kind, amount: r.amount }, claimed: claimed.has(key) };
     };
     return {

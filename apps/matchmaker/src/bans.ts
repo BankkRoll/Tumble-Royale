@@ -12,6 +12,7 @@
  * mints tokens. The outage is logged.
  */
 import { createHmac, randomBytes } from 'node:crypto';
+import { requestIdHeaders } from '@tumble/shared/request-id';
 
 /** Ban scopes the API issues: `all` (every service), `ranked` (ranked queue), `chat` (in-game chat). */
 export type BanScope = 'all' | 'ranked' | 'chat';
@@ -102,6 +103,7 @@ export class ApiBanLookup implements BanLookup {
           headers: {
             'content-type': 'application/json',
             ...signInternal(this.opts.secret, body, Date.now()),
+            ...requestIdHeaders(),
           },
           body,
           signal: AbortSignal.timeout(3000),

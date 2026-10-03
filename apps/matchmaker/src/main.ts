@@ -3,11 +3,21 @@
  */
 import { resolve } from 'node:path';
 import { loadServiceConfig } from '@tumble/shared/env';
+import { consoleLogger, installLifecycle } from '@tumble/shared/lifecycle';
 import { buildMatchmaker } from './app.ts';
 import { loadConfig } from './config.ts';
 
 const config = loadServiceConfig(resolve(import.meta.dirname, '..'), loadConfig);
+// Installed before anything opens, so a signal or crash during startup is handled too.
+const life = installLifecycle({
+  service: 'matchmaker',
+  log: consoleLogger,
+  sentryDsn: config.sentryDsn,
+  environment: config.env,
+});
 const built = await buildMatchmaker(config);
+life.setLogger(built.app.log);
+life.onShutdown(() => built.close());
 if (config.memoryStoreInProduction) {
   built.app.log.warn(
     '!!! REDIS_URL is unset (ALLOW_MEMORY_STORE=1): queues, lobbies and the game-server registry are in ' +
@@ -20,14 +30,3 @@ await built.app.listen({ host: config.host, port: config.port });
 built.app.log.info(
   `[matchmaker] ${config.redisUrl ? 'redis' : 'memory'} store | lobby ${config.targetSize} | max wait ${config.maxWaitMs} ms | :${config.port}`,
 );
-
-let closing = false;
-const shutdown = async (signal: string) => {
-  if (closing) return;
-  closing = true;
-  built.app.log.info(`[matchmaker] ${signal} received, shutting down`);
-  await built.close();
-  process.exit(0);
-};
-process.on('SIGINT', () => void shutdown('SIGINT'));
-process.on('SIGTERM', () => void shutdown('SIGTERM'));

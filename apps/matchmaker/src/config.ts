@@ -37,6 +37,8 @@ const EnvSchema = z.object({
   USER_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(30),
   TICK_MS: z.coerce.number().int().min(50).default(500),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  METRICS_TOKEN: optional,
+  SENTRY_DSN: optional,
 });
 
 /** Resolved matchmaker configuration. */
@@ -82,6 +84,10 @@ export interface MatchmakerConfig {
   /** Matchmaking tick interval; 0 in tests (ticks are driven manually). */
   tickMs: number;
   logLevel: string;
+  /** Bearer for `/metrics`; absent → open in development, disabled in production. */
+  metricsToken: string | undefined;
+  /** Sentry-compatible DSN for crash reports. */
+  sentryDsn: string | undefined;
 }
 
 const splitList = (v: string): string[] =>
@@ -147,5 +153,7 @@ export function loadConfig(env: Env = process.env): MatchmakerConfig {
     userRateLimitMax: e.USER_RATE_LIMIT_MAX,
     tickMs: e.NODE_ENV === 'test' ? 0 : e.TICK_MS,
     logLevel: e.LOG_LEVEL,
+    metricsToken: e.METRICS_TOKEN,
+    sentryDsn: e.SENTRY_DSN,
   };
 }

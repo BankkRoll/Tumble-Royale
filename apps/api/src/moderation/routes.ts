@@ -187,7 +187,7 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
       .update(reports)
       .set({ status: 'actioned' })
       .where(and(eq(reports.targetUserId, body.userId), eq(reports.status, 'open')));
-    invalidateBanCache(body.userId);
+    await invalidateBanCache(ctx, body.userId);
     return reply.code(201).send(row);
   });
 
@@ -199,7 +199,7 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
       .set({ revokedAt: ctx.now() })
       .where(eq(bans.id, id))
       .returning({ userId: bans.userId });
-    if (row) invalidateBanCache(row.userId);
+    if (row) await invalidateBanCache(ctx, row.userId);
     return reply.code(204).send();
   });
 

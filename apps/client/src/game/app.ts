@@ -439,6 +439,9 @@ export class GameApp {
     const dt = realDt * this.timeScale.value;
     if (realDt > 0) this.fpsSmooth += (1 / realDt - this.fpsSmooth) * 0.05;
 
+    const device = this.input.lastDevice;
+    if (ui.getState().hud.device !== device) ui.getState().setHud({ device });
+
     try {
       this.session?.frame(dt, realDt);
     } catch (err) {
@@ -1149,6 +1152,8 @@ export class GameApp {
         if (dir === 'back' && s().screen === 'menu' && s().overlay === 'none') s().setOverlay('settings');
       },
       onRetryConnection: () => s().setConnection({ status: 'connecting' }),
+      onTouchInput: (snapshot) => this.input.applyTouch(snapshot),
+      onTouchLook: ({ dx, dy }) => this.input.addTouchLook(dx, dy),
     });
 
     const canvas = this.renderer.domElement;

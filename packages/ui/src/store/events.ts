@@ -106,8 +106,13 @@ export interface UIIntents {
   dialogResult: { dialogId: string; buttonId: string };
   toastAction: { toastId: number; actionId: string };
   retryConnection: undefined;
-  /** Mobile touch controls. `move` is a unit-disc vector, y = forward. */
+  /**
+   * Mobile touch controls, emitted synchronously on every change so a tap is
+   * never coalesced away. `move` is a unit-disc vector, y = forward.
+   */
   touchInput: { move: { x: number; y: number }; jump: boolean; dive: boolean; grab: boolean };
+  /** Camera drag on the touch HUD, in CSS pixels since the last emit. */
+  touchLook: { dx: number; dy: number };
   /** A menu navigation the UI didn't consume (e.g. Back on the root menu). */
   navUnhandled: { dir: NavDirection };
   /** Colour preview while the welcome screen is open. */

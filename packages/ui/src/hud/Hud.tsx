@@ -30,6 +30,8 @@ export const Hud = memo(function Hud(): JSX.Element {
   const highContrast = useUI((s) => s.settings.accessibility.highContrastHud);
   return (
     <div className={`tr-hud${counting ? ' is-countdown' : ''}${highContrast ? ' is-contrast' : ''}`}>
+      {/* First, so every later HUD control paints above its camera-drag layer. */}
+      <TouchControls />
       <div className="tr-hud-top">
         <div className="tr-hud-tl">
           <HudTimer />
@@ -58,7 +60,6 @@ export const Hud = memo(function Hud(): JSX.Element {
       <GrabStatus />
       <SpectateBanner />
       <CaptionChip />
-      <TouchControls />
       <EmoteWheel />
       <CountdownNumerals />
       <EliminatedSheet />

@@ -1,7 +1,7 @@
 # @tumble/matchmaker
 
 Queue service for Tumble Royale: parties and solos queue per playlist and
-region, lobbies fill to the playlist size (default 40) or are released with
+region, lobbies fill to the playlist size (default 100, `MAX_PLAYERS`) or are released with
 bots after the max wait, and each player receives a signed join ticket for a
 game server. Also hosts custom/private lobbies.
 

@@ -33,7 +33,7 @@ The shared secrets and URLs come from the root [`.env`](../../.env.example); run
   `REPORT_RESULTS=0` turns this off.
 - `MATCHMAKER_URL` + `GAME_SERVER_SECRET` register and heartbeat with the
   matchmaker, advertising `SERVER_CAPACITY` seats (bots included, default
-  `MAX_ROOMS × ROOM_CAPACITY`). Once registered, tickets whose `sid` names
+  `MAX_ROOMS × ROOM_CAPACITY` = 3 × 100). Once registered, tickets whose `sid` names
   another server are refused. `GAME_SERVER_SECRET` also enables the signed
   `POST /internal/kick` endpoint.
 
@@ -41,11 +41,16 @@ The shared secrets and URLs come from the root [`.env`](../../.env.example); run
 
 ```sh
 FILL_WAIT_MS=3000 pnpm --filter @tumble/game-server start
-pnpm --filter @tumble/bot-swarm start -- --clients 40 --url ws://localhost:7350/ws --duration 60
+pnpm --filter @tumble/bot-swarm start -- --clients 100 --url ws://localhost:7350/ws --duration 60
 ```
 
 Add `--lag 150 --jitter 20 --loss 0.02` to simulate a bad connection, or
 `--procs 8` to spread clients across processes.
+
+Every room in a process ticks on one Node event loop, so `MAX_ROOMS` is rooms
+per core. A full 100-player room measured 6.4 ms p50 / 9.0 ms p95 per 30 Hz
+tick in process (`TUMBLE_PERF=1 pnpm exec vitest run test/tickBudget.test.ts`),
+so the default is 3: run one process per core to host more.
 
 ## Testing
 

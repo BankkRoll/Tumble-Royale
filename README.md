@@ -2,7 +2,7 @@
 
 # Tumble Royale
 
-**A 40-player physics party royale that runs in a browser tab.**
+**A 100-player physics party royale that runs in a browser tab.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-ff4f9a.svg)](LICENSE)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6.svg)
@@ -15,7 +15,7 @@
 
 </div>
 
-Up to 40 Tumblers (humans and bots) compete through a show of 3–5 randomly
+Up to 100 Tumblers (humans and bots) compete through a show of 3–5 randomly
 drawn rounds (races, survivals, team games, a logic round and a final) until
 one player takes the Crown. No install, no plugins: it runs in a browser tab
 on desktop and mobile.
@@ -235,7 +235,7 @@ overrides the channel) and start the client and game server themselves:
 ```sh
 cd apps/client
 npx playwright test e2e/phase0.spec.ts                    # renderer parity + physics determinism
-npx playwright test e2e/game.spec.ts                      # a full 40-player show, splash to rewards
+npx playwright test e2e/game.spec.ts                      # a full 100-player show, splash to rewards
 ROUNDS=gumdrop-gauntlet,tile-panic npx playwright test e2e/level.spec.ts  # per-round smoke + screenshots
 ```
 
@@ -273,15 +273,22 @@ the same pose with zero bandwidth.
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Foundations                 | Done: both GPU backends render, client/server Rapier bit-identical after 600 steps (`e2e/phase0.spec.ts`)                                        |
 | The Tumbler                 | Done; tuning still needs human playtesting                                                                                                       |
-| Netcode                     | Done: no steady-state corrections at 150 ms + 2% loss (unit-tested), lag-compensated grab/dive hit assist, protocol v3                           |
-| Shows                       | Done: full 40-player shows end to end in the browser (`e2e/game.spec.ts`), solo/Duos/Squads online, live pre-show lobby                          |
+| Netcode                     | Done: no steady-state corrections at 150 ms + 2% loss (unit-tested), lag-compensated grab/dive hit assist, protocol v5                           |
+| Shows                       | Done: full shows end to end in the browser (`e2e/game.spec.ts`; 100-player run pending), solo/Duos/Squads online                                 |
 | Meta & accounts             | Done: guest + OAuth/email accounts, locker, parties, matchmaking, server-granted rewards, seasons, shard shop                                    |
 | Content                     | 20 rounds, tutorial island, procedural audio. Touch controls exist but no phone frame rate has been measured                                     |
 | Ranked, store, pass, social | Done: OpenSkill ranked with soft reset, store, pass, challenges, friends, chat, private shows, moderation                                        |
 | Launch hardening            | Partly: rate limits, bans, reconnect, results outbox, metrics. Not done: long soak, load test against a deployed stack, crash reporting, hosting |
 
-Server tick time is measured, not asserted in CI: run the game server and
-`pnpm --filter @tumble/bot-swarm start -- --clients 40 --duration 60`, which
+Server tick time is measured, not asserted in CI. A full 100-player room
+(real sim, director and snapshot encoders, 100 protocol clients, Tilt Town,
+60 s of PLAYING) costs **6.4 ms p50 / 9.0 ms p95 / 26.8 ms max** per 30 Hz
+tick (sim 4.1 + snapshots 2.4 + send 0.1 ms mean) and sends **33.9 KB/s**
+of snapshots per client; one human with 99 bots costs 8.1 ms p95. Hence
+`MAX_ROOMS=3` per process (one event loop per core). Reproduce in process
+with `TUMBLE_PERF=1 pnpm --filter @tumble/game-server exec vitest run test/tickBudget.test.ts`,
+or over real sockets: start the game server and run
+`pnpm --filter @tumble/bot-swarm start -- --clients 100 --duration 60`, which
 prints the server's `/metrics` including `tumble_tick_ms` avg / p95 / max.
 Results depend on the machine.
 

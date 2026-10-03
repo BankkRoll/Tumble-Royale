@@ -10,7 +10,7 @@ import type { BitReader, BitWriter } from './bits.ts';
 import type { Bounds } from './quantize.ts';
 
 /** Bumped on any incompatible wire change; peers with different versions are rejected in the handshake. */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 /** First byte of every binary message. Values are stable wire ids. */
 export const MsgType = {
@@ -71,7 +71,7 @@ export interface HelloMsg {
 /** Server → client: session accepted. */
 export interface WelcomeMsg {
   version: number;
-  /** This client's player/entity id (0–63). */
+  /** This client's player/entity id (below `MAX_ENTITIES`; spectators sit above the player range). */
   playerId: number;
   /** Present it in a later Hello within the resume window to reclaim the player. */
   resumeToken: string;

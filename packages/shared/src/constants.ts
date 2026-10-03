@@ -16,8 +16,12 @@ export const SNAPSHOT_HZ = 30;
 /** Default world gravity in m/s². Heavier than Earth so jumps feel snappy rather than floaty. */
 export const GRAVITY_Y = -24;
 
-/** Hard cap on players in a single show, including bots. */
-export const MAX_PLAYERS = 60;
+/**
+ * Hard cap on players in a single show, including bots. Every capacity that
+ * scales with the field (netcode entity ids, matchmaker lobbies, join tickets,
+ * result payloads, render pools, UI sliders) derives from this one number.
+ */
+export const MAX_PLAYERS = 100;
 
-/** Default target player count for a show. */
-export const DEFAULT_SHOW_PLAYERS = 40;
+/** Default target player count for a show: standard shows fill to the cap. */
+export const DEFAULT_SHOW_PLAYERS = MAX_PLAYERS;

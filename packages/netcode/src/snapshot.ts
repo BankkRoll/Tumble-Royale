@@ -21,7 +21,7 @@
  */
 import type { CharacterFullState } from '@tumble/sim';
 import type { Quat, Vec3 } from '@tumble/shared';
-import { SIM_DT, SIM_STEPS_PER_TICK } from '@tumble/shared';
+import { MAX_PLAYERS, SIM_DT, SIM_STEPS_PER_TICK } from '@tumble/shared';
 import type { BitReader, BitWriter } from './bits.ts';
 import { MsgType } from './protocol.ts';
 import {
@@ -45,10 +45,15 @@ import type { PositionQuantizer } from './quantize.ts';
 // Layout
 // -----------------------------------------------------------------------------
 
-/** Entity ids are player ids in [0, MAX_ENTITIES). */
-export const MAX_ENTITIES = 64;
-/** Bits for an entity id. */
-export const ENTITY_ID_BITS = 6;
+/** Bits for an entity id: the narrowest width that addresses every show seat. */
+export const ENTITY_ID_BITS = Math.ceil(Math.log2(MAX_PLAYERS));
+/**
+ * Entity ids are player ids in [0, MAX_ENTITIES): the whole id space of
+ * {@link ENTITY_ID_BITS}, so any id read off the wire indexes the tables safely.
+ */
+export const MAX_ENTITIES = 1 << ENTITY_ID_BITS;
+/** Bits for the removal count, which can be every entity at once. */
+const REMOVED_COUNT_BITS = ENTITY_ID_BITS + 1;
 /** Snapshot views kept for delta baselines (≈1 s at 30 Hz). */
 export const SNAPSHOT_HISTORY = 32;
 /** Bits for "snapshots since baseline" (0 = no baseline). */
@@ -633,7 +638,7 @@ export class SnapshotEncoder {
     // Removals.
     let removed = 0;
     for (let id = 0; id < MAX_ENTITIES; id++) if (vp[viewBase + id] && !cur.present[id]) removed++;
-    w.writeBits(removed, 7);
+    w.writeBits(removed, REMOVED_COUNT_BITS);
     for (let id = 0; id < MAX_ENTITIES && removed > 0; id++) {
       if (vp[viewBase + id] && !cur.present[id]) {
         w.writeBits(id, ENTITY_ID_BITS);
@@ -694,7 +699,7 @@ export class SnapshotEncoder {
       this.accum[id] = this.accum[id]! + p;
       if (this.accum[id]! < 1) continue;
       this.masks[id] = mask;
-      // Insertion sort by accumulator, descending; n ≤ 64.
+      // Insertion sort by accumulator, descending; n ≤ MAX_ENTITIES.
       let j = candidates++;
       while (j > 0 && this.accum[this.order[j - 1]!]! < this.accum[id]!) {
         this.order[j] = this.order[j - 1]!;
@@ -862,7 +867,7 @@ export class SnapshotDecoder {
     const viewBase = slot * MAX_ENTITIES;
     const simTick = simTickOf(serverTick);
 
-    out.removedCount = r.readBits(7);
+    out.removedCount = r.readBits(REMOVED_COUNT_BITS);
     for (let i = 0; i < out.removedCount && i < MAX_ENTITIES; i++) {
       const id = r.readBits(ENTITY_ID_BITS);
       out.removed[i] = id;

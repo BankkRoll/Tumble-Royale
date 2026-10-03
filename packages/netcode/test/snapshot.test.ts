@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { Rng, quatFromAxisAngle, quatFromYaw } from '@tumble/shared';
+import { MAX_PLAYERS, Rng, quatFromAxisAngle, quatFromYaw } from '@tumble/shared';
 import { BitReader, BitWriter } from '../src/bits.ts';
 import { MsgType } from '../src/protocol.ts';
 import { PositionQuantizer } from '../src/quantize.ts';
 import {
+  ENTITY_ID_BITS,
   EntityTable,
+  MAX_ENTITIES,
   ObstacleTable,
   SnapshotDecoder,
   SnapshotEncoder,
@@ -99,7 +101,7 @@ function expectStateClose(a: NetEntityState, b: NetEntityState): void {
 describe('snapshot delta compression', () => {
   it('delta-decoded world equals the full quantised world every tick, with acks lagging and packets lost', () => {
     const rng = new Rng(11);
-    const sim = makeSim(40, rng);
+    const sim = makeSim(MAX_PLAYERS, rng);
     const table = new EntityTable();
     const obstacles = new ObstacleTable(['tiles', 'tilt']);
     const enc = new SnapshotEncoder({ obstacleCount: 2, byteBudget: 100000, nearRadius: 1e9 });
@@ -107,7 +109,7 @@ describe('snapshot delta compression', () => {
     const w = new BitWriter(2048);
     const r = new BitReader();
     const out = createDecodedSnapshot();
-    const view = Array.from({ length: 64 }, createNetEntityState);
+    const view = Array.from({ length: MAX_ENTITIES }, createNetEntityState);
     const truth = createNetEntityState();
     const pendingAcks: { at: number; id: number }[] = [];
     let deltas = 0;
@@ -134,7 +136,7 @@ describe('snapshot delta compression', () => {
 
       // With an unlimited budget nothing is deferred, so the reconstructed view must match the truth exactly.
       const n = dec.readView(out.snapshotId, out.serverTick, q, view);
-      expect(n).toBe(40);
+      expect(n).toBe(MAX_PLAYERS);
       for (let i = 0; i < n; i++)
         expectStateClose(view[i]!, table.get(view[i]!.id, q, simTickOf(tick), truth));
     }
@@ -143,10 +145,11 @@ describe('snapshot delta compression', () => {
 
   it('skips unchanged entities entirely', () => {
     const rng = new Rng(1);
-    const sim = makeSim(40, rng);
+    const sim = makeSim(MAX_PLAYERS, rng);
     const table = new EntityTable();
     const obstacles = new ObstacleTable([]);
-    const enc = new SnapshotEncoder();
+    // Unlimited budget so the first snapshot carries the whole field and nothing is left deferred.
+    const enc = new SnapshotEncoder({ byteBudget: 100000 });
     const w = new BitWriter();
     const viewer = { playerId: 0, spectateTarget: -1, ackedInputSeq: -1 };
     enc.encode(w.reset(), frameFor(sim, table, 1, 1, obstacles), viewer);
@@ -159,42 +162,95 @@ describe('snapshot delta compression', () => {
     expect(full).toBeGreaterThan(400);
   });
 
-  it('keeps 40 moving players within the 1.2 KB budget and still converges', () => {
-    const rng = new Rng(5);
-    const sim = makeSim(40, rng);
-    // Cluster everyone near the viewer so interest management can't help: worst case.
-    sim.states.forEach((s) => {
-      s.pos.x = rng.range(-10, 10);
-      s.pos.z = rng.range(-10, 10);
-    });
+  it.each([40, MAX_PLAYERS])(
+    'keeps %i clustered, moving players within the 1.2 KB budget, fresh and converging',
+    (n) => {
+      const rng = new Rng(5);
+      const sim = makeSim(n, rng);
+      // Cluster everyone near the viewer so interest management can't help: worst case.
+      sim.states.forEach((s) => {
+        s.pos.x = rng.range(-10, 10);
+        s.pos.z = rng.range(-10, 10);
+      });
+      const table = new EntityTable();
+      const obstacles = new ObstacleTable([]);
+      const enc = new SnapshotEncoder();
+      const dec = new SnapshotDecoder();
+      const w = new BitWriter();
+      const r = new BitReader();
+      const out = createDecodedSnapshot();
+      const lastSent = new Int32Array(n);
+      let maxGap = 0;
+      let maxBytes = 0;
+      let total = 0;
+      for (let tick = 1; tick <= 120; tick++) {
+        stepSim(sim, rng, tick / 30);
+        enc.encode(w.reset(), frameFor(sim, table, tick, tick, obstacles), {
+          playerId: 3,
+          spectateTarget: -1,
+          ackedInputSeq: -1,
+        });
+        maxBytes = Math.max(maxBytes, enc.stats.bytes);
+        if (tick > 1) total += enc.stats.bytes;
+        r.reset(w.finish().slice());
+        r.readBits(8);
+        expect(dec.decode(r, q, out)).toBe('ok');
+        enc.ack(out.snapshotId);
+        const ids = Array.from({ length: out.entityCount }, (_, i) => out.entities[i]!.id);
+        // The viewer's own entity must be in every snapshot it changed in.
+        expect(ids).toContain(3);
+        for (const id of ids) lastSent[id] = tick;
+        // The first second fills the field from nothing; staleness counts once it is steady.
+        // Every 7th player idles (unchanged records are never resent), so only movers count.
+        if (tick > 30)
+          for (let id = 0; id < n; id++) if (id % 7 !== 0) maxGap = Math.max(maxGap, tick - lastSent[id]!);
+      }
+      expect(maxBytes).toBeLessThanOrEqual(1200);
+      // 1200 B × 30 Hz = 36 KB/s per client at most, under the 40 KB/s target.
+      expect(total / 119).toBeLessThanOrEqual(1200);
+      if (n <= 40) expect(total / 119).toBeLessThan(1000);
+      // Even with the whole lobby piled on the viewer, nobody goes more than 3 snapshots (100 ms) unsent.
+      expect(maxGap).toBeLessThanOrEqual(3);
+    },
+  );
+
+  it('addresses every id in the entity space and removes a whole lobby in one snapshot', () => {
+    expect(MAX_ENTITIES).toBeGreaterThanOrEqual(MAX_PLAYERS);
+    expect(1 << ENTITY_ID_BITS).toBe(MAX_ENTITIES);
+    const rng = new Rng(4);
+    const sim = makeSim(MAX_ENTITIES, rng);
     const table = new EntityTable();
     const obstacles = new ObstacleTable([]);
-    const enc = new SnapshotEncoder();
+    const enc = new SnapshotEncoder({ byteBudget: 100000 });
     const dec = new SnapshotDecoder();
     const w = new BitWriter();
     const r = new BitReader();
     const out = createDecodedSnapshot();
-    let maxBytes = 0;
-    let total = 0;
-    for (let tick = 1; tick <= 120; tick++) {
-      stepSim(sim, rng, tick / 30);
-      enc.encode(w.reset(), frameFor(sim, table, tick, tick, obstacles), {
-        playerId: 3,
-        spectateTarget: -1,
-        ackedInputSeq: -1,
-      });
-      maxBytes = Math.max(maxBytes, enc.stats.bytes);
-      if (tick > 1) total += enc.stats.bytes;
+    const view = Array.from({ length: MAX_ENTITIES }, createNetEntityState);
+    const decode = (): void => {
       r.reset(w.finish().slice());
       r.readBits(8);
       expect(dec.decode(r, q, out)).toBe('ok');
       enc.ack(out.snapshotId);
-      // The viewer's own entity must be in every snapshot it changed in.
-      expect(Array.from({ length: out.entityCount }, (_, i) => out.entities[i]!.id)).toContain(3);
-    }
-    expect(maxBytes).toBeLessThanOrEqual(1200);
-    // Average delta snapshot for 40 running players.
-    expect(total / 119).toBeLessThan(1000);
+    };
+    enc.encode(w.reset(), frameFor(sim, table, 1, 1, obstacles), {
+      playerId: MAX_ENTITIES - 1,
+      spectateTarget: -1,
+      ackedInputSeq: -1,
+    });
+    decode();
+    expect(dec.readView(out.snapshotId, out.serverTick, q, view)).toBe(MAX_ENTITIES);
+    expect(view[MAX_ENTITIES - 1]!.id).toBe(MAX_ENTITIES - 1);
+    // Everyone leaves at once (round end): the removal count must hold the full id space.
+    table.clear();
+    enc.encode(
+      w.reset(),
+      { ...frameFor({ states: [] }, table, 2, 2, obstacles) },
+      { playerId: -1, spectateTarget: -1, ackedInputSeq: -1 },
+    );
+    decode();
+    expect(out.removedCount).toBe(MAX_ENTITIES);
+    expect(dec.readView(out.snapshotId, out.serverTick, q, view)).toBe(0);
   });
 
   it('sends distant entities at a reduced rate', () => {

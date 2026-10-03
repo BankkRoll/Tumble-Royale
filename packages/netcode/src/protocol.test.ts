@@ -10,7 +10,7 @@ import {
   type LowFreqMessage,
 } from './protocol.ts';
 
-describe('protocol v4', () => {
+describe('protocol v5', () => {
   it('round-trips a Hello with a join ticket', () => {
     const ticket = `${'a'.repeat(40)}.${'b'.repeat(700)}.${'c'.repeat(43)}`;
     const w = new BitWriter(64);
@@ -49,8 +49,8 @@ describe('protocol v4', () => {
     expect(unpackLowFreq(packLowFreq(rewards))).toEqual(rewards);
   });
 
-  it('carries load progress and the loading roster (v4)', () => {
-    expect(PROTOCOL_VERSION).toBe(4);
+  it('carries load progress and the loading roster (v4, unchanged in v5)', () => {
+    expect(PROTOCOL_VERSION).toBe(5);
     const progress: LowFreqMessage = { t: 'loadProgress', roundId: 'tilt-town', pct: 0.42 };
     expect(unpackLowFreq(packLowFreq(progress))).toEqual(progress);
     const status: LowFreqMessage = {

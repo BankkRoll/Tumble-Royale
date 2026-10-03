@@ -34,22 +34,20 @@ export const REPLAY_EXTENSION = '.tumblereplay';
 
 /** Positions: centimetres. */
 export const POS_SCALE = 100;
-/** Velocities: 0.05 m/s. */
-export const VEL_SCALE = 20;
 /** Yaw/pitch: 4096 steps per turn. */
 export const ANGLE_STEPS = 4096;
 /** State times and event times: centiseconds. */
 export const TIME_SCALE = 100;
 /** Event scalars (impact, strength, score deltas): hundredths. */
 export const EVENT_NUM_SCALE = 100;
-/** Non-integer obstacle net states (props): thousandths. */
-export const NET_MILLI_SCALE = 1000;
+/** Non-integer obstacle net states (props): hundredths (cm, 0.01 of a quaternion). */
+export const NET_FLOAT_SCALE = 100;
 
 /** Per-player frame mask bits: which fields follow. */
 export const PlayerField = {
   Pos: 1,
   Yaw: 2,
-  Vel: 4,
+  // 4 is unused: velocity is derived from positions on playback (bots jitter it every sample).
   State: 8,
   Flags: 16,
   Misc: 32,
@@ -75,7 +73,7 @@ export const CameraModeCode = {
 /** Obstacle net-state value encodings. */
 export const NetKind = {
   Int: 0,
-  Milli: 1,
+  Float: 1,
 } as const;
 
 // -----------------------------------------------------------------------------

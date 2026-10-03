@@ -14,16 +14,15 @@
  * cursors and output objects), so the playback loop can call them per frame.
  */
 import type { SimEvent } from '@tumble/sim';
-import { ByteReader, ReplayDecodeError } from './codec.ts';
+import { ByteReader, ReplayDecodeError, readZeroRuns } from './codec.ts';
 import {
   ANGLE_STEPS,
   CameraField,
-  NET_MILLI_SCALE,
+  NET_FLOAT_SCALE,
   NetKind,
   POS_SCALE,
   PlayerField,
   TIME_SCALE,
-  VEL_SCALE,
   readEvent,
   type ReplayData,
   type ReplayHeader,
@@ -159,9 +158,6 @@ export class ReplayTimeline {
       py: new Float64Array(n),
       pz: new Float64Array(n),
       yaw: new Float64Array(n),
-      vx: new Float64Array(n),
-      vy: new Float64Array(n),
-      vz: new Float64Array(n),
     };
     const state = new Uint8Array(n);
     const start = new Float32Array(n);
@@ -175,6 +171,7 @@ export class ReplayTimeline {
     let camPitch = 0;
     const netKind: number[] = h.obstacles.map(() => -1);
     const netLast: Float64Array[] = h.obstacles.map(() => new Float64Array(0));
+    const netDelta: Float64Array[] = h.obstacles.map(() => new Float64Array(0));
     let ms = 0;
     for (let fi = 0; fi < this.frameCount; fi++) {
       ms += r.varint();
@@ -205,11 +202,6 @@ export class ReplayTimeline {
           q.pz[s] = (q.pz[s] as number) + r.svarint();
         }
         if (mask & PlayerField.Yaw) q.yaw[s] = ((q.yaw[s] as number) + r.svarint() + ANGLE_STEPS) % ANGLE_STEPS;
-        if (mask & PlayerField.Vel) {
-          q.vx[s] = (q.vx[s] as number) + r.svarint();
-          q.vy[s] = (q.vy[s] as number) + r.svarint();
-          q.vz[s] = (q.vz[s] as number) + r.svarint();
-        }
         if (mask & PlayerField.State) {
           state[s] = r.u8();
           start[s] = t - r.varint() / TIME_SCALE;
@@ -222,9 +214,6 @@ export class ReplayTimeline {
         this.pos[k * 3 + 1] = (q.py[s] as number) / POS_SCALE;
         this.pos[k * 3 + 2] = (q.pz[s] as number) / POS_SCALE;
         this.yaw[k] = (q.yaw[s] as number) * ANGLE;
-        this.vel[k * 3] = (q.vx[s] as number) / VEL_SCALE;
-        this.vel[k * 3 + 1] = (q.vy[s] as number) / VEL_SCALE;
-        this.vel[k * 3 + 2] = (q.vz[s] as number) / VEL_SCALE;
         this.state[k] = state[s] as number;
         this.stateStart[k] = start[s] as number;
         this.flags[k] = flags[s] as number;
@@ -237,21 +226,60 @@ export class ReplayTimeline {
         const kind = r.u8();
         const len = r.varint();
         const track = this.obstacles[index];
-        if (!track || (kind !== NetKind.Int && kind !== NetKind.Milli))
+        if (!track || (kind !== NetKind.Int && kind !== NetKind.Float))
           throw new ReplayDecodeError(`Bad obstacle state ${index}`);
         const prev = netLast[index] as Float64Array;
         const comparable = netKind[index] === kind && prev.length === len;
         const next = new Float64Array(len);
-        for (let v = 0; v < len; v++) next[v] = r.svarint() + (comparable ? (prev[v] as number) : 0);
+        readZeroRuns(r, next, len);
+        if (comparable) {
+          const d = netDelta[index] as Float64Array;
+          for (let v = 0; v < len; v++) {
+            next[v] = (next[v] as number) + (prev[v] as number) + (d[v] as number);
+            d[v] = (next[v] as number) - (prev[v] as number);
+          }
+        } else netDelta[index] = new Float64Array(len);
         netKind[index] = kind;
         netLast[index] = next;
-        const scale = kind === NetKind.Milli ? NET_MILLI_SCALE : 1;
+        const scale = kind === NetKind.Float ? NET_FLOAT_SCALE : 1;
         const out = scale === 1 ? next.slice() : next.map((v) => v / scale);
         track.frames.push(fi);
         track.states.push(out);
       }
     }
     if (!r.done) throw new ReplayDecodeError('Trailing frame data');
+    this.deriveVelocities();
+  }
+
+  /**
+   * Velocity per sample from neighbouring positions (central difference where
+   * both neighbours exist). Zero across teleports so a respawn doesn't read as
+   * a 200 m/s sprint in the animation or camera.
+   */
+  private deriveVelocities(): void {
+    const n = this.playerCount;
+    const f = this.frameCount;
+    const p = this.pos;
+    const times = this.times;
+    for (let s = 0; s < n; s++) {
+      for (let fi = 0; fi < f; fi++) {
+        const k = fi * n + s;
+        if (!this.present[k]) continue;
+        const a = fi > 0 && this.present[k - n] ? fi - 1 : fi;
+        const b = fi < f - 1 && this.present[k + n] ? fi + 1 : fi;
+        const dt = (times[b] as number) - (times[a] as number);
+        if (dt <= 0) continue;
+        const ka = (a * n + s) * 3;
+        const kb = (b * n + s) * 3;
+        const dx = (p[kb] as number) - (p[ka] as number);
+        const dy = (p[kb + 1] as number) - (p[ka + 1] as number);
+        const dz = (p[kb + 2] as number) - (p[ka + 2] as number);
+        if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > TELEPORT_DIST * (b - a)) continue;
+        this.vel[k * 3] = dx / dt;
+        this.vel[k * 3 + 1] = dy / dt;
+        this.vel[k * 3 + 2] = dz / dt;
+      }
+    }
   }
 
   private decodeEvents(bytes: Uint8Array): void {

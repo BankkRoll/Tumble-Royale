@@ -222,5 +222,52 @@ export class ByteReader {
   }
 }
 
+/**
+ * Writes `n` signed integers with zero runs collapsed: a zero is followed by
+ * the run length, so long stretches of unchanged values cost two bytes.
+ *
+ * @param w - Destination.
+ * @param values - Integers to write.
+ * @param n - How many.
+ */
+export function writeZeroRuns(w: ByteWriter, values: ArrayLike<number>, n: number): void {
+  let i = 0;
+  while (i < n) {
+    const v = values[i] as number;
+    if (v !== 0) {
+      w.svarint(v);
+      i++;
+      continue;
+    }
+    let run = 1;
+    while (i + run < n && values[i + run] === 0) run++;
+    w.svarint(0);
+    w.varint(run - 1);
+    i += run;
+  }
+}
+
+/**
+ * Reads what {@link writeZeroRuns} wrote.
+ *
+ * @param r - Source.
+ * @param out - Filled with `n` integers.
+ * @param n - How many.
+ */
+export function readZeroRuns(r: ByteReader, out: Float64Array, n: number): void {
+  let i = 0;
+  while (i < n) {
+    const v = r.svarint();
+    if (v !== 0) {
+      out[i++] = v;
+      continue;
+    }
+    const run = r.varint() + 1;
+    if (i + run > n) throw new ReplayDecodeError('Zero run overflows its array');
+    out.fill(0, i, i + run);
+    i += run;
+  }
+}
+
 /** Largest integer {@link ByteWriter.u32} round-trips. */
 export const U32_MAX = TWO_32 - 1;

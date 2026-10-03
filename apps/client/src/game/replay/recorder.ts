@@ -4,7 +4,7 @@
  *
  * Responsibilities:
  * - samples every player at {@link REPLAY_RATE} Hz of round time (position,
- *   yaw, velocity, character state, flags, emote) with quantisation and
+ *   yaw, character state, flags, emote) with quantisation and
  *   per-field delta encoding behind a change mask, so idle or eliminated
  *   players cost one byte a frame;
  * - records the live camera (mode, target, yaw, pitch) for the "your view"
@@ -18,12 +18,12 @@
  * Pure: it only sees a sampler callback, never the sim or the renderer.
  */
 import type { SimEvent } from '@tumble/sim';
-import { ByteWriter } from './codec.ts';
+import { ByteWriter, writeZeroRuns } from './codec.ts';
 import {
   ANGLE_STEPS,
   CameraField,
   GAME_VERSION,
-  NET_MILLI_SCALE,
+  NET_FLOAT_SCALE,
   NetKind,
   POS_SCALE,
   PlayerField,
@@ -31,7 +31,6 @@ import {
   REPLAY_RATE,
   StringTable,
   TIME_SCALE,
-  VEL_SCALE,
   isRecordableEvent,
   writeEvent,
   type ReplayData,
@@ -111,9 +110,6 @@ interface Track {
   py: number;
   pz: number;
   yaw: number;
-  vx: number;
-  vy: number;
-  vz: number;
   state: number;
   flags: number;
   misc: number;
@@ -122,6 +118,8 @@ interface Track {
 interface NetTrack {
   kind: number;
   values: Float64Array;
+  /** Change between the last two written states (second-order prediction). */
+  delta: Float64Array;
 }
 
 /**
@@ -145,6 +143,7 @@ export class ReplayRecorder {
   private readonly obstacleIndex = new Map<string, number>();
   private readonly netTracks: (NetTrack | null)[] = [];
   private netScratch = new Float64Array(64);
+  private netResidual = new Float64Array(64);
   private readonly tracks: Track[];
   private readonly sampleOut: RecordablePlayer = {
     x: 0,
@@ -188,9 +187,6 @@ export class ReplayRecorder {
       py: 0,
       pz: 0,
       yaw: 0,
-      vx: 0,
-      vy: 0,
-      vz: 0,
       state: -1,
       flags: 0,
       misc: 0,
@@ -312,15 +308,11 @@ export class ReplayRecorder {
     const py = qi(s.y, POS_SCALE);
     const pz = qi(s.z, POS_SCALE);
     const yaw = qAngle(s.facing);
-    const vx = qi(s.vx, VEL_SCALE);
-    const vy = qi(s.vy, VEL_SCALE);
-    const vz = qi(s.vz, VEL_SCALE);
     const misc = (s.grounded ? 1 : 0) | ((s.emote & 7) << 1);
     let mask = 0;
     if (!tr.present) mask |= PlayerField.Presence;
     if (px !== tr.px || py !== tr.py || pz !== tr.pz) mask |= PlayerField.Pos;
     if (yaw !== tr.yaw) mask |= PlayerField.Yaw;
-    if (vx !== tr.vx || vy !== tr.vy || vz !== tr.vz) mask |= PlayerField.Vel;
     if (s.state !== tr.state) mask |= PlayerField.State;
     if ((s.flags & 0xff) !== tr.flags) mask |= PlayerField.Flags;
     if (misc !== tr.misc) mask |= PlayerField.Misc;
@@ -331,11 +323,6 @@ export class ReplayRecorder {
       w.svarint(pz - tr.pz);
     }
     if (mask & PlayerField.Yaw) w.svarint(dAngle(yaw, tr.yaw));
-    if (mask & PlayerField.Vel) {
-      w.svarint(vx - tr.vx);
-      w.svarint(vy - tr.vy);
-      w.svarint(vz - tr.vz);
-    }
     if (mask & PlayerField.State) {
       w.u8(s.state & 0xff);
       w.varint(Math.max(0, qi(s.stateTime, TIME_SCALE)));
@@ -347,9 +334,6 @@ export class ReplayRecorder {
     tr.py = py;
     tr.pz = pz;
     tr.yaw = yaw;
-    tr.vx = vx;
-    tr.vy = vy;
-    tr.vz = vz;
     tr.state = s.state;
     tr.flags = s.flags & 0xff;
     tr.misc = misc;
@@ -384,11 +368,11 @@ export class ReplayRecorder {
     for (let i = 0; i < n; i++) {
       const v = values[i] as number;
       if (Number.isFinite(v) && !Number.isInteger(v)) {
-        kind = NetKind.Milli;
+        kind = NetKind.Float;
         break;
       }
     }
-    const scale = kind === NetKind.Milli ? NET_MILLI_SCALE : 1;
+    const scale = kind === NetKind.Float ? NET_FLOAT_SCALE : 1;
     for (let i = 0; i < n; i++) {
       const v = Math.round((values[i] as number) * scale);
       qv[i] = Number.isSafeInteger(v) ? v : 0;
@@ -407,9 +391,19 @@ export class ReplayRecorder {
     out.varint(index);
     out.u8(kind);
     out.varint(n);
-    for (let i = 0; i < n; i++) out.svarint((qv[i] as number) - (comparable ? (prev.values[i] as number) : 0));
-    if (comparable) prev.values.set(qv.subarray(0, n));
-    else this.netTracks[index] = { kind, values: qv.slice(0, n) };
+    if (this.netResidual.length < n) this.netResidual = new Float64Array(this.netScratch.length);
+    const res = this.netResidual;
+    // Counters such as "ticks since" rise by the same step every sample: predicting
+    // last value + last change turns them (and anything at rest) into zero runs.
+    for (let i = 0; i < n; i++) {
+      const q = qv[i] as number;
+      res[i] = comparable ? q - (prev.values[i] as number) - (prev.delta[i] as number) : q;
+    }
+    writeZeroRuns(out, res, n);
+    if (comparable) {
+      for (let i = 0; i < n; i++) prev.delta[i] = (qv[i] as number) - (prev.values[i] as number);
+      prev.values.set(qv.subarray(0, n));
+    } else this.netTracks[index] = { kind, values: qv.slice(0, n), delta: new Float64Array(n) };
     return true;
   }
 

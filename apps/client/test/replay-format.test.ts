@@ -7,7 +7,15 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { SimEvent } from '@tumble/sim';
-import { ByteReader, ByteWriter, ReplayDecodeError, unzigzag, zigzag } from '../src/game/replay/codec.ts';
+import {
+  ByteReader,
+  ByteWriter,
+  ReplayDecodeError,
+  readZeroRuns,
+  unzigzag,
+  writeZeroRuns,
+  zigzag,
+} from '../src/game/replay/codec.ts';
 import {
   GAME_VERSION,
   REPLAY_FORMAT_VERSION,
@@ -93,6 +101,18 @@ describe('codec', () => {
     expect(r.u32()).toBe(0xdeadbeef);
     expect(r.u8()).toBe(0);
     expect(w.capacity).toBeGreaterThanOrEqual(1006);
+  });
+
+  it('collapses zero runs and rejects runs past the end', () => {
+    const values = [0, 0, 0, 5, -2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0];
+    const w = new ByteWriter();
+    writeZeroRuns(w, values, values.length);
+    const bytes = w.finish();
+    expect(bytes.length).toBeLessThan(12);
+    const out = new Float64Array(values.length);
+    readZeroRuns(new ByteReader(bytes), out, values.length);
+    expect([...out]).toEqual(values);
+    expect(() => readZeroRuns(new ByteReader(bytes), new Float64Array(2), 2)).toThrow(ReplayDecodeError);
   });
 
   it('rejects reads past the end and negative varints', () => {

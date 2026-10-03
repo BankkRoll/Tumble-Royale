@@ -591,11 +591,12 @@ export class GameApp {
       case 'offline':
         this.startBotShow(next.playlistId);
         break;
-      case 'custom':
+      case 'custom': {
         this.lastShow = { kind: 'custom', options: next.options };
         const show = privateShow(next.options);
         this.startOfflineShow(show.playlist, show.roundTimeScale);
         break;
+      }
       case 'play':
         void this.startShow(next.playlistId);
         break;

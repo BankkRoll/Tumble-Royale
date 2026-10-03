@@ -77,6 +77,25 @@ export interface RulesHost {
    * @returns False when the round has no overtime or is already in it.
    */
   requestOvertime(): boolean;
+  /**
+   * Adds the team points currently held by obstacles (painted floor, golden
+   * eggs resting in nests) into `out`, indexed by team. Optional: hosts
+   * without such obstacles may omit it.
+   *
+   * @returns True when at least one obstacle contributes.
+   */
+  obstacleTeamScores?(out: number[]): boolean;
+}
+
+/**
+ * Optional obstacle runtime extension: a mechanic whose state is worth team
+ * points (paint grids, nest bonuses). Read every step by team rules through
+ * {@link RulesHost.obstacleTeamScores}; the points are a live level, not a
+ * stream of `score` events, so painting does not spam horns.
+ */
+export interface TeamScoreSource {
+  /** Adds this obstacle's current points per team into `out` (index = team). */
+  addTeamScores(out: number[]): void;
 }
 
 /** Tunables that do not live in the round definition. */

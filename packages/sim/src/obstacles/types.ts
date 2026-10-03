@@ -39,7 +39,10 @@ export type ObstacleType =
   | 'finishLine'
   | 'startGate'
   | 'voidTrigger'
-  | 'propSpawner';
+  | 'propSpawner'
+  | 'paintGrid'
+  | 'patternBoard'
+  | 'goalZone';
 
 /**
  * Placement of one obstacle in a round. `rotation` is yaw/pitch/roll in DEGREES

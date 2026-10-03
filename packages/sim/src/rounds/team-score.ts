@@ -22,6 +22,9 @@ export class TeamScoreRules extends BaseRules {
   private inZone: number[] = [];
   private zoneAccum: number[] = [];
   private readonly order: number[] = [];
+  /** Obstacle-held points per team already folded into `teamScores`. */
+  private obstacleApplied: number[] = [];
+  private readonly obstacleNow: number[] = [];
 
   override init(host: RulesHost): void {
     super.init(host);
@@ -29,6 +32,7 @@ export class TeamScoreRules extends BaseRules {
     this.teamScores = new Array<number>(this.teamCount).fill(0);
     this.teamScoreTick = new Array<number>(this.teamCount).fill(0);
     this.zoneAccum = new Array<number>(this.teamCount).fill(0);
+    this.obstacleApplied = new Array<number>(this.teamCount).fill(0);
     this.inZone = new Array<number>(host.players.length).fill(-1);
     const teams = host.players.map((p) => p.team);
     assignTeams(teams, host.players.map((p) => p.id), this.teamCount);
@@ -79,7 +83,23 @@ export class TeamScoreRules extends BaseRules {
     else if (!entered && this.inZone[idx] === trigger.index) this.inZone[idx] = -1;
   }
 
+  /** Applies the change in obstacle-held points (paint, nest bonuses) since the last step. */
+  private syncObstacleScores(): void {
+    const now = this.obstacleNow;
+    now.length = this.teamCount;
+    now.fill(0);
+    if (!this.host.obstacleTeamScores?.(now)) return;
+    for (let t = 0; t < this.teamCount; t++) {
+      const delta = (now[t] as number) - (this.obstacleApplied[t] as number);
+      if (delta === 0) continue;
+      this.obstacleApplied[t] = now[t] as number;
+      this.teamScores[t] = (this.teamScores[t] as number) + delta;
+      this.teamScoreTick[t] = this.host.tick;
+    }
+  }
+
   protected override tickRules(): void {
+    this.syncObstacleScores();
     const rate = this.options.zonePointsPerSecond ?? 1;
     if (rate > 0) {
       for (let i = 0; i < this.inZone.length; i++) {

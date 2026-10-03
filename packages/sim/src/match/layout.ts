@@ -65,7 +65,8 @@ export interface SpawnSlot {
 
 /**
  * Spawn positions for each player, in the order of `teams`. Players fill a
- * centred grid (`cols` wide, `spacing` apart) facing the spawn yaw; slot order
+ * centred grid (`cols` wide, `spacing` apart) facing the spawn yaw (team grids
+ * face the spawn origin instead); slot order
  * is shuffled with the round seed so nobody always gets pole position. Team
  * rounds use one grid per `teamOrigins` entry.
  *
@@ -86,10 +87,14 @@ export function spawnSlots(round: RoundDefinition, seed: number, teams: readonly
     list.push(i);
   });
   const out: SpawnSlot[] = teams.map(() => ({ pos: { ...sp.origin }, yaw }));
-  const sin = Math.sin(yaw);
-  const cos = Math.cos(yaw);
   for (const [key, members] of [...groups.entries()].sort((a, b) => a[0] - b[0])) {
     const origin = key >= 0 ? (sp.teamOrigins[key] as Vec3) : sp.origin;
+    // The schema has one spawn yaw, so team grids face the spawn origin (the arena centre).
+    const dx = sp.origin.x - origin.x;
+    const dz = sp.origin.z - origin.z;
+    const gridYaw = key >= 0 && dx * dx + dz * dz > 1e-6 ? Math.atan2(dx, dz) : yaw;
+    const sin = Math.sin(gridYaw);
+    const cos = Math.cos(gridYaw);
     const cols = Math.max(1, Math.min(sp.cols, members.length));
     const rows = Math.ceil(members.length / cols);
     const order = rng.shuffle(members.map((_, k) => k));
@@ -104,6 +109,7 @@ export function spawnSlots(round: RoundDefinition, seed: number, teams: readonly
       s.pos.x = origin.x + lx * cos + lz * sin;
       s.pos.y = origin.y;
       s.pos.z = origin.z - lx * sin + lz * cos;
+      s.yaw = gridYaw;
     });
   }
   return out;

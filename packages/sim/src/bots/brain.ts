@@ -394,6 +394,8 @@ export class DefaultBotBrain implements BotBrainLike {
       if (self.state === CharacterState.Carry) {
         this.setTarget(nest.position.x, nest.position.y, nest.position.z);
         this.speed = this.p.speed * 0.9;
+        // Releasing Grab drops the prop: keep holding until inside the nest, then let go to deposit.
+        this.holdGrab = sqDistXZ(nest.position, self.pos) > 2.25;
         return;
       }
       if (this.nearestProp(view, self, prop, nest)) {

@@ -43,6 +43,7 @@ import {
 } from '../character/types.ts';
 import { EventSink, type SimEvent } from '../events.ts';
 import type { ObstacleActor, ObstacleRuntime, ObstacleStepContext } from '../obstacles/types.ts';
+import { PROP_SPECS, PropMode, type PropSpawnerRuntime } from '../obstacles/propSpawner.ts';
 import type { Rapier } from '../physics/rapier.ts';
 import { SurfaceRegistry } from '../physics/surfaces.ts';
 import { createWorld } from '../physics/world.ts';
@@ -50,7 +51,7 @@ import { compareStanding } from '../rounds/base.ts';
 import { createRoundRules } from '../rounds/factory.ts';
 import { assignTeams } from '../rounds/team-score.ts';
 import { CourseMetric } from '../rounds/progress.ts';
-import type { RoundRules, RulesHost, RulesPlayer } from '../rounds/types.ts';
+import type { RoundRules, RulesHost, RulesPlayer, TeamScoreSource } from '../rounds/types.ts';
 import type { MatchDeps } from './deps.ts';
 import { buildStaticGeometry } from './geometry.ts';
 import { chooseVariation, resolveObstacles, spawnSlots, type SpawnSlot } from './layout.ts';
@@ -123,12 +124,33 @@ export interface MatchSimHandle extends MatchSim {
 // Internals
 // -----------------------------------------------------------------------------
 
-/** Adapts a controller to the obstacle-facing actor interface. */
+/**
+ * Adapts a controller to the obstacle-facing actor interface. Besides the
+ * {@link ObstacleActor} contract it exposes `team`, `state` and `grounded`,
+ * which round mechanics (paint grids, team goals) read by duck typing.
+ */
 class ControllerActor implements ObstacleActor {
-  constructor(private readonly ctrl: TumblerControllerLike) {}
+  constructor(
+    private readonly ctrl: TumblerControllerLike,
+    private readonly rp?: RulesPlayer,
+  ) {}
 
   get id(): number {
     return this.ctrl.id;
+  }
+
+  /** Team index for team rounds, else -1. */
+  get team(): number {
+    return this.rp?.team ?? -1;
+  }
+
+  /** Current character state id. */
+  get state(): number {
+    return this.ctrl.state;
+  }
+
+  get grounded(): boolean {
+    return this.ctrl.grounded;
   }
 
   get body(): TumblerControllerLike['body'] {
@@ -369,7 +391,7 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
         info,
         ctrl,
         proxy,
-        actor: new ControllerActor(ctrl),
+        actor: new ControllerActor(ctrl, rp),
         rp,
         spawn,
         input,
@@ -411,6 +433,7 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
       surfaces: this.surfaces,
       events: this.events,
       controllerByCollider: (handle) => this.slotByCollider.get(handle)?.ctrl,
+      propIdByCollider: (handle) => this.carryablePropId(handle),
     };
     this.botView = this.createBotView();
 
@@ -433,6 +456,7 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
       this.rules = createRoundRules(round, this.entrants, { ...opts.rules, qualifyTarget: opts.qualifyTarget ?? opts.rules?.qualifyTarget });
       this.rules.init(this);
       for (const s of this.slots) s.self.team = s.rp.team;
+      if (round.qualification.mode === 'teamScore') this.assignTeamCheckpoints();
     } else {
       this.rules = null;
     }
@@ -705,9 +729,47 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
     return true;
   }
 
+  obstacleTeamScores(out: number[]): boolean {
+    let any = false;
+    for (const o of this.obstacleRuntimes) {
+      if (typeof (o as Partial<TeamScoreSource>).addTeamScores !== 'function') continue;
+      (o as unknown as TeamScoreSource).addTeamScores(out);
+      any = true;
+    }
+    return any;
+  }
+
   // ---------------------------------------------------------------------------
   // Step helpers
   // ---------------------------------------------------------------------------
+
+  /**
+   * Team rounds respawn players on their own team's checkpoint (trigger
+   * `index` = team), so a fall never hands a raider the enemy's spawn.
+   */
+  private assignTeamCheckpoints(): void {
+    const defs = this.triggers.defs;
+    for (const s of this.slots) {
+      for (let i = 0; i < defs.length; i++) {
+        const d = defs[i] as TriggerDef;
+        if (d.kind === 'checkpoint' && d.index === s.rp.team) {
+          s.checkpointTrigger = i;
+          break;
+        }
+      }
+    }
+  }
+
+  /** Carryable prop id for a grab query hit, or undefined (balls, hidden or floating props). */
+  private carryablePropId(handle: number): number | undefined {
+    const owner = this.ownerOf(handle);
+    if (owner < 0) return undefined;
+    const rt = this.obstacleRuntimes[owner] as Partial<PropSpawnerRuntime>;
+    if (typeof rt.indexOfCollider !== 'function' || !rt.kind || !PROP_SPECS[rt.kind]?.carryable) return undefined;
+    const i = rt.indexOfCollider(handle);
+    if (i < 0 || rt.mode?.(i) !== PropMode.Free) return undefined;
+    return rt.propId?.(i);
+  }
 
   private forceEliminate(s: Slot): void {
     if (s.rp.status !== PlayerRoundStatus.Playing) return;
@@ -839,6 +901,8 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
           if (started) this.fallOut(slot);
           break;
         case 'checkpoint':
+          // Team rounds pin each player to their team's checkpoint (see assignTeamCheckpoints).
+          if (this.round.qualification.mode === 'teamScore') break;
           if (started && def.index > slot.rp.checkpoint) {
             slot.rp.checkpoint = def.index;
             slot.checkpointTrigger = ti;

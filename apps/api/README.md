@@ -5,7 +5,7 @@ realtime gateway for Tumble Royale. Fastify 5 + Drizzle ORM.
 
 ```sh
 pnpm --filter @tumble/api dev     # watch mode, http://localhost:7360
-pnpm --filter @tumble/api start   # single run
+pnpm --filter @tumble/api build && pnpm --filter @tumble/api start   # production bundle
 pnpm --filter @tumble/api test    # vitest, in-memory PGlite
 ```
 

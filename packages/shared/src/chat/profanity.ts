@@ -160,16 +160,7 @@ function matcher(strong: readonly string[], wordOnly: readonly string[]): Matche
  * Slurs and self-harm incitement. Chat masks these even for players who turned
  * the chat filter off: the toggle is for swearing, not for abuse.
  */
-const SEVERE_STRONG = [
-  'nigger',
-  'nigga',
-  'faggot',
-  'killyourself',
-  'chink',
-  'kike',
-  'tranny',
-  'retard',
-];
+const SEVERE_STRONG = ['nigger', 'nigga', 'faggot', 'killyourself', 'chink', 'kike', 'tranny', 'retard'];
 const SEVERE_WORD_ONLY = ['fag', 'kys', 'spic', 'coon', 'gook'];
 
 /**

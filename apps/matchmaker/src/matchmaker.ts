@@ -4,6 +4,7 @@
  * events go out on per-user channels that the WebSocket layer relays.
  */
 import { randomInt, randomUUID } from 'node:crypto';
+import { filterChat } from '@tumble/shared';
 import { NO_BANS, type BanLookup } from './bans.ts';
 import type { MatchmakerConfig } from './config.ts';
 import { MMError } from './errors.ts';
@@ -18,6 +19,7 @@ import {
   type QueueEntry,
   type QueueStatus,
 } from './engine.ts';
+import { RateLimiter } from './rateLimit.ts';
 import { candidateRegions, humansInRooms, pickServer, SERVER_TTL_MS, type GameServer } from './servers.ts';
 import type { MMStore } from './store.ts';
 import {
@@ -82,7 +84,27 @@ export type MMEvent =
     }
   | { type: 'lobby_update'; lobby: CustomLobby }
   | { type: 'lobby_closed'; code: string }
-  | { type: 'lobby_kicked'; code: string; reason: 'kicked' | 'away' };
+  | { type: 'lobby_kicked'; code: string; reason: 'kicked' | 'away' }
+  | ({ type: 'lobby_chat' } & LobbyChatLine);
+
+/** A chat line in a private-show lobby. */
+export interface LobbyChatLine {
+  /** Unique id (dedupe across tabs). */
+  id: string;
+  code: string;
+  from: { userId: string; name: string };
+  /** Slurs masked; shown with the chat filter off. */
+  text: string;
+  /** Fully masked copy, when it differs from `text`. */
+  masked?: string;
+  /** Epoch ms. */
+  at: number;
+}
+
+/** Lobby chat lines allowed per member per {@link LOBBY_CHAT_WINDOW_MS}. */
+export const LOBBY_CHAT_MAX = 6;
+/** Lobby chat rate-limit window. */
+export const LOBBY_CHAT_WINDOW_MS = 10_000;
 
 /** A member's seat in a custom lobby. */
 export interface LobbySeat {
@@ -197,6 +219,7 @@ export class Matchmaker {
     control?: GameControl,
   ) {
     this.control = control ?? httpGameControl(cfg.gameServerSecret, now);
+    this.chatLimiter = new RateLimiter(LOBBY_CHAT_MAX, LOBBY_CHAT_WINDOW_MS, now);
     this.engine = {
       ...DEFAULT_ENGINE,
       maxWaitMs: cfg.maxWaitMs,
@@ -204,6 +227,9 @@ export class Matchmaker {
       hotThreshold: cfg.hotThreshold,
     };
   }
+
+  // NOTE: per instance, like the HTTP limiter: roughly right is enough for chat.
+  private readonly chatLimiter: RateLimiter;
 
   private async emit(userId: string, event: MMEvent): Promise<void> {
     await this.store.publish(userChannel(userId), JSON.stringify(event));
@@ -706,6 +732,34 @@ export class Matchmaker {
   /** Reads a lobby by code. */
   async getLobby(code: string): Promise<CustomLobby> {
     return this.loadLobby(code);
+  }
+
+  /**
+   * Sends a chat line to every member of the caller's open lobby. The text is
+   * filtered with the shared chat filter; clients hide lines from players they
+   * blocked or muted.
+   *
+   * @throws {MMError} 404 `no_lobby`, 403 `chat_banned`, 400 `empty_message`, 429 `chat_rate`.
+   */
+  async lobbyChat(userId: string, raw: unknown): Promise<LobbyChatLine> {
+    const lobby = await this.lobbyOf(userId);
+    const seat = lobby ? rules.seatOf(lobby, userId) : undefined;
+    if (!lobby || !seat) throw new MMError(404, 'no_lobby', 'You are not in a private show');
+    const scopes = (await this.bans.scopes([userId])).get(userId);
+    if (scopes?.has('chat') || scopes?.has('all'))
+      throw new MMError(403, 'chat_banned', 'Chat is disabled on this account');
+    const filtered = filterChat(raw);
+    if (!filtered) throw new MMError(400, 'empty_message', 'Say something first');
+    if (!this.chatLimiter.hit(userId).allowed) throw new MMError(429, 'chat_rate', 'Slow down a little');
+    const line: LobbyChatLine = {
+      id: randomUUID(),
+      code: lobby.code,
+      from: { userId, name: seat.name },
+      ...filtered,
+      at: this.now(),
+    };
+    for (const m of rules.members(lobby)) await this.emit(m.userId, { type: 'lobby_chat', ...line });
+    return line;
   }
 
   /** The open lobby a user is a member of, or null (reloads restore it from this). */

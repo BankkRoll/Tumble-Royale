@@ -419,7 +419,19 @@ export async function buildMatchmaker(
               void mm.setLobbyPresence(p.userId, false);
             }
           });
-          ws.on('message', () => undefined);
+          ws.on('message', (data) => {
+            let msg: { type?: unknown; text?: unknown };
+            try {
+              msg = JSON.parse(String(data)) as { type?: unknown; text?: unknown };
+            } catch {
+              return;
+            }
+            if (msg.type !== 'lobby_chat') return;
+            mm.lobbyChat(p.userId, msg.text).catch((err: unknown) => {
+              if (err instanceof MMError && ws.readyState === WebSocket.OPEN)
+                ws.send(JSON.stringify({ type: 'error', code: err.code, message: err.message }));
+            });
+          });
           const status = await mm.status(p.userId);
           ws.send(JSON.stringify(status ? { type: 'status', ...status } : { type: 'idle' }));
           // A reload lands here: hand the member their lobby back without a separate fetch.

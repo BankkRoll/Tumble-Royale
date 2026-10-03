@@ -64,6 +64,21 @@ describe('match results ingest', () => {
     expect(detail.botCount).toBe(38);
   });
 
+  it('replays instead of re-granting when a game-server outbox retries much later', async () => {
+    const u = await api.guest();
+    const show = buildShow({ humans: [{ userId: u.id, placement: 1 }] });
+    const first = (await api.postMatch(show)).json();
+    // The response was lost; the outbox keeps the payload across a restart and retries a day later.
+    api.clock.advance(24 * 3_600_000);
+    const retried = await api.postMatch(show);
+    expect(retried.statusCode).toBe(200);
+    expect(retried.json()).toMatchObject({ alreadyProcessed: true, rewards: first.rewards });
+    api.clock.advance(-24 * 3_600_000);
+    const me = (await api.req('GET', '/me', { token: u.accessToken })).json();
+    expect(me).toMatchObject({ crowns: 1, stats: { showsPlayed: 1 } });
+    expect((await verifyLedger(api.ctx.db, u.id)).ok).toBe(true);
+  });
+
   it('handles concurrent duplicate posts', async () => {
     const u = await api.guest();
     const show = buildShow({ humans: [{ userId: u.id, placement: 5 }] });

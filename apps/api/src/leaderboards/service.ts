@@ -92,6 +92,43 @@ export async function recordLeaderboards(
   }
 }
 
+/**
+ * Moves a player's live regional rows after their region changes. Regional
+ * scores always equal the global ones, so the global board is the source.
+ *
+ * @param from - Region the player left.
+ * @param to - Region the player joined (already saved in Postgres).
+ */
+export async function moveLeaderboardRegion(
+  ctx: AppContext,
+  userId: string,
+  from: string,
+  to: string,
+): Promise<void> {
+  if (from === to) return;
+  const now = ctx.now();
+  for (const type of BOARD_TYPES) {
+    await ctx.kv.zrem(boardKey(ctx, type, from, now), userId);
+    const score = await ctx.kv.zscore(boardKey(ctx, type, 'global', now), userId);
+    // A cold board is rebuilt from Postgres, which already has the new region.
+    if (score !== null && !(await ensureBuilt(ctx, type, to, now))) {
+      await ctx.kv.zadd(boardKey(ctx, type, to, now), score, userId);
+    }
+  }
+}
+
+/**
+ * Removes a player from every live board (account deletion).
+ *
+ * @param region - The player's region.
+ */
+export async function removeFromLeaderboards(ctx: AppContext, userId: string, region: string): Promise<void> {
+  const now = ctx.now();
+  for (const type of BOARD_TYPES) {
+    for (const area of ['global', region]) await ctx.kv.zrem(boardKey(ctx, type, area, now), userId);
+  }
+}
+
 /** Scores straight from Postgres, optionally limited to some users / a region. */
 async function scoresFromDb(
   ctx: AppContext,

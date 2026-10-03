@@ -13,6 +13,7 @@ import {
   CaptionChip,
   ControlsHint,
   CountdownNumerals,
+  GrabStatus,
   EliminatedSheet,
   HudTimer,
   NetStats,
@@ -54,6 +55,7 @@ export const Hud = memo(function Hud(): JSX.Element {
       </div>
       <ControlsHint />
       <CameraLockHint />
+      <GrabStatus />
       <SpectateBanner />
       <CaptionChip />
       <TouchControls />

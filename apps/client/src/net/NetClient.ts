@@ -64,9 +64,35 @@ export interface NetClientEvents extends Record<string, unknown> {
   lobby: { humans: number; capacity: number; startsInMs: number };
   /** Relayed in-show chat (text with `masked` variant, or a quick-chat preset). */
   chat: Omit<ChatMsg, 't'>;
+  /** A reconnect attempt was scheduled after a drop. */
+  reconnect: ReconnectAttempt;
   /** Every low-frequency message, including the ones above. */
   message: LowFreqMessage;
   kicked: { reason: number; detail: string };
+}
+
+/** One scheduled reconnect attempt. */
+export interface ReconnectAttempt {
+  /** 1-based attempt number. */
+  attempt: number;
+  /** Attempts before the client gives up. */
+  maxAttempts: number;
+  /** Delay before this attempt opens a socket (ms). */
+  delayMs: number;
+}
+
+/** Default reconnect attempts before giving up (all fit inside the server's 30 s resume window). */
+export const DEFAULT_RECONNECT_ATTEMPTS = 5;
+
+/**
+ * Backoff before reconnect attempt `attempt` (1-based): 0.5 s, 1 s, 2 s, then
+ * 4 s per attempt.
+ *
+ * @param attempt - Attempt number.
+ * @returns Delay in ms.
+ */
+export function reconnectDelayMs(attempt: number): number {
+  return Math.min(4000, 250 * 2 ** Math.min(Math.max(1, attempt), 4));
 }
 
 /** The subset of the browser WebSocket the client uses (injectable for tests). */
@@ -97,6 +123,8 @@ export interface NetClientOptions {
   createSocket?: (url: string) => WebSocketLike;
   /** How long to keep trying to resume after a drop. */
   reconnectWindowMs?: number;
+  /** Reconnect attempts after a drop before the state becomes `failed`. */
+  maxReconnectAttempts?: number;
   pingIntervalMs?: number;
 }
 
@@ -197,6 +225,7 @@ export class NetClient extends TypedEmitter<NetClientEvents> {
       now,
       createSocket: opts.createSocket ?? ((url) => new WebSocket(url) as unknown as WebSocketLike),
       reconnectWindowMs: opts.reconnectWindowMs ?? 30_000,
+      maxReconnectAttempts: Math.max(1, opts.maxReconnectAttempts ?? DEFAULT_RECONNECT_ATTEMPTS),
       pingIntervalMs: opts.pingIntervalMs ?? 2000,
     };
     this.clock = new ClockSync(now);
@@ -225,6 +254,21 @@ export class NetClient extends TypedEmitter<NetClientEvents> {
     this.userClosed = false;
     this.setState(this.droppedAt >= 0 ? 'reconnecting' : 'connecting');
     this.open();
+  }
+
+  /**
+   * Starts a fresh round of reconnect attempts after the client gave up
+   * (`failed`), e.g. from the connection-lost curtain's Try again. No-op when
+   * a socket is open, after {@link close}, or after a kick.
+   *
+   * @returns True when a new attempt started.
+   */
+  retry(): boolean {
+    if (this.socket || this.userClosed || this.state !== 'failed') return false;
+    this.reconnectAttempts = 0;
+    this.droppedAt = this.opts.now();
+    this.scheduleReconnect(this.droppedAt);
+    return true;
   }
 
   /** Closes for good (no reconnect). */
@@ -328,17 +372,26 @@ export class NetClient extends TypedEmitter<NetClientEvents> {
     if (this.userClosed || this.state === 'failed') return;
     const now = this.opts.now();
     if (this.droppedAt < 0) this.droppedAt = now;
-    if (!this.resumeToken && this.state === 'connecting' && this.reconnectAttempts > 5) {
+    if (
+      this.reconnectAttempts >= this.opts.maxReconnectAttempts ||
+      now - this.droppedAt > this.opts.reconnectWindowMs
+    ) {
       this.setState('failed');
       return;
     }
-    if (now - this.droppedAt > this.opts.reconnectWindowMs) {
-      this.setState('failed');
-      return;
-    }
+    this.scheduleReconnect(now);
+  }
+
+  private scheduleReconnect(now: number): void {
     this.reconnectAttempts++;
-    this.nextReconnectAt = now + Math.min(4000, 250 * 2 ** Math.min(this.reconnectAttempts, 4));
+    const delayMs = reconnectDelayMs(this.reconnectAttempts);
+    this.nextReconnectAt = now + delayMs;
     this.setState('reconnecting');
+    this.emit('reconnect', {
+      attempt: this.reconnectAttempts,
+      maxAttempts: this.opts.maxReconnectAttempts,
+      delayMs,
+    });
   }
 
   private sendHello(): void {

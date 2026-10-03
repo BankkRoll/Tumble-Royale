@@ -50,11 +50,8 @@ export interface JoinTicketClaims {
   bots: number;
   teamSize: number;
   custom?: TicketCustomSettings;
-  /**
-   * The account has an active `chat` ban: text chat is dropped (quick-chat
-   * presets still work). Set by whoever signs the ticket from the API's bans.
-   */
-  chatBanned?: boolean;
+  /** Chat-suspended account: its chat is never relayed. */
+  mute?: boolean;
 }
 
 function b64url(buf: Buffer): string {
@@ -124,7 +121,7 @@ export function verifyJoinTicket(secret: string, token: string, nowMs: number): 
     bots: isInt(c.bots) ? c.bots : Math.max(0, c.size - c.humans),
     teamSize: isInt(c.teamSize) ? c.teamSize : 1,
     ...(c.custom && typeof c.custom === 'object' ? { custom: c.custom as TicketCustomSettings } : {}),
-    ...(c.chatBanned === true ? { chatBanned: true } : {}),
+    ...(c.mute === true ? { mute: true } : {}),
   };
 }
 

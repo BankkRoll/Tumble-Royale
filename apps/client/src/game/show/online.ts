@@ -29,7 +29,9 @@ import { RoundPhase, ShowPhase, type RoundDefinition, type RoundPhaseId } from '
 import { emptyInput, type SimEvent } from '@tumble/sim';
 import {
   PlayerRoundStatus,
+  clampRoundTimeScale,
   createMatchSim,
+  scaleRoundTimer,
   type MatchPlayerInfo,
   type MatchSim,
   type MatchSimHandle,
@@ -37,7 +39,13 @@ import {
 import { CourseMetric } from '@tumble/sim/rounds';
 import { ShowPlaylistSchema } from '@tumble/sim/show';
 import { bindUI, ui, type RewardsSummary } from '@tumble/ui';
-import { NetClient, NetGameSession, defaultServerUrl, type ConnectionState } from '../../net/index.ts';
+import {
+  NetClient,
+  NetGameSession,
+  defaultServerUrl,
+  type ConnectionState,
+  type ReconnectAttempt,
+} from '../../net/index.ts';
 import { botLoadout, decodeLoadout, encodeLoadout } from '../cosmetics.ts';
 import type { ShowResultForProfile } from '../profile.ts';
 import type { HudInput, HudPlayerStatus } from '../round/hud.ts';
@@ -190,7 +198,9 @@ export class OnlineShowSession extends ShowSession {
         status: 'searching',
         startedAt: Date.now(),
         playersFound: 1,
-        playersNeeded: 40,
+        playersNeeded:
+          (this.opts.playlistId ? getPlaylist(this.opts.playlistId) : undefined)?.maxPlayers ??
+          MAIN.maxPlayers,
         etaSec: -1,
         region: 'Local server',
       });
@@ -200,6 +210,7 @@ export class OnlineShowSession extends ShowSession {
     const net = this.net;
     this.unsub.push(
       net.on('state', (st) => this.onConnection(st)),
+      net.on('reconnect', (a) => this.onReconnectAttempt(a)),
       net.on('welcome', (w) => {
         // A fresh (non-resumed) Welcome mid-show means the server lost the room (restart): the show is gone.
         if (this.welcomed && !w.resumed && (this.preShowEntered || this.roundIndex >= 0)) {
@@ -264,6 +275,8 @@ export class OnlineShowSession extends ShowSession {
         // Same layout and quota as the server, so predicted obstacles match the authoritative ones.
         ...(join.variationId ? { variationId: join.variationId } : {}),
         ...(join.qualifyTarget > 0 ? { qualifyTarget: join.qualifyTarget } : {}),
+        ...(join.mutatorId ? { mutatorId: join.mutatorId } : {}),
+        ...(join.roundTimeScale !== undefined ? { roundTimeScale: join.roundTimeScale } : {}),
       },
       this.ctx.matchDeps,
     ) as MatchSimHandle;
@@ -274,16 +287,37 @@ export class OnlineShowSession extends ShowSession {
   private onConnection(st: ConnectionState): void {
     const s = ui.getState();
     if (this.summary) return;
-    if (st === 'reconnecting')
-      s.setConnection({
-        status: 'reconnecting',
-        attempt: 1,
-        maxAttempts: 5,
-        message: 'Hold tight, wobbling back in…',
-      });
-    else if (st === 'connected') s.setConnection({ status: 'online' });
+    // Reconnect attempts arrive through `reconnect` with their real numbers.
+    if (st === 'connected') s.setConnection({ status: 'online' });
     else if (st === 'connecting') s.setConnection({ status: 'connecting' });
-    else if (st === 'failed') this.fail('Connection lost');
+    else if (st === 'failed') this.connectionLost();
+  }
+
+  private onReconnectAttempt(a: ReconnectAttempt): void {
+    if (this.summary || this.failed) return;
+    ui.getState().setConnection({
+      status: 'reconnecting',
+      attempt: a.attempt,
+      maxAttempts: a.maxAttempts,
+      nextAttemptAt: Date.now() + a.delayMs,
+      message: 'Hold tight, wobbling back in…',
+    });
+  }
+
+  /** Every attempt failed: the curtain offers Try again and Leave (kicks and lost rooms use {@link fail}). */
+  private connectionLost(): void {
+    if (this.failed || this.summary) return;
+    const prev = ui.getState().connection;
+    ui.getState().setConnection({
+      status: 'lost',
+      message: "We couldn't get your Tumbler back into the show.",
+      ...(prev.maxAttempts !== undefined ? { maxAttempts: prev.maxAttempts } : {}),
+    });
+  }
+
+  override retryConnection(): void {
+    if (this.failed || this.summary) return;
+    if (!this.net.retry()) this.fail('Connection lost');
   }
 
   private failed = false;
@@ -373,11 +407,13 @@ export class OnlineShowSession extends ShowSession {
     const start: RoundStart = {
       index,
       isFinal: j.isFinal,
-      round,
+      // Same timer the server runs, so the rules card and HUD clock match it.
+      round: scaleRoundTimer(round, clampRoundTimeScale(j.roundTimeScale)),
       players: j.players,
       seed: j.seed,
       stage: j.stage,
       qualifyTarget: j.isFinal ? 1 : Math.max(1, j.qualifyTarget),
+      mutatorId: j.mutatorId ?? null,
     };
     this.onRoundSelected(start);
   }
@@ -540,6 +576,24 @@ export class OnlineShowSession extends ShowSession {
 
   protected override ping(): number {
     return this.net.rtt;
+  }
+
+  protected override isOnline(): boolean {
+    return true;
+  }
+
+  /**
+   * A matchmade show's results reach the account API from the game server,
+   * which keeps a leaver's played rounds (reported with `quit`), so nothing is
+   * banked locally. Dev shows without a ticket fall back to the local profile.
+   */
+  protected override bankOnLeave(facts: ShowResultForProfile): void {
+    if (this.reportsToAccount()) return;
+    super.bankOnLeave(facts);
+  }
+
+  private reportsToAccount(): boolean {
+    return !!this.opts.matchId && !!this.ctx.account?.active;
   }
 
   protected override rewardsPending(): boolean {

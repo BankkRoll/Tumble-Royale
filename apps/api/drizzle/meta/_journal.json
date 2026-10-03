@@ -15,6 +15,13 @@
       "when": 1790984579770,
       "tag": "0001_ledger_append_only",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791048519136,
+      "tag": "0002_account_erasure",
+      "breakpoints": true
     }
   ]
 }

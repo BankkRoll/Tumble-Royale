@@ -90,6 +90,8 @@ interface PlayerSlot {
   lastYaw: number;
   /** Account id from the join ticket (null for bots and unticketed dev joins). */
   userId: string | null;
+  /** Chat-suspended (join ticket `mute`): chat from this slot is dropped. */
+  muted?: boolean;
   /** Action counters for challenge progress. */
   stats: PlayerStatsCounters;
 }
@@ -375,6 +377,7 @@ export class Room {
       id,
       name,
       userId: ticket?.sub ?? null,
+      muted: ticket?.mute === true,
       stats: newStats(),
       isBot: false,
       loadout: hello.loadout.slice(0, 255),
@@ -389,7 +392,7 @@ export class Room {
       lastYaw: 0,
     };
     this.slots.set(id, slot);
-    this.chat.register(id, { chatBanned: ticket?.chatBanned ?? false }, now);
+    this.chat.register(id, { muted: slot.muted === true }, now);
     if (this.firstJoinAt < 0) this.firstJoinAt = now;
     this.attach(session, slot, false);
     this.log(`[room ${this.id}] ${slot.name} joined as ${spectator ? 'spectator' : 'player'} ${id}`);
@@ -581,6 +584,8 @@ export class Room {
       (this.state === 'lobby' && this.slots.size === 0 && this.serverTick > SERVER_TICK_HZ * 60)
     ) {
       this.log(`[room ${this.id}] closing (${over ? 'show over' : 'empty'})`);
+      // Every human left mid-show: report the rounds they played, or their rewards would be lost with the room.
+      if (this.state === 'show' && !this.rewardsDone) this.reportResults([]);
       this.dispose();
     }
   }
@@ -788,6 +793,8 @@ export class Room {
       mode: 'authority',
       ...(plan.qualifyTarget !== undefined ? { qualifyTarget: plan.qualifyTarget } : {}),
       ...(plan.variationId !== undefined ? { variationId: plan.variationId } : {}),
+      ...(plan.mutatorId ? { mutatorId: plan.mutatorId } : {}),
+      ...(plan.roundTimeScale !== undefined ? { roundTimeScale: plan.roundTimeScale } : {}),
     });
     this.sim = sim;
     this.round = round;
@@ -926,6 +933,8 @@ export class Room {
       isFinal: this.currentPlan?.isFinal ?? this.round.type === 'final',
       qualifyTarget: this.currentPlan?.qualifyTarget ?? this.sim.getStatus().qualifyTarget,
       variationId: this.sim.variationId ?? null,
+      mutatorId: this.currentPlan?.mutatorId ?? null,
+      roundTimeScale: this.currentPlan?.roundTimeScale ?? 1,
     });
   }
 

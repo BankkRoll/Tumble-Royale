@@ -296,6 +296,11 @@ export class TestClient {
     this.reliable.send(encodeReliableMessage({ kind: 'msg', msg }));
   }
 
+  /** Queues a chat line on the reliable channel; it goes out on the next {@link pump}. */
+  chat(text: string): void {
+    this.reliable.send(encodeReliableMessage({ kind: 'msg', msg: { t: 'chat', from: 0, text } }));
+  }
+
   lowFreq(t: LowFreqMessage['t']): LowFreqMessage[] {
     return this.messages.flatMap((m) => (m.kind === 'msg' && m.msg.t === t ? [m.msg] : []));
   }

@@ -64,6 +64,12 @@ export const ShowPlaylistSchema = z.object({
   ranked: z.boolean().default(false),
   /** Allow bots to fill empty seats. */
   botsAllowed: z.boolean().default(true),
+  /**
+   * Show mutators (`@tumble/sim/mutators` ids) with weights. When non-empty the
+   * director picks exactly one per show from the seed and applies it to every
+   * round. Unknown ids are skipped.
+   */
+  mutators: z.array(z.object({ id: z.string(), weight: z.number().min(0).default(1) })).default([]),
 });
 
 /** Validated playlist. */

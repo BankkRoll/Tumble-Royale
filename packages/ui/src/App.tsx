@@ -12,6 +12,8 @@ import { InGameMenu } from './screens/overlays/InGameMenu.tsx';
 import { SocialLayer } from './screens/overlays/PlayerActions.tsx';
 import { JoinCodeDialog, PrivateShowDialog } from './screens/overlays/PrivateShow.tsx';
 import { FriendsSheet, NotificationsPanel } from './screens/overlays/SocialSheets.tsx';
+import { WatchChoiceLayer } from './screens/overlays/WatchChoice.tsx';
+import { ReplayLayer } from './screens/Replay.tsx';
 import { ScreenLayer } from './screens/ScreenLayer.tsx';
 import { useUI } from './store/uiStore.ts';
 import { installEasingVars } from './theme/motion.ts';
@@ -49,6 +51,7 @@ export function App(): JSX.Element {
   const a = useUI((s) => s.settings.accessibility);
   const streamer = useUI((s) => s.settings.gameplay.streamerMode);
   const screen = useUI((s) => s.screen);
+  const replay = useUI((s) => s.replay !== null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -70,6 +73,7 @@ export function App(): JSX.Element {
       data-reduce-shake={String(a.reduceShake)}
       data-streamer={String(streamer)}
       data-screen={screen}
+      data-replay={replay ? 'true' : undefined}
       style={{ ['--ui-scale' as string]: String(a.uiScale) }}
     >
       <div className="tr-stage">
@@ -79,7 +83,9 @@ export function App(): JSX.Element {
         <StampLayer />
       </div>
       <ConfettiLayer />
+      <WatchChoiceLayer />
       <ToastLayer />
+      <ReplayLayer />
       <OverlayLayer />
       <SocialLayer />
       <DialogLayer />

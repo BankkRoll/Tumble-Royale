@@ -4,6 +4,7 @@
  * events go out on per-user channels that the WebSocket layer relays.
  */
 import { randomInt, randomUUID } from 'node:crypto';
+import { NO_BANS, type BanLookup } from './bans.ts';
 import type { MatchmakerConfig } from './config.ts';
 import {
   DEFAULT_ENGINE,
@@ -14,7 +15,7 @@ import {
   type QueueEntry,
   type QueueStatus,
 } from './engine.ts';
-import { pickServer, SERVER_TTL_MS, type GameServer } from './servers.ts';
+import { candidateRegions, humansInRooms, pickServer, SERVER_TTL_MS, type GameServer } from './servers.ts';
 import type { MMStore } from './store.ts';
 import {
   JOIN_TICKET_TTL_SEC,
@@ -55,6 +56,8 @@ export interface MatchRecord {
     partyId: string;
     team: number | null;
     role: 'player' | 'spectator';
+    /** Chat-suspended; carried to the game server in the join ticket. */
+    muted?: boolean;
   }[];
   custom: CustomSettings | null;
   createdAt: number;
@@ -64,7 +67,13 @@ export interface MatchRecord {
 export type MMEvent =
   | { type: 'queued'; entryId: string; playlistId: string; queue: string }
   | ({ type: 'status' } & QueueStatus)
-  | { type: 'waiting_for_server' }
+  | {
+      type: 'waiting_for_server';
+      /** The lobby's home region. */
+      region: string;
+      /** True once servers in other regions are being tried ("Finding a server in another region"). */
+      otherRegions: boolean;
+    }
   | { type: 'queue_cancelled'; reason: string }
   | {
       type: 'match_found';
@@ -80,6 +89,16 @@ export type MMEvent =
   | { type: 'lobby_update'; lobby: CustomLobby }
   | { type: 'lobby_closed'; code: string }
   | { type: 'lobby_kicked'; code: string };
+
+/** `GET /stats`: cheap public player counts. */
+export interface MatchmakerStats {
+  /** Players waiting in the matchmaking queue (party members counted). */
+  queued: number;
+  /** Humans in game-server rooms, from the latest heartbeats. */
+  inGame: number;
+  /** Live game servers. */
+  servers: number;
+}
 
 /** A custom/private lobby. */
 export interface CustomLobby {
@@ -97,8 +116,37 @@ export interface CustomLobby {
 /** Channel for a user's events. */
 export const userChannel = (userId: string): string => `user:${userId}`;
 
+/** Seats held on a server for a placed match until the server reports its room. */
+export interface Reservation {
+  serverId: string;
+  /** Seats (humans + bots + spectators). */
+  seats: number;
+  /** Epoch ms. */
+  at: number;
+}
+
+/** What a game server reports on every heartbeat. */
+export interface ServerReport {
+  /** Seats in use (humans + bots) across its rooms. */
+  load: number;
+  /** Rooms open. */
+  rooms?: number;
+  /** Match ids it hosts; their reservations are released because `load` now counts them. */
+  matches?: readonly string[];
+  /** Humans connected to its rooms (the public "online" count). */
+  humans?: number;
+}
+
 const ENTRIES = 'entries';
 const SERVERS = 'servers';
+/** Seats promised to placed matches whose room the server has not reported yet. */
+const RESERVATIONS = 'reservations';
+/**
+ * A reservation outlives the join tickets (90 s) by a margin: if no ticketed
+ * player has reached the server by then, the room will never be created.
+ */
+export const RESERVATION_TTL_MS = JOIN_TICKET_TTL_SEC * 1000 + 30_000;
+const SERVER_WAIT_TTL_MS = 30 * 60_000;
 const MATCH_TTL_MS = 30 * 60_000;
 const LOBBY_TTL_MS = 2 * 3_600_000;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -118,10 +166,17 @@ export const DEFAULT_CUSTOM: CustomSettings = {
 export class Matchmaker {
   readonly engine: EngineConfig;
 
+  /**
+   * @param cfg - Configuration.
+   * @param store - Shared state.
+   * @param now - Clock (ms).
+   * @param bans - Ban lookups; {@link NO_BANS} skips the checks.
+   */
   constructor(
     private readonly cfg: MatchmakerConfig,
     private readonly store: MMStore,
     private readonly now: () => number = Date.now,
+    private readonly bans: BanLookup = NO_BANS,
   ) {
     this.engine = {
       ...DEFAULT_ENGINE,
@@ -133,6 +188,41 @@ export class Matchmaker {
 
   private async emit(userId: string, event: MMEvent): Promise<void> {
     await this.store.publish(userChannel(userId), JSON.stringify(event));
+  }
+
+  /**
+   * Checks players against active bans.
+   *
+   * @param userIds - Players about to queue or join a lobby together.
+   * @param ranked - True for the ranked queue, where `ranked` bans also apply.
+   * @returns The chat-suspended players among them.
+   * @throws {MMError} 403 `banned` / `ranked_banned`.
+   */
+  async checkStanding(userIds: readonly string[], ranked = false): Promise<Set<string>> {
+    const scopes = await this.bans.scopes(userIds);
+    const muted = new Set<string>();
+    const many = userIds.length > 1;
+    for (const id of userIds) {
+      const s = scopes.get(id);
+      if (!s) continue;
+      if (s.has('all'))
+        throw new MMError(403, 'banned', many ? 'A party member is suspended' : 'This account is suspended');
+      if (ranked && s.has('ranked'))
+        throw new MMError(
+          403,
+          'ranked_banned',
+          many
+            ? 'A party member is suspended from ranked play'
+            : 'This account is suspended from ranked play',
+        );
+      if (s.has('chat')) muted.add(id);
+    }
+    return muted;
+  }
+
+  /** True when the player has an active `all` ban (used to refuse the status stream). */
+  async isSuspended(userId: string): Promise<boolean> {
+    return (await this.bans.scopes([userId])).get(userId)?.has('all') ?? false;
   }
 
   // ---------------------------------------------------------------------------
@@ -154,6 +244,8 @@ export class Matchmaker {
 
   private async removeEntry(e: QueueEntry): Promise<void> {
     await this.store.hdel(ENTRIES, e.id);
+    await this.store.del(`server-wait:${e.id}`);
+    await this.store.del(`server-fallback:${e.id}`);
     for (const m of e.members) {
       if ((await this.store.get(`user-entry:${m.userId}`)) === e.id)
         await this.store.del(`user-entry:${m.userId}`);
@@ -170,6 +262,10 @@ export class Matchmaker {
     if (ticket.sub !== caller.userId || ticket.leaderId !== caller.userId) {
       throw new MMError(403, 'not_leader', 'Only the party leader can queue the party');
     }
+    const muted = await this.checkStanding(
+      ticket.members.map((m) => m.userId),
+      ticket.queue === 'ranked',
+    );
     for (const m of ticket.members) {
       if (await this.store.get(`lobby-user:${m.userId}`))
         throw new MMError(409, 'in_lobby', 'Leave the custom lobby before queueing');
@@ -180,7 +276,12 @@ export class Matchmaker {
       id: randomUUID(),
       partyId: ticket.pid,
       leaderId: ticket.leaderId,
-      members: ticket.members.map((m) => ({ userId: m.userId, name: m.name, ordinal: m.ordinal })),
+      members: ticket.members.map((m) => ({
+        userId: m.userId,
+        name: m.name,
+        ordinal: m.ordinal,
+        ...(muted.has(m.userId) ? { muted: true } : {}),
+      })),
       playlistId: ticket.playlistId,
       queue: ticket.queue,
       region: ticket.region,
@@ -245,10 +346,17 @@ export class Matchmaker {
       const lobbies = formLobbies(await this.entries(), this.now(), this.engine);
       const created: MatchRecord[] = [];
       for (const lobby of lobbies) {
-        const server = await this.allocateServer(lobby.region, lobby.size);
+        const fallback = await this.serverWait(lobby);
+        const server = await this.allocateServer(lobby.region, lobby.size, fallback.otherRegions);
         if (!server) {
-          for (const e of lobby.entries)
-            for (const m of e.members) await this.emit(m.userId, { type: 'waiting_for_server' });
+          if (fallback.changed) {
+            const event: MMEvent = {
+              type: 'waiting_for_server',
+              region: lobby.region,
+              otherRegions: fallback.otherRegions,
+            };
+            for (const e of lobby.entries) for (const m of e.members) await this.emit(m.userId, event);
+          }
           continue;
         }
         for (const e of lobby.entries) await this.removeEntry(e);
@@ -258,6 +366,23 @@ export class Matchmaker {
     } finally {
       await this.store.del('tick-lock');
     }
+  }
+
+  /**
+   * Tracks how long a released lobby has waited for a server, keyed by its
+   * oldest entry (lobbies are re-formed every tick, entries persist).
+   *
+   * @returns Whether other regions may be tried yet, and whether that state
+   *   just changed (so players are told once per phase, not every tick).
+   */
+  private async serverWait(lobby: FormedLobby): Promise<{ otherRegions: boolean; changed: boolean }> {
+    const anchor = lobby.entries[0]!.id;
+    const now = this.now();
+    const first = await this.store.setNX(`server-wait:${anchor}`, String(now), SERVER_WAIT_TTL_MS);
+    const since = first ? now : Number((await this.store.get(`server-wait:${anchor}`)) ?? now);
+    if (now - since < this.cfg.regionFallbackMs) return { otherRegions: false, changed: first };
+    const fallbackStarted = await this.store.setNX(`server-fallback:${anchor}`, '1', SERVER_WAIT_TTL_MS);
+    return { otherRegions: true, changed: fallbackStarted };
   }
 
   private async placeMatch(lobby: FormedLobby, server: GameServer): Promise<MatchRecord> {
@@ -281,17 +406,19 @@ export class Matchmaker {
           partyId: e.partyId,
           team: teamOf.get(m.userId) ?? null,
           role: 'player' as const,
+          ...(m.muted ? { muted: true } : {}),
         })),
       ),
       custom: null,
       createdAt: this.now(),
     };
-    await this.publishMatch(record, server);
+    await this.publishMatch(record, server, lobby.size);
     return record;
   }
 
-  /** Stores the match, signs join tickets and notifies every participant. */
-  private async publishMatch(record: MatchRecord, server: GameServer): Promise<void> {
+  /** Reserves the seats, stores the match, signs join tickets and notifies every participant. */
+  private async publishMatch(record: MatchRecord, server: GameServer, seats: number): Promise<void> {
+    await this.reserve(record.matchId, server, seats);
     await this.store.set(`match:${record.matchId}`, JSON.stringify(record), MATCH_TTL_MS);
     const now = new Date(this.now());
     for (const r of record.roster) {
@@ -311,6 +438,7 @@ export class Matchmaker {
         bots: record.botFill,
         teamSize: record.teamSize,
         ...(record.custom ? { custom: record.custom } : {}),
+        ...(r.muted ? { mute: true } : {}),
       };
       const ticket = await signJoinTicket(this.cfg.gameTicketSecret, claims, now);
       await this.emit(r.userId, {
@@ -345,16 +473,46 @@ export class Matchmaker {
   }
 
   /**
-   * Heartbeat with the server's real load (replaces any reservation).
+   * Records a server's real load. Reservations for matches the server now
+   * reports as hosted are released (its `load` counts them); the rest keep
+   * holding seats until their room appears or they expire.
    *
+   * @param report - A bare number is the legacy `load`-only heartbeat.
    * @throws {MMError} 404 when unknown (the server should re-register).
    */
-  async heartbeat(id: string, load: number): Promise<GameServer> {
+  async heartbeat(id: string, report: number | ServerReport): Promise<GameServer> {
+    const r: ServerReport = typeof report === 'number' ? { load: report } : report;
     const raw = (await this.store.hgetall(SERVERS))[id];
     if (!raw) throw new MMError(404, 'unknown_server', 'Register first');
-    const server = { ...(JSON.parse(raw) as GameServer), load, lastSeen: this.now() };
+    const server: GameServer = {
+      ...(JSON.parse(raw) as GameServer),
+      load: r.load,
+      ...(r.rooms !== undefined ? { rooms: r.rooms } : {}),
+      ...(r.humans !== undefined ? { humans: r.humans } : {}),
+      lastSeen: this.now(),
+    };
     await this.store.hset(SERVERS, id, JSON.stringify(server));
+    if (r.matches?.length) {
+      const hosted = new Set(r.matches);
+      for (const [matchId, v] of Object.entries(await this.store.hgetall(RESERVATIONS))) {
+        if (hosted.has(matchId) && (JSON.parse(v) as Reservation).serverId === id)
+          await this.store.hdel(RESERVATIONS, matchId);
+      }
+    }
     return server;
+  }
+
+  /**
+   * Public player counts for the Play tab: players waiting in queue and
+   * humans in game-server rooms (from heartbeats).
+   */
+  async stats(): Promise<MatchmakerStats> {
+    const servers = await this.servers();
+    return {
+      queued: (await this.entries()).reduce((s, e) => s + e.members.length, 0),
+      inGame: humansInRooms(servers, this.now()),
+      servers: servers.length,
+    };
   }
 
   /** Removes a server (graceful shutdown). */
@@ -362,7 +520,7 @@ export class Matchmaker {
     await this.store.hdel(SERVERS, id);
   }
 
-  /** Live servers. */
+  /** Live servers as last reported (without reservations). */
   async servers(): Promise<GameServer[]> {
     const now = this.now();
     return Object.values(await this.store.hgetall(SERVERS))
@@ -370,14 +528,60 @@ export class Matchmaker {
       .filter((s) => now - s.lastSeen <= SERVER_TTL_MS);
   }
 
-  /** Picks a server and reserves seats on it until its next heartbeat. */
-  private async allocateServer(region: string, seats: number): Promise<GameServer | null> {
-    const server = pickServer(await this.servers(), region, seats, this.now());
-    if (server) {
-      const reserved = { ...server, load: server.load + seats };
-      await this.store.hset(SERVERS, server.id, JSON.stringify(reserved));
-      return reserved;
+  /** Live reservations per server; expired ones are dropped on the way. */
+  private async reservations(): Promise<Map<string, { seats: number; rooms: number }>> {
+    const now = this.now();
+    const out = new Map<string, { seats: number; rooms: number }>();
+    for (const [matchId, v] of Object.entries(await this.store.hgetall(RESERVATIONS))) {
+      const r = JSON.parse(v) as Reservation;
+      if (now - r.at > RESERVATION_TTL_MS) {
+        await this.store.hdel(RESERVATIONS, matchId);
+        continue;
+      }
+      const sum = out.get(r.serverId) ?? { seats: 0, rooms: 0 };
+      sum.seats += r.seats;
+      sum.rooms += 1;
+      out.set(r.serverId, sum);
     }
+    return out;
+  }
+
+  /**
+   * Live servers with pending reservations added to their load and room count,
+   * which is what placement must use: a reported load lags placement by up to
+   * one heartbeat plus the time players take to connect.
+   */
+  async effectiveServers(): Promise<GameServer[]> {
+    const held = await this.reservations();
+    return (await this.servers()).map((s) => {
+      const h = held.get(s.id);
+      return h ? { ...s, load: s.load + h.seats, rooms: (s.rooms ?? 0) + h.rooms } : s;
+    });
+  }
+
+  private async reserve(matchId: string, server: GameServer, seats: number): Promise<void> {
+    if (server.id === 'default') return;
+    const r: Reservation = { serverId: server.id, seats, at: this.now() };
+    await this.store.hset(RESERVATIONS, matchId, JSON.stringify(r));
+  }
+
+  /**
+   * Picks a server for `seats`: in the region, or anywhere nearby once
+   * `otherRegions` allows it; the development default server as a last resort.
+   */
+  private async allocateServer(
+    region: string,
+    seats: number,
+    otherRegions = false,
+  ): Promise<GameServer | null> {
+    const live = await this.effectiveServers();
+    const regions = candidateRegions(
+      region,
+      otherRegions,
+      live.map((s) => s.region),
+    );
+    const server = pickServer(live, regions, seats, this.now());
+    if (server) return server;
     if (this.cfg.defaultGameServerUrl) {
       return {
         id: 'default',
@@ -409,6 +613,7 @@ export class Matchmaker {
 
   /** Creates a lobby hosted by the caller. */
   async createLobby(host: Player, settings: Partial<CustomSettings>, region?: string): Promise<CustomLobby> {
+    await this.checkStanding([host.userId]);
     await this.leaveLobby(host.userId);
     await this.cancel(host.userId, 'joined_custom_lobby');
     let code = '';
@@ -444,6 +649,7 @@ export class Matchmaker {
    * @throws {MMError} 404 unknown code, 409 started/full.
    */
   async joinLobby(p: Player, code: string, spectator: boolean): Promise<CustomLobby> {
+    await this.checkStanding([p.userId]);
     const lobby = await this.loadLobby(code);
     if (lobby.status !== 'open') throw new MMError(409, 'lobby_started', 'That lobby already started');
     const current = await this.store.get(`lobby-user:${p.userId}`);
@@ -526,9 +732,18 @@ export class Matchmaker {
    */
   async startLobby(hostId: string, code: string): Promise<MatchRecord> {
     const lobby = await this.hostLobby(hostId, code);
+    // Bans can land after someone joined: suspended players are left out, chat-suspended ones muted.
+    const scopes = await this.bans.scopes([...lobby.players, ...lobby.spectators].map((p) => p.userId));
+    if (scopes.get(hostId)?.has('all')) throw new MMError(403, 'banned', 'This account is suspended');
+    const inGoodStanding = (p: { userId: string }) => !scopes.get(p.userId)?.has('all');
+    const mute = (userId: string) => (scopes.get(userId)?.has('chat') ? { muted: true } : {});
+    lobby.players = lobby.players.filter(inGoodStanding);
+    lobby.spectators = lobby.spectators.filter(inGoodStanding);
     const size = lobby.settings.maxPlayers;
-    const server = await this.allocateServer(lobby.region, size + lobby.spectators.length);
-    if (!server) throw new MMError(503, 'no_server', 'No game server available in this region');
+    const seats = size + lobby.spectators.length;
+    // A host pressing Start is waiting on us, so other regions are tried straight away.
+    const server = await this.allocateServer(lobby.region, seats, true);
+    if (!server) throw new MMError(503, 'no_server', 'No game server available');
     const record: MatchRecord = {
       matchId: `m_${randomUUID().replace(/-/g, '')}`,
       serverId: server.id,
@@ -547,6 +762,7 @@ export class Matchmaker {
           partyId: `custom:${code}`,
           team: null,
           role: 'player' as const,
+          ...mute(p.userId),
         })),
         ...lobby.spectators.map((p) => ({
           userId: p.userId,
@@ -554,6 +770,7 @@ export class Matchmaker {
           partyId: `custom:${code}`,
           team: null,
           role: 'spectator' as const,
+          ...mute(p.userId),
         })),
       ],
       custom: lobby.settings,
@@ -563,7 +780,7 @@ export class Matchmaker {
     lobby.matchId = record.matchId;
     await this.saveLobby(lobby);
     for (const p of [...lobby.players, ...lobby.spectators]) await this.store.del(`lobby-user:${p.userId}`);
-    await this.publishMatch(record, server);
+    await this.publishMatch(record, server, seats);
     return record;
   }
 }

@@ -7,7 +7,7 @@
  *   players with the chat filter on (see `filterChat`);
  * - per-player rate limit that survives reconnects (the per-connection guard
  *   resets with each new socket);
- * - chat bans: text from chat-banned accounts is dropped.
+ * - chat bans (join ticket `mute`): text is dropped, quick-chat presets still pass.
  */
 import type { ChatMsg } from '@tumble/netcode';
 import { filterChat, quickChat } from '@tumble/shared';
@@ -37,12 +37,12 @@ export type ChatOutcome =
  *
  * @example
  * const chat = new ChatRelay();
- * chat.register(slot.id, { chatBanned: ticket?.chatBanned ?? false }, now);
+ * chat.register(slot.id, { muted: ticket?.mute === true }, now);
  * const out = chat.handle(slot.id, msg, now);
  * if (out.kind === 'relay') room.broadcast(out.msg);
  */
 export class ChatRelay {
-  private readonly players = new Map<number, { bucket: TokenBucket; chatBanned: boolean }>();
+  private readonly players = new Map<number, { bucket: TokenBucket; muted: boolean }>();
 
   constructor(private readonly limits: ChatLimits = DEFAULT_CHAT_LIMITS) {}
 
@@ -50,13 +50,13 @@ export class ChatRelay {
    * Registers (or re-registers) a player. Re-registering keeps the bucket so a
    * reconnect does not refill it.
    */
-  register(id: number, opts: { chatBanned: boolean }, now: number): void {
+  register(id: number, opts: { muted: boolean }, now: number): void {
     const cur = this.players.get(id);
-    if (cur) cur.chatBanned = opts.chatBanned;
+    if (cur) cur.muted = opts.muted;
     else
       this.players.set(id, {
         bucket: new TokenBucket(this.limits.perSec, this.limits.burst, now),
-        chatBanned: opts.chatBanned,
+        muted: opts.muted,
       });
   }
 
@@ -66,12 +66,12 @@ export class ChatRelay {
   }
 
   /**
-   * HOOK: chat bans. Text chat is refused for accounts whose join ticket
-   * carries `chatBanned: true`. Quick-chat presets stay allowed: they are fixed
+   * Chat bans: text chat is refused for accounts whose join ticket carries
+   * `mute: true` (set by the matchmaker from the API's chat bans). Quick-chat presets stay allowed: they are fixed
    * gameplay callouts and cannot carry abuse.
    */
   canSendText(id: number): boolean {
-    return !(this.players.get(id)?.chatBanned ?? false);
+    return !(this.players.get(id)?.muted ?? false);
   }
 
   /**

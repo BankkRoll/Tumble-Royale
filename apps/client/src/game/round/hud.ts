@@ -58,6 +58,7 @@ export class HudMapper {
    * @param info - Name/colour lookup.
    * @param audio - Adaptive music sink.
    * @param isFinal - Final round (one winner).
+   * @param mutator - The show's mutator, kept on the objective chip as a reminder.
    */
   constructor(
     private readonly round: RoundDefinition,
@@ -66,8 +67,13 @@ export class HudMapper {
     private readonly info: (id: number) => { name: string; color: string } | null,
     private readonly audio: GameAudio | null,
     private readonly isFinal: boolean,
+    private readonly mutator: { name: string; icon: string } | null = null,
   ) {
-    this.objectiveFor = round.objective;
+    this.objectiveFor = this.objectiveText(round.objective);
+  }
+
+  private objectiveText(objective: string): string {
+    return this.mutator ? `${this.mutator.icon} ${this.mutator.name} · ${objective}` : objective;
   }
 
   /**
@@ -145,7 +151,7 @@ export class HudMapper {
       patch.place = me.place;
       patch.score = me.score;
       if (me.hasItem !== undefined) {
-        const obj = me.hasItem ? 'You have it — hold on!' : this.round.objective;
+        const obj = this.objectiveText(me.hasItem ? 'You have it — hold on!' : this.round.objective);
         if (obj !== this.objectiveFor) {
           this.objectiveFor = obj;
           patch.objective = obj;

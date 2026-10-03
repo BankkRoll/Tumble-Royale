@@ -141,6 +141,8 @@ export interface JoinTicketClaims {
   teamSize: number;
   /** Present for custom lobbies. */
   custom?: CustomSettings;
+  /** True when the player is chat-suspended: the game server must not relay their chat. */
+  mute?: boolean;
 }
 
 /**

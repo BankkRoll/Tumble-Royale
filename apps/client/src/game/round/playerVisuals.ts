@@ -114,6 +114,8 @@ const BUBBLE_STYLE: NameplateStyle = {
 };
 /** Seconds a speech bubble stays up. */
 const BUBBLE_SECONDS = 3.5;
+/** Nameplate chip that marks computer-controlled players. */
+const BOT_TAG = 'BOT';
 
 const TRAIL_STYLE: Readonly<Record<string, TrailStyle>> = {
   sparkle: 'sparkle',
@@ -154,6 +156,8 @@ export interface PlayerVisualsOptions {
   audio: GameAudio | null;
   nameplates: boolean;
   streamerMode: boolean;
+  /** Tag bots' nameplates with a small BOT chip (Settings → Gameplay → Show bot tags). */
+  botTags?: boolean;
 }
 
 /** All entrants' visuals for one round. */
@@ -207,6 +211,7 @@ export class PlayerVisuals {
         : this.plates.create(info.name, {
             style: loadout.nameplate,
             teamColor: info.team >= 0 ? (TEAM_COLORS[info.team % TEAM_COLORS.length] ?? null) : null,
+            tag: info.isBot && (opts.botTags ?? true) ? BOT_TAG : null,
           });
       if (plate) plate.target = visual.object;
       let trail: TrailHandle | null = null;
@@ -297,6 +302,11 @@ export class PlayerVisuals {
       b.plate.visible = e.visible;
     }
     this.bubbles.update(camera);
+  }
+
+  /** Shows or hides the BOT chip on bots' nameplates. */
+  setBotTags(on: boolean): void {
+    for (const e of this.entries) if (e.info.isBot) e.plate?.setTag(on ? BOT_TAG : null);
   }
 
   /** Adds a squash/stretch kick to a player's next frame. */

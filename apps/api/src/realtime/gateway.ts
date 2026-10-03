@@ -25,6 +25,7 @@ import type { Duplex } from 'node:stream';
 import type { FastifyInstance } from 'fastify';
 import { WebSocket, WebSocketServer } from 'ws';
 import { z } from 'zod';
+import { isErased } from '../accounts/tombstone.ts';
 import { verifyAccessToken } from '../auth/tokens.ts';
 import type { AppContext } from '../context.ts';
 import { activeBans } from '../http/auth.ts';
@@ -118,7 +119,10 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
         token,
         Math.floor(ctx.now().getTime() / 1000),
       );
-      const banned = claims ? (await activeBans(ctx, claims.sub)).some((b) => b.scope === 'all') : false;
+      const banned = claims
+        ? (await isErased(ctx.kv, claims.sub)) ||
+          (await activeBans(ctx, claims.sub)).some((b) => b.scope === 'all')
+        : false;
       if (!claims || banned) {
         socket.write(
           `HTTP/1.1 ${banned ? '403 Forbidden' : '401 Unauthorized'}\r\nConnection: close\r\n\r\n`,

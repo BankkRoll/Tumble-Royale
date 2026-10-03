@@ -107,8 +107,9 @@ export class NameplateSet {
    * @param i - Plate index.
    * @param name - Display name (truncated to fit).
    * @param accent - Accent stripe colour (player colour).
+   * @param tag - Small text chip after the name (e.g. `BOT`).
    */
-  setName(i: number, name: string, accent = '#ff6fb5'): void {
+  setName(i: number, name: string, accent = '#ff6fb5', tag?: string): void {
     const cx = (i % this.cols) * CELL_W;
     const cy = Math.floor(i / this.cols) * CELL_H;
     const g = this.ctx;
@@ -129,14 +130,32 @@ export class NameplateSet {
     g.fillStyle = this.opts.foreground;
     g.textBaseline = 'middle';
     g.textAlign = 'center';
+    let maxW = CELL_W - pad * 2 - r * 2.4;
+    let textX = cx + CELL_W / 2 + r * 0.6;
+    if (tag) {
+      g.font = `800 15px 'Trebuchet MS', system-ui, sans-serif`;
+      const tw = g.measureText(tag).width + 12;
+      const tx = cx + CELL_W - pad - r * 0.6 - tw;
+      const ty = cy + (CELL_H - 20) / 2;
+      g.beginPath();
+      g.roundRect(tx, ty, tw, 20, 6);
+      g.globalAlpha = 0.6;
+      g.lineWidth = 2;
+      g.strokeStyle = this.opts.foreground;
+      g.stroke();
+      g.globalAlpha = 0.75;
+      g.fillText(tag, tx + tw / 2, ty + 11);
+      g.globalAlpha = 1;
+      maxW -= tw + 6;
+      textX -= (tw + 6) / 2;
+    }
     let size = 30;
     g.font = `800 ${size}px 'Trebuchet MS', system-ui, sans-serif`;
-    const maxW = CELL_W - pad * 2 - r * 2.4;
     while (g.measureText(name).width > maxW && size > 14) {
       size -= 2;
       g.font = `800 ${size}px 'Trebuchet MS', system-ui, sans-serif`;
     }
-    g.fillText(name, cx + CELL_W / 2 + r * 0.6, cy + CELL_H / 2 + 1);
+    g.fillText(name, textX, cy + CELL_H / 2 + 1);
     this.cell[i * 3] = i % this.cols;
     this.cell[i * 3 + 1] = Math.floor(i / this.cols);
     if (this.cell[i * 3 + 2] === 0) this.cell[i * 3 + 2] = 1;

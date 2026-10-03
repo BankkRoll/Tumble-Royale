@@ -703,3 +703,48 @@
 .tr-hud-menu-btn:hover {
   transform: rotate(-12deg) scale(1.06);
 }
+
+/* Grab feedback, centred above the controls hint. */
+.tr-hud-grab {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--safe-b) + 7.4em);
+  /* translate, not transform: the pop-in keyframes animate transform. */
+  translate: -50% 0;
+  display: grid;
+  gap: 0.3em;
+  justify-items: center;
+  min-width: 14em;
+  padding: 0.45em 1.1em 0.55em;
+  border-radius: 1em;
+  border: 0.13em solid var(--ink);
+  background: var(--cloud);
+  color: var(--ink);
+  font-weight: 800;
+  box-shadow: 0 0.14em 0 var(--ink);
+  pointer-events: none;
+  animation: tr-pop-in 220ms var(--ease-back-out, ease-out) backwards;
+}
+.tr-hud-grab.is-held {
+  background: #ffd6e4;
+  animation:
+    tr-pop-in 220ms var(--ease-back-out, ease-out) backwards,
+    tr-pulse 0.6s ease-in-out infinite;
+}
+.tr-hud-grab-bar {
+  width: 100%;
+  height: 0.5em;
+  border-radius: 999px;
+  border: 0.1em solid var(--ink);
+  background: #fff;
+  overflow: hidden;
+}
+.tr-hud-grab-bar i {
+  display: block;
+  height: 100%;
+  background: var(--lemon);
+  transition: width 120ms linear;
+}
+.tr-hud-grab.is-held .tr-hud-grab-bar i {
+  background: var(--mint);
+}

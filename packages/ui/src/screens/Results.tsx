@@ -131,7 +131,7 @@ export function RoundResultsScreen(): JSX.Element | null {
   );
 }
 
-/** "PLAYERS REMAINING 40 → 26" + next round tease. */
+/** "PLAYERS REMAINING 100 → 60" + next round tease. */
 export function BetweenRoundsScreen(): JSX.Element | null {
   const info = useUI((s) => s.betweenRounds);
   const step = useSequence([400, 1500, 2300], info);

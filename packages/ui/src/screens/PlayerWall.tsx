@@ -3,7 +3,7 @@
  *
  * A stadium wall of cubbies, one per participant. The show replays round by
  * round: eliminated Tumblers' cells flash, their trapdoors swing open and they
- * tumble out of the wall; the counter rolls down (40 → 26 → 14 → 7 → 1); the
+ * tumble out of the wall; the counter rolls down (100 → 60 → 30 → 12 → 1); the
  * winner's cell glows, the wall shakes and the Crown drops onto them.
  *
  * Responsibilities:

@@ -7,6 +7,7 @@
  * - `JoinCodeDialog`: type a friend's invite code. Opened from the start
  *   card, the private show dialog and the friends sheet.
  */
+import { DEFAULT_SHOW_PLAYERS, MAX_PLAYERS } from '@tumble/shared';
 import { useRef, useState, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
 import { Button, Slider, Toggle } from '../../components/controls.tsx';
@@ -163,7 +164,7 @@ function SetupView(): JSX.Element {
   const [opts, setOpts] = useState<CustomLobbyOptions>({
     rounds: catalog.slice(0, 5).map((r) => r.id),
     bots: true,
-    maxPlayers: 40,
+    maxPlayers: DEFAULT_SHOW_PLAYERS,
     timerScale: 1,
     spectators: true,
     isPrivate: true,
@@ -192,7 +193,7 @@ function SetupView(): JSX.Element {
               label="Players"
               value={opts.maxPlayers}
               min={2}
-              max={60}
+              max={MAX_PLAYERS}
               step={1}
               format={(v) => String(v)}
               onChange={(maxPlayers) => patch({ maxPlayers })}

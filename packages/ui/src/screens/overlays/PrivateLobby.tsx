@@ -12,6 +12,7 @@
  * - the footer: ready toggle and play/spectate switch for members, Start for
  *   the host with its blockers and a force start past the ready check.
  */
+import { MAX_PLAYERS } from '@tumble/shared';
 import { useEffect, useRef, useState, type JSX } from 'react';
 import { Button, Slider, Toggle } from '../../components/controls.tsx';
 import { Icon } from '../../components/icons/index.tsx';
@@ -126,7 +127,7 @@ function HostSettings({ lobby }: { lobby: CustomLobbyState }): JSX.Element {
           label="Max players"
           value={o.maxPlayers}
           min={Math.max(2, lobby.players.length)}
-          max={60}
+          max={MAX_PLAYERS}
           step={1}
           format={(v) => String(v)}
           onChange={(maxPlayers) =>

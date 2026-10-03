@@ -11,6 +11,7 @@
  * React components read it with `useUI(selector)`; selectors keep HUD updates
  * from re-rendering anything but the widget that changed.
  */
+import { DEFAULT_SHOW_PLAYERS } from '@tumble/shared';
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 import { DEFAULT_HUD, DEFAULT_SETTINGS, DEFAULT_TRANSITIONS, MENU_INPUT_SCREENS } from './defaults.ts';
@@ -356,7 +357,14 @@ export const ui = createStore<UIState>()((set, get) => ({
   lockerSlot: null,
   storeSection: null,
 
-  queue: { status: 'idle', startedAt: 0, playersFound: 0, playersNeeded: 40, etaSec: -1, region: 'auto' },
+  queue: {
+    status: 'idle',
+    startedAt: 0,
+    playersFound: 0,
+    playersNeeded: DEFAULT_SHOW_PLAYERS,
+    etaSec: -1,
+    region: 'auto',
+  },
   regionStatus: { pings: {}, auto: null, probing: false },
   photo: { active: false, fov: 50, filter: 'none', watermark: true },
   preShow: null,

@@ -16,6 +16,8 @@ export interface MatchmakerLinkOptions {
   serverId: string;
   /** Public WebSocket URL clients connect to (e.g. `ws://localhost:7350/ws`). */
   publicUrl: string;
+  /** HTTP base for the matchmaker's signed control calls (host kicks). */
+  controlUrl?: string;
   region: string;
   /** Maximum concurrent seats (humans and bots). */
   capacity: number;
@@ -70,6 +72,7 @@ export function startMatchmakerLink(opts: MatchmakerLinkOptions): MatchmakerLink
       registered = await call('/servers/register', 'POST', {
         serverId: opts.serverId,
         url: opts.publicUrl,
+        ...(opts.controlUrl ? { controlUrl: opts.controlUrl } : {}),
         region: opts.region,
         capacity: opts.capacity,
         load: r.load,

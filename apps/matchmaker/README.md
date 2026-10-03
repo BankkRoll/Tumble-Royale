@@ -68,9 +68,25 @@ when it mints tokens and queue tickets) and the outage is logged.
 Custom lobbies: `POST /lobbies { settings? }` → `{ lobby.code }`;
 `POST /lobbies/:code/join { spectator? }`, `PATCH /lobbies/:code` (host
 settings: `playlistId`, `rounds[]`, `maxPlayers`, `bots`, `roundTimeScale`,
-`lobbyCountdownSec`, `spectatorSlots`), `POST /lobbies/:code/kick`,
-`POST /lobbies/:code/leave`, `POST /lobbies/:code/start` (host). Lobby changes
-arrive on the same WebSocket as `lobby_update`.
+`lobbyCountdownSec`, `spectatorSlots`, `minPlayers`), `POST /lobbies/:code/leave`,
+`POST /lobbies/:code/start { force? }` (host; refuses with `not_enough_players`
+or `not_ready` unless forced). Lobby changes arrive on the same WebSocket as
+`lobby_update`; a reconnecting member gets their lobby pushed right away
+(`GET /lobbies/mine` returns it too).
+
+Host tools (all host-only, all broadcast): `POST /lobbies/:code/kick { userId }`
+removes and bans a member (they get `lobby_kicked { reason: 'kicked' }`; after
+the start the kick is forwarded to the game server, see below),
+`/unban { userId }`, `/host { userId }` transfers the crown, `/lock { locked }`
+refuses code joins, `/code` issues a new invite code. Members:
+`/ready { ready }` and `/role { spectator }`. When the host leaves, the
+longest-present connected player inherits the crown. Members whose last socket
+closed are marked away and dropped after 90 s (`lobby_kicked { reason: 'away' }`).
+
+Kicks after a start reach the game server as `POST {controlUrl}/internal/kick
+{ matchId, userId }`, HMAC-SHA256 signed with `GAME_SERVER_SECRET` over
+`<ts>.<body>` (`x-tumble-ts`, `x-tumble-sig`). `controlUrl` comes from the
+server's registration, else is derived from its public WebSocket URL.
 
 ## Game servers
 

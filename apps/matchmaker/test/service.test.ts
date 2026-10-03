@@ -225,6 +225,8 @@ describe('custom lobbies', () => {
     expect(guestEvents.some((e) => e.type === 'lobby_update')).toBe(true);
 
     expect((await call('POST', `/lobbies/${code}/start`, await access('guest'))).statusCode).toBe(403);
+    expect((await call('POST', `/lobbies/${code}/start`, host)).json().error).toBe('not_ready');
+    await call('POST', `/lobbies/${code}/ready`, await access('guest'), { ready: true });
     const started = await call('POST', `/lobbies/${code}/start`, host);
     expect(started.statusCode).toBe(200);
     expect(started.json()).toMatchObject({ players: 2, bots: 10 });

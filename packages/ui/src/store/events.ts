@@ -100,12 +100,30 @@ export interface UIIntents {
   leaveShow: undefined;
   createCustom: { options: CustomLobbyOptions };
   joinCode: { code: string };
-  startCustom: undefined;
+  /** Host starts the private show; `force` skips the ready check. */
+  startCustom: { force?: boolean };
   leaveCustom: undefined;
+  /** Host changes lobby settings live (debounced by the UI). */
+  updateCustom: { options: Partial<CustomLobbyOptions> };
+  /** Host removes a member; they cannot rejoin with the code until unbanned. */
+  kickCustomMember: { userId: string };
+  unbanCustomMember: { userId: string };
+  /** Host hands the crown to another player. */
+  transferCustomHost: { userId: string };
+  /** Host locks or unlocks code joins. */
+  lockCustom: { locked: boolean };
+  /** Host retires the invite code for a new one. */
+  newCustomCode: undefined;
+  /** Member ready toggle in a private lobby. */
+  readyCustom: { ready: boolean };
+  /** Member switches between playing and spectating. */
+  spectateCustom: { spectator: boolean };
   inviteFriend: { friendId: string };
   addFriend: { nameTag: string };
   copyInvite: { code: string };
   kickPartyMember: { memberId: string };
+  /** Party leader hands leadership to a member. */
+  promotePartyMember: { memberId: string };
   leaveParty: undefined;
   /** Rewards / victory / winner-cam "Continue". */
   continue: { from: ScreenId };

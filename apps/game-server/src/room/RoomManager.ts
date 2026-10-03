@@ -77,6 +77,8 @@ export class RoomManager {
   private readonly rooms = new Map<string, Room>();
   /** Match id → room id for ticketed rooms. */
   private readonly matchRooms = new Map<string, string>();
+  /** Match id → accounts the host removed; their still-valid tickets are refused. */
+  private readonly bannedFromMatch = new Map<string, Set<string>>();
   private readonly tickets: TicketPolicy | null;
   private readonly pending = new Set<ClientSession>();
   private readonly limits: ConnectionLimits;
@@ -126,6 +128,32 @@ export class RoomManager {
   /** Summaries for `/rooms`. */
   list(): RoomInfo[] {
     return [...this.rooms.values()].map((r) => r.info());
+  }
+
+  /**
+   * Removes an account from a match and refuses its join ticket afterwards
+   * (a private show's host kicked them; relayed by the matchmaker).
+   *
+   * @returns True when the match is hosted here (the ban holds even if the
+   *   player had not connected yet).
+   */
+  kickUser(matchId: string, userId: string): boolean {
+    const roomId = this.matchRooms.get(matchId);
+    const room = roomId ? this.rooms.get(roomId) : undefined;
+    let banned = this.bannedFromMatch.get(matchId);
+    if (!banned) {
+      banned = new Set();
+      this.bannedFromMatch.set(matchId, banned);
+      // Bans for matches that never got a room here are not cleaned up by the tick; cap them.
+      if (this.bannedFromMatch.size > 1024) {
+        const oldest = this.bannedFromMatch.keys().next().value;
+        if (oldest !== undefined) this.bannedFromMatch.delete(oldest);
+      }
+    }
+    banned.add(userId);
+    if (!room) return false;
+    room.removeUser(userId);
+    return true;
   }
 
   /** Upper bound on concurrent rooms; reported to the matchmaker at registration. */
@@ -187,7 +215,11 @@ export class RoomManager {
         return this.reject(
           conn,
           reason,
-          reason === KickReason.BadTicket ? 'join ticket missing, invalid or expired' : 'no room',
+          reason === KickReason.BadTicket
+            ? 'join ticket missing, invalid or expired'
+            : reason === KickReason.RemovedByHost
+              ? 'removed by the host'
+              : 'no room',
         );
       }
       const room = placed;
@@ -219,6 +251,7 @@ export class RoomManager {
       // SECURITY: the ticket is the only proof of which account and match this connection belongs to.
       const claims = verifyJoinTicket(policy.secret, hello.ticket, (policy.now ?? Date.now)());
       if (!claims) return KickReason.BadTicket;
+      if (this.bannedFromMatch.get(claims.mid)?.has(claims.sub)) return KickReason.RemovedByHost;
       if (
         policy.serverId &&
         claims.sid !== policy.serverId &&
@@ -321,8 +354,10 @@ export class RoomManager {
       }
       if (room.state === 'closed') {
         this.rooms.delete(id);
-        if (room.match && this.matchRooms.get(room.match.matchId) === id)
+        if (room.match && this.matchRooms.get(room.match.matchId) === id) {
           this.matchRooms.delete(room.match.matchId);
+          this.bannedFromMatch.delete(room.match.matchId);
+        }
         this.deps.log?.(`[rooms] removed ${id}`);
       }
     }

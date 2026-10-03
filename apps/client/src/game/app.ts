@@ -54,6 +54,12 @@ import { playlistIdForPlay, privateShow, resolvePlaylist } from './playlists.ts'
 import { OnlineAccount } from './online/account.ts';
 import { AccountAuth } from './online/auth.ts';
 import { finishCheckoutReturn } from './online/checkout.ts';
+import {
+  optionsToSettings,
+  reduceLobbyEvent,
+  toCustomLobbyState,
+  type LobbyEvent,
+} from './online/lobbyState.ts';
 import { onlineCounts, queueTarget } from './online/playerCounts.ts';
 import { MatchmakerClient, gameSocketUrl, type Lobby, type MatchFound } from './online/matchmaker.ts';
 import { ProfileStore } from './profile.ts';
@@ -138,6 +144,10 @@ export class GameApp {
   private queued = false;
   private pendingJoin: string | null = deepLinkCode();
   private lobby: Lobby | null = null;
+  /** A lobby arrived (e.g. restored after a reload) before the menu was up; open it there. */
+  private lobbyRevealPending = false;
+  /** The private show the local player hosts after it moved to the game server (in-show kicks). */
+  private startedLobby: Lobby | null = null;
   private readonly thumbs: ThumbnailRenderer;
   private readonly auth: AccountAuth;
   private readonly replays: ReplayController;
@@ -549,6 +559,10 @@ export class GameApp {
     swapUnderWipe('menu', { transition: 'wipe' }, () => {
       this.showMenuScene();
       this.pushMeta();
+      if (this.lobbyRevealPending && this.lobby) {
+        this.lobbyRevealPending = false;
+        ui.getState().setOverlay('privateShow');
+      }
     });
   }
 
@@ -747,15 +761,15 @@ export class GameApp {
         });
     });
     mm.on('match_found', (m) => this.startMatchmadeShow(m as unknown as MatchFound));
-    mm.on('lobby_update', (m) => this.applyLobby(m.lobby as Lobby));
-    mm.on('lobby_closed', () => {
-      this.applyLobby(null);
-      ui.getState().pushToast({ kind: 'info', title: 'The custom lobby closed', icon: '🚪' });
-    });
-    mm.on('lobby_kicked', () => {
-      this.applyLobby(null);
-      ui.getState().pushToast({ kind: 'warning', title: 'You were removed from the lobby', icon: '👋' });
-    });
+    mm.on('lobby_update', (m) => this.onLobbyEvent({ type: 'lobby_update', lobby: m.lobby as Lobby }));
+    mm.on('lobby_closed', (m) => this.onLobbyEvent({ type: 'lobby_closed', code: String(m.code ?? '') }));
+    mm.on('lobby_kicked', (m) =>
+      this.onLobbyEvent({
+        type: 'lobby_kicked',
+        code: String(m.code ?? ''),
+        reason: m.reason === 'away' ? 'away' : 'kicked',
+      }),
+    );
   }
 
   private startMatchmadeShow(m: MatchFound): void {
@@ -786,6 +800,7 @@ export class GameApp {
 
   private onSessionEnd(reason: SessionEnd): void {
     this.endSession();
+    this.clearStartedLobby();
     this.pushMeta();
     if (this.account?.active) {
       this.account.setPresence('in_menu');
@@ -803,35 +818,81 @@ export class GameApp {
   // Custom lobbies
   // ---------------------------------------------------------------------------
 
-  private applyLobby(lobby: Lobby | null): void {
-    this.lobby = lobby;
-    const me = this.account?.userId;
-    if (!lobby || lobby.status === 'started') {
-      ui.getState().setCustomLobby(null);
+  /** Applies a matchmaker lobby event and tells the player what happened. */
+  private onLobbyEvent(event: LobbyEvent): void {
+    const me = this.account?.userId ?? null;
+    if (event.type === 'lobby_update' && event.lobby.status === 'started') {
+      // The host keeps the roster of the running show for in-show kicks; members let match_found take over.
+      this.startedLobby = event.lobby.hostId === me ? event.lobby : null;
+      this.applyLobby(null);
       return;
     }
-    const state: CustomLobbyState = {
-      code: lobby.code,
-      isHost: lobby.hostId === me,
-      players: lobby.players.map((p) => ({
-        id: p.userId,
-        name: p.name.replace(/#\d+$/, ''),
-        colors:
-          p.userId === me
-            ? (ui.getState().profile?.colors ?? tumblerColors(this.look()))
-            : tumblerColors(botLoadout(1, p.name.length, p.name)),
-      })),
-      options: {
-        rounds: lobby.settings.rounds,
-        bots: lobby.settings.bots,
-        maxPlayers: lobby.settings.maxPlayers,
-        timerScale: lobby.settings.roundTimeScale,
-        spectators: lobby.settings.spectatorSlots > 0,
-        isPrivate: true,
-      },
-    };
-    ui.getState().setCustomLobby(state);
+    const { next, notice, removed } = reduceLobbyEvent(this.lobby, event, me);
+    this.applyLobby(next);
+    const s = ui.getState();
+    if (removed && s.overlay === 'privateShow') s.setOverlay('none');
+    // In a running show the game server's kick ends the session with its own dialog and way back to the menu.
+    if (!notice || (this.session && event.type === 'lobby_kicked')) return;
+    if (notice.dialog)
+      s.showDialog({
+        id: 'custom-removed',
+        kind: 'info',
+        title: notice.title,
+        ...(notice.body ? { body: notice.body } : {}),
+      });
+    else
+      s.pushToast({ kind: notice.kind, title: notice.title, ...(notice.body ? { body: notice.body } : {}) });
+  }
+
+  private lobbyView(lobby: Lobby): CustomLobbyState {
+    return toCustomLobbyState(lobby, this.account?.userId ?? null, (seat, self) =>
+      self
+        ? (ui.getState().profile?.colors ?? tumblerColors(this.look()))
+        : tumblerColors(botLoadout(1, seat.name.length, seat.name)),
+    );
+  }
+
+  private applyLobby(lobby: Lobby | null): void {
+    const joined = lobby !== null && this.lobby === null;
+    this.lobby = lobby;
+    if (!lobby || lobby.status === 'started') {
+      this.lobbyRevealPending = false;
+      const started = this.startedLobby;
+      ui.getState().setCustomLobby(started ? { ...this.lobbyView(started), started: true } : null);
+      return;
+    }
+    this.startedLobby = null;
+    ui.getState().setCustomLobby(this.lobbyView(lobby));
+    // Only a fresh join opens the dialog; live updates must not reopen it after the player closed it.
+    if (!joined) return;
     if (ui.getState().screen === 'menu') ui.getState().setOverlay('privateShow');
+    else this.lobbyRevealPending = true;
+  }
+
+  /** Forgets the running private show (its session ended). */
+  private clearStartedLobby(): void {
+    if (!this.startedLobby) return;
+    this.startedLobby = null;
+    if (!this.lobby) ui.getState().setCustomLobby(null);
+  }
+
+  /**
+   * Runs a call on the current lobby (or, when `started` is allowed, the
+   * running private show the local player hosts). The result is not applied:
+   * every change is pushed to all members as `lobby_update`, and applying a
+   * response that raced a newer push would roll the view back.
+   */
+  private lobbyCall(
+    failTitle: string,
+    fn: (mm: MatchmakerClient, code: string) => Promise<unknown>,
+    started = false,
+  ): void {
+    const lobby = this.lobby ?? (started ? this.startedLobby : null);
+    const mm = this.mm;
+    if (!lobby || !mm) return;
+    void fn(mm, lobby.code).catch((err: unknown) =>
+      ui.getState().pushToast({ kind: 'error', title: failTitle, body: errorText(err) }),
+    );
   }
 
   private customUnavailable(): boolean {
@@ -1110,24 +1171,16 @@ export class GameApp {
         }),
       onCreateCustom: ({ options }) => {
         if (this.customUnavailable() || !this.mm) return;
-        void this.mm
-          .createLobby({
-            rounds: options.rounds,
-            bots: options.bots,
-            maxPlayers: options.maxPlayers,
-            roundTimeScale: Math.min(2, Math.max(0.5, options.timerScale)),
-            spectatorSlots: options.spectators ? 2 : 0,
-          })
-          .then(
-            ({ lobby }) => this.applyLobby(lobby),
-            (err) =>
-              s().showDialog({
-                id: 'custom-failed',
-                kind: 'error',
-                title: "Couldn't create the lobby",
-                body: errorText(err),
-              }),
-          );
+        void this.mm.createLobby(optionsToSettings(options)).then(
+          ({ lobby }) => this.applyLobby(lobby),
+          (err) =>
+            s().showDialog({
+              id: 'custom-failed',
+              kind: 'error',
+              title: "Couldn't create the lobby",
+              body: errorText(err),
+            }),
+        );
       },
       onJoinCode: ({ code }) => {
         if (this.customUnavailable() || !this.mm) return;
@@ -1143,10 +1196,10 @@ export class GameApp {
             }),
         );
       },
-      onStartCustom: () => {
+      onStartCustom: ({ force }) => {
         const lobby = this.lobby;
         if (!lobby || !this.mm) return;
-        void this.mm.startLobby(lobby.code).catch((err) =>
+        void this.mm.startLobby(lobby.code, force === true).catch((err) =>
           s().showDialog({
             id: 'custom-start-failed',
             kind: 'error',
@@ -1155,6 +1208,28 @@ export class GameApp {
           }),
         );
       },
+      onUpdateCustom: ({ options }) =>
+        this.lobbyCall("Couldn't change that setting", (mm, code) =>
+          mm.updateLobby(code, optionsToSettings(options)),
+        ),
+      onKickCustomMember: ({ userId }) =>
+        this.lobbyCall("Couldn't remove that player", (mm, code) => mm.kickFromLobby(code, userId), true),
+      onUnbanCustomMember: ({ userId }) =>
+        this.lobbyCall("Couldn't unban that player", (mm, code) => mm.unbanFromLobby(code, userId)),
+      onTransferCustomHost: ({ userId }) =>
+        this.lobbyCall("Couldn't hand over the crown", (mm, code) => mm.transferLobbyHost(code, userId)),
+      onLockCustom: ({ locked }) =>
+        this.lobbyCall(locked ? "Couldn't lock the show" : "Couldn't unlock the show", (mm, code) =>
+          mm.lockLobby(code, locked),
+        ),
+      onNewCustomCode: () => this.lobbyCall("Couldn't make a new code", (mm, code) => mm.newLobbyCode(code)),
+      onReadyCustom: ({ ready }) =>
+        this.lobbyCall("Couldn't change ready", (mm, code) => mm.readyInLobby(code, ready)),
+      onSpectateCustom: ({ spectator }) =>
+        this.lobbyCall(
+          spectator ? "Couldn't take a spectator seat" : "Couldn't take a player seat",
+          (mm, code) => mm.setLobbyRole(code, spectator),
+        ),
       onLeaveCustom: () => {
         const lobby = this.lobby;
         this.applyLobby(null);
@@ -1171,6 +1246,7 @@ export class GameApp {
         else s().pushToast({ kind: 'social', title: 'Friends need an online account', icon: '👥' });
       },
       onKickPartyMember: ({ memberId }) => void online()?.kick(memberId),
+      onPromotePartyMember: ({ memberId }) => void online()?.promote(memberId),
       onLeaveParty: () => void online()?.leaveParty(),
       onToastAction: ({ actionId }) => {
         online()?.handleToastAction(actionId);
@@ -1221,6 +1297,7 @@ export class GameApp {
       this.session.quit();
       this.session = null;
     }
+    this.clearStartedLobby();
     if (this.account?.active) this.account.setPresence('in_menu');
     this.goMenu();
   }

@@ -239,17 +239,37 @@ export const PRESETS: Preset[] = [
       s().setCustomLobby({
         code: 'GOO42X',
         isHost: true,
-        players: world.players
-          .slice(0, 11)
-          .map((p) => ({ id: String(p.id), name: p.name, colors: p.colors })),
+        players: world.players.slice(0, 11).map((p, i) => ({
+          id: String(p.id),
+          name: p.name,
+          colors: p.colors,
+          isHost: i === 0,
+          isSelf: i === 0,
+          ready: i === 0 || i % 3 !== 0,
+          away: i === 5,
+        })),
+        spectators: world.players.slice(11, 12).map((p) => ({
+          id: String(p.id),
+          name: p.name,
+          colors: p.colors,
+          isHost: false,
+          isSelf: false,
+          ready: false,
+          away: false,
+        })),
         options: {
           rounds: [...SHOW_ROUNDS],
           bots: true,
           maxPlayers: 40,
           timerScale: 1,
           spectators: true,
+          spectatorSlots: 2,
+          countdownSec: 10,
+          minPlayers: 2,
           isPrivate: true,
         },
+        locked: false,
+        banned: [{ id: 'banned-1', name: 'Grumbles' }],
       });
       menu('play')();
       s().setOverlay('privateShow');

@@ -6,6 +6,9 @@
 import { randomInt, randomUUID } from 'node:crypto';
 import { NO_BANS, type BanLookup } from './bans.ts';
 import type { MatchmakerConfig } from './config.ts';
+import { MMError } from './errors.ts';
+import { httpGameControl, type GameControl } from './gameControl.ts';
+import * as rules from './lobbyRules.ts';
 import {
   DEFAULT_ENGINE,
   formLobbies,
@@ -26,16 +29,7 @@ import {
   type QueueTicket,
 } from './tickets.ts';
 
-/** Error with an HTTP status and stable code. */
-export class MMError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-  }
-}
+export { MMError };
 
 /** Server-side record of a placed match (served to game servers). */
 export interface MatchRecord {
@@ -88,7 +82,19 @@ export type MMEvent =
     }
   | { type: 'lobby_update'; lobby: CustomLobby }
   | { type: 'lobby_closed'; code: string }
-  | { type: 'lobby_kicked'; code: string };
+  | { type: 'lobby_kicked'; code: string; reason: 'kicked' | 'away' };
+
+/** A member's seat in a custom lobby. */
+export interface LobbySeat {
+  userId: string;
+  name: string;
+  /** When they first joined; the longest-present player inherits the crown. */
+  joinedAt: number;
+  /** Ready check (the host is always ready; spectators are not asked). */
+  ready: boolean;
+  /** When their last matchmaker socket closed, or null while connected. */
+  awaySince: number | null;
+}
 
 /** `GET /stats`: cheap public player counts. */
 export interface MatchmakerStats {
@@ -106,10 +112,14 @@ export interface CustomLobby {
   hostId: string;
   region: string;
   settings: CustomSettings;
-  players: { userId: string; name: string; joinedAt: number }[];
-  spectators: { userId: string; name: string; joinedAt: number }[];
+  players: LobbySeat[];
+  spectators: LobbySeat[];
   status: 'open' | 'started';
   matchId: string | null;
+  /** Locked lobbies refuse code joins (members already inside stay). */
+  locked: boolean;
+  /** Removed by the host; the code no longer lets them in until unbanned. */
+  banned: { userId: string; name: string }[];
   createdAt: number;
 }
 
@@ -149,6 +159,9 @@ export const RESERVATION_TTL_MS = JOIN_TICKET_TTL_SEC * 1000 + 30_000;
 const SERVER_WAIT_TTL_MS = 30 * 60_000;
 const MATCH_TTL_MS = 30 * 60_000;
 const LOBBY_TTL_MS = 2 * 3_600_000;
+/** Hash of live lobby codes, walked by the away sweep. */
+const LOBBY_INDEX = 'lobby-index';
+const LOBBY_LOCK_TTL_MS = 5000;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 /** Default custom lobby settings. */
@@ -160,24 +173,30 @@ export const DEFAULT_CUSTOM: CustomSettings = {
   roundTimeScale: 1,
   lobbyCountdownSec: 10,
   spectatorSlots: 2,
+  minPlayers: 1,
 };
 
 /** The matchmaking service. */
 export class Matchmaker {
   readonly engine: EngineConfig;
 
+  private readonly control: GameControl;
+
   /**
    * @param cfg - Configuration.
    * @param store - Shared state.
    * @param now - Clock (ms).
    * @param bans - Ban lookups; {@link NO_BANS} skips the checks.
+   * @param control - Game-server control channel (tests inject a fake).
    */
   constructor(
     private readonly cfg: MatchmakerConfig,
     private readonly store: MMStore,
     private readonly now: () => number = Date.now,
     private readonly bans: BanLookup = NO_BANS,
+    control?: GameControl,
   ) {
+    this.control = control ?? httpGameControl(cfg.gameServerSecret, now);
     this.engine = {
       ...DEFAULT_ENGINE,
       maxWaitMs: cfg.maxWaitMs,
@@ -602,13 +621,61 @@ export class Matchmaker {
   private async loadLobby(code: string): Promise<CustomLobby> {
     const raw = await this.store.get(`lobby:${code}`);
     if (!raw) throw new MMError(404, 'lobby_not_found', 'No lobby with that code');
-    return JSON.parse(raw) as CustomLobby;
+    return rules.normalizeLobby(JSON.parse(raw) as CustomLobby);
   }
 
   private async saveLobby(l: CustomLobby): Promise<void> {
     await this.store.set(`lobby:${l.code}`, JSON.stringify(l), LOBBY_TTL_MS);
-    for (const p of [...l.players, ...l.spectators])
-      await this.emit(p.userId, { type: 'lobby_update', lobby: l });
+    await this.store.hset(LOBBY_INDEX, l.code, String(l.createdAt));
+    for (const p of rules.members(l)) await this.emit(p.userId, { type: 'lobby_update', lobby: l });
+  }
+
+  private async dropLobby(code: string): Promise<void> {
+    await this.store.del(`lobby:${code}`);
+    await this.store.hdel(LOBBY_INDEX, code);
+  }
+
+  /**
+   * Runs a read-modify-write on one lobby under a short store lock, so two
+   * members acting at once (a join racing a kick, a settings change racing a
+   * leave) cannot overwrite each other's change.
+   */
+  private async withLobby<T>(code: string, fn: (lobby: CustomLobby) => Promise<T>): Promise<T> {
+    const key = `lobby-lock:${code}`;
+    for (let i = 0; !(await this.store.setNX(key, '1', LOBBY_LOCK_TTL_MS)); i++) {
+      if (i >= 100) throw new MMError(503, 'lobby_busy', 'The lobby is busy, try again');
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    try {
+      return await fn(await this.loadLobby(code));
+    } finally {
+      await this.store.del(key);
+    }
+  }
+
+  private async freshCode(): Promise<string> {
+    let code = '';
+    for (let i = 0; i < 20; i++) {
+      code = Array.from({ length: 6 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
+      if (!(await this.store.get(`lobby:${code}`))) break;
+    }
+    return code;
+  }
+
+  /** Removes a member inside a held lock; closes the lobby when no player is left. */
+  private async removeFromLobby(lobby: CustomLobby, userId: string): Promise<void> {
+    if ((await this.store.get(`lobby-user:${userId}`)) === lobby.code)
+      await this.store.del(`lobby-user:${userId}`);
+    const { closed } = rules.removeMember(lobby, userId);
+    if (!closed) {
+      await this.saveLobby(lobby);
+      return;
+    }
+    await this.dropLobby(lobby.code);
+    for (const s of lobby.spectators) {
+      await this.store.del(`lobby-user:${s.userId}`);
+      await this.emit(s.userId, { type: 'lobby_closed', code: lobby.code });
+    }
   }
 
   /** Creates a lobby hosted by the caller. */
@@ -616,24 +683,22 @@ export class Matchmaker {
     await this.checkStanding([host.userId]);
     await this.leaveLobby(host.userId);
     await this.cancel(host.userId, 'joined_custom_lobby');
-    let code = '';
-    for (let i = 0; i < 20; i++) {
-      code = Array.from({ length: 6 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
-      if (!(await this.store.get(`lobby:${code}`))) break;
-    }
     const now = this.now();
     const lobby: CustomLobby = {
-      code,
+      code: await this.freshCode(),
       hostId: host.userId,
       region: region ?? host.region,
       settings: { ...DEFAULT_CUSTOM, ...settings },
-      players: [{ userId: host.userId, name: host.name, joinedAt: now }],
+      players: [{ userId: host.userId, name: host.name, joinedAt: now, ready: true, awaySince: null }],
       spectators: [],
       status: 'open',
       matchId: null,
+      locked: false,
+      banned: [],
       createdAt: now,
     };
-    await this.store.set(`lobby-user:${host.userId}`, code, LOBBY_TTL_MS);
+    rules.validateSettings(lobby, lobby.settings);
+    await this.store.set(`lobby-user:${host.userId}`, lobby.code, LOBBY_TTL_MS);
     await this.saveLobby(lobby);
     return lobby;
   }
@@ -643,143 +708,294 @@ export class Matchmaker {
     return this.loadLobby(code);
   }
 
+  /** The open lobby a user is a member of, or null (reloads restore it from this). */
+  async lobbyOf(userId: string): Promise<CustomLobby | null> {
+    const code = await this.store.get(`lobby-user:${userId}`);
+    if (!code) return null;
+    try {
+      const lobby = await this.loadLobby(code);
+      return rules.seatOf(lobby, userId) && lobby.status === 'open' ? lobby : null;
+    } catch {
+      return null;
+    }
+  }
+
   /**
-   * Joins a lobby as a player (or spectator).
+   * Joins a lobby as a player (or spectator). A current member calling again
+   * (reload, second tab) keeps their seat, role and place in the host line.
    *
-   * @throws {MMError} 404 unknown code, 409 started/full.
+   * @throws {MMError} 404 unknown code, 403 banned/locked, 409 started/full.
    */
   async joinLobby(p: Player, code: string, spectator: boolean): Promise<CustomLobby> {
     await this.checkStanding([p.userId]);
-    const lobby = await this.loadLobby(code);
-    if (lobby.status !== 'open') throw new MMError(409, 'lobby_started', 'That lobby already started');
+    const preview = await this.loadLobby(code);
+    rules.assertOpen(preview);
+    if (!rules.seatOf(preview, p.userId)) rules.assertCanEnter(preview, p.userId);
     const current = await this.store.get(`lobby-user:${p.userId}`);
     if (current && current !== code) await this.leaveLobby(p.userId);
-    lobby.players = lobby.players.filter((x) => x.userId !== p.userId);
-    lobby.spectators = lobby.spectators.filter((x) => x.userId !== p.userId);
-    const seat = { userId: p.userId, name: p.name, joinedAt: this.now() };
-    if (spectator) {
-      if (lobby.spectators.length >= lobby.settings.spectatorSlots)
-        throw new MMError(409, 'spectators_full', 'No spectator slots left');
-      lobby.spectators.push(seat);
-    } else {
-      if (lobby.players.length >= lobby.settings.maxPlayers)
-        throw new MMError(409, 'lobby_full', 'Lobby is full');
-      lobby.players.push(seat);
-    }
+    const lobby = await this.withLobby(code, async (lobby) => {
+      rules.assertOpen(lobby);
+      const seat = rules.seatOf(lobby, p.userId);
+      if (seat) {
+        seat.awaySince = null;
+      } else {
+        rules.assertCanEnter(lobby, p.userId);
+        const fresh = { userId: p.userId, name: p.name, joinedAt: this.now(), ready: false, awaySince: null };
+        if (spectator) {
+          if (lobby.spectators.length >= lobby.settings.spectatorSlots)
+            throw new MMError(409, 'spectators_full', 'No spectator slots left');
+          lobby.spectators.push(fresh);
+        } else {
+          if (lobby.players.length >= lobby.settings.maxPlayers)
+            throw new MMError(409, 'lobby_full', 'Lobby is full');
+          lobby.players.push(fresh);
+        }
+      }
+      await this.store.set(`lobby-user:${p.userId}`, code, LOBBY_TTL_MS);
+      await this.saveLobby(lobby);
+      return lobby;
+    });
     await this.cancel(p.userId, 'joined_custom_lobby');
-    await this.store.set(`lobby-user:${p.userId}`, code, LOBBY_TTL_MS);
-    await this.saveLobby(lobby);
     return lobby;
   }
 
-  /** Leaves the caller's lobby; hosting passes on, an empty lobby closes. */
+  /** Leaves the caller's lobby; hosting passes to the longest-present player, an empty lobby closes. */
   async leaveLobby(userId: string): Promise<void> {
     const code = await this.store.get(`lobby-user:${userId}`);
     if (!code) return;
     await this.store.del(`lobby-user:${userId}`);
-    const raw = await this.store.get(`lobby:${code}`);
-    if (!raw) return;
-    const lobby = JSON.parse(raw) as CustomLobby;
-    lobby.players = lobby.players.filter((x) => x.userId !== userId);
-    lobby.spectators = lobby.spectators.filter((x) => x.userId !== userId);
-    if (lobby.players.length === 0) {
-      await this.store.del(`lobby:${code}`);
-      for (const s of lobby.spectators) {
-        await this.store.del(`lobby-user:${s.userId}`);
-        await this.emit(s.userId, { type: 'lobby_closed', code });
-      }
-      return;
-    }
-    if (lobby.hostId === userId) lobby.hostId = lobby.players[0]!.userId;
-    await this.saveLobby(lobby);
+    if (!(await this.store.get(`lobby:${code}`))) return;
+    await this.withLobby(code, async (lobby) => {
+      if (rules.seatOf(lobby, userId)) await this.removeFromLobby(lobby, userId);
+    }).catch((err: unknown) => {
+      if (!(err instanceof MMError && err.status === 404)) throw err;
+    });
   }
 
-  private async hostLobby(hostId: string, code: string): Promise<CustomLobby> {
-    const lobby = await this.loadLobby(code);
-    if (lobby.hostId !== hostId) throw new MMError(403, 'not_host', 'Only the host can do that');
-    if (lobby.status !== 'open') throw new MMError(409, 'lobby_started', 'Lobby already started');
-    return lobby;
+  /** Runs a host-only change on an open lobby and broadcasts the result. */
+  private hostChange(
+    hostId: string,
+    code: string,
+    fn: (lobby: CustomLobby) => void | Promise<void>,
+  ): Promise<CustomLobby> {
+    return this.withLobby(code, async (lobby) => {
+      rules.assertHost(lobby, hostId);
+      rules.assertOpen(lobby);
+      await fn(lobby);
+      await this.saveLobby(lobby);
+      return lobby;
+    });
   }
 
-  /** Updates settings (host only). */
+  /**
+   * Updates settings (host only) while the lobby is open; members see the
+   * change through `lobby_update`.
+   *
+   * @throws {MMError} 403 not host, 409 started or the change strands members.
+   */
   async updateLobby(hostId: string, code: string, settings: Partial<CustomSettings>): Promise<CustomLobby> {
-    const lobby = await this.hostLobby(hostId, code);
-    const next = { ...lobby.settings, ...settings };
-    if (next.maxPlayers < lobby.players.length)
-      throw new MMError(409, 'too_many_players', 'More players than the new limit');
-    lobby.settings = next;
-    await this.saveLobby(lobby);
-    return lobby;
+    return this.hostChange(hostId, code, (lobby) => {
+      const next = { ...lobby.settings, ...settings };
+      rules.validateSettings(lobby, next);
+      lobby.settings = next;
+    });
   }
 
-  /** Removes a player or spectator (host only). */
-  async kickFromLobby(hostId: string, code: string, userId: string): Promise<CustomLobby> {
-    if (hostId === userId) throw new MMError(400, 'self_kick', 'Use leave instead');
-    const lobby = await this.hostLobby(hostId, code);
-    lobby.players = lobby.players.filter((x) => x.userId !== userId);
-    lobby.spectators = lobby.spectators.filter((x) => x.userId !== userId);
-    await this.store.del(`lobby-user:${userId}`);
-    await this.emit(userId, { type: 'lobby_kicked', code });
-    await this.saveLobby(lobby);
-    return lobby;
+  /**
+   * Removes a player or spectator (host only) and bans them from the code.
+   * After the show moved to a game server the kick is forwarded there too, so
+   * the player is despawned for everyone and cannot reconnect with their ticket.
+   *
+   * @returns The lobby and, for started shows, whether the game server confirmed.
+   */
+  async kickFromLobby(
+    hostId: string,
+    code: string,
+    userId: string,
+  ): Promise<{ lobby: CustomLobby; removedFromMatch: boolean | null }> {
+    const lobby = await this.withLobby(code, async (lobby) => {
+      rules.kickMember(lobby, hostId, userId);
+      if ((await this.store.get(`lobby-user:${userId}`)) === code)
+        await this.store.del(`lobby-user:${userId}`);
+      await this.saveLobby(lobby);
+      return lobby;
+    });
+    await this.emit(userId, { type: 'lobby_kicked', code: lobby.code, reason: 'kicked' });
+    const removedFromMatch =
+      lobby.status === 'started' && lobby.matchId ? await this.kickFromMatch(lobby.matchId, userId) : null;
+    return { lobby, removedFromMatch };
+  }
+
+  /** Forwards a kick to the game server hosting a match. */
+  private async kickFromMatch(matchId: string, userId: string): Promise<boolean> {
+    const record = await this.getMatch(matchId);
+    if (!record) return false;
+    const raw = (await this.store.hgetall(SERVERS))[record.serverId];
+    const server = raw ? (JSON.parse(raw) as GameServer) : null;
+    return this.control.kick({ matchId, serverUrl: record.serverUrl, server }, userId);
+  }
+
+  /** Lifts a ban so the player can use the code again (host only). */
+  async unbanFromLobby(hostId: string, code: string, userId: string): Promise<CustomLobby> {
+    return this.hostChange(hostId, code, (lobby) => rules.unban(lobby, hostId, userId));
+  }
+
+  /** Hands the crown to another player (host only). */
+  async transferLobbyHost(hostId: string, code: string, userId: string): Promise<CustomLobby> {
+    return this.hostChange(hostId, code, (lobby) => rules.transferHost(lobby, hostId, userId));
+  }
+
+  /** Locks or unlocks code joins (host only). */
+  async setLobbyLocked(hostId: string, code: string, locked: boolean): Promise<CustomLobby> {
+    return this.hostChange(hostId, code, (lobby) => {
+      lobby.locked = locked;
+    });
+  }
+
+  /**
+   * Replaces the invite code (host only), e.g. after it leaked on stream. The
+   * old code stops working at once; members follow via `lobby_update`.
+   */
+  async regenerateLobbyCode(hostId: string, code: string): Promise<CustomLobby> {
+    return this.withLobby(code, async (lobby) => {
+      rules.assertHost(lobby, hostId);
+      rules.assertOpen(lobby);
+      const next = await this.freshCode();
+      await this.dropLobby(code);
+      lobby.code = next;
+      for (const m of rules.members(lobby))
+        await this.store.set(`lobby-user:${m.userId}`, next, LOBBY_TTL_MS);
+      await this.saveLobby(lobby);
+      return lobby;
+    });
+  }
+
+  /** Member ready toggle (the host is always ready). */
+  async setLobbyReady(userId: string, code: string, ready: boolean): Promise<CustomLobby> {
+    return this.withLobby(code, async (lobby) => {
+      rules.assertOpen(lobby);
+      const seat = lobby.players.find((p) => p.userId === userId);
+      if (!seat) throw new MMError(404, 'not_a_player', 'Only players ready up');
+      seat.ready = userId === lobby.hostId ? true : ready;
+      await this.saveLobby(lobby);
+      return lobby;
+    });
+  }
+
+  /** Switches the caller between playing and spectating. */
+  async setLobbyRole(userId: string, code: string, spectator: boolean): Promise<CustomLobby> {
+    return this.withLobby(code, async (lobby) => {
+      rules.assertOpen(lobby);
+      rules.setRole(lobby, userId, spectator);
+      await this.saveLobby(lobby);
+      return lobby;
+    });
+  }
+
+  /**
+   * Marks a member connected or away (their last matchmaker socket closed).
+   * Away members are dropped by {@link sweepLobbies} after the grace period.
+   *
+   * @returns The lobby, or null when the user is in none.
+   */
+  async setLobbyPresence(userId: string, online: boolean): Promise<CustomLobby | null> {
+    const code = await this.store.get(`lobby-user:${userId}`);
+    if (!code) return null;
+    return this.withLobby(code, async (lobby) => {
+      const seat = rules.seatOf(lobby, userId);
+      if (!seat || lobby.status !== 'open') return lobby;
+      const awaySince = online ? null : this.now();
+      if ((seat.awaySince === null) !== (awaySince === null)) {
+        seat.awaySince = awaySince;
+        await this.saveLobby(lobby);
+      }
+      return lobby;
+    }).catch(() => null);
+  }
+
+  /** Drops members who stayed away past the grace period from every open lobby. */
+  async sweepLobbies(): Promise<void> {
+    const now = this.now();
+    for (const code of Object.keys(await this.store.hgetall(LOBBY_INDEX))) {
+      if (!(await this.store.get(`lobby:${code}`))) {
+        await this.store.hdel(LOBBY_INDEX, code);
+        continue;
+      }
+      await this.withLobby(code, async (lobby) => {
+        if (lobby.status !== 'open') return;
+        for (const userId of rules.expiredMembers(lobby, now)) {
+          if (!rules.seatOf(lobby, userId)) continue;
+          await this.emit(userId, { type: 'lobby_kicked', code, reason: 'away' });
+          await this.removeFromLobby(lobby, userId);
+          if (!(await this.store.get(`lobby:${code}`))) return;
+        }
+      }).catch(() => undefined);
+    }
   }
 
   /**
    * Starts the lobby (host only): places it on a server and sends every
    * player and spectator a join ticket.
    *
-   * @throws {MMError} 503 when no game server is available.
+   * @param force - Start even though some players are not ready.
+   * @throws {MMError} 409 too few players / not ready, 503 when no game server is available.
    */
-  async startLobby(hostId: string, code: string): Promise<MatchRecord> {
-    const lobby = await this.hostLobby(hostId, code);
-    // Bans can land after someone joined: suspended players are left out, chat-suspended ones muted.
-    const scopes = await this.bans.scopes([...lobby.players, ...lobby.spectators].map((p) => p.userId));
-    if (scopes.get(hostId)?.has('all')) throw new MMError(403, 'banned', 'This account is suspended');
-    const inGoodStanding = (p: { userId: string }) => !scopes.get(p.userId)?.has('all');
-    const mute = (userId: string) => (scopes.get(userId)?.has('chat') ? { muted: true } : {});
-    lobby.players = lobby.players.filter(inGoodStanding);
-    lobby.spectators = lobby.spectators.filter(inGoodStanding);
-    const size = lobby.settings.maxPlayers;
-    const seats = size + lobby.spectators.length;
-    // A host pressing Start is waiting on us, so other regions are tried straight away.
-    const server = await this.allocateServer(lobby.region, seats, true);
-    if (!server) throw new MMError(503, 'no_server', 'No game server available');
-    const record: MatchRecord = {
-      matchId: `m_${randomUUID().replace(/-/g, '')}`,
-      serverId: server.id,
-      serverUrl: server.url,
-      playlistId: lobby.settings.playlistId,
-      queue: 'custom',
-      region: lobby.region,
-      size,
-      teamSize: 1,
-      humans: lobby.players.length,
-      botFill: lobby.settings.bots ? Math.max(0, size - lobby.players.length) : 0,
-      roster: [
-        ...lobby.players.map((p) => ({
-          userId: p.userId,
-          name: p.name,
-          partyId: `custom:${code}`,
-          team: null,
-          role: 'player' as const,
-          ...mute(p.userId),
-        })),
-        ...lobby.spectators.map((p) => ({
-          userId: p.userId,
-          name: p.name,
-          partyId: `custom:${code}`,
-          team: null,
-          role: 'spectator' as const,
-          ...mute(p.userId),
-        })),
-      ],
-      custom: lobby.settings,
-      createdAt: this.now(),
-    };
-    lobby.status = 'started';
-    lobby.matchId = record.matchId;
-    await this.saveLobby(lobby);
-    for (const p of [...lobby.players, ...lobby.spectators]) await this.store.del(`lobby-user:${p.userId}`);
+  async startLobby(hostId: string, code: string, force = false): Promise<MatchRecord> {
+    const { lobby, record, server, seats } = await this.withLobby(code, async (lobby) => {
+      rules.assertHost(lobby, hostId);
+      rules.assertOpen(lobby);
+      // Bans can land after someone joined: suspended players are left out, chat-suspended ones muted.
+      const scopes = await this.bans.scopes(rules.members(lobby).map((p) => p.userId));
+      if (scopes.get(hostId)?.has('all')) throw new MMError(403, 'banned', 'This account is suspended');
+      const inGoodStanding = (p: { userId: string }) => !scopes.get(p.userId)?.has('all');
+      const mute = (userId: string) => (scopes.get(userId)?.has('chat') ? { muted: true } : {});
+      lobby.players = lobby.players.filter(inGoodStanding);
+      lobby.spectators = lobby.spectators.filter(inGoodStanding);
+      const blocker = rules.startBlocker(lobby, force);
+      if (blocker) throw blocker;
+      const size = lobby.settings.maxPlayers;
+      const seats = size + lobby.spectators.length;
+      // A host pressing Start is waiting on us, so other regions are tried straight away.
+      const server = await this.allocateServer(lobby.region, seats, true);
+      if (!server) throw new MMError(503, 'no_server', 'No game server available');
+      const record: MatchRecord = {
+        matchId: `m_${randomUUID().replace(/-/g, '')}`,
+        serverId: server.id,
+        serverUrl: server.url,
+        playlistId: lobby.settings.playlistId,
+        queue: 'custom',
+        region: lobby.region,
+        size,
+        teamSize: 1,
+        humans: lobby.players.length,
+        botFill: lobby.settings.bots ? Math.max(0, size - lobby.players.length) : 0,
+        roster: [
+          ...lobby.players.map((p) => ({
+            userId: p.userId,
+            name: p.name,
+            partyId: `custom:${code}`,
+            team: null,
+            role: 'player' as const,
+            ...mute(p.userId),
+          })),
+          ...lobby.spectators.map((p) => ({
+            userId: p.userId,
+            name: p.name,
+            partyId: `custom:${code}`,
+            team: null,
+            role: 'spectator' as const,
+            ...mute(p.userId),
+          })),
+        ],
+        custom: lobby.settings,
+        createdAt: this.now(),
+      };
+      lobby.status = 'started';
+      lobby.matchId = record.matchId;
+      await this.saveLobby(lobby);
+      return { lobby, record, server, seats };
+    });
+    for (const p of rules.members(lobby)) await this.store.del(`lobby-user:${p.userId}`);
     await this.publishMatch(record, server, seats);
     return record;
   }

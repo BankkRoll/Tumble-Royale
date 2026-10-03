@@ -21,6 +21,9 @@
  *   register with the matchmaker and heartbeat (optional); tickets for other servers are refused
  * - `MAX_ROOMS` (10) and `SERVER_CAPACITY` (= MAX_ROOMS × ROOM_CAPACITY seats, bots included) —
  *   what the matchmaker may place here
+ * - `GAME_SERVER_SECRET` also enables the signed `POST /internal/kick` control endpoint;
+ *   `CONTROL_URL` tells the matchmaker where to reach it when the public WS host is not
+ *   the internal one (default: derived from `PUBLIC_WS_URL`)
  *
  * Integration: `createDevRoomDeps` is the standalone wiring (capsule sim,
  * dev arena, single-round loop, random-walk bots); `createRealRoomDeps`
@@ -85,6 +88,7 @@ const server = await startGameServer({
     allowUnticketed,
     ...(linkCfg ? { serverId: linkCfg.serverId, allowDefaultSid: !production } : {}),
   },
+  ...(process.env.GAME_SERVER_SECRET ? { control: { secret: process.env.GAME_SERVER_SECRET } } : {}),
 });
 
 console.log(
@@ -94,6 +98,7 @@ console.log(
 const link: MatchmakerLink | null = linkCfg
   ? startMatchmakerLink({
       ...linkCfg,
+      ...(process.env.CONTROL_URL ? { controlUrl: process.env.CONTROL_URL } : {}),
       capacity: serverCapacity,
       maxRooms,
       report: () => server.rooms.capacityReport(),

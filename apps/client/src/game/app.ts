@@ -217,6 +217,7 @@ export class GameApp {
       }),
       drawCalls: () => renderer.info.render.drawCalls,
       tumblers: () => this.session?.visibleTumblers() ?? 0,
+      localPlayer: () => this.session?.localDebug() ?? null,
       tier: () => quality.tier,
       memoryLog: this.memoryLog,
       account: () => {

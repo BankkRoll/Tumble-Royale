@@ -215,6 +215,28 @@ export const ControlsHint = memo(function ControlsHint(): JSX.Element | null {
   );
 });
 
+/** Grab feedback: who you hold (stamina) or who holds you (mash meter). */
+export const GrabStatus = memo(function GrabStatus(): JSX.Element | null {
+  const grab = useUI((s) => s.hud.grab);
+  const device = useUI((s) => s.hud.device);
+  if (grab.mode === 'none') return null;
+  const mash = device === 'gamepad' ? 'Ⓐ' : device === 'touch' ? 'Jump' : 'Space';
+  const text =
+    grab.mode === 'held'
+      ? `Grabbed${grab.name ? ` by ${grab.name}` : ''}! Mash ${mash} to break free`
+      : grab.mode === 'holding'
+        ? `Holding ${grab.name || 'a Tumbler'}`
+        : 'Carrying';
+  return (
+    <div className={`tr-hud-grab is-${grab.mode}`} role="status" data-testid="grab-status">
+      <span className="tr-hud-grab-text">{text}</span>
+      <span className="tr-hud-grab-bar" aria-hidden>
+        <i style={{ width: `${Math.round(grab.meter * 100)}%` }} />
+      </span>
+    </div>
+  );
+});
+
 /** Prompt to lock the mouse to the camera while it is free; Esc reminder once locked. */
 export const CameraLockHint = memo(function CameraLockHint(): JSX.Element | null {
   const { lock, device } = useUI(useShallow((s) => ({ lock: s.cameraLock, device: s.hud.device })));

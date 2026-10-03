@@ -718,6 +718,15 @@ export interface RoundIntroInfo {
   qualifyTarget: number;
 }
 
+/** Local grab feedback for the HUD. */
+export interface HudGrab {
+  mode: 'none' | 'holding' | 'held' | 'carrying';
+  /** Partner's display name (empty when carrying). */
+  name: string;
+  /** Holding/carrying: stamina left. Held: progress toward breaking free. */
+  meter: number;
+}
+
 /** Local player's fate this round. */
 export type LocalStatus = 'playing' | 'qualified' | 'eliminated' | 'spectating';
 
@@ -760,6 +769,8 @@ export interface HudState {
   alive: number;
   objective: string;
   localStatus: LocalStatus;
+  /** Local grab: who you hold or who holds you, with the stamina or break-free meter (0..1). */
+  grab: HudGrab;
   /** Local race progress 0..1. */
   progress: number;
   /** Leaders shown on the race bar (top 3 recommended). */

@@ -108,6 +108,7 @@ export const DEFAULT_HUD: HudState = {
   alive: 0,
   objective: '',
   localStatus: 'playing',
+  grab: { mode: 'none', name: '', meter: 0 },
   progress: 0,
   leaders: [],
   teams: [],

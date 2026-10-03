@@ -22,12 +22,13 @@ import type { TumblerLoadout } from '@tumble/render/scenes';
 import { RoundPhase, ShowPhase, type RoundPhaseId, type RoundType } from '@tumble/shared';
 import { CharacterState, type CharacterFullState, type CharacterInput, type SimEvent } from '@tumble/sim';
 import { createBotBrain, type BotBrainLike, type BotSelfView } from '@tumble/sim/bots';
-import { createCharacterFullState } from '@tumble/sim/character';
+import { DEFAULT_TUNING, GrabKind, createCharacterFullState } from '@tumble/sim/character';
 import { PlayerRoundStatus } from '@tumble/sim/match';
 import type { ShowPlaylist } from '@tumble/sim/show';
 import {
   bindUI,
   ui,
+  type HudGrab,
   type PlayerWallEvent,
   type RoundIntroInfo,
   type ScreenId,
@@ -320,6 +321,50 @@ export abstract class ShowSession {
   visibleTumblers(): number {
     return this.round?.view?.players.count ?? 0;
   }
+
+  /** Publishes who the local Tumbler holds (or is held by) and the matching meter. */
+  private updateGrabHud(): void {
+    const c = this.round?.source?.sim.controller(this.localId);
+    const st = c ? c.getState(this.debugState) : null;
+    let mode: HudGrab['mode'] = 'none';
+    let name = '';
+    let meter = 0;
+    if (st?.ext?.grabKind === GrabKind.Player) {
+      name = this.players.get(st.grabTarget)?.name ?? '';
+      if (st.state === CharacterState.Grabbed) {
+        mode = 'held';
+        meter = Math.min(1, st.ext.breakFree / DEFAULT_TUNING.breakFreeMashes);
+      } else {
+        mode = 'holding';
+        meter = st.grabStamina;
+      }
+    } else if (st?.ext?.grabKind === GrabKind.Prop) {
+      mode = 'carrying';
+      meter = st.grabStamina;
+    }
+    // Quantised so the store only updates when the bar visibly moves.
+    meter = Math.round(meter * 20) / 20;
+    const prev = ui.getState().hud.grab;
+    if (prev.mode !== mode || prev.name !== name || prev.meter !== meter)
+      ui.getState().setHud({ grab: { mode, name, meter } });
+  }
+
+  /** Local Tumbler's controller state for automation (null outside a round). */
+  localDebug(): { state: number; grabTarget: number; x: number; y: number; z: number; grabs: number } | null {
+    const c = this.round?.source?.sim.controller(this.localId);
+    if (!c) return null;
+    const p = c.body.translation();
+    const full = c.getState(this.debugState);
+    return {
+      state: c.state,
+      grabTarget: full.grabTarget,
+      x: p.x,
+      y: p.y,
+      z: p.z,
+      grabs: this.counters.grabs ?? 0,
+    };
+  }
+  private readonly debugState = createCharacterFullState();
 
   /** The live round view (debug, quality changes). */
   get roundView(): RoundView | null {
@@ -1154,6 +1199,7 @@ export abstract class ShowSession {
       input.settings.pointerLock && !us.isTouch ? (input.pointerLocked ? 'locked' : 'unlocked') : 'off';
     if (us.cameraLock !== lock) ui.setState({ cameraLock: lock });
     const look = input.readLook(realDt);
+    this.updateGrabHud();
     if (!view || !r) return;
     if (active || spectating) view.rig.addLook(look.yaw, look.pitch);
 

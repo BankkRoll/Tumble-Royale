@@ -3,10 +3,18 @@ import type { ThemeDefinition, Weather } from '@tumble/content/themes';
 import { resolveAtmosphere, type Atmosphere } from './atmosphere.ts';
 import { createThemedSky, type ThemedSky } from './sky.ts';
 import { createLightingRig, type LightingRig, type LightingRigOptions } from './lighting.ts';
-import { createCloudLayer, type CloudLayer } from './clouds.ts';
+import { createCloudLayer, type CloudLayer, type CloudSpec } from './clouds.ts';
 import { PropBuilder, type PropBatch } from './propKit.ts';
-import { layoutIslands } from './islands.ts';
-import { createSkyTraffic, type SkyTraffic } from './balloons.ts';
+import { layoutIslands, type IslandSpec } from './islands.ts';
+import { createSkyTraffic, type BlimpOrbit, type SkyTraffic } from './balloons.ts';
+import {
+  buildKeepOut,
+  planStands,
+  type BoxLike,
+  type KeepOut,
+  type StandAnchors,
+  type Vec3Like,
+} from './dressing.ts';
 import { createCrowd, type Crowd, type CrowdStandPlacement } from './crowd.ts';
 import { createWeather, type WeatherLayer } from './weather.ts';
 
@@ -43,8 +51,19 @@ export const DEFAULT_ENVIRONMENT_DETAIL: EnvironmentDetail = {
 /** Options for {@link createEnvironment}. */
 export interface EnvironmentOptions {
   weather?: Weather;
-  /** Course AABB; decor stays outside it and fairy lights drape around it. */
-  courseBounds?: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } };
+  /**
+   * Playable course AABB (`measureCourse` from `@tumble/sim/match` for rounds);
+   * decor stays outside it and fairy lights drape around it.
+   */
+  courseBounds?: BoxLike;
+  /**
+   * Volume clouds, islands, balloons, blimps and stands keep out of. Defaults
+   * to the course padded by the gameplay camera's reach; rounds also add their
+   * intro flyover path (see {@link buildKeepOut}).
+   */
+  keepOut?: KeepOut;
+  /** Floor points the default stands face (see `standAnchorsForRound`); defaults to the course's low corners. */
+  standAnchors?: StandAnchors;
   seed?: number;
   detail?: Partial<EnvironmentDetail>;
   lighting?: LightingRigOptions;
@@ -54,8 +73,24 @@ export interface EnvironmentOptions {
   islands?: boolean;
 }
 
+/** Where every backdrop prop ended up (world space), for placement checks and debugging. */
+export interface EnvironmentDressing {
+  readonly keepOut: KeepOut;
+  /** World position of the cloud layer's origin (cloud specs are relative to it). */
+  readonly cloudOrigin: Vec3Like;
+  readonly clouds: readonly CloudSpec[];
+  readonly islands: readonly IslandSpec[];
+  readonly balloonColumns: readonly BoxLike[];
+  /** Blimp orbits around {@link EnvironmentDressing.center}. */
+  readonly blimpOrbits: readonly BlimpOrbit[];
+  readonly center: Vec3Like;
+  readonly stands: readonly CrowdStandPlacement[];
+}
+
 /** Live environment. */
 export interface Environment {
+  /** Placement of the backdrop props. */
+  readonly dressing: EnvironmentDressing;
   /** Everything except fog; add to the scene (or call `attach`). */
   readonly object: Group;
   readonly fog: Fog;
@@ -103,6 +138,7 @@ export function createEnvironment(theme: ThemeDefinition, opts: EnvironmentOptio
   const b = opts.courseBounds ?? { min: { x: -20, y: -2, z: -20 }, max: { x: 20, y: 6, z: 60 } };
   const center = new Vector3((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2);
   const extent = Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2;
+  const keepOut = opts.keepOut ?? buildKeepOut(b);
 
   const fog = new Fog(new Color(), 60, 240);
   const sky = createThemedSky(atmosphere, 900);
@@ -118,6 +154,8 @@ export function createEnvironment(theme: ThemeDefinition, opts: EnvironmentOptio
           count: detail.clouds,
           innerRadius: extent + 30,
           wrapRadius: Math.max(theme.fog.far + 40, extent + 200),
+          origin: center,
+          keepOut,
         })
       : null;
   if (clouds) {
@@ -126,15 +164,17 @@ export function createEnvironment(theme: ThemeDefinition, opts: EnvironmentOptio
   }
 
   let props: PropBatch | null = null;
+  let islands: IslandSpec[] = [];
   if ((opts.islands ?? true) && detail.islands > 0) {
     const builder = new PropBuilder();
-    layoutIslands(builder, theme, {
+    islands = layoutIslands(builder, theme, {
       seed: seed * 7 + 3,
       count: detail.islands,
       center: { x: center.x, y: center.y - 6, z: center.z },
       innerRadius: extent + 45,
       outerRadius: extent + 240,
       exclude: { minX: b.min.x, maxX: b.max.x, minZ: b.min.z, maxZ: b.max.z },
+      keepOut,
     });
     props = builder.build(false);
     for (const m of props.meshes) object.add(m);
@@ -150,21 +190,35 @@ export function createEnvironment(theme: ThemeDefinition, opts: EnvironmentOptio
       center,
       innerRadius: extent + 25,
       outerRadius: extent + 170,
+      keepOut,
     });
     for (const m of traffic.meshes) object.add(m);
   }
 
   let crowd: Crowd | null = null;
+  let stands: readonly CrowdStandPlacement[] = [];
   if (theme.decor.crowd && detail.crowd) {
-    const stands: readonly CrowdStandPlacement[] = opts.crowdStands ?? [
-      { position: { x: b.max.x + 9, y: b.min.y + 1, z: b.min.z + 10 }, yaw: Math.PI / 2, width: 18, rows: 4 },
-      {
-        position: { x: b.min.x - 9, y: b.min.y + 1, z: b.max.z - 10 },
-        yaw: -Math.PI / 2,
-        width: 18,
-        rows: 4,
-      },
-    ];
+    // NOTE: rounds pass anchors: stands then face the floor at the start and goal. Sitting at the level's
+    // lowest point put the stadium under the map on courses with deep supports or a raised start. Composed
+    // menu scenes (no anchors) keep their framed placement.
+    stands =
+      opts.crowdStands ??
+      (opts.standAnchors
+        ? planStands(b, opts.standAnchors, keepOut)
+        : [
+            {
+              position: { x: b.max.x + 9, y: b.min.y + 1, z: b.min.z + 10 },
+              yaw: Math.PI / 2,
+              width: 18,
+              rows: 4,
+            },
+            {
+              position: { x: b.min.x - 9, y: b.min.y + 1, z: b.max.z - 10 },
+              yaw: -Math.PI / 2,
+              width: 18,
+              rows: 4,
+            },
+          ]);
     if (stands.length > 0) {
       crowd = createCrowd({
         stands,
@@ -198,6 +252,16 @@ export function createEnvironment(theme: ThemeDefinition, opts: EnvironmentOptio
   apply(atmosphere);
 
   const env: Environment = {
+    dressing: {
+      keepOut,
+      cloudOrigin: { x: center.x, y: center.y, z: center.z },
+      clouds: clouds?.clouds ?? [],
+      islands,
+      balloonColumns: traffic?.balloonColumns ?? [],
+      blimpOrbits: traffic?.blimpOrbits ?? [],
+      center: { x: center.x, y: center.y, z: center.z },
+      stands,
+    },
     object,
     fog,
     lights,

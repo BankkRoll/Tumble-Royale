@@ -1,5 +1,6 @@
 import type { DecorSet, ThemeDefinition } from '@tumble/content/themes';
 import { DecorRandom } from '../level/toolkit.ts';
+import { keepOutHitsBox, type BoxLike, type KeepOut } from './dressing.ts';
 import type { PropBuilder } from './propKit.ts';
 
 /**
@@ -27,6 +28,34 @@ export interface IslandLayoutOptions {
   /** Maximum distance from centre. */
   outerRadius?: number;
   exclude?: IslandExclusion;
+  /** Volume no island (props and rock underside included) may touch. */
+  keepOut?: KeepOut;
+}
+
+/** A placed island and its world bounds (props and rock cone included). */
+export interface IslandSpec {
+  x: number;
+  y: number;
+  z: number;
+  radius: number;
+  bounds: BoxLike;
+}
+
+/** Tallest prop above an island top (m): the biggest props are ~5.5 m at up to ~2.1× scale. */
+const PROP_HEADROOM = 14;
+
+/**
+ * World bounds of an island built by {@link addIsland}.
+ *
+ * @returns Box around the cake top, its props and the rock cones beneath.
+ */
+export function islandBounds(x: number, y: number, z: number, radius: number): BoxLike {
+  const th = Math.max(1.2, radius * 0.22);
+  const r = radius * 1.03 + 1;
+  return {
+    min: { x: x - r, y: y - th / 2 - radius * 2.5, z: z - r },
+    max: { x: x + r, y: y + th / 2 + PROP_HEADROOM, z: z + r },
+  };
 }
 
 type Palette = readonly string[];
@@ -335,7 +364,11 @@ export function addIsland(
  * @param theme - Theme (decor set + colours).
  * @param opts - Layout options.
  */
-export function layoutIslands(b: PropBuilder, theme: ThemeDefinition, opts: IslandLayoutOptions = {}): void {
+export function layoutIslands(
+  b: PropBuilder,
+  theme: ThemeDefinition,
+  opts: IslandLayoutOptions = {},
+): IslandSpec[] {
   const rng = new DecorRandom(opts.seed ?? 11);
   const count = opts.count ?? 14;
   const c = opts.center ?? { x: 0, y: 0, z: 0 };
@@ -343,9 +376,9 @@ export function layoutIslands(b: PropBuilder, theme: ThemeDefinition, opts: Isla
   const outer = opts.outerRadius ?? 260;
   const ex = opts.exclude;
   const margin = 26;
-  let placed = 0;
+  const placed: IslandSpec[] = [];
   let attempts = 0;
-  while (placed < count && attempts < count * 20) {
+  while (placed.length < count && attempts < count * 20) {
     attempts++;
     const a = rng.range(0, Math.PI * 2);
     const d = rng.range(inner, outer);
@@ -355,9 +388,15 @@ export function layoutIslands(b: PropBuilder, theme: ThemeDefinition, opts: Isla
       continue;
     const radius = rng.range(6, 18) * (0.7 + (d / outer) * 0.6);
     const y = c.y + rng.range(-30, 22);
-    b.group(rng.range(0, Math.PI * 2), rng.range(0.6, 1.6));
+    const bounds = islandBounds(x, y, z, radius);
+    const bob = 1.6;
+    bounds.min.y -= bob;
+    bounds.max.y += bob;
+    if (opts.keepOut && keepOutHitsBox(opts.keepOut, bounds)) continue;
+    b.group(rng.range(0, Math.PI * 2), rng.range(0.6, bob));
     addIsland(b, theme.decor.set, theme.decor.colors, x, y, z, radius, rng);
-    placed++;
+    placed.push({ x, y, z, radius, bounds });
   }
   b.group(0, 0);
+  return placed;
 }

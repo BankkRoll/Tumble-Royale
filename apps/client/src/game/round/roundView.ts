@@ -13,7 +13,7 @@ import { getTheme, type ThemeDefinition, type Weather } from '@tumble/content/th
 import { MeshBatcher } from '@tumble/render/batching';
 import { RagdollManager, RagdollWorld } from '@tumble/render/character';
 import { ThirdPersonCamera, type CameraFollowTarget, type CameraVec3 } from '@tumble/render/camera';
-import { createEnvironment, type Environment } from '@tumble/render/environment';
+import { createEnvironment, roundDressing, type Environment } from '@tumble/render/environment';
 import { buildLevelVisuals, quaternionFromRotation, type LevelVisuals } from '@tumble/render/level';
 import { getObstacleVisual, type ObstacleVisual } from '@tumble/render/obstacles';
 import { gradeFromTheme, type GradeParams } from '@tumble/render/post';
@@ -22,9 +22,11 @@ import type { TumblerLoadout } from '@tumble/render/scenes';
 import { createVfxSystem, type VfxSystem } from '@tumble/render/vfx';
 import { CollisionGroup, InteractionGroups, groups, type RoundDefinition } from '@tumble/shared';
 import type { ObstacleRuntime, Rapier, SimEvent } from '@tumble/sim';
+import { measureCourse } from '@tumble/sim/match';
 import type { CeremonyPost } from '../views/ceremonies.ts';
 import type { GameView } from '../views/types.ts';
 import { runLoadStepsSync, type LoadStep } from './loadPipeline.ts';
+import { ObstacleClock, introPreRollSeconds } from './obstacleClock.ts';
 import { PlayerVisuals, type TumblerPool } from './playerVisuals.ts';
 import type { RoundSource } from './source.ts';
 
@@ -40,7 +42,7 @@ export interface RoundViewOptions {
   R: Rapier;
   source: RoundSource;
   round: RoundDefinition;
-  /** Show stage (obstacle speed scale index). */
+  /** Show stage. Obstacle visuals take their speed from `source.sim.speedScale`, which also folds in mutators. */
   stage: number;
   /** Show seed (seeded obstacle layouts must match the sim). */
   seed: number;
@@ -80,6 +82,7 @@ export class RoundView implements GameView {
   private readonly obstacles: { visual: ObstacleVisual; runtime: ObstacleRuntime }[] = [];
   /** Instances render-identical obstacle parts across the whole course (hundreds of draws → dozens). */
   private readonly batcher = new MeshBatcher();
+  private readonly obstacleClock: ObstacleClock;
   private readonly loops: LoopEmitter[] = [];
   private loopsStarted = false;
   private ragdollMgr: RagdollManager | null = null;
@@ -116,6 +119,7 @@ export class RoundView implements GameView {
     this.targetId = source.localId;
     this.ray = new R.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
     this.camBall = new R.Ball(0.2);
+    this.obstacleClock = new ObstacleClock(introPreRollSeconds(round.flyover.duration));
   }
 
   /** Builds a view synchronously (flows that need it in the same call). */
@@ -165,10 +169,11 @@ export class RoundView implements GameView {
         weight: 3,
         run: () => {
           const level = this.level as LevelVisuals;
-          const b = level.bounds;
+          // Obstacles included: tile floors, drum rings and sweepers are the course on several rounds.
+          const course = measureCourse(source.sim.round, source.sim.obstacleRuntimes);
           const env = createEnvironment(this.theme, {
             weather: roundWeather(round, source.sim.variationId, this.theme),
-            courseBounds: Number.isFinite(b.min.x) ? { min: b.min, max: b.max } : round.bounds,
+            ...roundDressing(round, course),
             seed: round.decorSeed,
             detail: preset.environment,
             lighting: {
@@ -246,9 +251,9 @@ export class RoundView implements GameView {
   }
 
   private *buildObstacles(): Generator<number> {
-    const { round, source, stage, seed } = this.opts;
-    const scales = round.speedScaleByStage;
-    const speedScale = scales.length > 0 ? (scales[Math.max(0, Math.min(stage, scales.length - 1))] ?? 1) : 1;
+    const { round, source, seed } = this.opts;
+    // The sim's own scale includes the mutator bonus (Speed Demons); the stage table alone would desync visuals from colliders.
+    const speedScale = source.sim.speedScale;
     const runtimes = source.sim.obstacleRuntimes;
     let i = 0;
     for (const runtime of runtimes) {
@@ -573,7 +578,7 @@ export class RoundView implements GameView {
     const level = this.level as LevelVisuals;
     this.players.update(dt, this.camera);
 
-    const t = src.renderTime();
+    const t = this.obstacleClock.time(src.sim.phase, src.renderTime(), dt);
     if (src.alive) {
       for (const o of this.obstacles) o.visual.update(t, dt, o.runtime);
     }

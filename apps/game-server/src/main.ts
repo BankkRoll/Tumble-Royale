@@ -11,6 +11,7 @@
  */
 import { resolve } from 'node:path';
 import { loadServiceConfig } from '@tumble/shared/env';
+import { trustFunction } from '@tumble/shared/proxy';
 import { loadRapier } from '@tumble/sim';
 import { loadConfig } from './config.ts';
 import { createDevRoomDeps } from './devDeps.ts';
@@ -60,10 +61,26 @@ const server = await startGameServer({
     ...(config.link ? { serverId: config.link.serverId, allowDefaultSid: !production } : {}),
   },
   ...(config.controlSecret ? { control: { secret: config.controlSecret } } : {}),
+  helloTimeoutMs: config.exposure.helloTimeoutMs,
+  http: {
+    debug: config.exposure.debug,
+    allowedOrigins: config.exposure.allowedOrigins,
+    ...(config.exposure.metricsToken ? { metricsToken: config.exposure.metricsToken } : {}),
+    // Outside production, monitoring stays open unless the operator chose a token or an internal port.
+    openMetrics: !production && !config.exposure.metricsToken && config.exposure.internalPort === undefined,
+    ...(config.exposure.internalPort !== undefined ? { internalPort: config.exposure.internalPort } : {}),
+    ...(config.exposure.internalHost ? { internalHost: config.exposure.internalHost } : {}),
+    trust: trustFunction(config.exposure.trustProxy),
+    maxPendingPerIp: config.exposure.maxPendingPerIp,
+  },
 });
+if (production && !config.exposure.metricsToken && config.exposure.internalPort === undefined)
+  console.warn(
+    '[game-server] /metrics and /rooms are disabled: set INTERNAL_PORT (private listener) or METRICS_TOKEN (bearer) to scrape them',
+  );
 
 console.log(
-  `[game-server] listening on :${server.port} (rapier ${R.version()}) ws=/ws metrics=/metrics · tickets ${config.allowUnticketed ? 'optional (dev)' : 'required'} · results ${resultsCfg ? `→ ${resultsCfg.apiUrl} (outbox ${resultsCfg.outboxDir})` : 'off'}`,
+  `[game-server] listening on :${server.port} (rapier ${R.version()}) ws=/ws${server.internalPort ? ` internal=:${server.internalPort}` : ''} · tickets ${config.allowUnticketed ? 'optional (dev)' : 'required'} · results ${resultsCfg ? `→ ${resultsCfg.apiUrl} (outbox ${resultsCfg.outboxDir})` : 'off'}`,
 );
 
 const link: MatchmakerLink | null = config.link

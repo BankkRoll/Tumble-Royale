@@ -27,8 +27,14 @@ import { DEFAULT_ROOM_CONFIG, type MatchSettings, type RoomConfig, type RoomDeps
 export interface RoomManagerOptions {
   config?: Partial<RoomConfig>;
   limits?: ConnectionLimits;
-  /** Hello must arrive within this long or the connection is dropped. */
+  /**
+   * Hello must arrive within this long or the connection is dropped (5 s).
+   * Clients send it as soon as the socket opens, so anything slower is an
+   * idle socket holding a slot.
+   */
   helloTimeoutMs?: number;
+  /** Connections from one address still waiting for their Hello (8); more are closed at once. */
+  maxPendingPerIp?: number;
   /** Profiling log interval; 0 disables. */
   profileLogMs?: number;
   /** Cap on concurrent rooms. */
@@ -86,6 +92,9 @@ export class RoomManager {
   private readonly joined: { matchId: string; userId: string }[] = [];
   private readonly limits: ConnectionLimits;
   private readonly helloTimeoutMs: number;
+  private readonly maxPendingPerIp: number;
+  /** Unhandshaken connections per remote address. */
+  private readonly pendingByIp = new Map<string, number>();
   private readonly profileLogMs: number;
   private readonly maxRooms: number;
   private readonly writer = new BitWriter(512);
@@ -108,7 +117,8 @@ export class RoomManager {
   ) {
     this.config = { ...DEFAULT_ROOM_CONFIG, ...opts.config };
     this.limits = opts.limits ?? DEFAULT_LIMITS;
-    this.helloTimeoutMs = opts.helloTimeoutMs ?? 10_000;
+    this.helloTimeoutMs = opts.helloTimeoutMs ?? 5000;
+    this.maxPendingPerIp = opts.maxPendingPerIp ?? 8;
     this.profileLogMs = opts.profileLogMs ?? 5000;
     this.maxRooms = opts.maxRooms ?? 64;
     this.tickets = opts.tickets ?? null;
@@ -159,6 +169,11 @@ export class RoomManager {
     return true;
   }
 
+  /** Connections from `ip` that have not completed their Hello yet. */
+  pendingFrom(ip: string): number {
+    return this.pendingByIp.get(ip) ?? 0;
+  }
+
   /** Upper bound on concurrent rooms; reported to the matchmaker at registration. */
   get roomLimit(): number {
     return this.maxRooms;
@@ -190,15 +205,34 @@ export class RoomManager {
 
   /** Takes ownership of a new connection and waits for its Hello. */
   accept(conn: Connection): void {
+    const ip = conn.remoteAddress;
+    // SECURITY: sockets that never say Hello cost memory and a timer each; cap them per address.
+    if (this.pendingFrom(ip) >= this.maxPendingPerIp) {
+      conn.close(1013, 'too many pending connections');
+      return;
+    }
     const now = this.deps.now();
     const session = new ClientSession(conn, now, this.config.snapshotByteBudget, this.limits);
     this.pending.add(session);
+    this.pendingByIp.set(ip, this.pendingFrom(ip) + 1);
+    let counted = true;
+    const settle = (): void => {
+      if (!counted) return;
+      counted = false;
+      const left = this.pendingFrom(ip) - 1;
+      if (left > 0) this.pendingByIp.set(ip, left);
+      else this.pendingByIp.delete(ip);
+    };
     const timer = setTimeout(() => {
-      if (this.pending.delete(session)) conn.close(4000, 'hello timeout');
+      if (this.pending.delete(session)) {
+        settle();
+        conn.close(4000, 'hello timeout');
+      }
     }, this.helloTimeoutMs);
     conn.onClose = () => {
       clearTimeout(timer);
       this.pending.delete(session);
+      settle();
     };
     conn.onMessage = (data) => {
       const t = this.deps.now();
@@ -212,6 +246,7 @@ export class RoomManager {
       }
       clearTimeout(timer);
       this.pending.delete(session);
+      settle();
       const placed = this.place(session, hello.resumeToken, hello, t);
       if (!(placed instanceof Room)) {
         const reason = placed ?? (hello.resumeToken ? KickReason.ResumeExpired : KickReason.ServerFull);

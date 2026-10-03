@@ -11,9 +11,9 @@ import {
 import { RoomManager } from '../src/room/RoomManager.ts';
 import { SimpleShowController } from '../src/show/SimpleShowController.ts';
 import { signJoinTicket, verifyJoinTicket, type JoinTicketClaims } from '../src/tickets.ts';
-import { FakeConnection, TestClient, testDeps, type FakeMatchSim } from './helpers.ts';
+import { FakeConnection, TEST_SECRETS, TestClient, testDeps, type FakeMatchSim } from './helpers.ts';
 
-const SECRET = 'test-ticket-secret-0123456789';
+const SECRET = TEST_SECRETS.GAME_TICKET_SECRET;
 const TICK_MS = 1000 / 30;
 const WALL = Date.parse('2026-10-02T12:00:00Z');
 

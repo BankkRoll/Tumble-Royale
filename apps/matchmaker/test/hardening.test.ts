@@ -2,9 +2,10 @@ import { SignJWT } from 'jose';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildMatchmaker, type MatchmakerApp } from '../src/app.ts';
 import { loadConfig } from '../src/config.ts';
+import { TEST_SECRETS, testEnv } from './helpers.ts';
 
-const JWT_SECRET = 'test-jwt-secret-0123456789-abcdefghijkl';
-const SERVER_SECRET = 'test-server-secret-0123456789';
+const JWT_SECRET = TEST_SECRETS.JWT_SECRET;
+const SERVER_SECRET = TEST_SECRETS.GAME_SERVER_SECRET;
 const clock = Date.parse('2026-10-02T12:00:00Z');
 let mm: MatchmakerApp | undefined;
 
@@ -14,16 +15,7 @@ afterEach(async () => {
 });
 
 async function build(env: Record<string, string> = {}): Promise<MatchmakerApp> {
-  mm = await buildMatchmaker(
-    loadConfig({
-      NODE_ENV: 'test',
-      JWT_SECRET,
-      GAME_SERVER_SECRET: SERVER_SECRET,
-      LOG_LEVEL: 'silent',
-      ...env,
-    }),
-    { now: () => clock, logger: false },
-  );
+  mm = await buildMatchmaker(loadConfig(testEnv(env)), { now: () => clock, logger: false });
   return mm;
 }
 
@@ -61,19 +53,6 @@ describe('CORS', () => {
       headers: { origin: 'https://evil.example.com' },
     });
     expect(evilGet.headers['access-control-allow-origin']).toBeUndefined();
-  });
-
-  it('defaults to PUBLIC_WEB_URL in production and anything in development', () => {
-    const prod = loadConfig({
-      NODE_ENV: 'production',
-      JWT_SECRET: 'p'.repeat(40),
-      GAME_TICKET_SECRET: 't'.repeat(20),
-      GAME_SERVER_SECRET: 's'.repeat(20),
-      REDIS_URL: 'redis://r',
-      PUBLIC_WEB_URL: 'https://play.example.com/',
-    });
-    expect(prod.allowedOrigins).toEqual(['https://play.example.com']);
-    expect(loadConfig({ NODE_ENV: 'development' }).allowedOrigins).toBe(true);
   });
 });
 
@@ -120,26 +99,5 @@ describe('rate limiting', () => {
     // A new address does not reset the player's budget.
     expect(await post('alice', '10.0.0.3')).toBe(429);
     expect(await post('bob', '10.0.0.3')).toBe(200);
-  });
-});
-
-describe('production store', () => {
-  const prod = {
-    NODE_ENV: 'production',
-    JWT_SECRET: 'p'.repeat(40),
-    GAME_TICKET_SECRET: 't'.repeat(20),
-    GAME_SERVER_SECRET: 's'.repeat(20),
-  };
-
-  it('refuses to run on memory unless explicitly allowed', () => {
-    expect(() => loadConfig(prod)).toThrow(/REDIS_URL/);
-    expect(loadConfig({ ...prod, ALLOW_MEMORY_STORE: '1' }).memoryStoreInProduction).toBe(true);
-    expect(loadConfig({ ...prod, REDIS_URL: 'redis://r' }).memoryStoreInProduction).toBe(false);
-  });
-
-  it('refuses the development HMAC secret when talking to the API', () => {
-    expect(() => loadConfig({ ...prod, REDIS_URL: 'redis://r', API_URL: 'https://api.example.com' })).toThrow(
-      /INTERNAL_HMAC_SECRET/,
-    );
   });
 });

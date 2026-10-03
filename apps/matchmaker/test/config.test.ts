@@ -1,0 +1,61 @@
+import { describe, expect, it } from 'vitest';
+import { EnvConfigError } from '@tumble/shared/env';
+import { loadConfig } from '../src/config.ts';
+import { TEST_SECRETS, testEnv } from './helpers.ts';
+
+const issueNames = (env: Record<string, string | undefined>): string[] => {
+  try {
+    loadConfig(env);
+  } catch (err) {
+    if (err instanceof EnvConfigError) return err.issues.map((i) => i.name);
+    throw err;
+  }
+  return [];
+};
+
+const prod = testEnv({ NODE_ENV: 'production', INTERNAL_HMAC_SECRET: undefined, REDIS_URL: 'redis://r' });
+
+describe('matchmaker config', () => {
+  it('requires every secret and reports them together', () => {
+    expect(issueNames({ NODE_ENV: 'test' })).toEqual([
+      'JWT_SECRET',
+      'GAME_TICKET_SECRET',
+      'GAME_SERVER_SECRET',
+    ]);
+    expect(issueNames({ NODE_ENV: 'test', ...TEST_SECRETS, TARGET_SIZE: '1', JWT_SECRET: 'x' })).toEqual([
+      'JWT_SECRET',
+      'TARGET_SIZE',
+    ]);
+  });
+
+  it('refuses placeholder secrets copied from .env.example', () => {
+    expect(issueNames(testEnv({ GAME_SERVER_SECRET: 'change-me' }))).toEqual(['GAME_SERVER_SECRET']);
+  });
+
+  it('needs INTERNAL_HMAC_SECRET only when it calls the API', () => {
+    expect(loadConfig(prod).internalHmacSecret).toBeUndefined();
+    expect(issueNames({ ...prod, API_URL: 'https://api.example.com' })).toEqual(['INTERNAL_HMAC_SECRET']);
+    expect(issueNames(testEnv({ NODE_ENV: 'development', INTERNAL_HMAC_SECRET: undefined }))).toEqual([
+      'INTERNAL_HMAC_SECRET',
+    ]);
+    expect(loadConfig(testEnv({ NODE_ENV: 'development' }))).toMatchObject({
+      apiUrl: 'http://localhost:7360',
+      internalHmacSecret: TEST_SECRETS.INTERNAL_HMAC_SECRET,
+      defaultGameServerUrl: 'ws://localhost:7350',
+    });
+  });
+
+  it('defaults CORS to PUBLIC_WEB_URL in production and anything in development', () => {
+    expect(loadConfig({ ...prod, PUBLIC_WEB_URL: 'https://play.example.com/' }).allowedOrigins).toEqual([
+      'https://play.example.com',
+    ]);
+    expect(loadConfig(testEnv({ NODE_ENV: 'development' })).allowedOrigins).toBe(true);
+  });
+
+  it('refuses to run production on memory unless explicitly allowed', () => {
+    const noRedis = { ...prod, REDIS_URL: undefined };
+    expect(issueNames(noRedis)).toEqual(['REDIS_URL']);
+    expect(loadConfig({ ...noRedis, ALLOW_MEMORY_STORE: '1' }).memoryStoreInProduction).toBe(true);
+    expect(loadConfig(prod).memoryStoreInProduction).toBe(false);
+  });
+});

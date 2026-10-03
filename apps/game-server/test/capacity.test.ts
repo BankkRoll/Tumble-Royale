@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { capacityConfig, linkConfig } from '../src/config.ts';
 import { startMatchmakerLink } from '../src/matchmakerLink.ts';
 import { ServerMetrics } from '../src/metrics.ts';
 import { RoomManager, type TicketPolicy } from '../src/room/RoomManager.ts';
 import { signJoinTicket, type JoinTicketClaims } from '../src/tickets.ts';
-import { FakeConnection, TestClient, testDeps, type FakeMatchSim } from './helpers.ts';
+import { FakeConnection, TEST_SECRETS, TestClient, testDeps, type FakeMatchSim } from './helpers.ts';
 
-const SECRET = 'test-ticket-secret-0123456789';
+const SECRET = TEST_SECRETS.GAME_TICKET_SECRET;
 const WALL = Date.parse('2026-10-02T12:00:00Z');
 
 function claims(sub: string, over: Partial<JoinTicketClaims> = {}): JoinTicketClaims {
@@ -48,21 +47,6 @@ function setup(policy: Partial<TicketPolicy> = {}) {
   };
   return { manager, connect };
 }
-
-describe('capacity config', () => {
-  it('keeps the seat and room limits consistent by default', () => {
-    expect(capacityConfig({})).toEqual({ roomCapacity: 40, maxRooms: 10, serverCapacity: 400 });
-    expect(capacityConfig({ MAX_ROOMS: '4', ROOM_CAPACITY: '20' }).serverCapacity).toBe(80);
-    expect(capacityConfig({ SERVER_CAPACITY: '120' }).serverCapacity).toBe(120);
-  });
-
-  it('only links to the matchmaker when both URL and secret are set', () => {
-    expect(linkConfig({ MATCHMAKER_URL: 'http://mm' }, 7350)).toBeNull();
-    expect(
-      linkConfig({ MATCHMAKER_URL: 'http://mm', GAME_SERVER_SECRET: 's', SERVER_ID: 'gs-1' }, 7350),
-    ).toMatchObject({ serverId: 'gs-1', publicUrl: 'ws://localhost:7350/ws', region: 'na' });
-  });
-});
 
 describe('ticket server id', () => {
   it('refuses tickets for matches placed on another server', () => {

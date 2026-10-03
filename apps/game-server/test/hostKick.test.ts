@@ -10,10 +10,10 @@ import { ServerMetrics } from '../src/metrics.ts';
 import { RoomManager } from '../src/room/RoomManager.ts';
 import { startGameServer } from '../src/server.ts';
 import { signJoinTicket, type JoinTicketClaims } from '../src/tickets.ts';
-import { FakeConnection, TestClient, testDeps, type FakeMatchSim } from './helpers.ts';
+import { FakeConnection, TEST_SECRETS, TestClient, testDeps, type FakeMatchSim } from './helpers.ts';
 
-const SECRET = 'test-ticket-secret-0123456789';
-const CONTROL = 'test-server-secret-0123456789';
+const SECRET = TEST_SECRETS.GAME_TICKET_SECRET;
+const CONTROL = TEST_SECRETS.GAME_SERVER_SECRET;
 const WALL = Date.parse('2026-10-02T12:00:00Z');
 const TICK_MS = 1000 / 30;
 

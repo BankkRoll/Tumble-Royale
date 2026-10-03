@@ -2,14 +2,15 @@
  * Environment configuration for the API.
  *
  * Responsibilities:
- * - Parse and validate every environment variable the service reads, once, at boot.
- * - Provide safe development defaults so `pnpm dev` works with zero setup.
- * - Refuse to boot in production with development secrets.
+ * - Parse and validate every environment variable the service reads, once, at
+ *   boot, reporting every problem together.
+ * - Provide development defaults for everything except secrets, which come
+ *   from the environment or the `.env` files `pnpm setup:env` writes.
+ * - Refuse to boot without secrets, with placeholder secrets, or in
+ *   production without Redis unless that is explicitly allowed.
  */
+import { EnvIssues, type Env } from '@tumble/shared/env';
 import { z } from 'zod';
-
-const DEV_JWT_SECRET = 'dev-only-jwt-secret-change-me-0123456789abcdef';
-const DEV_INTERNAL_SECRET = 'dev-only-internal-hmac-secret-change-me';
 
 const optionalString = z
   .string()
@@ -24,8 +25,6 @@ const EnvSchema = z.object({
   PGLITE_DIR: z.string().default('./.data/pglite'),
   REDIS_URL: optionalString,
   ALLOW_MEMORY_STORE: optionalString,
-  JWT_SECRET: z.string().min(32).default(DEV_JWT_SECRET),
-  INTERNAL_HMAC_SECRET: z.string().min(16).default(DEV_INTERNAL_SECRET),
   ADMIN_TOKEN: optionalString,
   PUBLIC_WEB_URL: z.string().url().default('http://localhost:5173'),
   PUBLIC_API_URL: z.string().url().default('http://localhost:7360'),
@@ -102,24 +101,27 @@ function pair(id: string | undefined, secret: string | undefined): OAuthClientCo
  *
  * @param env - Usually `process.env`; tests pass a literal map.
  * @returns The validated configuration.
- * @throws If a variable is malformed, or production runs with development
- *   secrets, or without `REDIS_URL` unless `ALLOW_MEMORY_STORE=1`.
+ * @throws {EnvConfigError} Listing every malformed variable and missing or
+ *   placeholder secret, and `REDIS_URL` in production unless `ALLOW_MEMORY_STORE=1`.
  */
-export function loadConfig(env: Record<string, string | undefined> = process.env): ApiConfig {
-  const e = EnvSchema.parse(env);
-  if (e.NODE_ENV === 'production') {
-    if (e.JWT_SECRET === DEV_JWT_SECRET) throw new Error('JWT_SECRET must be set in production');
-    if (e.INTERNAL_HMAC_SECRET === DEV_INTERNAL_SECRET) {
-      throw new Error('INTERNAL_HMAC_SECRET must be set in production');
-    }
-    if (!e.REDIS_URL && e.ALLOW_MEMORY_STORE !== '1') {
-      throw new Error(
-        'REDIS_URL must be set in production: parties, presence, leaderboards and nonces would live in ' +
-          'process memory, vanish on restart and not be shared between instances. ' +
-          'Set ALLOW_MEMORY_STORE=1 to run a single instance on memory anyway.',
-      );
-    }
+export function loadConfig(env: Env = process.env): ApiConfig {
+  const issues = new EnvIssues(env);
+  const jwtSecret = issues.secret('JWT_SECRET', 32);
+  const internalHmacSecret = issues.secret('INTERNAL_HMAC_SECRET', 16);
+  const parsed = EnvSchema.safeParse(env);
+  if (!parsed.success) issues.addSchemaIssues(parsed.error.issues);
+  // Every field has a default, so parsing {} lets the remaining checks run and
+  // report alongside the schema issues.
+  const e = parsed.success ? parsed.data : EnvSchema.parse({});
+  if (e.NODE_ENV === 'production' && !e.REDIS_URL && e.ALLOW_MEMORY_STORE !== '1') {
+    issues.add(
+      'REDIS_URL',
+      'is required in production: parties, presence, leaderboards and nonces would live in ' +
+        'process memory, vanish on restart and not be shared between instances. ' +
+        'Set ALLOW_MEMORY_STORE=1 to run a single instance on memory anyway.',
+    );
   }
+  issues.throwIfAny('api');
   const corsOrigins: string[] | true = e.CORS_ORIGINS
     ? e.CORS_ORIGINS.split(',')
         .map((s) => s.trim())
@@ -135,8 +137,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     pgliteDir: e.NODE_ENV === 'test' ? 'memory://' : e.PGLITE_DIR,
     redisUrl: e.REDIS_URL,
     memoryStoreInProduction: e.NODE_ENV === 'production' && !e.REDIS_URL,
-    jwtSecret: e.JWT_SECRET,
-    internalHmacSecret: e.INTERNAL_HMAC_SECRET,
+    jwtSecret,
+    internalHmacSecret,
     adminToken: e.ADMIN_TOKEN,
     publicWebUrl: e.PUBLIC_WEB_URL.replace(/\/$/, ''),
     publicApiUrl: e.PUBLIC_API_URL.replace(/\/$/, ''),

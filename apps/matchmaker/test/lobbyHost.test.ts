@@ -9,11 +9,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import { buildMatchmaker, type MatchmakerApp } from '../src/app.ts';
 import { loadConfig } from '../src/config.ts';
+import { TEST_SECRETS, testEnv } from './helpers.ts';
 import { controlBase, type GameControl, type MatchTarget } from '../src/gameControl.ts';
 import { LOBBY_AWAY_GRACE_MS } from '../src/lobbyRules.ts';
 import { userChannel, type CustomLobby, type MMEvent } from '../src/matchmaker.ts';
 
-const JWT_SECRET = 'test-jwt-secret-0123456789-abcdefghijkl';
+const JWT_SECRET = TEST_SECRETS.JWT_SECRET;
 const enc = (s: string) => new TextEncoder().encode(s);
 
 let clock = 0;
@@ -29,14 +30,7 @@ beforeEach(async () => {
       return true;
     },
   };
-  const cfg = loadConfig({
-    NODE_ENV: 'test',
-    JWT_SECRET,
-    GAME_TICKET_SECRET: 'test-ticket-secret-0123456789',
-    GAME_SERVER_SECRET: 'test-server-secret-0123456789',
-    DEFAULT_GAME_SERVER_URL: 'ws://gs.test:7350/ws',
-    LOG_LEVEL: 'silent',
-  });
+  const cfg = loadConfig(testEnv({ DEFAULT_GAME_SERVER_URL: 'ws://gs.test:7350/ws' }));
   mmApp = await buildMatchmaker(cfg, { now: () => clock, logger: false, control });
 });
 afterEach(async () => {

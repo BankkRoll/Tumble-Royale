@@ -41,6 +41,7 @@ import {
   type RoundPhaseId,
   type Vec3,
 } from '@tumble/shared';
+import type { Env } from '@tumble/shared/env';
 import type { RoomDeps } from '../src/room/types.ts';
 import { SimpleShowController } from '../src/show/SimpleShowController.ts';
 import type { Connection } from '../src/transport/types.ts';
@@ -337,4 +338,20 @@ export class TestClient {
   lowFreq(t: LowFreqMessage['t']): LowFreqMessage[] {
     return this.messages.flatMap((m) => (m.kind === 'msg' && m.msg.t === t ? [m.msg] : []));
   }
+}
+
+/** Explicit secrets for tests, which never read `.env` files. */
+export const TEST_SECRETS = {
+  GAME_TICKET_SECRET: 'test-game-ticket-secret-0123456789',
+  GAME_SERVER_SECRET: 'test-game-server-secret-0123456789',
+  INTERNAL_HMAC_SECRET: 'test-internal-hmac-secret-0123456789',
+} as const;
+
+/**
+ * A complete test environment: `NODE_ENV=test` plus {@link TEST_SECRETS}.
+ *
+ * @param overrides - Variables to add or replace; `undefined` removes one.
+ */
+export function testEnv(overrides: Env = {}): Env {
+  return { NODE_ENV: 'test', ...TEST_SECRETS, ...overrides };
 }

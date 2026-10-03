@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp, type BuiltApp } from '../src/app.ts';
 import { MemoryMailer } from '../src/auth/mailer.ts';
 import { loadConfig } from '../src/config.ts';
+import { testEnv } from './helpers.ts';
 
 let built: BuiltApp;
 const mailer = new MemoryMailer();
@@ -21,14 +22,14 @@ const stubFetch = (async (input: string | URL | Request) => {
 }) as typeof fetch;
 
 beforeAll(async () => {
-  const config = loadConfig({
-    NODE_ENV: 'test',
-    LOG_LEVEL: 'silent',
-    RATE_LIMIT_MAX: '100000',
-    DISCORD_CLIENT_ID: 'client-id',
-    DISCORD_CLIENT_SECRET: 'client-secret',
-    PUBLIC_WEB_URL: 'https://play.example.com',
-  });
+  const config = loadConfig(
+    testEnv({
+      RATE_LIMIT_MAX: '100000',
+      DISCORD_CLIENT_ID: 'client-id',
+      DISCORD_CLIENT_SECRET: 'client-secret',
+      PUBLIC_WEB_URL: 'https://play.example.com',
+    }),
+  );
   built = await buildApp(config, { mailer, fetch: stubFetch, logger: false });
 });
 afterAll(async () => {

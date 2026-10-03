@@ -78,6 +78,7 @@ To play online against a local authoritative server, also start the game
 server and add `?online=1`:
 
 ```sh
+pnpm setup:env                          # once: writes .env files with local secrets
 pnpm --filter @tumble/game-server dev   # ws://localhost:7350/ws
 # open http://localhost:5173/?online=1
 ```
@@ -96,8 +97,26 @@ server, API and matchmaker.
 
 The API uses an embedded Postgres (PGlite) and in-memory Redis when
 `DATABASE_URL` / `REDIS_URL` are unset, and a fake payment provider without
-Stripe keys, so the whole stack runs locally with no external services. See
-each app's README for its environment variables.
+Stripe keys, so the whole stack runs locally with no external services.
+
+### Environment
+
+`pnpm setup:env` creates every `.env` from its `.env.example`, filling the
+root file's secrets with random values; `pnpm dev` runs it automatically and
+it never overwrites an existing `.env`.
+
+| File                                                             | Holds                                                                                                    |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| [`.env.example`](.env.example)                                   | Secrets and URLs shared by the API, matchmaker and game server (`JWT_SECRET`, `INTERNAL_HMAC_SECRET`, …) |
+| [`apps/api/.env.example`](apps/api/.env.example)                 | API overrides: database, Redis, OAuth, SMTP, Stripe, tuning                                              |
+| [`apps/matchmaker/.env.example`](apps/matchmaker/.env.example)   | Matchmaker overrides: Redis, lobby timing, rate limits                                                   |
+| [`apps/game-server/.env.example`](apps/game-server/.env.example) | Game server overrides: public URL, region, capacity, results outbox                                      |
+| [`apps/client/.env.example`](apps/client/.env.example)           | Client build URLs (`VITE_*`, baked into the bundle) and the dev proxy target                             |
+
+Each service loads its own `apps/<name>/.env`, then the root `.env`; real
+environment variables always win. Secrets have no built-in defaults: a service
+lists every missing or invalid variable and exits, and refuses the `change-me`
+placeholders from the examples. Tests never read `.env` files.
 
 ### Deploying
 
@@ -113,10 +132,11 @@ VITE_GAME_SERVER_URL=wss://play.example.com/ws \
 
 If `VITE_GAME_SERVER_URL` is unset, the client connects to `/gs/ws` on its
 own origin, so a reverse proxy in front of the game server also works. Run the
-servers with `NODE_ENV=production` and real secrets (see
-[SECURITY.md](SECURITY.md)): production refuses development secrets, requires
-matchmaker tickets to join a game, and disables Gem checkout unless Stripe is
-configured.
+servers with `NODE_ENV=production`, the four shared secrets set to the same
+strong values on every service (see [SECURITY.md](SECURITY.md)) and
+`REDIS_URL`: production requires matchmaker tickets to join a game and
+disables Gem checkout unless Stripe is configured. The "Required in
+production" group of each `.env.example` lists what to set.
 
 The client is a single-page app. Party invites (`/join/<code>`), OAuth and
 email sign-in returns (`/auth/*`) and Stripe returns (`/store`) must serve

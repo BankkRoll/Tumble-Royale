@@ -1,18 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildMatchmaker, type MatchmakerApp } from '../src/app.ts';
 import { loadConfig } from '../src/config.ts';
+import { TEST_SECRETS, testEnv } from './helpers.ts';
 
-const SERVER_SECRET = 'test-server-secret-0123456789';
+const SERVER_SECRET = TEST_SECRETS.GAME_SERVER_SECRET;
 let mmApp: MatchmakerApp;
 
 beforeEach(async () => {
-  const cfg = loadConfig({
-    NODE_ENV: 'test',
-    JWT_SECRET: 'test-jwt-secret-0123456789-abcdefghijkl',
-    GAME_TICKET_SECRET: 'test-ticket-secret-0123456789',
-    GAME_SERVER_SECRET: SERVER_SECRET,
-    LOG_LEVEL: 'silent',
-  });
+  const cfg = loadConfig(testEnv());
   mmApp = await buildMatchmaker(cfg, { logger: false });
 });
 afterEach(async () => {

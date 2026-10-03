@@ -27,6 +27,10 @@ URL options and the dev sandbox pages are listed in the root README.
 
 ## Deploying
 
+Set the service URLs at build time with the `VITE_*` variables in
+[`.env.example`](.env.example) (copy it to `.env`, or export them); the
+defaults point at the local dev stack.
+
 The game handles a few paths itself, so the static host must answer them
 with `index.html`:
 

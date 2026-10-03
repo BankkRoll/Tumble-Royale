@@ -8,15 +8,13 @@ import {
   type MailTransport,
 } from '../src/auth/mailer.ts';
 import { loadConfig } from '../src/config.ts';
+import { testEnv } from './helpers.ts';
 
-const PROD = {
+const PROD = testEnv({
   NODE_ENV: 'production',
-  JWT_SECRET: 'prod-jwt-secret-0123456789abcdef0123456789',
-  INTERNAL_HMAC_SECRET: 'prod-internal-secret-0123456789',
   PUBLIC_WEB_URL: 'https://play.example.com',
   ALLOW_MEMORY_STORE: '1',
-  LOG_LEVEL: 'silent',
-};
+});
 
 function fakeTransport(): MailTransport & { sent: Parameters<MailTransport['sendMail']>[0][] } {
   const sent: Parameters<MailTransport['sendMail']>[0][] = [];
@@ -31,8 +29,8 @@ function fakeTransport(): MailTransport & { sent: Parameters<MailTransport['send
 
 describe('mailer selection', () => {
   it('uses the console in development and test', () => {
-    expect(createMailer(loadConfig({ NODE_ENV: 'development' }))).toBeInstanceOf(ConsoleMailer);
-    expect(createMailer(loadConfig({ NODE_ENV: 'test' }))).toBeInstanceOf(ConsoleMailer);
+    expect(createMailer(loadConfig(testEnv({ NODE_ENV: 'development' })))).toBeInstanceOf(ConsoleMailer);
+    expect(createMailer(loadConfig(testEnv()))).toBeInstanceOf(ConsoleMailer);
   });
 
   it('disables email in production without SMTP', () => {
@@ -89,10 +87,10 @@ describe('email sign-in without a mailer', () => {
 describe('email delivery failure', () => {
   it('reports email_failed and forgets the unsent link', async () => {
     const failing = { id: 'smtp' as const, send: () => Promise.reject(new Error('relay down')) };
-    const { app, ctx, close } = await buildApp(
-      loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent', RATE_LIMIT_MAX: '1000' }),
-      { mailer: failing, logger: false },
-    );
+    const { app, ctx, close } = await buildApp(loadConfig(testEnv({ RATE_LIMIT_MAX: '1000' })), {
+      mailer: failing,
+      logger: false,
+    });
     try {
       const res = await app.inject({
         method: 'POST',

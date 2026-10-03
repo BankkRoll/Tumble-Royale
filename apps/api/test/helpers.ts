@@ -2,6 +2,7 @@
  * Test harness: an API on in-memory PGlite + memory KV with a controllable clock.
  */
 import { randomUUID } from 'node:crypto';
+import type { Env } from '@tumble/shared/env';
 import type { LightMyRequestResponse } from 'fastify';
 import { buildApp, type BuildOptions, type BuiltApp } from '../src/app.ts';
 import { MemoryMailer } from '../src/auth/mailer.ts';
@@ -12,6 +13,22 @@ import type { MatchResultInput } from '../src/matches/schema.ts';
 
 /** Admin bearer used by tests. */
 export const ADMIN_TOKEN = 'test-admin-token-0123456789';
+
+/** Explicit secrets for tests, which never read `.env` files. */
+export const TEST_SECRETS = {
+  JWT_SECRET: 'test-jwt-secret-0123456789-abcdefghijkl',
+  INTERNAL_HMAC_SECRET: 'test-internal-hmac-secret-0123456789',
+} as const;
+
+/**
+ * A complete, quiet test environment: `NODE_ENV=test`, `LOG_LEVEL=silent`
+ * and {@link TEST_SECRETS}.
+ *
+ * @param overrides - Variables to add or replace; `undefined` removes one.
+ */
+export function testEnv(overrides: Env = {}): Env {
+  return { NODE_ENV: 'test', LOG_LEVEL: 'silent', ...TEST_SECRETS, ...overrides };
+}
 
 /** A signed-in guest. */
 export interface TestUser {
@@ -70,15 +87,15 @@ export async function createTestApi(
       nowMs = Date.parse(iso);
     },
   };
-  const config = loadConfig({
-    NODE_ENV: 'test',
-    RATE_LIMIT_MAX: '100000',
-    ADMIN_TOKEN,
-    LOG_LEVEL: 'silent',
-    // Short enough for tests to watch a disconnect turn into "offline".
-    PRESENCE_GRACE_MS: '150',
-    ...env,
-  });
+  const config = loadConfig(
+    testEnv({
+      RATE_LIMIT_MAX: '100000',
+      ADMIN_TOKEN,
+      // Short enough for tests to watch a disconnect turn into "offline".
+      PRESENCE_GRACE_MS: '150',
+      ...env,
+    }),
+  );
   const mailer = new MemoryMailer();
   const built = await buildApp(config, { now: clock.now, mailer, logger: false, ...extra });
 

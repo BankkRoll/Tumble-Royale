@@ -29,6 +29,13 @@ const MM = `http://127.0.0.1:${BASE + 370}`;
 const GS_PORT = BASE + 350;
 const SHOTS = process.env.META_SHOTS ?? 'test-results/meta';
 const ROOT = resolve(import.meta.dirname, '../../..');
+// Explicit secrets shared by the three services, so the run never depends on .env files.
+const SECRETS = {
+  JWT_SECRET: 'test-jwt-secret-0123456789-abcdefghijkl',
+  INTERNAL_HMAC_SECRET: 'test-internal-hmac-secret-0123456789',
+  GAME_TICKET_SECRET: 'test-game-ticket-secret-0123456789',
+  GAME_SERVER_SECRET: 'test-game-server-secret-0123456789',
+};
 
 const procs: ChildProcess[] = [];
 let dataDir = '';
@@ -37,7 +44,7 @@ function start(app: string, env: Record<string, string>): ChildProcess {
   // `node --import tsx` keeps the server in this one process, so killing it leaves no orphans.
   const p = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts'], {
     cwd: join(ROOT, app),
-    env: { ...process.env, LOG_LEVEL: 'warn', ...env },
+    env: { ...process.env, LOG_LEVEL: 'warn', ...SECRETS, ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const tag = app.split('/').pop();
@@ -78,11 +85,13 @@ test.beforeAll(async () => {
       MAX_WAIT_MS: '3000',
       HOT_MAX_WAIT_MS: '3000',
       DEFAULT_GAME_SERVER_URL: `ws://localhost:${GS_PORT}/ws`,
+      API_URL: API,
     });
     start('apps/game-server', {
       PORT: String(GS_PORT),
       API_URL: API,
-      INTERNAL_HMAC_SECRET: 'dev-only-internal-hmac-secret-change-me',
+      // Empty wins over the root .env, keeping the matchmaker's default-server path.
+      MATCHMAKER_URL: '',
       TICKET_FILL_WAIT_MS: '10000',
     });
   }

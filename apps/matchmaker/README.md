@@ -20,25 +20,12 @@ Redis is optional in development (`REDIS_URL`); without it state is in-process.
 
 ## Environment
 
-| Variable                                            | Default                             | Purpose                                                                                                               |
-| --------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                                              | `7370`                              | Listen port                                                                                                           |
-| `REDIS_URL`                                         | –                                   | Shared state + tick lock for several instances                                                                        |
-| `JWT_SECRET`                                        | dev value                           | Verifies API access tokens and party queue tickets (**same value as the API**)                                        |
-| `GAME_TICKET_SECRET`                                | dev value                           | Signs join tickets (**shared with game servers**)                                                                     |
-| `GAME_SERVER_SECRET`                                | dev value                           | Bearer game servers use for `/servers/*` and `/matches/:id`                                                           |
-| `DEFAULT_GAME_SERVER_URL`                           | `ws://localhost:7350` in dev        | Used when no server has registered                                                                                    |
-| `TARGET_SIZE`                                       | `40`                                | Lobby size when a ticket omits `maxPlayers`                                                                           |
-| `MAX_WAIT_MS` / `HOT_MAX_WAIT_MS` / `HOT_THRESHOLD` | `25000` / `12000` / `80`            | Release with bots after the wait; the shorter wait applies once a region has `HOT_THRESHOLD` players searching        |
-| `TICK_MS`                                           | `500`                               | Release tick                                                                                                          |
-| `REGION_FALLBACK_MS`                                | `10000`                             | How long a ready lobby waits for a server in its own region before nearby regions are tried                           |
-| `ALLOW_MEMORY_STORE`                                | –                                   | `1` lets production boot without `REDIS_URL` (single instance, state lost on restart)                                 |
-| `ALLOWED_ORIGINS`                                   | any (dev) / `PUBLIC_WEB_URL` (prod) | Comma-separated browser origins allowed by CORS and on the `/ws` handshake                                            |
-| `PUBLIC_WEB_URL`                                    | `http://localhost:5173`             | Web client origin; the production CORS default                                                                        |
-| `RATE_LIMIT_MAX`                                    | `120`                               | Requests (and `/ws` handshakes) per minute per IP; game-server routes are exempt                                      |
-| `USER_RATE_LIMIT_MAX`                               | `30`                                | Queue and lobby mutations (non-GET) per minute per player                                                             |
-| `API_URL`                                           | `http://localhost:7360` in dev      | Account API for ban lookups; unset → bans are not checked here (warned at boot)                                       |
-| `INTERNAL_HMAC_SECRET`                              | the API's dev value                 | Signs `POST {API_URL}/internal/bans/lookup` (**same value as the API**); required in production when `API_URL` is set |
+Every variable and its default is listed once in [`.env.example`](.env.example).
+The shared secrets (`JWT_SECRET` with the API, `GAME_TICKET_SECRET` and
+`GAME_SERVER_SECRET` with game servers, `INTERNAL_HMAC_SECRET` for ban lookups)
+and `API_URL` / `PUBLIC_WEB_URL` come from the root [`.env`](../../.env.example);
+run `pnpm setup:env` once to create both files. `INTERNAL_HMAC_SECRET` is only
+required while `API_URL` is set (it defaults to the local API in development).
 
 ## Bans
 

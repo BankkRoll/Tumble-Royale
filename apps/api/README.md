@@ -21,27 +21,11 @@ No Docker needed: without `DATABASE_URL` the API runs on embedded
 
 ## Environment
 
-| Variable                                      | Default                             | Purpose                                                                                                                                 |
-| --------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT` / `HOST`                               | `7360` / `0.0.0.0`                  | Listen address                                                                                                                          |
-| `DATABASE_URL`                                | –                                   | Postgres; unset → PGlite                                                                                                                |
-| `PGLITE_DIR`                                  | `./.data/pglite`                    | PGlite data directory                                                                                                                   |
-| `REDIS_URL`                                   | –                                   | Redis for parties, presence, leaderboards, pub/sub; unset → memory (required in production, see above)                                  |
-| `ALLOW_MEMORY_STORE`                          | –                                   | `1` lets production boot without `REDIS_URL` (single instance, state lost on restart)                                                   |
-| `JWT_SECRET`                                  | dev value                           | HS256 secret for access tokens and party queue tickets. **Shared with the matchmaker.** Required in production                          |
-| `INTERNAL_HMAC_SECRET`                        | dev value                           | Signs `/internal/match-results` from game servers. Required in production                                                               |
-| `ADMIN_TOKEN`                                 | –                                   | Bearer for `/internal/bans`, `/internal/flags`, `/internal/reports`, `/internal/ledger`; unset → disabled                               |
-| `PUBLIC_WEB_URL`                              | `http://localhost:5173`             | Client origin (invite links, magic links, OAuth return)                                                                                 |
-| `PUBLIC_API_URL`                              | `http://localhost:7360`             | Used to build OAuth redirect URIs                                                                                                       |
-| `CORS_ORIGINS`                                | any (dev) / `PUBLIC_WEB_URL` (prod) | Comma-separated allow-list                                                                                                              |
-| `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | –                                   | Discord OAuth; unset → `/auth/discord/*` returns 503 `provider_disabled`                                                                |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`   | –                                   | Google OAuth; same behaviour                                                                                                            |
-| `SMTP_URL`                                    | –                                   | Magic-link mail relay, e.g. `smtp://user:pass@host:587` (STARTTLS) or `smtps://…:465`; unset → console (dev) / email sign-in off (prod) |
-| `SMTP_FROM`                                   | `Tumble Royale <no-reply@web host>` | Sender for sign-in emails                                                                                                               |
-| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | –                                   | Stripe Checkout for Gem packs; unset → fake provider that completes instantly                                                           |
-| `NAME_CHANGE_COOLDOWN_DAYS`                   | `30`                                | Display name change cooldown (the first rename is free)                                                                                 |
-| `RATE_LIMIT_MAX`                              | `300`                               | Requests/minute per token (or IP)                                                                                                       |
-| `LOG_LEVEL`                                   | `info`                              | pino level                                                                                                                              |
+Every variable, its default and its group (required in production, optional
+features, tuning) is listed once in [`.env.example`](.env.example). `JWT_SECRET`
+(shared with the matchmaker), `INTERNAL_HMAC_SECRET` (shared with the
+matchmaker and game servers) and `PUBLIC_WEB_URL` come from the root
+[`.env`](../../.env.example); run `pnpm setup:env` once to create both files.
 
 OAuth redirect URIs to register: `${PUBLIC_API_URL}/auth/discord/callback`,
 `${PUBLIC_API_URL}/auth/google/callback`. Stripe webhook endpoint:

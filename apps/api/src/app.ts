@@ -30,6 +30,7 @@ import { ApiError } from './http/errors.ts';
 import { createKV, type KV } from './kv/index.ts';
 import { registerMatchRoutes } from './matches/routes.ts';
 import { registerModerationRoutes } from './moderation/routes.ts';
+import { registerNewsRoutes } from './news/routes.ts';
 import { registerProgressionRoutes } from './progression/routes.ts';
 import { ensureSeason, onSeasonChanged, type SeasonChangeListener } from './progression/seasons.ts';
 import { attachGateway, type Gateway } from './realtime/gateway.ts';
@@ -236,6 +237,7 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
   registerFriendRoutes(app, ctx);
   registerPartyRoutes(app, ctx);
   registerModerationRoutes(app, ctx);
+  registerNewsRoutes(app, ctx);
   const gateway = attachGateway(app, ctx);
 
   return {

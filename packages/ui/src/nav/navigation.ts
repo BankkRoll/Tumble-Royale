@@ -229,7 +229,12 @@ export function installKeyboardNav(navigate: (dir: NavDirection) => void): () =>
   const onKey = (e: KeyboardEvent): void => {
     if (e.defaultPrevented) return;
     const s = ui.getState();
-    const menuish = s.inputMode === 'menu' || s.dialog !== null || s.overlay !== 'none' || s.eliminatedSheet;
+    const menuish =
+      s.inputMode === 'menu' ||
+      s.dialog !== null ||
+      s.overlay !== 'none' ||
+      s.eliminatedSheet ||
+      s.watchChoice !== null;
     if (!menuish) return;
     const target = e.target as HTMLElement | null;
     const typing = !!target && (TEXT_INPUT.test(target.tagName) || target.isContentEditable);

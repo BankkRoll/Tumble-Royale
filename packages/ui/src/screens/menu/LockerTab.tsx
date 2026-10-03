@@ -1,6 +1,7 @@
 /**
  * Locker, as a dressing room: the 3D Tumbler on stage at the left, slot chips,
- * rarity filter + search, the item grid (select = live try-on), loadouts, the
+ * rarity filter + search, the grid of owned items (select = live try-on; an
+ * empty slot links to the Store, Pass and Shard shop), loadouts, the
  * colour/pattern editor and a docked detail with Equip. docs/design/SCREENS.md §5.1.
  */
 import { useEffect, useMemo, useState, type JSX } from 'react';
@@ -30,6 +31,32 @@ function lockerSlot(slot: CosmeticSlot | null): CosmeticSlot {
   return !slot || slot === 'pattern' ? 'colors' : slot;
 }
 
+/** Friendly empty state for a slot the player owns nothing in yet, with ways to get some. */
+export function EmptySlot({ slot }: { slot: CosmeticSlot }): JSX.Element {
+  const s = ui.getState();
+  return (
+    <div className="tr-empty tr-locker-empty" data-testid="locker-empty">
+      <Icon name="locker" size="2.4em" />
+      <b className="tr-title tr-h3">No {SLOT_NAMES[slot]} items yet</b>
+      <p className="tr-small tr-muted">
+        Your Locker only holds what you own. Pick some up in the Store, unlock them on the Season Pass or
+        trade Crown Shards for royal exclusives.
+      </p>
+      <div className="tr-row tr-wrap" style={{ gap: '0.5em', justifyContent: 'center' }}>
+        <Button size="sm" variant="go" onClick={() => s.openStore('catalog')}>
+          Browse the Store
+        </Button>
+        <Button size="sm" variant="premium" onClick={() => s.setMenuTab('pass')}>
+          Season Pass
+        </Button>
+        <Button size="sm" variant="secondary" onClick={() => s.openStore('shards')}>
+          Crown Shard shop
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /** Locker tab. */
 export function LockerTab(): JSX.Element {
   const inv = useUI((s) => s.inventory);
@@ -41,22 +68,20 @@ export function LockerTab(): JSX.Element {
     ui.setState({ lockerSlot: null });
   }, [deepSlot]);
   const [rarity, setRarity] = useState<Rarity | 'all'>('all');
-  const [ownedOnly, setOwnedOnly] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const loadout = inv?.loadouts[inv.activeLoadout];
 
+  // The Locker is the player's own collection: unowned items live in the Store, Pass and Shard shop.
+  const owned = useMemo(() => (inv?.items ?? []).filter((i) => i.owned), [inv]);
+  const inSlot = useMemo(() => owned.filter((i) => i.slot === slot), [owned, slot]);
   const items = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return (inv?.items ?? []).filter(
-      (i) =>
-        i.slot === slot &&
-        (rarity === 'all' || i.rarity === rarity) &&
-        (!ownedOnly || i.owned) &&
-        (q === '' || i.name.toLowerCase().includes(q)),
+    return inSlot.filter(
+      (i) => (rarity === 'all' || i.rarity === rarity) && (q === '' || i.name.toLowerCase().includes(q)),
     );
-  }, [inv, slot, rarity, ownedOnly, query]);
-  const selected = (inv?.items ?? []).find((i) => i.id === selectedId) ?? null;
+  }, [inSlot, rarity, query]);
+  const selected = owned.find((i) => i.id === selectedId) ?? null;
   const editor = slot === 'colors' || slot === 'pattern';
 
   const tryOn = (item: CosmeticItem): void => {
@@ -148,15 +173,7 @@ export function LockerTab(): JSX.Element {
                   </button>
                 ))}
               </div>
-              <label className="tr-row tr-small" style={{ cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={ownedOnly}
-                  data-nav=""
-                  onChange={(e) => setOwnedOnly(e.target.checked)}
-                />{' '}
-                Owned only
-              </label>
+
               <input
                 className="tr-input tr-search"
                 placeholder="Search"
@@ -166,10 +183,12 @@ export function LockerTab(): JSX.Element {
                 aria-label="Search items"
               />
             </div>
-            {items.length === 0 ? (
+            {inSlot.length === 0 ? (
+              <EmptySlot slot={slot} />
+            ) : items.length === 0 ? (
               <div className="tr-empty">
                 <Icon name="locker" size="2.4em" />
-                <p>No matches. Try “cone” or “disco”.</p>
+                <p>None of your {SLOT_NAMES[slot]} items match.</p>
               </div>
             ) : (
               <div className="tr-item-grid tr-scroll">
@@ -193,7 +212,6 @@ export function LockerTab(): JSX.Element {
           item={selected}
           equipped={isEquipped(loadout, selected)}
           onEquip={() => uiEvents.emit('equip', { slot: selected.slot, itemId: selected.id })}
-          onGetInStore={() => ui.getState().setMenuTab('store')}
         />
       )}
     </DressingRoom>

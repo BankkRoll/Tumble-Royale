@@ -3,24 +3,29 @@
  *
  * - left: info cards only (Season Pass progress → Pass, today's challenges →
  *   Challenges, the latest news post → News reader);
+ * - bottom-left: the lobby emote and lobby games buttons; top-centre over
+ *   the 3D platform: the running lobby game's score HUD;
  * - bottom-right: everything that starts a game, in one card — how to play
  *   (Play Online / Vs Bots / Private), the playlist, the party, Join with code
  *   and the big PLAY button. While queueing the same card becomes the
  *   matchmaking status. docs/design/SCREENS.md §6.
  */
-import { useRef, type JSX } from 'react';
+import { useRef, useState, type JSX } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { playCue } from '../../audio-cues.ts';
-import { Bar, ItemArt, TipCarousel } from '../../components/bits.tsx';
+import { Bar, TipCarousel } from '../../components/bits.tsx';
+import { ItemPreview } from '../../components/ItemPreview.tsx';
 import { Button } from '../../components/controls.tsx';
 import { formatClock, formatRemaining, useNow } from '../../components/hooks.ts';
 import { SafeImg } from '../../components/SafeImg.tsx';
 import { Icon, challengeIcon, type IconName } from '../../components/icons/index.tsx';
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
 import { uiEvents } from '../../store/events.ts';
+import { social } from '../../store/social.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
-import type { PassReward, PlayMode, Playlist, SeasonPassData } from '../../store/types.ts';
+import type { OnlineStatus, PassReward, PlayMode, Playlist, SeasonPassData } from '../../store/types.ts';
 import { LobbyEmotes } from './LobbyEmotes.tsx';
+import { LobbyGameHudSlot, LobbyGamesButton } from './LobbyGames.tsx';
 import { openNewsPost } from './NewsTab.tsx';
 import { openJoinCode, openPrivateShow } from '../overlays/PrivateShow.tsx';
 
@@ -103,7 +108,7 @@ function SeasonCard(): JSX.Element | null {
             className={`tr-season-next tr-rar-frame tr-rar-frame--${next.reward.item.rarity}`}
             title={`Tier ${next.tier}: ${next.reward.item.name}`}
           >
-            <ItemArt item={next.reward.item} className="tr-season-next-art" />
+            <ItemPreview item={next.reward.item} className="tr-season-next-art" />
             <small>T{next.tier}</small>
           </span>
         )}
@@ -210,13 +215,30 @@ function NewsCard(): JSX.Element | null {
 
 const MODES: { id: PlayMode | 'custom'; label: string; sub: string; icon: IconName }[] = [
   { id: 'online', label: 'Play Online', sub: 'Real players + bot fill', icon: 'globe' },
-  { id: 'offline', label: 'Vs Bots', sub: 'Offline · always on', icon: 'bot' },
-  { id: 'custom', label: 'Private', sub: 'Your rounds · invite friends', icon: 'key' },
+  { id: 'offline', label: 'Vs Bots', sub: 'Offline · all bots', icon: 'bot' },
+  { id: 'custom', label: 'Private', sub: 'Your rounds · bots or friends', icon: 'key' },
 ];
 
 /** The mode a Play press will use: online only when it's reachable. */
 export function effectiveMode(mode: PlayMode, online: boolean): PlayMode {
   return mode === 'online' && online ? 'online' : 'offline';
+}
+
+/**
+ * Play Online tile subtitle: only numbers the servers actually report
+ * ("N online · M in queue"), else the honest "Real players + bot fill".
+ *
+ * @param status - Online reachability and counts.
+ * @returns Subtitle copy.
+ */
+export function onlineTileSub(status: OnlineStatus): string {
+  if (status.state === 'checking') return 'Checking servers…';
+  if (status.state !== 'online') return 'Servers offline';
+  const fmt = (n: number): string => n.toLocaleString('en-US');
+  const parts: string[] = [];
+  if (status.playersOnline !== undefined) parts.push(`${fmt(status.playersOnline)} online`);
+  if (status.inQueue !== undefined) parts.push(`${fmt(status.inQueue)} in queue`);
+  return parts.length > 0 ? parts.join(' · ') : 'Real players + bot fill';
 }
 
 function ModeTiles({ disabled }: { disabled: boolean }): JSX.Element {
@@ -230,15 +252,7 @@ function ModeTiles({ disabled }: { disabled: boolean }): JSX.Element {
         const isOnline = m.id === 'online';
         const unavailable = isOnline && !online;
         const selected = m.id === eff;
-        const sub = isOnline
-          ? status.state === 'checking'
-            ? 'Checking servers…'
-            : status.state === 'online'
-              ? status.playersOnline
-                ? `${status.playersOnline.toLocaleString('en-US')} playing`
-                : m.sub
-              : 'Servers offline'
-          : m.sub;
+        const sub = isOnline ? onlineTileSub(status) : m.sub;
         return (
           <button
             key={m.id}
@@ -376,6 +390,8 @@ function PartyRow(): JSX.Element {
       : []);
   const max = party?.maxSize ?? 4;
   const notReady = members.filter((m) => !m.ready && !m.isLeader).length;
+  const leading = members.some((m) => m.isSelf && m.isLeader) && members.length > 1;
+  const [armed, setArmed] = useState<string | null>(null);
   return (
     <div className="tr-party" aria-label="Party">
       <div className="tr-party-slots">
@@ -405,11 +421,55 @@ function PartyRow(): JSX.Element {
               className={`tr-party-slot${m.ready ? ' is-ready' : ''}${m.isSelf ? ' is-self' : ''}`}
               title={`${m.name}${m.isLeader ? ' (leader)' : ''}${m.ready ? ' · ready' : ''}`}
             >
-              <TumblerAvatar colors={m.colors} size="2.3em" blink={false} noShadow />
+              {m.isSelf ? (
+                <TumblerAvatar colors={m.colors} size="2.3em" blink={false} noShadow />
+              ) : (
+                <button
+                  type="button"
+                  className="tr-party-slot-who"
+                  data-nav=""
+                  data-testid="party-member"
+                  aria-label={`Player card for ${m.name}`}
+                  onClick={() =>
+                    social.getState().openPlayerMenu({
+                      userId: m.id,
+                      name: m.name,
+                      ...(m.tag ? { tag: m.tag } : {}),
+                      key: m.id,
+                    })
+                  }
+                >
+                  <TumblerAvatar colors={m.colors} size="2.3em" blink={false} noShadow />
+                </button>
+              )}
               {m.isLeader && (
                 <span className="tr-party-crown">
                   <Icon name="crown" size="1em" />
                 </span>
+              )}
+              {leading && !m.isSelf && (
+                <button
+                  type="button"
+                  className={`tr-party-kick${armed === m.id ? ' is-armed' : ''}`}
+                  data-nav=""
+                  data-testid="party-kick"
+                  aria-label={armed === m.id ? `Confirm: kick ${m.name}` : `Kick ${m.name}`}
+                  title={armed === m.id ? 'Click again to kick' : `Kick ${m.name}`}
+                  onBlur={() => setArmed((a) => (a === m.id ? null : a))}
+                  onClick={() => {
+                    // Two presses: a stray click on a tiny badge must not boot a friend.
+                    if (armed !== m.id) {
+                      playCue('ui.click');
+                      setArmed(m.id);
+                      return;
+                    }
+                    playCue('ui.confirm');
+                    setArmed(null);
+                    uiEvents.emit('kickPartyMember', { memberId: m.id });
+                  }}
+                >
+                  <Icon name="close" size="0.9em" />
+                </button>
               )}
             </span>
           );
@@ -419,7 +479,7 @@ function PartyRow(): JSX.Element {
         {members.length <= 1
           ? 'Solo · invite up to 3'
           : notReady > 0
-            ? `${notReady} not ready`
+            ? `Waiting for ${notReady} to ready up`
             : `Party of ${members.length} · all ready`}
       </span>
       <button
@@ -570,9 +630,11 @@ export function PlayTab({ matchmaking = false }: { matchmaking?: boolean }): JSX
         <ChallengesCard />
         <NewsCard />
       </aside>
+      <LobbyGameHudSlot />
       {!matchmaking && (
         <div className="tr-play-emotes">
           <LobbyEmotes />
+          <LobbyGamesButton />
         </div>
       )}
       <StartCluster matchmaking={matchmaking} />

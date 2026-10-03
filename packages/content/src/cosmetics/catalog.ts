@@ -5,36 +5,22 @@
  * - Declares every launch item, validated once at module load.
  * - Provides id lookup and per-slot listings.
  *
- * Prices follow one curve per rarity so the store stays coherent; premium
- * (Gems) pricing is reserved for Legendary/Mythic store items.
+ * Prices follow one curve per rarity (pricing.ts); the themed store sets live
+ * in catalog-store.ts.
  */
+import { itemMeta, type ItemPrice } from './pricing.ts';
+import { STORE_COLLECTION } from './catalog-store.ts';
 import {
   CosmeticItemSchema,
   type CosmeticItem,
   type CosmeticItemInput,
   type CosmeticSlot,
-  type Currency,
   type Rarity,
 } from './schema.ts';
 
-type Price = { currency: Currency; amount: number } | null;
-
-/** Store price per rarity. */
-const STORE_PRICE: Readonly<Record<Rarity, Price>> = {
-  common: { currency: 'gumballs', amount: 400 },
-  uncommon: { currency: 'gumballs', amount: 800 },
-  rare: { currency: 'gumballs', amount: 1500 },
-  epic: { currency: 'gumballs', amount: 3000 },
-  legendary: { currency: 'gems', amount: 800 },
-  mythic: { currency: 'gems', amount: 1600 },
-};
-
-type Src = 'default' | 'store' | 'pass' | 'challenge' | 'event';
-const meta = (rarity: Rarity, source: Src): { rarity: Rarity; source: Src; price: Price } => ({
-  rarity,
-  source,
-  price: source === 'store' ? STORE_PRICE[rarity] : null,
-});
+type Src = 'default' | 'store' | 'pass' | 'challenge' | 'event' | 'shards';
+const meta = (rarity: Rarity, source: Src): { rarity: Rarity; source: Src; price: ItemPrice } =>
+  itemMeta(rarity, source);
 
 // -----------------------------------------------------------------------------
 // Colours
@@ -1000,7 +986,7 @@ const footsteps: CosmeticItemInput[] = [
 // Season 1: Sugar Rush pass
 // -----------------------------------------------------------------------------
 
-const pass = (rarity: Rarity): { rarity: Rarity; source: Src; price: Price } => meta(rarity, 'pass');
+const pass = (rarity: Rarity): { rarity: Rarity; source: Src; price: ItemPrice } => meta(rarity, 'pass');
 
 const sugarRushColors: CosmeticItemInput[] = [
   {
@@ -2020,6 +2006,144 @@ const sugarRushVfx: CosmeticItemInput[] = [
 ];
 
 // -----------------------------------------------------------------------------
+// Crown Shard shop exclusives (royal set)
+// -----------------------------------------------------------------------------
+
+const shardItem = (rarity: Rarity): { rarity: Rarity; source: Src; price: ItemPrice } =>
+  meta(rarity, 'shards');
+
+/** Only obtainable from the weekly Crown Shard shop rotation (`progression/shard-shop.ts`). */
+const shardExclusives: CosmeticItemInput[] = [
+  {
+    id: 'color.royal-velvet',
+    slot: 'color',
+    name: 'Royal Velvet',
+    description: 'Deep purple trimmed in gold, as tradition demands.',
+    colors: ['#6b2fd6', '#ffd23f', '#fff2c4'],
+    ...shardItem('rare'),
+  },
+  {
+    id: 'pattern.crown-argyle',
+    slot: 'pattern',
+    name: 'Crown Argyle',
+    description: 'Diamonds stitched for a coronation.',
+    pattern: 'diamonds',
+    scale: 0.8,
+    angle: 45,
+    ...shardItem('epic'),
+  },
+  {
+    id: 'face.regal-gaze',
+    slot: 'face',
+    name: 'Regal Gaze',
+    description: 'Star-struck eyes behind a golden monocle.',
+    face: { pupil: 'star', iris: '#6b2fd6', accessory: 'monocle', tint: ['#ffd23f'] },
+    ...shardItem('rare'),
+  },
+  {
+    id: 'headwear.shard-diadem',
+    slot: 'headwear',
+    name: 'Shard Diadem',
+    description: 'Forged from sixty very patient Crown Shards.',
+    mesh: 'tiara',
+    tint: ['#7cf2ff', '#ffd23f'],
+    ...shardItem('legendary'),
+  },
+  {
+    id: 'headwear.court-jester',
+    slot: 'headwear',
+    name: 'Court Jester',
+    description: 'Two floppy points of royal mischief.',
+    mesh: 'horns',
+    tint: ['#6b2fd6', '#ffd23f'],
+    ...shardItem('epic'),
+  },
+  {
+    id: 'back.royal-train',
+    slot: 'back',
+    name: 'Royal Train',
+    description: 'A cape long enough to need its own fan club.',
+    mesh: 'cape',
+    tint: ['#7a1fd1', '#ffd23f'],
+    ...shardItem('epic'),
+  },
+  {
+    id: 'upper.shard-medallion',
+    slot: 'upper',
+    name: 'Shard Medallion',
+    description: 'A glassy medal that hums near a Crown.',
+    mesh: 'medal',
+    tint: ['#7cf2ff', '#ffffff'],
+    ...shardItem('rare'),
+  },
+  {
+    id: 'lower.royal-sash',
+    slot: 'lower',
+    name: 'Royal Sash',
+    description: 'Gold buckle, purple band, zero humility.',
+    mesh: 'belt',
+    tint: ['#6b2fd6', '#ffd23f'],
+    ...shardItem('rare'),
+  },
+  {
+    id: 'emote.royal-wave',
+    slot: 'emote',
+    name: 'Royal Wave',
+    description: 'Wrist only. Never the whole arm.',
+    clip: 'wave',
+    ...shardItem('rare'),
+  },
+  {
+    id: 'celebration.coronation-spin',
+    slot: 'celebration',
+    name: 'Coronation Spin',
+    description: 'A twirl worthy of a throne room.',
+    clip: 'spin',
+    ...shardItem('epic'),
+  },
+  {
+    id: 'victory.shard-sovereign',
+    slot: 'victory',
+    name: 'Shard Sovereign',
+    description: 'Strike the pose every Crown Shard dreams of.',
+    clip: 'victory-superstar',
+    ...shardItem('legendary'),
+  },
+  {
+    id: 'nameplate.royal-decree',
+    slot: 'nameplate',
+    name: 'Royal Decree',
+    description: 'Hear ye: this Tumbler means business.',
+    plate: { style: 'ribbon', bg: '#6b2fd6', bg2: '#9a5cff', text: '#fff2c4', border: '#ffd23f' },
+    ...shardItem('rare'),
+  },
+  {
+    id: 'banner.throne-room',
+    slot: 'banner',
+    name: 'Throne Room',
+    description: 'Starlit drapes over a very squishy throne.',
+    banner: { motif: 'stars', colors: ['#2b1d6a', '#6b2fd6', '#ffd23f'] },
+    ...shardItem('epic'),
+  },
+  {
+    id: 'trail.crown-dust',
+    slot: 'trail',
+    name: 'Crown Dust',
+    description: 'Glittering shard dust in your wake.',
+    trail: { kind: 'sparkle', colors: ['#7cf2ff', '#ffd23f', '#ffffff'] },
+    ...shardItem('legendary'),
+  },
+  {
+    id: 'footsteps.royal-fanfare',
+    slot: 'footsteps',
+    name: 'Royal Fanfare',
+    description: 'Every step rings like a tiny bell tower.',
+    pack: 'bell',
+    ...shardItem('epic'),
+  },
+];
+
+// -----------------------------------------------------------------------------
 // Catalog
 // -----------------------------------------------------------------------------
 
@@ -2049,6 +2173,8 @@ export const COSMETICS: readonly CosmeticItem[] = [
   ...sugarRushClips,
   ...sugarRushProfile,
   ...sugarRushVfx,
+  ...shardExclusives,
+  ...STORE_COLLECTION,
 ].map((item) => CosmeticItemSchema.parse(item));
 
 const byId = new Map<string, CosmeticItem>();

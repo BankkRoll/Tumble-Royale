@@ -11,10 +11,10 @@ import type { Rapier } from '@tumble/sim';
 import { createTumblerController } from '@tumble/sim/character';
 import { createMatchSim } from '@tumble/sim/match';
 import { OBSTACLE_REGISTRY } from '@tumble/sim/obstacles';
-import { ShowPlaylistSchema, type ShowPlaylist } from '@tumble/sim/show';
+import { PRE_SHOW_LOBBY_ROUND, ShowPlaylistSchema, type ShowPlaylist } from '@tumble/sim/show';
 import type { MatchSettings, RoomDeps } from './room/types.ts';
 import type { ResultsSink } from './results.ts';
-import { ShowDirectorController } from './show/ShowDirectorController.ts';
+import { ShowDirectorController, type ShowDirectorControllerOptions } from './show/ShowDirectorController.ts';
 
 /** Options for {@link createRealRoomDeps}. */
 export interface RealDepsOptions {
@@ -66,6 +66,30 @@ export function playlistForMatch(
 }
 
 /**
+ * Director options from a custom lobby's settings: the round timer multiplier
+ * and the pre-show countdown. Values are clamped to the matchmaker's own
+ * validation ranges (0.5–2, 0–120 s) in case a ticket was minted by an older
+ * matchmaker.
+ *
+ * @param match - The room's match settings.
+ * @returns Partial controller options (empty for public queues).
+ * @example
+ * new ShowDirectorController({ playlist, rounds, ...customShowOptions(match) });
+ */
+export function customShowOptions(
+  match: MatchSettings | null | undefined,
+): Pick<ShowDirectorControllerOptions, 'roundTimeScale' | 'timings'> {
+  const c = match?.custom;
+  if (!c) return {};
+  const out: Pick<ShowDirectorControllerOptions, 'roundTimeScale' | 'timings'> = {};
+  if (typeof c.roundTimeScale === 'number' && Number.isFinite(c.roundTimeScale))
+    out.roundTimeScale = Math.min(2, Math.max(0.5, c.roundTimeScale));
+  if (typeof c.lobbyCountdownSec === 'number' && Number.isFinite(c.lobbyCountdownSec))
+    out.timings = { preShow: Math.min(120, Math.max(0, Math.round(c.lobbyCountdownSec))) };
+  return out;
+}
+
+/**
  * Builds {@link RoomDeps} backed by the real game.
  *
  * @example
@@ -83,7 +107,12 @@ export function createRealRoomDeps(R: Rapier, opts: RealDepsOptions = {}): RoomD
       return round;
     },
     createShowController: ({ match }) =>
-      new ShowDirectorController({ playlist: playlistForMatch(opts.playlistId, match), rounds }),
+      new ShowDirectorController({
+        playlist: playlistForMatch(opts.playlistId, match),
+        rounds,
+        ...customShowOptions(match),
+      }),
+    lobbyRound: PRE_SHOW_LOBBY_ROUND,
     describePlaylist: (playlistId, players) => {
       const p = ShowPlaylistSchema.parse(
         (playlistId && getPlaylist(playlistId)) ||

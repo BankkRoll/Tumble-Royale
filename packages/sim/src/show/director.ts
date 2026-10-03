@@ -24,7 +24,9 @@ import {
   type ShowPhaseId,
   RoundDefinitionSchema,
 } from '@tumble/shared';
+import { clampRoundTimeScale, scaleRoundTimer } from '../match/round-time.ts';
 import { PlayerRoundStatus, type MatchPlayerInfo } from '../match/types.ts';
+import { getMutator, pickMutator } from '../mutators/index.ts';
 import { assignTeams } from '../rounds/team-score.ts';
 import { ShowPlaylistSchema, type ShowPlaylist, type ShowPlaylistInput } from './schema/index.ts';
 import { selectRound } from './selector.ts';
@@ -59,6 +61,19 @@ export interface ShowDirectorOptions {
    * disconnected) are eliminated (spec default: true).
    */
   lateLoadersEliminated?: boolean;
+  /**
+   * Multiplier on every round's timer and overtime (private shows' "timer"
+   * option, matchmaker tickets). Clamped to 0.5–2; defaults to 1. The director
+   * uses it for its own PLAYING cut-off and forwards it in
+   * {@link RoundStartInfo.roundTimeScale}.
+   */
+  roundTimeScale?: number;
+  /**
+   * Forces the show mutator: an id from `@tumble/sim/mutators`, or null for
+   * none. When omitted, the director picks one from `playlist.mutators` with
+   * the show seed.
+   */
+  mutatorId?: string | null;
 }
 
 /** Most players a {@link LoadingRoster} names. */
@@ -85,6 +100,10 @@ export class ShowDirector {
   readonly seed: number;
   readonly playlist: ShowPlaylist;
   readonly participants: readonly ShowParticipant[];
+  /** The show's mutator id (fixed for the whole show), or null. */
+  readonly mutatorId: string | null;
+  /** Round timer multiplier in use (clamped). */
+  readonly roundTimeScale: number;
   private readonly catalog: Map<string, RoundDefinition>;
   private readonly host: ShowRoundHost;
   private readonly timings: ShowTimings;
@@ -129,6 +148,11 @@ export class ShowDirector {
     this.timings = { ...DEFAULT_SHOW_TIMINGS, ...opts.timings };
     this.lateLoadersEliminated = opts.lateLoadersEliminated ?? true;
     this.rng = new Rng((this.seed ^ SELECT_SALT) >>> 0);
+    this.roundTimeScale = clampRoundTimeScale(opts.roundTimeScale);
+    this.mutatorId =
+      opts.mutatorId !== undefined
+        ? (getMutator(opts.mutatorId)?.id ?? null)
+        : pickMutator(this.seed, this.playlist.mutators);
     this.alive = this.participants.map((p) => p.id);
     this.duration = this.timings.preShow;
   }
@@ -359,7 +383,7 @@ export class ShowDirector {
     this.elapsed -= this.duration;
     const cur = this.live as CurrentRound;
     if (next === RoundPhase.Playing) {
-      const d = cur.round.duration;
+      const d = scaleRoundTimer(cur.round, this.roundTimeScale).duration;
       cur.playingLimit = d.seconds > 0 ? d.seconds + d.overtimeSeconds + this.timings.safetyGrace : Infinity;
     }
     this.setRoundPhase(next, nextDuration, matchTime);
@@ -399,6 +423,8 @@ export class ShowDirector {
       players,
       qualifyTarget: qualifyTarget ?? undefined,
       isFinal,
+      mutatorId: this.mutatorId,
+      roundTimeScale: this.roundTimeScale,
     });
     this.live = {
       round,
@@ -413,7 +439,13 @@ export class ShowDirector {
     };
     for (const id of this.left) if (this.live.entrants.includes(id)) driver.forfeit?.(id);
     this.setShowPhase(ShowPhase.InRound, -1);
-    this.emit({ type: 'roundSelected', roundIndex: index, roundId: round.id, isFinal });
+    this.emit({
+      type: 'roundSelected',
+      roundIndex: index,
+      roundId: round.id,
+      isFinal,
+      mutatorId: this.mutatorId,
+    });
     this.setRoundPhase(RoundPhase.Loading, this.timings.loadingHardCap);
   }
 
@@ -472,7 +504,14 @@ export class ShowDirector {
     }
     return ids.map((id, i) => {
       const p = this.byId.get(id) as ShowParticipant;
-      return { id, name: p.name, isBot: p.isBot, team: teams[i] as number, botSkill: p.botSkill };
+      return {
+        id,
+        name: p.name,
+        isBot: p.isBot,
+        team: teams[i] as number,
+        botSkill: p.botSkill,
+        ...(p.partyId !== undefined ? { partyId: p.partyId } : {}),
+      };
     });
   }
 
@@ -634,6 +673,7 @@ export class ShowDirector {
       alive: [...this.alive],
       spectators: this.participants.filter((p) => !aliveSet.has(p.id)).map((p) => p.id),
       qualifyTarget: cur?.qualifyTarget ?? null,
+      mutatorId: this.mutatorId,
     };
   }
 

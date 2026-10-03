@@ -108,7 +108,7 @@
   --team-0: #ff8a3d;
   --team-1: #3fa9ff;
   --team-2: #f0f0f0;
-  --team-3: #b05cff;
+  --team-3: #6a2fb0;
 }
 .tr-root[data-cb='tritanopia'] {
   --good: #3ec7c7;
@@ -563,6 +563,11 @@
   border-radius: 0.25em 0.25em 0.5em 0.5em;
   background: linear-gradient(180deg, #fff3a8, var(--lemon) 50%, #ffb021);
 }
+.tr-coin--shard {
+  border-radius: 0.15em 0.6em 0.15em 0.6em;
+  transform: rotate(-12deg) scale(0.86);
+  background: linear-gradient(150deg, #fff 0 14%, #a9f6ff 15% 45%, #3fc7e0 46%);
+}
 
 /* -----------------------------------------------------------------------------
  * Progress bars
@@ -978,4 +983,21 @@
   to {
     transform: translateX(130vw);
   }
+}
+
+/* Bot tag: a quiet text chip beside bot names. */
+.tr-bot-tag {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 0.05em 0.4em;
+  border-radius: 0.4em;
+  border: 0.1em solid currentColor;
+  font-size: 0.62em;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  opacity: 0.72;
+  vertical-align: middle;
+  white-space: nowrap;
 }

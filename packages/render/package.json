@@ -16,9 +16,7 @@
     "@tumble/content": "workspace:*",
     "@tumble/shared": "workspace:*",
     "@tumble/sim": "workspace:*",
-    "three": "0.186.1",
-    "three-mesh-bvh": "^0.9.1",
-    "troika-three-text": "^0.52.4"
+    "three": "0.186.1"
   },
   "devDependencies": {
     "@types/three": "0.186.0",

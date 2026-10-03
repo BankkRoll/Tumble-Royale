@@ -7,24 +7,29 @@
  * expandable per-round results. `ProfileOverlay` shows the same card for
  * another player (ranks, results). docs/design/SCREENS.md §5.5.
  */
-import { useState, type CSSProperties, type JSX } from 'react';
+import { useState, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
-import { Bar, ItemArt, TypeBadge } from '../../components/bits.tsx';
+import { Bar, BotTag, TypeBadge } from '../../components/bits.tsx';
+import { ItemPreview, Nameplate, bannerStyle } from '../../components/ItemPreview.tsx';
 import { confirmSignOut } from '../../components/account.ts';
+import { RenameField } from '../overlays/AccountSheet.tsx';
 import { Button } from '../../components/controls.tsx';
-import { formatNumber, ordinal } from '../../components/hooks.ts';
+import { formatNumber, ordinal, useDisplayName } from '../../components/hooks.ts';
 import { Icon, type IconName } from '../../components/icons/index.tsx';
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
+import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
+import { PlayerActionRow } from '../overlays/PlayerActions.tsx';
+import type { PlayerRef } from '../../store/social.ts';
 import type {
   MatchHistoryEntry,
-  ProfileBanner,
+  MetOfflineInfo,
   ProfileData,
-  ProfileNameplate,
   RankInfo,
   RankTier,
 } from '../../store/types.ts';
 import { rarityLabels } from '../../theme/tokens.ts';
+import { OpenReplayButton } from '../Replay.tsx';
 
 /** Ranked ladder tiers, lowest first, with display colours. */
 export const RANK_TIERS: { tier: RankTier; label: string; color: string; dark: string }[] = [
@@ -121,45 +126,7 @@ export function RankEmblem({ rank, compact }: { rank: RankInfo; compact?: boolea
   );
 }
 
-/** CSS background for a banner motif. */
-export function bannerStyle(b: ProfileBanner | undefined): CSSProperties {
-  const [a, c, d] = b?.colors ?? ['#ff6fb5', '#ffd23f', '#5ce1e6'];
-  const motif: Record<ProfileBanner['motif'], string> = {
-    confetti: `radial-gradient(circle at 20% 30%, ${c} 0 6%, transparent 7%), radial-gradient(circle at 70% 60%, ${d} 0 5%, transparent 6%), radial-gradient(circle at 45% 80%, #fff 0 4%, transparent 5%), radial-gradient(circle at 85% 20%, ${c} 0 4%, transparent 5%)`,
-    clouds: `radial-gradient(ellipse 30% 40% at 25% 70%, ${d} 0 60%, transparent 61%), radial-gradient(ellipse 25% 35% at 70% 40%, ${d} 0 60%, transparent 61%)`,
-    stripes: `repeating-linear-gradient(115deg, transparent 0 18px, ${c}55 18px 36px)`,
-    stars: `radial-gradient(circle at 15% 25%, ${d} 0 2%, transparent 3%), radial-gradient(circle at 55% 70%, ${d} 0 2.5%, transparent 3.5%), radial-gradient(circle at 80% 35%, #fff 0 2%, transparent 3%), radial-gradient(circle at 35% 55%, #fff 0 1.5%, transparent 2.5%)`,
-    candy: `radial-gradient(circle at 20% 40%, ${c} 0 9%, transparent 10%), radial-gradient(circle at 75% 55%, ${d} 0 8%, transparent 9%)`,
-    waves: `repeating-radial-gradient(circle at 50% 140%, ${c}66 0 14px, transparent 14px 28px)`,
-  };
-  return { background: `${motif[b?.motif ?? 'confetti']}, linear-gradient(135deg, ${a}, ${c})` };
-}
-
-/** Name#tag in the equipped nameplate's style. */
-export function Nameplate({
-  name,
-  tag,
-  plate,
-}: {
-  name: string;
-  tag?: string;
-  plate?: ProfileNameplate;
-}): JSX.Element {
-  const style = plate
-    ? ({
-        ['--np-bg' as string]: plate.bg,
-        ['--np-bg2' as string]: plate.bg2,
-        ['--np-fg' as string]: plate.text,
-        ['--np-border' as string]: plate.border,
-      } as CSSProperties)
-    : undefined;
-  return (
-    <span className={`tr-nameplate tr-nameplate--${plate?.style ?? 'pill'}`} style={style}>
-      <b>{name}</b>
-      {tag && <small>#{tag}</small>}
-    </span>
-  );
-}
+export { bannerStyle, Nameplate };
 
 function Stat({
   icon,
@@ -365,7 +332,7 @@ function Showcase({ p }: { p: ProfileData }): JSX.Element | null {
               title={it.name}
               style={{ ['--art-a' as string]: it.art[0], ['--art-b' as string]: it.art[1] }}
             >
-              <ItemArt item={it} className="tr-showcase-art" />
+              <ItemPreview item={it} className="tr-showcase-art" />
               <b>{it.name}</b>
               <small className={`tr-rarity-text--${it.rarity}`}>{rarityLabels[it.rarity]}</small>
             </span>
@@ -476,10 +443,7 @@ function AccountCard({ p }: { p: ProfileData }): JSX.Element {
     <div className="tr-panel tr-profile-account">
       <div className="tr-col tr-grow" style={{ gap: '0.15em', minWidth: 0 }}>
         <span className="tr-label">Account</span>
-        <b className="tr-ellipsis">
-          {p.name}
-          <small className="tr-muted">#{p.tag}</small>
-        </b>
+        <RenameField testId="profile-rename" />
         <small className="tr-muted">
           {p.isGuest ? 'Guest · saved on this device only' : 'Signed in · saved to your account'}
         </small>
@@ -489,6 +453,16 @@ function AccountCard({ p }: { p: ProfileData }): JSX.Element {
       </Button>
     </div>
   );
+}
+
+/** Shows listed inline on the Profile tab; See all opens the full Match history. */
+export const PROFILE_HISTORY_PREVIEW = 5;
+
+/** Opens the full Match history screen, asking the game for fresh entries. */
+export function openMatchHistory(): void {
+  playCue('ui.click');
+  uiEvents.emit('requestMatchHistory');
+  ui.getState().setScreen('matchHistory', { transition: 'fade' });
 }
 
 /** Profile tab (self). */
@@ -507,11 +481,64 @@ export function ProfileTab(): JSX.Element {
         <Stats p={p} />
         <div className="tr-panel tr-profile-history">
           <div className="tr-panel-head">
-            <h2 className="tr-title tr-h3 tr-grow">Match history</h2>
-            <small className="tr-muted">Last {Math.min(20, history.length)} shows</small>
+            <h2 className="tr-title tr-h3 tr-grow">Latest shows</h2>
+            <OpenReplayButton />
+            {history.length > 0 && (
+              <Button variant="secondary" size="sm" data-testid="history-see-all" onClick={openMatchHistory}>
+                See all
+              </Button>
+            )}
           </div>
-          <HistoryList entries={history} />
+          <HistoryList entries={history.slice(0, PROFILE_HISTORY_PREVIEW)} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+const ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Local cards (bots, offline players) have no account id, so only mute applies to them. */
+function inspectRef(p: ProfileData): PlayerRef {
+  return ACCOUNT_ID.test(p.id)
+    ? { userId: p.id, name: p.name, tag: p.tag, key: p.id }
+    : { name: p.name, key: `name:${p.name}`, isBot: true };
+}
+
+/**
+ * Card for a Tumbler only met in offline shows: just the shows played
+ * together, with no level, XP, rank or lifetime stats (this device can't know them).
+ */
+export function MetOfflineCard({ p, info }: { p: ProfileData; info: MetOfflineInfo }): JSX.Element {
+  const name = useDisplayName();
+  return (
+    <div className="tr-panel tr-profile-card" data-testid="met-offline-card">
+      <div className="tr-profile-banner" style={bannerStyle(p.banner)}>
+        <span className="tr-profile-avatar">
+          <TumblerAvatar colors={p.colors} hat={p.hat} expression="grin" size="5.5em" />
+        </span>
+      </div>
+      <div className="tr-profile-id">
+        <div className="tr-row" style={{ gap: '0.5em', minWidth: 0 }}>
+          <b className="tr-title tr-h3 tr-ellipsis">{name({ id: -1, name: p.name, isBot: info.isBot })}</b>
+          <BotTag isBot={info.isBot} />
+        </div>
+      </div>
+      <small className="tr-muted">
+        {info.isBot ? 'A bot' : 'A Tumbler'} from your offline shows
+        {info.lastSeen > 0 && ` · last seen ${new Date(info.lastSeen).toLocaleDateString()}`}
+      </small>
+      <div className="tr-stat-grid">
+        <Stat icon="ticket" label="Shows together" value={formatNumber(info.showsTogether)} />
+        <Stat icon="medal" label="Best finish vs you" value={ordinal(info.bestPlace)} />
+        <Stat icon="crown" label="Crowns in your shows" value={formatNumber(info.crownsTogether)} />
+        {info.aheadOfYou !== undefined && (
+          <Stat
+            icon="flag"
+            label="Finished ahead of you"
+            value={`${info.aheadOfYou}/${info.showsTogether}`}
+          />
+        )}
       </div>
     </div>
   );
@@ -520,6 +547,7 @@ export function ProfileTab(): JSX.Element {
 /** Another player's profile card (opened from Ranks / results via `inspectPlayer`). */
 export function ProfileOverlay(): JSX.Element | null {
   const p = useUI((s) => s.inspectedProfile);
+  const selfId = useUI((s) => s.profile?.id);
   if (!p) return null;
   const close = (): void => {
     playCue('ui.back');
@@ -536,9 +564,16 @@ export function ProfileOverlay(): JSX.Element | null {
       <div className="tr-dim" onClick={close} />
       <div className="tr-inspect tr-enter-pop" data-testid="inspect-profile">
         <div className="tr-inspect-body">
-          <ProfileCard p={p} self={false} />
-          {p.stats.shows > 0 && <Stats p={p} />}
+          {p.metOffline ? (
+            <MetOfflineCard p={p} info={p.metOffline} />
+          ) : (
+            <>
+              <ProfileCard p={p} self={false} />
+              {p.stats.shows > 0 && <Stats p={p} />}
+            </>
+          )}
         </div>
+        {p.id !== selfId && <PlayerActionRow p={inspectRef(p)} compact />}
         <Button
           variant="secondary"
           data-nav-back=""

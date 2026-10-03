@@ -13,8 +13,6 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 export const TICKET_ISSUER = 'tumble-matchmaker';
 /** Audience claim of join tickets. */
 export const TICKET_AUDIENCE = 'tumble-game-server';
-/** Secret the matchmaker uses outside production when `GAME_TICKET_SECRET` is unset. */
-export const DEV_TICKET_SECRET = 'dev-only-game-ticket-secret-change-me-0123';
 
 /** Custom lobby settings carried by custom-match tickets. */
 export interface TicketCustomSettings {
@@ -50,6 +48,8 @@ export interface JoinTicketClaims {
   bots: number;
   teamSize: number;
   custom?: TicketCustomSettings;
+  /** Chat-suspended account: its chat is never relayed. */
+  mute?: boolean;
 }
 
 function b64url(buf: Buffer): string {
@@ -79,7 +79,7 @@ const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInt
  * @param nowMs - Wall clock (ms) for `exp`/`nbf`.
  * @returns Claims, or null when the signature, issuer, audience, type, expiry or shape is wrong.
  * @example
- * const claims = verifyJoinTicket(process.env.GAME_TICKET_SECRET!, hello.ticket, Date.now());
+ * const claims = verifyJoinTicket(config.ticketSecret, hello.ticket, Date.now());
  */
 export function verifyJoinTicket(secret: string, token: string, nowMs: number): JoinTicketClaims | null {
   const parts = token.split('.');
@@ -119,6 +119,7 @@ export function verifyJoinTicket(secret: string, token: string, nowMs: number): 
     bots: isInt(c.bots) ? c.bots : Math.max(0, c.size - c.humans),
     teamSize: isInt(c.teamSize) ? c.teamSize : 1,
     ...(c.custom && typeof c.custom === 'object' ? { custom: c.custom as TicketCustomSettings } : {}),
+    ...(c.mute === true ? { mute: true } : {}),
   };
 }
 

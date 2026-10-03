@@ -4,13 +4,14 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import { buildMatchmaker, type MatchmakerApp } from '../src/app.ts';
 import { loadConfig } from '../src/config.ts';
+import { TEST_SECRETS, testEnv } from './helpers.ts';
 import type { MMEvent } from '../src/matchmaker.ts';
 import { userChannel } from '../src/matchmaker.ts';
 import { verifyJoinTicket } from '../src/tickets.ts';
 
-const JWT_SECRET = 'test-jwt-secret-0123456789-abcdefghijkl';
-const TICKET_SECRET = 'test-ticket-secret-0123456789';
-const SERVER_SECRET = 'test-server-secret-0123456789';
+const JWT_SECRET = TEST_SECRETS.JWT_SECRET;
+const TICKET_SECRET = TEST_SECRETS.GAME_TICKET_SECRET;
+const SERVER_SECRET = TEST_SECRETS.GAME_SERVER_SECRET;
 const enc = (s: string) => new TextEncoder().encode(s);
 
 let clock = Date.parse('2026-10-02T12:00:00Z');
@@ -18,13 +19,7 @@ let mmApp: MatchmakerApp;
 
 beforeEach(async () => {
   clock = Date.parse('2026-10-02T12:00:00Z');
-  const cfg = loadConfig({
-    NODE_ENV: 'test',
-    JWT_SECRET,
-    GAME_TICKET_SECRET: TICKET_SECRET,
-    GAME_SERVER_SECRET: SERVER_SECRET,
-    LOG_LEVEL: 'silent',
-  });
+  const cfg = loadConfig(testEnv());
   mmApp = await buildMatchmaker(cfg, { now: () => clock, logger: false });
 });
 afterEach(async () => {
@@ -225,6 +220,8 @@ describe('custom lobbies', () => {
     expect(guestEvents.some((e) => e.type === 'lobby_update')).toBe(true);
 
     expect((await call('POST', `/lobbies/${code}/start`, await access('guest'))).statusCode).toBe(403);
+    expect((await call('POST', `/lobbies/${code}/start`, host)).json().error).toBe('not_ready');
+    await call('POST', `/lobbies/${code}/ready`, await access('guest'), { ready: true });
     const started = await call('POST', `/lobbies/${code}/start`, host);
     expect(started.statusCode).toBe(200);
     expect(started.json()).toMatchObject({ players: 2, bots: 10 });
@@ -250,5 +247,28 @@ describe('custom lobbies', () => {
     await call('POST', `/lobbies/${code}/join`, await access('p2'), {});
     await call('POST', `/lobbies/${code}/leave`, await access('h1'));
     expect((await call('GET', `/lobbies/${code}`, await access('p2'))).json().lobby.hostId).toBe('p2');
+  });
+});
+
+describe('GET /stats', () => {
+  it('reports queued players and humans in rooms from heartbeats, without auth', async () => {
+    await registerServer('gs-a');
+    await registerServer('gs-b');
+    await call('POST', '/servers/heartbeat', SERVER_SECRET, { serverId: 'gs-a', load: 30, humans: 12 });
+    // Without `humans` a server adds nothing: its load also counts bots.
+    await call('POST', '/servers/heartbeat', SERVER_SECRET, { serverId: 'gs-b', load: 5 });
+    await call('POST', '/queue', await access('alice'), {
+      ticket: await queueTicket('alice', ['alice', 'bob']),
+    });
+    const res = await call('GET', '/stats');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ queued: 2, inGame: 12, servers: 2 });
+  });
+
+  it('drops servers that stopped heartbeating', async () => {
+    await registerServer('gs-a');
+    await call('POST', '/servers/heartbeat', SERVER_SECRET, { serverId: 'gs-a', load: 9, humans: 9 });
+    clock += 60_000;
+    expect((await call('GET', '/stats')).json()).toEqual({ queued: 0, inGame: 0, servers: 0 });
   });
 });

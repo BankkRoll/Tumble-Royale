@@ -1,0 +1,315 @@
+/*
+ * Tumble Royale UI — global chat widget, clickable players, friend rows,
+ * requests, the player card and the report dialog.
+ */
+
+/* Global chat widget (bottom-left on the menu and every show screen) */
+.tr-chat-wrap {
+  position: absolute;
+  left: calc(var(--safe-l) + 1em);
+  bottom: calc(var(--safe-b) + 7em);
+  width: min(26em, 72vw);
+  pointer-events: none;
+  z-index: 6;
+}
+/* The menu's emote and Games buttons own the corner; chat starts just right of them. */
+[data-screen='menu'] .tr-chat-wrap {
+  bottom: calc(var(--safe-b) + 1em);
+  left: calc(var(--safe-l) + 10.4em);
+}
+.tr-chat {
+  display: grid;
+  gap: 0.35em;
+  width: 100%;
+  justify-items: start;
+}
+.tr-chat.is-open {
+  pointer-events: auto;
+  padding: 0.5em;
+  border-radius: 1em;
+  background: rgba(31, 18, 51, 0.72);
+  box-shadow: 0 0.3em 1.2em rgba(0, 0, 0, 0.25);
+}
+.tr-chat-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25em;
+}
+.tr-chat-tab {
+  position: relative;
+  padding: 0.15em 0.65em;
+  border-radius: 999px;
+  border: 0.1em solid rgba(255, 255, 255, 0.35);
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: 0.8em;
+  font-weight: 800;
+  cursor: pointer;
+}
+.tr-chat-tab.is-active {
+  background: var(--lemon);
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.tr-chat-unread {
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  margin-left: 0.35em;
+  border-radius: 50%;
+  background: var(--bubblegum, #ff4f9a);
+  vertical-align: middle;
+}
+.tr-chat-lines {
+  display: grid;
+  align-content: end;
+  gap: 0.2em;
+  width: 100%;
+}
+.tr-chat.is-open .tr-chat-lines {
+  max-height: 16em;
+  min-height: 4em;
+  overflow-y: auto;
+}
+.tr-chat-fade {
+  transition: opacity 1.5s;
+}
+.tr-chat-fade.is-faded {
+  opacity: 0;
+}
+/* Block flow so long messages wrap under the name instead of in a narrow column. */
+.tr-chat-line {
+  display: block;
+  max-width: 100%;
+  padding: 0.18em 0.6em;
+  border-radius: 0.7em;
+  background: rgba(31, 18, 51, 0.5);
+  color: #fff;
+  font-size: 0.9em;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  animation: tr-fade-in 200ms ease-out;
+}
+.tr-chat.is-open .tr-chat-line {
+  background: transparent;
+  padding: 0.1em 0.2em;
+}
+.tr-chat-line.is-ping {
+  background: rgba(255, 210, 63, 0.92);
+  color: var(--ink);
+}
+.tr-chat-line.is-party .tr-chat-name,
+.tr-chat-name.is-party-mate {
+  color: #8cf3c7;
+}
+.tr-chat-line.is-whisper {
+  font-style: italic;
+}
+.tr-chat-line.is-whisper .tr-chat-name {
+  color: #ffb3ea;
+}
+.tr-chat-line.is-system {
+  color: #b9b2d6;
+  font-size: 0.85em;
+  font-style: italic;
+  opacity: 0.85;
+}
+.tr-chat-tag {
+  margin-right: 0.35em;
+  font-size: 0.75em;
+  font-weight: 800;
+  opacity: 0.75;
+  text-transform: uppercase;
+}
+.tr-chat-name {
+  margin-right: 0.35em;
+  font-size: 0.92em;
+  font-weight: 800;
+}
+.tr-chat-friend {
+  display: inline-block;
+  width: 0.4em;
+  height: 0.4em;
+  margin-left: 0.25em;
+  border-radius: 50%;
+  background: #8fd3ff;
+  vertical-align: middle;
+}
+.tr-chat-notice {
+  padding: 0.15em 0.6em;
+  border-radius: 0.7em;
+  background: rgba(31, 18, 51, 0.6);
+  color: #ffd23f;
+  font-size: 0.8em;
+  font-weight: 700;
+}
+.tr-chat-who {
+  all: unset;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.tr-chat-who:hover .tr-chat-name,
+.tr-chat-who:focus-visible .tr-chat-name {
+  text-decoration: underline;
+}
+.tr-chat-input {
+  width: 100%;
+  pointer-events: auto;
+}
+.tr-chat-empty {
+  color: #d9d2ff;
+}
+.tr-chat-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35em;
+}
+.tr-chat-hint {
+  font-size: 0.75em;
+  padding: 0.12em 0.6em;
+  border-radius: 999px;
+  background: rgba(31, 18, 51, 0.45);
+  color: #fff;
+  opacity: 0.65;
+}
+button.tr-chat-hint {
+  border: 0.12em solid var(--ink);
+  background: var(--cloud);
+  color: var(--ink);
+  font-weight: 800;
+  pointer-events: auto;
+  opacity: 1;
+}
+.tr-chat-hint kbd {
+  font-family: inherit;
+  font-weight: 800;
+  padding: 0 0.35em;
+  border-radius: 0.3em;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Clickable players (open the player card) */
+.tr-player-link {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  flex: 1 1 auto;
+  min-width: 0;
+  border-radius: 0.7em;
+  cursor: pointer;
+}
+.tr-player-link.is-static {
+  cursor: default;
+}
+.tr-player-link:not(.is-static):hover b,
+.tr-player-link:focus-visible b {
+  text-decoration: underline;
+}
+.tr-player-link:focus-visible,
+.tr-party-slot-who:focus-visible {
+  outline: 0.15em solid var(--grape);
+  outline-offset: 0.1em;
+}
+.tr-party-slot-who {
+  all: unset;
+  cursor: pointer;
+  border-radius: 50%;
+}
+.tr-player-head {
+  gap: 0.7em;
+  width: 100%;
+}
+
+/* Friend rows, requests, blocked */
+.tr-friend-wrap {
+  display: grid;
+  gap: 0.2em;
+}
+.tr-friend-more,
+.tr-player-actions,
+.tr-notif-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35em;
+}
+.tr-friend-more {
+  padding: 0 0.4em 0.3em 3.2em;
+}
+.tr-section-toggle {
+  all: unset;
+  cursor: pointer;
+}
+.tr-section-toggle::after {
+  content: ' +';
+}
+.tr-section-toggle[aria-expanded='true']::after {
+  content: ' −';
+}
+.tr-friends-empty {
+  margin: 0;
+  font-size: 0.9em;
+}
+.tr-friends-offline {
+  display: grid;
+  justify-items: center;
+  gap: 0.7em;
+  padding: 1.5em 0.5em;
+  text-align: center;
+}
+.tr-friends-offline p {
+  margin: 0;
+  max-width: 24em;
+}
+
+/* Player action menu + report dialog */
+.tr-player-menu,
+.tr-report {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 0.7em;
+  width: min(26em, 94vw);
+  text-align: center;
+}
+.tr-player-actions {
+  justify-content: center;
+}
+.tr-report-reasons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10em, 1fr));
+  gap: 0.4em;
+  width: 100%;
+}
+.tr-report-reason {
+  display: grid;
+  gap: 0.1em;
+  text-align: left;
+  padding: 0.5em 0.7em;
+  border-radius: 0.8em;
+  border: 0.13em solid var(--ink);
+  background: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+.tr-report-reason small {
+  opacity: 0.7;
+}
+.tr-report-reason.is-picked {
+  background: var(--lemon);
+  box-shadow: 0 0.15em 0 var(--ink);
+}
+.tr-report-details {
+  width: 100%;
+  resize: vertical;
+}
+.tr-inspect .tr-player-actions {
+  margin-bottom: 0.4em;
+}
+
+[data-reduce-motion='true'] .tr-chat-line,
+[data-reduce-motion='true'] .tr-chat-fade {
+  animation: none;
+  transition: none;
+}

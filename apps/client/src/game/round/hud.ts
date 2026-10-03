@@ -4,7 +4,8 @@
  * and feeds the same numbers to adaptive music.
  */
 import type { GameAudio } from '@tumble/audio';
-import { TEAM_COLORS, type RoundDefinition, type RoundType } from '@tumble/shared';
+import { teamColor, teamShape } from '@tumble/render';
+import type { RoundDefinition, RoundType } from '@tumble/shared';
 import { ui, type EmoteSlot, type HudState, type ProgressMarker, type TeamScore } from '@tumble/ui';
 
 /** Seconds between HUD pushes (12 Hz, inside the store's 10–15 Hz budget). */
@@ -58,16 +59,24 @@ export class HudMapper {
    * @param info - Name/colour lookup.
    * @param audio - Adaptive music sink.
    * @param isFinal - Final round (one winner).
+   * @param mutator - The show's mutator, kept on the objective chip as a reminder.
    */
   constructor(
     private readonly round: RoundDefinition,
     private readonly entrants: number,
     private readonly localId: number,
-    private readonly info: (id: number) => { name: string; color: string } | null,
+    private readonly info: (
+      id: number,
+    ) => { name: string; color: string; isBot?: boolean; isLocal?: boolean; isParty?: boolean } | null,
     private readonly audio: GameAudio | null,
     private readonly isFinal: boolean,
+    private readonly mutator: { name: string; icon: string } | null = null,
   ) {
-    this.objectiveFor = round.objective;
+    this.objectiveFor = this.objectiveText(round.objective);
+  }
+
+  private objectiveText(objective: string): string {
+    return this.mutator ? `${this.mutator.icon} ${this.mutator.name} · ${objective}` : objective;
   }
 
   /**
@@ -145,7 +154,7 @@ export class HudMapper {
       patch.place = me.place;
       patch.score = me.score;
       if (me.hasItem !== undefined) {
-        const obj = me.hasItem ? 'You have it — hold on!' : this.round.objective;
+        const obj = this.objectiveText(me.hasItem ? 'You have it — hold on!' : this.round.objective);
         if (obj !== this.objectiveFor) {
           this.objectiveFor = obj;
           patch.objective = obj;
@@ -164,6 +173,9 @@ export class HudMapper {
           id,
           name: who.name,
           color: who.color,
+          ...(who.isBot ? { isBot: true } : {}),
+          ...(who.isLocal ? { isLocal: true } : {}),
+          ...(who.isParty ? { isParty: true } : {}),
           progress: Math.max(0, Math.min(1, p.progress)),
         });
       }
@@ -177,7 +189,8 @@ export class HudMapper {
         this.lastTeamKey = key;
         this.teams = s.teamScores.map((score, i) => ({
           name: TEAM_NAMES[i] ?? `Team ${i + 1}`,
-          color: TEAM_COLORS[i % TEAM_COLORS.length] ?? '#ffffff',
+          color: teamColor(i),
+          shape: teamShape(i),
           score,
           isMine: i === myTeam,
         }));

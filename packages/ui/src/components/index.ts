@@ -27,11 +27,25 @@ export {
   Logo,
   CountUp,
   TipCarousel,
+  BotTag,
   type PanelProps,
   type BarProps,
   type CurrencyPillProps,
   type ItemCardProps,
   type LogoProps,
 } from './bits.tsx';
+export {
+  ItemPreview,
+  ItemSilhouette,
+  CurrencyPreview,
+  Nameplate,
+  bannerStyle,
+  useWearer,
+  CURRENCY_LABELS,
+  type ItemPreviewProps,
+  type Wearer,
+  type CurrencyKind,
+} from './ItemPreview.tsx';
+export { type AvatarPose } from './TumblerAvatar.tsx';
 export { ToastLayer, DialogLayer, ConnectionLayer } from './system.tsx';
 export * from './hooks.ts';

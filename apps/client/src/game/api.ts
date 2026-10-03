@@ -9,6 +9,8 @@
  *   API's `{ error, message }` as {@link ApiError};
  * - typed endpoint helpers mirroring `apps/api/README.md`.
  */
+import type { WalletLedger } from './online/checkout.ts';
+import { tokenSubject, type AuthOutcome, type LoginProvider } from './online/returnUrl.ts';
 import { loadJson, removeJson, saveJson } from './storage.ts';
 
 /** Tokens returned by `/auth/guest` and `/auth/refresh`. */
@@ -63,6 +65,24 @@ export interface ApiMe {
   wallet: { gumballs: number; gems: number; crownShards: number };
   activeLoadout: number;
   linkedProviders: string[];
+  /** When the next rename is allowed (ISO); null = now. */
+  nameChangeAvailableAt?: string | null;
+}
+
+/** `POST /auth/exchange` and `POST /auth/email/verify`: a session plus what the sign-in did. */
+export interface ApiAuthResult {
+  accessToken: string;
+  refreshToken: string;
+  user: { id: string; displayName: string; tag: string; isGuest: boolean };
+  outcome: AuthOutcome;
+  provider: LoginProvider;
+}
+
+/** `GET /auth/providers`. */
+export interface ApiAuthProviders {
+  discord: boolean;
+  google: boolean;
+  email: boolean;
 }
 
 /** API loadout body (content `CosmeticLoadout` + banner/footsteps). */
@@ -92,9 +112,25 @@ export interface ApiLoadouts {
 /** A store offer. `offerId` is the cosmetic id. */
 export interface ApiOffer {
   offerId: string;
-  section: 'featured' | 'daily';
+  section: 'featured' | 'daily' | 'weekly';
   item: { id: string; name: string; slot: string; rarity: string };
+  /** Today's price. */
   price: { currency: 'gumballs' | 'gems'; amount: number };
+  /** Catalog price (higher than `price` on deals). */
+  listPrice?: { currency: 'gumballs' | 'gems'; amount: number };
+  owned: boolean;
+}
+
+/** A bundle priced for the caller (`offerId` is `bundle:<id>`). */
+export interface ApiBundle {
+  offerId: string;
+  name: string;
+  description: string;
+  itemIds: string[];
+  /** Items the caller does not own yet; buying grants these. */
+  missing: string[];
+  price: { currency: 'gumballs' | 'gems'; amount: number };
+  listPrice: { currency: 'gumballs' | 'gems'; amount: number };
   owned: boolean;
 }
 
@@ -103,7 +139,14 @@ export interface ApiStore {
   day: string;
   featured: ApiOffer[];
   daily: ApiOffer[];
+  weekly?: ApiOffer[];
+  /** This week's hero bundle offer id. */
+  heroBundle?: string | null;
+  bundles?: ApiBundle[];
+  /** Every item for sale at list price. */
+  catalog?: { offerId: string; price: { currency: 'gumballs' | 'gems'; amount: number }; owned: boolean }[];
   refreshesAt: string;
+  weeklyRefreshesAt?: string;
 }
 
 /** A Gem pack. */
@@ -119,11 +162,35 @@ export interface ApiGemPack {
 export type ApiPassReward =
   { type: 'cosmetic'; id: string } | { type: 'gumballs' | 'gems' | 'crown_shards'; amount: number };
 
+/** `GET /shop/shards`. */
+export interface ApiShardShop {
+  week: string;
+  refreshesAt: string;
+  shardsPerCrown: number;
+  /** Signed-in balance, null when anonymous. */
+  balance: number | null;
+  offers: { offerId: string; price: { currency: 'crown_shards'; amount: number }; owned: boolean }[];
+}
+
+/** `GET /gems/packs`. */
+export interface ApiGemPacks {
+  provider: string;
+  /** Older APIs omit it; `provider` then decides. */
+  checkout?: 'live' | 'test' | 'unavailable';
+  packs: ApiGemPack[];
+}
+
 /** `GET /pass`. */
 export interface ApiPass {
   seasonId: string;
+  /** Absent on APIs from before season rollover (always Season 1). */
+  seasonNumber?: number;
   name: string;
+  startsAt?: string;
   endsAt: string;
+  next?: { id: string; number: number; name: string; startsAt: string };
+  /** Ended seasons this request settled (unclaimed rewards auto-granted). */
+  settled?: { seasonId: string; name: string; autoGranted: number }[];
   xp: number;
   tier: number;
   maxTier: number;
@@ -152,7 +219,7 @@ export interface ApiChallenge {
   target: number;
   completed: boolean;
   claimed: boolean;
-  reward: { xp: number; gumballs: number };
+  reward: { xp: number; gumballs: number; gems?: number };
   rerolled: boolean;
 }
 
@@ -163,6 +230,17 @@ export interface ApiChallenges {
   rerollsLeft: number;
   dailyRefreshesAt: string;
   weeklyRefreshesAt: string;
+}
+
+/** `POST /me/tutorial-complete`. */
+export interface ApiTutorialComplete {
+  /** True when this call granted the reward; false on repeats. */
+  granted: boolean;
+  xp: number;
+  /** Cosmetic id unlocked by this call, or null. */
+  unlock: string | null;
+  level: number;
+  totalXp: number;
 }
 
 /** `GET /leaderboards/:type`. */
@@ -193,12 +271,42 @@ export interface ApiFriendCard {
   level: number;
 }
 
+/** Presence states the API reports. */
+export type ApiPresenceStatus = 'online' | 'in_menu' | 'in_queue' | 'in_match' | 'offline';
+
+/** What friends see about a player's presence (`GET /friends`, realtime `presence`). */
+export interface ApiPresenceView {
+  playlistId?: string;
+  lobbyCode?: string;
+  joinable?: boolean;
+}
+
+/** A friend row in `GET /friends`. */
+export type ApiFriend = ApiFriendCard & ApiPresenceView & { presence: ApiPresenceStatus; since?: string };
+
+/** A pending request or blocked row (`at` = ISO time it was made). */
+export type ApiFriendRequest = ApiFriendCard & { at?: string };
+
 /** `GET /friends`. */
 export interface ApiFriends {
-  friends: (ApiFriendCard & { presence: string })[];
-  incoming: ApiFriendCard[];
-  outgoing: ApiFriendCard[];
+  friends: ApiFriend[];
+  incoming: ApiFriendRequest[];
+  outgoing: ApiFriendRequest[];
+  blocked?: ApiFriendRequest[];
+  total?: number;
 }
+
+/** How the caller relates to another player. */
+export type ApiRelation = 'self' | 'friend' | 'incoming' | 'outgoing' | 'none';
+
+/** `GET /friends/recent` row. */
+export type ApiRecentPlayer = ApiFriendCard & { relation?: ApiRelation; presence?: ApiPresenceStatus };
+
+/** `GET /friends/search` row. */
+export type ApiSearchResult = ApiFriendCard & { relation: ApiRelation };
+
+/** Report reasons accepted by `POST /report`. */
+export type ApiReportReason = 'cheating' | 'harassment' | 'offensive_name' | 'griefing' | 'spam' | 'other';
 
 /** A party (API view). */
 export interface ApiParty {
@@ -366,6 +474,51 @@ export class ApiClient {
     );
   }
 
+  /** The signed-in account's id (from the stored access token), or null. */
+  currentUserId(): string | null {
+    return tokenSubject(this.tokens?.accessToken);
+  }
+
+  /**
+   * Switches this device to a session from an OAuth/email sign-in.
+   *
+   * @param session - Tokens from `/auth/exchange` or `/auth/email/verify`.
+   * @param keepDevice - Keep the guest device token. Only for the same
+   *   account: a stale device token would otherwise sign the device back in
+   *   to the old guest the next time a refresh fails.
+   */
+  adoptSession(session: { accessToken: string; refreshToken: string }, keepDevice: boolean): void {
+    this.tokens = {
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      deviceToken: keepDevice ? (this.tokens?.deviceToken ?? '') : '',
+    };
+    saveJson('auth', this.tokens);
+  }
+
+  /** Drops the stored session without telling the server (the account is gone). */
+  forget(): void {
+    this.tokens = null;
+    removeJson('auth');
+  }
+
+  /**
+   * Revokes a session this device decided not to keep (best effort).
+   *
+   * @param refreshToken - That session's refresh token.
+   */
+  async revoke(refreshToken: string): Promise<void> {
+    await fetchJson(
+      `${this.baseUrl}/auth/logout`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      },
+      REQUEST_TIMEOUT_MS,
+    );
+  }
+
   /** Rotates the refresh token; concurrent callers share one rotation. */
   private refresh(): Promise<boolean> {
     if (this.refreshing) return this.refreshing;
@@ -473,15 +626,49 @@ export class ApiClient {
     this.request('PUT', `/loadouts/${index}`, { name, items });
   activateLoadout = (index: number): Promise<{ activeIndex: number; items: ApiLoadoutItems }> =>
     this.request('POST', `/loadouts/${index}/activate`);
+  /** Deletes the account on the server (204; the literal confirm guards against stray calls). */
+  deleteMe = (): Promise<void> => this.request('DELETE', '/me', { confirm: 'DELETE' });
+
+  // ---------------------------------------------------------------------------
+  // Sign-in methods
+  // ---------------------------------------------------------------------------
+
+  authProviders = (): Promise<ApiAuthProviders> =>
+    this.request('GET', '/auth/providers', undefined, { auth: false });
+  /** Trades the one-time code from `/auth/complete` for a session. */
+  exchangeCode = (code: string): Promise<ApiAuthResult> =>
+    this.request('POST', '/auth/exchange', { code }, { auth: false });
+  /** Redeems an email magic-link token for a session. */
+  verifyEmail = (token: string): Promise<ApiAuthResult> =>
+    this.request('POST', '/auth/email/verify', { token }, { auth: false });
+  /**
+   * Starts Discord/Google sign-in. With `link` the signed-in account is sent
+   * along, so a new identity is linked to it (or the device switches to the
+   * account that already owns it).
+   */
+  startOAuth = (provider: 'discord' | 'google', link: boolean): Promise<{ url: string }> =>
+    this.request('POST', `/auth/${provider}/start`, undefined, { auth: link });
+  /** Emails a magic link; `link` works as for {@link ApiClient.startOAuth}. */
+  startEmail = (email: string, link: boolean): Promise<{ sent: boolean }> =>
+    this.request('POST', '/auth/email/start', { email }, { auth: link });
+  unlinkIdentity = (provider: LoginProvider): Promise<{ linkedProviders: string[] }> =>
+    this.request('DELETE', `/me/identities/${provider}`);
 
   // ---------------------------------------------------------------------------
   // Economy & progression
   // ---------------------------------------------------------------------------
 
   store = (): Promise<ApiStore> => this.request('GET', '/store');
+  wallet = (): Promise<{ wallet: ApiMe['wallet'] } & WalletLedger> => this.request('GET', '/wallet');
   purchase = (offerId: string, key: string): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> =>
     this.request('POST', '/purchase', { offerId }, { idempotencyKey: key });
-  gemPacks = (): Promise<{ provider: string; packs: ApiGemPack[] }> => this.request('GET', '/gems/packs');
+  gemPacks = (): Promise<ApiGemPacks> => this.request('GET', '/gems/packs');
+  shardShop = (): Promise<ApiShardShop> => this.request('GET', '/shop/shards');
+  buyShardOffer = (offerId: string, key: string): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> =>
+    this.request('POST', '/shop/shards/buy', { offerId }, { idempotencyKey: key });
+  /** Live news feed (public; no sign-in needed). */
+  news = (): Promise<{ posts: unknown[]; withdrawn?: string[] }> =>
+    this.request('GET', '/news', undefined, { auth: false });
   gemCheckout = (
     packId: string,
     key: string,
@@ -495,6 +682,7 @@ export class ApiClient {
   challenges = (): Promise<ApiChallenges> => this.request('GET', '/challenges');
   rerollChallenge = (id: string): Promise<unknown> => this.request('POST', '/challenges/reroll', { id });
   claimChallenge = (id: string): Promise<unknown> => this.request('POST', '/challenges/claim', { id });
+  tutorialComplete = (): Promise<ApiTutorialComplete> => this.request('POST', '/me/tutorial-complete');
   leaderboard = (type: string, scope: 'global' | 'regional' | 'friends'): Promise<ApiLeaderboard> =>
     this.request('GET', `/leaderboards/${type}?scope=${scope}&limit=50`);
   myMatches = (): Promise<{ matches: ApiMatch[] }> => this.request('GET', '/me/matches');
@@ -504,27 +692,60 @@ export class ApiClient {
   // ---------------------------------------------------------------------------
 
   friends = (): Promise<ApiFriends> => this.request('GET', '/friends');
-  recentPlayers = (): Promise<{ players: ApiFriendCard[] }> => this.request('GET', '/friends/recent');
+  recentPlayers = (): Promise<{ players: ApiRecentPlayer[] }> => this.request('GET', '/friends/recent');
+  searchPlayers = (q: string): Promise<{ players: ApiSearchResult[] }> =>
+    this.request('GET', `/friends/search?q=${encodeURIComponent(q)}`);
+  /** Sends a request by `name#tag` or account id. */
   friendRequest = (
-    nameTag: string,
-  ): Promise<{ status: 'pending' | 'accepted'; user: { displayName: string; tag: string } }> =>
-    this.request('POST', '/friends/request', { nameTag });
+    target: string | { userId: string },
+  ): Promise<{
+    status: 'pending' | 'accepted';
+    user: { userId: string; displayName: string; tag: string };
+  }> => this.request('POST', '/friends/request', typeof target === 'string' ? { nameTag: target } : target);
   acceptFriend = (userId: string): Promise<unknown> => this.request('POST', '/friends/accept', { userId });
   declineFriend = (userId: string): Promise<unknown> => this.request('POST', '/friends/decline', { userId });
-  presence = (status: 'online' | 'in_menu' | 'in_queue' | 'in_match'): Promise<unknown> =>
-    this.request('POST', '/presence', { status });
+  cancelFriendRequest = (userId: string): Promise<void> =>
+    this.request('DELETE', `/friends/request/${encodeURIComponent(userId)}`);
+  removeFriend = (userId: string): Promise<void> =>
+    this.request('DELETE', `/friends/${encodeURIComponent(userId)}`);
+  block = (userId: string): Promise<unknown> => this.request('POST', '/friends/block', { userId });
+  unblock = (userId: string): Promise<void> =>
+    this.request('DELETE', `/friends/block/${encodeURIComponent(userId)}`);
+  report = (body: {
+    targetUserId: string;
+    reason: ApiReportReason;
+    details?: string;
+    matchId?: string;
+  }): Promise<{ id: string }> => this.request('POST', '/report', body);
+  presence = (
+    status: 'online' | 'in_menu' | 'in_queue' | 'in_match',
+    details: { playlistId?: string; lobbyCode?: string } = {},
+  ): Promise<unknown> => this.request('POST', '/presence', { status, ...details });
+  joinFriendParty = (userId: string): Promise<{ party: ApiParty }> =>
+    this.request('POST', '/party/join-friend', { userId });
+  declinePartyInvite = (userId: string): Promise<void> =>
+    this.request('POST', '/party/invite/decline', { userId });
+  partyChat = (text: string): Promise<unknown> => this.request('POST', '/party/chat', { text });
+  whisper = (userId: string, text: string): Promise<unknown> =>
+    this.request('POST', '/whisper', { userId, text });
   party = (): Promise<{ party: ApiParty | null }> => this.request('GET', '/party');
   createParty = (): Promise<{ party: ApiParty }> => this.request('POST', '/party');
   joinParty = (code: string): Promise<{ party: ApiParty }> => this.request('POST', '/party/join', { code });
   leaveParty = (): Promise<void> => this.request('POST', '/party/leave');
   kickFromParty = (userId: string): Promise<{ party: ApiParty }> =>
     this.request('POST', '/party/kick', { userId });
+  promotePartyMember = (userId: string): Promise<{ party: ApiParty }> =>
+    this.request('POST', '/party/promote', { userId });
   setReady = (ready: boolean): Promise<{ party: ApiParty }> =>
     this.request('POST', '/party/ready', { ready });
   setPartyPlaylist = (playlistId: string): Promise<{ party: ApiParty }> =>
     this.request('POST', '/party/playlist', { playlistId });
   inviteToParty = (userId: string): Promise<{ party: ApiParty }> =>
     this.request('POST', '/party/invite', { userId });
-  queueTicket = (playlistId: string): Promise<{ ticket: string; expiresIn: number }> =>
-    this.request('POST', '/party/queue-ticket', { playlistId });
+  /**
+   * Party queue ticket. `region` is the client's measured pick (Settings →
+   * Region); the API also reads it from the account after `PATCH /me`.
+   */
+  queueTicket = (playlistId: string, region?: string): Promise<{ ticket: string; expiresIn: number }> =>
+    this.request('POST', '/party/queue-ticket', region ? { playlistId, region } : { playlistId });
 }

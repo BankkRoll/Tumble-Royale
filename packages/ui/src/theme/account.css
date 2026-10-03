@@ -1,0 +1,69 @@
+/* Account management: rename, logins, email links, sign in to an existing Tumbler. */
+
+.tr-account-rename {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4em 0.6em;
+  min-width: 0;
+}
+.tr-profile-account .tr-account-rename {
+  justify-content: flex-start;
+}
+.tr-account-rename.is-editing {
+  flex-direction: column;
+  align-items: stretch;
+}
+.tr-account-rename .tr-input {
+  min-width: 10em;
+}
+.tr-account-name {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25em;
+  min-width: 0;
+}
+.tr-account-note {
+  flex-basis: 100%;
+  text-align: right;
+}
+.tr-profile-account .tr-account-note {
+  text-align: left;
+}
+
+.tr-account-methods,
+.tr-account-signin,
+.tr-account-email {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.45em;
+  min-width: 0;
+}
+.tr-account-method {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5em;
+}
+.tr-account-method-name {
+  margin-right: auto;
+  font-weight: 700;
+}
+.tr-account-email .tr-input {
+  min-width: 0;
+  flex: 1 1 12em;
+}
+.tr-account-email.is-sent {
+  padding: 0.6em 0.8em;
+  border-radius: 0.8em;
+  background: rgba(62, 230, 180, 0.18);
+  border: 0.12em dashed rgba(43, 26, 94, 0.3);
+}
+
+.tr-welcome-signin {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+}

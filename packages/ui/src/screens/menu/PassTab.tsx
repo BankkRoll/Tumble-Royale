@@ -14,7 +14,13 @@
  */
 import { useEffect, useMemo, useRef, useState, type JSX, type WheelEvent } from 'react';
 import { playCue } from '../../audio-cues.ts';
-import { Bar, Coin, ItemArt } from '../../components/bits.tsx';
+import { Bar, Coin } from '../../components/bits.tsx';
+import {
+  CURRENCY_LABELS,
+  CurrencyPreview,
+  ItemPreview,
+  MOTION_SLOTS,
+} from '../../components/ItemPreview.tsx';
 import { Button } from '../../components/controls.tsx';
 import { formatNumber, formatRemaining, useNow } from '../../components/hooks.ts';
 import { Icon } from '../../components/icons/index.tsx';
@@ -33,12 +39,17 @@ type Track = 'free' | 'premium';
 /** Whether a tier is a big milestone card. */
 const isMilestone = (tier: number): boolean => tier % 10 === 0;
 
-/** Readable label for a currency reward. */
+/** Readable label for a reward: the item name, or `250 Gumballs`. */
 export function rewardLabel(r: PassReward): string {
   if (r.item) return r.item.name;
   if (!r.currency) return '';
-  const k = r.currency.kind;
-  return `${formatNumber(r.currency.amount)} ${k === 'xp' ? 'XP' : k === 'gems' ? 'Gems' : 'Gumballs'}`;
+  return `${formatNumber(r.currency.amount)} ${CURRENCY_LABELS[r.currency.kind]}`;
+}
+
+/** What kind of reward it is: `Hat · Epic` for items, the currency name otherwise. */
+export function rewardKind(r: PassReward): string {
+  if (r.item) return `${SLOT_NAMES[r.item.slot]} · ${rarityLabels[r.item.rarity]}`;
+  return r.currency ? CURRENCY_LABELS[r.currency.kind] : '';
 }
 
 interface Selection {
@@ -50,7 +61,52 @@ function rewardAt(pass: SeasonPassData, sel: Selection): PassReward | undefined 
   return pass.tiers[sel.tier - 1]?.[sel.track];
 }
 
-function RewardCard({
+/** Where a reward stands for this player. */
+export type RewardState = 'claimed' | 'claimable' | 'premium' | 'future';
+
+/**
+ * State of one pass reward.
+ *
+ * @param pass - Season pass.
+ * @param tier - Tier number.
+ * @param track - Free or premium lane.
+ * @param reward - The reward.
+ */
+export function rewardState(
+  pass: SeasonPassData,
+  tier: number,
+  track: Track,
+  reward: PassReward,
+): RewardState {
+  if (reward.claimed) return 'claimed';
+  if (track === 'premium' && !pass.premium) return 'premium';
+  return tier <= pass.currentTier ? 'claimable' : 'future';
+}
+
+/** Short status line for a reward card. */
+function stateLabel(state: RewardState, tier: number, pass: SeasonPassData): string {
+  switch (state) {
+    case 'claimed':
+      return 'Claimed';
+    case 'claimable':
+      return 'Ready to claim';
+    case 'premium':
+      return tier <= pass.currentTier ? 'Premium: unlock to claim' : 'Premium';
+    case 'future': {
+      const n = tier - pass.currentTier;
+      return n === 1 ? 'Next tier' : `${n} tiers to go`;
+    }
+  }
+}
+
+function claim(tier: number, track: Track, reward: PassReward): void {
+  playCue('ui.claim');
+  if (reward.item) playCue(`ui.rarity.${reward.item.rarity}`);
+  uiEvents.emit('claimPassTier', { tier, track });
+}
+
+/** One reward on the track: tier and lane, the reward on the player's Tumbler, its kind and state. */
+export function RewardCard({
   reward,
   track,
   tier,
@@ -68,72 +124,76 @@ function RewardCard({
   const big = isMilestone(tier);
   if (!reward)
     return <div className={`tr-pr tr-pr--${track} is-empty${big ? ' is-milestone' : ''}`} aria-hidden />;
-  const unlocked = tier <= pass.currentTier;
-  const locked = track === 'premium' && !pass.premium;
-  const claimable = unlocked && !locked && !reward.claimed;
-  const label = rewardLabel(reward);
+  const state = rewardState(pass, tier, track, reward);
   const item = reward.item;
+  const label = rewardLabel(reward);
+  const status = stateLabel(state, tier, pass);
   return (
-    <button
-      type="button"
+    <div
       className={[
         'tr-pr',
         `tr-pr--${track}`,
         item ? `tr-rar-frame tr-rar-frame--${item.rarity}` : 'tr-pr--currency',
         big ? 'is-milestone' : '',
-        claimable ? 'is-claimable' : '',
-        reward.claimed ? 'is-claimed' : '',
-        locked ? 'is-locked' : '',
-        !unlocked ? 'is-future' : '',
+        `is-${state}`,
+        state === 'premium' ? 'is-locked' : '',
         selected ? 'is-selected' : '',
       ]
         .filter(Boolean)
         .join(' ')}
       style={item ? { ['--art-a' as string]: item.art[0], ['--art-b' as string]: item.art[1] } : undefined}
-      data-nav=""
       data-tier={tier}
       data-track={track}
-      aria-pressed={selected}
-      aria-label={`Tier ${tier} ${track} reward: ${label}${reward.claimed ? ', claimed' : claimable ? ', ready to claim' : locked ? ', premium' : ''}`}
-      onClick={() => {
-        onSelect();
-        if (!claimable) return;
-        playCue('ui.claim');
-        if (item) playCue(`ui.rarity.${item.rarity}`);
-        uiEvents.emit('claimPassTier', { tier, track });
-      }}
+      data-state={state}
     >
-      <span className="tr-pr-art">
-        {item ? (
-          <ItemArt item={item} className="tr-pr-thumb" />
-        ) : reward.currency ? (
-          <span className="tr-pr-coin">
-            <Coin currency={reward.currency.kind} />
+      <button
+        type="button"
+        className="tr-pr-hit"
+        data-nav=""
+        aria-pressed={selected}
+        aria-label={`Tier ${tier}, ${track === 'free' ? 'free' : 'premium'} track: ${label}, ${rewardKind(reward)}, ${status}`}
+        onClick={onSelect}
+      >
+        <span className="tr-pr-top">
+          <span className="tr-pr-tier">Tier {tier}</span>
+          <span className={`tr-pr-lane tr-pr-lane--${track}`}>
+            {track === 'premium' && !pass.premium && <Icon name="lock" size="0.85em" />}
+            {track === 'free' ? 'Free' : 'Premium'}
           </span>
-        ) : null}
-      </span>
-      <span className="tr-pr-name">{label}</span>
-      {item && (
-        <span className={`tr-pr-rarity tr-rarity-text--${item.rarity}`}>
-          {big ? `${rarityLabels[item.rarity]} · ${SLOT_NAMES[item.slot]}` : rarityLabels[item.rarity]}
         </span>
-      )}
-      {reward.claimed && (
-        <span className="tr-pr-state is-claimed" aria-hidden>
-          <Icon name="check" size="0.9em" />
+        <span className="tr-pr-art">
+          {item ? (
+            <ItemPreview item={item} className="tr-pr-thumb" />
+          ) : reward.currency ? (
+            <CurrencyPreview kind={reward.currency.kind} amount={reward.currency.amount} />
+          ) : null}
         </span>
-      )}
-      {locked && !reward.claimed && (
-        <span className="tr-pr-state is-locked" aria-hidden>
-          <Icon name="lock" size="1em" />
+        {item && <span className="tr-pr-name">{label}</span>}
+        {item && <span className={`tr-pr-rarity tr-rarity-text--${item.rarity}`}>{rewardKind(reward)}</span>}
+        <span className={`tr-pr-status is-${state}`}>
+          {state === 'claimed' && <Icon name="check" size="0.85em" />}
+          {state === 'premium' && <Icon name="lock" size="0.85em" />}
+          {state !== 'claimable' && status}
         </span>
+      </button>
+      {state === 'claimable' && (
+        <button
+          type="button"
+          className="tr-pr-claim"
+          data-nav=""
+          data-testid="pass-card-claim"
+          aria-label={`Claim tier ${tier} ${track} reward: ${label}`}
+          onClick={() => {
+            onSelect();
+            claim(tier, track, reward);
+          }}
+        >
+          Claim
+        </button>
       )}
-      {claimable && <span className="tr-pr-claim">Claim</span>}
-      {big && <span className="tr-pr-ribbon">Tier {tier}</span>}
-    </button>
+    </div>
   );
 }
-
 function TierColumn({
   t,
   pass,
@@ -180,15 +240,29 @@ function TierColumn({
   );
 }
 
+/** Slots the 3D stage can show on the Tumbler; everything else gets a flat preview in the detail. */
+const ON_STAGE = new Set([
+  'colors',
+  'pattern',
+  'face',
+  'upper',
+  'lower',
+  'headwear',
+  'back',
+  'emote',
+  'celebration',
+  'victory',
+]);
+
+/** Docked detail for the selected reward: what it is, which slot it fills, and what to do next. */
 function Preview({ pass, sel }: { pass: SeasonPassData; sel: Selection }): JSX.Element | null {
   const loadout = useActiveLoadout();
   const reward = rewardAt(pass, sel);
   if (!reward) return null;
   const item = reward.item;
-  const unlocked = sel.tier <= pass.currentTier;
-  const locked = sel.track === 'premium' && !pass.premium;
-  const claimable = unlocked && !locked && !reward.claimed;
+  const state = rewardState(pass, sel.tier, sel.track, reward);
   const owned = item?.owned ?? false;
+  const toGo = sel.tier - pass.currentTier;
   return (
     <div
       key={`${sel.tier}:${sel.track}`}
@@ -202,29 +276,44 @@ function Preview({ pass, sel }: { pass: SeasonPassData; sel: Selection }): JSX.E
         {item && (
           <span className={`tr-rarity-band tr-rarity-band--${item.rarity}`}>{rarityLabels[item.rarity]}</span>
         )}
-        {item && <span className="tr-small tr-muted">{SLOT_NAMES[item.slot]}</span>}
+        <span className="tr-chip">{item ? SLOT_NAMES[item.slot] : rewardKind(reward)}</span>
       </div>
-      <b className="tr-title tr-h3 tr-pass-preview-name">{rewardLabel(reward)}</b>
-      {item?.description && <span className="tr-small tr-muted tr-clamp-2">{item.description}</span>}
+      <div className="tr-row" style={{ gap: '0.7em', alignItems: 'center' }}>
+        {(!item || !ON_STAGE.has(item.slot)) && (
+          <span className="tr-pass-preview-art">
+            {item ? (
+              <ItemPreview item={item} />
+            ) : reward.currency ? (
+              <CurrencyPreview kind={reward.currency.kind} amount={reward.currency.amount} />
+            ) : null}
+          </span>
+        )}
+        <div className="tr-col" style={{ gap: '0.25em', minWidth: 0 }}>
+          <b className="tr-title tr-h3 tr-pass-preview-name">{rewardLabel(reward)}</b>
+          {item?.description && <span className="tr-small tr-muted tr-clamp-2">{item.description}</span>}
+          {item && ON_STAGE.has(item.slot) && (
+            <span className="tr-small">
+              {MOTION_SLOTS.has(item.slot) ? 'Playing on your Tumbler' : 'Shown on your Tumbler'}
+            </span>
+          )}
+        </div>
+      </div>
       <div className="tr-row" style={{ gap: '0.5em', flexWrap: 'wrap' }}>
-        {claimable ? (
+        {state === 'claimable' ? (
           <Button
             size="sm"
             variant="mint"
             cue={null}
             data-testid="pass-claim"
-            onClick={() => {
-              playCue('ui.claim');
-              uiEvents.emit('claimPassTier', { tier: sel.tier, track: sel.track });
-            }}
+            onClick={() => claim(sel.tier, sel.track, reward)}
           >
             Claim
           </Button>
-        ) : reward.claimed && item && owned ? (
+        ) : state === 'claimed' && item && owned ? (
           isEquipped(loadout, item) ? (
             <span className="tr-chip tr-chip--mint">Equipped</span>
           ) : item.slot === 'colors' || item.slot === 'pattern' ? (
-            <span className="tr-chip tr-chip--mint">In your locker</span>
+            <span className="tr-chip tr-chip--mint">In your Locker</span>
           ) : (
             <Button
               size="sm"
@@ -234,17 +323,83 @@ function Preview({ pass, sel }: { pass: SeasonPassData; sel: Selection }): JSX.E
               Equip
             </Button>
           )
-        ) : reward.claimed ? (
+        ) : state === 'claimed' ? (
           <span className="tr-chip tr-chip--mint">Claimed</span>
-        ) : locked ? (
+        ) : state === 'premium' ? (
           <span className="tr-chip tr-chip--grape">
             <Icon name="lock" size="1em" /> Premium track
+            {toGo > 0 ? ` · ${toGo} ${toGo === 1 ? 'tier' : 'tiers'} to go` : ''}
           </span>
         ) : (
-          <span className="tr-chip">Reach tier {sel.tier} to unlock</span>
+          <span className="tr-chip">
+            Reach tier {sel.tier} to unlock · {toGo} {toGo === 1 ? 'tier' : 'tiers'} to go
+          </span>
         )}
       </div>
     </div>
+  );
+}
+
+/** The next tier's rewards, so the next unlock is always visible in the header. */
+function NextUnlock({
+  pass,
+  onShow,
+}: {
+  pass: SeasonPassData;
+  onShow: (s: Selection) => void;
+}): JSX.Element | null {
+  const next = pass.tiers[pass.currentTier];
+  if (!next) return null;
+  const pick: Selection = next.free
+    ? { tier: next.tier, track: 'free' }
+    : { tier: next.tier, track: 'premium' };
+  const reward = rewardAt(pass, pick);
+  if (!reward) return null;
+  return (
+    <button
+      type="button"
+      className="tr-pass-next"
+      data-nav=""
+      data-testid="pass-next"
+      onClick={() => onShow(pick)}
+    >
+      <span className="tr-pass-next-art">
+        {reward.item ? (
+          <ItemPreview item={reward.item} />
+        ) : reward.currency ? (
+          <CurrencyPreview kind={reward.currency.kind} amount={reward.currency.amount} />
+        ) : null}
+      </span>
+      <span className="tr-col" style={{ gap: '0.1em', minWidth: 0, alignItems: 'flex-start' }}>
+        <small className="tr-muted">Next unlock · Tier {next.tier}</small>
+        <b className="tr-ellipsis">{rewardLabel(reward)}</b>
+        <small>{rewardKind(reward)}</small>
+      </span>
+    </button>
+  );
+}
+/** How close to the end a season must be before the next one is announced. */
+export const NEXT_SEASON_TEASE_MS = 14 * 86_400_000;
+
+/**
+ * Season time left; in the last {@link NEXT_SEASON_TEASE_MS} also when the
+ * next season starts and that unclaimed rewards will be auto-granted.
+ */
+export function SeasonClock({ pass, now }: { pass: SeasonPassData; now: number }): JSX.Element {
+  const left = pass.endsAt - now;
+  const next = pass.nextSeason;
+  return (
+    <span className="tr-col" style={{ gap: '0.2em' }} data-testid="season-clock">
+      <span className="tr-label">
+        Season {pass.seasonNumber} · ends in {formatRemaining(left)}
+      </span>
+      {next && left <= NEXT_SEASON_TEASE_MS && (
+        <span className="tr-chip tr-chip--lemon" style={{ alignSelf: 'flex-start' }}>
+          Season {next.number} starts in {formatRemaining(next.startsAt - now)} · unclaimed rewards are added
+          automatically
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -269,7 +424,12 @@ function PremiumState({ pass }: { pass: SeasonPassData }): JSX.Element {
       >
         Unlock Premium <Coin currency="gems" /> {formatNumber(pass.premiumPrice)}
       </Button>
-      {!afford && <small className="tr-muted">Gems coming soon</small>}
+      {!afford && (
+        <small className="tr-muted">
+          Need {formatNumber(pass.premiumPrice - gems)} more Gems — earn them from weekly challenges, daily
+          Crowns and free-track tiers
+        </small>
+      )}
     </div>
   );
 }
@@ -345,9 +505,7 @@ export function PassTab(): JSX.Element {
     >
       <div className="tr-panel tr-pass-head">
         <div className="tr-col tr-grow" style={{ gap: '0.35em', minWidth: 0 }}>
-          <span className="tr-label">
-            Season {pass.seasonNumber} · ends in {formatRemaining(pass.endsAt - now)}
-          </span>
+          <SeasonClock pass={pass} now={now} />
           <h2 className="tr-title tr-h2 tr-pass-title">{pass.seasonName.replace(/^Season \d+:\s*/, '')}</h2>
           <div className="tr-row" style={{ gap: '0.7em' }}>
             <span className="tr-pass-tier-badge">
@@ -363,6 +521,13 @@ export function PassTab(): JSX.Element {
               </small>
             </div>
           </div>
+          <NextUnlock
+            pass={pass}
+            onShow={(s) => {
+              select(s);
+              scrollToTier(s.tier);
+            }}
+          />
         </div>
         <div className="tr-col tr-pass-actions">
           <Button

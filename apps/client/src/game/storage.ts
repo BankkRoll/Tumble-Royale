@@ -7,7 +7,30 @@
 const PREFIX = 'tumble.v1.';
 
 /** Keys the client persists. */
-export type StorageKey = 'profile' | 'settings' | 'quality' | 'auth' | 'newsRead';
+export type StorageKey =
+  | 'profile'
+  | 'settings'
+  | 'quality'
+  | 'auth'
+  | 'newsRead'
+  /** Last live news feed from the API (offline fallback over the bundled posts). */
+  | 'newsLive'
+  /** Local (offline) notification inbox with read flags. */
+  | 'notifications'
+  /** Players muted on this device. */
+  | 'mutes'
+  /** Matchmaking region picked by the player or by ping. */
+  | 'region';
+
+/**
+ * The raw `localStorage` key behind a {@link StorageKey}, for matching
+ * cross-tab `storage` events.
+ *
+ * @param key - Storage key.
+ */
+export function storageKeyName(key: StorageKey): string {
+  return PREFIX + key;
+}
 
 /**
  * Reads and JSON-parses a stored value.

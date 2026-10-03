@@ -15,7 +15,8 @@ import {
 } from 'three/webgpu';
 import { abs, float, fract, max, mix, smoothstep, uniform, uv } from 'three/tsl';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { TEAM_COLORS, type RoundDefinition, type StaticPiece, type TriggerDef } from '@tumble/shared';
+import type { RoundDefinition, StaticPiece, TriggerDef } from '@tumble/shared';
+import { remapTeamColor, teamColor } from '../teamPalette.ts';
 import { resolveThemeColor, type ThemeDefinition } from '@tumble/content/themes';
 import {
   createEdgeRailGeometry,
@@ -133,9 +134,7 @@ function grabRails(piece: StaticPiece): BufferGeometry[] {
 /** Translucent pulsing floor marker for team goals, nests and logic zones. */
 function createZoneMarker(trigger: TriggerDef, theme: ThemeDefinition, time: LevelUniforms['time']): Mesh {
   const isTeam = trigger.kind === 'goal' || trigger.kind === 'nest';
-  const hex = isTeam
-    ? (TEAM_COLORS[trigger.index % TEAM_COLORS.length] ?? theme.palette.safe)
-    : theme.palette.safe;
+  const hex = isTeam ? teamColor(trigger.index) : theme.palette.safe;
   const col = uniform(new Color(hex));
   const geo = new PlaneGeometry(trigger.size.x, trigger.size.z);
   geo.rotateX(-Math.PI / 2);
@@ -208,7 +207,7 @@ export function buildLevelVisuals(
 
     const geo = createPieceGeometry(piece, detail);
     geo.applyMatrix4(tmpMatrix);
-    tmpColor.set(resolveThemeColor(theme, piece.color));
+    tmpColor.set(remapTeamColor(resolveThemeColor(theme, piece.color)));
     paint(geo, tmpColor);
 
     geo.computeBoundingBox();

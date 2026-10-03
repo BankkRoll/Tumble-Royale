@@ -110,6 +110,8 @@ export interface CustomSettings {
   roundTimeScale: number;
   lobbyCountdownSec: number;
   spectatorSlots: number;
+  /** Players needed before the host can start (bots fill the rest). */
+  minPlayers: number;
 }
 
 /**
@@ -141,6 +143,8 @@ export interface JoinTicketClaims {
   teamSize: number;
   /** Present for custom lobbies. */
   custom?: CustomSettings;
+  /** True when the player is chat-suspended: the game server must not relay their chat. */
+  mute?: boolean;
 }
 
 /**

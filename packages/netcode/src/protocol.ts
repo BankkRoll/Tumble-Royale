@@ -10,7 +10,7 @@ import type { BitReader, BitWriter } from './bits.ts';
 import type { Bounds } from './quantize.ts';
 
 /** Bumped on any incompatible wire change; peers with different versions are rejected in the handshake. */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 /** First byte of every binary message. Values are stable wire ids. */
 export const MsgType = {
@@ -37,6 +37,8 @@ export const KickReason = {
   Shutdown: 6,
   /** Missing, invalid or expired join ticket. */
   BadTicket: 7,
+  /** A private show's host removed the player (relayed by the matchmaker). */
+  RemovedByHost: 8,
 } as const;
 
 /** Numeric kick reason. */
@@ -187,6 +189,13 @@ export interface NetPlayerInfo {
   /** Opaque loadout blob from Hello (bots: generated). */
   loadout: string;
   connected: boolean;
+  /**
+   * Account id from the join ticket, for profile cards, friend requests,
+   * reports and client-side block/mute. Absent for bots and dev joins.
+   */
+  userId?: string;
+  /** Duos/squads party id (teammates share fates and the Crown); absent in solo shows. */
+  partyId?: number;
 }
 
 /** Everything a client needs to build the round locally and decode its snapshots. */
@@ -211,6 +220,18 @@ export interface JoinRoundMsg {
   qualifyTarget: number;
   /** Seeded (or forced) layout variation id; null when the round has none. */
   variationId: string | null;
+  /**
+   * v3: the pre-show lobby platform (`PRE_SHOW_LOBBY_ROUND`), not a show round.
+   * Players join and leave it live; it never produces results.
+   */
+  lobby?: boolean;
+  /**
+   * Show mutator (`@tumble/sim/mutators` id) the server applies; predicting
+   * clients must pass it to their sim. Absent or null: none.
+   */
+  mutatorId?: string | null;
+  /** Round timer multiplier the server applies (0.5–2). Absent: 1. */
+  roundTimeScale?: number;
 }
 
 /** Show context, sent once per connection right after Welcome. */
@@ -272,6 +293,23 @@ export interface RoundResultEntry {
   status: number;
   place: number;
   score: number;
+  /** v3: eliminated but carried into the next round by a qualifying teammate (duos/squads). */
+  carried?: boolean;
+}
+
+/**
+ * In-show chat. Client → server: either `text` or a quick-chat preset id in
+ * `quick` (`from` is ignored). Server → client: the relayed message; `text` has
+ * slurs masked, `masked` (when present) is the fully filtered variant for
+ * players with the chat filter on.
+ */
+export interface ChatMsg {
+  t: 'chat';
+  from: number;
+  text: string;
+  masked?: string;
+  /** Quick-chat preset id (`@tumble/shared` QUICK_CHAT). */
+  quick?: string;
 }
 
 /**
@@ -307,7 +345,7 @@ export type LowFreqMessage =
   | { t: 'playerList'; players: NetPlayerInfo[] }
   | { t: 'roundResults'; roundId: string; results: RoundResultEntry[] }
   | { t: 'showSummary'; winners: number[]; rounds: { roundId: string; qualified: number[] }[] }
-  | { t: 'chat'; from: number; text: string }
+  | ChatMsg
   /** Client → server: finished loading the round (scene built and shaders compiled). */
   | { t: 'loaded'; roundId: string }
   | LoadProgressMsg
@@ -316,7 +354,8 @@ export type LowFreqMessage =
   | { t: 'spectate'; target: number }
   /** Server → client: lobby countdown before the show fills with bots. */
   | { t: 'lobby'; humans: number; capacity: number; startsInMs: number }
-  | { t: 'showPhase'; phase: ShowPhaseId }
+  /** `startsInMs` (v3, PreShow only): time until round 1 is selected. */
+  | { t: 'showPhase'; phase: ShowPhaseId; startsInMs?: number }
   | { t: 'roundPhase'; phase: RoundPhaseId; time: number }
   | ShowInfoMsg
   | ShowRewardsMsg;

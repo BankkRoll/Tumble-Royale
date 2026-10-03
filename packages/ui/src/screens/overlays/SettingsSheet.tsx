@@ -11,7 +11,7 @@ import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { BindAction, Keybinds, SettingsSection } from '../../store/types.ts';
 import { Icon } from '../../components/icons/index.tsx';
-import { confirmDeleteAccount, confirmSignOut } from '../../components/account.ts';
+import { AccountSection } from './AccountSheet.tsx';
 import { semanticColors } from '../../theme/tokens.ts';
 
 const SECTIONS: { id: SettingsSection; label: string }[] = [
@@ -160,7 +160,6 @@ function Rebinder(): JSX.Element {
 
 function Section({ id }: { id: SettingsSection }): JSX.Element {
   const s = useUI((st) => st.settings);
-  const profile = useUI((st) => st.profile);
   const up = ui.getState().updateSettings;
   const pct = (v: number): string => `${Math.round(v * 100)}%`;
   switch (id) {
@@ -441,77 +440,77 @@ function Section({ id }: { id: SettingsSection }): JSX.Element {
               onChange={(showPing) => up('gameplay', { showPing })}
             />
           </Row>
-          <Row label="Auto-spectate after qualifying">
+          <Row label="Auto-spectate" hint="Keep watching the show after you qualify or get knocked out">
             <Toggle
               label="Auto-spectate"
               checked={s.gameplay.autoSpectate}
               onChange={(autoSpectate) => up('gameplay', { autoSpectate })}
             />
           </Row>
-          <Row label="Chat filter">
+          <Row label="Show bot tags" hint="Marks computer-controlled players with a small BOT tag">
+            <Toggle
+              label="Show bot tags"
+              checked={s.gameplay.botTags}
+              onChange={(botTags) => up('gameplay', { botTags })}
+            />
+          </Row>
+          <Row label="Show chat" hint="Off hides chat and quick pings from other players">
+            <Toggle
+              label="Show chat"
+              checked={s.gameplay.showChat}
+              onChange={(showChat) => up('gameplay', { showChat })}
+            />
+          </Row>
+          <Row label="Chat filter" hint="Masks swearing. Slurs are always hidden">
             <Toggle
               label="Chat filter"
               checked={s.gameplay.chatFilter}
               onChange={(chatFilter) => up('gameplay', { chatFilter })}
             />
           </Row>
-          <Row label="Region">
-            <Segmented
-              label="Region"
-              value={s.gameplay.region}
-              options={[
-                { value: 'auto', label: 'Auto' },
-                { value: 'eu', label: 'EU' },
-                { value: 'na', label: 'NA' },
-                { value: 'asia', label: 'Asia' },
-                { value: 'oce', label: 'OCE' },
-              ]}
-              onChange={(region) => up('gameplay', { region })}
-            />
-          </Row>
+          <RegionRow />
         </>
       );
     case 'account':
-      return (
-        <>
-          <Row label="Display name" hint={profile ? `#${profile.tag}` : undefined}>
-            <b>{profile?.name ?? 'Guest'}</b>
-          </Row>
-          <Row
-            label="Linked accounts"
-            hint={profile?.isGuest ? 'Link one to keep your stuff safe!' : undefined}
-          >
-            <div className="tr-row tr-wrap" style={{ justifyContent: 'flex-end' }}>
-              {(['discord', 'google', 'email'] as const).map((p) => {
-                const linked = profile?.linkedProviders?.includes(p);
-                return (
-                  <Button
-                    key={p}
-                    size="sm"
-                    variant={linked ? 'mint' : 'secondary'}
-                    disabled={linked}
-                    onClick={() => uiEvents.emit('accountAction', { action: `link-${p}` })}
-                  >
-                    {linked ? <Icon name="check" size="0.9em" /> : null}
-                    {p === 'discord' ? 'Discord' : p === 'google' ? 'Google' : 'Email'}
-                  </Button>
-                );
-              })}
-            </div>
-          </Row>
-          <Row label="Sign out">
-            <Button size="sm" variant="secondary" data-testid="sign-out" onClick={confirmSignOut}>
-              Sign out
-            </Button>
-          </Row>
-          <Row label="Delete Tumbler" hint="Gone forever. Like a Tumbler in the goo.">
-            <Button size="sm" variant="danger" onClick={confirmDeleteAccount}>
-              Delete…
-            </Button>
-          </Row>
-        </>
-      );
+      return <AccountSection />;
   }
+}
+
+const REGION_LABELS: [string, string][] = [
+  ['eu', 'EU'],
+  ['na', 'NA'],
+  ['sa', 'SA'],
+  ['asia', 'Asia'],
+  ['oce', 'OCE'],
+];
+
+/** Region picker with the measured ping next to each region; Auto shows what it picked. */
+export function RegionRow(): JSX.Element {
+  const region = useUI((s) => s.settings.gameplay.region);
+  const status = useUI((s) => s.regionStatus);
+  useEffect(() => uiEvents.emit('probeRegions'), []);
+  const ms = (id: string): string => {
+    const v = status.pings[id];
+    return v === undefined ? '' : ` ${v} ms`;
+  };
+  const autoName = REGION_LABELS.find(([id]) => id === status.auto)?.[1] ?? status.auto?.toUpperCase();
+  const autoLabel = autoName ? `Auto (${autoName})` : 'Auto';
+  return (
+    <Row
+      label="Region"
+      hint={status.probing ? 'Measuring ping…' : 'Auto picks the lowest ping, or guesses from your time zone'}
+    >
+      <Segmented
+        label="Region"
+        value={region}
+        options={[
+          { value: 'auto', label: autoLabel },
+          ...REGION_LABELS.map(([value, label]) => ({ value, label: label + ms(value) })),
+        ]}
+        onChange={(next) => ui.getState().updateSettings('gameplay', { region: next })}
+      />
+    </Row>
+  );
 }
 
 /** Opened from the in-round menu, Settings closes back to it. */

@@ -6,16 +6,23 @@
  *   unlit draw call; they flash faster when someone emotes).
  * - A bounce pad that really launches the Tumbler in idle play (a `bouncy`
  *   surface in the idle-play Rapier world) and squashes when used.
- * - Bumpable candy props (gumdrops, a cupcake, a striped beach ball) as
- *   dynamic Rapier bodies drawn with instanced toon meshes.
+ * - Bumpable candy props (gumdrops, a cupcake) and a big striped beach ball
+ *   as dynamic Rapier bodies drawn with instanced toon meshes; the ball's
+ *   state can be read and steered so a party shares one ball.
+ * - A little candy ramp to run up and launch off.
  * - A confetti cannon that fires (with a confetti shower over the Tumbler)
  *   whenever an emote plays.
  * - Giant lollipop pinwheels slowly turning in the backdrop.
+ * - The Games sign at the back of the stage (click it or run into it to pick
+ *   a lobby mini-game) and "arena mode": the bumpable props and the ramp
+ *   step aside while a game runs and come back after.
  *
- * Budget: ~10 draw calls for the dressing plus the VFX pools while they have
+ * Budget: ~14 draw calls for the dressing plus the VFX pools while they have
  * live particles. Everything is created here and released in `dispose()`.
  */
+import type { Raycaster } from 'three/webgpu';
 import {
+  CanvasTexture,
   CircleGeometry,
   CylinderGeometry,
   DoubleSide,
@@ -27,7 +34,9 @@ import {
   Mesh,
   MeshBasicNodeMaterial,
   Object3D,
+  PlaneGeometry,
   Quaternion,
+  SRGBColorSpace,
   Vector3,
   type Camera,
   type MeshToonNodeMaterial,
@@ -52,8 +61,9 @@ import { PropBuilder, type PrimitiveKind, type PropBatch } from '@tumble/render/
 import { createVfxSystem, type VfxSystem } from '@tumble/render/vfx';
 import type { QualityPreset } from '@tumble/render/quality';
 import { InteractionGroups } from '@tumble/shared';
-import type { Rapier, RigidBody, SimEvent } from '@tumble/sim';
+import type { Collider, Rapier, RigidBody, SimEvent } from '@tumble/sim';
 import type { IdlePlay } from './idlePlay.ts';
+import { LOBBY_SIGN } from './lobbyGames.ts';
 
 /** Inner radius of the invisible rim wall (m). The cake top is 6 m. */
 export const LOBBY_WALL_RADIUS = 5.7;
@@ -102,7 +112,7 @@ const gumdrop = (x: number, z: number, r: number, color: string): PropSpec => ({
 
 const PROPS: PropSpec[] = [
   gumdrop(4.3, 0.2, 0.5, '#ff5fa8'),
-  gumdrop(-4.4, 0.7, 0.42, '#3ee6b4'),
+  gumdrop(-4.0, 2.2, 0.42, '#3ee6b4'),
   gumdrop(1.3, -4.4, 0.36, '#ffd23f'),
   {
     x: -2.7,
@@ -117,7 +127,9 @@ const PROPS: PropSpec[] = [
     ],
   },
 ];
-const BALL = { x: 2.5, z: 2.9, r: 0.42 };
+const BALL = { x: 2.6, z: 2.9, r: 0.7 };
+/** Ramp along +z on the left of the stage: low end at z0, high end at z1. */
+const RAMP = { x: -4.3, z0: -1.2, z1: 0.8, width: 1.2, rise: 0.6, thick: 0.12 };
 
 /**
  * Builds and runs the lobby set dressing.
@@ -183,6 +195,8 @@ export class LobbyStage {
     this.ballBody = ball.body;
     this.pinwheels = this.buildPinwheels();
     this.root.add(this.pinwheels);
+    this.sign = this.buildSign();
+    this.root.add(this.sign);
 
     this.vfx = createVfxSystem({ budget: preset.vfx });
     this.vfx.setShadowCount(0);
@@ -294,7 +308,35 @@ export class LobbyStage {
     this.backdrop = back.build(false);
     for (const m of this.backdrop.meshes) this.root.add(m);
 
-    // Colliders: pad rim, cannon mount and the platform's rim posts.
+    // Ramp: a tilted candy-stripe deck propped on a gumdrop. Its own batch so it can step aside for games.
+    const rampLen = Math.hypot(RAMP.z1 - RAMP.z0, RAMP.rise);
+    const rampTilt = -Math.atan2(RAMP.rise, RAMP.z1 - RAMP.z0);
+    const rampZ = (RAMP.z0 + RAMP.z1) / 2;
+    const rampY = RAMP.rise / 2;
+    const rb = new PropBuilder();
+    rb.add('box', RAMP.x, rampY, rampZ, RAMP.width, RAMP.thick, rampLen, '#ff9ecb', [rampTilt, 0, 0]);
+    for (const sx of [-1, 1])
+      rb.add(
+        'box',
+        RAMP.x + sx * (RAMP.width / 2 - 0.06),
+        rampY + 0.07,
+        rampZ,
+        0.1,
+        0.1,
+        rampLen,
+        '#ffffff',
+        [rampTilt, 0, 0],
+      );
+    rb.add('cone', RAMP.x, RAMP.rise / 2, RAMP.z1 - 0.15, 0.5, RAMP.rise, 0.5, '#5aa9ff');
+    this.rampBatch = rb.build(false);
+    for (const m of this.rampBatch.meshes) {
+      m.receiveShadow = true;
+      m.castShadow = true;
+      this.rampGroup.add(m);
+    }
+    this.props.add(this.rampGroup);
+
+    // Colliders: pad rim, cannon mount, the ramp and the platform's rim posts.
     const world = this.idle.world;
     const fixed = world.createRigidBody(R.RigidBodyDesc.fixed());
     world.createCollider(
@@ -306,6 +348,14 @@ export class LobbyStage {
     world.createCollider(
       R.ColliderDesc.cylinder(0.5, 0.6)
         .setTranslation(cx, 0.5, cz)
+        .setCollisionGroups(InteractionGroups.static),
+      fixed,
+    );
+    this.rampCollider = world.createCollider(
+      R.ColliderDesc.cuboid(RAMP.width / 2, RAMP.thick / 2, rampLen / 2)
+        .setTranslation(RAMP.x, rampY, rampZ)
+        .setRotation({ x: Math.sin(rampTilt / 2), y: 0, z: 0, w: Math.cos(rampTilt / 2) })
+        .setFriction(0.6)
         .setCollisionGroups(InteractionGroups.static),
       fixed,
     );
@@ -322,6 +372,14 @@ export class LobbyStage {
   }
 
   private backdrop!: PropBatch;
+  private signBatch!: PropBatch;
+  private signLabel!: Mesh;
+  private readonly sign: Group;
+  private signGlow = 0;
+  private arena = false;
+  private rampBatch!: PropBatch;
+  private rampCollider!: Collider;
+  private readonly rampGroup = new Group();
   private readonly cannonMouth = new Vector3();
   private readonly cannonDir = new Vector3();
 
@@ -457,6 +515,59 @@ export class LobbyStage {
     return { mesh, body };
   }
 
+  /** The Games sign: a candy post and board with a painted label, solid to bump into. */
+  private buildSign(): Group {
+    const S = LOBBY_SIGN;
+    const group = new Group();
+    group.name = 'lobby-games-sign';
+    const b = new PropBuilder();
+    b.add('cyl', S.x, 0.7, S.z, 0.09, 1.4, 0.09, '#fff3f8');
+    b.add('box', S.x, 1.55, S.z - 0.03, 1.78, 0.8, 0.08, '#2b1a5e');
+    b.add('box', S.x, 1.55, S.z, 1.62, 0.66, 0.12, '#3ee6b4');
+    b.add('sphere', S.x - 0.9, 1.95, S.z, 0.12, 0.12, 0.12, '#ffd23f', undefined, 1);
+    b.add('sphere', S.x + 0.9, 1.95, S.z, 0.12, 0.12, 0.12, '#ff4f9a', undefined, 1);
+    this.signBatch = b.build(false);
+    for (const m of this.signBatch.meshes) {
+      m.castShadow = true;
+      group.add(m);
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 96;
+    const g = canvas.getContext('2d');
+    if (g) {
+      g.font = `900 64px 'Lilita One', 'Arial Rounded MT Bold', 'Trebuchet MS', sans-serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.lineJoin = 'round';
+      g.lineWidth = 12;
+      g.strokeStyle = '#2b1a5e';
+      g.strokeText('GAMES', 128, 52);
+      g.fillStyle = '#ffffff';
+      g.fillText('GAMES', 128, 52);
+    }
+    const tex = this.track(new CanvasTexture(canvas));
+    tex.colorSpace = SRGBColorSpace;
+    const label = new Mesh(
+      this.track(new PlaneGeometry(1.5, 0.56)),
+      this.track(new MeshBasicNodeMaterial({ map: tex, transparent: true, depthWrite: false })),
+    );
+    label.position.set(S.x, 1.55, S.z + 0.07);
+    label.name = 'lobby-games-sign-label';
+    this.signLabel = label;
+    group.add(label);
+
+    const body = this.idle.world.createRigidBody(this.R.RigidBodyDesc.fixed());
+    this.idle.world.createCollider(
+      this.R.ColliderDesc.cylinder(0.75, 0.14)
+        .setTranslation(S.x, 0.75, S.z)
+        .setCollisionGroups(InteractionGroups.static),
+      body,
+    );
+    return group;
+  }
+
   private buildPinwheels(): InstancedMesh {
     const geo = this.track(new CircleGeometry(1, 64));
     const mat = this.track(new MeshBasicNodeMaterial({ side: DoubleSide }));
@@ -533,6 +644,73 @@ export class LobbyStage {
   /** Dressing room: the props step out of the close-up. */
   setDressing(on: boolean): void {
     this.props.visible = !on;
+    this.sign.visible = !on;
+  }
+
+  /**
+   * Arena mode for lobby games: the bumpable props and the ramp vanish in a
+   * puff (bodies and colliders disabled) so the platform is a clear pitch;
+   * off brings them back home.
+   */
+  setArena(on: boolean): void {
+    if (on === this.arena) return;
+    this.arena = on;
+    for (const m of this.dynamic.meshes) m.visible = !on;
+    this.rampGroup.visible = !on;
+    this.rampCollider.setEnabled(!on);
+    this.poof({ x: RAMP.x, y: 0, z: (RAMP.z0 + RAMP.z1) / 2 });
+    for (const p of this.bodies) {
+      if (!on) {
+        p.body.setTranslation(p.home, true);
+        p.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
+        p.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        p.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      }
+      const t = p.body.translation();
+      this.poof({ x: t.x, y: Math.max(0, t.y - 0.5), z: t.z });
+      p.body.setEnabled(!on);
+    }
+  }
+
+  /** True when the ray hits the Games sign. */
+  signHit(raycaster: Raycaster): boolean {
+    return this.sign.visible && raycaster.intersectObject(this.sign, true).length > 0;
+  }
+
+  /** Makes the sign's label pulse (the local Tumbler is next to it). */
+  highlightSign(): void {
+    this.signGlow = 1;
+  }
+
+  /**
+   * Reads the beach ball into `out` as `[x, y, z, vx, vy, vz]`.
+   *
+   * @returns `out`.
+   */
+  readBall<T extends { [i: number]: number }>(out: T): T {
+    const t = this.ballBody.translation();
+    const v = this.ballBody.linvel();
+    out[0] = t.x;
+    out[1] = t.y;
+    out[2] = t.z;
+    out[3] = v.x;
+    out[4] = v.y;
+    out[5] = v.z;
+    return out;
+  }
+
+  /** Moves the beach ball to a state `[x, y, z, vx, vy, vz]` (the party's shared ball). */
+  writeBall(s: { readonly [i: number]: number }): void {
+    this.v.set(s[0]!, s[1]!, s[2]!);
+    this.ballBody.setTranslation(this.v, true);
+    this.v.set(s[3]!, s[4]!, s[5]!);
+    this.ballBody.setLinvel(this.v, true);
+  }
+
+  /** Sets the beach ball's velocity (a party member knocked it). */
+  kickBall(vx: number, vy: number, vz: number): void {
+    this.v.set(vx, vy, vz);
+    this.ballBody.setLinvel(this.v, true);
   }
 
   /** Puts any prop that wandered within `radius` of (x, z) back home. */
@@ -571,6 +749,11 @@ export class LobbyStage {
     this.decor.update(dt);
     this.backdrop.update(dt);
     this.dynamic.update(dt);
+    this.rampBatch.update(dt);
+    this.signBatch.update(dt);
+    this.signGlow = Math.max(0, this.signGlow - dt * 2);
+    const pulse = 1 + Math.sin(this.t * 3.2) * 0.03 + this.signGlow * Math.abs(Math.sin(this.t * 9)) * 0.12;
+    this.signLabel.scale.set(pulse, pulse, 1);
     this.syncProps();
     this.spinPinwheels();
     this.vfx.update(dt, camera);
@@ -615,6 +798,8 @@ export class LobbyStage {
     this.decor.dispose();
     this.backdrop.dispose();
     this.dynamic.dispose();
+    this.rampBatch.dispose();
+    this.signBatch.dispose();
     for (const d of this.disposables) d.dispose();
     this.bulbs.dispose();
     this.ball.dispose();

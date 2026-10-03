@@ -8,11 +8,13 @@
  * - `GET /debug/determinism?steps=N` — physics determinism probe (Phase 0)
  * - `GET /metrics` — Prometheus text
  * - `GET /rooms` — JSON room list
+ * - `POST /internal/kick` — signed matchmaker call removing a kicked private show member
  * - `GET /ws` (upgrade) — game WebSocket (`/gs/ws` also accepted for the Vite proxy path)
  */
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { runDeterminismScenario } from '@tumble/sim';
+import { handleControl, type ControlOptions } from './control.ts';
 import { ServerMetrics } from './metrics.ts';
 import { RoomManager, type RoomManagerOptions } from './room/RoomManager.ts';
 import type { RoomDeps } from './room/types.ts';
@@ -24,6 +26,8 @@ export interface GameServerOptions extends RoomManagerOptions {
   port: number;
   host?: string;
   deps: RoomDeps;
+  /** Enables the signed matchmaker control endpoint (`POST /internal/kick`). */
+  control?: ControlOptions;
 }
 
 /** A running server. */
@@ -54,10 +58,19 @@ export async function startGameServer(opts: GameServerOptions): Promise<GameServ
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
     // NOTE: the client dev server runs on a different port, so debug endpoints need CORS.
     res.setHeader('Access-Control-Allow-Origin', '*');
+    if (handleControl(req, res, url.pathname, rooms, opts.control ?? null)) return;
     switch (url.pathname) {
       case '/health':
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, rapier: deps.R.version(), rooms: rooms.list().length }));
+        res.end(
+          JSON.stringify({
+            ok: true,
+            rapier: deps.R.version(),
+            rooms: rooms.list().length,
+            anomalies: metrics.anomalies,
+            lagComp: { grabs: metrics.lagCompGrabs, tackles: metrics.lagCompTackles },
+          }),
+        );
         return;
       case '/debug/determinism': {
         const steps = Math.min(Math.max(Number(url.searchParams.get('steps') ?? 600), 1), 10_000);

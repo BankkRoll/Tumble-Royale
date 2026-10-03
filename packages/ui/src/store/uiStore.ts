@@ -27,9 +27,11 @@ import type {
   HudState,
   InventoryData,
   CosmeticSlot,
+  StoreSection,
   LeaderboardId,
   LeaderboardInfo,
   LeaderboardRow,
+  LobbyGamesState,
   MatchHistoryEntry,
   MenuTab,
   NavDirection,
@@ -44,6 +46,10 @@ import type {
   PreShowInfo,
   ProfileData,
   QueueState,
+  RegionStatus,
+  PhotoModeState,
+  ReplayRoundEntry,
+  ReplayViewerState,
   RewardsSummary,
   RoundCatalogEntry,
   RoundIntroInfo,
@@ -55,6 +61,7 @@ import type {
   Settings,
   SettingsSection,
   ShowIntroInfo,
+  ShowSeat,
   ShowSummary,
   SpectateInfo,
   StampEntry,
@@ -64,6 +71,7 @@ import type {
   ToastInput,
   TransitionKind,
   VictoryInfo,
+  WatchChoice,
   WipePhase,
 } from './types.ts';
 
@@ -118,6 +126,8 @@ export interface UIState {
   playlists: Playlist[];
   selectedPlaylist: string;
   localReady: boolean;
+  /** Lobby mini-games on the menu platform (picker + running game). */
+  lobbyGames: LobbyGamesState;
   customLobby: CustomLobbyState | null;
   roundCatalog: RoundCatalogEntry[];
   /** Rendered cosmetic thumbnails (data/blob URLs) by item id; cards fall back to the emoji icon. */
@@ -134,9 +144,15 @@ export interface UIState {
   inspectedProfile: ProfileData | null;
   /** Slot the Locker should open on (set by deep links such as Profile → banner). */
   lockerSlot: CosmeticSlot | null;
+  /** Section the Store should open on (set by deep links such as the Locker's empty state). */
+  storeSection: StoreSection | null;
 
   // --- show ----------------------------------------------------------------
   queue: QueueState;
+  /** Region pings and the Auto pick (Settings → Region). */
+  regionStatus: RegionStatus;
+  /** Photo mode controls (the game owns the camera). */
+  photo: PhotoModeState;
   preShow: PreShowInfo | null;
   showIntro: ShowIntroInfo | null;
   roundIntro: RoundIntroInfo | null;
@@ -147,6 +163,10 @@ export interface UIState {
   countdown: number | null;
   stamps: StampEntry[];
   eliminatedSheet: boolean;
+  /** "Keep watching / Leave show" offer while knocked out (null = nothing pending). */
+  watchChoice: WatchChoice | null;
+  /** The local seat in the running show (null outside shows). */
+  showSeat: ShowSeat | null;
   spectate: SpectateInfo | null;
   emoteWheelOpen: boolean;
   results: RoundResults | null;
@@ -160,6 +180,14 @@ export interface UIState {
   rewards: RewardsSummary | null;
   /** Announcer caption (shown when captions are enabled). */
   caption: string | null;
+
+  // --- replays ------------------------------------------------------------
+  /** Recorded rounds of the current (or just finished) show. */
+  replays: ReplayRoundEntry[];
+  /** The round in progress is being recorded and can be watched now (after elimination). */
+  replayLive: boolean;
+  /** The open replay viewer (null = closed). While open it covers the screen and HUD. */
+  replay: ReplayViewerState | null;
 
   // --- actions: screens ----------------------------------------------------
   /** Changes screen, with the screen's default transition unless overridden. */
@@ -203,6 +231,8 @@ export interface UIState {
   setPlaylists: (playlists: Playlist[], selected?: string) => void;
   selectPlaylist: (id: string) => void;
   setLocalReady: (ready: boolean) => void;
+  /** Merges lobby mini-game state (the game publishes the HUD; the UI opens/closes the picker). */
+  setLobbyGames: (patch: Partial<LobbyGamesState>) => void;
   setCustomLobby: (lobby: CustomLobbyState | null) => void;
   setRoundCatalog: (rounds: RoundCatalogEntry[]) => void;
   /** Adds rendered thumbnails (merged into `thumbnails`). */
@@ -214,9 +244,13 @@ export interface UIState {
   setInspectedProfile: (profile: ProfileData | null) => void;
   /** Opens the Locker tab on a slot. */
   openLocker: (slot: CosmeticSlot | null) => void;
+  /** Opens the Store tab on a section. */
+  openStore: (section: StoreSection | null) => void;
 
   // --- actions: show -------------------------------------------------------
   setQueue: (queue: Partial<QueueState>) => void;
+  setRegionStatus: (patch: Partial<RegionStatus>) => void;
+  setPhoto: (patch: Partial<PhotoModeState>) => void;
   setPreShow: (info: PreShowInfo | null) => void;
   setShowIntro: (info: ShowIntroInfo | null) => void;
   setRoundIntro: (info: RoundIntroInfo | null) => void;
@@ -234,6 +268,8 @@ export interface UIState {
   dismissStamp: (id: number) => void;
   clearStamps: () => void;
   setEliminatedSheet: (open: boolean) => void;
+  setWatchChoice: (choice: WatchChoice | null) => void;
+  setShowSeat: (seat: ShowSeat | null) => void;
   setSpectate: (info: SpectateInfo | null) => void;
   setEmoteWheel: (open: boolean) => void;
   setResults: (results: RoundResults | null) => void;
@@ -243,6 +279,14 @@ export interface UIState {
   /** Loads the end-of-show wall; call before `setScreen('playerWall')`. */
   setPlayerWall: (summary: ShowSummary | null, opts?: Partial<PlayerWallOptions>) => void;
   setRewards: (rewards: RewardsSummary | null) => void;
+
+  // --- actions: replays ----------------------------------------------------
+  setReplays: (replays: ReplayRoundEntry[]) => void;
+  setReplayLive: (live: boolean) => void;
+  /** Opens (state) or closes (null) the replay viewer. */
+  setReplay: (replay: ReplayViewerState | null) => void;
+  /** Merges viewer fields (playhead updates at ~15 Hz). */
+  patchReplay: (patch: Partial<ReplayViewerState>) => void;
 
   // --- internal (TumbleWipe component) -------------------------------------
   /** @internal Cover animation finished. */
@@ -300,6 +344,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   playlists: [],
   selectedPlaylist: '',
   localReady: false,
+  lobbyGames: { pickerOpen: false, canStart: true, players: 1, hud: null },
   customLobby: null,
   roundCatalog: [],
   thumbnails: {},
@@ -309,8 +354,11 @@ export const ui = createStore<UIState>()((set, get) => ({
   leaderboardInfo: {},
   inspectedProfile: null,
   lockerSlot: null,
+  storeSection: null,
 
   queue: { status: 'idle', startedAt: 0, playersFound: 0, playersNeeded: 40, etaSec: -1, region: 'auto' },
+  regionStatus: { pings: {}, auto: null, probing: false },
+  photo: { active: false, fov: 50, filter: 'none', watermark: true },
   preShow: null,
   showIntro: null,
   roundIntro: null,
@@ -319,6 +367,8 @@ export const ui = createStore<UIState>()((set, get) => ({
   countdown: null,
   stamps: [],
   eliminatedSheet: false,
+  watchChoice: null,
+  showSeat: null,
   spectate: null,
   emoteWheelOpen: false,
   results: null,
@@ -330,6 +380,9 @@ export const ui = createStore<UIState>()((set, get) => ({
   playerWallSeq: 0,
   rewards: null,
   caption: null,
+  replays: [],
+  replayLive: false,
+  replay: null,
 
   setScreen: (screen, opts = {}) => {
     const s = get();
@@ -438,6 +491,7 @@ export const ui = createStore<UIState>()((set, get) => ({
     uiEvents.emit('selectPlaylist', { playlistId: id });
   },
   setLocalReady: (localReady) => set({ localReady }),
+  setLobbyGames: (patch) => set({ lobbyGames: { ...get().lobbyGames, ...patch } }),
   setCustomLobby: (customLobby) => set({ customLobby }),
   setRoundCatalog: (roundCatalog) => set({ roundCatalog }),
   setThumbnails: (thumbs) => set({ thumbnails: { ...get().thumbnails, ...thumbs } }),
@@ -453,8 +507,14 @@ export const ui = createStore<UIState>()((set, get) => ({
     set({ lockerSlot });
     get().setMenuTab('locker');
   },
+  openStore: (storeSection) => {
+    set({ storeSection });
+    get().setMenuTab('store');
+  },
 
   setQueue: (queue) => set({ queue: { ...get().queue, ...queue } }),
+  setRegionStatus: (patch) => set({ regionStatus: { ...get().regionStatus, ...patch } }),
+  setPhoto: (patch) => set({ photo: { ...get().photo, ...patch } }),
   setPreShow: (preShow) => set({ preShow }),
   setShowIntro: (showIntro) => set({ showIntro }),
   setRoundIntro: (roundIntro) => set({ roundIntro }),
@@ -501,6 +561,8 @@ export const ui = createStore<UIState>()((set, get) => ({
   dismissStamp: (id) => set({ stamps: get().stamps.filter((s) => s.id !== id) }),
   clearStamps: () => set({ stamps: [] }),
   setEliminatedSheet: (eliminatedSheet) => set({ eliminatedSheet }),
+  setWatchChoice: (watchChoice) => set({ watchChoice }),
+  setShowSeat: (showSeat) => set({ showSeat }),
   setSpectate: (spectate) => set({ spectate }),
   setEmoteWheel: (emoteWheelOpen) => set({ emoteWheelOpen }),
   setResults: (results) => set({ results }),
@@ -514,6 +576,21 @@ export const ui = createStore<UIState>()((set, get) => ({
       playerWallSeq: get().playerWallSeq + 1,
     }),
   setRewards: (rewards) => set({ rewards }),
+  setReplays: (replays) => set({ replays }),
+  setReplayLive: (replayLive) => {
+    if (get().replayLive !== replayLive) set({ replayLive });
+  },
+  setReplay: (replay) => set({ replay }),
+  patchReplay: (patch) => {
+    const r = get().replay;
+    if (!r) return;
+    for (const k in patch) {
+      if (r[k as keyof ReplayViewerState] !== patch[k as keyof ReplayViewerState]) {
+        set({ replay: { ...r, ...patch } });
+        return;
+      }
+    }
+  },
 }));
 
 function applyScreen(screen: ScreenId, transition: TransitionKind): void {

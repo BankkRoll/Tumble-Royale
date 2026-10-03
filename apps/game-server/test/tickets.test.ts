@@ -11,9 +11,9 @@ import {
 import { RoomManager } from '../src/room/RoomManager.ts';
 import { SimpleShowController } from '../src/show/SimpleShowController.ts';
 import { signJoinTicket, verifyJoinTicket, type JoinTicketClaims } from '../src/tickets.ts';
-import { FakeConnection, TestClient, testDeps, type FakeMatchSim } from './helpers.ts';
+import { FakeConnection, TEST_SECRETS, TestClient, testDeps, type FakeMatchSim } from './helpers.ts';
 
-const SECRET = 'test-ticket-secret-0123456789';
+const SECRET = TEST_SECRETS.GAME_TICKET_SECRET;
 const TICK_MS = 1000 / 30;
 const WALL = Date.parse('2026-10-02T12:00:00Z');
 
@@ -87,7 +87,7 @@ describe('placements', () => {
 });
 
 describe('ticketed rooms', () => {
-  function setup(allowUnticketed: boolean, sink: ResultsSink | null) {
+  function setup(allowUnticketed: boolean, sink: ResultsSink | null, loops = 1) {
     const clock = { now: 1000 };
     const sims: FakeMatchSim[] = [];
     const deps = {
@@ -99,7 +99,7 @@ describe('ticketed rooms', () => {
           countdownSeconds: 0.2,
           roundEndSeconds: 0.2,
           resultsSeconds: 0.2,
-          loops: 1,
+          loops,
         }),
       results: sink,
     };
@@ -125,6 +125,22 @@ describe('ticketed rooms', () => {
     };
     return { clock, sims, manager, connect, advance };
   }
+
+  it('drops chat from players whose ticket says they are chat-suspended', () => {
+    const { connect, advance } = setup(false, null);
+    const muted = connect(signJoinTicket(SECRET, claims('u-muted', { mute: true }), WALL));
+    const other = connect(signJoinTicket(SECRET, claims('u-other'), WALL));
+    expect(
+      verifyJoinTicket(SECRET, signJoinTicket(SECRET, claims('x', { mute: true }), WALL), WALL)?.mute,
+    ).toBe(true);
+    muted.chat('hello from a muted player');
+    other.chat('hello from a normal player');
+    advance(3, [muted, other]);
+    const texts = (c: TestClient) =>
+      c.lowFreq('chat').map((m) => (m as Extract<LowFreqMessage, { t: 'chat' }>).text);
+    expect(texts(other)).toEqual(['hello from a normal player']);
+    expect(texts(muted)).toEqual(['hello from a normal player']);
+  });
 
   it('rejects unticketed joins when tickets are required', () => {
     const { connect } = setup(false, null);
@@ -197,5 +213,33 @@ describe('ticketed rooms', () => {
     // A reload (no resume token) with the same account rejoins the same slot.
     const again = connect(signJoinTicket(SECRET, claims(u1), WALL));
     expect(again.welcome?.playerId).toBe(a.welcome?.playerId);
+  });
+
+  it('reports the rounds a leaver played even when every human left before the show ended', async () => {
+    const posted: MatchResultPayload[] = [];
+    const sink: ResultsSink = {
+      async post(payload): Promise<IngestResponse> {
+        posted.push(payload);
+        return { matchId: payload.matchId, alreadyProcessed: false, rewards: [] };
+      },
+    };
+    const { manager, connect, advance } = setup(false, sink, Infinity);
+    const u1 = '11111111-1111-4111-8111-111111111111';
+    const a = connect(signJoinTicket(SECRET, claims(u1, { humans: 1, size: 4, bots: 3 }), WALL));
+    advance(2, [a]);
+    // Play until the first round's results are in, then leave mid-show.
+    for (let i = 0; i < 600 && a.lowFreq('roundResults').length === 0; i++) advance(1, [a]);
+    expect(a.lowFreq('roundResults').length).toBeGreaterThan(0);
+    a.conn.close();
+    // Resume window, then the empty-room idle close (30 s each by default).
+    advance(30 * 65, []);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(manager.list()).toHaveLength(0);
+    expect(posted).toHaveLength(1);
+    const p = posted[0]!;
+    const me = p.participants.find((x) => x.userId === u1);
+    expect(me?.quit).toBe(true);
+    expect(p.rounds[0]!.results.some((r) => r.key === me?.key)).toBe(true);
+    expect(p.placements.some((x) => x.crowned)).toBe(false);
   });
 });

@@ -2,6 +2,7 @@
  * Server metrics: rolling tick-time windows with a per-phase breakdown,
  * traffic counters, and Prometheus text exposition for `/metrics`.
  */
+import { ANOMALY_KINDS, createAnomalyCounts, type AnomalyCounts } from './anomaly.ts';
 
 /** Rolling window of samples with mean / percentile / max. */
 export class RollingWindow {
@@ -84,6 +85,12 @@ export class ServerMetrics {
   inputMissed = 0;
   inputLate = 0;
   roomCrashes = 0;
+  /** Sanity-check anomalies by kind (telemetry only; nobody is kicked for these). */
+  readonly anomalies: AnomalyCounts = createAnomalyCounts();
+  /** Grabs the server granted from a lag-compensated view. */
+  lagCompGrabs = 0;
+  /** Dive tackles the server granted from a lag-compensated view. */
+  lagCompTackles = 0;
   private bytesOutSample = 0;
   private bytesOutAt = 0;
   /** Outbound bytes/s over the last rate interval. */
@@ -172,6 +179,18 @@ export class ServerMetrics {
     counter('tumble_input_missed_total', 'Inputs that never arrived (repeated instead).', this.inputMissed);
     counter('tumble_input_late_total', 'Inputs that arrived after their step.', this.inputLate);
     counter('tumble_room_crashes_total', 'Rooms closed after an exception in their tick.', this.roomCrashes);
+    lines.push(
+      '# HELP tumble_anomalies_total Sanity-check anomalies (sim body speed/teleport, client input floods and impossible sequences).',
+      '# TYPE tumble_anomalies_total counter',
+    );
+    for (const kind of ANOMALY_KINDS)
+      lines.push(`tumble_anomalies_total{kind="${kind}"} ${this.anomalies[kind]}`);
+    lines.push(
+      '# HELP tumble_lagcomp_assists_total Hits granted from a lag-compensated client view.',
+      '# TYPE tumble_lagcomp_assists_total counter',
+      `tumble_lagcomp_assists_total{kind="grab"} ${this.lagCompGrabs}`,
+      `tumble_lagcomp_assists_total{kind="tackle"} ${this.lagCompTackles}`,
+    );
     return lines.join('\n') + '\n';
   }
 }

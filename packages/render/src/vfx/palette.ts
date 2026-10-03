@@ -58,7 +58,7 @@ export const RAINBOW_COLORS = list([
   '#a98bff',
   '#ff8bd8',
 ]);
-/** Team colours (shared with UI). */
+/** @deprecated Use `teamColor(i)` from `teamPalette.ts`, which follows the colour-blind setting. */
 export const TEAM_PALETTE = list(TEAM_COLORS);
 
 /** Named single colours. */

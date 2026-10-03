@@ -3,22 +3,33 @@
  * challenges, history, playlists, news, leaderboards, party) into the UI
  * while playing offline; `online/account.ts` does the same from the API.
  */
-import { NEWS_POSTS } from '@tumble/content/news';
 import { roundCatalog, DEV_ROUND_IDS } from '@tumble/content/rounds';
 import { PLAYLISTS, getPlaylist } from '@tumble/content/shows';
-import type { ShowPlaylist } from '@tumble/sim/show';
-import { ShowPlaylistSchema } from '@tumble/sim/show/schema';
 import {
   ui,
-  type CustomLobbyOptions,
   type LeaderboardId,
   type LeaderboardRow,
   type NewsItem,
   type Playlist,
   type ProfileData,
 } from '@tumble/ui';
+import { facedCard } from './facedCard.ts';
+import { DEFAULT_PLAYLIST_ID, isNewcomer } from './playlists.ts';
+import { currentNews, refreshLiveNews } from './liveNews.ts';
+import { syncLocalNotifications } from './localNotifications.ts';
 import type { ProfileStore } from './profile.ts';
 import { loadJson, saveJson } from './storage.ts';
+
+/**
+ * Fetches the live news feed and refreshes the News tab when it arrives.
+ *
+ * @param fetchNews - `ApiClient.news`.
+ */
+export async function pushLiveNews(
+  fetchNews: () => Promise<{ posts: unknown[]; withdrawn?: unknown[] }>,
+): Promise<void> {
+  if (await refreshLiveNews(fetchNews)) ui.getState().setNews(uiNews());
+}
 
 const PLAYLIST_ART: Readonly<Record<string, { art: [string, string]; icon: string }>> = {
   'main-show': { art: ['#ff6fae', '#ffd23f'], icon: '🎪' },
@@ -28,54 +39,27 @@ const PLAYLIST_ART: Readonly<Record<string, { art: [string, string]; icon: strin
   ranked: { art: ['#ffd23f', '#ffb021'], icon: '🏅' },
 };
 
-/** Playlists the menu offers (the gentle first show is picked automatically). */
-export function uiPlaylists(): Playlist[] {
-  return PLAYLISTS.filter((p) => p.id !== 'first-show').map((p) => ({
-    id: p.id,
-    name: p.name,
-    description: p.description,
-    players: p.maxPlayers,
-    teamSize: (p.partySize === 2 ? 2 : p.partySize === 4 ? 4 : 1) as 1 | 2 | 4,
-    art: PLAYLIST_ART[p.id]?.art ?? ['#ff6fae', '#ffd23f'],
-    icon: PLAYLIST_ART[p.id]?.icon ?? '🎪',
-    ...(p.ranked ? { ranked: true } : {}),
-  }));
-}
-
 /**
- * Resolves the playlist for an offline show.
+ * Playlists the menu offers. The First Show is never listed on its own: while
+ * the player is a newcomer it replaces the Main Show card (same id, so the
+ * selection survives), because that is what Play will actually start.
  *
- * @param requested - Menu selection or `?playlist=`.
- * @param firstShow - The player has never finished a show.
+ * @param showsPlayed - Finished shows, or null when unknown.
  */
-export function resolvePlaylist(requested: string | null, firstShow: boolean): ShowPlaylist {
-  if (firstShow && !requested) return getPlaylist('first-show') ?? (getPlaylist('main-show') as ShowPlaylist);
-  const p = requested ? getPlaylist(requested) : undefined;
-  // Ranked needs real opponents; offline it plays as the Main Show.
-  if (!p || p.ranked) return getPlaylist('main-show') as ShowPlaylist;
-  return p;
-}
-
-/**
- * An offline private show: the host's picked rounds (played in that pool, the
- * last one a final when one was picked), bots filling every other seat.
- *
- * @param options - Custom lobby options from the UI.
- * @returns A validated playlist.
- */
-export function customPlaylist(options: CustomLobbyOptions): ShowPlaylist {
-  const base = getPlaylist('main-show') as ShowPlaylist;
-  const n = Math.max(1, options.rounds.length);
-  return ShowPlaylistSchema.parse({
-    ...base,
-    id: 'custom-offline',
-    name: 'Private Show',
-    description: 'Your rounds, your rules.',
-    maxPlayers: Math.max(2, Math.min(60, options.maxPlayers)),
-    minRounds: Math.min(base.minRounds, n),
-    maxRounds: Math.max(2, Math.min(n, 8)),
-    pool: options.rounds.map((roundId) => ({ roundId, weight: 1 })),
-    botsAllowed: options.bots,
+export function uiPlaylists(showsPlayed: number | null = null): Playlist[] {
+  const first = isNewcomer(showsPlayed) ? getPlaylist('first-show') : undefined;
+  return PLAYLISTS.filter((p) => p.id !== 'first-show').map((p) => {
+    const shown = first && p.id === DEFAULT_PLAYLIST_ID ? first : p;
+    return {
+      id: p.id,
+      name: shown.name,
+      description: shown.description,
+      players: shown.maxPlayers,
+      teamSize: (p.partySize === 2 ? 2 : p.partySize === 4 ? 4 : 1) as 1 | 2 | 4,
+      art: PLAYLIST_ART[p.id]?.art ?? ['#ff6fae', '#ffd23f'],
+      icon: shown === first ? '🌱' : (PLAYLIST_ART[p.id]?.icon ?? '🎪'),
+      ...(p.ranked ? { ranked: true } : {}),
+    };
   });
 }
 
@@ -85,13 +69,15 @@ function readNews(): Set<string> {
 }
 
 /**
- * The news feed (`@tumble/content/news`) as UI items, with unread flags.
+ * The news feed as UI items, with unread flags: the bundled posts
+ * (`@tumble/content/news`) with the last live feed from the API merged over
+ * them (see `liveNews.ts`).
  *
  * @returns Posts, newest first.
  */
 export function uiNews(): NewsItem[] {
   const read = readNews();
-  return NEWS_POSTS.map((p) => ({
+  return currentNews().map((p) => ({
     id: p.id,
     title: p.title,
     body: p.summary,
@@ -131,7 +117,8 @@ export function pushMeta(profile: ProfileStore): void {
   s.setPass(profile.uiPass());
   s.setChallenges(profile.uiChallenges());
   s.setMatchHistory(profile.uiHistory());
-  pushStaticMeta();
+  syncLocalNotifications(profile);
+  pushStaticMeta(profile.showsPlayed);
   const p = s.profile;
   if (p) {
     s.setParty({
@@ -142,11 +129,17 @@ export function pushMeta(profile: ProfileStore): void {
   }
 }
 
-/** News, playlists and the custom-lobby round catalog (the same online and offline). */
-export function pushStaticMeta(): void {
+/**
+ * News, playlists and the custom-lobby round catalog (the same online and offline).
+ *
+ * @param showsPlayed - Finished shows, for the First Show card; null when unknown.
+ */
+export function pushStaticMeta(showsPlayed: number | null = null): void {
   const s = ui.getState();
   s.setNews(uiNews());
-  if (s.playlists.length === 0) s.setPlaylists(uiPlaylists(), 'main-show');
+  const cards = uiPlaylists(showsPlayed);
+  if (s.playlists.length === 0) s.setPlaylists(cards, DEFAULT_PLAYLIST_ID);
+  else if (JSON.stringify(cards) !== JSON.stringify(s.playlists)) s.setPlaylists(cards);
   if (s.roundCatalog.length === 0) {
     s.setRoundCatalog(
       [...roundCatalog().values()]
@@ -222,19 +215,5 @@ export function localPlayerCard(profile: ProfileStore, playerId: string): Profil
   if (playerId === me.id) return me;
   const name = playerId.replace(/^faced:/, '');
   const o = profile.opponents()[name];
-  if (!o) return null;
-  return {
-    id: playerId,
-    name,
-    tag: o.isBot ? 'BOT' : '0000',
-    level: 1,
-    xp: 0,
-    xpToNext: 1,
-    gumballs: 0,
-    gems: 0,
-    crowns: o.crowns,
-    colors: o.colors,
-    isGuest: false,
-    stats: { shows: o.faced, finals: 0, roundsQualified: 0, bestStreak: 0, wins: o.crowns },
-  };
+  return o ? facedCard(playerId, name, o) : null;
 }

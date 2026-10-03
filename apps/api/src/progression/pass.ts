@@ -1,5 +1,6 @@
 /**
- * Season pass: state view, tier claims and premium unlock.
+ * Season pass: state view, tier claims and premium unlock. Opening the pass
+ * also settles any ended season (see `seasons.ts`).
  */
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
@@ -10,13 +11,21 @@ import { purchases, seasonPassProgress } from '../db/schema.ts';
 import { applyLedger } from '../economy/ledger.ts';
 import { readWallet } from '../economy/wallet.ts';
 import { ApiError, conflict, isUniqueViolation } from '../http/errors.ts';
-import { grantReward } from './xp.ts';
+import { grantPassTier, settleEndedSeasons, type SettledSeason } from './seasons.ts';
 
 /** Season pass progress as shown on the pass screen. */
 export interface PassState {
   seasonId: string;
+  /** 1-based season number. */
+  seasonNumber: number;
   name: string;
+  theme: string;
+  startsAt: string;
   endsAt: string;
+  /** The season after this one (for "Season N+1 starts in …"). */
+  next: { id: string; number: number; name: string; startsAt: string };
+  /** Ended seasons this request settled (unclaimed rewards auto-granted). */
+  settled: SettledSeason[];
   xp: number;
   /** Tiers cleared (0 until the first tier's XP is earned). */
   tier: number;
@@ -51,15 +60,34 @@ async function loadRow(db: DbOrTx, userId: string, seasonId: string, lock: boole
 /** Builds the pass view for a player. */
 export async function passState(ctx: AppContext, userId: string): Promise<PassState> {
   const s = ctx.catalog.season;
-  const row = await loadRow(ctx.db, userId, s.id, false);
-  const progress = passProgress(ctx.catalog, row.xp);
+  const next = ctx.catalog.nextSeason(s);
+  const { row, settled } = await ctx.db.transaction(async (tx) => ({
+    settled: await settleEndedSeasons(tx, ctx, userId),
+    row: await loadRow(tx, userId, s.id, false),
+  }));
+  for (const done of settled.filter((x) => x.autoGranted > 0)) {
+    await ctx.notifier.notifyUser(userId, {
+      type: 'notification',
+      kind: 'reward',
+      title: `${done.autoGranted} unclaimed ${done.name} rewards added`,
+      body: `${s.name} has begun. Everything you unlocked last season is in your locker.`,
+    });
+  }
+  if (settled.length > 0)
+    await ctx.notifier.notifyUser(userId, { type: 'wallet', ...(await readWallet(ctx.db, userId)) });
+  const progress = passProgress(ctx.catalog, row.xp, s);
   const tier = progress.tier;
   const freeClaimed = new Set(row.claimedFree);
   const premiumClaimed = new Set(row.claimedPremium);
   return {
     seasonId: s.id,
+    seasonNumber: s.number,
     name: s.name,
+    theme: s.theme,
+    startsAt: s.startsAt,
     endsAt: s.endsAt,
+    next: { id: next.id, number: next.number, name: next.name, startsAt: next.startsAt },
+    settled,
     xp: row.xp,
     tier,
     maxTier: s.tiers.length,
@@ -91,18 +119,13 @@ export async function claimTier(ctx: AppContext, userId: string, tierNo: number,
   if (!def || rewards.length === 0) throw new ApiError(404, 'not_found', 'No reward on that tier/track');
   return ctx.db.transaction(async (tx) => {
     const row = await loadRow(tx, userId, s.id, true);
-    if (tierNo > passProgress(ctx.catalog, row.xp).tier)
+    if (tierNo > passProgress(ctx.catalog, row.xp, s).tier)
       throw new ApiError(403, 'tier_locked', 'Tier not reached yet');
     if (track === 'premium' && !row.premium)
       throw new ApiError(403, 'premium_required', 'Unlock the premium pass first');
     const claimed = track === 'free' ? row.claimedFree : row.claimedPremium;
     if (claimed.includes(tierNo)) throw conflict('already_claimed', 'Reward already claimed');
-    const granted = [];
-    for (const [i, reward] of rewards.entries()) {
-      granted.push(
-        await grantReward(tx, userId, reward, 'pass_reward', `${s.id}:tier:${tierNo}:${track}:${i}`),
-      );
-    }
+    const granted = await grantPassTier(tx, userId, s.id, tierNo, track, rewards);
     const next = [...claimed, tierNo].sort((a, b) => a - b);
     await tx
       .update(seasonPassProgress)

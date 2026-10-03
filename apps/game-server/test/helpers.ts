@@ -31,6 +31,7 @@ import {
   type CharacterFullState,
   type CharacterInput,
   type Rapier,
+  type SimEvent,
   type World,
 } from '@tumble/sim';
 import {
@@ -40,6 +41,7 @@ import {
   type RoundPhaseId,
   type Vec3,
 } from '@tumble/shared';
+import type { Env } from '@tumble/shared/env';
 import type { RoomDeps } from '../src/room/types.ts';
 import { SimpleShowController } from '../src/show/SimpleShowController.ts';
 import type { Connection } from '../src/transport/types.ts';
@@ -116,6 +118,23 @@ export class FakeMatchSim implements MatchSim {
 
   setInput(playerId: number, input: CharacterInput): void {
     this.inputs.set(playerId, { ...input });
+  }
+
+  /** Lobby sims only (the real sim's contract). */
+  addPlayer(info: { id: number }, feet: Vec3): boolean {
+    if (!this.opts.lobby || this.states.has(info.id)) return false;
+    const s = createCharacterFullState();
+    s.pos.x = feet.x;
+    s.pos.y = feet.y;
+    s.pos.z = feet.z;
+    this.states.set(info.id, s);
+    this.applied.set(info.id, []);
+    return true;
+  }
+
+  removePlayer(id: number): boolean {
+    this.inputs.delete(id);
+    return this.states.delete(id);
   }
 
   step(): void {
@@ -297,12 +316,48 @@ export class TestClient {
     return seq;
   }
 
-  /** Queues a low-frequency message; the next {@link pump} flushes it. */
+  /** Sends one input batch with an explicit newest sequence. */
+  inputAt(seq: number, input: CharacterInput): void {
+    writeInputBatch(
+      this.w.reset(),
+      { newestSeq: seq, clientTick: seq, ackSnapshotId: this.decoder.newestId, count: 1 },
+      [input],
+    );
+    this.conn.receive(this.w.finish());
+  }
+
+  /** Queues a low-frequency message to the server (flushed by the next {@link pump}). */
   send(msg: LowFreqMessage): void {
     this.reliable.send(encodeReliableMessage({ kind: 'msg', msg }));
+  }
+
+  /** Every sim event received, in order. */
+  simEvents(): SimEvent[] {
+    return this.messages.flatMap((m) => (m.kind === 'sim' ? [m.event] : []));
+  }
+
+  /** Queues a chat line on the reliable channel; it goes out on the next {@link pump}. */
+  chat(text: string): void {
+    this.reliable.send(encodeReliableMessage({ kind: 'msg', msg: { t: 'chat', from: 0, text } }));
   }
 
   lowFreq(t: LowFreqMessage['t']): LowFreqMessage[] {
     return this.messages.flatMap((m) => (m.kind === 'msg' && m.msg.t === t ? [m.msg] : []));
   }
+}
+
+/** Explicit secrets for tests, which never read `.env` files. */
+export const TEST_SECRETS = {
+  GAME_TICKET_SECRET: 'test-game-ticket-secret-0123456789',
+  GAME_SERVER_SECRET: 'test-game-server-secret-0123456789',
+  INTERNAL_HMAC_SECRET: 'test-internal-hmac-secret-0123456789',
+} as const;
+
+/**
+ * A complete test environment: `NODE_ENV=test` plus {@link TEST_SECRETS}.
+ *
+ * @param overrides - Variables to add or replace; `undefined` removes one.
+ */
+export function testEnv(overrides: Env = {}): Env {
+  return { NODE_ENV: 'test', ...TEST_SECRETS, ...overrides };
 }

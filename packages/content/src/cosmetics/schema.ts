@@ -66,8 +66,11 @@ export const CurrencySchema = z.enum(['gumballs', 'gems']);
 /** A currency id. */
 export type Currency = z.infer<typeof CurrencySchema>;
 
-/** How an item is unlocked. */
-export const CosmeticSourceSchema = z.enum(['default', 'store', 'pass', 'challenge', 'event']);
+/**
+ * How an item is unlocked. `shards` items are Crown Shard shop exclusives:
+ * never sold for Gumballs/Gems, never on a pass, never a level-up drop.
+ */
+export const CosmeticSourceSchema = z.enum(['default', 'store', 'pass', 'challenge', 'event', 'shards']);
 /** An unlock source. */
 export type CosmeticSource = z.infer<typeof CosmeticSourceSchema>;
 

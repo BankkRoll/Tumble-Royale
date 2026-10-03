@@ -15,6 +15,7 @@ import type { GameConfig } from '../config.ts';
 import type { OnlineAccount } from '../online/account.ts';
 import type { ProfileStore } from '../profile.ts';
 import type { QualityManager } from '../quality.ts';
+import type { ReplayHooks } from '../replay/live.ts';
 import type { CeremonyPost } from '../views/ceremonies.ts';
 import type { SceneDirector } from '../views/sceneDirector.ts';
 
@@ -50,6 +51,8 @@ export interface GameContext {
   settings(): Settings;
   /** The session is done; the app decides what comes next. */
   onEnd(reason: SessionEnd): void;
+  /** Round recorder for replays (absent in tools and tests). */
+  readonly replays?: ReplayHooks | null;
 }
 
 /** A show participant as the session tracks them. */
@@ -59,6 +62,8 @@ export interface SessionPlayer {
   isBot: boolean;
   loadout: TumblerLoadout;
   partyId?: number;
+  /** Account id (online humans), for profile cards, friend requests, reports and mutes. */
+  userId?: string;
 }
 
 /** A round about to load (normalised from the director or a `joinRound` message). */
@@ -71,6 +76,8 @@ export interface RoundStart {
   stage: number;
   /** Expected qualifiers (1 in a final). */
   qualifyTarget: number;
+  /** Show mutator id (`@tumble/sim/mutators`), or null. */
+  mutatorId?: string | null;
 }
 
 /** One finished round (best first in each list). */

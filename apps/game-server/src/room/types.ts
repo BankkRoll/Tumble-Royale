@@ -28,6 +28,8 @@ export interface MatchSettings {
   humans: number;
   /** Bots to fill with. */
   bots: number;
+  /** Matchmaker party size (1 solo, 2 duos, 4 squads). */
+  teamSize?: number;
   /** Custom lobby settings (host-picked rounds, bots on/off). */
   custom: TicketCustomSettings | null;
 }
@@ -51,6 +53,15 @@ export interface ShowRoundPlan {
   variationId?: string;
   /** The round definition when the controller already has it (skips {@link RoomDeps.loadRound}). */
   round?: RoundDefinition;
+  /**
+   * Entrants as the show built them (team rounds keep parties on one team);
+   * the room falls back to its roster with `team: -1` when absent.
+   */
+  players?: readonly MatchPlayerInfo[];
+  /** Show mutator id (`@tumble/sim/mutators`); forwarded to the sim and to clients in `joinRound`. */
+  mutatorId?: string | null;
+  /** Round timer multiplier (0.5–2); forwarded to the sim and to clients in `joinRound`. */
+  roundTimeScale?: number;
 }
 
 /** Things the show director asks the room to do, drained once per tick. */
@@ -112,6 +123,12 @@ export interface ShowController {
   loadingStatus?(): ShowLoadingStatus | null;
   /** The round being played, or null. */
   currentRound(): ShowRoundPlan | null;
+  /** Playlist party size (duos 2, squads 4); the room assigns party ids with it. */
+  readonly partySize?: number;
+  /** Playlist bot skill weights; the room seeds bot tiers with it. */
+  readonly botSkillMix?: Readonly<Record<'clumsy' | 'average' | 'sharp', number>>;
+  /** Length of the pre-show countdown before round 1, in seconds. */
+  readonly preShowSeconds?: number;
   /** Returns and clears pending events. */
   drainEvents(): ShowEvent[];
 }
@@ -160,6 +177,13 @@ export interface RoomDeps {
     playlistId: string | null,
     players: number,
   ) => { id: string; name: string; roundCount: number };
+  /**
+   * The pre-show lobby platform. When set, the room runs it as a live,
+   * rule-less match sim (`lobby: true`) from the first join until round 1,
+   * so everyone on the platform sees each other move, grab and emote.
+   * Null/absent keeps the old purely local pre-show.
+   */
+  lobbyRound?: RoundDefinition | null;
 }
 
 /** Room tuning. */
@@ -180,6 +204,13 @@ export interface RoomConfig {
   idleCloseMs: number;
   /** Matchmade rooms start once every ticketed human joined, or after this long. */
   ticketedFillWaitMs: number;
+  /**
+   * Seats of ticketed humans who have not arrived are held until round 1
+   * starts loading plus this long; then the seat forfeits like a quitter.
+   */
+  lateJoinGraceMs: number;
+  /** Snapshots go out every N × {@link snapshotEvery} ticks on the pre-show platform (bandwidth). */
+  lobbySnapshotDivisor: number;
 }
 
 /** Defaults per SPEC §3.1. */
@@ -192,4 +223,6 @@ export const DEFAULT_ROOM_CONFIG: RoomConfig = {
   snapshotEvery: 1,
   idleCloseMs: 30_000,
   ticketedFillWaitMs: 15_000,
+  lateJoinGraceMs: 10_000,
+  lobbySnapshotDivisor: 2,
 };

@@ -6,4 +6,4 @@ export type { InputDevice, InputSettings, LookDelta } from './inputSystem.ts';
 export { DEFAULT_KEYMAP, INPUT_ACTIONS, createKeymap, mouseCode } from './keymap.ts';
 export type { InputAction, Keymap } from './keymap.ts';
 export { ButtonLatch } from './latch.ts';
-export { TouchControls, type TouchButton } from './touchControls.ts';
+export { TouchState, type TouchButton, type TouchSnapshot } from './touchState.ts';

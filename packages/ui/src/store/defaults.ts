@@ -79,7 +79,9 @@ export const DEFAULT_SETTINGS: Settings = {
     streamerMode: false,
     showPing: true,
     autoSpectate: true,
+    botTags: true,
     chatFilter: true,
+    showChat: true,
     region: 'auto',
   },
 };
@@ -108,6 +110,7 @@ export const DEFAULT_HUD: HudState = {
   alive: 0,
   objective: '',
   localStatus: 'playing',
+  grab: { mode: 'none', name: '', meter: 0 },
   progress: 0,
   leaders: [],
   teams: [],

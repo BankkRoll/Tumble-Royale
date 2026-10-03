@@ -2,7 +2,8 @@
  * Composition root for the API.
  *
  * Responsibilities:
- * - Open the database (Postgres or PGlite), run migrations, sync the content catalog.
+ * - Open the database (Postgres or PGlite), run migrations, sync the content catalog,
+ *   soft-reset ranked ratings when the active season is new.
  * - Pick the KV (Redis or memory), payment provider (Stripe or fake) and mailer.
  * - Configure Fastify: CORS, rate limits, raw-body JSON parsing, error mapping.
  * - Register every route module and the realtime gateway.
@@ -11,10 +12,11 @@ import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import { sql } from 'drizzle-orm';
 import Fastify, { type FastifyInstance } from 'fastify';
+import { registerIdentityRoutes } from './accounts/identities.ts';
 import { registerAccountRoutes } from './accounts/routes.ts';
-import { ConsoleMailer, type Mailer } from './auth/mailer.ts';
+import { createMailer, type Mailer } from './auth/mailer.ts';
 import { registerAuthRoutes } from './auth/routes.ts';
-import { cosmeticIndex, loadCatalog, type Catalog } from './catalog.ts';
+import { clockedCatalog, cosmeticIndex, loadCatalog, type Catalog } from './catalog.ts';
 import type { ApiConfig } from './config.ts';
 import type { AppContext } from './context.ts';
 import { openDatabase, type Database } from './db/client.ts';
@@ -27,13 +29,19 @@ import {
 } from './economy/payments.ts';
 import { registerEconomyRoutes } from './economy/routes.ts';
 import { ApiError } from './http/errors.ts';
+import { rateLimitKey } from './http/rate-limit.ts';
 import { createKV, type KV } from './kv/index.ts';
 import { registerMatchRoutes } from './matches/routes.ts';
 import { registerModerationRoutes } from './moderation/routes.ts';
+import { registerNewsRoutes } from './news/routes.ts';
 import { registerProgressionRoutes } from './progression/routes.ts';
+import { ensureSeason, onSeasonChanged, type SeasonChangeListener } from './progression/seasons.ts';
+import { registerTutorialRoutes } from './progression/tutorial.ts';
+import { ensureRankedSeason } from './ranked/season.ts';
 import { attachGateway, type Gateway } from './realtime/gateway.ts';
 import { Notifier } from './realtime/notifier.ts';
 import { registerFriendRoutes } from './social/friends.ts';
+import { registerWhisperRoutes } from './social/whisper.ts';
 import { registerPartyRoutes } from './social/party.ts';
 
 /** Optional dependency overrides (tests). */
@@ -45,6 +53,11 @@ export interface BuildOptions {
   payments?: PaymentProvider;
   fetch?: typeof fetch;
   catalog?: Catalog;
+  /**
+   * Run once per new season, cluster-wide (e.g. the ranked soft reset).
+   * Also attachable later with `onSeasonChanged(ctx, fn)`.
+   */
+  seasonListeners?: SeasonChangeListener[];
   /** Disable request logging (tests). */
   logger?: boolean;
 }
@@ -110,7 +123,7 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
   await database.migrate();
   const now = opts.now ?? (() => new Date());
   const kv = opts.kv ?? createKV(config.redisUrl, () => now().getTime());
-  const catalog = opts.catalog ?? loadCatalog();
+  const catalog = clockedCatalog(opts.catalog ?? loadCatalog(), now);
   const payments =
     opts.payments ??
     (config.stripe
@@ -126,12 +139,24 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     catalog,
     cosmetics: cosmeticIndex(catalog),
     now,
-    mailer: opts.mailer ?? new ConsoleMailer(),
+    mailer: opts.mailer ?? createMailer(config),
     payments,
     fetch: opts.fetch ?? fetch,
     notifier: new Notifier(kv),
   };
   await syncCatalog(ctx);
+  // The ranked soft reset follows every season change; listeners must be
+  // registered before the boot check so a rollover that happened while the
+  // API was down still reaches them.
+  onSeasonChanged(ctx, async ({ current }) => {
+    await ensureRankedSeason(ctx, current.id);
+  });
+  for (const listener of opts.seasonListeners ?? []) onSeasonChanged(ctx, listener);
+  await ensureSeason(ctx);
+  await ensureRankedSeason(ctx);
+  // Idle servers still notice a rollover; requests also check (cheaply) below.
+  const seasonTimer = setInterval(() => void ensureSeason(ctx).catch(() => undefined), 60_000);
+  seasonTimer.unref();
 
   const app = Fastify({
     logger: opts.logger === false ? false : { level: config.logLevel },
@@ -161,11 +186,7 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     global: true,
     max: config.rateLimitMax,
     timeWindow: '1 minute',
-    keyGenerator: (req) => {
-      const auth = req.headers.authorization;
-      // Per-token buckets for signed-in calls so players behind one NAT do not share a limit.
-      return auth?.startsWith('Bearer ') ? `t:${auth.slice(-24)}` : `ip:${req.ip}`;
-    },
+    keyGenerator: (req) => rateLimitKey(config.jwtSecret, req, now),
     errorResponseBuilder: (_req, c) => ({
       statusCode: 429,
       error: 'rate_limited',
@@ -196,6 +217,14 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     reply.code(404).send({ error: 'not_found', message: `No route ${req.method} ${req.url}` }),
   );
 
+  app.addHook('onRequest', async (req) => {
+    try {
+      await ensureSeason(ctx);
+    } catch (err) {
+      req.log.error({ err }, 'season rollover check failed');
+    }
+  });
+
   app.get('/health', { config: { rateLimit: false } }, async () => {
     await ctx.db.execute(sql`select 1`);
     return {
@@ -209,12 +238,16 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
 
   registerAuthRoutes(app, ctx);
   registerAccountRoutes(app, ctx);
+  registerIdentityRoutes(app, ctx);
   registerEconomyRoutes(app, ctx);
   registerProgressionRoutes(app, ctx);
+  registerTutorialRoutes(app, ctx);
   registerMatchRoutes(app, ctx);
   registerFriendRoutes(app, ctx);
+  registerWhisperRoutes(app, ctx);
   registerPartyRoutes(app, ctx);
   registerModerationRoutes(app, ctx);
+  registerNewsRoutes(app, ctx);
   const gateway = attachGateway(app, ctx);
 
   return {
@@ -223,6 +256,7 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     database,
     gateway,
     close: async () => {
+      clearInterval(seasonTimer);
       await gateway.close();
       await app.close();
       await kv.close();

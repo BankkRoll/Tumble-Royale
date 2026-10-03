@@ -5,14 +5,20 @@
 import { memo, useEffect, useRef, useState, type JSX } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { playCue } from '../audio-cues.ts';
+import { BotTag } from '../components/bits.tsx';
 import { TumblerAvatar } from '../components/TumblerAvatar.tsx';
 import { Button } from '../components/controls.tsx';
+import { WatchChoicePanel } from '../screens/overlays/WatchChoice.tsx';
+import { keyLabel } from '../screens/overlays/SettingsSheet.tsx';
 import { formatClock, useDisplayName } from '../components/hooks.ts';
 import { uiEvents } from '../store/events.ts';
-import { ui, useUI } from '../store/uiStore.ts';
+import { social } from '../store/social.ts';
+import { useUI } from '../store/uiStore.ts';
 import { squash } from '../theme/motion.ts';
 import { Icon } from '../components/icons/index.tsx';
 import { roundTypeStyle } from '../theme/tokens.ts';
+import type { BindAction, TeamScore } from '../store/types.ts';
+import { PAD_GLYPHS, controlGlyph } from './glyphs.ts';
 
 /** Round timer pill; turns tangerine < 30 s and bubblegum + pulsing < 10 s. */
 export const HudTimer = memo(function HudTimer(): JSX.Element | null {
@@ -116,7 +122,7 @@ export const RaceProgress = memo(function RaceProgress(): JSX.Element | null {
             key={l.id}
             className="tr-hud-race-leader"
             style={{ left: `${l.progress * 100}%`, background: l.color }}
-            title={name({ id: l.id, name: l.name, isBot: true })}
+            title={name(l)}
           >
             {i === 0 ? <Icon name="crown" size="0.9em" /> : i + 1}
           </span>
@@ -136,6 +142,39 @@ export const RaceProgress = memo(function RaceProgress(): JSX.Element | null {
   );
 });
 
+const SHAPE_PATHS: Record<NonNullable<TeamScore['shape']>, JSX.Element> = {
+  circle: <circle cx="8" cy="8" r="6" />,
+  square: <rect x="2.5" y="2.5" width="11" height="11" />,
+  triangle: <path d="M8 1.5 15 14H1z" />,
+  diamond: <path d="M8 1 15 8 8 15 1 8z" />,
+};
+
+/** A team's shape cue in its colour (same shape as the team dot on 3D nameplates). */
+export function TeamShapeIcon({
+  shape,
+  color,
+}: {
+  shape: NonNullable<TeamScore['shape']>;
+  color: string;
+}): JSX.Element {
+  return (
+    <svg
+      className="tr-team-shape"
+      data-shape={shape}
+      viewBox="0 0 16 16"
+      width="0.95em"
+      height="0.95em"
+      aria-hidden
+      fill={color}
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+    >
+      {SHAPE_PATHS[shape]}
+    </svg>
+  );
+}
+
 /** Team score pills. */
 export const TeamScores = memo(function TeamScores(): JSX.Element | null {
   const teams = useUI((s) => s.hud.teams);
@@ -154,6 +193,7 @@ export const TeamScores = memo(function TeamScores(): JSX.Element | null {
               <Icon name="crown" size="1em" />
             </span>
           )}
+          {t.shape && <TeamShapeIcon shape={t.shape} color={t.color} />}
           <span className="tr-hud-team-name">{t.name}</span>
           <span key={t.score} className="tr-hud-team-score">
             {t.score}
@@ -181,33 +221,27 @@ export const NetStats = memo(function NetStats(): JSX.Element | null {
   );
 });
 
-const HINTS: Record<'keyboard' | 'gamepad' | 'touch', [string, string][]> = {
-  keyboard: [
-    ['WASD', 'Move'],
-    ['Space', 'Jump'],
-    ['Ctrl', 'Dive'],
-    ['Shift', 'Grab'],
-    ['E', 'Emote'],
-  ],
-  gamepad: [
-    ['Ⓛ', 'Move'],
-    ['Ⓐ', 'Jump'],
-    ['Ⓧ', 'Dive'],
-    ['RT', 'Grab'],
-    ['✚', 'Emote'],
-  ],
-  touch: [],
-};
+const HINT_ACTIONS: [BindAction, string][] = [
+  ['jump', 'Jump'],
+  ['dive', 'Dive'],
+  ['grab', 'Grab'],
+  ['emoteWheel', 'Emote'],
+];
 
-/** Bottom-left controls hint. */
+/** Bottom-left controls hint: bound keys on keyboard, pad buttons once a controller is used. */
 export const ControlsHint = memo(function ControlsHint(): JSX.Element | null {
   const { show, device } = useUI(useShallow((s) => ({ show: s.hud.controlsHint, device: s.hud.device })));
+  const binds = useUI((s) => s.settings.controls.keybinds);
   if (!show || device === 'touch') return null;
   return (
-    <div className="tr-hud-hint">
-      {HINTS[device].map(([k, label]) => (
+    <div className="tr-hud-hint" data-testid="controls-hint">
+      <span className="tr-hud-hint-item">
+        <kbd>{device === 'gamepad' ? PAD_GLYPHS.moveForward : 'WASD'}</kbd>
+        Move
+      </span>
+      {HINT_ACTIONS.map(([action, label]) => (
         <span key={label} className="tr-hud-hint-item">
-          <kbd>{k}</kbd>
+          <kbd>{controlGlyph(action, device, binds)}</kbd>
           {label}
         </span>
       ))}
@@ -215,9 +249,37 @@ export const ControlsHint = memo(function ControlsHint(): JSX.Element | null {
   );
 });
 
-/** Prompt to lock the mouse to the camera while it is free; Esc reminder once locked. */
+/** Grab feedback: who you hold (stamina) or who holds you (mash meter). */
+export const GrabStatus = memo(function GrabStatus(): JSX.Element | null {
+  const grab = useUI((s) => s.hud.grab);
+  const device = useUI((s) => s.hud.device);
+  if (grab.mode === 'none') return null;
+  const mash = device === 'gamepad' ? 'Ⓐ' : device === 'touch' ? 'Jump' : 'Space';
+  const text =
+    grab.mode === 'held'
+      ? `Grabbed${grab.name ? ` by ${grab.name}` : ''}! Mash ${mash} to break free`
+      : grab.mode === 'holding'
+        ? `Holding ${grab.name || 'a Tumbler'}`
+        : 'Carrying';
+  return (
+    <div className={`tr-hud-grab is-${grab.mode}`} role="status" data-testid="grab-status">
+      <span className="tr-hud-grab-text">{text}</span>
+      <span className="tr-hud-grab-bar" aria-hidden>
+        <i style={{ width: `${Math.round(grab.meter * 100)}%` }} />
+      </span>
+    </div>
+  );
+});
+
+/** Prompt to lock the mouse to the camera while it is free; Esc and Menu key reminder once locked. */
 export const CameraLockHint = memo(function CameraLockHint(): JSX.Element | null {
-  const { lock, device } = useUI(useShallow((s) => ({ lock: s.cameraLock, device: s.hud.device })));
+  const { lock, device, menuKey } = useUI(
+    useShallow((s) => ({
+      lock: s.cameraLock,
+      device: s.hud.device,
+      menuKey: s.settings.controls.keybinds.pause[0] || 'Escape',
+    })),
+  );
   if (lock === 'off' || device !== 'keyboard') return null;
   return (
     <div className={`tr-hud-camlock is-${lock}`} role="status" data-testid="camera-lock-hint">
@@ -227,7 +289,7 @@ export const CameraLockHint = memo(function CameraLockHint(): JSX.Element | null
         </>
       ) : (
         <>
-          <kbd>Esc</kbd> frees the mouse
+          <kbd>Esc</kbd> frees the mouse · <kbd>{keyLabel(menuKey)}</kbd> menu
         </>
       )}
     </div>
@@ -250,29 +312,62 @@ export const CountdownNumerals = memo(function CountdownNumerals(): JSX.Element 
   );
 });
 
-/** Bottom spectating bar with Q/E cycling. */
+/** Prev/next hints per device: the rebindable keys, the pad's shoulder buttons, nothing on touch. */
+function useSpectateHints(): [string | undefined, string | undefined] {
+  const device = useUI((s) => s.hud.device);
+  const prev = useUI((s) => s.settings.controls.keybinds.spectatePrev[0]);
+  const next = useUI((s) => s.settings.controls.keybinds.spectateNext[0]);
+  if (device === 'touch') return [undefined, undefined];
+  if (device === 'gamepad') return ['LB', 'RB'];
+  return [prev ? keyLabel(prev) : undefined, next ? keyLabel(next) : undefined];
+}
+
+/** Bottom spectating bar: who you're watching, prev/next (keys, pad shoulders, tap) and who is left. */
 export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null {
   const spec = useUI((s) => s.spectate);
+  const out = useUI((s) => s.showSeat?.outOfShow ?? false);
   const name = useDisplayName();
+  const [prevHint, nextHint] = useSpectateHints();
   if (!spec) return null;
   return (
-    <div className="tr-spectate tr-interactive" data-nav-scope="5">
+    <div className="tr-spectate tr-interactive" data-nav-scope="5" data-testid="spectate-banner">
       <Button
         variant="secondary"
         size="sm"
-        hint="Q"
+        {...(prevHint ? { hint: prevHint } : {})}
         aria-label="Previous player"
         onClick={() => uiEvents.emit('spectateNext', { dir: -1 })}
       >
         <Icon name="chevron-left" size="1em" />
       </Button>
       <div key={spec.player.id} className="tr-spectate-card">
-        <span className="tr-label tr-spectate-label">Spectating</span>
+        <span className="tr-label tr-spectate-label">{out ? 'Eliminated · Spectating' : 'Spectating'}</span>
         <TumblerAvatar colors={spec.player.colors} hat={spec.player.hat} size="2.6em" blink={false} />
         <span className="tr-col" style={{ gap: '0.1em', minWidth: 0 }}>
-          <b className="tr-ellipsis">{name(spec.player)}</b>
+          <span className="tr-row" style={{ gap: '0.4em', minWidth: 0 }}>
+            {spec.player.userId && !spec.player.isLocal ? (
+              <button
+                type="button"
+                className="tr-player-link tr-ellipsis"
+                aria-label={`Player card for ${name(spec.player)}`}
+                onClick={() =>
+                  social.getState().openPlayerMenu({
+                    userId: spec.player.userId!,
+                    name: spec.player.name,
+                    key: spec.player.userId!,
+                  })
+                }
+              >
+                <b className="tr-ellipsis">{name(spec.player)}</b>
+              </button>
+            ) : (
+              <b className="tr-ellipsis">{name(spec.player)}</b>
+            )}
+            <BotTag isBot={spec.player.isBot} />
+          </span>
           <span className="tr-small tr-muted">
             {spec.detail} · {spec.index + 1}/{spec.count}
+            {spec.remaining !== undefined && ` · ${spec.remaining} still in`}
           </span>
         </span>
         {spec.qualified && (
@@ -284,7 +379,7 @@ export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null
       <Button
         variant="secondary"
         size="sm"
-        hint="E"
+        {...(nextHint ? { hint: nextHint } : {})}
         aria-label="Next player"
         onClick={() => uiEvents.emit('spectateNext', { dir: 1 })}
       >
@@ -294,40 +389,14 @@ export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null
   );
 });
 
-/** Spectate / Back to lobby / Play again after elimination. */
+/** "Keep watching / Leave show" after the ELIMINATED stamp. */
 export const EliminatedSheet = memo(function EliminatedSheet(): JSX.Element | null {
   const open = useUI((s) => s.eliminatedSheet);
+  const choice = useUI((s) => s.watchChoice);
   if (!open) return null;
   return (
     <div className="tr-elim-sheet tr-interactive" data-nav-scope="8">
-      <div className="tr-panel tr-elim-panel">
-        <div className="tr-title tr-h3">What now, champ?</div>
-        <div className="tr-row tr-wrap" style={{ justifyContent: 'center' }}>
-          <Button
-            variant="sky"
-            size="lg"
-            autoFocusNav
-            onClick={() => {
-              ui.getState().setEliminatedSheet(false);
-              uiEvents.emit('spectate');
-            }}
-          >
-            <Icon name="eye" size="1.1em" /> Spectate
-          </Button>
-          <Button
-            variant="secondary"
-            size="lg"
-            data-nav-back=""
-            cue="ui.back"
-            onClick={() => uiEvents.emit('backToLobby')}
-          >
-            <Icon name="home" size="1.1em" /> Back to lobby
-          </Button>
-          <Button variant="go" size="lg" cue="ui.confirm" onClick={() => uiEvents.emit('playAgain')}>
-            <Icon name="refresh" size="1.1em" /> Play again
-          </Button>
-        </div>
-      </div>
+      <WatchChoicePanel choice={choice} title="Knocked out!" />
     </div>
   );
 });

@@ -151,6 +151,8 @@
 }
 .tr-edit-chip {
   position: absolute;
+  /* The profile id row is pulled up over the banner; keep the chip clickable above it. */
+  z-index: 2;
   top: 0.6em;
   right: 0.6em;
   padding: 0.2em 0.75em 0.25em;
@@ -2597,4 +2599,346 @@
   align-items: center;
   gap: 0.8em;
   padding: 0.8em 1em;
+}
+
+/* -----------------------------------------------------------------------------
+ * Item previews (ItemPreview / CurrencyPreview): every cosmetic on the
+ * player's own Tumbler, nameplates/banners as the real thing, one currency card
+ * -------------------------------------------------------------------------- */
+
+.tr-ip {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  font-size: 1em;
+  filter: none;
+}
+.tr-ip > img,
+.tr-ip > .tr-item-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.tr-ip > .tr-avatar {
+  max-height: 100%;
+}
+.tr-ip.tr-item-icon {
+  font-size: 1em;
+  width: 92%;
+  height: 92%;
+}
+.tr-ip.tr-showcase-art {
+  width: 4.6em;
+  height: 4.6em;
+}
+.tr-ip.tr-capsule-icon {
+  width: 4.2em;
+  height: 4.2em;
+}
+.tr-ip.tr-lobby-emote-img {
+  width: 2.4em;
+  height: 2.4em;
+}
+.tr-ip-motion {
+  position: absolute;
+  right: 4%;
+  bottom: 4%;
+  display: grid;
+  place-items: center;
+  width: 1.5em;
+  height: 1.5em;
+  border-radius: 50%;
+  border: 0.12em solid var(--ink);
+  background: var(--lemon);
+  color: var(--ink);
+  font-size: clamp(0.6rem, 22%, 0.9rem);
+}
+.tr-ip--nameplate .tr-nameplate {
+  font-size: 0.6em;
+  max-width: 96%;
+}
+.tr-ip-banner {
+  display: grid;
+  place-items: end start;
+  width: 96%;
+  aspect-ratio: 2.2;
+  padding: 0.3em 0.5em;
+  border-radius: 0.6em;
+  border: 0.12em solid var(--ink);
+  box-shadow: 0 0.12em 0 var(--ink);
+  overflow: hidden;
+}
+.tr-ip-banner b {
+  max-width: 100%;
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 0.8em;
+  text-shadow: 0 0.08em 0 var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tr-ip-swatch {
+  position: relative;
+  display: grid;
+  place-items: center end;
+  width: 100%;
+  height: 100%;
+}
+.tr-ip-swatch > svg {
+  position: absolute;
+  inset: 10% 0;
+  width: 100%;
+  height: 80%;
+}
+.tr-ip--currency {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.1em;
+  text-align: center;
+}
+.tr-ip-coin .tr-coin {
+  width: 2.2em;
+  height: 2.2em;
+}
+.tr-ip-coin .tr-coin-xp {
+  font-size: 1.4em;
+  color: var(--grape);
+}
+.tr-ip-amount {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 1.5em;
+  line-height: 1;
+}
+.tr-ip-unit {
+  font-size: 0.7em;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* Pass reward cards: tier + lane on top, reward on the player's Tumbler, kind and state below. */
+.tr-pr {
+  padding: 0 !important;
+}
+.tr-pr-hit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15em;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0.35em 0.4em 0.45em;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+.tr-pr-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3em;
+  width: 100%;
+}
+.tr-pr-tier {
+  font-family: var(--font-display);
+  font-size: 0.72em;
+}
+.tr-pr-lane {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2em;
+  padding: 0 0.45em 0.05em;
+  border-radius: 999px;
+  border: 0.1em solid var(--ink);
+  background: #e6f6ff;
+  font-size: 0.6em;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.tr-pr-lane--premium {
+  background: linear-gradient(90deg, #ffe680, var(--lemon));
+}
+.tr-pr-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  min-height: 1.2em;
+  font-size: 0.66em;
+  font-weight: 800;
+  color: var(--ink-soft);
+}
+.tr-pr-status.is-claimed {
+  color: #12805c;
+}
+.tr-pr-status.is-premium {
+  color: #8a5a00;
+}
+.tr-pr .tr-pr-claim {
+  bottom: 0.3em;
+  cursor: pointer;
+}
+.tr-pr .tr-ip--currency .tr-ip-amount {
+  font-size: 1.7em;
+}
+.tr-pr.is-milestone .tr-ip--currency .tr-ip-amount {
+  font-size: 2.3em;
+}
+.tr-pass-next {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  max-width: 100%;
+  padding: 0.3em 0.7em 0.3em 0.35em;
+  border-radius: 0.9em;
+  border: 0.13em solid var(--ink);
+  background: #fff;
+  box-shadow: 0 0.13em 0 var(--ink);
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+}
+.tr-pass-next-art {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 3em;
+  height: 3em;
+  border-radius: 0.6em;
+  background: var(--cream);
+  font-size: 0.85em;
+}
+.tr-pass-preview-art {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 6em;
+  height: 4.6em;
+  border-radius: 0.8em;
+  border: 0.12em solid var(--ink);
+  background: var(--cream);
+}
+
+/* Locker empty slot. */
+.tr-locker-empty {
+  max-width: 30em;
+  margin: 0 auto;
+}
+
+/* Store: section tabs, scrolling body, bundles, deals and afford state. */
+.tr-store-tabs {
+  display: flex;
+  gap: 0.35em;
+  min-width: 0;
+}
+.tr-store-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.tr-store-section {
+  gap: 0.6em;
+}
+.tr-store-shelf .tr-store-body .tr-item-grid {
+  flex: none;
+  overflow: visible;
+}
+.tr-store-sort {
+  width: auto;
+  padding: 0.2em 0.5em;
+}
+.tr-bundle {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  width: 100%;
+  padding: 0.6em 0.8em;
+  border-radius: 1em;
+  border: 0.16em solid var(--ink) !important;
+  background:
+    radial-gradient(circle at 12% 40%, rgba(255, 255, 255, 0.8), transparent 55%),
+    linear-gradient(150deg, color-mix(in srgb, var(--rar, #b8c4d6) 35%, #fff), #fff) !important;
+  box-shadow: 0 0.18em 0 var(--ink);
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+}
+.tr-bundle.is-hero {
+  padding: 0.8em 1em;
+  background:
+    radial-gradient(circle at 12% 40%, rgba(255, 255, 255, 0.85), transparent 55%),
+    linear-gradient(150deg, #ffe6f3, #e9e0ff) !important;
+}
+.tr-bundle.is-selected {
+  outline: 0.2em solid var(--lemon);
+  outline-offset: 0.12em;
+}
+.tr-bundle-hero {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 5em;
+  height: 5em;
+  border-radius: 0.9em;
+  border: 0.12em solid var(--ink);
+  background: rgba(255, 255, 255, 0.6);
+}
+.tr-bundle.is-hero .tr-bundle-hero {
+  width: 7.5em;
+  height: 7.5em;
+}
+.tr-bundle-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3em;
+}
+.tr-bundle-item {
+  display: grid;
+  place-items: center;
+  width: 2.2em;
+  height: 2.2em;
+  border-radius: 0.5em;
+  border: 0.1em solid var(--ink);
+  background: color-mix(in srgb, var(--rar, #b8c4d6) 35%, #fff);
+}
+.tr-bundle-item.is-owned {
+  opacity: 0.55;
+}
+.tr-bundle-list {
+  display: grid;
+  gap: 0.6em;
+}
+.tr-deal-tag {
+  position: absolute;
+  top: 0.4em;
+  left: 0.4em;
+  padding: 0 0.45em 0.05em;
+  border-radius: 999px;
+  border: 0.1em solid var(--ink);
+  background: var(--bubblegum);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 0.65em;
+}
+.tr-offer-price.is-short .tr-price b {
+  color: #c2185b;
+}
+.tr-offer-price.is-short {
+  opacity: 0.85;
 }

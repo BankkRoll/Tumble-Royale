@@ -10,7 +10,7 @@ import {
   type LowFreqMessage,
 } from './protocol.ts';
 
-describe('protocol v3', () => {
+describe('protocol v4', () => {
   it('round-trips a Hello with a join ticket', () => {
     const ticket = `${'a'.repeat(40)}.${'b'.repeat(700)}.${'c'.repeat(43)}`;
     const w = new BitWriter(64);
@@ -49,8 +49,8 @@ describe('protocol v3', () => {
     expect(unpackLowFreq(packLowFreq(rewards))).toEqual(rewards);
   });
 
-  it('carries load progress and the loading roster (v3)', () => {
-    expect(PROTOCOL_VERSION).toBe(3);
+  it('carries load progress and the loading roster (v4)', () => {
+    expect(PROTOCOL_VERSION).toBe(4);
     const progress: LowFreqMessage = { t: 'loadProgress', roundId: 'tilt-town', pct: 0.42 };
     expect(unpackLowFreq(packLowFreq(progress))).toEqual(progress);
     const status: LowFreqMessage = {
@@ -64,5 +64,35 @@ describe('protocol v3', () => {
     // Low-frequency means small: a full roster stays well under one reliable packet.
     const full: LowFreqMessage = { ...status, waitingOn: [1, 2, 3, 4, 5, 6, 7, 8] };
     expect(packLowFreq(full).byteLength).toBeLessThan(80);
+  });
+
+  it('carries v3 party, lobby, carry and pre-show timing fields', () => {
+    const msgs: LowFreqMessage[] = [
+      {
+        t: 'playerList',
+        players: [{ id: 3, name: 'Duo', isBot: false, loadout: '', connected: true, partyId: 1 }],
+      },
+      {
+        t: 'joinRound',
+        roundId: 'pre-show-lobby',
+        seed: 1,
+        stage: 0,
+        players: [{ id: 3, name: 'Duo', isBot: false, team: -1, partyId: 1 }],
+        obstacleIds: [],
+        bounds: { min: { x: -1, y: -1, z: -1 }, max: { x: 1, y: 1, z: 1 } },
+        epoch: 1,
+        startTick: 0,
+        roundIndex: -1,
+        isFinal: false,
+        qualifyTarget: 0,
+        variationId: null,
+        lobby: true,
+        roundTimeScale: 1.5,
+      },
+      { t: 'roundResults', roundId: 'r', results: [{ id: 3, status: 1, place: 9, score: 0, carried: true }] },
+      { t: 'showPhase', phase: 0, startsInMs: 9000 },
+      { t: 'spectate', target: 7 },
+    ];
+    for (const m of msgs) expect(unpackLowFreq(packLowFreq(m))).toEqual(m);
   });
 });

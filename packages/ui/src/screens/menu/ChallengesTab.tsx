@@ -8,7 +8,8 @@
  */
 import { useState, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
-import { Bar, Coin, ItemArt } from '../../components/bits.tsx';
+import { Bar, Coin } from '../../components/bits.tsx';
+import { ItemPreview } from '../../components/ItemPreview.tsx';
 import { Button } from '../../components/controls.tsx';
 import { formatNumber, formatRemaining, useNow, useReducedMotion } from '../../components/hooks.ts';
 import { Icon, challengeIcon } from '../../components/icons/index.tsx';
@@ -64,6 +65,14 @@ function RewardChip({ c }: { c: Challenge }): JSX.Element {
           <span className="tr-ch-plus">+</span>
           <b>{formatNumber(c.bonus.amount)}</b>
           <small>{c.bonus.kind === 'xp' ? 'XP' : c.bonus.kind === 'gems' ? 'Gems' : 'Gumballs'}</small>
+        </>
+      )}
+      {c.gems !== undefined && c.gems > 0 && (
+        <>
+          <span className="tr-ch-plus">+</span>
+          <Coin currency="gems" />
+          <b>{formatNumber(c.gems)}</b>
+          <small>Gems</small>
         </>
       )}
     </span>
@@ -178,7 +187,7 @@ function MilestoneStrip(): JSX.Element | null {
               className={`tr-ch-milestone tr-rar-frame tr-rar-frame--${item.rarity}`}
               title={`Tier ${t.tier}: ${item.name}`}
             >
-              <ItemArt item={item} className="tr-ch-milestone-art" />
+              <ItemPreview item={item} className="tr-ch-milestone-art" />
               <small>Tier {t.tier}</small>
             </span>
           );

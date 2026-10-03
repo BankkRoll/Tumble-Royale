@@ -1,0 +1,106 @@
+# Tumble Royale — Economy & Seasons (ECONOMY.md)
+
+> Owner: Lead Game Design. Consumers: content (`packages/content/src/progression`),
+> API (`apps/api/src/{economy,progression}`), offline profile
+> (`apps/client/src/game/profile.ts`), UI (Store, Season Pass, wallet popovers).
+> Every number here lives in content data; this page explains why the numbers
+> are what they are. Show payouts (XP, Gumballs, shards per show) are in
+> [SHOWS.md §6](./SHOWS.md#6-rewards).
+
+## 1. Currencies
+
+| Currency         | How you get it                                    | What it buys                                              | Sold for money?                  |
+| ---------------- | ------------------------------------------------- | --------------------------------------------------------- | -------------------------------- |
+| **Gumballs**     | Shows, challenges, level-ups, pass free track     | Common–Epic store items                                   | **Never.** Earn-only.            |
+| **Gems**         | Free earn paths (§3), pass tracks, and Gem packs  | Premium Pass, Legendary/Mythic store items                | Only via Stripe, only when keyed |
+| **Crown Shards** | Reaching a final (1 per show), premium pass tiers | Crown Shard shop exclusives (§4); 60 combine into a Crown | Never                            |
+
+Everything sold is cosmetic. Nothing affects gameplay.
+
+## 2. Seasons
+
+- Schedule: `packages/content/src/progression/seasons.ts`. Authored seasons
+  (`AUTHORED_SEASONS`) have an id (`s<n>`), number, name, theme, UTC
+  `[startsAt, endsAt)` and a pass track. After the authored list ends, a
+  rolling generator keeps going on a **3-month cadence** (boundaries on the 1st
+  of a month, 00:00 UTC) with themes from `GENERATED_THEMES`, so there is
+  always a current and a next season. Generated seasons cycle through the
+  authored pass tracks.
+- Season 1 (Sugar Rush): 2026-09-01 → 2026-12-01. Season 2 (Frosting Frenzy):
+  2026-12-01 → 2027-03-01. Season 3 onward is generated.
+
+### 2.1 Rollover rule
+
+When the live season changes, for each player:
+
+1. **Unclaimed rewards are auto-granted, not lost.** Every tier the player had
+   unlocked but not claimed is granted (free track always; premium track only
+   if premium was unlocked that season). Locked tiers are not granted.
+2. Season XP and pass progress start at 0 for the new season; premium must be
+   unlocked again.
+3. History is kept: the API keeps every `season_pass_progress` row (one per
+   player per season, marked `settled_at` once rewards are granted); the
+   offline profile keeps a `seasonHistory` list (season id, XP, tier, premium,
+   auto-granted count).
+4. The rollover is idempotent: granting reuses the exact ledger refs a manual
+   claim uses (`<season>:tier:<n>:<track>:<i>`), so a reward can never be paid
+   twice, and a settled season is never settled again.
+5. Pass cosmetics the player already owns (expected when a track repeats) pay
+   **100 Gumballs** instead (`PASS_DUPLICATE_GUMBALLS`).
+
+Server-wide, the API records each new season once in `season_rollovers` and
+fires `onSeasonChanged` listeners (the ranked soft reset subscribes there).
+
+## 3. Free Gem earn paths
+
+Gems must be reachable without paying. Rules: `GEM_EARN` in
+`packages/content/src/progression/gems.ts`, plus the pass tracks.
+
+| Source                                                                    | Gems    | Cap                                         |
+| ------------------------------------------------------------------------- | ------- | ------------------------------------------- |
+| Weekly challenge claimed                                                  | 10 each | 6 per week → 60/week                        |
+| First Crown of the UTC day                                                | 15      | 1 per day → 105/week                        |
+| Account level milestone (every 10)                                        | 100     | levels 10, 20, … 100                        |
+| Season Pass free track (x5 spotlight tiers 5, 15, 35, 45, 55, 65, 85, 95) | 50 each | 400/season                                  |
+| Season Pass premium track                                                 | 100 × 8 | 800/season (premium refunds most of itself) |
+
+Season budget (13 weeks):
+
+| Player  | Weeklies   | First Crowns | Milestones | Free track | **Total** |
+| ------- | ---------- | ------------ | ---------- | ---------- | --------- |
+| Casual  | 3/wk → 390 | 2/wk → 390   | 1 → 100    | half → 200 | **1,080** |
+| Regular | 5/wk → 650 | 4/wk → 780   | 1 → 100    | all → 400  | **1,930** |
+| Grinder | 6/wk → 780 | 7/wk → 1,365 | 2 → 200    | all → 400  | **2,745** |
+
+Premium Pass costs **950 Gems**, so a casual player can buy the next season's
+pass from one season of play; premium then refunds 800 of it. Legendary store
+items (800) and Mythics (1,600) take a regular player roughly one season of
+saving. `packages/content/test/economy.test.ts` checks the casual row stays at
+or above the premium price.
+
+### 3.1 Buying Gems
+
+`GET /gems/packs` reports the payment provider. The client enables checkout:
+
+- `stripe` → real checkout (only when the server has `STRIPE_SECRET_KEY`);
+- `fake` (development API only — production never selects it) → instant test
+  credit, labelled **"Test purchase (dev)"**;
+- `disabled` or offline → packs are shown read-only with **"Coming soon —
+  Secure checkout via Stripe"**.
+
+No API key is ever needed to run or play the game.
+
+## 4. Crown Shard shop
+
+- Stock: only `source: 'shards'` cosmetics (the royal set). They are never sold
+  for Gumballs/Gems, never on a pass and never a level-up drop.
+- Rotation: 4 offers per ISO week, at most one Legendary, seeded by the week
+  key (`shardShopForWeek`), restocking Monday 00:00 UTC. The API and the
+  offline client compute the same shelf.
+- Prices (Crown Shards): Rare 18 · Epic 30 · Legendary 48. Every price is below
+  the 60 shards that make a Crown, because shard balances above 60 convert into
+  a Crown when a show is ingested: buying is a choice between a cosmetic now and
+  the next Crown sooner.
+- Purchase: `POST /shop/shards/buy` with an `Idempotency-Key`; writes a
+  `shard_shop` ledger spend and a `purchases` row; `402 insufficient_funds`
+  when short; `409 already_owned`; `404 offer_not_available` off-rotation.

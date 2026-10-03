@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useUI } from '../store/uiStore.ts';
-import type { ShowPlayer } from '../store/types.ts';
+import { streamerSafeName, type NamedPlayer } from '../names.ts';
 
 /**
  * Re-renders every `intervalMs` and returns `Date.now()`.
@@ -113,14 +113,9 @@ export function useReducedFlashing(): boolean {
  * Display name honouring Streamer Mode: other humans become "Tumbler N".
  * Bots keep their generated names (they're not personal data).
  */
-export function useDisplayName(): (
-  p: Pick<ShowPlayer, 'id' | 'name' | 'isLocal' | 'isBot' | 'isParty'>,
-) => string {
+export function useDisplayName(): (p: NamedPlayer) => string {
   const streamer = useUI((s) => s.settings.gameplay.streamerMode);
-  return useCallback(
-    (p) => (streamer && !p.isLocal && !p.isBot && !p.isParty ? `Tumbler ${p.id + 1}` : p.name),
-    [streamer],
-  );
+  return useCallback((p) => streamerSafeName(p, streamer), [streamer]);
 }
 
 /** Formats seconds as `m:ss`. */

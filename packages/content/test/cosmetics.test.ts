@@ -19,8 +19,8 @@ import {
 const BANNED = /fall\s*guys|\bbeans?\b|mediatonic|\bepic games\b/i;
 
 describe('cosmetics catalog', () => {
-  it('has at least 60 items', () => {
-    expect(COSMETICS.length).toBeGreaterThanOrEqual(60);
+  it('has the launch catalog plus the item shop collection', () => {
+    expect(COSMETICS.length).toBeGreaterThanOrEqual(340);
   });
 
   it('every item passes the schema', () => {

@@ -313,6 +313,11 @@ export function RoundIntroScreen(): JSX.Element | null {
           ))}
         </h1>
         {step >= 2 && <div className="tr-roundintro-objective tr-enter-left">{info.objective}</div>}
+        {step >= 2 && info.mutator && (
+          <div className="tr-chip tr-chip--grape tr-enter-pop" title={info.mutator.description}>
+            {info.mutator.icon} {info.mutator.name}: {info.mutator.description}
+          </div>
+        )}
         {step >= 3 && (
           <div className="tr-row tr-wrap tr-enter-pop">
             <span className="tr-chip tr-chip--lemon">

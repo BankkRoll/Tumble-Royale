@@ -22,7 +22,8 @@ import {
   type BufferGeometry,
 } from 'three/webgpu';
 import { float, fract, mix, positionLocal, sin, smoothstep, time, uv } from 'three/tsl';
-import { TEAM_COLORS, hash01 } from '@tumble/shared';
+import { hash01 } from '@tumble/shared';
+import { teamColor, teamColors } from '../teamPalette.ts';
 import type { ObstacleRuntime } from '@tumble/sim';
 import {
   PaintGridSchema,
@@ -48,7 +49,6 @@ import {
 import type { ObstacleVisualFactory } from './types.ts';
 
 const POP_TIME = 0.32;
-const TEAM = TEAM_COLORS.map((c) => new Color(c));
 
 /** A wobbly paint-blob disc (lying flat), radius ≈ 1. */
 function splatGeometry(d: Disposer): BufferGeometry {
@@ -82,6 +82,7 @@ class PaintGridVisual {
   private readonly rinse = new Group();
   private readonly buckets: Group[] = [];
   private readonly m = new Matrix4();
+  private readonly team = teamColors().map((c) => new Color(c));
   private readonly q = new Quaternion();
   private readonly v = new Vector3();
   private readonly s = new Vector3();
@@ -128,7 +129,7 @@ class PaintGridVisual {
     this.splats.renderOrder = 3;
     for (let i = 0; i < this.count; i++) {
       this.splats.setMatrixAt(i, this.m.makeScale(0, 0, 0));
-      this.splats.setColorAt(i, TEAM[0]!);
+      this.splats.setColorAt(i, this.team[0]!);
     }
     this.object.add(this.splats);
 
@@ -219,7 +220,7 @@ class PaintGridVisual {
       // Rainbow of the four team colours: buckets belong to nobody.
       const top = solid(
         paintGeo,
-        toon(d, { color: TEAM_COLORS[i % 4]!, emissive: TEAM_COLORS[i % 4]!, emissiveIntensity: 0.4 }),
+        toon(d, { color: teamColor(i), emissive: teamColor(i), emissiveIntensity: 0.4 }),
       );
       top.position.y = 0.36;
       g.add(top);
@@ -246,7 +247,7 @@ class PaintGridVisual {
       this.owner[i] = o;
       this.changedAt[i] = t;
       if (o >= 0) {
-        this.splats.setColorAt(i, TEAM[o % TEAM.length]!);
+        this.splats.setColorAt(i, this.team[o % this.team.length]!);
         dirtyC = true;
         this.popping.add(i);
       } else {

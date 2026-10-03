@@ -23,6 +23,7 @@ import type {
   CosmeticItem as UiItem,
   CosmeticSlot as UiSlot,
   EmoteSlot,
+  ItemLook,
   Loadout as UiLoadout,
   PatternId as UiPattern,
   ShowPlayer,
@@ -185,7 +186,7 @@ export function showPlayer(
   id: number,
   name: string,
   loadout: TumblerLoadout,
-  extra: { isBot: boolean; isLocal?: boolean; isParty?: boolean; team?: number },
+  extra: { isBot: boolean; isLocal?: boolean; isParty?: boolean; team?: number; userId?: string },
 ): ShowPlayer {
   return { id, name, colors: tumblerColors(loadout), hat: avatarHat(loadout.headwear), ...extra };
 }
@@ -313,7 +314,50 @@ export function uiItem(item: ContentItem, owned: boolean): UiItem {
     icon: ITEM_ICON[item.id] ?? SLOT_ICON[item.slot] ?? '🎁',
     art,
     owned,
+    look: itemLook(item),
   };
+}
+
+/**
+ * Render facts the UI previews need to draw an item on the player's Tumbler.
+ *
+ * @param item - Content cosmetic.
+ */
+export function itemLook(item: ContentItem): ItemLook {
+  switch (item.slot) {
+    case 'color':
+      return { kind: 'skin', colors: [...item.colors] };
+    case 'pattern':
+      return { kind: 'skin', pattern: contentPatternToUi(item.id) };
+    case 'face':
+      return {
+        kind: 'face',
+        iris: item.face.iris,
+        ...(item.face.accessory ? { accessory: item.face.accessory } : {}),
+        ...(item.face.tint[0] ? { tint: item.face.tint[0] } : {}),
+      };
+    case 'headwear':
+    case 'back':
+    case 'upper':
+    case 'lower':
+      return {
+        kind: 'wearable',
+        tint: [...item.tint],
+        ...(item.slot === 'headwear' ? { hat: HATS[item.mesh] ?? 'none' } : {}),
+      };
+    case 'emote':
+    case 'celebration':
+    case 'victory':
+      return { kind: 'pose', clip: item.clip };
+    case 'nameplate':
+      return { kind: 'nameplate', plate: { ...item.plate } };
+    case 'banner':
+      return { kind: 'banner', banner: { motif: item.banner.motif, colors: [...item.banner.colors] } };
+    case 'trail':
+      return { kind: 'trail', effect: item.trail.kind, colors: [...item.trail.colors] };
+    case 'footsteps':
+      return { kind: 'footsteps', pack: item.pack };
+  }
 }
 
 /**
@@ -353,8 +397,14 @@ export function emoteSlots(emotes: readonly string[]): EmoteSlot[] {
  * @returns A catalog item, or null when everything is owned.
  */
 export function levelUpUnlock(owned: ReadonlySet<string>, level: number): ContentItem | null {
+  // Crown Shard exclusives are only ever sold in the shard shop.
   const pool = COSMETICS.filter(
-    (c) => c.source !== 'default' && !owned.has(c.id) && c.rarity !== 'mythic' && c.rarity !== 'legendary',
+    (c) =>
+      c.source !== 'default' &&
+      c.source !== 'shards' &&
+      !owned.has(c.id) &&
+      c.rarity !== 'mythic' &&
+      c.rarity !== 'legendary',
   );
   if (pool.length === 0) return null;
   const rng = new Rng(hashString(`level-${level}`));

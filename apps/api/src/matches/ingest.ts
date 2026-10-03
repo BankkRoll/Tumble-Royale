@@ -33,6 +33,7 @@ import { recordLeaderboards, RANKED_QUEUE } from '../leaderboards/service.ts';
 import { applyChallengeProgress, type ChallengeUpdate } from '../progression/challenges.ts';
 import { addXp } from '../progression/xp.ts';
 import { computeRankedUpdate, type RankedPrior } from '../ranked/rating.ts';
+import { ensureRankedSeason } from '../ranked/season.ts';
 import { tierLabel, type TierInfo } from '../ranked/tiers.ts';
 import { dayKey } from '../util/time.ts';
 import type { MatchResult } from './schema.ts';
@@ -53,6 +54,8 @@ export interface PlayerRewardSummary {
   xp: { total: number; lines: RewardLine[] };
   level: { before: number; after: number };
   gumballs: { total: number; lines: RewardLine[] };
+  /** Free Gems earned this show (first Crown of the day, level milestones). Absent on older stored results. */
+  gems?: { total: number; lines: RewardLine[] };
   crownShards: number;
   /** Crowns created by converting Crown Shards this show. */
   crownsFromShards: number;
@@ -148,6 +151,9 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
   if (stored) return stored;
 
   const seasonId = m.seasonId ?? ctx.catalog.season.id;
+  // Only the live season is ever seeded: a late result for an old season must
+  // not "reset" that season from the newer one.
+  if (m.queue === 'ranked' && seasonId === ctx.catalog.season.id) await ensureRankedSeason(ctx, seasonId);
   const now = ctx.now();
   const grants = m.queue !== 'custom';
   let leaderboardUpdates: Parameters<typeof recordLeaderboards>[1][] = [];
@@ -297,6 +303,20 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
           gbLines.push({ label: `Level up → ${xp.levelAfter}`, amount: xp.levelGumballs });
           gbTotal += xp.levelGumballs;
         }
+        const gemLines: RewardLine[] = [];
+        if (xp.levelGems) gemLines.push({ label: `Level ${xp.levelAfter} milestone`, amount: xp.levelGems });
+        const crownGems = ctx.catalog.gemEarn.firstCrownOfDay;
+        if (grants && pl.crowned && crownGems > 0) {
+          // Keyed by UTC day, so only the day's first Crown pays (the ledger rejects the rest).
+          const g = await applyLedger(tx, {
+            userId,
+            currency: 'gems',
+            delta: crownGems,
+            reason: 'daily_crown',
+            ref: `day:${dayKey(now)}`,
+          });
+          if (g.applied) gemLines.push({ label: 'First Crown of the day', amount: crownGems });
+        }
         const crownsGained = (grants && pl.crowned ? 1 : 0) + crownsFromShards;
         if (crownsGained) {
           await tx
@@ -381,6 +401,7 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
           xp: { total: xpTotal, lines: xpLines },
           level: { before: xp.levelBefore, after: xp.levelAfter },
           gumballs: { total: gbTotal, lines: gbLines },
+          gems: { total: gemLines.reduce((s, l) => s + l.amount, 0), lines: gemLines },
           crownShards: shards,
           crownsFromShards,
           pass: { xp: xp.passXp, tierBefore: xp.passTierBefore, tierAfter: xp.passTierAfter },
@@ -422,6 +443,14 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
   for (const u of leaderboardUpdates) await recordLeaderboards(ctx, u, now);
   for (const r of result.rewards) {
     await ctx.notifier.notifyUser(r.userId, { type: 'wallet', ...r.wallet });
+    for (const g of r.gems?.lines ?? []) {
+      await ctx.notifier.notifyUser(r.userId, {
+        type: 'notification',
+        kind: 'reward',
+        title: `+${g.amount} Gems`,
+        body: g.label,
+      });
+    }
     for (const c of r.challenges.filter((x) => x.completed)) {
       await ctx.notifier.notifyUser(r.userId, {
         type: 'notification',

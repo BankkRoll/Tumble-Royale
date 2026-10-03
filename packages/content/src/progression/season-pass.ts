@@ -63,7 +63,7 @@ const SEASON1_LAYOUT: readonly (readonly [free: Cell, premium: Cell])[] = [
   /*   2 */ ['emote.sugar-wave', 'color.blue-raspberry'],
   /*   3 */ [gumballs(100), 'headwear.lolli-propeller'],
   /*   4 */ ['headwear.gumdrop-cone', gumballs(250)],
-  /*   5 */ [null, 'face.monocle'],
+  /*   5 */ [gems(50), 'face.monocle'],
   /*   6 */ [gumballs(100), 'back.taffy-tail'],
   /*   7 */ ['nameplate.lemon-pill', 'nameplate.taffy-ribbon'],
   /*   8 */ [gumballs(100), gems(100)],
@@ -73,7 +73,7 @@ const SEASON1_LAYOUT: readonly (readonly [free: Cell, premium: Cell])[] = [
   /*  12 */ [gumballs(100), 'celebration.wiggle'],
   /*  13 */ ['banner.lemonade', shards(3)],
   /*  14 */ [gumballs(100), 'pattern.licorice-lace'],
-  /*  15 */ [null, 'color.rock-candy'],
+  /*  15 */ [gems(50), 'color.rock-candy'],
   /*  16 */ ['upper.licorice-bow', gumballs(250)],
   /*  17 */ [gumballs(100), 'headwear.cupcake-chef'],
   /*  18 */ ['face.gumdrop-gaze', gems(100)],
@@ -93,7 +93,7 @@ const SEASON1_LAYOUT: readonly (readonly [free: Cell, premium: Cell])[] = [
   /*  32 */ [gumballs(150), 'banner.soda-waves'],
   /*  33 */ ['back.lunchbox', 'emote.cheer-squad'],
   /*  34 */ [gumballs(200), shards(3)],
-  /*  35 */ [null, 'pattern.neapolitan'],
+  /*  35 */ [gems(50), 'pattern.neapolitan'],
   /*  36 */ ['nameplate.grape-bubble', 'color.caramel-apple'],
   /*  37 */ [gumballs(200), gumballs(300)],
   /*  38 */ ['pattern.gumball-dots', gems(100)],
@@ -103,7 +103,7 @@ const SEASON1_LAYOUT: readonly (readonly [free: Cell, premium: Cell])[] = [
   /*  42 */ [gumballs(200), 'headwear.jelly-feelers'],
   /*  43 */ ['upper.lemon-bow', gumballs(350)],
   /*  44 */ ['trail.sugar-sparkle', 'nameplate.golden-ticket'],
-  /*  45 */ [null, 'face.racer-visor'],
+  /*  45 */ [gems(50), 'face.racer-visor'],
   /*  46 */ [gumballs(200), 'pattern.taffy-pull'],
   /*  47 */ ['face.sugar-sleepy', gems(100)],
   /*  48 */ [gumballs(200), 'footsteps.bell'],
@@ -113,7 +113,7 @@ const SEASON1_LAYOUT: readonly (readonly [free: Cell, premium: Cell])[] = [
   /*  52 */ [gumballs(250), shards(4)],
   /*  53 */ ['lower.racer-shorts', 'upper.mint-scarf'],
   /*  54 */ [gumballs(250), 'banner.night-market'],
-  /*  55 */ [null, 'headwear.licorice-horns'],
+  /*  55 */ [gems(50), 'headwear.licorice-horns'],
   /*  56 */ ['color.pistachio', 'face.candy-specs'],
   /*  57 */ [gumballs(250), gumballs(350)],
   /*  58 */ ['nameplate.cola-ticket', gems(100)],
@@ -123,7 +123,7 @@ const SEASON1_LAYOUT: readonly (readonly [free: Cell, premium: Cell])[] = [
   /*  62 */ ['pattern.ribbon-candy', 'lower.toffee-belt'],
   /*  63 */ [gumballs(250), 'pattern.gemstone'],
   /*  64 */ ['banner.sprinkle-party', 'emote.bow'],
-  /*  65 */ [null, 'celebration.flex'],
+  /*  65 */ [gems(50), 'celebration.flex'],
   /*  66 */ ['headwear.cocoa-ears', gumballs(400)],
   /*  67 */ [gumballs(300), 'nameplate.sour-neon'],
   /*  68 */ ['emote.oops', gems(100)],
@@ -143,7 +143,7 @@ const SEASON1_LAYOUT: readonly (readonly [free: Cell, premium: Cell])[] = [
   /*  82 */ [gumballs(350), gems(100)],
   /*  83 */ ['celebration.pump', 'celebration.giddy'],
   /*  84 */ [gumballs(350), shards(5)],
-  /*  85 */ [null, 'lower.floatie'],
+  /*  85 */ [gems(50), 'lower.floatie'],
   /*  86 */ ['face.lemon-squint', 'headwear.bunny'],
   /*  87 */ [gumballs(350), 'nameplate.ribbon'],
   /*  88 */ ['banner.mint-stripes', gumballs(450)],
@@ -153,7 +153,7 @@ const SEASON1_LAYOUT: readonly (readonly [free: Cell, premium: Cell])[] = [
   /*  92 */ [gumballs(400), 'face.lovestruck'],
   /*  93 */ ['footsteps.candy-tap', gumballs(500)],
   /*  94 */ ['emote.who-knows', 'victory.hero'],
-  /*  95 */ [null, 'color.chocolate-fudge'],
+  /*  95 */ [gems(50), 'color.chocolate-fudge'],
   /*  96 */ [gumballs(400), 'pattern.checker'],
   /*  97 */ ['color.root-beer', shards(5)],
   /*  98 */ [gumballs(400), 'banner.candy'],
@@ -181,12 +181,13 @@ function resolveCell(cell: Cell, where: string): PassReward[] {
 /**
  * Season 1 ("Sugar Rush") layout, built from {@link SEASON1_LAYOUT}.
  *
- * Tier cost ramps gently from 900 to 1500 XP. Every tier pays out on the
- * premium track and all but eight (the x5 "premium spotlight" tiers) on the free
- * track. About 70% of rewards are real `pass` catalogue cosmetics, rising in
- * rarity through the season; currency is filler only (Gumballs on free;
- * Gumballs, Gems and Crown Shards on premium, with 800 Gems refunding most of
- * the premium price). Every 10th tier is a showcase (rare+ free, epic+
+ * Tier cost ramps gently from 900 to 1500 XP. Every tier pays out on both
+ * tracks. About 70% of rewards are real `pass` catalogue cosmetics, rising in
+ * rarity through the season; currency is filler (Gumballs on free, plus 50
+ * Gems on each of the eight x5 "premium spotlight" tiers so free players bank
+ * 400 Gems a season toward the next Premium Pass; Gumballs, Gems and Crown
+ * Shards on premium, with 800 Gems refunding most of the premium price). See
+ * docs/design/ECONOMY.md. Every 10th tier is a showcase (rare+ free, epic+
  * premium), tiers 25/50/75 are premium legendaries and tier 100 is the mythic
  * victory pose. Each cosmetic appears at most once.
  *

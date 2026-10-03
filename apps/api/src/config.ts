@@ -2,14 +2,15 @@
  * Environment configuration for the API.
  *
  * Responsibilities:
- * - Parse and validate every environment variable the service reads, once, at boot.
- * - Provide safe development defaults so `pnpm dev` works with zero setup.
- * - Refuse to boot in production with development secrets.
+ * - Parse and validate every environment variable the service reads, once, at
+ *   boot, reporting every problem together.
+ * - Provide development defaults for everything except secrets, which come
+ *   from the environment or the `.env` files `pnpm setup:env` writes.
+ * - Refuse to boot without secrets, with placeholder secrets, or in
+ *   production without Redis unless that is explicitly allowed.
  */
+import { EnvIssues, type Env } from '@tumble/shared/env';
 import { z } from 'zod';
-
-const DEV_JWT_SECRET = 'dev-only-jwt-secret-change-me-0123456789abcdef';
-const DEV_INTERNAL_SECRET = 'dev-only-internal-hmac-secret-change-me';
 
 const optionalString = z
   .string()
@@ -23,8 +24,7 @@ const EnvSchema = z.object({
   DATABASE_URL: optionalString,
   PGLITE_DIR: z.string().default('./.data/pglite'),
   REDIS_URL: optionalString,
-  JWT_SECRET: z.string().min(32).default(DEV_JWT_SECRET),
-  INTERNAL_HMAC_SECRET: z.string().min(16).default(DEV_INTERNAL_SECRET),
+  ALLOW_MEMORY_STORE: optionalString,
   ADMIN_TOKEN: optionalString,
   PUBLIC_WEB_URL: z.string().url().default('http://localhost:5173'),
   PUBLIC_API_URL: z.string().url().default('http://localhost:7360'),
@@ -35,8 +35,11 @@ const EnvSchema = z.object({
   GOOGLE_CLIENT_SECRET: optionalString,
   STRIPE_SECRET_KEY: optionalString,
   STRIPE_WEBHOOK_SECRET: optionalString,
+  SMTP_URL: optionalString,
+  SMTP_FROM: optionalString,
   NAME_CHANGE_COOLDOWN_DAYS: z.coerce.number().int().min(0).default(30),
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(300),
+  PRESENCE_GRACE_MS: z.coerce.number().int().min(0).max(120_000).default(8_000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 });
 
@@ -58,6 +61,12 @@ export interface ApiConfig {
   pgliteDir: string;
   /** Redis connection string; absent → in-process KV. */
   redisUrl: string | undefined;
+  /**
+   * True when production runs on the in-process KV because `ALLOW_MEMORY_STORE=1`
+   * was set explicitly; parties, presence and leaderboards are then lost on
+   * restart and not shared between instances.
+   */
+  memoryStoreInProduction: boolean;
   /** HS256 secret for access tokens. Shared with the matchmaker, which verifies them. */
   jwtSecret: string;
   /** HMAC secret shared with game servers for `/internal/*` calls. */
@@ -73,9 +82,13 @@ export interface ApiConfig {
   discord: OAuthClientConfig | undefined;
   google: OAuthClientConfig | undefined;
   stripe: { secretKey: string; webhookSecret: string | undefined } | undefined;
+  /** SMTP relay for sign-in emails; absent → console (dev) or email sign-in disabled (production). */
+  smtp: { url: string; from: string } | undefined;
   nameChangeCooldownDays: number;
   /** Requests per minute per client for the global rate limiter. */
   rateLimitMax: number;
+  /** How long a user stays "online" after their last realtime connection closes. */
+  presenceGraceMs: number;
   logLevel: string;
 }
 
@@ -88,16 +101,27 @@ function pair(id: string | undefined, secret: string | undefined): OAuthClientCo
  *
  * @param env - Usually `process.env`; tests pass a literal map.
  * @returns The validated configuration.
- * @throws If a variable is malformed, or production runs with development secrets.
+ * @throws {EnvConfigError} Listing every malformed variable and missing or
+ *   placeholder secret, and `REDIS_URL` in production unless `ALLOW_MEMORY_STORE=1`.
  */
-export function loadConfig(env: Record<string, string | undefined> = process.env): ApiConfig {
-  const e = EnvSchema.parse(env);
-  if (e.NODE_ENV === 'production') {
-    if (e.JWT_SECRET === DEV_JWT_SECRET) throw new Error('JWT_SECRET must be set in production');
-    if (e.INTERNAL_HMAC_SECRET === DEV_INTERNAL_SECRET) {
-      throw new Error('INTERNAL_HMAC_SECRET must be set in production');
-    }
+export function loadConfig(env: Env = process.env): ApiConfig {
+  const issues = new EnvIssues(env);
+  const jwtSecret = issues.secret('JWT_SECRET', 32);
+  const internalHmacSecret = issues.secret('INTERNAL_HMAC_SECRET', 16);
+  const parsed = EnvSchema.safeParse(env);
+  if (!parsed.success) issues.addSchemaIssues(parsed.error.issues);
+  // Every field has a default, so parsing {} lets the remaining checks run and
+  // report alongside the schema issues.
+  const e = parsed.success ? parsed.data : EnvSchema.parse({});
+  if (e.NODE_ENV === 'production' && !e.REDIS_URL && e.ALLOW_MEMORY_STORE !== '1') {
+    issues.add(
+      'REDIS_URL',
+      'is required in production: parties, presence, leaderboards and nonces would live in ' +
+        'process memory, vanish on restart and not be shared between instances. ' +
+        'Set ALLOW_MEMORY_STORE=1 to run a single instance on memory anyway.',
+    );
   }
+  issues.throwIfAny('api');
   const corsOrigins: string[] | true = e.CORS_ORIGINS
     ? e.CORS_ORIGINS.split(',')
         .map((s) => s.trim())
@@ -112,8 +136,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     databaseUrl: e.DATABASE_URL,
     pgliteDir: e.NODE_ENV === 'test' ? 'memory://' : e.PGLITE_DIR,
     redisUrl: e.REDIS_URL,
-    jwtSecret: e.JWT_SECRET,
-    internalHmacSecret: e.INTERNAL_HMAC_SECRET,
+    memoryStoreInProduction: e.NODE_ENV === 'production' && !e.REDIS_URL,
+    jwtSecret,
+    internalHmacSecret,
     adminToken: e.ADMIN_TOKEN,
     publicWebUrl: e.PUBLIC_WEB_URL.replace(/\/$/, ''),
     publicApiUrl: e.PUBLIC_API_URL.replace(/\/$/, ''),
@@ -123,8 +148,15 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     stripe: e.STRIPE_SECRET_KEY
       ? { secretKey: e.STRIPE_SECRET_KEY, webhookSecret: e.STRIPE_WEBHOOK_SECRET }
       : undefined,
+    smtp: e.SMTP_URL
+      ? {
+          url: e.SMTP_URL,
+          from: e.SMTP_FROM ?? `Tumble Royale <no-reply@${new URL(e.PUBLIC_WEB_URL).hostname}>`,
+        }
+      : undefined,
     nameChangeCooldownDays: e.NAME_CHANGE_COOLDOWN_DAYS,
     rateLimitMax: e.RATE_LIMIT_MAX,
+    presenceGraceMs: e.PRESENCE_GRACE_MS,
     logLevel: e.LOG_LEVEL,
   };
 }

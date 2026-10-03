@@ -7,7 +7,7 @@
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
-import { ItemArt } from '../../components/bits.tsx';
+import { ItemPreview } from '../../components/ItemPreview.tsx';
 import { Icon } from '../../components/icons/index.tsx';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
@@ -178,7 +178,7 @@ export const LobbyEmotes = memo(function LobbyEmotes({ className }: LobbyEmotesP
                   onPointerEnter={() => playCue('ui.hover')}
                 >
                   <span className="tr-lobby-emote-art">
-                    <ItemArt item={item} className="tr-lobby-emote-img" />
+                    <ItemPreview item={item} className="tr-lobby-emote-img" />
                   </span>
                   <span className="tr-lobby-emote-name tr-ellipsis">{item.name}</span>
                   {entry.slot >= 0 && <span className="tr-lobby-emote-slot">{entry.slot + 1}</span>}

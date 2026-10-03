@@ -11,9 +11,9 @@ import {
   FIREWORK_COLORS,
   GOLD_COLORS,
   MINT_COLORS,
-  TEAM_PALETTE,
   hexColor,
 } from './palette.ts';
+import { teamColor } from '../teamPalette.ts';
 import { GlowShape, ParticleSpec, PuffShape, type ParticlePool } from './particles.ts';
 import type { StunStars } from './stunStars.ts';
 
@@ -806,7 +806,7 @@ function tileCrack(t: RecipeTargets, pos: VfxVec3): void {
 
 function teamSmoke(t: RecipeTargets, pos: VfxVec3): void {
   const k = O.scale;
-  const base = O.color ?? TEAM_PALETTE[O.team] ?? COLORS.white;
+  const base = O.color ?? (O.team >= 0 ? hexColor(teamColor(O.team)) : COLORS.white);
   const count = n(16, t.density, 5);
   for (let i = 0; i < count; i++) {
     P.reset();

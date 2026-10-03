@@ -6,6 +6,7 @@
  * +X pitches a trunk bone forward and swings a hanging limb backward; positive
  * symmetric Z lifts a limb away from the body.
  */
+import { LOBBY_SIT_STATE } from '@tumble/shared';
 import { CharacterState } from '@tumble/sim';
 import type { ExpressionId } from './face.ts';
 import { Pose, noise1 } from './pose.ts';
@@ -245,14 +246,32 @@ function eliminated(p: Pose, c: PoseContext): void {
   p.stretch(-0.05 + sin(c.time * 1.4) * 0.008);
 }
 
+/** Sitting on the floor, legs out, leaning back on the hands (menu-lobby AFK). */
+function sit(p: Pose, c: PoseContext): void {
+  const k = clamp01(c.t / 0.45);
+  const e = k * k * (3 - 2 * k);
+  const breathe = sin(c.time * 1.6 + c.seed);
+  p.move(0, -0.42 * e, 0).stretch(breathe * 0.01);
+  p.sym(B.upperLegL, B.upperLegR, -1.45 * e, 0, 0.14 * e);
+  p.sym(B.lowerLegL, B.lowerLegR, 0.25 * e, 0, 0);
+  p.sym(B.upperArmL, B.upperArmR, 0.55 * e, 0, 0.32 * e);
+  p.sym(B.lowerArmL, B.lowerArmR, -0.2 * e, 0, 0);
+  p.rot(B.spine, -0.18 * e + breathe * 0.02, 0, 0).rot(
+    B.head,
+    0.08 * e,
+    noise1(c.time * 0.3, c.seed) * 0.35,
+    0,
+  );
+}
+
 const scratchA = new Pose();
 const scratchB = new Pose();
 const subCtx: PoseContext = { t: 0, time: 0, speed: 0, vy: 0, grounded: true, phase: 0, seed: 0, prevT: 0 };
 
 const S = CharacterState;
 
-/** Number of state slots (max `CharacterState` id + 1). */
-export const STATE_COUNT = 20;
+/** Number of state slots (max pose id + 1; {@link LOBBY_SIT_STATE} is past the sim's range). */
+export const STATE_COUNT = LOBBY_SIT_STATE + 1;
 
 /** Pose function per state id. */
 export const STATE_POSES: readonly PoseFn[] = (() => {
@@ -277,6 +296,7 @@ export const STATE_POSES: readonly PoseFn[] = (() => {
   fns[S.LedgeClimb] = ledgeClimb;
   fns[S.Respawning] = idle;
   fns[S.Eliminated] = eliminated;
+  fns[LOBBY_SIT_STATE] = sit;
   return fns;
 })();
 
@@ -300,6 +320,7 @@ export const STATE_FACE: readonly ExpressionId[] = (() => {
   f[S.LedgeClimb] = 'effort';
   f[S.Respawning] = 'surprised';
   f[S.Eliminated] = 'sad';
+  f[LOBBY_SIT_STATE] = 'content';
   return f;
 })();
 

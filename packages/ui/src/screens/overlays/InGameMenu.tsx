@@ -12,8 +12,10 @@ import { Icon } from '../../components/icons/index.tsx';
 import { BIND_ACTION_LABELS } from '../../store/defaults.ts';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
-import type { BindAction, LocalStatus } from '../../store/types.ts';
+import type { BindAction, LocalStatus, ShowSeat } from '../../store/types.ts';
+import { PAD_GLYPHS, controlGlyph } from '../../hud/glyphs.ts';
 import { keyLabel } from './SettingsSheet.tsx';
+import { ShowHostTools } from './ShowHostTools.tsx';
 
 const STATUS: Record<LocalStatus, { label: string; tone: string }> = {
   playing: { label: 'Still in it', tone: 'is-playing' },
@@ -22,7 +24,11 @@ const STATUS: Record<LocalStatus, { label: string; tone: string }> = {
   spectating: { label: 'Spectating', tone: 'is-out' },
 };
 
+/** Knocked out of the show and watching the rest of it. */
+const OUT_OF_SHOW = { label: 'Eliminated · Spectating', tone: 'is-out' };
+
 const CONTROL_ROWS: BindAction[] = ['jump', 'dive', 'grab', 'emoteWheel'];
+const SPECTATE_ROWS: BindAction[] = ['spectatePrev', 'spectateNext'];
 
 /** Opens the in-round menu. */
 export function openInGameMenu(): void {
@@ -35,14 +41,35 @@ function close(): void {
   ui.getState().setOverlay('none');
 }
 
+/**
+ * Leave-show dialog body, accurate per mode: offline the profile banks the
+ * played rounds on the spot; online the game server reports the leaver's
+ * rounds with the show and the account API grants them then.
+ *
+ * @param seat - The local seat (null outside a show: treated as offline).
+ * @returns Dialog body copy.
+ */
+export function leaveShowBody(seat: ShowSeat | null): string {
+  const rounds = seat?.online
+    ? 'Rewards for the rounds you already played are added when the show finishes.'
+    : 'Rewards for the rounds you already played are saved now.';
+  return `You'll be out of this show and back in the menu. ${rounds} Show and placement bonuses need you to stay until the end.`;
+}
+
 function confirmLeave(): void {
+  const seat = ui.getState().showSeat;
   ui.getState().showDialog({
     id: 'leaveShow',
     kind: 'confirm',
     title: 'Leave the show?',
-    body: "You'll be out of this show and back in the menu. Rewards for rounds you already played still count.",
+    body: leaveShowBody(seat),
     buttons: [
-      { id: 'cancel', label: 'Keep playing', variant: 'secondary', autofocus: true },
+      {
+        id: 'cancel',
+        label: seat?.outOfShow ? 'Keep watching' : 'Keep playing',
+        variant: 'secondary',
+        autofocus: true,
+      },
       { id: 'confirm', label: 'Leave show', variant: 'danger' },
     ],
   });
@@ -69,7 +96,10 @@ export function InGameMenu(): JSX.Element {
     })),
   );
   const binds = useUI((s) => s.settings.controls.keybinds);
-  const status = STATUS[hud.status];
+  const device = useUI((s) => s.hud.device);
+  const outOfShow = useUI((s) => s.showSeat?.outOfShow ?? false);
+  const replayLive = useUI((s) => s.replayLive);
+  const status = outOfShow ? OUT_OF_SHOW : STATUS[hud.status];
   return (
     <div
       className="tr-dialog-wrap tr-interactive"
@@ -109,22 +139,42 @@ export function InGameMenu(): JSX.Element {
           <i className="tr-status-dot is-online" aria-hidden /> The show keeps running while this menu is
           open.
         </p>
-        <div className="tr-igm-keys" aria-label="Controls">
-          {CONTROL_ROWS.map((a) => (
-            <span key={a} className="tr-hud-hint-item">
-              <kbd>{keyLabel(binds[a][0] ?? '')}</kbd>
-              {BIND_ACTION_LABELS[a]}
+        {device !== 'touch' && (
+          <div className="tr-igm-keys" aria-label="Controls">
+            {(hud.status === 'spectating' || outOfShow ? SPECTATE_ROWS : CONTROL_ROWS).map((a) => (
+              <span key={a} className="tr-hud-hint-item">
+                <kbd>{controlGlyph(a, device, binds)}</kbd>
+                {BIND_ACTION_LABELS[a]}
+              </span>
+            ))}
+            <span className="tr-hud-hint-item" data-testid="igm-menu-key">
+              <kbd>{device === 'gamepad' ? PAD_GLYPHS.pause : keyLabel(binds.pause[0] || 'Escape')}</kbd>
+              {BIND_ACTION_LABELS.pause}
             </span>
-          ))}
-          <span className="tr-hud-hint-item">
-            <kbd>Esc</kbd>
-            Free the mouse
-          </span>
-        </div>
+            {device === 'keyboard' && (
+              <span className="tr-hud-hint-item">
+                <kbd>Esc</kbd>
+                Free the mouse
+              </span>
+            )}
+          </div>
+        )}
+        <ShowHostTools />
         <div className="tr-igm-actions">
           <Button variant="go" size="lg" block autoFocusNav cue="ui.confirm" data-nav-back="" onClick={close}>
             Resume
           </Button>
+          {replayLive && (hud.status === 'eliminated' || hud.status === 'spectating') && (
+            <Button
+              variant="secondary"
+              block
+              data-testid="igm-replay"
+              // The game closes this menu while the replay plays and reopens it on exit.
+              onClick={() => uiEvents.emit('replayOpenLive')}
+            >
+              <Icon name="film" size="1.1em" /> Watch replay
+            </Button>
+          )}
           <Button
             variant="secondary"
             block
@@ -136,6 +186,19 @@ export function InGameMenu(): JSX.Element {
           >
             <Icon name="gear" size="1.1em" /> Settings
           </Button>
+          {hud.status !== 'playing' && (
+            <Button
+              variant="secondary"
+              block
+              data-testid="igm-photo"
+              onClick={() => {
+                ui.getState().setOverlay('none');
+                uiEvents.emit('photoMode');
+              }}
+            >
+              <Icon name="camera" size="1.1em" /> Photo mode
+            </Button>
+          )}
           <Button variant="danger" block data-testid="igm-leave" onClick={confirmLeave}>
             Leave show
           </Button>

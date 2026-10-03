@@ -25,6 +25,27 @@ URL options and the dev sandbox pages are listed in the root README.
 | `src/input/`                                                                                      | Keyboard, mouse (pointer lock), gamepad and touch input, latched per fixed step                                       |
 | `src/*-lab/`, `src/playground/`, `src/level-viewer/`, `src/ui-preview/`, `src/obstacles-gallery/` | Dev sandboxes behind the extra `*.html` entries                                                                       |
 
+## Deploying
+
+Set the service URLs at build time with the `VITE_*` variables in
+[`.env.example`](.env.example) (copy it to `.env`, or export them); the
+defaults point at the local dev stack.
+
+The game handles a few paths itself, so the static host must answer them
+with `index.html`:
+
+| Path                                         | Purpose                            |
+| -------------------------------------------- | ---------------------------------- |
+| `/join/<code>`                               | Party invite links                 |
+| `/auth/complete?code=…` / `?error=…`         | Return from Discord/Google sign-in |
+| `/auth/email?token=…`                        | Email magic links                  |
+| `/store?checkout=success\|cancel&purchase=…` | Return from Stripe Checkout        |
+
+`public/_redirects` covers Netlify and Cloudflare Pages and `vercel.json`
+covers Vercel (with `apps/client` as the project root). Elsewhere, add an
+equivalent SPA fallback. `vite dev` and `vite preview` already fall back to
+`index.html` (Vite's default `appType: 'spa'`).
+
 ## Testing
 
 ```sh

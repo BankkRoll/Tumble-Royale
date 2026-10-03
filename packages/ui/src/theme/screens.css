@@ -2372,6 +2372,12 @@
   font-size: 0.68em;
   font-weight: 700;
 }
+.tr-res-bot {
+  position: absolute;
+  top: 0.3em;
+  left: 0.3em;
+  font-size: 0.5em;
+}
 .tr-res-mark {
   position: absolute;
   top: 0.15em;
@@ -3702,6 +3708,86 @@
 .tr-pshow-players .tr-custom-player-grid {
   max-height: min(40vh, 22em);
 }
+/* Live lobby: member rows with host actions, read-only settings for members. */
+.tr-lobby-members {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+  max-height: min(34vh, 20em);
+  min-height: 0;
+}
+.tr-lobby-member {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  min-width: 0;
+  min-height: 2.6em;
+  padding: 0.2em 0.35em 0.2em 0.45em;
+  border-radius: 999px;
+  border: 0.12em solid var(--ink);
+  background: var(--cloud);
+}
+.tr-lobby-member.is-self {
+  background: var(--lemon);
+}
+.tr-lobby-member.is-away {
+  opacity: 0.6;
+}
+.tr-lobby-member.is-banned {
+  border-style: dashed;
+  background: transparent;
+  padding-left: 0.9em;
+}
+.tr-lobby-member .tr-chip {
+  flex-shrink: 0;
+}
+.tr-lobby-crown {
+  display: inline-flex;
+  margin-right: 0.3em;
+  color: var(--tangerine);
+  vertical-align: -0.1em;
+}
+.tr-lobby-confirm {
+  gap: 0.35em;
+  flex-shrink: 0;
+}
+.tr-lobby-settings {
+  margin: 0;
+}
+.tr-lobby-settings dd {
+  margin: 0;
+  max-width: 60%;
+  font-weight: 700;
+  text-align: right;
+}
+.tr-lobby-warn {
+  color: var(--bad);
+  font-weight: 700;
+}
+.tr-code-big.is-locked {
+  opacity: 0.45;
+}
+.tr-party-slot .tr-party-kick {
+  position: absolute;
+  top: -0.45em;
+  right: -0.45em;
+  display: grid;
+  place-items: center;
+  width: 1.35em;
+  height: 1.35em;
+  padding: 0;
+  border-radius: 50%;
+  border: 0.12em solid var(--ink);
+  background: var(--cloud);
+  color: var(--ink);
+  font-size: 0.8em;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.tr-party-slot .tr-party-kick.is-armed {
+  background: var(--bad);
+  color: var(--cloud);
+}
 @media (max-width: 760px), (orientation: portrait) {
   .tr-pshow {
     overflow: auto;
@@ -3770,4 +3856,20 @@
 .tr-igm-actions {
   display: grid;
   gap: 0.5em;
+}
+
+/* Your Name#tag at the top of the Friends sheet: what friends type to find you. */
+.tr-my-tag {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  padding: 0.6em 0.8em;
+  border-radius: 1em;
+  background: #fff;
+  border: 0.13em solid var(--ink);
+}
+.tr-my-tag-num {
+  margin-left: 0.15em;
+  color: var(--grape);
+  letter-spacing: 0.05em;
 }

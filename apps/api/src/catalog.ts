@@ -5,19 +5,29 @@
  * Responsibilities:
  * - Adapt `@tumble/content/{cosmetics,progression,shows}` into the narrow
  *   shapes the backend reads, so route code never depends on content internals.
- * - Own backend-only economy data content does not define (Gem packs, season
- *   dates, level-up Gumballs).
+ * - Own backend-only economy data content does not define (Gem packs,
+ *   level-up Gumballs).
+ * - Resolve the live season from the content schedule against a clock
+ *   ({@link clockedCatalog}), so seasons roll over without a deploy.
  */
 import { COSMETICS, DEFAULT_LOADOUT, type CosmeticItem } from '@tumble/content/cosmetics';
 import {
   CHALLENGE_POOL,
   computeShowRewards,
+  GEM_EARN,
   levelForXp as contentLevelForXp,
+  nextSeason as contentNextSeason,
+  passForSeason,
   pickChallenges as contentPickChallenges,
-  SEASON_PASS,
+  seasonAt as contentSeasonAt,
+  seasonById,
+  shardShopAt,
   SHARDS_PER_CROWN,
   type ChallengeMetric as ContentChallengeMetric,
+  type GemEarnRules,
   type PassReward,
+  type Season,
+  type ShardShopRotation,
   type ShowResultFacts,
 } from '@tumble/content/progression';
 import { PLAYLISTS } from '@tumble/content/shows';
@@ -58,7 +68,7 @@ export interface CatalogCosmetic {
   slot: CosmeticSlot;
   rarity: Rarity;
   /** `default` items are granted to every new account. */
-  source: 'default' | 'store' | 'pass' | 'challenge' | 'event';
+  source: 'default' | 'store' | 'pass' | 'challenge' | 'event' | 'shards';
   /** Direct store price; null when not sold. */
   price: { currency: StoreCurrency; amount: number } | null;
 }
@@ -96,10 +106,19 @@ export interface CatalogPassTier {
 
 /** Season definition including its pass. */
 export interface CatalogSeason {
+  /** `s<number>`; keys pass progress, ratings and season leaderboards. */
   id: string;
+  /** 1-based season number. */
+  number: number;
   name: string;
+  /** Short theme name, e.g. `Sugar Rush`. */
+  theme: string;
+  /** Inclusive start, ISO-8601 UTC. */
   startsAt: string;
+  /** Exclusive end (the next season's start), ISO-8601 UTC. */
   endsAt: string;
+  /** Content pass track the season plays. */
+  passTrackId: string;
   premiumPriceGems: number;
   tiers: readonly CatalogPassTier[];
 }
@@ -162,7 +181,22 @@ export interface LoadoutItems {
 export interface Catalog {
   cosmetics: readonly CatalogCosmetic[];
   playlists: readonly CatalogPlaylist[];
-  season: CatalogSeason;
+  /**
+   * The live season. On {@link CONTENT_CATALOG} this reads the wall clock; the
+   * API context wraps the catalog with {@link clockedCatalog} so it follows
+   * the injected clock instead.
+   */
+  readonly season: CatalogSeason;
+  /** The season live at an instant. */
+  seasonAt(at: Date): CatalogSeason;
+  /** The season after `season`. */
+  nextSeason(season: CatalogSeason): CatalogSeason;
+  /** A season by id, or undefined when malformed. */
+  seasonById(id: string): CatalogSeason | undefined;
+  /** The Crown Shard shop shelf live at an instant. */
+  shardShop(at: Date): ShardShopRotation;
+  /** Free Gem payouts for play. */
+  gemEarn: GemEarnRules;
   challenges: readonly CatalogChallenge[];
   gemPacks: readonly CatalogGemPack[];
   /** Gumballs granted per account level gained. */
@@ -178,9 +212,6 @@ export interface Catalog {
   /** Starter look for new accounts. */
   defaultLoadout(): LoadoutItems;
 }
-
-/** Season 1 calendar; content defines the pass, not its dates. */
-const SEASON_DATES = { startsAt: '2026-09-01T00:00:00.000Z', endsAt: '2026-12-01T00:00:00.000Z' };
 
 const GEM_PACKS: readonly CatalogGemPack[] = [
   { id: 'gems.500', gems: 500, priceCents: 499, currency: 'usd', name: 'Handful of Gems' },
@@ -221,6 +252,33 @@ const challengeById = new Map<string, CatalogChallenge>(
   ]),
 );
 
+const seasonCache = new Map<string, CatalogSeason>();
+
+/** Content season → catalog season, memoised so tier tables are built once per season. */
+function toSeason(s: Season): CatalogSeason {
+  const hit = seasonCache.get(s.id);
+  if (hit) return hit;
+  const pass = passForSeason(s);
+  const season: CatalogSeason = {
+    id: s.id,
+    number: s.number,
+    name: s.name,
+    theme: s.theme,
+    startsAt: s.startsAt,
+    endsAt: s.endsAt,
+    passTrackId: s.passTrackId,
+    premiumPriceGems: pass.premiumPriceGems,
+    tiers: pass.tiers.map((t) => ({
+      tier: t.tier,
+      xp: t.xp,
+      free: t.free.map(toReward),
+      premium: t.premium.map(toReward),
+    })),
+  };
+  seasonCache.set(s.id, season);
+  return season;
+}
+
 /** The catalog backed by `@tumble/content`. */
 export const CONTENT_CATALOG: Catalog = {
   cosmetics: COSMETICS.map(toCosmetic),
@@ -233,18 +291,17 @@ export const CONTENT_CATALOG: Catalog = {
     minPlayers: p.minPlayers,
     botsAllowed: p.botsAllowed,
   })),
-  season: {
-    id: SEASON_PASS.seasonId,
-    name: SEASON_PASS.name,
-    ...SEASON_DATES,
-    premiumPriceGems: SEASON_PASS.premiumPriceGems,
-    tiers: SEASON_PASS.tiers.map((t) => ({
-      tier: t.tier,
-      xp: t.xp,
-      free: t.free.map(toReward),
-      premium: t.premium.map(toReward),
-    })),
+  get season() {
+    return toSeason(contentSeasonAt(new Date()));
   },
+  seasonAt: (at) => toSeason(contentSeasonAt(at)),
+  nextSeason: (s) => toSeason(contentNextSeason(s)),
+  seasonById: (id) => {
+    const s = seasonById(id);
+    return s ? toSeason(s) : undefined;
+  },
+  shardShop: (at) => shardShopAt(at),
+  gemEarn: GEM_EARN,
   challenges: [...challengeById.values()],
   gemPacks: GEM_PACKS,
   gumballsPerLevel: 100,
@@ -270,6 +327,20 @@ export const CONTENT_CATALOG: Catalog = {
 /** Returns the catalog in use. */
 export function loadCatalog(): Catalog {
   return CONTENT_CATALOG;
+}
+
+/**
+ * A view of `base` whose `season` follows `now` instead of the wall clock, so
+ * an injected clock (tests, replays) sees seasons roll over.
+ *
+ * @param base - Catalog to wrap.
+ * @param now - Clock.
+ * @returns A catalog delegating every other member to `base`.
+ */
+export function clockedCatalog(base: Catalog, now: () => Date): Catalog {
+  const view = Object.create(base) as Catalog;
+  Object.defineProperty(view, 'season', { get: () => base.seasonAt(now()), enumerable: true });
+  return view;
 }
 
 /** Index of cosmetics by id for O(1) validation. */
@@ -306,16 +377,18 @@ export function starterItems(catalog: Catalog): string[] {
 /**
  * Season pass progress for an XP total.
  *
+ * @param season - Season whose tier table applies (defaults to the live one).
  * @returns Tiers cleared (0–max), XP into the next tier and that tier's cost.
  */
 export function passProgress(
   catalog: Catalog,
   seasonXp: number,
+  season: CatalogSeason = catalog.season,
 ): { tier: number; intoTier: number; tierXp: number } {
   let xp = Math.max(0, Math.floor(seasonXp));
-  for (const t of catalog.season.tiers) {
+  for (const t of season.tiers) {
     if (xp < t.xp) return { tier: t.tier - 1, intoTier: xp, tierXp: t.xp };
     xp -= t.xp;
   }
-  return { tier: catalog.season.tiers.length, intoTier: 0, tierXp: 0 };
+  return { tier: season.tiers.length, intoTier: 0, tierXp: 0 };
 }

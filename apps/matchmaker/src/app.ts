@@ -13,8 +13,11 @@ import type { Duplex } from 'node:stream';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { WebSocket, WebSocketServer } from 'ws';
 import { z } from 'zod';
+import { ApiBanLookup, NO_BANS, type BanLookup } from './bans.ts';
 import type { MatchmakerConfig } from './config.ts';
+import type { GameControl } from './gameControl.ts';
 import { DEFAULT_CUSTOM, Matchmaker, MMError, userChannel } from './matchmaker.ts';
+import { RateLimiter } from './rateLimit.ts';
 import { createStore, type MMStore } from './store.ts';
 import { verifyAccess, verifyQueueTicket, type Player } from './tickets.ts';
 
@@ -23,6 +26,10 @@ export interface MatchmakerAppOptions {
   store?: MMStore;
   now?: () => number;
   logger?: boolean;
+  /** Ban lookups; defaults to the API at `API_URL`, or none without it. */
+  bans?: BanLookup;
+  /** Game-server control channel (host kicks after a show started). */
+  control?: GameControl;
 }
 
 /** A built matchmaker. */
@@ -37,11 +44,22 @@ const QueueBody = z.object({ ticket: z.string().min(20).max(8192) });
 const RegisterBody = z.object({
   serverId: z.string().regex(/^[A-Za-z0-9_.-]{1,64}$/),
   url: z.string().url(),
+  controlUrl: z.string().url().optional(),
   region: z.string().min(2).max(8),
   capacity: z.number().int().min(1).max(100_000),
   load: z.number().int().min(0).default(0),
+  humans: z.number().int().min(0).optional(),
+  maxRooms: z.number().int().min(1).max(10_000).optional(),
+  rooms: z.number().int().min(0).optional(),
 });
-const HeartbeatBody = z.object({ serverId: z.string().min(1).max(64), load: z.number().int().min(0) });
+const HeartbeatBody = z.object({
+  serverId: z.string().min(1).max(64),
+  load: z.number().int().min(0),
+  /** Humans connected to the server's rooms (older servers omit it). */
+  humans: z.number().int().min(0).optional(),
+  rooms: z.number().int().min(0).optional(),
+  matches: z.array(z.string().min(1).max(64)).max(10_000).optional(),
+});
 const SettingsSchema = z
   .object({
     playlistId: z.string().min(1).max(64),
@@ -51,6 +69,7 @@ const SettingsSchema = z
     roundTimeScale: z.number().min(0.5).max(2),
     lobbyCountdownSec: z.number().int().min(0).max(120),
     spectatorSlots: z.number().int().min(0).max(10),
+    minPlayers: z.number().int().min(1).max(60),
   })
   .partial();
 const CreateLobbyBody = z.object({
@@ -66,6 +85,10 @@ const CodeParam = z.object({
 });
 const JoinLobbyBody = z.object({ spectator: z.boolean().default(false) }).default({ spectator: false });
 const KickBody = z.object({ userId: z.string().min(1).max(64) });
+const LockBody = z.object({ locked: z.boolean() });
+const ReadyBody = z.object({ ready: z.boolean() });
+const RoleBody = z.object({ spectator: z.boolean() });
+const StartBody = z.object({ force: z.boolean().default(false) }).default({ force: false });
 
 function parse<S extends z.ZodType>(schema: S, data: unknown): z.output<S> {
   const r = schema.safeParse(data);
@@ -96,19 +119,48 @@ export async function buildMatchmaker(
 ): Promise<MatchmakerApp> {
   const now = opts.now ?? Date.now;
   const store = opts.store ?? createStore(cfg.redisUrl, now);
-  const mm = new Matchmaker(cfg, store, now);
+  const bans =
+    opts.bans ??
+    (cfg.apiUrl && cfg.internalHmacSecret
+      ? new ApiBanLookup({
+          apiUrl: cfg.apiUrl,
+          secret: cfg.internalHmacSecret,
+          now,
+          log: (m) => app.log.warn(m),
+        })
+      : NO_BANS);
+  const mm = new Matchmaker(cfg, store, now, bans, opts.control);
   const app = Fastify({ logger: opts.logger === false ? false : { level: cfg.logLevel }, trustProxy: true });
+
+  const ipLimiter = new RateLimiter(cfg.rateLimitMax, 60_000, now);
+  const userLimiter = new RateLimiter(cfg.userRateLimitMax, 60_000, now);
+  const originAllowed = (origin: string): boolean =>
+    cfg.allowedOrigins === true || cfg.allowedOrigins.includes(origin);
+  const rateLimited = (retryAfterMs: number): MMError =>
+    new MMError(429, 'rate_limited', `Too many requests; retry in ${Math.ceil(retryAfterMs / 1000)} s`);
 
   // @fastify/cors is not a dependency here; the surface is small enough to answer preflights directly.
   app.addHook('onRequest', async (req, reply) => {
     const origin = req.headers.origin;
     if (origin) {
-      reply.header('access-control-allow-origin', origin);
       reply.header('vary', 'origin');
-      reply.header('access-control-allow-headers', 'authorization, content-type');
-      reply.header('access-control-allow-methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+      if (originAllowed(origin)) {
+        reply.header('access-control-allow-origin', origin);
+        reply.header('access-control-allow-headers', 'authorization, content-type');
+        reply.header('access-control-allow-methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+      } else if (req.method === 'OPTIONS') {
+        return reply.code(403).send({ error: 'origin_not_allowed', message: 'Origin not allowed' });
+      }
     }
     if (req.method === 'OPTIONS') return reply.code(204).send();
+    // Game servers authenticate with their shared secret and may sit behind one NAT; they are not throttled per IP.
+    const path = req.url.split('?')[0] ?? '';
+    if (path === '/health' || path.startsWith('/servers') || path.startsWith('/matches/')) return;
+    const r = ipLimiter.hit(`ip:${req.ip}`);
+    if (!r.allowed) {
+      reply.header('retry-after', String(Math.ceil(r.retryAfterMs / 1000)));
+      throw rateLimited(r.retryAfterMs);
+    }
   });
 
   app.setErrorHandler((err, req, reply) => {
@@ -124,6 +176,11 @@ export async function buildMatchmaker(
     const token = bearer(req);
     const p = token ? await verifyAccess(cfg.jwtSecret, token, new Date(now())) : null;
     if (!p) throw new MMError(401, 'unauthorized', 'Valid API access token required');
+    // Reads are cheap and polled; only queue and lobby mutations count against the per-player budget.
+    if (req.method !== 'GET') {
+      const r = userLimiter.hit(`u:${p.userId}`);
+      if (!r.allowed) throw rateLimited(r.retryAfterMs);
+    }
     return p;
   };
   const gameServer = (req: FastifyRequest): void => {
@@ -139,6 +196,20 @@ export async function buildMatchmaker(
     queued: (await mm.entries()).reduce((s, e) => s + e.members.length, 0),
     servers: (await mm.servers()).length,
   }));
+
+  // Clients time this round trip to pick a region (Settings → Region → Auto).
+  // Kept free of store lookups beyond the server list so RTT stays network-bound.
+  app.get('/ping', async (_req, reply) => {
+    void reply.header('cache-control', 'no-store');
+    const regions = [...new Set((await mm.servers()).map((s) => s.region))].sort();
+    return { ok: true, regions };
+  });
+
+  // Public and unauthenticated: the Play tab shows these counts before sign-in.
+  app.get('/stats', async (_req, reply) => {
+    reply.header('cache-control', 'public, max-age=5');
+    return mm.stats();
+  });
 
   // --- Queue -----------------------------------------------------------------
   app.post('/queue', async (req) => {
@@ -173,16 +244,25 @@ export async function buildMatchmaker(
     return mm.registerServer({
       id: b.serverId,
       url: b.url,
+      ...(b.controlUrl ? { controlUrl: b.controlUrl } : {}),
       region: b.region,
       capacity: b.capacity,
       load: b.load,
+      ...(b.humans !== undefined ? { humans: b.humans } : {}),
+      ...(b.maxRooms !== undefined ? { maxRooms: b.maxRooms } : {}),
+      ...(b.rooms !== undefined ? { rooms: b.rooms } : {}),
     });
   });
 
   app.post('/servers/heartbeat', async (req) => {
     gameServer(req);
     const b = parse(HeartbeatBody, req.body);
-    return mm.heartbeat(b.serverId, b.load);
+    return mm.heartbeat(b.serverId, {
+      load: b.load,
+      ...(b.humans !== undefined ? { humans: b.humans } : {}),
+      ...(b.rooms !== undefined ? { rooms: b.rooms } : {}),
+      ...(b.matches ? { matches: b.matches } : {}),
+    });
   });
 
   app.delete('/servers/:id', async (req, reply) => {
@@ -207,6 +287,11 @@ export async function buildMatchmaker(
   });
 
   app.get('/lobbies/defaults', async () => DEFAULT_CUSTOM);
+
+  app.get('/lobbies/mine', async (req) => {
+    const p = await player(req);
+    return { lobby: await mm.lobbyOf(p.userId) };
+  });
 
   app.get('/lobbies/:code', async (req) => {
     await player(req);
@@ -236,13 +321,52 @@ export async function buildMatchmaker(
   app.post('/lobbies/:code/kick', async (req) => {
     const p = await player(req);
     const { code } = parse(CodeParam, req.params);
-    return { lobby: await mm.kickFromLobby(p.userId, code, parse(KickBody, req.body).userId) };
+    return mm.kickFromLobby(p.userId, code, parse(KickBody, req.body).userId);
+  });
+
+  // Host tools: each returns the updated lobby, which members also receive as `lobby_update`.
+  app.post('/lobbies/:code/unban', async (req) => {
+    const p = await player(req);
+    const { code } = parse(CodeParam, req.params);
+    return { lobby: await mm.unbanFromLobby(p.userId, code, parse(KickBody, req.body).userId) };
+  });
+
+  app.post('/lobbies/:code/host', async (req) => {
+    const p = await player(req);
+    const { code } = parse(CodeParam, req.params);
+    return { lobby: await mm.transferLobbyHost(p.userId, code, parse(KickBody, req.body).userId) };
+  });
+
+  app.post('/lobbies/:code/lock', async (req) => {
+    const p = await player(req);
+    const { code } = parse(CodeParam, req.params);
+    return { lobby: await mm.setLobbyLocked(p.userId, code, parse(LockBody, req.body).locked) };
+  });
+
+  app.post('/lobbies/:code/code', async (req) => {
+    const p = await player(req);
+    const { code } = parse(CodeParam, req.params);
+    return { lobby: await mm.regenerateLobbyCode(p.userId, code) };
+  });
+
+  // Member tools.
+  app.post('/lobbies/:code/ready', async (req) => {
+    const p = await player(req);
+    const { code } = parse(CodeParam, req.params);
+    return { lobby: await mm.setLobbyReady(p.userId, code, parse(ReadyBody, req.body).ready) };
+  });
+
+  app.post('/lobbies/:code/role', async (req) => {
+    const p = await player(req);
+    const { code } = parse(CodeParam, req.params);
+    return { lobby: await mm.setLobbyRole(p.userId, code, parse(RoleBody, req.body).spectator) };
   });
 
   app.post('/lobbies/:code/start', async (req) => {
     const p = await player(req);
     const { code } = parse(CodeParam, req.params);
-    const m = await mm.startLobby(p.userId, code);
+    const { force } = parse(StartBody, req.body ?? undefined);
+    const m = await mm.startLobby(p.userId, code, force);
     return {
       matchId: m.matchId,
       server: { id: m.serverId, url: m.serverUrl },
@@ -253,13 +377,30 @@ export async function buildMatchmaker(
 
   // --- WebSocket status stream -------------------------------------------------
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 });
+  // NOTE: per instance; with Redis a reconnect may land on another instance, which marks the member present again.
+  const sockets = new Map<string, number>();
   const onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (url.pathname !== '/ws') return;
+    const origin = req.headers.origin;
+    // Same trust model as Fastify's `trustProxy: true`: the left-most forwarded address is the client.
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip =
+      (typeof forwarded === 'string' ? forwarded.split(',')[0]?.trim() : undefined) ||
+      (req.socket.remoteAddress ?? 'unknown');
+    // SECURITY: browsers send Origin on WebSocket handshakes but CORS does not apply, so check it here.
+    if ((origin && !originAllowed(origin)) || !ipLimiter.hit(`ip:${ip}`).allowed) {
+      socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+      socket.destroy();
+      return;
+    }
     void (async () => {
       const p = await verifyAccess(cfg.jwtSecret, url.searchParams.get('token') ?? '', new Date(now()));
-      if (!p) {
-        socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+      const suspended = p ? await mm.isSuspended(p.userId) : false;
+      if (!p || suspended) {
+        socket.write(
+          `HTTP/1.1 ${suspended ? '403 Forbidden' : '401 Unauthorized'}\r\nConnection: close\r\n\r\n`,
+        );
         socket.destroy();
         return;
       }
@@ -268,10 +409,35 @@ export async function buildMatchmaker(
           const unsubscribe = await store.subscribe(userChannel(p.userId), (msg) => {
             if (ws.readyState === WebSocket.OPEN) ws.send(msg);
           });
-          ws.on('close', () => void unsubscribe());
-          ws.on('message', () => undefined);
+          sockets.set(p.userId, (sockets.get(p.userId) ?? 0) + 1);
+          ws.on('close', () => {
+            void unsubscribe();
+            const left = (sockets.get(p.userId) ?? 1) - 1;
+            if (left > 0) sockets.set(p.userId, left);
+            else {
+              sockets.delete(p.userId);
+              void mm.setLobbyPresence(p.userId, false);
+            }
+          });
+          ws.on('message', (data) => {
+            let msg: { type?: unknown; text?: unknown };
+            try {
+              msg = JSON.parse(String(data)) as { type?: unknown; text?: unknown };
+            } catch {
+              return;
+            }
+            if (msg.type !== 'lobby_chat') return;
+            mm.lobbyChat(p.userId, msg.text).catch((err: unknown) => {
+              if (err instanceof MMError && ws.readyState === WebSocket.OPEN)
+                ws.send(JSON.stringify({ type: 'error', code: err.code, message: err.message }));
+            });
+          });
           const status = await mm.status(p.userId);
           ws.send(JSON.stringify(status ? { type: 'status', ...status } : { type: 'idle' }));
+          // A reload lands here: hand the member their lobby back without a separate fetch.
+          const lobby = (await mm.setLobbyPresence(p.userId, true)) ?? null;
+          if (lobby && lobby.status === 'open' && ws.readyState === WebSocket.OPEN)
+            ws.send(JSON.stringify({ type: 'lobby_update', lobby }));
         })().catch(() => ws.close());
       });
     })().catch(() => socket.destroy());
@@ -287,6 +453,12 @@ export async function buildMatchmaker(
       setInterval(
         () => void mm.broadcastStatus().catch((err) => app.log.error({ err }, 'status failed')),
         1000,
+      ),
+    );
+    timers.push(
+      setInterval(
+        () => void mm.sweepLobbies().catch((err) => app.log.error({ err }, 'lobby sweep failed')),
+        10_000,
       ),
     );
   }

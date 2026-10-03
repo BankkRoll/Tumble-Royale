@@ -10,17 +10,21 @@ import type {
   CustomLobbyOptions,
   LeaderboardId,
   LeaderboardScope,
+  LobbyGameId,
   MenuTab,
   NavDirection,
   OverlayId,
   PlayMode,
   PatternId,
   PlayerWallEvent,
+  ReplayCommand,
+  ReportReason,
   ScreenId,
   Settings,
   SettingsSection,
   TumblerColors,
 } from './types.ts';
+import type { AuthProviderId } from './account.ts';
 
 /** Every intent the UI can emit, keyed by name with its payload. */
 export interface UIIntents {
@@ -67,13 +71,29 @@ export interface UIIntents {
   claimChallenge: { id: string };
   leaderboardQuery: { board: LeaderboardId; scope?: LeaderboardScope };
   /** Open another player's profile card (ranks, results, friends). */
-  inspectPlayer: { playerId: string; name?: string };
+  inspectPlayer: {
+    playerId: string;
+    name?: string;
+    /** Open the full profile even for party members (whose click opens the player card). */
+    direct?: boolean;
+  };
   /** News posts the player has opened (clears unread badges). */
   newsRead: { ids: string[] };
   requestMatchHistory: undefined;
   settingsChange: { settings: Settings; section: SettingsSection };
+  /**
+   * Account management. `link-*` adds a sign-in method to this Tumbler,
+   * `signIn-*` signs this device in to an existing Tumbler, `unlink-*` removes
+   * one. `value` is the address for the email actions and the new name for `rename`.
+   */
   accountAction: {
-    action: 'link-discord' | 'link-google' | 'link-email' | 'signOut' | 'deleteAccount' | 'rename';
+    action:
+      | `link-${AuthProviderId}`
+      | `signIn-${AuthProviderId}`
+      | `unlink-${AuthProviderId}`
+      | 'signOut'
+      | 'deleteAccount'
+      | 'rename';
     value?: string;
   };
   spectate: undefined;
@@ -82,18 +102,66 @@ export interface UIIntents {
   backToLobby: undefined;
   emote: { slot: number; id: string };
   quickPing: { kind: string };
+  /** Enter photo mode (victory / winner cam / in-round menu while out of play). */
   photoMode: undefined;
+  /** Photo mode: save the current frame as a PNG. */
+  photoCapture: undefined;
+  /** Photo mode: back to the game. */
+  photoExit: undefined;
   /** Leave the current show (pause menu / reconnect curtain). */
   leaveShow: undefined;
   createCustom: { options: CustomLobbyOptions };
   joinCode: { code: string };
-  startCustom: undefined;
+  /** Host starts the private show; `force` skips the ready check. */
+  startCustom: { force?: boolean };
   leaveCustom: undefined;
+  /** Host changes lobby settings live (debounced by the UI). */
+  updateCustom: { options: Partial<CustomLobbyOptions> };
+  /** Host removes a member; they cannot rejoin with the code until unbanned. */
+  kickCustomMember: { userId: string };
+  unbanCustomMember: { userId: string };
+  /** Host hands the crown to another player. */
+  transferCustomHost: { userId: string };
+  /** Host locks or unlocks code joins. */
+  lockCustom: { locked: boolean };
+  /** Host retires the invite code for a new one. */
+  newCustomCode: undefined;
+  /** Member ready toggle in a private lobby. */
+  readyCustom: { ready: boolean };
+  /** Member switches between playing and spectating. */
+  spectateCustom: { spectator: boolean };
   inviteFriend: { friendId: string };
   addFriend: { nameTag: string };
   copyInvite: { code: string };
   kickPartyMember: { memberId: string };
+  /** Solo player or party leader starts a lobby mini-game on the menu platform. */
+  lobbyGameStart: { game: LobbyGameId };
+  /** Solo player or party leader ends the running lobby mini-game. */
+  lobbyGameStop: undefined;
+  /** Party leader hands leadership to a member. */
+  promotePartyMember: { memberId: string };
   leaveParty: undefined;
+  /** Friend request by account id (search results, recent players, profiles, chat). */
+  requestFriend: { userId: string; name?: string };
+  /** Answer or withdraw a pending friend request. */
+  friendRequestAction: { userId: string; action: 'accept' | 'decline' | 'cancel' };
+  /** Player search in the friends sheet (debounced by the UI). */
+  searchPlayers: { query: string };
+  removeFriend: { userId: string };
+  blockPlayer: { userId: string; name: string };
+  unblockPlayer: { userId: string };
+  /** Local, persisted per-player mute. `key` is the account id, or `name:<name>` for bots. */
+  mutePlayer: { key: string; name: string; muted: boolean };
+  reportPlayer: { userId: string; reason: ReportReason; details?: string };
+  /** Join a friend's party (or their shared private show) from their row. */
+  joinFriend: { userId: string };
+  /** Answer a party invite from the notifications panel. */
+  partyInviteAction: { userId: string; code: string; action: 'join' | 'decline' };
+  /** In-show text chat (online shows only). */
+  sendChat: { text: string };
+  sendPartyChat: { text: string };
+  /** The in-show chat input opened or closed (the game frees the mouse and held keys). */
+  chatInput: { open: boolean };
   /** Rewards / victory / winner-cam "Continue". */
   continue: { from: ScreenId };
   skipPlayerWall: undefined;
@@ -106,12 +174,27 @@ export interface UIIntents {
   dialogResult: { dialogId: string; buttonId: string };
   toastAction: { toastId: number; actionId: string };
   retryConnection: undefined;
-  /** Mobile touch controls. `move` is a unit-disc vector, y = forward. */
+  /** Settings → Region is on screen: re-measure region pings. */
+  probeRegions: undefined;
+  /**
+   * Mobile touch controls, emitted synchronously on every change so a tap is
+   * never coalesced away. `move` is a unit-disc vector, y = forward.
+   */
   touchInput: { move: { x: number; y: number }; jump: boolean; dive: boolean; grab: boolean };
+  /** Camera drag on the touch HUD, in CSS pixels since the last emit. */
+  touchLook: { dx: number; dy: number };
   /** A menu navigation the UI didn't consume (e.g. Back on the root menu). */
   navUnhandled: { dir: NavDirection };
   /** Colour preview while the welcome screen is open. */
   previewColors: { colors: TumblerColors; pattern: PatternId };
+  /** Watch a recorded round of this show (`ReplayRoundEntry.key`). */
+  replayOpen: { key: string };
+  /** Watch the round in progress from the start (after being knocked out). */
+  replayOpenLive: undefined;
+  /** Load a saved replay file and play it. */
+  replayOpenFile: { name: string; bytes: ArrayBuffer };
+  /** Replay viewer control. */
+  replayCommand: ReplayCommand;
 }
 
 /** Intent name. */

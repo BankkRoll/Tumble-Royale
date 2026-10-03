@@ -5,7 +5,7 @@
  * server messages, API responses or mocks. The UI never imports runtime code
  * from `@tumble/sim` or three.js; only `@tumble/shared` types.
  */
-import type { RoundType, ThemeId } from '@tumble/shared';
+import type { LobbyGameKind, RoundType, TeamShape, ThemeId } from '@tumble/shared';
 
 export type { RoundType, ThemeId };
 
@@ -137,6 +137,8 @@ export interface ShowPlayer {
   isLocal?: boolean;
   /** True for members of the local player's party. */
   isParty?: boolean;
+  /** Account id (online humans): names open the player card. */
+  userId?: string;
   /** Team index in team rounds, else -1/undefined. */
   team?: number;
 }
@@ -156,9 +158,13 @@ export interface BootState {
 
 /** Network status. `reconnecting` shows the curtain overlay. */
 export interface ConnectionState {
-  status: 'online' | 'connecting' | 'reconnecting' | 'offline';
+  /** `lost`: every reconnect attempt failed; the curtain offers Try again and Leave. */
+  status: 'online' | 'connecting' | 'reconnecting' | 'lost' | 'offline';
+  /** Current reconnect attempt (1-based). */
   attempt?: number;
   maxAttempts?: number;
+  /** Epoch ms of the next reconnect attempt (curtain countdown). */
+  nextAttemptAt?: number;
   message?: string;
 }
 
@@ -226,6 +232,10 @@ export interface NotificationItem {
   /** Epoch ms. */
   time: number;
   read?: boolean;
+  /** Inline Accept/Decline (friend request) or Join/Decline (party invite) buttons. */
+  action?: { kind: 'friendRequest'; userId: string } | { kind: 'partyInvite'; userId: string; code: string };
+  /** Set once the action was taken ("Accepted", "Declined"…); hides the buttons. */
+  resolved?: string;
 }
 
 // -----------------------------------------------------------------------------
@@ -304,7 +314,23 @@ export interface CosmeticItem {
   art: [string, string];
   owned: boolean;
   set?: string;
+  /** What the item looks like, for previews drawn on the player's own Tumbler. */
+  look?: ItemLook;
 }
+
+/**
+ * Render facts a preview needs (from the content catalog). Wearable tints may
+ * say primary / secondary / 	ertiary to follow the wearer's colours.
+ */
+export type ItemLook =
+  | { kind: 'skin'; colors?: [string, string, string]; pattern?: PatternId }
+  | { kind: 'wearable'; tint: string[]; hat?: AvatarHat }
+  | { kind: 'face'; iris: string; accessory?: string; tint?: string }
+  | { kind: 'pose'; clip: string }
+  | { kind: 'nameplate'; plate: Omit<ProfileNameplate, 'name'> }
+  | { kind: 'banner'; banner: Omit<ProfileBanner, 'name'> }
+  | { kind: 'trail'; effect: string; colors: string[] }
+  | { kind: 'footsteps'; pack: string };
 
 /** Equipped item ids per slot (`emote` holds up to 4). */
 export interface Loadout {
@@ -336,6 +362,10 @@ export interface StoreOffer {
   /** Bundle contents; `item` is the hero. */
   bundle?: CosmeticItem[];
   tag?: string;
+  /** Bundle display name (bundles only). */
+  title?: string;
+  /** Bundle blurb (bundles only). */
+  blurb?: string;
 }
 
 /** A Gem pack for real money (shown only when the account API sells them). */
@@ -356,17 +386,51 @@ export interface StoreData {
   /** Gem packs (online accounts), listed in the Gems shop. */
   gemPacks?: GemPackOffer[];
   /**
-   * `enabled` when real checkout works (Stripe configured, or the dev fake
-   * provider behind `?debug=1`); otherwise packs show "Coming soon".
+   * What buying a pack does, as reported by the account API:
+   * - `enabled`: real checkout (the server has Stripe keys);
+   * - `test`: the development API's fake provider credits instantly, so packs
+   *   are buyable but labelled "Test purchase (dev)";
+   * - `comingSoon` (or absent): no provider — packs are read-only.
    */
-  gemCheckout?: 'enabled' | 'comingSoon';
+  gemCheckout?: 'enabled' | 'test' | 'comingSoon';
+  /** This week's Crown Shard shop. */
+  shardShop?: ShardShopData;
+  /** This week's discounted picks. */
+  weekly?: StoreOffer[];
+  /** Epoch ms when the weekly picks restock. */
+  weeklyEndsAt?: number;
+  /** Bundles (`bundle:<id>` offers); the hero bundle is flagged `featured`. */
+  bundles?: StoreOffer[];
+  /** Every item for sale at list price (browsable catalog). */
+  catalog?: StoreOffer[];
+}
+
+/** Store tab sections. */
+export type StoreSection = 'today' | 'week' | 'catalog' | 'shards';
+
+/** A Crown Shard shop offer. */
+export interface ShardOffer {
+  /** Offer id (`shards:<item id>`); buying emits `purchase` with it. */
+  id: string;
+  item: CosmeticItem;
+  /** Price in Crown Shards. */
+  price: number;
+}
+
+/** The weekly Crown Shard shop. */
+export interface ShardShopData {
+  offers: ShardOffer[];
+  /** Epoch ms when the shelf restocks. */
+  rotationEndsAt: number;
+  /** Shards that combine into one Crown (prices are always below this). */
+  shardsPerCrown: number;
 }
 
 /** One Season Pass reward. */
 export interface PassReward {
   item?: CosmeticItem;
   /** Currency or XP-type rewards. */
-  currency?: { kind: Currency | 'xp'; amount: number };
+  currency?: { kind: Currency | 'xp' | 'crownShards'; amount: number };
   claimed: boolean;
 }
 
@@ -383,6 +447,8 @@ export interface SeasonPassData {
   seasonNumber: number;
   /** Epoch ms. */
   endsAt: number;
+  /** The season after this one, for "Season N+1 starts in …". */
+  nextSeason?: { number: number; name: string; /** Epoch ms. */ startsAt: number };
   currentTier: number;
   /** 0..1 progress into the next tier. */
   tierProgress: number;
@@ -406,6 +472,8 @@ export interface Challenge {
   metric?: string;
   /** Secondary reward shown beside the main one (e.g. XP on a Gumball challenge). */
   bonus?: { kind: Currency | 'xp'; amount: number };
+  /** Free Gems paid on claim (weekly challenges). */
+  gems?: number;
 }
 
 /** Challenge board. */
@@ -436,6 +504,12 @@ export interface RankInfo {
 
 /** Profile + stats for the profile card and top bar. */
 export interface ProfileData {
+  /**
+   * Set for a Tumbler only met in offline shows: just what this device saw.
+   * The card shows these facts and hides level, XP, rank and lifetime stats,
+   * which are unknown for them.
+   */
+  metOffline?: MetOfflineInfo;
   id: string;
   name: string;
   tag: string;
@@ -477,6 +551,21 @@ export interface ProfileData {
   banner?: ProfileBanner;
   /** Equipped nameplate styling. */
   nameplate?: ProfileNameplate;
+}
+
+/** What this device knows about a Tumbler met in offline shows. */
+export interface MetOfflineInfo {
+  isBot: boolean;
+  /** Shows played together. */
+  showsTogether: number;
+  /** Their best final place in those shows (1 = Crown). */
+  bestPlace: number;
+  /** Crowns they won in those shows. */
+  crownsTogether: number;
+  /** Shows where they finished ahead of you, when tracked. */
+  aheadOfYou?: number;
+  /** Epoch ms of the last show together. */
+  lastSeen: number;
 }
 
 /** Profile banner art (from the equipped banner cosmetic). */
@@ -583,8 +672,10 @@ export type PlayMode = 'online' | 'offline';
 /** Whether online play (account API + matchmaker) is reachable. */
 export interface OnlineStatus {
   state: 'checking' | 'online' | 'offline' | 'disabled';
-  /** Players online / in queue, when the server reports it. */
+  /** Humans online in shows right now (matchmaker `GET /stats`), when reported. */
   playersOnline?: number;
+  /** Players waiting in the matchmaking queue, when reported. */
+  inQueue?: number;
   /** Short human explanation for the offline state. */
   message?: string;
 }
@@ -594,7 +685,13 @@ export interface OnlineStatus {
 // -----------------------------------------------------------------------------
 
 /** Friend presence. */
-export type Presence = 'online' | 'inShow' | 'inMenu' | 'offline';
+export type Presence = 'online' | 'inShow' | 'inMenu' | 'inQueue' | 'offline';
+
+/** Reasons offered by the report dialog (the API's report reasons). */
+export type ReportReason = 'cheating' | 'harassment' | 'offensive_name' | 'griefing' | 'spam' | 'other';
+
+/** How the local player relates to another player. */
+export type Relation = 'friend' | 'incoming' | 'outgoing' | 'none';
 
 /** A friend / recent player. */
 export interface Friend {
@@ -604,12 +701,22 @@ export interface Friend {
   presence: Presence;
   colors: TumblerColors;
   recent?: boolean;
+  /** Recent players: whether they are already a friend or a request is pending. */
+  relation?: Relation;
+  /** Playlist name while queued or in a show. */
+  playlist?: string;
+  /** Their party has room and they are in the menu: "Join" works. */
+  joinable?: boolean;
+  /** Private show code they are sharing with friends. */
+  lobbyCode?: string;
 }
 
 /** A party member slot. */
 export interface PartyMember {
   id: string;
   name: string;
+  /** Four-digit tag (Name#1234); friend requests need it. */
+  tag?: string;
   colors: TumblerColors;
   ready: boolean;
   isLeader: boolean;
@@ -621,6 +728,58 @@ export interface PartyState {
   code: string;
   members: PartyMember[];
   maxSize: number;
+}
+
+/** A lobby mini-game played on the menu platform. */
+export type LobbyGameId = LobbyGameKind;
+
+/** One scoreboard row: a team (Goal Rush) or a player. */
+export interface LobbyGameRow {
+  id: string;
+  label: string;
+  score: number;
+  /** Team colour or the player's main colour. */
+  color: string;
+  /** The local player (or their team). */
+  self: boolean;
+  /** Knocked out or spectating. */
+  out: boolean;
+  /** Holding the hot potato. */
+  it: boolean;
+}
+
+/** The live lobby game, as the score HUD shows it. */
+export interface LobbyGameHud {
+  kind: LobbyGameId;
+  title: string;
+  rule: string;
+  phase: 'intro' | 'play' | 'results';
+  /** Intro: whole seconds before GO (3, 2, 1), then 0. */
+  countdown: number;
+  /** Whole seconds on the game clock, or null when the game has none. */
+  clock: number | null;
+  rows: LobbyGameRow[];
+  /** Hot Potato fuse left (0..1), or null. */
+  fuse: number | null;
+  /** Short call-out (GOAL!, POP!, +3); a new `seq` replays its animation. */
+  banner: { text: string; tone: 'pink' | 'blue' | 'gold' | 'mint'; seq: number } | null;
+  /** Results line, e.g. `Pink team wins!`, `Draw`, `Game cancelled`. */
+  result: string | null;
+  /** The local player won (results only). */
+  won: boolean;
+  /** The local player is watching (switched tab or knocked out). */
+  spectating: boolean;
+}
+
+/** Lobby mini-games: the picker and the running game. */
+export interface LobbyGamesState {
+  pickerOpen: boolean;
+  /** The local player may start or stop a game (solo, or the party leader). */
+  canStart: boolean;
+  /** Tumblers on the platform (1 when solo). */
+  players: number;
+  /** The running game, or null. */
+  hud: LobbyGameHud | null;
 }
 
 /** A selectable playlist. */
@@ -646,14 +805,41 @@ export interface CustomLobbyOptions {
   timerScale: number;
   spectators: boolean;
   isPrivate: boolean;
+  /** Spectator seats when `spectators` is on (default 2). */
+  spectatorSlots?: number;
+  /** Seconds the pre-show platform counts down before round 1. */
+  countdownSec?: number;
+  /** Players needed before the host can start (bots fill the rest). */
+  minPlayers?: number;
 }
 
-/** Custom lobby state after create/join. */
+/** A member of a custom lobby as the lobby view shows them. */
+export interface CustomLobbyMember {
+  id: string;
+  name: string;
+  colors: TumblerColors;
+  /** Wears the crown. */
+  isHost: boolean;
+  isSelf: boolean;
+  /** Ready check (always true for the host; spectators are not asked). */
+  ready: boolean;
+  /** Their connection dropped; the seat is held for a short grace period. */
+  away: boolean;
+}
+
+/** Custom lobby state after create/join, pushed live from the matchmaker. */
 export interface CustomLobbyState {
   code: string;
   isHost: boolean;
-  players: { id: string; name: string; colors: TumblerColors }[];
+  players: CustomLobbyMember[];
+  spectators: CustomLobbyMember[];
   options: CustomLobbyOptions;
+  /** Code joins are refused while locked. */
+  locked: boolean;
+  /** Players the host removed; they cannot rejoin with the code until unbanned. */
+  banned: { id: string; name: string }[];
+  /** The show moved to the game server; only the host keeps this (for in-show kicks). */
+  started?: boolean;
 }
 
 /** A selectable round for the custom lobby picker. */
@@ -732,6 +918,17 @@ export interface RoundIntroInfo {
   playerCount: number;
   /** How many qualify (or survive); 1 for finals. */
   qualifyTarget: number;
+  /** The show's mutator (Chaos Mode), announced on the card. */
+  mutator?: { name: string; description: string; icon: string };
+}
+
+/** Local grab feedback for the HUD. */
+export interface HudGrab {
+  mode: 'none' | 'holding' | 'held' | 'carrying';
+  /** Partner's display name (empty when carrying). */
+  name: string;
+  /** Holding/carrying: stamina left. Held: progress toward breaking free. */
+  meter: number;
 }
 
 /** Local player's fate this round. */
@@ -744,12 +941,18 @@ export interface ProgressMarker {
   color: string;
   /** 0..1 along the course. */
   progress: number;
+  /** Bot, local or party marker: Streamer Mode keeps the name. Omitted = another real player. */
+  isBot?: boolean;
+  isLocal?: boolean;
+  isParty?: boolean;
 }
 
 /** Team score pill. */
 export interface TeamScore {
   name: string;
   color: string;
+  /** Shape cue drawn on the pill (matches the 3D nameplate dot), so colour is never the only cue. */
+  shape?: TeamShape;
   score: number;
   isMine: boolean;
 }
@@ -776,6 +979,8 @@ export interface HudState {
   alive: number;
   objective: string;
   localStatus: LocalStatus;
+  /** Local grab: who you hold or who holds you, with the stamina or break-free meter (0..1). */
+  grab: HudGrab;
   /** Local race progress 0..1. */
   progress: number;
   /** Leaders shown on the race bar (top 3 recommended). */
@@ -828,6 +1033,27 @@ export interface SpectateInfo {
   qualified: boolean;
   index: number;
   count: number;
+  /** Players still in the running this round (qualified or playing), when known. */
+  remaining?: number;
+}
+
+/** The local player's seat in the running show. */
+export interface ShowSeat {
+  /** The show runs on a game server (rewards are granted by the account API). */
+  online: boolean;
+  /** Knocked out of the show: watching the remaining rounds as a spectator. */
+  outOfShow: boolean;
+}
+
+/**
+ * "Keep watching / Leave show" choice, offered once the local player is
+ * knocked out (the in-round sheet, and the card over the results wall).
+ */
+export interface WatchChoice {
+  /** Epoch ms when Keep watching is picked automatically (null = waits for the player). */
+  autoAt: number | null;
+  /** Players still in the show, when known. */
+  remaining?: number;
 }
 
 /** One cell of the round results grid. */
@@ -1031,11 +1257,104 @@ export interface Settings {
     nameplates: boolean;
     streamerMode: boolean;
     showPing: boolean;
+    /** Pick "Keep watching" automatically after qualifying or being knocked out. */
     autoSpectate: boolean;
+    /** Small "BOT" tag beside bot names (nameplates, results, wall, spectate). */
+    botTags: boolean;
+    /** Masks swearing in chat (slurs are always masked). */
     chatFilter: boolean;
+    /** Off hides every chat line and quick ping from other players. */
+    showChat: boolean;
     region: string;
   };
 }
 
+/** Photo mode look filters. */
+export type PhotoFilter = 'none' | 'warm' | 'mono' | 'vivid';
+
+/** Photo mode: the game hides the UI and frees the camera while `active`. */
+export interface PhotoModeState {
+  active: boolean;
+  /** Vertical field of view (degrees); the slider and pad bumpers both change it. */
+  fov: number;
+  filter: PhotoFilter;
+  /** Stamp the game logo on saved photos. */
+  watermark: boolean;
+}
+
+/** Region probe results shown in Settings → Gameplay → Region. */
+export interface RegionStatus {
+  /** Measured round trip (ms) per region id; missing = not measurable. */
+  pings: Record<string, number>;
+  /** What Auto resolves to, null before the first probe. */
+  auto: string | null;
+  /** A probe is running. */
+  probing: boolean;
+}
+
 /** Settings section ids. */
 export type SettingsSection = keyof Settings | 'account';
+
+// -----------------------------------------------------------------------------
+// Replays
+// -----------------------------------------------------------------------------
+
+/** Replay viewer camera: follow a player, orbit freely, or the recorded live view. */
+export type ReplayCameraMode = 'follow' | 'free' | 'pov';
+
+/** Viewer controls the UI (buttons, scrub bar) sends to the game. */
+export type ReplayCommand =
+  | { type: 'toggle' }
+  /** Absolute seek, seconds from the start of the recording. */
+  | { type: 'seek'; t: number }
+  | { type: 'seekBy'; seconds: number }
+  | { type: 'speed'; speed: number }
+  | { type: 'speedStep'; dir: 1 | -1 }
+  | { type: 'camera'; mode: ReplayCameraMode | 'next' }
+  /** Follow the previous/next player. */
+  | { type: 'player'; dir: 1 | -1 }
+  | { type: 'save' }
+  | { type: 'exit' };
+
+/** A recorded round of the current show the player can rewatch. */
+export interface ReplayRoundEntry {
+  key: string;
+  /** 0-based round index within the show. */
+  roundIndex: number;
+  name: string;
+  type: RoundType;
+  isFinal: boolean;
+  /** The local player's fate in that round. */
+  outcome: 'qualified' | 'eliminated' | 'spectated';
+  /** Seconds. */
+  duration: number;
+}
+
+/** A point of interest on the replay scrub bar. */
+export interface ReplayMarkerInfo {
+  /** Seconds from the start of the recording. */
+  t: number;
+  kind: 'eliminated' | 'qualified' | 'localEliminated' | 'localQualified';
+  label: string;
+}
+
+/** Live state of the open replay viewer. */
+export interface ReplayViewerState {
+  title: string;
+  subtitle: string;
+  /** Playhead, seconds. */
+  time: number;
+  duration: number;
+  playing: boolean;
+  speed: number;
+  camera: ReplayCameraMode;
+  /** The recording carries the local player's camera ("Your view"). */
+  povAvailable: boolean;
+  /** Followed player (follow / your view cameras). */
+  target: { name: string; color: string; index: number; count: number } | null;
+  markers: ReplayMarkerInfo[];
+  /** Offer "Save replay" (recordings made in this session). */
+  canSave: boolean;
+  /** Where the recording came from. */
+  origin: 'show' | 'file';
+}

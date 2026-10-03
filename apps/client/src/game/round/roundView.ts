@@ -54,6 +54,8 @@ export interface RoundViewOptions {
   reduceShake: boolean;
   nameplates: boolean;
   streamerMode: boolean;
+  /** BOT chip on bots' nameplates. */
+  botTags?: boolean;
 }
 
 /** Weather for a round: the seeded variation's, else the theme default. */
@@ -97,6 +99,11 @@ export class RoundView implements GameView {
   private readonly camGroups = groups(0xffff, CollisionGroup.Static | CollisionGroup.KinematicObstacle);
   private readonly obstaclePos = new Map<string, CameraVec3>();
   private disposed = false;
+  /**
+   * Overrides the camera rig's frame delta. Replays freeze the world while
+   * paused (dt 0) but keep the camera live.
+   */
+  cameraDt: number | null = null;
 
   /**
    * Cheap setup only. Call {@link loadSteps} (time-sliced) or {@link build}
@@ -213,6 +220,7 @@ export class RoundView implements GameView {
             audio: this.opts.audio,
             nameplates: this.opts.nameplates,
             streamerMode: this.opts.streamerMode,
+            ...(this.opts.botTags !== undefined ? { botTags: this.opts.botTags } : {}),
           });
         },
       },
@@ -457,6 +465,34 @@ export class RoundView implements GameView {
     if (changed && this.players.feetOf(id, this.follow.position)) this.rig.snapTo(this.follow);
   }
 
+  /** Cuts the camera to its current target (after a replay seek teleports everyone). */
+  snapCamera(): void {
+    if (this.targetId >= 0 && this.players.feetOf(this.targetId, this.follow.position))
+      this.rig.snapTo(this.follow);
+  }
+
+  /**
+   * Detaches the camera from players and orbits a free point (replay free
+   * camera). Call every frame the point moves.
+   *
+   * @param p - World-space focus.
+   */
+  orbitPoint(p: CameraVec3): void {
+    if (this.mode !== 'spectate' || this.targetId !== -1) {
+      this.mode = 'spectate';
+      this.targetId = -1;
+      this.rig.setMode('spectate');
+    }
+    this.follow.position.x = p.x;
+    this.follow.position.y = p.y;
+    this.follow.position.z = p.z;
+    this.follow.velocity.x = 0;
+    this.follow.velocity.y = 0;
+    this.follow.velocity.z = 0;
+    this.follow.grounded = true;
+    this.focus.set(p.x, p.y, p.z);
+  }
+
   /** Adds camera shake (no-op with Reduce Shake). */
   shake(amount: number): void {
     this.rig.addTrauma(amount);
@@ -466,6 +502,11 @@ export class RoundView implements GameView {
   setAccessibility(reduceShake: boolean, nameplates: boolean, streamer: boolean): void {
     this.rig.settings.shakeScale = reduceShake ? 0 : 1;
     this.players.setNameplates(nameplates, streamer);
+  }
+
+  /** Shows or hides the BOT chip on bots' nameplates mid-round. */
+  setBotTags(on: boolean): void {
+    this.players.setBotTags(on);
   }
 
   /** Quality tier changed mid-round (LOD distances, budgets). */
@@ -542,7 +583,7 @@ export class RoundView implements GameView {
       const p = this.follow.position;
       this.focus.set(p.x, p.y, p.z);
     }
-    this.rig.update(dt, this.follow);
+    this.rig.update(this.cameraDt ?? dt, this.follow);
 
     this.camera.getWorldPosition(this.camPos);
     this.ragdollMgr?.update(dt, this.camPos);

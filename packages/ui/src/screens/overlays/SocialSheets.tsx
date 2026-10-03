@@ -56,6 +56,7 @@ export function FriendsSheet(): JSX.Element {
   const [reveal, setReveal] = useState(false);
   const [copied, setCopied] = useState<'code' | 'link' | null>(null);
   const [search, setSearch] = useState('');
+  const [kickArmed, setKickArmed] = useState<string | null>(null);
   const code = party?.code ?? '';
   const link = `${globalThis.location?.origin ?? ''}/join/${code}`;
   const copy = (what: 'code' | 'link'): void => {
@@ -154,15 +155,46 @@ export function FriendsSheet(): JSX.Element {
                       'Not ready'
                     )}
                   </span>
-                  {self?.isLeader && !m.isSelf && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      aria-label={`Kick ${m.name}`}
-                      onClick={() => uiEvents.emit('kickPartyMember', { memberId: m.id })}
-                    >
-                      <Icon name="close" size="1em" />
-                    </Button>
+                  {self?.isLeader && !m.isSelf && kickArmed !== m.id && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Make ${m.name} party leader`}
+                        title="Make leader"
+                        data-testid="party-promote"
+                        onClick={() => uiEvents.emit('promotePartyMember', { memberId: m.id })}
+                      >
+                        <Icon name="crown" size="1em" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Kick ${m.name}`}
+                        onClick={() => setKickArmed(m.id)}
+                      >
+                        <Icon name="close" size="1em" />
+                      </Button>
+                    </>
+                  )}
+                  {self?.isLeader && kickArmed === m.id && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        cue="ui.confirm"
+                        aria-label={`Confirm: kick ${m.name}`}
+                        onClick={() => {
+                          setKickArmed(null);
+                          uiEvents.emit('kickPartyMember', { memberId: m.id });
+                        }}
+                      >
+                        Kick
+                      </Button>
+                      <Button size="sm" variant="ghost" cue="ui.back" onClick={() => setKickArmed(null)}>
+                        Cancel
+                      </Button>
+                    </>
                   )}
                 </div>
               ))}

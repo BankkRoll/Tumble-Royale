@@ -3,7 +3,7 @@
  *
  * - `PrivateShowDialog`: pick rounds and house rules, then play them against
  *   bots right away or get an invite code (needs the online servers). Once a
- *   lobby exists the same dialog shows its code, who joined and Start.
+ *   lobby exists the same dialog shows the live lobby (`PrivateLobby.tsx`).
  * - `JoinCodeDialog`: type a friend's invite code. Opened from the start
  *   card, the private show dialog and the friends sheet.
  */
@@ -11,15 +11,14 @@ import { useRef, useState, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
 import { Button, Slider, Toggle } from '../../components/controls.tsx';
 import { Icon } from '../../components/icons/index.tsx';
-import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
-import type { CustomLobbyOptions, CustomLobbyState, RoundType } from '../../store/types.ts';
+import type { CustomLobbyOptions } from '../../store/types.ts';
 import { shakeNo } from '../../theme/motion.ts';
-import { roundTypeStyle } from '../../theme/tokens.ts';
+import { LobbyView } from './PrivateLobby.tsx';
+import { RoundPicker } from './RoundPicker.tsx';
 
 const CODE_LEN = 6;
-const TYPE_ORDER: RoundType[] = ['race', 'survival', 'team', 'hunt', 'logic', 'final'];
 
 function closeOverlay(): void {
   playCue('ui.back');
@@ -158,71 +157,6 @@ export function openPrivateShow(): void {
   ui.getState().setOverlay('privateShow');
 }
 
-function RoundPicker({
-  picked,
-  onChange,
-}: {
-  picked: string[];
-  onChange: (rounds: string[]) => void;
-}): JSX.Element {
-  const catalog = useUI((s) => s.roundCatalog);
-  const all = picked.length === catalog.length;
-  return (
-    <section className="tr-pshow-rounds" aria-label="Rounds">
-      <div className="tr-pshow-section-head">
-        <span className="tr-label tr-grow">
-          Rounds <b className="tr-pshow-count">{picked.length}</b>
-          <span className="tr-muted"> / {catalog.length}</span>
-        </span>
-        <button
-          type="button"
-          className="tr-link-btn"
-          data-nav=""
-          onClick={() => {
-            playCue('ui.toggle');
-            onChange(all ? [] : catalog.map((r) => r.id));
-          }}
-        >
-          {all ? 'Clear all' : 'Pick all'}
-        </button>
-      </div>
-      <div className="tr-pshow-round-list tr-scroll">
-        {TYPE_ORDER.map((type) => {
-          const rounds = catalog.filter((r) => r.type === type);
-          if (rounds.length === 0) return null;
-          const style = roundTypeStyle[type];
-          return (
-            <div key={type} className="tr-pshow-group" style={{ ['--type' as string]: style.color }}>
-              <span className="tr-pshow-group-label">{style.label}</span>
-              <div className="tr-row tr-wrap" style={{ gap: '0.35em' }}>
-                {rounds.map((r) => {
-                  const on = picked.includes(r.id);
-                  return (
-                    <button
-                      key={r.id}
-                      type="button"
-                      className={`tr-round-pick${on ? ' is-on' : ''}`}
-                      aria-pressed={on}
-                      data-nav=""
-                      onClick={() => {
-                        playCue('ui.toggle');
-                        onChange(on ? picked.filter((x) => x !== r.id) : [...picked, r.id]);
-                      }}
-                    >
-                      {on ? <Icon name="check" size="0.85em" /> : null}
-                      {r.name}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
 function SetupView(): JSX.Element {
   const catalog = useUI((s) => s.roundCatalog);
   const online = useUI((s) => s.onlineStatus.state === 'online');
@@ -310,71 +244,6 @@ function SetupView(): JSX.Element {
         >
           <Icon name="bot" size="1.1em" /> Play with bots
         </Button>
-      </div>
-    </>
-  );
-}
-
-function LobbyView({ lobby }: { lobby: CustomLobbyState }): JSX.Element {
-  const streamer = useUI((s) => s.settings.gameplay.streamerMode);
-  const catalog = useUI((s) => s.roundCatalog);
-  const [reveal, setReveal] = useState(false);
-  const names = lobby.options.rounds.map((id) => catalog.find((r) => r.id === id)?.name ?? id);
-  return (
-    <>
-      <div className="tr-pshow-body tr-pshow-body--lobby">
-        <section className="tr-pshow-code" aria-label="Invite code">
-          <span className="tr-label">Invite code</span>
-          <div className="tr-code-big" data-testid="lobby-code">
-            {streamer && !reveal ? '••••••' : lobby.code}
-          </div>
-          <div className="tr-row" style={{ justifyContent: 'center' }}>
-            {streamer && (
-              <Button size="sm" variant="ghost" onClick={() => setReveal((r) => !r)}>
-                {reveal ? 'Hide' : 'Reveal'}
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="sky"
-              onClick={() => {
-                void navigator.clipboard?.writeText(lobby.code);
-                uiEvents.emit('copyInvite', { code: lobby.code });
-                ui.getState().pushToast({ kind: 'success', title: 'Code copied!' });
-              }}
-            >
-              <Icon name="copy" size="1em" /> Copy code
-            </Button>
-          </div>
-          <p className="tr-small tr-muted">
-            {names.length} round{names.length === 1 ? '' : 's'} · up to {lobby.options.maxPlayers} players
-            {lobby.options.bots ? ' · bots fill the rest' : ''}
-          </p>
-        </section>
-        <section className="tr-pshow-players" aria-label="Players">
-          <span className="tr-label">In the lobby · {lobby.players.length}</span>
-          <div className="tr-custom-player-grid tr-scroll">
-            {lobby.players.map((p) => (
-              <div key={p.id} className="tr-custom-player">
-                <TumblerAvatar colors={p.colors} size="2.2em" blink={false} noShadow />
-                <span className="tr-ellipsis">{p.name}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-      <div className="tr-pshow-foot">
-        <Button variant="secondary" cue="ui.back" onClick={() => uiEvents.emit('leaveCustom')}>
-          Leave
-        </Button>
-        <span className="tr-grow" />
-        {lobby.isHost ? (
-          <Button variant="go" cue="ui.confirm" autoFocusNav onClick={() => uiEvents.emit('startCustom')}>
-            Start show
-          </Button>
-        ) : (
-          <span className="tr-small tr-muted">Waiting for the host to start…</span>
-        )}
       </div>
     </>
   );

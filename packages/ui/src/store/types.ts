@@ -646,14 +646,39 @@ export interface CustomLobbyOptions {
   timerScale: number;
   spectators: boolean;
   isPrivate: boolean;
+  /** Spectator seats when `spectators` is on (default 2). */
+  spectatorSlots?: number;
+  /** Seconds the pre-show platform counts down before round 1. */
+  countdownSec?: number;
+  /** Players needed before the host can start (bots fill the rest). */
+  minPlayers?: number;
 }
 
-/** Custom lobby state after create/join. */
+/** A member of a custom lobby as the lobby view shows them. */
+export interface CustomLobbyMember {
+  id: string;
+  name: string;
+  colors: TumblerColors;
+  /** Wears the crown. */
+  isHost: boolean;
+  isSelf: boolean;
+  /** Ready check (always true for the host; spectators are not asked). */
+  ready: boolean;
+  /** Their connection dropped; the seat is held for a short grace period. */
+  away: boolean;
+}
+
+/** Custom lobby state after create/join, pushed live from the matchmaker. */
 export interface CustomLobbyState {
   code: string;
   isHost: boolean;
-  players: { id: string; name: string; colors: TumblerColors }[];
+  players: CustomLobbyMember[];
+  spectators: CustomLobbyMember[];
   options: CustomLobbyOptions;
+  /** Code joins are refused while locked. */
+  locked: boolean;
+  /** Players the host removed; they cannot rejoin with the code until unbanned. */
+  banned: { id: string; name: string }[];
 }
 
 /** A selectable round for the custom lobby picker. */

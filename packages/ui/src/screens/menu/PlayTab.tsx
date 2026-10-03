@@ -8,7 +8,7 @@
  *   and the big PLAY button. While queueing the same card becomes the
  *   matchmaking status. docs/design/SCREENS.md §6.
  */
-import { useRef, type JSX } from 'react';
+import { useRef, useState, type JSX } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { playCue } from '../../audio-cues.ts';
 import { Bar, ItemArt, TipCarousel } from '../../components/bits.tsx';
@@ -376,6 +376,8 @@ function PartyRow(): JSX.Element {
       : []);
   const max = party?.maxSize ?? 4;
   const notReady = members.filter((m) => !m.ready && !m.isLeader).length;
+  const leading = members.some((m) => m.isSelf && m.isLeader) && members.length > 1;
+  const [armed, setArmed] = useState<string | null>(null);
   return (
     <div className="tr-party" aria-label="Party">
       <div className="tr-party-slots">
@@ -410,6 +412,30 @@ function PartyRow(): JSX.Element {
                 <span className="tr-party-crown">
                   <Icon name="crown" size="1em" />
                 </span>
+              )}
+              {leading && !m.isSelf && (
+                <button
+                  type="button"
+                  className={`tr-party-kick${armed === m.id ? ' is-armed' : ''}`}
+                  data-nav=""
+                  data-testid="party-kick"
+                  aria-label={armed === m.id ? `Confirm: kick ${m.name}` : `Kick ${m.name}`}
+                  title={armed === m.id ? 'Click again to kick' : `Kick ${m.name}`}
+                  onBlur={() => setArmed((a) => (a === m.id ? null : a))}
+                  onClick={() => {
+                    // Two presses: a stray click on a tiny badge must not boot a friend.
+                    if (armed !== m.id) {
+                      playCue('ui.click');
+                      setArmed(m.id);
+                      return;
+                    }
+                    playCue('ui.confirm');
+                    setArmed(null);
+                    uiEvents.emit('kickPartyMember', { memberId: m.id });
+                  }}
+                >
+                  <Icon name="close" size="0.9em" />
+                </button>
               )}
             </span>
           );

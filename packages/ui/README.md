@@ -45,14 +45,14 @@ Sub-path imports: `@tumble/ui/store`, `@tumble/ui/components`, `@tumble/ui/hud`,
 | `setLeaderboard`                                                  | `(board: LeaderboardId, rows: LeaderboardRow[])`                                     | Answer to `leaderboardQuery`.                                                                                                                                      |
 | `setMatchHistory` / `setNews` / `setFriends` / `setParty`         | arrays / `PartyState`                                                                |                                                                                                                                                                    |
 | `setPlaylists`                                                    | `(list: Playlist[], selected?: string)`                                              |                                                                                                                                                                    |
-| `setLocalReady` / `setCustomLobby` / `setRoundCatalog`            |                                                                                      |                                                                                                                                                                    |
+| `setLocalReady` / `setCustomLobby` / `setRoundCatalog`            | `(boolean)` / `(CustomLobbyState \| null)` / `(RoundCatalogEntry[])`                 | Party ready flag; the private-show lobby (`privateShow` dialog); rounds offered by the round picker.                                                               |
 | `setQueue`                                                        | `(q: Partial<QueueState>)`                                                           | Matchmaking card.                                                                                                                                                  |
 | `setPreShow` / `setShowIntro` / `setRoundIntro`                   | info objects                                                                         | Round intro feeds loading, flyover and rules cards.                                                                                                                |
 | `setHud`                                                          | `(patch: Partial<HudState>)`                                                         | **Throttle to 10–15 Hz.** No-op if nothing changed; widgets select single fields.                                                                                  |
 | `resetHud`                                                        | `(patch?)`                                                                           | Start of each round.                                                                                                                                               |
 | `setCountdown`                                                    | `(3\|2\|1\|null)`                                                                    | Numerals; follow with `showStamp('go')`.                                                                                                                           |
 | `showStamp`                                                       | `(kind: StampKind, { text?, sub? }) => id`                                           | `qualified, eliminated, roundOver, timeUp, go, overtime, final, victory, teamWin, teamLose`. Queued.                                                               |
-| `setEliminatedSheet`                                              | `(open)`                                                                             | Spectate / Back to lobby / Play again.                                                                                                                             |
+| `setEliminatedSheet`                                              | `(open)`                                                                             | Keep watching / Leave show choice after elimination.                                                                                                               |
 | `setSpectate`                                                     | `(SpectateInfo \| null)`                                                             | Spectating banner.                                                                                                                                                 |
 | `setEmoteWheel`                                                   | `(open)`                                                                             | Hold-to-open; emits the highlighted slot on close.                                                                                                                 |
 | `setResults` / `setBetweenRounds` / `setFinalHype` / `setVictory` | info objects                                                                         |                                                                                                                                                                    |
@@ -76,57 +76,98 @@ const off = bindUI({
 uiEvents.on('equip', ({ slot, itemId }) => api.equip(slot, itemId));
 ```
 
-| Intent                                    | Payload                                                                                                           |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `start`                                   | — (splash pressed; unlock audio)                                                                                  |
-| `welcomeDone`                             | `{ name, colors }`                                                                                                |
-| `previewColors`                           | `{ colors, pattern }`                                                                                             |
-| `tutorialChoice`                          | `{ accept, dontAskAgain }`                                                                                        |
-| `menuTab` / `overlay`                     | `{ tab }` / `{ overlay }`                                                                                         |
-| `selectPlaylist` / `play`                 | `{ playlistId }`                                                                                                  |
-| `cancelQueue`                             | —                                                                                                                 |
-| `ready`                                   | `{ ready }`                                                                                                       |
-| `tryOn`                                   | `{ slot, itemId \| null }`                                                                                        |
-| `equip`                                   | `{ slot, itemId }`                                                                                                |
-| `selectLoadout`                           | `{ index }`                                                                                                       |
-| `customizeColors`                         | `{ colors }`                                                                                                      |
-| `randomizeOutfit`                         | —                                                                                                                 |
-| `purchase`                                | `{ offerId }` (after the UI's own confirm dialog)                                                                 |
-| `claimPassTier`                           | `{ tier, track: 'free' \| 'premium' }`                                                                            |
-| `buyPremiumPass`                          | —                                                                                                                 |
-| `rerollChallenge` / `claimChallenge`      | `{ id }`                                                                                                          |
-| `leaderboardQuery`                        | `{ board }`                                                                                                       |
-| `requestMatchHistory`                     | —                                                                                                                 |
-| `settingsChange`                          | `{ settings, section }`                                                                                           |
-| `accountAction`                           | `{ action: 'link-discord' \| 'link-google' \| 'link-email' \| 'signOut' \| 'deleteAccount' \| 'rename', value? }` |
-| `spectate`                                | —                                                                                                                 |
-| `spectateNext`                            | `{ dir: 1 \| -1 }`                                                                                                |
-| `playAgain` / `backToLobby` / `leaveShow` | —                                                                                                                 |
-| `emote`                                   | `{ slot, id }`                                                                                                    |
-| `quickPing`                               | `{ kind }`                                                                                                        |
-| `photoMode`                               | —                                                                                                                 |
-| `createCustom`                            | `{ options: CustomLobbyOptions }`                                                                                 |
-| `joinCode`                                | `{ code }`                                                                                                        |
-| `startCustom` / `leaveCustom`             | —                                                                                                                 |
-| `inviteFriend`                            | `{ friendId }`                                                                                                    |
-| `addFriend`                               | `{ nameTag }`                                                                                                     |
-| `copyInvite`                              | `{ code }`                                                                                                        |
-| `kickPartyMember`                         | `{ memberId }`                                                                                                    |
-| `leaveParty`                              | —                                                                                                                 |
-| `continue`                                | `{ from: ScreenId }` (victory, winnerCam, playerWall)                                                             |
-| `skipPlayerWall`                          | —                                                                                                                 |
-| `playerWallEvent`                         | `PlayerWallEvent` (every wall beat; see below)                                                                    |
-| `transitionCovered`                       | `{ to: ScreenId }` (swap 3D scenes now)                                                                           |
-| `screenShown`                             | `{ screen }`                                                                                                      |
-| `dialogResult`                            | `{ dialogId, buttonId }`                                                                                          |
-| `toastAction`                             | `{ toastId, actionId }`                                                                                           |
-| `retryConnection`                         | —                                                                                                                 |
-| `touchInput`                              | `{ move: {x,y}, jump, dive, grab }` (rAF-coalesced)                                                               |
-| `navUnhandled`                            | `{ dir }` (e.g. Back on a root screen → open pause)                                                               |
+The full typed list is `UIIntents` in `src/store/events.ts`.
+
+| Intent                                                          | Payload                                                                                                                             |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **Start & menus**                                               |                                                                                                                                     |
+| `start`                                                         | — (splash pressed; unlock audio)                                                                                                    |
+| `welcomeDone`                                                   | `{ name, colors }`                                                                                                                  |
+| `previewColors`                                                 | `{ colors, pattern }`                                                                                                               |
+| `tutorialChoice`                                                | `{ accept, dontAskAgain }`                                                                                                          |
+| `menuTab` / `overlay`                                           | `{ tab }` / `{ overlay }`                                                                                                           |
+| `navUnhandled`                                                  | `{ dir }` (e.g. Back on the root menu)                                                                                              |
+| `screenShown` / `transitionCovered`                             | `{ screen }` / `{ to }` (swap 3D scenes now)                                                                                        |
+| `dialogResult`                                                  | `{ dialogId, buttonId }`                                                                                                            |
+| `toastAction`                                                   | `{ toastId, actionId }`                                                                                                             |
+| `retryConnection`                                               | —                                                                                                                                   |
+| **Play & matchmaking**                                          |                                                                                                                                     |
+| `selectPlaylist`                                                | `{ playlistId }`                                                                                                                    |
+| `playMode`                                                      | `{ mode: PlayMode }`                                                                                                                |
+| `play`                                                          | `{ playlistId, mode? }`                                                                                                             |
+| `retryOnline`                                                   | — (re-probe the servers)                                                                                                            |
+| `probeRegions`                                                  | — (Settings → Region is open; measure pings)                                                                                        |
+| `cancelQueue`                                                   | —                                                                                                                                   |
+| `ready`                                                         | `{ ready }` (party member)                                                                                                          |
+| **Private shows**                                               |                                                                                                                                     |
+| `createCustom`                                                  | `{ options: CustomLobbyOptions }`                                                                                                   |
+| `playCustomOffline`                                             | `{ options: CustomLobbyOptions }` (private show vs bots)                                                                            |
+| `joinCode`                                                      | `{ code }`                                                                                                                          |
+| `updateCustom`                                                  | `{ options: Partial<CustomLobbyOptions> }` (host, live)                                                                             |
+| `startCustom`                                                   | `{ force? }` (force = start with unready players)                                                                                   |
+| `leaveCustom` / `newCustomCode`                                 | —                                                                                                                                   |
+| `lockCustom`                                                    | `{ locked }`                                                                                                                        |
+| `kickCustomMember` / `unbanCustomMember` / `transferCustomHost` | `{ userId }`                                                                                                                        |
+| `readyCustom`                                                   | `{ ready }`                                                                                                                         |
+| `spectateCustom`                                                | `{ spectator }`                                                                                                                     |
+| **Locker, store, pass**                                         |                                                                                                                                     |
+| `tryOn`                                                         | `{ slot, itemId \| null }`                                                                                                          |
+| `tryOnBundle`                                                   | `{ items: { slot, itemId }[] }`                                                                                                     |
+| `equip`                                                         | `{ slot, itemId }`                                                                                                                  |
+| `selectLoadout`                                                 | `{ index }`                                                                                                                         |
+| `customizeColors`                                               | `{ colors }`                                                                                                                        |
+| `randomizeOutfit`                                               | —                                                                                                                                   |
+| `dressingRoom`                                                  | `{ active }` (move the 3D Tumbler into the dressing-room framing)                                                                   |
+| `turntable`                                                     | `{ rotate, zoom }`                                                                                                                  |
+| `needThumbnails`                                                | `{ ids }` (render cosmetic thumbnails)                                                                                              |
+| `purchase`                                                      | `{ offerId }` (after the UI's own confirm dialog)                                                                                   |
+| `buyGems`                                                       | `{ packId }`                                                                                                                        |
+| `claimPassTier`                                                 | `{ tier, track: 'free' \| 'premium' }`                                                                                              |
+| `buyPremiumPass`                                                | —                                                                                                                                   |
+| `rerollChallenge` / `claimChallenge`                            | `{ id }`                                                                                                                            |
+| **Profile, ranks, news, settings**                              |                                                                                                                                     |
+| `leaderboardQuery`                                              | `{ board, scope? }`                                                                                                                 |
+| `inspectPlayer`                                                 | `{ playerId, name? }`                                                                                                               |
+| `requestMatchHistory`                                           | —                                                                                                                                   |
+| `newsRead`                                                      | `{ ids }`                                                                                                                           |
+| `settingsChange`                                                | `{ settings, section }`                                                                                                             |
+| `accountAction`                                                 | `{ action, value? }`; action is `link-<provider>`, `signIn-<provider>`, `unlink-<provider>`, `signOut`, `deleteAccount` or `rename` |
+| **Party & social**                                              |                                                                                                                                     |
+| `inviteFriend`                                                  | `{ friendId }`                                                                                                                      |
+| `copyInvite`                                                    | `{ code }`                                                                                                                          |
+| `kickPartyMember` / `promotePartyMember`                        | `{ memberId }`                                                                                                                      |
+| `leaveParty`                                                    | —                                                                                                                                   |
+| `addFriend`                                                     | `{ nameTag }`                                                                                                                       |
+| `searchPlayers`                                                 | `{ query }`                                                                                                                         |
+| `requestFriend`                                                 | `{ userId, name? }`                                                                                                                 |
+| `friendRequestAction`                                           | `{ userId, action: 'accept' \| 'decline' \| 'cancel' }`                                                                             |
+| `removeFriend` / `unblockPlayer` / `joinFriend`                 | `{ userId }`                                                                                                                        |
+| `blockPlayer`                                                   | `{ userId, name }`                                                                                                                  |
+| `mutePlayer`                                                    | `{ key, name, muted }` (local only)                                                                                                 |
+| `reportPlayer`                                                  | `{ userId, reason, details? }`                                                                                                      |
+| `partyInviteAction`                                             | `{ userId, code, action: 'join' \| 'decline' }`                                                                                     |
+| `sendChat` / `sendPartyChat`                                    | `{ text }`                                                                                                                          |
+| `chatInput`                                                     | `{ open }` (the game frees the mouse and held keys)                                                                                 |
+| **In the show**                                                 |                                                                                                                                     |
+| `emote`                                                         | `{ slot, id }`                                                                                                                      |
+| `quickPing`                                                     | `{ kind }`                                                                                                                          |
+| `spectate`                                                      | — (keep watching)                                                                                                                   |
+| `spectateNext`                                                  | `{ dir: 1 \| -1 }`                                                                                                                  |
+| `leaveShow` / `playAgain` / `backToLobby`                       | —                                                                                                                                   |
+| `touchInput`                                                    | `{ move: {x,y}, jump, dive, grab }` (rAF-coalesced)                                                                                 |
+| `touchLook`                                                     | `{ dx, dy }`                                                                                                                        |
+| `photoMode` / `photoCapture` / `photoExit`                      | —                                                                                                                                   |
+| `replayOpen`                                                    | `{ key }` (a recorded round)                                                                                                        |
+| `replayOpenLive`                                                | — (replay of the round in progress)                                                                                                 |
+| `replayOpenFile`                                                | `{ name, bytes: ArrayBuffer }`                                                                                                      |
+| `replayCommand`                                                 | `ReplayCommand` (play/pause, seek, speed, camera, save…)                                                                            |
+| `continue`                                                      | `{ from: ScreenId }` (victory, winnerCam, playerWall)                                                                               |
+| `skipPlayerWall`                                                | —                                                                                                                                   |
+| `playerWallEvent`                                               | `PlayerWallEvent` (every wall beat; see below)                                                                                      |
 
 The UI never navigates on its own for game-owned transitions (e.g. after
 `continue` the game decides between rewards / menu). Pure-UI navigation (menu
-tabs, custom lobby, match history, overlays) is handled internally.
+tabs, private-show dialog, match history, overlays) is handled internally.
 
 ## Player wall sync
 
@@ -168,7 +209,7 @@ src/
   audio-cues.ts     pluggable cue/music hooks
   names.ts          original name generator + validation
   store/            types, defaults, Zustand store, intent bus, wall timeline
-  theme/            tokens, motion (spring → CSS linear()), CSS (base, screens, hud, wall)
+  theme/            tokens, motion (spring → CSS linear()), its own CSS (base, screens, menu, hud, lobby, social, account, replay, wall)
   transitions/      TumbleWipe, StampLayer, Confetti (canvas)
   components/       Button/Toggle/Slider…, TumblerAvatar (SVG), panels, toasts, dialogs
   hud/              HUD widgets, emote wheel, touch controls

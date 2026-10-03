@@ -30,11 +30,13 @@
     "node": ">=22"
   },
   "scripts": {
+    "setup:env": "node scripts/setup-env.mjs",
+    "predev": "node scripts/setup-env.mjs --if-missing",
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "lint": "eslint .",
-    "test": "turbo run test",
+    "test": "turbo run test && node --test \"scripts/*.test.mjs\"",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

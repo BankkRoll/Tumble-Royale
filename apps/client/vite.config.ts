@@ -7,7 +7,9 @@ import { defineConfig } from 'vite';
 const GAME_SERVER = process.env.GAME_SERVER_URL ?? 'http://localhost:7350';
 
 // Every *.html in the client root is an entry: index.html is the game, the rest
-// are dev sandboxes (playground, obstacle gallery, UI screen preview, …).
+// are dev sandboxes (playground, obstacle gallery, UI screen preview, …). Dev
+// serves them all; production builds ship only the game, and `--mode sandbox`
+// builds everything (with dev URL options enabled) for e2e and media capture.
 const root = import.meta.dirname;
 const pages = Object.fromEntries(
   readdirSync(root)
@@ -15,7 +17,7 @@ const pages = Object.fromEntries(
     .map((f) => [f.replace(/\.html$/, ''), resolve(root, f)]),
 );
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwind()],
   resolve: {
     // three's addons import bare 'three'; point it at the WebGPU build so only one copy of the core loads.
@@ -35,8 +37,8 @@ export default defineConfig({
     target: 'es2022',
     sourcemap: true,
     chunkSizeWarningLimit: 2000,
-    rollupOptions: { input: pages },
+    rollupOptions: { input: mode === 'sandbox' ? pages : { index: resolve(root, 'index.html') } },
   },
   // Rapier-compat embeds its WASM; pre-bundling it only slows cold starts.
   optimizeDeps: { exclude: ['@dimforge/rapier3d-compat'] },
-});
+}));

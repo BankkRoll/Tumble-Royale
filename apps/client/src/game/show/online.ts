@@ -16,19 +16,37 @@
  */
 import { MAIN_SHOW, getPlaylist } from '@tumble/content/shows';
 import { getRound } from '@tumble/content/rounds';
-import type { DecodedSnapshot, JoinRoundMsg, NetPlayerInfo, PlayerRewardMsg, RoundResultEntry, ShowInfoMsg } from '@tumble/netcode';
+import type {
+  DecodedSnapshot,
+  JoinRoundMsg,
+  NetPlayerInfo,
+  PlayerRewardMsg,
+  RoundResultEntry,
+  ShowInfoMsg,
+} from '@tumble/netcode';
 import { CharacterState } from '@tumble/sim';
 import { RoundPhase, ShowPhase, type RoundDefinition, type RoundPhaseId } from '@tumble/shared';
 import { emptyInput, type SimEvent } from '@tumble/sim';
-import { PlayerRoundStatus, createMatchSim, type MatchPlayerInfo, type MatchSim, type MatchSimHandle } from '@tumble/sim/match';
+import {
+  PlayerRoundStatus,
+  createMatchSim,
+  type MatchPlayerInfo,
+  type MatchSim,
+  type MatchSimHandle,
+} from '@tumble/sim/match';
 import { CourseMetric } from '@tumble/sim/rounds';
 import { ShowPlaylistSchema } from '@tumble/sim/show';
 import { bindUI, ui, type RewardsSummary } from '@tumble/ui';
-import { NetClient, NetGameSession, type ConnectionState } from '../../net/index.ts';
+import { NetClient, NetGameSession, defaultServerUrl, type ConnectionState } from '../../net/index.ts';
 import { botLoadout, decodeLoadout, encodeLoadout } from '../cosmetics.ts';
 import type { ShowResultForProfile } from '../profile.ts';
 import type { HudInput, HudPlayerStatus } from '../round/hud.ts';
-import { OnlineRoundSource, createPlayerSample, type PlayerSample, type RoundSource } from '../round/source.ts';
+import {
+  OnlineRoundSource,
+  createPlayerSample,
+  type PlayerSample,
+  type RoundSource,
+} from '../round/source.ts';
 import type { GameContext, RoundOutcomeInfo, RoundStart, SessionPlayer } from './context.ts';
 import { ShowSession } from './session.ts';
 
@@ -46,9 +64,9 @@ export async function gameServerAvailable(timeoutMs = 1500): Promise<boolean> {
   const ctrl = new AbortController();
   const t = window.setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    // `?gs=ws://host:port/ws` points at a specific server; probe that one instead of the dev proxy.
-    const gs = new URLSearchParams(location.search).get('gs');
-    const url = gs ? gs.replace(/^ws/, 'http').replace(/\/ws$/, '/health') : '/gs/health';
+    // Probe the same server NetClient will connect to.
+    const ws = defaultServerUrl();
+    const url = ws.replace(/^ws/, 'http').replace(/\/ws$/, '/health');
     const r = await fetch(url, { signal: ctrl.signal });
     return r.ok;
   } catch {
@@ -102,7 +120,8 @@ class EmotingSource implements RoundSource {
 
   sample(id: number, out: PlayerSample): boolean {
     if (!this.inner.sample(id, out)) return false;
-    if (id !== this.inner.localId && out.state === CharacterState.Emote) out.emote = this.emoteSlots.get(id) ?? 1;
+    if (id !== this.inner.localId && out.state === CharacterState.Emote)
+      out.emote = this.emoteSlots.get(id) ?? 1;
     return true;
   }
 }
@@ -167,7 +186,14 @@ export class OnlineShowSession extends ShowSession {
       s.setQueue({ status: 'found' });
       s.setScreen('matchFound');
     } else {
-      s.setQueue({ status: 'searching', startedAt: Date.now(), playersFound: 1, playersNeeded: 40, etaSec: -1, region: 'Local server' });
+      s.setQueue({
+        status: 'searching',
+        startedAt: Date.now(),
+        playersFound: 1,
+        playersNeeded: 40,
+        etaSec: -1,
+        region: 'Local server',
+      });
       s.setScreen('matchmaking');
     }
     s.setConnection({ status: 'connecting' });
@@ -185,7 +211,11 @@ export class OnlineShowSession extends ShowSession {
         ui.getState().setConnection({ status: 'online' });
       }),
       net.on('lobby', (l) => {
-        ui.getState().setQueue({ playersFound: l.humans, playersNeeded: l.capacity, etaSec: Math.max(0, Math.ceil(l.startsInMs / 1000)) });
+        ui.getState().setQueue({
+          playersFound: l.humans,
+          playersNeeded: l.capacity,
+          etaSec: Math.max(0, Math.ceil(l.startsInMs / 1000)),
+        });
       }),
       net.on('playerList', (list) => {
         this.onPlayerList(list);
@@ -202,7 +232,11 @@ export class OnlineShowSession extends ShowSession {
       net.on('roundResults', ({ roundId, results }) => this.onResults(roundId, results)),
       net.on('showSummary', (m) => this.onSummary(m.winners, m.rounds)),
       net.on('snapshot', (snap) => this.onSnapshot(snap)),
-      net.on('kicked', ({ reason, detail }) => this.fail(reason === 7 ? 'Your match ticket expired — queue again.' : detail || 'Removed from the show')),
+      net.on('kicked', ({ reason, detail }) =>
+        this.fail(
+          reason === 7 ? 'Your match ticket expired — queue again.' : detail || 'Removed from the show',
+        ),
+      ),
       bindUI({
         onDialogResult: ({ dialogId }) => {
           if (dialogId === 'net-failed') this.ctx.onEnd('failed');
@@ -238,7 +272,13 @@ export class OnlineShowSession extends ShowSession {
   private onConnection(st: ConnectionState): void {
     const s = ui.getState();
     if (this.summary) return;
-    if (st === 'reconnecting') s.setConnection({ status: 'reconnecting', attempt: 1, maxAttempts: 5, message: 'Hold tight, wobbling back in…' });
+    if (st === 'reconnecting')
+      s.setConnection({
+        status: 'reconnecting',
+        attempt: 1,
+        maxAttempts: 5,
+        message: 'Hold tight, wobbling back in…',
+      });
     else if (st === 'connected') s.setConnection({ status: 'online' });
     else if (st === 'connecting') s.setConnection({ status: 'connecting' });
     else if (st === 'failed') this.fail('Connection lost');
@@ -252,7 +292,14 @@ export class OnlineShowSession extends ShowSession {
     this.failed = true;
     const s = ui.getState();
     s.setConnection({ status: 'offline', message });
-    s.showDialog({ id: 'net-failed', kind: 'error', title: 'Connection lost', body: message, code: 'E-NET-04', buttons: [{ id: 'menu', label: 'Back to menu', autofocus: true }] });
+    s.showDialog({
+      id: 'net-failed',
+      kind: 'error',
+      title: 'Connection lost',
+      body: message,
+      code: 'E-NET-04',
+      buttons: [{ id: 'menu', label: 'Back to menu', autofocus: true }],
+    });
   }
 
   private onShowInfo(m: ShowInfoMsg): void {
@@ -264,7 +311,10 @@ export class OnlineShowSession extends ShowSession {
   private onPlayerList(list: NetPlayerInfo[]): void {
     for (const p of list) {
       const prev = this.players.get(p.id);
-      const loadout = (p.id === this.net.playerId ? this.ctx.look() : decodeLoadout(p.loadout)) ?? prev?.loadout ?? botLoadout(this.roomSeed, p.id, p.name);
+      const loadout =
+        (p.id === this.net.playerId ? this.ctx.look() : decodeLoadout(p.loadout)) ??
+        prev?.loadout ??
+        botLoadout(this.roomSeed, p.id, p.name);
       const sp: SessionPlayer = { id: p.id, name: p.name, isBot: p.isBot, loadout };
       this.players.set(p.id, sp);
       if (!this.order.includes(p.id)) this.order.push(p.id);
@@ -297,7 +347,12 @@ export class OnlineShowSession extends ShowSession {
     this.lastJoin = j;
     for (const p of j.players) {
       if (!this.players.has(p.id)) {
-        this.players.set(p.id, { id: p.id, name: p.name, isBot: p.isBot, loadout: botLoadout(j.seed, p.id, p.name) });
+        this.players.set(p.id, {
+          id: p.id,
+          name: p.name,
+          isBot: p.isBot,
+          loadout: botLoadout(j.seed, p.id, p.name),
+        });
         this.order.push(p.id);
       }
     }
@@ -324,8 +379,12 @@ export class OnlineShowSession extends ShowSession {
 
   private onResults(roundId: string, results: RoundResultEntry[]): void {
     const round = getRound(roundId);
-    const q = results.filter((r) => r.status === PlayerRoundStatus.Qualified).sort((a, b) => a.place - b.place);
-    const e = results.filter((r) => r.status !== PlayerRoundStatus.Qualified).sort((a, b) => a.place - b.place);
+    const q = results
+      .filter((r) => r.status === PlayerRoundStatus.Qualified)
+      .sort((a, b) => a.place - b.place);
+    const e = results
+      .filter((r) => r.status !== PlayerRoundStatus.Qualified)
+      .sort((a, b) => a.place - b.place);
     const info: RoundOutcomeInfo = {
       roundId,
       name: round?.name ?? roundId,
@@ -338,18 +397,29 @@ export class OnlineShowSession extends ShowSession {
   }
 
   private onSummary(winners: number[], rounds: { roundId: string; qualified: number[] }[]): void {
-    const outcomes = this.outcomes.length >= rounds.length ? this.outcomes.slice() : rounds.map((r, i) => {
-      const entrants = i === 0 ? this.order : (rounds[i - 1]?.qualified ?? []);
-      const round = getRound(r.roundId);
-      const q = new Set(r.qualified);
-      return { roundId: r.roundId, name: round?.name ?? r.roundId, type: round?.type ?? ('race' as const), isFinal: i === rounds.length - 1, qualified: r.qualified, eliminated: entrants.filter((id) => !q.has(id)) };
-    });
+    const outcomes =
+      this.outcomes.length >= rounds.length
+        ? this.outcomes.slice()
+        : rounds.map((r, i) => {
+            const entrants = i === 0 ? this.order : (rounds[i - 1]?.qualified ?? []);
+            const round = getRound(r.roundId);
+            const q = new Set(r.qualified);
+            return {
+              roundId: r.roundId,
+              name: round?.name ?? r.roundId,
+              type: round?.type ?? ('race' as const),
+              isFinal: i === rounds.length - 1,
+              qualified: r.qualified,
+              eliminated: entrants.filter((id) => !q.has(id)),
+            };
+          });
     const placements = new Map<number, number>();
     let place = 1;
     for (const w of winners) placements.set(w, place++);
     for (let i = outcomes.length - 1; i >= 0; i--) {
       const o = outcomes[i] as RoundOutcomeInfo;
-      for (const id of [...o.qualified, ...o.eliminated]) if (!placements.has(id)) placements.set(id, place++);
+      for (const id of [...o.qualified, ...o.eliminated])
+        if (!placements.has(id)) placements.set(id, place++);
     }
     for (const id of this.order) if (!placements.has(id)) placements.set(id, place++);
     this.onShowEnded({ winnerId: winners[0] ?? null, rounds: outcomes, placements });
@@ -383,8 +453,19 @@ export class OnlineShowSession extends ShowSession {
 
   protected createSource(rs: RoundStart): RoundSource | null {
     const sim = this.predictSim;
-    if (!sim || this.session.sim !== sim || sim.round.id !== rs.round.id || this.lastJoin?.roundId !== rs.round.id) return null;
-    const inner = new OnlineRoundSource(sim, rs.players, rs.players.some((p) => p.id === this.localId) ? this.localId : -1, this.session);
+    if (
+      !sim ||
+      this.session.sim !== sim ||
+      sim.round.id !== rs.round.id ||
+      this.lastJoin?.roundId !== rs.round.id
+    )
+      return null;
+    const inner = new OnlineRoundSource(
+      sim,
+      rs.players,
+      rs.players.some((p) => p.id === this.localId) ? this.localId : -1,
+      this.session,
+    );
     return new EmotingSource(inner, this.emoteSlots);
   }
 

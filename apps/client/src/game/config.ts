@@ -6,6 +6,7 @@
  */
 import type { BackendPreference } from '@tumble/render';
 import type { QualityTier } from '@tumble/render/quality';
+import { devParam, ENDPOINTS } from '../devTools.ts';
 
 /** Parsed launch options. */
 export interface GameConfig {
@@ -60,24 +61,27 @@ function num(v: string | null): number | null {
  */
 export function readConfig(search: string = location.search): GameConfig {
   const p = new URLSearchParams(search);
+  // Players may pick a GPU backend or quality tier to troubleshoot; everything
+  // else is developer tooling and is ignored outside dev/sandbox builds.
   const backend = p.get('backend');
   const tier = p.get('tier');
-  const ts = num(p.get('ts'));
+  const dev = (key: string): string | null => devParam(p, key);
+  const ts = num(dev('ts'));
   return {
     backend: backend === 'webgpu' || backend === 'webgl' ? backend : 'auto',
-    debug: p.get('debug') === '1',
-    autoplay: p.get('autoplay') === '1',
-    autoShows: Math.max(0, num(p.get('shows')) ?? 1),
+    debug: dev('debug') === '1',
+    autoplay: dev('autoplay') === '1',
+    autoShows: Math.max(0, num(dev('shows')) ?? 1),
     timeScale: ts !== null && ts > 0 ? Math.min(ts, 16) : 1,
-    online: p.get('online') === '1',
-    seed: num(p.get('seed')),
+    online: dev('online') === '1',
+    seed: num(dev('seed')),
     tier: tier && (TIERS as readonly string[]).includes(tier) ? (tier as QualityTier) : null,
-    api: p.get('api') !== '0',
-    fresh: p.get('fresh') === '1',
-    players: num(p.get('players')),
-    playlist: p.get('playlist'),
-    apiUrl: p.get('apiUrl') ?? 'http://localhost:7360',
-    mmUrl: p.get('mmUrl') ?? 'http://localhost:7370',
-    matchmaking: p.get('mm') !== '0',
+    api: dev('api') !== '0',
+    fresh: dev('fresh') === '1',
+    players: num(dev('players')),
+    playlist: dev('playlist'),
+    apiUrl: dev('apiUrl') ?? ENDPOINTS.api,
+    mmUrl: dev('mmUrl') ?? ENDPOINTS.matchmaker,
+    matchmaking: dev('mm') !== '0',
   };
 }

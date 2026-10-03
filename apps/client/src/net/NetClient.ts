@@ -42,6 +42,7 @@ import {
 import type { CharacterInput, SimEvent } from '@tumble/sim';
 import type { RoundPhaseId, ShowPhaseId } from '@tumble/shared';
 import { TypedEmitter } from './emitter.ts';
+import { devParam, ENDPOINTS } from '../devTools.ts';
 
 /** Connection state for the UI. */
 export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'failed';
@@ -100,13 +101,14 @@ export interface NetClientOptions {
 const OPEN = 1;
 
 /**
- * Resolves the default server URL: `?gs=<url>` wins, else `/gs/ws` on this
- * origin (proxied to the game server by Vite in dev).
+ * Resolves the default server URL: `?gs=<url>` in dev builds, else the
+ * deployment's `VITE_GAME_SERVER_URL`, else `/gs/ws` on this origin (the Vite
+ * proxy in dev, a reverse proxy when deployed).
  */
 export function defaultServerUrl(): string {
-  const params = new URLSearchParams(location.search);
-  const explicit = params.get('gs');
+  const explicit = devParam(new URLSearchParams(location.search), 'gs');
   if (explicit) return explicit;
+  if (ENDPOINTS.gameServer) return ENDPOINTS.gameServer;
   return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/gs/ws`;
 }
 
@@ -134,7 +136,14 @@ export class NetClient extends TypedEmitter<NetClientEvents> {
   /** Server clock time of network tick 0 (ms). */
   tickEpochMs = 0;
   /** Diagnostics for the HUD/debug overlay. */
-  readonly stats = { bytesIn: 0, bytesOut: 0, snapshots: 0, snapshotBytes: 0, decodeFailures: 0, lastSnapshotAt: 0 };
+  readonly stats = {
+    bytesIn: 0,
+    bytesOut: 0,
+    snapshots: 0,
+    snapshotBytes: 0,
+    decodeFailures: 0,
+    lastSnapshotAt: 0,
+  };
 
   private readonly opts: Required<Omit<NetClientOptions, 'url' | 'conditioner' | 'createSocket'>> & {
     url: string;
@@ -149,7 +158,13 @@ export class NetClient extends TypedEmitter<NetClientEvents> {
   private readonly reliable = new ReliableEndpoint();
   private readonly decoder = new SnapshotDecoder();
   private readonly decoded = createDecodedSnapshot();
-  private readonly batch: CharacterInput[] = Array.from({ length: INPUT_REDUNDANCY }, () => ({ moveX: 0, moveZ: 0, yaw: 0, buttons: 0, emote: 0 }));
+  private readonly batch: CharacterInput[] = Array.from({ length: INPUT_REDUNDANCY }, () => ({
+    moveX: 0,
+    moveZ: 0,
+    yaw: 0,
+    buttons: 0,
+    emote: 0,
+  }));
   private resumeToken = '';
   private welcomed = false;
   private userClosed = false;
@@ -171,7 +186,12 @@ export class NetClient extends TypedEmitter<NetClientEvents> {
       name: opts.name,
       loadout: opts.loadout ?? '',
       ticket: opts.ticket ?? '',
-      conditioner: opts.conditioner !== undefined ? opts.conditioner : typeof location !== 'undefined' ? conditionerFromParams(new URLSearchParams(location.search)) : null,
+      conditioner:
+        opts.conditioner !== undefined
+          ? opts.conditioner
+          : typeof location !== 'undefined'
+            ? conditionerFromParams(new URLSearchParams(location.search))
+            : null,
       now,
       createSocket: opts.createSocket ?? ((url) => new WebSocket(url) as unknown as WebSocketLike),
       reconnectWindowMs: opts.reconnectWindowMs ?? 30_000,
@@ -233,7 +253,11 @@ export class NetClient extends TypedEmitter<NetClientEvents> {
     if (!this.welcomed) return;
     const n = history.collectRecent(seq, INPUT_REDUNDANCY, this.batch);
     const w = this.w.reset();
-    writeInputBatch(w, { newestSeq: seq, clientTick: this.clientTick++, ackSnapshotId: this.decoder.newestId, count: n }, this.batch);
+    writeInputBatch(
+      w,
+      { newestSeq: seq, clientTick: this.clientTick++, ackSnapshotId: this.decoder.newestId, count: n },
+      this.batch,
+    );
     this.send(w.finish());
     this.lastInputAt = this.opts.now();
   }
@@ -266,7 +290,11 @@ export class NetClient extends TypedEmitter<NetClientEvents> {
     if (now - this.lastInputAt > 100) {
       this.lastInputAt = now;
       const w = this.w.reset();
-      writeInputBatch(w, { newestSeq: 0, clientTick: this.clientTick, ackSnapshotId: this.decoder.newestId, count: 0 }, this.batch);
+      writeInputBatch(
+        w,
+        { newestSeq: 0, clientTick: this.clientTick, ackSnapshotId: this.decoder.newestId, count: 0 },
+        this.batch,
+      );
       this.send(w.finish());
     }
     this.flushReliable();
@@ -314,7 +342,13 @@ export class NetClient extends TypedEmitter<NetClientEvents> {
   private sendHello(): void {
     this.lastHelloAt = this.opts.now();
     const w = this.w.reset();
-    writeHello(w, { version: PROTOCOL_VERSION, name: this.opts.name, resumeToken: this.resumeToken, loadout: this.opts.loadout, ticket: this.opts.ticket });
+    writeHello(w, {
+      version: PROTOCOL_VERSION,
+      name: this.opts.name,
+      resumeToken: this.resumeToken,
+      loadout: this.opts.loadout,
+      ticket: this.opts.ticket,
+    });
     this.send(w.finish());
   }
 

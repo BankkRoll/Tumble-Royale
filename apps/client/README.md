@@ -36,5 +36,6 @@ ROUNDS=<id,…> npx playwright test e2e/level.spec.ts
 ```
 
 Playwright uses the installed Edge and starts the client and game server
-itself. Set `GAME_URL` to test against a private `vite preview` build instead
-of the shared dev server.
+itself. Set `GAME_URL` to test against a private `vite preview` of a
+sandbox build (`pnpm build:sandbox`) instead of the shared dev server; the
+specs use dev URL options, which production builds ignore.

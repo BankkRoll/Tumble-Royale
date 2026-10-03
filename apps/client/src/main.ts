@@ -8,6 +8,7 @@ import './styles.css';
 import { runTestScene } from './debug/testSceneMode.ts';
 import { GameApp } from './game/app.ts';
 import { readConfig } from './game/config.ts';
+import { devParam } from './devTools.ts';
 import './game/hooks.ts';
 
 const bootLabel = document.getElementById('boot-label');
@@ -19,11 +20,14 @@ const setBoot = (pct: number, label: string): void => {
 
 const params = new URLSearchParams(location.search);
 
-const run = params.get('scene') === 'test' ? runTestScene(setBoot) : GameApp.boot(readConfig(), setBoot);
+const run =
+  devParam(params, 'scene') === 'test' ? runTestScene(setBoot) : GameApp.boot(readConfig(), setBoot);
 
 run.catch((err: unknown) => {
   console.error(err);
   const msg = err instanceof Error ? err.message : String(err);
   setBoot(100, `Failed to start: ${msg}`);
-  void import('@tumble/ui').then(({ ui }) => ui.getState().setBoot({ error: `Something got stuck in the chute: ${msg}` }));
+  void import('@tumble/ui').then(({ ui }) =>
+    ui.getState().setBoot({ error: `Something got stuck in the chute: ${msg}` }),
+  );
 });

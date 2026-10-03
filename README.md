@@ -39,7 +39,7 @@ server, API and matchmaker.
 | Service     | Package            | Port | Needed for                                                                                            |
 | ----------- | ------------------ | ---- | ----------------------------------------------------------------------------------------------------- |
 | Game client | `apps/client`      | 5173 | everything                                                                                            |
-| Game server | `apps/game-server` | 7350 | online play (`?online=1`)                                                                             |
+| Game server | `apps/game-server` | 7350 | online play                                                                                           |
 | Account API | `apps/api`         | 7360 | accounts, inventory, store, pass, ranked, social (optional; the client falls back to a local profile) |
 | Matchmaker  | `apps/matchmaker`  | 7370 | queues, parties, custom lobbies                                                                       |
 
@@ -48,24 +48,54 @@ The API uses an embedded Postgres (PGlite) and in-memory Redis when
 Stripe keys, so the whole stack runs locally with no external services. See
 each app's README for its environment variables.
 
+### Deploying
+
+Build the client with the addresses of your services; the defaults point at
+the local dev stack:
+
+```sh
+VITE_API_URL=https://api.example.com \
+VITE_MATCHMAKER_URL=https://mm.example.com \
+VITE_GAME_SERVER_URL=wss://play.example.com/ws \
+  pnpm --filter @tumble/client build      # static files in apps/client/dist
+```
+
+If `VITE_GAME_SERVER_URL` is unset, the client connects to `/gs/ws` on its
+own origin, so a reverse proxy in front of the game server also works. Run the
+servers with `NODE_ENV=production` and real secrets (see
+[SECURITY.md](SECURITY.md)): production refuses development secrets, requires
+matchmaker tickets to join a game, and disables Gem checkout unless Stripe is
+configured.
+
 ### Client URL options
+
+Two options work everywhere, so players can troubleshoot graphics:
+
+| Param                            | Effect                                          |
+| -------------------------------- | ----------------------------------------------- |
+| `?backend=webgpu\|webgl`         | Force a GPU backend                             |
+| `?tier=low\|medium\|high\|ultra` | Skip the GPU benchmark and force a quality tier |
+
+The rest are developer tools. They work under `pnpm dev` and in sandbox
+builds (`pnpm --filter @tumble/client build:sandbox`), and a normal
+production build ignores them, since a crafted link could otherwise change
+how the game runs or point the client at another server.
 
 | Param                                       | Effect                                                            |
 | ------------------------------------------- | ----------------------------------------------------------------- |
-| `?online=1`                                 | Play against the game server instead of offline bots              |
+| `?online=1`                                 | Skip the mode select and play against the game server             |
 | `?autoplay=1`                               | A bot drives your Tumbler and menus auto-advance (demos, e2e)     |
 | `?ts=N`                                     | Time scale (max 16)                                               |
-| `?backend=webgpu\|webgl`                    | Force a GPU backend                                               |
-| `?tier=low\|medium\|high\|ultra`            | Skip the GPU benchmark and force a quality tier                   |
 | `?debug=1`                                  | Debug panel (skip round, force qualify, teleport) + stats overlay |
 | `?playlist=<id>` / `?players=N` / `?seed=N` | Offline show overrides                                            |
 | `?fresh=1`                                  | Ignore the saved profile (replays the first-launch flow)          |
-| `?api=0` / `?apiUrl=<url>`                  | Disable or redirect the account API                               |
+| `?api=0` / `?apiUrl=` / `?mmUrl=` / `?gs=`  | Disable or redirect the API, matchmaker or game server            |
 | `?scene=test`                               | Phase 0 renderer/physics test scene                               |
 
 ### Dev sandboxes
 
-Every `apps/client/*.html` is its own Vite entry:
+Every `apps/client/*.html` is its own Vite entry. `pnpm dev` serves them all
+and `build:sandbox` builds them; a production build ships only the game.
 
 | Page                     | What it shows                                                                          |
 | ------------------------ | -------------------------------------------------------------------------------------- |
@@ -129,8 +159,9 @@ ROUNDS=gumdrop-gauntlet,tile-panic npx playwright test e2e/level.spec.ts  # per-
 ```
 
 For long e2e runs while files are changing, point the specs at a private
-`vite preview` build with `GAME_URL=http://localhost:<port>` so hot reloads
-don't restart the page.
+preview of a sandbox build (`build:sandbox`, then `vite preview`) with
+`GAME_URL=http://localhost:<port>` so hot reloads don't restart the page. The
+specs rely on dev URL options, so a plain production build won't work.
 
 Rules that keep the simulation deterministic (lint-enforced in `sim`,
 `shared`, `netcode` and `content`): no DOM, no three.js, no `Date.now()`, no

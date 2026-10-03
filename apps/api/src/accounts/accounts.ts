@@ -5,7 +5,15 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { starterItems, type Catalog } from '../catalog.ts';
 import type { DbOrTx } from '../db/client.ts';
-import { authIdentities, inventoryItems, loadouts, playerStats, profiles, ratings, users } from '../db/schema.ts';
+import {
+  authIdentities,
+  inventoryItems,
+  loadouts,
+  playerStats,
+  profiles,
+  ratings,
+  users,
+} from '../db/schema.ts';
 import { ApiError, badRequest, notFound } from '../http/errors.ts';
 import { checkDisplayName, generateGuestName, randomTag } from '../names/display-name.ts';
 
@@ -48,7 +56,13 @@ async function pickFreeTag(tx: DbOrTx, name: string): Promise<string> {
 export async function createAccount(
   tx: DbOrTx,
   catalog: Catalog,
-  opts: { isGuest: boolean; email?: string | null; region?: string; displayName?: string; identity: { provider: IdentityProvider; subject: string } },
+  opts: {
+    isGuest: boolean;
+    email?: string | null;
+    region?: string;
+    displayName?: string;
+    identity: { provider: IdentityProvider; subject: string };
+  },
 ): Promise<AccountRef> {
   const region = REGIONS.includes(opts.region as Region) ? (opts.region as Region) : 'na';
   const [user] = await tx
@@ -67,9 +81,13 @@ export async function createAccount(
   await tx.insert(authIdentities).values({ userId: user.id, ...opts.identity });
   const starters = starterItems(catalog);
   if (starters.length) {
-    await tx.insert(inventoryItems).values(starters.map((id) => ({ userId: user.id, cosmeticId: id, source: 'default' })));
+    await tx
+      .insert(inventoryItems)
+      .values(starters.map((id) => ({ userId: user.id, cosmeticId: id, source: 'default' })));
   }
-  await tx.insert(loadouts).values({ userId: user.id, slotIndex: 0, name: 'Loadout 1', items: catalog.defaultLoadout() });
+  await tx
+    .insert(loadouts)
+    .values({ userId: user.id, slotIndex: 0, name: 'Loadout 1', items: catalog.defaultLoadout() });
   return { userId: user.id, displayName: name, tag, region, isGuest: opts.isGuest };
 }
 
@@ -80,7 +98,13 @@ export async function createAccount(
  */
 export async function getAccountRef(db: DbOrTx, userId: string): Promise<AccountRef> {
   const [row] = await db
-    .select({ userId: users.id, displayName: profiles.displayName, tag: profiles.tag, region: users.region, isGuest: users.isGuest })
+    .select({
+      userId: users.id,
+      displayName: profiles.displayName,
+      tag: profiles.tag,
+      region: users.region,
+      isGuest: users.isGuest,
+    })
     .from(users)
     .innerJoin(profiles, eq(profiles.userId, users.id))
     .where(eq(users.id, userId));
@@ -89,7 +113,11 @@ export async function getAccountRef(db: DbOrTx, userId: string): Promise<Account
 }
 
 /** Finds the user owning an external identity, if any. */
-export async function findIdentity(db: DbOrTx, provider: IdentityProvider, subject: string): Promise<string | null> {
+export async function findIdentity(
+  db: DbOrTx,
+  provider: IdentityProvider,
+  subject: string,
+): Promise<string | null> {
   const [row] = await db
     .select({ userId: authIdentities.userId })
     .from(authIdentities)
@@ -111,7 +139,8 @@ export async function linkIdentity(
   email?: string | null,
 ): Promise<void> {
   const owner = await findIdentity(tx, provider, subject);
-  if (owner && owner !== userId) throw new ApiError(409, 'identity_in_use', `That ${provider} account is linked to another player`);
+  if (owner && owner !== userId)
+    throw new ApiError(409, 'identity_in_use', `That ${provider} account is linked to another player`);
   if (!owner) await tx.insert(authIdentities).values({ userId, provider, subject });
   if (provider !== 'device') {
     const patch: { isGuest: boolean; email?: string } = { isGuest: false };
@@ -148,12 +177,17 @@ export async function changeDisplayName(
   if (p.changedAt) {
     const nextAllowed = new Date(p.changedAt.getTime() + cooldownDays * 86_400_000);
     if (nextAllowed > now) {
-      throw new ApiError(429, 'name_cooldown', 'You changed your name recently', { nextAllowedAt: nextAllowed.toISOString() });
+      throw new ApiError(429, 'name_cooldown', 'You changed your name recently', {
+        nextAllowedAt: nextAllowed.toISOString(),
+      });
     }
   }
   const sameNameDifferentCase = p.name.toLowerCase() === check.name.toLowerCase();
   const tag = sameNameDifferentCase ? p.tag : await pickFreeTag(tx, check.name);
-  await tx.update(profiles).set({ displayName: check.name, tag, nameChangedAt: now, updatedAt: now }).where(eq(profiles.userId, userId));
+  await tx
+    .update(profiles)
+    .set({ displayName: check.name, tag, nameChangedAt: now, updatedAt: now })
+    .where(eq(profiles.userId, userId));
   return { displayName: check.name, tag };
 }
 
@@ -166,8 +200,24 @@ export interface ProfileCard {
   level: number;
   xp: { total: number; intoLevel: number; toNext: number };
   crowns: number;
-  stats: { showsPlayed: number; wins: number; finals: number; roundsPlayed: number; roundsQualified: number; winRate: number; currentWinStreak: number; bestWinStreak: number };
-  ranked: { queue: string; seasonId: string; tier: string; division: number; rp: number; placementsLeft: number }[];
+  stats: {
+    showsPlayed: number;
+    wins: number;
+    finals: number;
+    roundsPlayed: number;
+    roundsQualified: number;
+    winRate: number;
+    currentWinStreak: number;
+    bestWinStreak: number;
+  };
+  ranked: {
+    queue: string;
+    seasonId: string;
+    tier: string;
+    division: number;
+    rp: number;
+    placementsLeft: number;
+  }[];
   loadout: unknown;
   createdAt: string;
 }
@@ -213,7 +263,14 @@ export async function getProfileCard(db: DbOrTx, catalog: Catalog, userId: strin
       currentWinStreak: s?.currentWinStreak ?? 0,
       bestWinStreak: s?.bestWinStreak ?? 0,
     },
-    ranked: rank.map((r) => ({ queue: r.queue, seasonId: r.seasonId, tier: r.tier, division: r.division, rp: r.rp, placementsLeft: r.placementsLeft })),
+    ranked: rank.map((r) => ({
+      queue: r.queue,
+      seasonId: r.seasonId,
+      tier: r.tier,
+      division: r.division,
+      rp: r.rp,
+      placementsLeft: r.placementsLeft,
+    })),
     loadout: lo?.items ?? null,
     createdAt: row.u.createdAt.toISOString(),
   };

@@ -56,7 +56,20 @@ export interface LookDelta {
 }
 
 /** Standard-mapping gamepad button indices. */
-const PAD = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, Up: 12, Down: 13, Left: 14, Right: 15 } as const;
+const PAD = {
+  A: 0,
+  B: 1,
+  X: 2,
+  Y: 3,
+  LB: 4,
+  RB: 5,
+  LT: 6,
+  RT: 7,
+  Up: 12,
+  Down: 13,
+  Left: 14,
+  Right: 15,
+} as const;
 
 const MOVE_ACTIONS: readonly InputAction[] = ['forward', 'back', 'left', 'right'];
 
@@ -119,7 +132,8 @@ export class InputSystem {
     }
     this.rebuildCodeIndex();
 
-    const touchCapable = opts.enableTouch ?? (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0);
+    const touchCapable =
+      opts.enableTouch ?? (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0);
     this.touch = touchCapable ? new TouchControls(this.element, opts.touchParent) : null;
 
     this.listen(window, 'keydown', (e) => this.onKey(e as KeyboardEvent, true));
@@ -314,7 +328,8 @@ export class InputSystem {
   private onKey(e: KeyboardEvent, down: boolean): void {
     const target = e.target as HTMLElement | null;
     // Debug panels and text fields keep their keys.
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable))
+      return;
     const actions = this.codeToActions.get(e.code);
     if (!actions) return;
     if (PREVENT_DEFAULT_CODES.has(e.code) || e.ctrlKey) e.preventDefault();
@@ -444,7 +459,12 @@ export class InputSystem {
  *
  * @returns `out` with magnitude in [0, 1].
  */
-export function radialDeadzone(x: number, y: number, deadzone: number, out: { x: number; y: number }): { x: number; y: number } {
+export function radialDeadzone(
+  x: number,
+  y: number,
+  deadzone: number,
+  out: { x: number; y: number },
+): { x: number; y: number } {
   const m = Math.hypot(x, y);
   if (m <= deadzone) {
     out.x = 0;

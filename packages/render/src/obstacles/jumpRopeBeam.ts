@@ -8,7 +8,18 @@ import { atan, float, positionLocal, uniform } from 'three/tsl';
 import type { PoseSample } from '@tumble/sim';
 import { JumpRopeBeamSchema, jumpRopeBeamPose, jumpRopeLayers, jumpRopeSpeed } from '@tumble/sim/obstacles';
 import type { ObstacleVisualFactory } from './types.ts';
-import { Disposer, PAL, addOutline, applyInstanceTransform, applyPose, glowMaterial, parseParams, solid, stripedToon, toon } from './visual-helpers-b.ts';
+import {
+  Disposer,
+  PAL,
+  addOutline,
+  applyInstanceTransform,
+  applyPose,
+  glowMaterial,
+  parseParams,
+  solid,
+  stripedToon,
+  toon,
+} from './visual-helpers-b.ts';
 
 /** Angular extent of a motion trail (radians). */
 const TRAIL = 0.55;
@@ -23,10 +34,16 @@ export const jumpRopeBeamVisual: ObstacleVisualFactory = (instance, ctx) => {
 
   const layers = jumpRopeLayers(p);
   const hubH = Math.max(p.lowHeight, p.layers === 'low' ? p.lowHeight : p.highHeight) + 0.6;
-  const hub = solid(d.track(new CylinderGeometry(p.hubRadius, p.hubRadius * 1.1, hubH, 32)), stripedToon(d, PAL.yellow, PAL.pink, 2, 'y'));
+  const hub = solid(
+    d.track(new CylinderGeometry(p.hubRadius, p.hubRadius * 1.1, hubH, 32)),
+    stripedToon(d, PAL.yellow, PAL.pink, 2, 'y'),
+  );
   hub.position.y = hubH / 2;
   root.add(hub);
-  const dome = solid(d.track(new SphereGeometry(p.hubRadius, 32, 12, 0, Math.PI * 2, 0, Math.PI / 2)), toon(d, { color: PAL.pink }));
+  const dome = solid(
+    d.track(new SphereGeometry(p.hubRadius, 32, 12, 0, Math.PI * 2, 0, Math.PI / 2)),
+    toon(d, { color: PAL.pink }),
+  );
   dome.position.y = hubH;
   root.add(dome);
 
@@ -42,7 +59,13 @@ export const jumpRopeBeamVisual: ObstacleVisualFactory = (instance, ctx) => {
   layers.forEach((layer, li) => {
     const rotor = new Group();
     const neon = li === 0 ? PAL.cyan : PAL.magenta;
-    const beamMat = toon(d, { color: neon, emissive: neon, emissiveIntensity: 0.55, rimColor: '#ffffff', rimStrength: 0.8 });
+    const beamMat = toon(d, {
+      color: neon,
+      emissive: neon,
+      emissiveIntensity: 0.55,
+      rimColor: '#ffffff',
+      rimStrength: 0.8,
+    });
     // The trail trails BEHIND the beam, so its bright edge depends on spin direction.
     const trail = glowMaterial(d, neon, { additive: true, doubleSide: true });
     const ang = atan(positionLocal.z.negate(), positionLocal.x).div(TRAIL).clamp(0, 1);

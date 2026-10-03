@@ -27,7 +27,10 @@ export interface ObstacleVisual {
 }
 
 /** Creates a visual for one placed obstacle. */
-export type ObstacleVisualFactory = (instance: ObstacleInstance, ctx: ObstacleVisualContext) => ObstacleVisual;
+export type ObstacleVisualFactory = (
+  instance: ObstacleInstance,
+  ctx: ObstacleVisualContext,
+) => ObstacleVisual;
 
 /** Visual factories keyed by obstacle type. Each obstacle set exports a partial map. */
 export type ObstacleVisualSet = Partial<Record<ObstacleType, ObstacleVisualFactory>>;

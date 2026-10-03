@@ -38,7 +38,13 @@ export function analyticOffset(
 ): Node<'vec3'> {
   const noDrag = k.lessThan(MIN_DRAG);
   const kk = max(k, float(MIN_DRAG));
-  const f = select(noDrag, t, float(1).sub(exp(kk.negate().mul(t))).div(kk));
+  const f = select(
+    noDrag,
+    t,
+    float(1)
+      .sub(exp(kk.negate().mul(t)))
+      .div(kk),
+  );
   const gt = select(noDrag, t.mul(t).mul(0.5), t.sub(f).div(kk));
   return v0.mul(f).sub(vec3(0, g.mul(gt), 0));
 }

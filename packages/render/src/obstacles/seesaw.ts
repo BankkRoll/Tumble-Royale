@@ -69,7 +69,10 @@ class SeesawVisual extends VisualBase<SeesawParams> {
       pad.position.set(side * p.length * 0.38, p.thickness + 0.03, 0);
       this.plank.add(pad);
     }
-    const axle = shadedMesh(new CylinderGeometry(0.22, 0.22, p.width + 0.3, 16), createPatternMaterial({ a: C.grape }));
+    const axle = shadedMesh(
+      new CylinderGeometry(0.22, 0.22, p.width + 0.3, 16),
+      createPatternMaterial({ a: C.grape }),
+    );
     axle.rotation.x = Math.PI / 2;
     this.plank.add(axle);
     this.add(this.plank);

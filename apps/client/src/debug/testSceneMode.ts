@@ -67,7 +67,10 @@ export async function runTestScene(setBoot: (pct: number, label: string) => void
       params.set('backend', v);
       location.search = params.toString();
     });
-  gui.add(settings, 'showStats').name('Stats overlay').onChange((v: boolean) => stats.setVisible(v));
+  gui
+    .add(settings, 'showStats')
+    .name('Stats overlay')
+    .onChange((v: boolean) => stats.setVisible(v));
   gui.add(settings, 'timeScale', 0, 2, 0.05).name('Time scale');
   const detCtrl = gui.add(settings, 'determinism').name('Determinism').disable();
   gui.add(settings, 'runDeterminism').name('Run client↔server check');

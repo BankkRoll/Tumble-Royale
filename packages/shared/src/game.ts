@@ -36,16 +36,7 @@ export type ShowPhaseId = (typeof ShowPhase)[keyof typeof ShowPhase];
 
 /** Visual themes. Each maps to a palette, sky, LUT and music track in content. */
 export type ThemeId =
-  | 'candy'
-  | 'factory'
-  | 'frosty'
-  | 'jungle'
-  | 'sunset'
-  | 'space'
-  | 'beach'
-  | 'neon'
-  | 'castle'
-  | 'goo';
+  'candy' | 'factory' | 'frosty' | 'jungle' | 'sunset' | 'space' | 'beach' | 'neon' | 'castle' | 'goo';
 
 /** Team colours for team rounds, in index order. */
 export const TEAM_COLORS = ['#ff4f8b', '#3fa9ff', '#ffd23f', '#6ee7a8'] as const;

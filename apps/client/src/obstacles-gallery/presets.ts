@@ -33,7 +33,10 @@ export const GALLERY_PRESETS: Partial<Record<string, GalleryPreset>> = {
   spinwheel: { params: { tiers: 2, reversePeriod: 7 }, spawn: { x: 0, z: 0, radius: 6, height: 6 } },
   pendulumHammer: { spawn: { x: 0, z: 0, radius: 3, height: 3 } },
   sweeperArm: { params: { accel: 0.05, upperArmHeight: 2.2 }, spawn: { x: 0, z: 0, radius: 7, height: 4 } },
-  bumperPillar: { params: { orbitRadius: 3, bobAmplitude: 0.3 }, spawn: { x: 0, z: 0, radius: 4, height: 6 } },
+  bumperPillar: {
+    params: { orbitRadius: 3, bobAmplitude: 0.3 },
+    spawn: { x: 0, z: 0, radius: 4, height: 6 },
+  },
   punchWall: { offset: { x: 0, y: 0, z: -4 }, spawn: { x: 0, z: -1.5, radius: 3, height: 4 } },
   doorGauntlet: {
     offset: { x: 0, y: 0, z: -3 },
@@ -42,18 +45,48 @@ export const GALLERY_PRESETS: Partial<Record<string, GalleryPreset>> = {
     ballVelocity: { x: 0, y: 0, z: 9 },
     balls: 6,
   },
-  conveyorBelt: { offset: { x: 0, y: 0.6, z: 0 }, params: { pattern: 'switch', switchPeriod: 4 }, spawn: { x: 0, z: 0, radius: 3, height: 3 } },
-  tiltPlatform: { offset: { x: 0, y: 3.6, z: 0 }, params: { columnHeight: 3.2 }, spawn: { x: 2, z: 1, radius: 2, height: 8 } },
+  conveyorBelt: {
+    offset: { x: 0, y: 0.6, z: 0 },
+    params: { pattern: 'switch', switchPeriod: 4 },
+    spawn: { x: 0, z: 0, radius: 3, height: 3 },
+  },
+  tiltPlatform: {
+    offset: { x: 0, y: 3.6, z: 0 },
+    params: { columnHeight: 3.2 },
+    spawn: { x: 2, z: 1, radius: 2, height: 8 },
+  },
   seesaw: { spawn: { x: -3.5, z: 0, radius: 1, height: 6 } },
   fanZone: { offset: { x: 0, y: 1.8, z: -6 }, spawn: { x: 0, z: 0, radius: 3, height: 5 } },
   bouncePad: { spawn: { x: 0, z: 0, radius: 0.8, height: 5 } },
-  fallingTiles: { offset: { x: 0, y: 3, z: 0 }, params: { cols: 7, rows: 7, respawnTime: 4 }, spawn: { x: 0, z: 0, radius: 6, height: 9 }, balls: 6 },
-  risingSlime: { params: { width: 24, depth: 24, keyframes: slimeLoop() }, spawn: { x: 0, z: 0, radius: 8, height: 6 } },
-  boulderLane: { offset: { x: 0, y: 0, z: -11 }, params: { length: 22, laneSpacing: 4 }, spawn: { x: 0, z: 0, radius: 5, height: 3 } },
-  spinningDisc: { offset: { x: 0, y: 1, z: 0 }, params: { bumps: 4, wobbleDeg: 4, reversePeriod: 6 }, spawn: { x: 0, z: 0, radius: 5, height: 5 } },
+  fallingTiles: {
+    offset: { x: 0, y: 3, z: 0 },
+    params: { cols: 7, rows: 7, respawnTime: 4 },
+    spawn: { x: 0, z: 0, radius: 6, height: 9 },
+    balls: 6,
+  },
+  risingSlime: {
+    params: { width: 24, depth: 24, keyframes: slimeLoop() },
+    spawn: { x: 0, z: 0, radius: 8, height: 6 },
+  },
+  boulderLane: {
+    offset: { x: 0, y: 0, z: -11 },
+    params: { length: 22, laneSpacing: 4 },
+    spawn: { x: 0, z: 0, radius: 5, height: 3 },
+  },
+  spinningDisc: {
+    offset: { x: 0, y: 1, z: 0 },
+    params: { bumps: 4, wobbleDeg: 4, reversePeriod: 6 },
+    spawn: { x: 0, z: 0, radius: 5, height: 5 },
+  },
   movingPlatform: {
     offset: { x: 0, y: 2, z: 0 },
-    params: { points: [{ x: 0, y: 0, z: -6 }, { x: 0, y: 2, z: 0 }, { x: 0, y: 0, z: 6 }] },
+    params: {
+      points: [
+        { x: 0, y: 0, z: -6 },
+        { x: 0, y: 2, z: 0 },
+        { x: 0, y: 0, z: 6 },
+      ],
+    },
     spawn: { x: 0, z: 0, radius: 6, height: 7 },
   },
 };

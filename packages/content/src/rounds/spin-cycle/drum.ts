@@ -146,7 +146,10 @@ export function hexCore(o: HexCoreOptions): Piece[] {
       const d = Math.hypot(x, z);
       if (d > o.radius) continue;
       const ring = Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r));
-      const color = o.centreRadius !== undefined && d <= o.centreRadius ? (o.centreColor ?? 'safe') : (o.colors[ring % o.colors.length] as string);
+      const color =
+        o.centreRadius !== undefined && d <= o.centreRadius
+          ? (o.centreColor ?? 'safe')
+          : (o.colors[ring % o.colors.length] as string);
       out.push({
         shape: 'hexPrism',
         position: { x, y: -0.03, z },

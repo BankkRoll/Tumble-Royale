@@ -28,7 +28,8 @@ const TOUCH: Record<PromptAction, string[]> = {
   confirm: ['Tap'],
 };
 
-const labels = (codes: readonly string[] | undefined): string[] => (codes ?? []).filter((c) => c !== '').map(keyLabel);
+const labels = (codes: readonly string[] | undefined): string[] =>
+  (codes ?? []).filter((c) => c !== '').map(keyLabel);
 
 /**
  * Chips for one action on the given device.
@@ -45,7 +46,9 @@ export function promptKeys(action: PromptAction, device: TutorialDevice, binds: 
   if (device === 'touch') return TOUCH[action];
   switch (action) {
     case 'move': {
-      const four = [binds.moveForward, binds.moveLeft, binds.moveBack, binds.moveRight].map((c) => keyLabel(c?.[0] ?? ''));
+      const four = [binds.moveForward, binds.moveLeft, binds.moveBack, binds.moveRight].map((c) =>
+        keyLabel(c?.[0] ?? ''),
+      );
       const word = four.join('');
       return [word === 'WASD' ? 'WASD' : four.join(' ')];
     }

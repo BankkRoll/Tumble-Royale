@@ -14,7 +14,15 @@
  * Nothing here is part of the public obstacle API; set B modules use it internally.
  */
 import type { Collider, ColliderDesc, RigidBody } from '@dimforge/rapier3d-compat';
-import { quatFromEulerYXZ, quatIdentity, quatMul, rotateVec, vec3, type Quat, type Vec3 } from '@tumble/shared';
+import {
+  quatFromEulerYXZ,
+  quatIdentity,
+  quatMul,
+  rotateVec,
+  vec3,
+  type Quat,
+  type Vec3,
+} from '@tumble/shared';
 import type { EventSink } from '../events.ts';
 import type { SurfaceInfo } from '../physics/surfaces.ts';
 import type { ObstacleBuildContext, ObstacleInstance, PoseSample } from './types.ts';
@@ -79,7 +87,13 @@ export function writeSample(s: PoseSample, x: number, y: number, z: number, q: Q
  * Composes `frame * local` into `outPos`/`outRot` (world = frame ∘ local).
  * `outPos` may alias `localPos`; `outRot` may alias `localRot`.
  */
-export function toWorld(frame: Frame, localPos: Vec3, localRot: Quat | null, outPos: Vec3, outRot: Quat | null): void {
+export function toWorld(
+  frame: Frame,
+  localPos: Vec3,
+  localRot: Quat | null,
+  outPos: Vec3,
+  outRot: Quat | null,
+): void {
   rotateVec(frame.rot, localPos, outPos);
   outPos.x += frame.pos.x;
   outPos.y += frame.pos.y;
@@ -375,7 +389,12 @@ export function archParts(width: number, height: number, pillar: number, depth: 
   const hd = depth / 2;
   const id = (): Quat => quatIdentity();
   return [
-    { pos: vec3(-(width / 2 + hp), height / 2, 0), rot: id(), half: vec3(hp, height / 2, hd), role: 'pillar' },
+    {
+      pos: vec3(-(width / 2 + hp), height / 2, 0),
+      rot: id(),
+      half: vec3(hp, height / 2, hd),
+      role: 'pillar',
+    },
     { pos: vec3(width / 2 + hp, height / 2, 0), rot: id(), half: vec3(hp, height / 2, hd), role: 'pillar' },
     { pos: vec3(0, height + hp, 0), rot: id(), half: vec3(width / 2 + pillar, hp, hd), role: 'beam' },
   ];

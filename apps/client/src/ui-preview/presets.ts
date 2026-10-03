@@ -169,8 +169,18 @@ export const PRESETS: Preset[] = [
       menu('play')();
     },
   },
-  { id: 'gumballs', label: 'Wallet · Earn Gumballs', group: 'Menu', apply: () => (menu('play')(), s().setCurrencyPanel('gumballs')) },
-  { id: 'gems', label: 'Wallet · Gems (coming soon)', group: 'Menu', apply: () => (menu('play')(), s().setCurrencyPanel('gems')) },
+  {
+    id: 'gumballs',
+    label: 'Wallet · Earn Gumballs',
+    group: 'Menu',
+    apply: () => (menu('play')(), s().setCurrencyPanel('gumballs')),
+  },
+  {
+    id: 'gems',
+    label: 'Wallet · Gems (coming soon)',
+    group: 'Menu',
+    apply: () => (menu('play')(), s().setCurrencyPanel('gems')),
+  },
   {
     id: 'inspectProfile',
     label: 'Ranks · another player card',
@@ -179,7 +189,16 @@ export const PRESETS: Preset[] = [
       menu('leaderboards')();
       const row = s().leaderboards.crowns?.[0];
       const me = s().profile;
-      if (row && me) s().setInspectedProfile({ ...me, id: row.playerId, name: row.name, colors: row.colors, crowns: row.value, isGuest: false, showcase: [] });
+      if (row && me)
+        s().setInspectedProfile({
+          ...me,
+          id: row.playerId,
+          name: row.name,
+          colors: row.colors,
+          crowns: row.value,
+          isGuest: false,
+          showcase: [],
+        });
     },
   },
   {

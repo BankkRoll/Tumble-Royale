@@ -53,7 +53,8 @@ export class TouchControls {
   ) {
     this.root = document.createElement('div');
     this.root.dataset.touch = 'root';
-    this.root.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:40;display:none;user-select:none;-webkit-user-select:none';
+    this.root.style.cssText =
+      'position:fixed;inset:0;pointer-events:none;z-index:40;display:none;user-select:none;-webkit-user-select:none';
 
     this.base = document.createElement('div');
     this.base.dataset.touch = 'stick';

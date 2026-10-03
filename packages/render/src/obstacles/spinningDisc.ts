@@ -30,7 +30,10 @@ class SpinningDiscVisual extends VisualBase<SpinningDiscParams> {
   private readonly poses;
   private readonly rimMat;
 
-  constructor(instance: ObstacleInstance, private readonly ctx: ObstacleVisualContext) {
+  constructor(
+    instance: ObstacleInstance,
+    private readonly ctx: ObstacleVisualContext,
+  ) {
     super(instance, spinningDiscSchema.parse(instance.params));
     const p = this.params;
     this.poses = poseBufferFor(spinningDisc, p, ctx.speedScale);
@@ -42,13 +45,22 @@ class SpinningDiscVisual extends VisualBase<SpinningDiscParams> {
     top.position.y = -p.thickness / 2;
     this.disc.add(top);
 
-    this.rimMat = createPatternMaterial({ a: C.interact, b: C.dangerAlt, pattern: 'pie', scale: 48, emissive: C.glowWarn });
+    this.rimMat = createPatternMaterial({
+      a: C.interact,
+      b: C.dangerAlt,
+      pattern: 'pie',
+      scale: 48,
+      emissive: C.glowWarn,
+    });
     const rim = shadedMesh(new TorusGeometry(p.radius, p.thickness * 0.32, 12, 96), this.rimMat);
     rim.rotation.x = Math.PI / 2;
     rim.position.y = -p.thickness * 0.35;
     this.disc.add(rim);
 
-    const hub = shadedMesh(new SphereGeometry(Math.min(0.9, p.radius * 0.15), 24, 10, 0, Math.PI * 2, 0, Math.PI / 2), createPatternMaterial({ a: C.pink }));
+    const hub = shadedMesh(
+      new SphereGeometry(Math.min(0.9, p.radius * 0.15), 24, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+      createPatternMaterial({ a: C.pink }),
+    );
     addOutline(hub, 0.03);
     this.disc.add(hub);
 
@@ -64,7 +76,12 @@ class SpinningDiscVisual extends VisualBase<SpinningDiscParams> {
     }
     this.add(this.disc);
 
-    const skirt = this.add(shadedMesh(new CylinderGeometry(p.radius * 0.3, p.radius * 0.2, 1.4, 32), createPatternMaterial({ a: C.lilac, b: C.grape, pattern: 'bands', scale: 2 })));
+    const skirt = this.add(
+      shadedMesh(
+        new CylinderGeometry(p.radius * 0.3, p.radius * 0.2, 1.4, 32),
+        createPatternMaterial({ a: C.lilac, b: C.grape, pattern: 'bands', scale: 2 }),
+      ),
+    );
     skirt.position.y = -p.thickness - 0.7;
   }
 
@@ -76,4 +93,5 @@ class SpinningDiscVisual extends VisualBase<SpinningDiscParams> {
 }
 
 /** Spinning disc visual factory. */
-export const spinningDiscVisual: ObstacleVisualFactory = (instance, ctx) => new SpinningDiscVisual(instance, ctx);
+export const spinningDiscVisual: ObstacleVisualFactory = (instance, ctx) =>
+  new SpinningDiscVisual(instance, ctx);

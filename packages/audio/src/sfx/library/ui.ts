@@ -19,7 +19,14 @@ function wet(s: SynthContext, seconds: number, amount: number): SynthContext {
   return into(s, reverb(s, seconds, amount).input);
 }
 
-function chord(s: SynthContext, inst: InstrumentId, t: number, notes: readonly number[], dur: number, vel: number): void {
+function chord(
+  s: SynthContext,
+  inst: InstrumentId,
+  t: number,
+  notes: readonly number[],
+  dur: number,
+  vel: number,
+): void {
   for (const m of notes) INSTRUMENTS[inst](s, t, m, dur, vel);
 }
 
@@ -40,7 +47,13 @@ function stampCore(s: SynthContext): void {
   bus.connect(softClip(s.ctx, 3)).connect(s.out);
   const p = into(s, bus);
   tone(p, { freq: 125, freqEnd: 42, t: 0, dur: 0.25, gain: 0.9 });
-  noise(p, { color: 'brown', t: 0, dur: 0.2, gain: 0.8, filter: { type: 'lowpass', freq: 1500, freqEnd: 200 } });
+  noise(p, {
+    color: 'brown',
+    t: 0,
+    dur: 0.2,
+    gain: 0.8,
+    filter: { type: 'lowpass', freq: 1500, freqEnd: 200 },
+  });
   noise(p, { t: 0, dur: 0.04, gain: 0.5, filter: { type: 'bandpass', freq: 1800, q: 1 } });
 }
 
@@ -73,7 +86,14 @@ const STAMP_VARIANTS: SfxDefs = {
     duration: 1,
     render: (s) => {
       stampCore(s);
-      tone(s, { freq: 2600, t: 0.1, dur: 0.45, gain: 0.12, env: { a: 0.01, d: 0.05, s: 0.85, r: 0.05 }, tremolo: { rate: 30, depth: 0.6 } });
+      tone(s, {
+        freq: 2600,
+        t: 0.1,
+        dur: 0.45,
+        gain: 0.12,
+        env: { a: 0.01, d: 0.05, s: 0.85, r: 0.05 },
+        tremolo: { rate: 30, depth: 0.6 },
+      });
     },
   }),
   'ui.stamp.go': ui({
@@ -90,8 +110,22 @@ const STAMP_VARIANTS: SfxDefs = {
     duration: 0.9,
     render: (s) => {
       stampCore(s);
-      tone(s, { type: 'sawtooth', freq: 110, t: 0.02, dur: 0.6, gain: 0.12, env: { a: 0.01, d: 0.05, s: 0.9, r: 0.08 } });
-      tone(s, { type: 'square', freq: 116, t: 0.02, dur: 0.6, gain: 0.08, env: { a: 0.01, d: 0.05, s: 0.9, r: 0.08 } });
+      tone(s, {
+        type: 'sawtooth',
+        freq: 110,
+        t: 0.02,
+        dur: 0.6,
+        gain: 0.12,
+        env: { a: 0.01, d: 0.05, s: 0.9, r: 0.08 },
+      });
+      tone(s, {
+        type: 'square',
+        freq: 116,
+        t: 0.02,
+        dur: 0.6,
+        gain: 0.08,
+        env: { a: 0.01, d: 0.05, s: 0.9, r: 0.08 },
+      });
     },
   }),
   'ui.stamp.final': ui({
@@ -168,8 +202,22 @@ export const UI_SFX: SfxDefs = {
     gain: 0.5,
     stereo: true,
     render: (s) => {
-      noise(into(s, panTo(s.ctx, -0.4, s.out)), { color: 'pink', t: 0, dur: 0.26, gain: 0.35, attack: 0.1, filter: { type: 'bandpass', freq: 400, freqEnd: 3200, q: 1.5 } });
-      noise(into(s, panTo(s.ctx, 0.4, s.out)), { color: 'pink', t: 0.03, dur: 0.26, gain: 0.3, attack: 0.1, filter: { type: 'bandpass', freq: 500, freqEnd: 3600, q: 1.5 } });
+      noise(into(s, panTo(s.ctx, -0.4, s.out)), {
+        color: 'pink',
+        t: 0,
+        dur: 0.26,
+        gain: 0.35,
+        attack: 0.1,
+        filter: { type: 'bandpass', freq: 400, freqEnd: 3200, q: 1.5 },
+      });
+      noise(into(s, panTo(s.ctx, 0.4, s.out)), {
+        color: 'pink',
+        t: 0.03,
+        dur: 0.26,
+        gain: 0.3,
+        attack: 0.1,
+        filter: { type: 'bandpass', freq: 500, freqEnd: 3600, q: 1.5 },
+      });
     },
   }),
   'ui.stamp': ui({
@@ -182,8 +230,22 @@ export const UI_SFX: SfxDefs = {
     duration: 0.3,
     gain: 0.5,
     render: (s) => {
-      tone(s, { type: 'square', freq: 220, t: 0, dur: 0.09, gain: 0.1, env: { a: 0.005, d: 0.02, s: 0.9, r: 0.02 } });
-      tone(s, { type: 'square', freq: 185, t: 0.11, dur: 0.12, gain: 0.1, env: { a: 0.005, d: 0.02, s: 0.9, r: 0.04 } });
+      tone(s, {
+        type: 'square',
+        freq: 220,
+        t: 0,
+        dur: 0.09,
+        gain: 0.1,
+        env: { a: 0.005, d: 0.02, s: 0.9, r: 0.02 },
+      });
+      tone(s, {
+        type: 'square',
+        freq: 185,
+        t: 0.11,
+        dur: 0.12,
+        gain: 0.1,
+        env: { a: 0.005, d: 0.02, s: 0.9, r: 0.04 },
+      });
     },
   }),
   'ui.toggle': ui({
@@ -370,7 +432,14 @@ export const UI_SFX: SfxDefs = {
     duration: 0.2,
     gain: 0.6,
     render: (s) => {
-      noise(s, { color: 'pink', t: 0, dur: 0.12, gain: 0.2, attack: 0.04, filter: { type: 'bandpass', freq: 1500, freqEnd: 3000, q: 2 } });
+      noise(s, {
+        color: 'pink',
+        t: 0,
+        dur: 0.12,
+        gain: 0.2,
+        attack: 0.04,
+        filter: { type: 'bandpass', freq: 1500, freqEnd: 3000, q: 2 },
+      });
       INSTRUMENTS.marimba(s, 0.05, 81, 0.1, 0.7);
     },
   }),
@@ -420,7 +489,15 @@ export const UI_SFX: SfxDefs = {
     render: (s) => {
       for (let i = 0; i < 9; i++) {
         const t = i * 0.07 + s.rng.range(0, 0.02);
-        fm(into(s, panTo(s.ctx, s.rng.range(-0.5, 0.5), s.out)), { t, freq: s.rng.pick([1976, 2349, 2637, 3136]), ratio: 3.5, index: 1, indexEnd: 0.05, dur: 0.2, gain: 0.1 });
+        fm(into(s, panTo(s.ctx, s.rng.range(-0.5, 0.5), s.out)), {
+          t,
+          freq: s.rng.pick([1976, 2349, 2637, 3136]),
+          ratio: 3.5,
+          index: 1,
+          indexEnd: 0.05,
+          dur: 0.2,
+          gain: 0.1,
+        });
       }
       INSTRUMENTS.marimba(s, 0.65, 77, 0.2, 0.9);
       INSTRUMENTS.marimba(s, 0.72, 84, 0.3, 1);
@@ -441,7 +518,15 @@ export const UI_SFX: SfxDefs = {
     desc: 'Player Wall: eliminated cells flash (alarm-ish blips)',
     duration: 0.6,
     render: (s) => {
-      for (let i = 0; i < 3; i++) tone(s, { type: 'square', freq: 740, t: i * 0.16, dur: 0.07, gain: 0.08, env: { a: 0.003, d: 0.02, s: 0.8, r: 0.02 } });
+      for (let i = 0; i < 3; i++)
+        tone(s, {
+          type: 'square',
+          freq: 740,
+          t: i * 0.16,
+          dur: 0.07,
+          gain: 0.08,
+          env: { a: 0.003, d: 0.02, s: 0.8, r: 0.02 },
+        });
     },
   }),
   'ui.wall.trapdoor': ui({
@@ -450,7 +535,15 @@ export const UI_SFX: SfxDefs = {
     render: (s) => {
       tone(s, { freq: 160, freqEnd: 70, t: 0, dur: 0.12, gain: 0.5 });
       noise(s, { t: 0, dur: 0.04, gain: 0.3, filter: { type: 'bandpass', freq: 900, q: 2 } });
-      tone(s, { type: 'sawtooth', freq: 220, freqEnd: 140, t: 0.05, dur: 0.3, gain: 0.04, vibrato: { rate: 30, depth: 8 } });
+      tone(s, {
+        type: 'sawtooth',
+        freq: 220,
+        freqEnd: 140,
+        t: 0.05,
+        dur: 0.3,
+        gain: 0.04,
+        vibrato: { rate: 30, depth: 8 },
+      });
     },
   }),
   'ui.wall.fall': ui({
@@ -460,7 +553,14 @@ export const UI_SFX: SfxDefs = {
     render: (s) => {
       for (let i = 0; i < 4; i++) {
         const f = s.rng.range(1400, 1900);
-        tone(into(s, panTo(s.ctx, s.rng.range(-0.7, 0.7), s.out)), { freq: f, freqEnd: f * 0.25, t: i * 0.08, dur: 0.8, gain: 0.08, env: { a: 0.02, d: 0.1, s: 0.8, r: 0.1 } });
+        tone(into(s, panTo(s.ctx, s.rng.range(-0.7, 0.7), s.out)), {
+          freq: f,
+          freqEnd: f * 0.25,
+          t: i * 0.08,
+          dur: 0.8,
+          gain: 0.08,
+          env: { a: 0.02, d: 0.1, s: 0.8, r: 0.1 },
+        });
       }
     },
   }),
@@ -479,7 +579,14 @@ export const UI_SFX: SfxDefs = {
     desc: 'Player Wall: rumble before the winner reveal',
     duration: 0.9,
     render: (s) => {
-      noise(s, { color: 'brown', t: 0, dur: 0.7, gain: 0.8, env: { a: 0.1, d: 0.2, s: 0.8, r: 0.2 }, filter: { type: 'lowpass', freq: 160 } });
+      noise(s, {
+        color: 'brown',
+        t: 0,
+        dur: 0.7,
+        gain: 0.8,
+        env: { a: 0.1, d: 0.2, s: 0.8, r: 0.2 },
+        filter: { type: 'lowpass', freq: 160 },
+      });
       snareRoll(s, 0, 0.7, 0.1, 0.5);
     },
   }),
@@ -501,11 +608,29 @@ export const UI_SFX: SfxDefs = {
     duration: 1.6,
     stereo: true,
     render: (s) => {
-      noise(s, { t: 0, dur: 0.45, gain: 0.15, attack: 0.3, filter: { type: 'bandpass', freq: 1500, freqEnd: 5000, q: 4 } });
+      noise(s, {
+        t: 0,
+        dur: 0.45,
+        gain: 0.15,
+        attack: 0.3,
+        filter: { type: 'bandpass', freq: 1500, freqEnd: 5000, q: 4 },
+      });
       tone(s, { freq: 900, freqEnd: 2400, t: 0, dur: 0.45, gain: 0.04, attack: 0.3 });
-      noise(s, { color: 'brown', t: 0.48, dur: 0.5, gain: 0.8, filter: { type: 'lowpass', freq: 1200, freqEnd: 150 } });
+      noise(s, {
+        color: 'brown',
+        t: 0.48,
+        dur: 0.5,
+        gain: 0.8,
+        filter: { type: 'lowpass', freq: 1200, freqEnd: 150 },
+      });
       tone(s, { freq: 90, freqEnd: 40, t: 0.48, dur: 0.3, gain: 0.6 });
-      for (let i = 0; i < 18; i++) noise(into(s, panTo(s.ctx, s.rng.range(-0.9, 0.9), s.out)), { t: s.rng.range(0.6, 1.4), dur: 0.006, gain: s.rng.range(0.05, 0.15), filter: { type: 'highpass', freq: 3500 } });
+      for (let i = 0; i < 18; i++)
+        noise(into(s, panTo(s.ctx, s.rng.range(-0.9, 0.9), s.out)), {
+          t: s.rng.range(0.6, 1.4),
+          dur: 0.006,
+          gain: s.rng.range(0.05, 0.15),
+          filter: { type: 'highpass', freq: 3500 },
+        });
     },
   }),
   'ui.joinTick': ui({
@@ -538,8 +663,22 @@ export const UI_SFX: SfxDefs = {
     refDistance: 6,
     render: (s) => {
       for (let i = 0; i < 2; i++) {
-        tone(s, { type: 'square', freq: 1000, t: i * 0.12, dur: 0.07, gain: 0.08, env: { a: 0.003, d: 0.02, s: 0.85, r: 0.02 } });
-        tone(s, { type: 'square', freq: 1414, t: i * 0.12, dur: 0.07, gain: 0.05, env: { a: 0.003, d: 0.02, s: 0.85, r: 0.02 } });
+        tone(s, {
+          type: 'square',
+          freq: 1000,
+          t: i * 0.12,
+          dur: 0.07,
+          gain: 0.08,
+          env: { a: 0.003, d: 0.02, s: 0.85, r: 0.02 },
+        });
+        tone(s, {
+          type: 'square',
+          freq: 1414,
+          t: i * 0.12,
+          dur: 0.07,
+          gain: 0.05,
+          env: { a: 0.003, d: 0.02, s: 0.85, r: 0.02 },
+        });
       }
     },
   },
@@ -549,7 +688,14 @@ export const UI_SFX: SfxDefs = {
     pitchVar: 1.5,
     cooldownMs: 60,
     render: (s) => {
-      noise(s, { color: 'pink', t: 0, dur: 0.35, gain: 0.45, attack: 0.25, filter: { type: 'bandpass', freq: 300, freqEnd: 2500, q: 2 } });
+      noise(s, {
+        color: 'pink',
+        t: 0,
+        dur: 0.35,
+        gain: 0.45,
+        attack: 0.25,
+        filter: { type: 'bandpass', freq: 300, freqEnd: 2500, q: 2 },
+      });
       tone(s, { freq: 200, freqEnd: 600, t: 0, dur: 0.35, gain: 0.06, attack: 0.2 });
     },
   },
@@ -559,7 +705,14 @@ export const UI_SFX: SfxDefs = {
     pitchVar: 1.5,
     cooldownMs: 60,
     render: (s) => {
-      noise(s, { color: 'pink', t: 0, dur: 0.38, gain: 0.45, attack: 0.03, filter: { type: 'bandpass', freq: 2500, freqEnd: 300, q: 2 } });
+      noise(s, {
+        color: 'pink',
+        t: 0,
+        dur: 0.38,
+        gain: 0.45,
+        attack: 0.03,
+        filter: { type: 'bandpass', freq: 2500, freqEnd: 300, q: 2 },
+      });
       tone(s, { freq: 600, freqEnd: 180, t: 0, dur: 0.35, gain: 0.06 });
     },
   },
@@ -569,8 +722,24 @@ export const UI_SFX: SfxDefs = {
     priority: 5,
     cooldownMs: 100,
     render: (s) => {
-      tone(s, { type: 'sawtooth', freq: 300, freqEnd: 1800, t: 0, dur: 0.6, gain: 0.05, env: { a: 0.4, d: 0.1, s: 0.9, r: 0.08 }, tremolo: { rate: 24, depth: 0.5 } });
-      tone(s, { freq: 600, freqEnd: 3600, t: 0, dur: 0.6, gain: 0.05, env: { a: 0.4, d: 0.1, s: 0.9, r: 0.08 } });
+      tone(s, {
+        type: 'sawtooth',
+        freq: 300,
+        freqEnd: 1800,
+        t: 0,
+        dur: 0.6,
+        gain: 0.05,
+        env: { a: 0.4, d: 0.1, s: 0.9, r: 0.08 },
+        tremolo: { rate: 24, depth: 0.5 },
+      });
+      tone(s, {
+        freq: 600,
+        freqEnd: 3600,
+        t: 0,
+        dur: 0.6,
+        gain: 0.05,
+        env: { a: 0.4, d: 0.1, s: 0.9, r: 0.08 },
+      });
     },
   },
 };

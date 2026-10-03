@@ -149,7 +149,11 @@ export const TeamScores = memo(function TeamScores(): JSX.Element | null {
           className={`tr-hud-team${t.isMine ? ' is-mine' : ''}`}
           style={{ ['--team' as string]: t.color }}
         >
-          {t.score === top && top > 0 && <span className="tr-hud-team-crown"><Icon name="crown" size="1em" /></span>}
+          {t.score === top && top > 0 && (
+            <span className="tr-hud-team-crown">
+              <Icon name="crown" size="1em" />
+            </span>
+          )}
           <span className="tr-hud-team-name">{t.name}</span>
           <span key={t.score} className="tr-hud-team-score">
             {t.score}
@@ -252,7 +256,11 @@ export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null
             {spec.detail} · {spec.index + 1}/{spec.count}
           </span>
         </span>
-        {spec.qualified && <span className="tr-chip tr-chip--good"><Icon name="check" size="0.9em" /> Qualified</span>}
+        {spec.qualified && (
+          <span className="tr-chip tr-chip--good">
+            <Icon name="check" size="0.9em" /> Qualified
+          </span>
+        )}
       </div>
       <Button
         variant="secondary"

@@ -33,9 +33,9 @@ Lab: run `pnpm --filter @tumble/client dev` and open
 import { AudioEngine, createGameAudio } from '@tumble/audio';
 import { RoundPhase } from '@tumble/shared';
 
-const engine = new AudioEngine();          // nothing is created until needed
-engine.installUnlockHandlers();             // first pointer/key/touch resumes audio
-void engine.sfx.prewarm();                  // renders in idle time; works before unlock
+const engine = new AudioEngine(); // nothing is created until needed
+engine.installUnlockHandlers(); // first pointer/key/touch resumes audio
+void engine.sfx.prewarm(); // renders in idle time; works before unlock
 const audio = createGameAudio(engine);
 
 audio.setLocalPlayer(myId);
@@ -50,7 +50,11 @@ audio.stepFootstep(id, speed, grounded, surface, pos, dt);
 audio.update();
 
 // lifecycle
-audio.onRoundPhase(RoundPhase.IntroFlyover, 'race', { roundNumber: 1, roundName: 'Gumdrop Gauntlet', theme: 'candy' });
+audio.onRoundPhase(RoundPhase.IntroFlyover, 'race', {
+  roundNumber: 1,
+  roundName: 'Gumdrop Gauntlet',
+  theme: 'candy',
+});
 audio.updateRoundStatus({ roundType: 'race', qualified: 12, qualifyTarget: 26, timeLeft: 95 }); // ~10 Hz
 audio.playCue('ui.stamp.qualified');
 ```
@@ -59,17 +63,17 @@ audio.playCue('ui.stamp.qualified');
 
 ### `AudioEngine`
 
-| Member | Description |
-|---|---|
-| `new AudioEngine({ maxVoices?, panningModel?, settings?, createContext? })` | `panningModel: 'auto'` picks HRTF on desktop and equal-power on mobile |
-| `ensureContext()`, `unlock()`, `installUnlockHandlers(target?)`, `onUnlock(cb)`, `isUnlocked` | lifecycle |
-| `play(name, { pos?, volume?, pitch?, priority?, delay?, noVariance?, pan? }) → VoiceHandle \| null` | one-shot; with `pos` it's spatial, without it plays 2D |
-| `createEmitter(name, { pos?, volume?, rate?, maxDistance? }) → LoopEmitter` | `start()`, `stop(fade)`, `setPosition(x,y,z)`, `setVolume()`, `setRate()`, `dispose()` |
-| `setListener(pos, forward, up)` | call every frame from the camera |
-| `getSettings()`, `applySettings(patch)`, `setVolume(bus, v)`, `setMuted()`, `setMonoAudio()` | settings are 0–1 per bus with a squared taper |
-| `duckMusic(active)` | ref-counted; the announcer uses it |
-| `update()` | per frame: realises or virtualises emitters by distance |
-| `activeVoices`, `maxVoices`, `audibleEmitters`, `sfx: SfxBank`, `listenerPos` | introspection |
+| Member                                                                                              | Description                                                                            |
+| --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `new AudioEngine({ maxVoices?, panningModel?, settings?, createContext? })`                         | `panningModel: 'auto'` picks HRTF on desktop and equal-power on mobile                 |
+| `ensureContext()`, `unlock()`, `installUnlockHandlers(target?)`, `onUnlock(cb)`, `isUnlocked`       | lifecycle                                                                              |
+| `play(name, { pos?, volume?, pitch?, priority?, delay?, noVariance?, pan? }) → VoiceHandle \| null` | one-shot; with `pos` it's spatial, without it plays 2D                                 |
+| `createEmitter(name, { pos?, volume?, rate?, maxDistance? }) → LoopEmitter`                         | `start()`, `stop(fade)`, `setPosition(x,y,z)`, `setVolume()`, `setRate()`, `dispose()` |
+| `setListener(pos, forward, up)`                                                                     | call every frame from the camera                                                       |
+| `getSettings()`, `applySettings(patch)`, `setVolume(bus, v)`, `setMuted()`, `setMonoAudio()`        | settings are 0–1 per bus with a squared taper                                          |
+| `duckMusic(active)`                                                                                 | ref-counted; the announcer uses it                                                     |
+| `update()`                                                                                          | per frame: realises or virtualises emitters by distance                                |
+| `activeVoices`, `maxVoices`, `audibleEmitters`, `sfx: SfxBank`, `listenerPos`                       | introspection                                                                          |
 
 ### `MusicSystem` (`audio.music`)
 
@@ -79,12 +83,12 @@ Layer changes are bar-quantised. Calling `play` before unlock queues the track.
 
 Stem levels from `stemLevels()`:
 
-| Stem | Level |
-|---|---|
-| drums, bass, chords | always on |
-| lead | fades in over intensity 0.12–0.35 |
-| intensity | fades in over intensity 0.5–0.8 |
-| final | follows the final-30 flag |
+| Stem                | Level                             |
+| ------------------- | --------------------------------- |
+| drums, bass, chords | always on                         |
+| lead                | fades in over intensity 0.12–0.35 |
+| intensity           | fades in over intensity 0.5–0.8   |
+| final               | follows the final-30 flag         |
 
 ### `Announcer` (`audio.announcer`)
 
@@ -122,6 +126,7 @@ new event kind, add it to `AudioSimEvent` and the router `switch`.
 Unknown names warn once and still play something.
 
 **UI** (SCREENS.md):
+
 - Basics: `ui.click`, `ui.hover`, `ui.confirm`, `ui.back`, `ui.whoosh`,
   `ui.error`, `ui.tab`, `ui.toggle`, `ui.slider`, `ui.toast`
 - Stamps: `ui.stamp`, `ui.stamp.qualified`, `ui.stamp.eliminated`,
@@ -138,6 +143,7 @@ Unknown names warn once and still play something.
   `ui.wall.aww`, `ui.wall.counter`, `ui.wall.shake`, `ui.wall.crown`
 
 **Music:**
+
 - `music.menu`, `music.matchmaking`, `music.preshow` and `music.rewards` all
   play the lobby track; each context sets its own intensity.
 - `music.intro`, `music.results` / `music.wall`, `music.final`,
@@ -164,24 +170,24 @@ a description of each on hover.
 
 ## Music tracks
 
-| id | Title | Tempo / key | Use |
-|---|---|---|---|
-| `candy` | Sugar Rush | 150 · C major | candy theme |
-| `factory` | Clockwork | 128 · D dorian | factory |
-| `frosty` | Snowglobe | 138 · E minor | frosty |
-| `jungle` | Bongo Bounce | 124 · D mixolydian (3:4 bongos) | jungle |
-| `sunset` | Boardwalk | 104 swung · B♭ major | sunset |
-| `space` | Orbit Party | 120 · A lydian | space |
-| `beach` | Tiki Tumble | 116 · G major (3+3+2 bass) | beach |
-| `neon` | Arcade Heart | 140 · F♯ minor | neon |
-| `castle` | Jester Court | 6/8 (♩.=100) · G mixolydian | castle |
-| `goo` | Gloop Groove | 100 swung · E dorian | goo |
-| `logic` | Tick Tock | 96 · A minor | logic rounds |
-| `final` | Crown Fever | 160 · C minor (leitmotif in minor) | every final |
-| `lobby` | Tumbletown | 112 swung · F major (leitmotif) | menus, matchmaking, pre-show |
-| `results` | The Tumble Wall | 92 · E♭ major | results, Player Wall |
-| `victory` | Crowned | 120 · C major | victory |
-| `showIntro` | Showtime Spin | 140 · B♭ major | show intro |
+| id          | Title           | Tempo / key                        | Use                          |
+| ----------- | --------------- | ---------------------------------- | ---------------------------- |
+| `candy`     | Sugar Rush      | 150 · C major                      | candy theme                  |
+| `factory`   | Clockwork       | 128 · D dorian                     | factory                      |
+| `frosty`    | Snowglobe       | 138 · E minor                      | frosty                       |
+| `jungle`    | Bongo Bounce    | 124 · D mixolydian (3:4 bongos)    | jungle                       |
+| `sunset`    | Boardwalk       | 104 swung · B♭ major               | sunset                       |
+| `space`     | Orbit Party     | 120 · A lydian                     | space                        |
+| `beach`     | Tiki Tumble     | 116 · G major (3+3+2 bass)         | beach                        |
+| `neon`      | Arcade Heart    | 140 · F♯ minor                     | neon                         |
+| `castle`    | Jester Court    | 6/8 (♩.=100) · G mixolydian        | castle                       |
+| `goo`       | Gloop Groove    | 100 swung · E dorian               | goo                          |
+| `logic`     | Tick Tock       | 96 · A minor                       | logic rounds                 |
+| `final`     | Crown Fever     | 160 · C minor (leitmotif in minor) | every final                  |
+| `lobby`     | Tumbletown      | 112 swung · F major (leitmotif)    | menus, matchmaking, pre-show |
+| `results`   | The Tumble Wall | 92 · E♭ major                      | results, Player Wall         |
+| `victory`   | Crowned         | 120 · C major                      | victory                      |
+| `showIntro` | Showtime Spin   | 140 · B♭ major                     | show intro                   |
 
 ## Adding a sound
 
@@ -222,25 +228,25 @@ Chord tokens: `1`, `6`, `5^7`, `4sus2`, `5M` (forced major), `2m^7`.
 
 Each part sets a `stem` and an `instrument`, plus a `mode`:
 
-| Mode | What the pattern means |
-|---|---|
-| `drum` | 16-character lanes (`x` hit, `X` accent, `o` ghost) |
-| `scale` | melody degrees |
-| `chord` | chord-tone indexes, for bass and arpeggios |
-| `stack` | the whole chord |
+| Mode    | What the pattern means                              |
+| ------- | --------------------------------------------------- |
+| `drum`  | 16-character lanes (`x` hit, `X` accent, `o` ghost) |
+| `scale` | melody degrees                                      |
+| `chord` | chord-tone indexes, for bass and arpeggios          |
+| `stack` | the whole chord                                     |
 
 Pattern tokens (8th-note grid with `res: 2`):
 
-| Token | Meaning |
-|---|---|
-| `.` | rest |
-| `_` | hold |
-| `5` | a degree |
-| `10` | a degree above the octave |
-| `-2` | a degree below the root |
-| `3b`, `7#` | accidentals |
-| `>5` | accent |
-| `~5` | ghost note |
+| Token      | Meaning                   |
+| ---------- | ------------------------- |
+| `.`        | rest                      |
+| `_`        | hold                      |
+| `5`        | a degree                  |
+| `10`       | a degree above the octave |
+| `-2`       | a degree below the root   |
+| `3b`, `7#` | accidentals               |
+| `>5`       | accent                    |
+| `~5`       | ghost note                |
 
 `variations: n` appends seeded, generated melody bars as a B-section. Every
 stem should have at least one part; the tests check this.
@@ -253,6 +259,7 @@ pnpm --filter @tumble/audio test
 ```
 
 The tests cover:
+
 - scheduler timing math (bar and beat quantisation, swing)
 - scale, chord and pattern parsing, and melody generation
 - that every track compiles in range, and the leitmotif

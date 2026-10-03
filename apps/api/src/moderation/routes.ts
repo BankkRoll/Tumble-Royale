@@ -21,7 +21,15 @@ const ReportBody = z.object({
   details: z.string().max(1000).optional(),
 });
 const EventsBody = z.object({
-  events: z.array(z.object({ name: z.string().regex(/^[a-z0-9_.]{2,64}$/), props: z.record(z.string(), z.unknown()).optional() })).min(1).max(50),
+  events: z
+    .array(
+      z.object({
+        name: z.string().regex(/^[a-z0-9_.]{2,64}$/),
+        props: z.record(z.string(), z.unknown()).optional(),
+      }),
+    )
+    .min(1)
+    .max(50),
 });
 const BoardParams = z.object({ type: z.enum(BOARD_TYPES) });
 const BoardQuery = z.object({
@@ -34,7 +42,12 @@ const BanBody = z.object({
   userId: z.string().uuid(),
   scope: z.enum(['all', 'ranked', 'chat']).default('all'),
   reason: z.string().min(3).max(500),
-  durationHours: z.number().int().min(1).max(24 * 365 * 10).optional(),
+  durationHours: z
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 365 * 10)
+    .optional(),
 });
 const FlagBody = z.object({
   enabled: z.boolean(),
@@ -78,8 +91,12 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
     const rows = await ctx.db.select().from(featureFlags);
     const flags: Record<string, { enabled: boolean; payload: unknown }> = {};
     for (const f of rows) {
-      const inRollout = f.rolloutPercent >= 100 || (auth ? rolloutBucket(f.key, auth.userId) < f.rolloutPercent : false);
-      flags[f.key] = { enabled: f.enabled && inRollout, payload: f.enabled && inRollout ? (f.payload ?? null) : null };
+      const inRollout =
+        f.rolloutPercent >= 100 || (auth ? rolloutBucket(f.key, auth.userId) < f.rolloutPercent : false);
+      flags[f.key] = {
+        enabled: f.enabled && inRollout,
+        payload: f.enabled && inRollout ? (f.payload ?? null) : null,
+      };
     }
     return { flags };
   });
@@ -87,7 +104,11 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
   app.post('/events', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req, reply) => {
     const auth = await optionalUser(ctx, req);
     const body = parse(EventsBody, req.body);
-    await ctx.db.insert(events).values(body.events.map((e) => ({ userId: auth?.userId ?? null, name: e.name, props: e.props ?? null })));
+    await ctx.db
+      .insert(events)
+      .values(
+        body.events.map((e) => ({ userId: auth?.userId ?? null, name: e.name, props: e.props ?? null })),
+      );
     return reply.code(202).send({ accepted: body.events.length });
   });
 
@@ -110,7 +131,12 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
 
   app.get('/internal/reports', async (req) => {
     requireAdmin(ctx, req);
-    const rows = await ctx.db.select().from(reports).where(eq(reports.status, 'open')).orderBy(asc(reports.createdAt)).limit(200);
+    const rows = await ctx.db
+      .select()
+      .from(reports)
+      .where(eq(reports.status, 'open'))
+      .orderBy(asc(reports.createdAt))
+      .limit(200);
     return { reports: rows };
   });
 
@@ -138,7 +164,11 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
   app.delete('/internal/bans/:id', async (req, reply) => {
     requireAdmin(ctx, req);
     const { id } = parse(z.object({ id: z.string().uuid() }), req.params);
-    const [row] = await ctx.db.update(bans).set({ revokedAt: ctx.now() }).where(eq(bans.id, id)).returning({ userId: bans.userId });
+    const [row] = await ctx.db
+      .update(bans)
+      .set({ revokedAt: ctx.now() })
+      .where(eq(bans.id, id))
+      .returning({ userId: bans.userId });
     if (row) invalidateBanCache(row.userId);
     return reply.code(204).send();
   });
@@ -147,8 +177,16 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
     requireAdmin(ctx, req);
     const { key } = parse(z.object({ key: z.string().regex(/^[a-z0-9_.-]{2,64}$/) }), req.params);
     const body = parse(FlagBody, req.body);
-    const values = { enabled: body.enabled, rolloutPercent: body.rolloutPercent, payload: body.payload ?? null, updatedAt: ctx.now() };
-    await ctx.db.insert(featureFlags).values({ key, ...values }).onConflictDoUpdate({ target: featureFlags.key, set: values });
+    const values = {
+      enabled: body.enabled,
+      rolloutPercent: body.rolloutPercent,
+      payload: body.payload ?? null,
+      updatedAt: ctx.now(),
+    };
+    await ctx.db
+      .insert(featureFlags)
+      .values({ key, ...values })
+      .onConflictDoUpdate({ target: featureFlags.key, set: values });
     return { key, ...values };
   });
 

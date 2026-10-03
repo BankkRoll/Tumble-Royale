@@ -11,7 +11,8 @@
  * core bone has an identity rest rotation, so animation rotations are plain
  * offsets in the parent's axes and accessory geometry is authored in mesh space.
  */
-import { Bone as ThreeBone, Matrix4, Object3D, Skeleton } from 'three/webgpu';
+import type { Object3D } from 'three/webgpu';
+import { Bone as ThreeBone, Matrix4, Skeleton } from 'three/webgpu';
 
 /** Core bone indices. Stable: geometry skin indices and glTF maps refer to them. */
 export const Bone = {
@@ -101,23 +102,57 @@ const wristL = { x: elbowL.x + ARM_DIR.x * LOWER_ARM, y: elbowL.y + ARM_DIR.y * 
 
 /** Default rest positions in mesh space, xyz per core bone. */
 export const DEFAULT_BONE_REST: Float32Array = new Float32Array([
-  0, 0, 0, // root
-  0, 0.55, 0, // hips
-  0, 0.85, 0, // spine
-  0, 1.12, 0, // chest
-  0, 1.36, 0, // head
-  SHOULDER.x, SHOULDER.y, 0,
-  elbowL.x, elbowL.y, 0,
-  wristL.x, wristL.y, 0,
-  -SHOULDER.x, SHOULDER.y, 0,
-  -elbowL.x, elbowL.y, 0,
-  -wristL.x, wristL.y, 0,
-  RIG.hipX, RIG.hipY, 0,
-  RIG.hipX, RIG.kneeY, 0,
-  RIG.hipX, RIG.ankleY, 0,
-  -RIG.hipX, RIG.hipY, 0,
-  -RIG.hipX, RIG.kneeY, 0,
-  -RIG.hipX, RIG.ankleY, 0,
+  0,
+  0,
+  0, // root
+  0,
+  0.55,
+  0, // hips
+  0,
+  0.85,
+  0, // spine
+  0,
+  1.12,
+  0, // chest
+  0,
+  1.36,
+  0, // head
+  SHOULDER.x,
+  SHOULDER.y,
+  0,
+  elbowL.x,
+  elbowL.y,
+  0,
+  wristL.x,
+  wristL.y,
+  0,
+  -SHOULDER.x,
+  SHOULDER.y,
+  0,
+  -elbowL.x,
+  elbowL.y,
+  0,
+  -wristL.x,
+  wristL.y,
+  0,
+  RIG.hipX,
+  RIG.hipY,
+  0,
+  RIG.hipX,
+  RIG.kneeY,
+  0,
+  RIG.hipX,
+  RIG.ankleY,
+  0,
+  -RIG.hipX,
+  RIG.hipY,
+  0,
+  -RIG.hipX,
+  RIG.kneeY,
+  0,
+  -RIG.hipX,
+  RIG.ankleY,
+  0,
 ]);
 
 let activeRest: Float32Array = DEFAULT_BONE_REST;
@@ -174,7 +209,9 @@ export function createRig(parent: Object3D): TumblerRig {
     const parentBone = p >= 0 ? bones[p] : undefined;
     (parentBone ?? parent).add(b);
     bones.push(b);
-    inverses.push(new Matrix4().makeTranslation(-(rest[i * 3] ?? 0), -(rest[i * 3 + 1] ?? 0), -(rest[i * 3 + 2] ?? 0)));
+    inverses.push(
+      new Matrix4().makeTranslation(-(rest[i * 3] ?? 0), -(rest[i * 3 + 1] ?? 0), -(rest[i * 3 + 2] ?? 0)),
+    );
   }
   for (let i = 0; i < POOL_BONE_COUNT; i++) {
     const b = new ThreeBone();

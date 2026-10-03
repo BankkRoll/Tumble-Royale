@@ -6,14 +6,43 @@ import { defaultLoadout } from '@tumble/render/scenes';
  * colours and a 4-round elimination schedule (40 → 26 → 14 → 7 → 1).
  */
 
-const FIRST = ['Sprinkle', 'Gummy', 'Bubble', 'Wobble', 'Jelly', 'Taffy', 'Fizz', 'Noodle', 'Puddin', 'Biscuit', 'Mochi', 'Pickle', 'Waffle', 'Doodle'];
+const FIRST = [
+  'Sprinkle',
+  'Gummy',
+  'Bubble',
+  'Wobble',
+  'Jelly',
+  'Taffy',
+  'Fizz',
+  'Noodle',
+  'Puddin',
+  'Biscuit',
+  'Mochi',
+  'Pickle',
+  'Waffle',
+  'Doodle',
+];
 const LAST = ['Bop', 'Pop', 'Zoom', 'Flop', 'Boing', 'Toot', 'Wiggle', 'Plonk', 'Splat', 'Twirl'];
-const COLORS = ['#ff6fb5', '#5ce1e6', '#ffd23f', '#7c5cff', '#6ee7a8', '#ff8a3d', '#ff4f8b', '#3fa9ff', '#b98cff', '#7cf27c'];
+const COLORS = [
+  '#ff6fb5',
+  '#5ce1e6',
+  '#ffd23f',
+  '#7c5cff',
+  '#6ee7a8',
+  '#ff8a3d',
+  '#ff4f8b',
+  '#3fa9ff',
+  '#b98cff',
+  '#7cf27c',
+];
 
 /** Builds a mock summary with `count` players over 4 rounds. */
 export function createMockShow(count = 40): PlayerWallSummary {
   const players = Array.from({ length: count }, (_, i) => {
-    const loadout: TumblerLoadout = defaultLoadout(COLORS[i % COLORS.length], COLORS[(i * 3 + 2) % COLORS.length]);
+    const loadout: TumblerLoadout = defaultLoadout(
+      COLORS[i % COLORS.length],
+      COLORS[(i * 3 + 2) % COLORS.length],
+    );
     return { id: `p${i}`, name: `${FIRST[i % FIRST.length]}${LAST[(i * 7) % LAST.length]}`, loadout };
   });
   // Deterministic shuffle so the eliminations scatter across the wall.

@@ -54,10 +54,16 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
     if (url.pathname !== '/ws') return;
     void (async () => {
       const token = url.searchParams.get('token') ?? '';
-      const claims = await verifyAccessToken(ctx.config.jwtSecret, token, Math.floor(ctx.now().getTime() / 1000));
+      const claims = await verifyAccessToken(
+        ctx.config.jwtSecret,
+        token,
+        Math.floor(ctx.now().getTime() / 1000),
+      );
       const banned = claims ? (await activeBans(ctx, claims.sub)).some((b) => b.scope === 'all') : false;
       if (!claims || banned) {
-        socket.write(`HTTP/1.1 ${banned ? '403 Forbidden' : '401 Unauthorized'}\r\nConnection: close\r\n\r\n`);
+        socket.write(
+          `HTTP/1.1 ${banned ? '403 Forbidden' : '401 Unauthorized'}\r\nConnection: close\r\n\r\n`,
+        );
         socket.destroy();
         return;
       }

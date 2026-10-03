@@ -117,7 +117,15 @@ export function createVfxSystem(opts: VfxSystemOptions = {}): VfxSystem {
   };
   const trails = new TrailPool(root, alloc.trails, budget.trails, time, trailEmit);
 
-  root.add(shadows.object, decals.object, puffs.object, confetti.object, balloons.object, stars.object, glow.object);
+  root.add(
+    shadows.object,
+    decals.object,
+    puffs.object,
+    confetti.object,
+    balloons.object,
+    stars.object,
+    glow.object,
+  );
 
   const targets: RecipeTargets = { glow, puffs, confetti, balloons, decals, stars, now: 0, density: 1 };
 
@@ -321,7 +329,8 @@ export function createVfxSystem(opts: VfxSystemOptions = {}): VfxSystem {
         }
         return;
       case 'eliminated':
-        if (anchorOr(e.player, null, scratchPos)) spawnRecipe('eliminationPoof', targets, scratchPos, options());
+        if (anchorOr(e.player, null, scratchPos))
+          spawnRecipe('eliminationPoof', targets, scratchPos, options());
         return;
       case 'tileWarn':
         if (tileResolver?.(e.obstacle, e.tile, scratchPos)) {
@@ -333,7 +342,8 @@ export function createVfxSystem(opts: VfxSystemOptions = {}): VfxSystem {
         return;
       case 'tileFell':
         retireCrack(e.obstacle, e.tile);
-        if (tileResolver?.(e.obstacle, e.tile, scratchPos)) spawnRecipe('dust', targets, scratchPos, options());
+        if (tileResolver?.(e.obstacle, e.tile, scratchPos))
+          spawnRecipe('dust', targets, scratchPos, options());
         return;
       case 'obstacleCue':
         handleCue(e.cue, e.pos);

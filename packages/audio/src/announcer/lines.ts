@@ -42,7 +42,10 @@ export const ANNOUNCER_LINES: Readonly<Record<AnnouncerLineId, readonly string[]
   showStart: ["It's showtime! Forty Tumblers, one Crown!", "Lights, cameras, tumble! Let's go!"],
   roundNumber: ['Round {n}!', 'Here comes round {n}!'],
   roundName: ['{name}!', 'Next up: {name}!'],
-  finalRound: ['Final round! The Crown is up for grabs!', "It's the final round! Somebody's leaving with a Crown!"],
+  finalRound: [
+    'Final round! The Crown is up for grabs!',
+    "It's the final round! Somebody's leaving with a Crown!",
+  ],
   'type.race': ['Race to the finish!', 'First to the finish line, go go go!'],
   'type.survival': ["Don't fall. Seriously. Just don't.", 'Stay on your feet and stay in the game!'],
   'type.team': ['Team up! Teamwork makes the dream work!', 'Stick with your team!'],
@@ -70,7 +73,9 @@ export const ANNOUNCER_LINES: Readonly<Record<AnnouncerLineId, readonly string[]
 };
 
 /** Every line id. */
-export const ANNOUNCER_LINE_IDS: readonly AnnouncerLineId[] = Object.keys(ANNOUNCER_LINES) as AnnouncerLineId[];
+export const ANNOUNCER_LINE_IDS: readonly AnnouncerLineId[] = Object.keys(
+  ANNOUNCER_LINES,
+) as AnnouncerLineId[];
 
 /** Values substituted into line templates. */
 export type LineVars = Readonly<Record<string, string | number>>;
@@ -100,7 +105,7 @@ export function fillLine(template: string, vars: LineVars = {}): string {
 export function estimateSpeechMs(text: string, rate = 1): number {
   const words = text.split(/\s+/).filter(Boolean).length;
   const pauses = (text.match(/[.,!?…]/g) ?? []).length;
-  return Math.max(900, Math.round(((words * 330 + pauses * 120) / rate) + 400));
+  return Math.max(900, Math.round((words * 330 + pauses * 120) / rate + 400));
 }
 
 /**
@@ -110,6 +115,9 @@ export function estimateSpeechMs(text: string, rate = 1): number {
  * @returns ≥ 1.
  */
 export function countSyllables(word: string): number {
-  const groups = word.toLowerCase().replace(/[^a-z]/g, '').match(/[aeiouy]+/g);
+  const groups = word
+    .toLowerCase()
+    .replace(/[^a-z]/g, '')
+    .match(/[aeiouy]+/g);
   return Math.max(1, groups?.length ?? 1);
 }

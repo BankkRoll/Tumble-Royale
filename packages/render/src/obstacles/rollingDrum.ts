@@ -3,11 +3,29 @@
  * grip ridges, rolled by the sim's exact analytic angle so the stripes move at
  * the same surface speed riders feel.
  */
-import { CylinderGeometry, Group, InstancedMesh, Matrix4, Quaternion, TorusGeometry, Vector3 } from 'three/webgpu';
+import {
+  CylinderGeometry,
+  Group,
+  InstancedMesh,
+  Matrix4,
+  Quaternion,
+  TorusGeometry,
+  Vector3,
+} from 'three/webgpu';
 import type { PoseSample } from '@tumble/sim';
 import { RollingDrumSchema, rollingDrumPose } from '@tumble/sim/obstacles';
 import type { ObstacleVisualFactory } from './types.ts';
-import { Disposer, PAL, applyInstanceTransform, applyPose, parseParams, roundedBox, solid, stripedToon, toon } from './visual-helpers-b.ts';
+import {
+  Disposer,
+  PAL,
+  applyInstanceTransform,
+  applyPose,
+  parseParams,
+  roundedBox,
+  solid,
+  stripedToon,
+  toon,
+} from './visual-helpers-b.ts';
 
 /** Creates the Rolling Drum visual. */
 export const rollingDrumVisual: ObstacleVisualFactory = (instance, ctx) => {
@@ -41,7 +59,11 @@ export const rollingDrumVisual: ObstacleVisualFactory = (instance, ctx) => {
 
   if (p.ridges > 0 && p.ridgeHeight > 0) {
     const ridgeMat = toon(d, { color: PAL.mint, rimStrength: 0.5 });
-    const ridges = new InstancedMesh(roundedBox(d, p.length / 2 - 0.1, p.ridgeHeight / 2 + 0.05, 0.12, 0.06), ridgeMat, p.ridges);
+    const ridges = new InstancedMesh(
+      roundedBox(d, p.length / 2 - 0.1, p.ridgeHeight / 2 + 0.05, 0.12, 0.06),
+      ridgeMat,
+      p.ridges,
+    );
     ridges.castShadow = true;
     const m = new Matrix4();
     const pos = new Vector3();

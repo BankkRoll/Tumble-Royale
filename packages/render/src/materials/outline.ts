@@ -9,7 +9,10 @@ import { normalLocal, positionLocal, uniform } from 'three/tsl';
  * @param thickness - Outline width in local units.
  * @param color - Outline colour.
  */
-export function createOutlineMaterial(thickness = 0.03, color: ColorRepresentation = '#2b1d3a'): MeshBasicNodeMaterial {
+export function createOutlineMaterial(
+  thickness = 0.03,
+  color: ColorRepresentation = '#2b1d3a',
+): MeshBasicNodeMaterial {
   const mat = new MeshBasicNodeMaterial({ color: new Color(color), side: BackSide });
   const t = uniform(thickness);
   mat.positionNode = positionLocal.add(normalLocal.mul(t));

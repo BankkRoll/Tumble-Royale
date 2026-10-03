@@ -135,7 +135,14 @@ export interface GameAudio {
   /** Adaptive music + milestone lines from live round status. */
   updateRoundStatus(status: RoundAudioStatus): void;
   /** Footsteps: call per player per frame; plays a step when the cadence says so. */
-  stepFootstep(player: number, speed: number, grounded: boolean, surface: FootSurface, pos: Vec3, dt: number): void;
+  stepFootstep(
+    player: number,
+    speed: number,
+    grounded: boolean,
+    surface: FootSurface,
+    pos: Vec3,
+    dt: number,
+  ): void;
   /** Starts/stops the belly-slide loop for a player (2D for the local player). */
   setSliding(player: number, sliding: boolean, pos?: Vec3): void;
   /** Creates the pose-driven loop for an obstacle type, or null if it has none. */
@@ -177,7 +184,11 @@ const TYPE_LINES: Readonly<Record<RoundType, AnnouncerLineId>> = {
  * @param isFinal - Final round flag.
  * @returns Track id.
  */
-export function trackForRound(roundType: RoundType, theme: ThemeId | undefined, isFinal = false): MusicTrackId {
+export function trackForRound(
+  roundType: RoundType,
+  theme: ThemeId | undefined,
+  isFinal = false,
+): MusicTrackId {
   if (isFinal || roundType === 'final') return 'final';
   if (roundType === 'logic') return 'logic';
   return theme ?? 'candy';
@@ -191,7 +202,8 @@ export function trackForRound(roundType: RoundType, theme: ThemeId | undefined, 
  */
 export function intensityForStatus(s: RoundAudioStatus): number {
   let i = 0.4;
-  if (s.qualified !== undefined && s.qualifyTarget) i = Math.max(i, 0.3 + 0.7 * (s.qualified / s.qualifyTarget));
+  if (s.qualified !== undefined && s.qualifyTarget)
+    i = Math.max(i, 0.3 + 0.7 * (s.qualified / s.qualifyTarget));
   if (s.alive !== undefined && s.startPlayers) i = Math.max(i, 0.35 + 0.65 * (1 - s.alive / s.startPlayers));
   if (s.timeLeft !== undefined && s.timeLeft <= 30) i = Math.max(i, 0.75);
   if (s.losing) i = Math.max(i, 0.7);
@@ -246,13 +258,21 @@ export function createGameAudio(engine: AudioEngine, opts: GameAudioOptions = {}
   };
 
   /** Plays for a player: 2D + priority bonus for the local player, spatial otherwise. `play` is reused to avoid per-event allocation. */
-  const sfx = (name: string, player: number | null, pos: Vec3 | undefined, volume = 1, delay = 0, priority?: number): void => {
+  const sfx = (
+    name: string,
+    player: number | null,
+    pos: Vec3 | undefined,
+    volume = 1,
+    delay = 0,
+    priority?: number,
+  ): void => {
     const isLocal = player !== null && player === local;
     const def = engine.sfx.def(name);
     play.pos = isLocal ? null : (pos ?? null);
     play.volume = volume;
     play.delay = delay;
-    play.priority = priority ?? (def?.priority ?? VoicePriority.Normal) + (isLocal ? LOCAL_PLAYER_PRIORITY_BONUS : 0);
+    play.priority =
+      priority ?? (def?.priority ?? VoicePriority.Normal) + (isLocal ? LOCAL_PLAYER_PRIORITY_BONUS : 0);
     play.pitch = 0;
     engine.play(name, play);
   };
@@ -294,7 +314,12 @@ export function createGameAudio(engine: AudioEngine, opts: GameAudioOptions = {}
         return;
       }
       case 'grabStart':
-        sfx(e.targetKind === 'prop' ? 'egg.pickup' : 'grab', e.player, posOf(e.player), e.targetKind === 'ledge' ? 0.7 : 1);
+        sfx(
+          e.targetKind === 'prop' ? 'egg.pickup' : 'grab',
+          e.player,
+          posOf(e.player),
+          e.targetKind === 'ledge' ? 0.7 : 1,
+        );
         return;
       case 'grabEnd':
         sfx('grab.release', e.player, posOf(e.player), e.reason === 'release' ? 0.6 : 1);
@@ -414,7 +439,9 @@ export function createGameAudio(engine: AudioEngine, opts: GameAudioOptions = {}
       if (!r) return;
       if (r.via === 'archetype' && !warned.has(name)) {
         warned.add(name);
-        console.warn(`[audio] unknown cue "${name}" — playing archetype "${r.action.kind === 'sfx' ? r.action.sound : r.action.kind}"`);
+        console.warn(
+          `[audio] unknown cue "${name}" — playing archetype "${r.action.kind === 'sfx' ? r.action.sound : r.action.kind}"`,
+        );
       }
       const a = r.action;
       switch (a.kind) {
@@ -465,7 +492,9 @@ export function createGameAudio(engine: AudioEngine, opts: GameAudioOptions = {}
           clearCountdown();
           if (!announceCountdown) return;
           (['countdown.3', 'countdown.2', 'countdown.1'] as const).forEach((line, i) => {
-            countdownTimers.push(setTimeout(() => announcer.say(line, {}, { priority: 3, interrupt: true }), i * 1000));
+            countdownTimers.push(
+              setTimeout(() => announcer.say(line, {}, { priority: 3, interrupt: true }), i * 1000),
+            );
           });
           return;
         case RoundPhase.Playing:
@@ -535,7 +564,8 @@ export function createGameAudio(engine: AudioEngine, opts: GameAudioOptions = {}
       };
       if (status.qualified !== undefined && status.qualifyTarget) {
         if (status.qualified >= status.qualifyTarget / 2) once('half', 'halfThrough');
-        if (status.qualifyTarget - status.qualified <= 3 && status.qualified < status.qualifyTarget) once('last', 'lastSpots', () => music.stinger('lastSpots'));
+        if (status.qualifyTarget - status.qualified <= 3 && status.qualified < status.qualifyTarget)
+          once('last', 'lastSpots', () => music.stinger('lastSpots'));
       }
       if (status.timeLeft !== undefined) {
         if (status.timeLeft <= 30) {
@@ -557,7 +587,10 @@ export function createGameAudio(engine: AudioEngine, opts: GameAudioOptions = {}
       let em = slides.get(player);
       if (sliding) {
         if (!em) {
-          em = engine.createEmitter('slide.loop', { pos: player === local ? null : (pos ?? null), volume: player === local ? 0.8 : 0.6 });
+          em = engine.createEmitter('slide.loop', {
+            pos: player === local ? null : (pos ?? null),
+            volume: player === local ? 0.8 : 0.6,
+          });
           slides.set(player, em);
         }
         if (pos) em.setPosition(pos.x, pos.y, pos.z);

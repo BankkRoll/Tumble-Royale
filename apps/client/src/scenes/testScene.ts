@@ -85,7 +85,9 @@ export class TestScene {
     this.scene.add(island);
     const floor = this.world.createRigidBody(R.RigidBodyDesc.fixed());
     this.world.createCollider(
-      R.ColliderDesc.cylinder(0.6, 14).setTranslation(0, -0.6, 0).setCollisionGroups(InteractionGroups.static),
+      R.ColliderDesc.cylinder(0.6, 14)
+        .setTranslation(0, -0.6, 0)
+        .setCollisionGroups(InteractionGroups.static),
       floor,
     );
 
@@ -111,7 +113,10 @@ export class TestScene {
 
     // Kinematic spinner bar — same idea as the "Spinwheel" obstacle
     this.bar = this.world.createRigidBody(R.RigidBodyDesc.kinematicPositionBased().setTranslation(0, 0.7, 0));
-    this.world.createCollider(R.ColliderDesc.cuboid(8, 0.3, 0.3).setCollisionGroups(InteractionGroups.kinematic), this.bar);
+    this.world.createCollider(
+      R.ColliderDesc.cuboid(8, 0.3, 0.3).setCollisionGroups(InteractionGroups.kinematic),
+      this.bar,
+    );
     const hazard = createToonMaterial({ color: '#ff4f8b', emissive: '#ff2a6d', emissiveIntensity: 0.15 });
     this.barMesh = new Mesh(new RoundedBoxGeometry(16, 0.6, 0.6, 3, 0.25), hazard);
     this.barMesh.position.set(0, 0.7, 0);
@@ -126,12 +131,19 @@ export class TestScene {
     const perShape = Math.ceil(BODY_COUNT / 3);
     const shapes = [
       { geo: new SphereGeometry(0.4, 24, 12), col: () => R.ColliderDesc.ball(0.4) },
-      { geo: new RoundedBoxGeometry(0.7, 0.7, 0.7, 2, 0.12), col: () => R.ColliderDesc.cuboid(0.35, 0.35, 0.35) },
+      {
+        geo: new RoundedBoxGeometry(0.7, 0.7, 0.7, 2, 0.12),
+        col: () => R.ColliderDesc.cuboid(0.35, 0.35, 0.35),
+      },
       { geo: new CapsuleGeometry(0.3, 0.5, 4, 12), col: () => R.ColliderDesc.capsule(0.25, 0.3) },
     ];
     const tint = new Color();
     for (const shape of shapes) {
-      const mesh = new InstancedMesh(shape.geo, createToonMaterial({ color: '#ffffff', rimStrength: 0.4 }), perShape);
+      const mesh = new InstancedMesh(
+        shape.geo,
+        createToonMaterial({ color: '#ffffff', rimStrength: 0.4 }),
+        perShape,
+      );
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       mesh.frustumCulled = false;

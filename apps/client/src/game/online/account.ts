@@ -20,7 +20,12 @@
  * writes to it except the display name.
  */
 import { COSMETICS, DEFAULT_LOADOUT, getCosmetic } from '@tumble/content/cosmetics';
-import { SHARDS_PER_CROWN, levelForXp, passTierForXp, type ChallengeMetric } from '@tumble/content/progression';
+import {
+  SHARDS_PER_CROWN,
+  levelForXp,
+  passTierForXp,
+  type ChallengeMetric,
+} from '@tumble/content/progression';
 import { getRound } from '@tumble/content/rounds';
 import { getPlaylist } from '@tumble/content/shows';
 import type { PlayerRewardMsg } from '@tumble/netcode';
@@ -57,7 +62,17 @@ import {
   type ApiPass,
   type ApiPassReward,
 } from '../api.ts';
-import { avatarHat, botLoadout, contentPatternToUi, defaultUiLoadout, lockerItems, tumblerColors, uiItem, uiLoadoutToTumbler, uiPatternToContent } from '../cosmetics.ts';
+import {
+  avatarHat,
+  botLoadout,
+  contentPatternToUi,
+  defaultUiLoadout,
+  lockerItems,
+  tumblerColors,
+  uiItem,
+  uiLoadoutToTumbler,
+  uiPatternToContent,
+} from '../cosmetics.ts';
 import { loadoutWithItem, profileDressing, randomizedLoadout } from '../profile.ts';
 import { JsonSocket, type TypedMessage } from './jsonSocket.ts';
 
@@ -106,7 +121,12 @@ export function uiLoadoutToApi(l: UiLoadout): ApiLoadoutItems {
  * @param a - API items.
  */
 export function apiLoadoutToUi(name: string, a: ApiLoadoutItems): UiLoadout {
-  const items: UiLoadout['items'] = { face: a.face, celebration: a.celebration, victory: a.victoryPose, nameplate: a.nameplate };
+  const items: UiLoadout['items'] = {
+    face: a.face,
+    celebration: a.celebration,
+    victory: a.victoryPose,
+    nameplate: a.nameplate,
+  };
   if (a.upper) items.upper = a.upper;
   if (a.lower) items.lower = a.lower;
   if (a.headwear) items.headwear = a.headwear;
@@ -116,7 +136,12 @@ export function apiLoadoutToUi(name: string, a: ApiLoadoutItems): UiLoadout {
   if (a.footsteps) items.footsteps = a.footsteps;
   return {
     name,
-    colors: { primary: a.colors[0], secondary: a.colors[1], tertiary: a.colors[2], pattern: contentPatternToUi(a.pattern) },
+    colors: {
+      primary: a.colors[0],
+      secondary: a.colors[1],
+      tertiary: a.colors[2],
+      pattern: contentPatternToUi(a.pattern),
+    },
     items,
     emotes: [...a.emotes],
   };
@@ -197,7 +222,14 @@ export class OnlineAccount {
   private gemProvider: string | null = null;
   private readonly realtime: JsonSocket;
   private readonly offs: (() => void)[] = [];
-  private notifications: { id: string; kind: 'invite' | 'friendRequest' | 'news' | 'reward'; title: string; body?: string; time: number; read?: boolean }[] = [];
+  private notifications: {
+    id: string;
+    kind: 'invite' | 'friendRequest' | 'news' | 'reward';
+    title: string;
+    body?: string;
+    time: number;
+    read?: boolean;
+  }[] = [];
   /** Account XP and season XP before the current show, for the rewards bars. */
   private snapshotBefore: { xp: number; passXp: number } | null = null;
 
@@ -236,7 +268,16 @@ export class OnlineAccount {
   }
 
   private get loadout(): UiLoadout {
-    return this.loadouts[this.activeIndex] ?? this.loadouts[0] ?? defaultUiLoadout('Loadout 1', { primary: '#ff6fb5', secondary: '#ffd23f', tertiary: '#7c5cff', pattern: 'plain' });
+    return (
+      this.loadouts[this.activeIndex] ??
+      this.loadouts[0] ??
+      defaultUiLoadout('Loadout 1', {
+        primary: '#ff6fb5',
+        secondary: '#ffd23f',
+        tertiary: '#7c5cff',
+        pattern: 'plain',
+      })
+    );
   }
 
   /** The active loadout as a 3D look. */
@@ -271,7 +312,14 @@ export class OnlineAccount {
     this.pushProfile();
     this.pushInventory();
     this.hooks.onLookChanged();
-    await Promise.all([this.refreshStore(), this.refreshPass(), this.refreshChallenges(), this.refreshFriends(), this.refreshParty(), this.history()]);
+    await Promise.all([
+      this.refreshStore(),
+      this.refreshPass(),
+      this.refreshChallenges(),
+      this.refreshFriends(),
+      this.refreshParty(),
+      this.history(),
+    ]);
     return true;
   }
 
@@ -290,7 +338,10 @@ export class OnlineAccount {
     await Promise.all([this.refreshStore(), this.refreshPass(), this.refreshChallenges(), this.history()]);
   }
 
-  private applyLoadouts(slots: readonly ({ name: string; items: ApiLoadoutItems } | null)[], active: number): void {
+  private applyLoadouts(
+    slots: readonly ({ name: string; items: ApiLoadoutItems } | null)[],
+    active: number,
+  ): void {
     this.loadouts = Array.from({ length: LOADOUT_SLOTS }, (_, i) => {
       const s = slots[i];
       return s ? apiLoadoutToUi(s.name, s.items) : null;
@@ -319,7 +370,15 @@ export class OnlineAccount {
       hat: avatarHat(l.headwear),
       isGuest: m.isGuest,
       ...(ranked && tier
-        ? { rank: { tier, division: Math.max(1, ranked.division), rp: ranked.rp, rpToNext: 400 - (ranked.rp % 400), ...(ranked.placementsLeft > 0 ? { placementsLeft: ranked.placementsLeft } : {}) } }
+        ? {
+            rank: {
+              tier,
+              division: Math.max(1, ranked.division),
+              rp: ranked.rp,
+              rpToNext: 400 - (ranked.rp % 400),
+              ...(ranked.placementsLeft > 0 ? { placementsLeft: ranked.placementsLeft } : {}),
+            },
+          }
         : {}),
       stats: {
         shows: m.stats.showsPlayed,
@@ -335,7 +394,9 @@ export class OnlineAccount {
       shardsPerCrown: SHARDS_PER_CROWN,
       ...profileDressing(this.loadout),
       showcase: owned.slice(-3).map((c) => uiItem(c, true)),
-      linkedProviders: m.linkedProviders.filter((p): p is 'discord' | 'google' | 'email' => p === 'discord' || p === 'google' || p === 'email'),
+      linkedProviders: m.linkedProviders.filter(
+        (p): p is 'discord' | 'google' | 'email' => p === 'discord' || p === 'google' || p === 'email',
+      ),
     };
   }
 
@@ -370,7 +431,16 @@ export class OnlineAccount {
         colors,
         hat: avatarHat(look?.items.headwear ?? null),
         isGuest: false,
-        ...(ranked && tier ? { rank: { tier, division: Math.max(1, ranked.division), rp: ranked.rp, rpToNext: 400 - (ranked.rp % 400) } } : {}),
+        ...(ranked && tier
+          ? {
+              rank: {
+                tier,
+                division: Math.max(1, ranked.division),
+                rp: ranked.rp,
+                rpToNext: 400 - (ranked.rp % 400),
+              },
+            }
+          : {}),
         stats: {
           shows: c.stats?.showsPlayed ?? 0,
           finals: c.stats?.finals ?? 0,
@@ -420,7 +490,10 @@ export class OnlineAccount {
         id: p.id,
         name: p.name,
         gems: p.gems,
-        price: new Intl.NumberFormat(undefined, { style: 'currency', currency: p.currency.toUpperCase() }).format(p.priceCents / 100),
+        price: new Intl.NumberFormat(undefined, {
+          style: 'currency',
+          currency: p.currency.toUpperCase(),
+        }).format(p.priceCents / 100),
       }));
       ui.getState().setStoreData({
         featured: store.featured.map(offer).filter((o): o is NonNullable<typeof o> => o !== null),
@@ -438,7 +511,9 @@ export class OnlineAccount {
     if (!r) return undefined;
     if (r.type === 'cosmetic') {
       const item = getCosmetic(r.id);
-      return item ? { item: uiItem(item, this.owns(item.id)), claimed } : { currency: { kind: 'gumballs', amount: 100 }, claimed };
+      return item
+        ? { item: uiItem(item, this.owns(item.id)), claimed }
+        : { currency: { kind: 'gumballs', amount: 100 }, claimed };
     }
     if (r.type === 'crown_shards') return { currency: { kind: 'xp', amount: r.amount * 100 }, claimed };
     return { currency: { kind: r.type, amount: r.amount }, claimed };
@@ -471,19 +546,26 @@ export class OnlineAccount {
   private async refreshChallenges(): Promise<void> {
     try {
       const c = await this.api.challenges();
-      const row = (cadence: 'daily' | 'weekly') => (x: (typeof c.daily)[number]): ChallengesData['list'][number] => ({
-        id: x.id,
-        cadence,
-        title: x.title,
-        icon: CHALLENGE_ICON[x.metric ?? ''] ?? '⭐',
-        progress: Math.min(x.progress, x.target),
-        goal: x.target,
-        reward: x.reward.gumballs > 0 ? { kind: 'gumballs', amount: x.reward.gumballs } : { kind: 'xp', amount: x.reward.xp },
-        ...(x.reward.gumballs > 0 && x.reward.xp > 0 ? { bonus: { kind: 'xp' as const, amount: x.reward.xp } } : {}),
-        ...(x.metric ? { metric: x.metric } : {}),
-        claimed: x.claimed,
-        canReroll: cadence === 'daily' && c.rerollsLeft > 0 && !x.completed,
-      });
+      const row =
+        (cadence: 'daily' | 'weekly') =>
+        (x: (typeof c.daily)[number]): ChallengesData['list'][number] => ({
+          id: x.id,
+          cadence,
+          title: x.title,
+          icon: CHALLENGE_ICON[x.metric ?? ''] ?? '⭐',
+          progress: Math.min(x.progress, x.target),
+          goal: x.target,
+          reward:
+            x.reward.gumballs > 0
+              ? { kind: 'gumballs', amount: x.reward.gumballs }
+              : { kind: 'xp', amount: x.reward.xp },
+          ...(x.reward.gumballs > 0 && x.reward.xp > 0
+            ? { bonus: { kind: 'xp' as const, amount: x.reward.xp } }
+            : {}),
+          ...(x.metric ? { metric: x.metric } : {}),
+          claimed: x.claimed,
+          canReroll: cadence === 'daily' && c.rerollsLeft > 0 && !x.completed,
+        });
       ui.getState().setChallenges({
         list: [...c.daily.map(row('daily')), ...c.weekly.map(row('weekly'))],
         dailyResetsAt: Date.parse(c.dailyRefreshesAt),
@@ -502,7 +584,9 @@ export class OnlineAccount {
 
   /** Previews an item on the 3D Tumbler without saving. */
   tryOnLoadout(slot: UiSlot, itemId: string | null): TumblerLoadout {
-    return itemId === null ? this.tumblerLoadout() : uiLoadoutToTumbler(loadoutWithItem(this.loadout, slot, itemId));
+    return itemId === null
+      ? this.tumblerLoadout()
+      : uiLoadoutToTumbler(loadoutWithItem(this.loadout, slot, itemId));
   }
 
   /** Previews several items at once (bundles) without saving. */
@@ -526,7 +610,12 @@ export class OnlineAccount {
       this.pushInventory();
       this.pushProfile();
       this.hooks.onLookChanged();
-      ui.getState().pushToast({ kind: 'error', title: "Couldn't save your look", body: describe(err), icon: '🧥' });
+      ui.getState().pushToast({
+        kind: 'error',
+        title: "Couldn't save your look",
+        body: describe(err),
+        icon: '🧥',
+      });
       return false;
     }
   }
@@ -544,7 +633,13 @@ export class OnlineAccount {
 
   /** Rolls a random owned outfit (persisted). */
   randomize(): Promise<boolean> {
-    return this.saveActive(randomizedLoadout(this.loadout, (id) => this.owns(id), (Date.now() ^ hashString(this.me?.userId ?? 'x')) >>> 0));
+    return this.saveActive(
+      randomizedLoadout(
+        this.loadout,
+        (id) => this.owns(id),
+        (Date.now() ^ hashString(this.me?.userId ?? 'x')) >>> 0,
+      ),
+    );
   }
 
   /** Switches the active loadout slot, creating it from the current look if empty. */
@@ -561,7 +656,12 @@ export class OnlineAccount {
       this.activeIndex = index;
     } catch (err) {
       this.activeIndex = prev;
-      ui.getState().pushToast({ kind: 'error', title: "Couldn't switch loadouts", body: describe(err), icon: '🧥' });
+      ui.getState().pushToast({
+        kind: 'error',
+        title: "Couldn't switch loadouts",
+        body: describe(err),
+        icon: '🧥',
+      });
     }
     this.pushInventory();
     this.pushProfile();
@@ -593,14 +693,29 @@ export class OnlineAccount {
       this.owned.add(offerId);
       if (this.me) this.me.wallet = res.wallet;
       const item = getCosmetic(offerId);
-      s.pushToast({ kind: 'reward', title: `${item?.name ?? 'Item'} is yours!`, icon: item ? uiItem(item, true).icon : '🎁' });
+      s.pushToast({
+        kind: 'reward',
+        title: `${item?.name ?? 'Item'} is yours!`,
+        icon: item ? uiItem(item, true).icon : '🎁',
+      });
       this.pushProfile();
       this.pushInventory();
       await this.refreshStore();
     } catch (err) {
       const code = err instanceof ApiError ? err.code : '';
-      const body = code === 'insufficient_funds' ? 'Not enough currency — play a few shows!' : code === 'already_owned' ? 'You already own that.' : describe(err);
-      s.showDialog({ id: 'purchase-failed', kind: 'error', title: 'Purchase failed', body, ...(err instanceof ApiError && err.code ? { code: err.code } : {}) });
+      const body =
+        code === 'insufficient_funds'
+          ? 'Not enough currency — play a few shows!'
+          : code === 'already_owned'
+            ? 'You already own that.'
+            : describe(err);
+      s.showDialog({
+        id: 'purchase-failed',
+        kind: 'error',
+        title: 'Purchase failed',
+        body,
+        ...(err instanceof ApiError && err.code ? { code: err.code } : {}),
+      });
     }
   }
 
@@ -608,7 +723,12 @@ export class OnlineAccount {
   async buyGems(packId: string): Promise<void> {
     const s = ui.getState();
     if (!gemCheckoutEnabled(this.gemProvider)) {
-      s.pushToast({ kind: 'info', title: 'Gems are coming soon', body: 'Secure checkout via Stripe is on its way.', icon: '💎' });
+      s.pushToast({
+        kind: 'info',
+        title: 'Gems are coming soon',
+        body: 'Secure checkout via Stripe is on its way.',
+        icon: '💎',
+      });
       return;
     }
     try {
@@ -621,7 +741,12 @@ export class OnlineAccount {
       }
     } catch (err) {
       const soon = err instanceof ApiError && err.code === 'payments_unavailable';
-      s.showDialog({ id: 'gems-failed', kind: soon ? 'info' : 'error', title: soon ? 'Gems are coming soon' : 'Checkout failed', body: soon ? 'Secure checkout via Stripe is on its way.' : describe(err) });
+      s.showDialog({
+        id: 'gems-failed',
+        kind: soon ? 'info' : 'error',
+        title: soon ? 'Gems are coming soon' : 'Checkout failed',
+        body: soon ? 'Secure checkout via Stripe is on its way.' : describe(err),
+      });
     }
   }
 
@@ -632,7 +757,12 @@ export class OnlineAccount {
       ui.getState().pushToast({ kind: 'reward', title: `Tier ${tier} claimed!`, icon: '🎁' });
       await this.refreshProgress();
     } catch (err) {
-      ui.getState().pushToast({ kind: 'error', title: "Couldn't claim that tier", body: describe(err), icon: '🎁' });
+      ui.getState().pushToast({
+        kind: 'error',
+        title: "Couldn't claim that tier",
+        body: describe(err),
+        icon: '🎁',
+      });
     }
   }
 
@@ -644,7 +774,12 @@ export class OnlineAccount {
       await this.refreshProgress();
     } catch (err) {
       const funds = err instanceof ApiError && err.code === 'insufficient_funds';
-      ui.getState().showDialog({ id: 'pass-funds', kind: 'error', title: funds ? 'Not enough Gems' : 'Unlock failed', body: funds ? 'Gems come from the store and the pass.' : describe(err) });
+      ui.getState().showDialog({
+        id: 'pass-funds',
+        kind: 'error',
+        title: funds ? 'Not enough Gems' : 'Unlock failed',
+        body: funds ? 'Gems come from the store and the pass.' : describe(err),
+      });
     }
   }
 
@@ -654,7 +789,12 @@ export class OnlineAccount {
       await this.api.claimChallenge(id);
       await this.refreshProgress();
     } catch (err) {
-      ui.getState().pushToast({ kind: 'error', title: "Couldn't claim that challenge", body: describe(err), icon: '🎯' });
+      ui.getState().pushToast({
+        kind: 'error',
+        title: "Couldn't claim that challenge",
+        body: describe(err),
+        icon: '🎯',
+      });
     }
   }
 
@@ -681,13 +821,33 @@ export class OnlineAccount {
         playerId: e.userId,
         name: `${e.displayName}#${e.tag}`,
         value: e.score,
-        colors: e.userId === me ? this.loadout.colors : (this.cards.has(e.userId) ? tumblerColors(this.cards.get(e.userId)!) : guessColors(e.userId)),
+        colors:
+          e.userId === me
+            ? this.loadout.colors
+            : this.cards.has(e.userId)
+              ? tumblerColors(this.cards.get(e.userId)!)
+              : guessColors(e.userId),
         ...(e.userId === me ? { isSelf: true } : {}),
       }));
       if (r.me && !rows.some((x) => x.isSelf)) {
-        rows.push({ rank: r.me.rank, playerId: r.me.userId, name: `${r.me.displayName}#${r.me.tag}`, value: r.me.score, colors: this.loadout.colors, isSelf: true });
+        rows.push({
+          rank: r.me.rank,
+          playerId: r.me.userId,
+          name: `${r.me.displayName}#${r.me.tag}`,
+          value: r.me.score,
+          colors: this.loadout.colors,
+          isSelf: true,
+        });
       }
-      if (rows.length === 0 && this.me) rows.push({ rank: 1, playerId: this.me.userId, name: `${this.me.displayName}#${this.me.tag}`, value: 0, colors: this.loadout.colors, isSelf: true });
+      if (rows.length === 0 && this.me)
+        rows.push({
+          rank: 1,
+          playerId: this.me.userId,
+          name: `${this.me.displayName}#${this.me.tag}`,
+          value: 0,
+          colors: this.loadout.colors,
+          isSelf: true,
+        });
       ui.getState().setLeaderboard(board, rows, { scope, source: 'api', updatedAt: Date.now() });
     } catch (err) {
       console.warn('[account] leaderboard failed', err);
@@ -705,7 +865,13 @@ export class OnlineAccount {
           id: m.id,
           time: Date.parse(m.endedAt),
           playlist: getPlaylist(m.playlistId)?.name ?? m.playlistId,
-          rounds: m.rounds.filter((r) => r.played).map((r) => ({ name: getRound(r.roundId)?.name ?? r.roundId, type: r.roundType as RoundType, qualified: r.qualified })),
+          rounds: m.rounds
+            .filter((r) => r.played)
+            .map((r) => ({
+              name: getRound(r.roundId)?.name ?? r.roundId,
+              type: r.roundType as RoundType,
+              qualified: r.qualified,
+            })),
           result: m.crowned ? 'crown' : reachedFinal ? 'final' : 'eliminated',
           xp: m.xp,
         };
@@ -744,7 +910,12 @@ export class OnlineAccount {
       this.pushProfile();
       return true;
     } catch (err) {
-      ui.getState().showDialog({ id: 'rename-failed', kind: 'error', title: "Couldn't rename", body: describe(err) });
+      ui.getState().showDialog({
+        id: 'rename-failed',
+        kind: 'error',
+        title: "Couldn't rename",
+        body: describe(err),
+      });
       return false;
     }
   }
@@ -778,7 +949,10 @@ export class OnlineAccount {
       }
     }
     const rk = r.ranked;
-    const tierOf = (info: unknown, rp: number): { tier: RankTier; division: number; rp: number; rpToNext: number } | null => {
+    const tierOf = (
+      info: unknown,
+      rp: number,
+    ): { tier: RankTier; division: number; rp: number; rpToNext: number } | null => {
       const t = info as { tier?: string; division?: number } | null;
       const tier = t?.tier ? RANK_TIERS[t.tier] : undefined;
       return tier ? { tier, division: Math.max(1, t?.division ?? 1), rp, rpToNext: 400 - (rp % 400) } : null;
@@ -787,8 +961,16 @@ export class OnlineAccount {
     const rkTo = rk ? tierOf((rk as { tierAfter?: unknown }).tierAfter, rk.rpAfter) : null;
     return {
       xpLines: r.xp.lines.filter((l) => l.amount > 0).map((l) => ({ label: l.label, xp: l.amount })),
-      levelFrom: { level: r.level.before, xp: from.level === r.level.before ? from.intoLevel : 0, xpToNext: Math.max(1, from.toNext) },
-      levelTo: { level: r.level.after, xp: to.level === r.level.after ? to.intoLevel : 0, xpToNext: Math.max(1, to.toNext) },
+      levelFrom: {
+        level: r.level.before,
+        xp: from.level === r.level.before ? from.intoLevel : 0,
+        xpToNext: Math.max(1, from.toNext),
+      },
+      levelTo: {
+        level: r.level.after,
+        xp: to.level === r.level.after ? to.intoLevel : 0,
+        xpToNext: Math.max(1, to.toNext),
+      },
       gumballs: r.gumballs.total,
       crowns: (r.crowned ? 1 : 0) + r.crownsFromShards,
       pass: {
@@ -799,7 +981,16 @@ export class OnlineAccount {
       },
       unlocks,
       ...(rk && rkFrom && rkTo ? { ranked: { from: rkFrom, to: rkTo, delta: rk.rpDelta } } : {}),
-      ...(r.challenges.length > 0 ? { challenges: r.challenges.slice(0, 3).map((c) => ({ title: c.title, from: Math.min(c.before, c.target), to: Math.min(c.progress, c.target), goal: c.target })) } : {}),
+      ...(r.challenges.length > 0
+        ? {
+            challenges: r.challenges.slice(0, 3).map((c) => ({
+              title: c.title,
+              from: Math.min(c.before, c.target),
+              to: Math.min(c.progress, c.target),
+              goal: c.target,
+            })),
+          }
+        : {}),
     };
   }
 
@@ -813,14 +1004,22 @@ export class OnlineAccount {
     this.offs.push(
       rt.on('wallet', (m) => {
         if (!this.me) return;
-        this.me.wallet = { gumballs: Number(m.gumballs ?? 0), gems: Number(m.gems ?? 0), crownShards: Number(m.crownShards ?? 0) };
+        this.me.wallet = {
+          gumballs: Number(m.gumballs ?? 0),
+          gems: Number(m.gems ?? 0),
+          crownShards: Number(m.crownShards ?? 0),
+        };
         ui.getState().setWallet({ gumballs: this.me.wallet.gumballs, gems: this.me.wallet.gems });
         this.pushProfile();
       }),
       rt.on('presence', () => void this.refreshFriends()),
       rt.on('friend_accepted', (m) => {
         const by = m.by as { name?: string } | undefined;
-        ui.getState().pushToast({ kind: 'social', title: `${by?.name ?? 'Someone'} is now your friend!`, icon: '🤝' });
+        ui.getState().pushToast({
+          kind: 'social',
+          title: `${by?.name ?? 'Someone'} is now your friend!`,
+          icon: '🤝',
+        });
         void this.refreshFriends();
       }),
       rt.on('friend_request', (m) => this.onFriendRequest(m)),
@@ -831,8 +1030,17 @@ export class OnlineAccount {
       }),
       rt.on('party_invite', (m) => this.onPartyInvite(m)),
       rt.on('notification', (m) => {
-        this.addNotification('reward', String(m.title ?? 'Reward'), typeof m.body === 'string' ? m.body : undefined);
-        ui.getState().pushToast({ kind: 'reward', title: String(m.title ?? 'Reward'), ...(typeof m.body === 'string' ? { body: m.body } : {}), icon: '🎁' });
+        this.addNotification(
+          'reward',
+          String(m.title ?? 'Reward'),
+          typeof m.body === 'string' ? m.body : undefined,
+        );
+        ui.getState().pushToast({
+          kind: 'reward',
+          title: String(m.title ?? 'Reward'),
+          ...(typeof m.body === 'string' ? { body: m.body } : {}),
+          icon: '🎁',
+        });
       }),
       rt.on('socket_open', () => rt.send({ type: 'presence', status: 'in_menu' })),
       ui.subscribe((s, prev) => {
@@ -848,8 +1056,21 @@ export class OnlineAccount {
     else void this.api.presence(status).catch(() => undefined);
   }
 
-  private addNotification(kind: 'invite' | 'friendRequest' | 'news' | 'reward', title: string, body?: string): void {
-    this.notifications = [{ id: `n-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, kind, title, ...(body ? { body } : {}), time: Date.now() }, ...this.notifications].slice(0, 30);
+  private addNotification(
+    kind: 'invite' | 'friendRequest' | 'news' | 'reward',
+    title: string,
+    body?: string,
+  ): void {
+    this.notifications = [
+      {
+        id: `n-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        kind,
+        title,
+        ...(body ? { body } : {}),
+        time: Date.now(),
+      },
+      ...this.notifications,
+    ].slice(0, 30);
     ui.getState().setNotifications(this.notifications);
   }
 
@@ -895,11 +1116,17 @@ export class OnlineAccount {
   handleToastAction(actionId: string): boolean {
     const [kind, arg] = actionId.split(':') as [string, string | undefined];
     if (kind === 'friend-accept' && arg) {
-      void this.api.acceptFriend(arg).then(() => this.refreshFriends(), (err) => ui.getState().pushToast({ kind: 'error', title: "Couldn't accept", body: describe(err) }));
+      void this.api.acceptFriend(arg).then(
+        () => this.refreshFriends(),
+        (err) => ui.getState().pushToast({ kind: 'error', title: "Couldn't accept", body: describe(err) }),
+      );
       return true;
     }
     if (kind === 'friend-decline' && arg) {
-      void this.api.declineFriend(arg).then(() => this.refreshFriends(), () => undefined);
+      void this.api.declineFriend(arg).then(
+        () => this.refreshFriends(),
+        () => undefined,
+      );
       return true;
     }
     if (kind === 'party-join' && arg) {
@@ -913,24 +1140,59 @@ export class OnlineAccount {
   async addFriend(nameTag: string): Promise<void> {
     try {
       const r = await this.api.friendRequest(nameTag);
-      ui.getState().pushToast({ kind: 'social', title: r.status === 'accepted' ? `${r.user.displayName} is now your friend!` : `Request sent to ${r.user.displayName}`, icon: '👥' });
+      ui.getState().pushToast({
+        kind: 'social',
+        title:
+          r.status === 'accepted'
+            ? `${r.user.displayName} is now your friend!`
+            : `Request sent to ${r.user.displayName}`,
+        icon: '👥',
+      });
       await this.refreshFriends();
     } catch (err) {
-      ui.getState().pushToast({ kind: 'warning', title: "Couldn't add that friend", body: describe(err), icon: '👥' });
+      ui.getState().pushToast({
+        kind: 'warning',
+        title: "Couldn't add that friend",
+        body: describe(err),
+        icon: '👥',
+      });
     }
   }
 
   private async refreshFriends(): Promise<void> {
     try {
-      const [f, recent] = await Promise.all([this.api.friends(), this.api.recentPlayers().catch(() => ({ players: [] }))]);
-      const presence = (p: string): Friend['presence'] => (p === 'in_match' ? 'inShow' : p === 'in_menu' || p === 'in_queue' ? 'inMenu' : p === 'online' ? 'online' : 'offline');
+      const [f, recent] = await Promise.all([
+        this.api.friends(),
+        this.api.recentPlayers().catch(() => ({ players: [] })),
+      ]);
+      const presence = (p: string): Friend['presence'] =>
+        p === 'in_match'
+          ? 'inShow'
+          : p === 'in_menu' || p === 'in_queue'
+            ? 'inMenu'
+            : p === 'online'
+              ? 'online'
+              : 'offline';
       const known = new Set(f.friends.map((x) => x.userId));
       const list: Friend[] = [
-        ...f.friends.map((x) => ({ id: x.userId, name: x.displayName, tag: x.tag, presence: presence(x.presence), colors: this.colorsOf(x.userId) })),
+        ...f.friends.map((x) => ({
+          id: x.userId,
+          name: x.displayName,
+          tag: x.tag,
+          presence: presence(x.presence),
+          colors: this.colorsOf(x.userId),
+        })),
         ...recent.players
           .filter((x) => !known.has(x.userId))
           .slice(0, 10)
-          .map((x) => ({ id: x.userId, name: x.displayName, tag: x.tag, presence: 'offline' as const, colors: this.colorsOf(x.userId), recent: true })),
+          .map((x) => ({
+            id: x.userId,
+            name: x.displayName,
+            tag: x.tag,
+            presence: 'offline' as const,
+            colors: this.colorsOf(x.userId),
+            recent: true,
+          })),
       ];
       ui.getState().setFriends(list);
     } catch (err) {
@@ -973,7 +1235,9 @@ export class OnlineAccount {
     const s = ui.getState();
     const me = this.me;
     if (!me) return;
-    const members = party?.members ?? [{ userId: me.userId, displayName: me.displayName, tag: me.tag, ready: true, joinedAt: 0 }];
+    const members = party?.members ?? [
+      { userId: me.userId, displayName: me.displayName, tag: me.tag, ready: true, joinedAt: 0 },
+    ];
     const leaderId = party?.leaderId ?? me.userId;
     const state: PartyState = {
       code: party?.code ?? '',
@@ -990,17 +1254,30 @@ export class OnlineAccount {
     s.setParty(state);
     const self = members.find((m) => m.userId === me.userId);
     s.setLocalReady(leaderId === me.userId || !!self?.ready);
-    if (party && party.leaderId !== me.userId && party.playlistId && s.selectedPlaylist !== party.playlistId) {
+    if (
+      party &&
+      party.leaderId !== me.userId &&
+      party.playlistId &&
+      s.selectedPlaylist !== party.playlistId
+    ) {
       if (s.playlists.some((p) => p.id === party.playlistId)) s.selectPlaylist(party.playlistId);
     }
     const others = members.filter((m) => m.userId !== me.userId);
-    void Promise.all(others.map(async (m) => ({ userId: m.userId, loadout: await this.lookOf(m.userId) }))).then((looks) => {
+    void Promise.all(
+      others.map(async (m) => ({ userId: m.userId, loadout: await this.lookOf(m.userId) })),
+    ).then((looks) => {
       if (this.party !== party) return;
-      this.hooks.onPartyChanged(looks.filter((x): x is { userId: string; loadout: TumblerLoadout } => x.loadout !== null));
+      this.hooks.onPartyChanged(
+        looks.filter((x): x is { userId: string; loadout: TumblerLoadout } => x.loadout !== null),
+      );
       // Member colours arrive with their looks; repaint the slots.
       if (looks.some((x) => x.loadout)) {
         const cur = ui.getState().party;
-        if (cur) ui.getState().setParty({ ...cur, members: cur.members.map((m) => (m.isSelf ? m : { ...m, colors: this.colorsOf(m.id) })) });
+        if (cur)
+          ui.getState().setParty({
+            ...cur,
+            members: cur.members.map((m) => (m.isSelf ? m : { ...m, colors: this.colorsOf(m.id) })),
+          });
       }
     });
   }
@@ -1024,11 +1301,22 @@ export class OnlineAccount {
       const { party } = await this.api.joinParty(code.toUpperCase());
       this.applyParty(party);
       const leader = party.members.find((m) => m.userId === party.leaderId);
-      ui.getState().pushToast({ kind: 'social', title: `Joined ${leader?.displayName ?? 'the'}'s party!`, body: 'Hit Ready when you are.', icon: '🎉' });
+      ui.getState().pushToast({
+        kind: 'social',
+        title: `Joined ${leader?.displayName ?? 'the'}'s party!`,
+        body: 'Hit Ready when you are.',
+        icon: '🎉',
+      });
       this.hooks.onJoinedParty?.();
       return true;
     } catch (err) {
-      ui.getState().showDialog({ id: 'party-join-failed', kind: 'error', title: "Couldn't join that party", body: describe(err), code: 'E-PARTY' });
+      ui.getState().showDialog({
+        id: 'party-join-failed',
+        kind: 'error',
+        title: "Couldn't join that party",
+        body: describe(err),
+        code: 'E-PARTY',
+      });
       return false;
     }
   }
@@ -1079,7 +1367,12 @@ export class OnlineAccount {
     try {
       this.applyParty((await this.api.setPartyPlaylist(playlistId)).party);
     } catch (err) {
-      ui.getState().pushToast({ kind: 'warning', title: "That show doesn't fit this party", body: describe(err), icon: '🎪' });
+      ui.getState().pushToast({
+        kind: 'warning',
+        title: "That show doesn't fit this party",
+        body: describe(err),
+        icon: '🎪',
+      });
     }
   }
 

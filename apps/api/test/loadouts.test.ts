@@ -25,17 +25,29 @@ describe('loadouts', () => {
   it('saves a loadout made of owned items and activates it', async () => {
     const u = await api.guest();
     const items = (await api.req('GET', '/loadouts', { token: u.accessToken })).json().slots[0].items;
-    const put = await api.req('PUT', '/loadouts/2', { token: u.accessToken, body: { name: 'Minty', items: { ...items, colors: ['#5ce1e6', '#ffffff', '#123456'], pattern: 'pattern.stripes' } } });
+    const put = await api.req('PUT', '/loadouts/2', {
+      token: u.accessToken,
+      body: {
+        name: 'Minty',
+        items: { ...items, colors: ['#5ce1e6', '#ffffff', '#123456'], pattern: 'pattern.stripes' },
+      },
+    });
     expect(put.statusCode).toBe(200);
     const act = await api.req('POST', '/loadouts/2/activate', { token: u.accessToken });
-    expect(act.json()).toMatchObject({ activeIndex: 2, items: { colors: ['#5ce1e6', '#ffffff', '#123456'], pattern: 'pattern.stripes' } });
+    expect(act.json()).toMatchObject({
+      activeIndex: 2,
+      items: { colors: ['#5ce1e6', '#ffffff', '#123456'], pattern: 'pattern.stripes' },
+    });
     expect((await api.req('DELETE', '/loadouts/2', { token: u.accessToken })).statusCode).toBe(409);
   });
 
   it('rejects unowned items with 403 not_owned', async () => {
     const u = await api.guest();
     const items = (await api.req('GET', '/loadouts', { token: u.accessToken })).json().slots[0].items;
-    const res = await api.req('PUT', '/loadouts/1', { token: u.accessToken, body: { items: { ...items, headwear: unownedHat } } });
+    const res = await api.req('PUT', '/loadouts/1', {
+      token: u.accessToken,
+      body: { items: { ...items, headwear: unownedHat } },
+    });
     expect(res.statusCode).toBe(403);
     expect(res.json()).toMatchObject({ error: 'not_owned', details: { items: [unownedHat] } });
   });
@@ -43,9 +55,15 @@ describe('loadouts', () => {
   it('rejects items in the wrong slot and unknown ids', async () => {
     const u = await api.guest();
     const items = (await api.req('GET', '/loadouts', { token: u.accessToken })).json().slots[0].items;
-    const wrong = await api.req('PUT', '/loadouts/1', { token: u.accessToken, body: { items: { ...items, face: 'pattern.stripes' } } });
+    const wrong = await api.req('PUT', '/loadouts/1', {
+      token: u.accessToken,
+      body: { items: { ...items, face: 'pattern.stripes' } },
+    });
     expect(wrong.json().error).toBe('invalid_loadout');
-    const unknown = await api.req('PUT', '/loadouts/1', { token: u.accessToken, body: { items: { ...items, back: 'back.nonexistent' } } });
+    const unknown = await api.req('PUT', '/loadouts/1', {
+      token: u.accessToken,
+      body: { items: { ...items, back: 'back.nonexistent' } },
+    });
     expect(unknown.json().error).toBe('invalid_loadout');
     const badIndex = await api.req('PUT', '/loadouts/6', { token: u.accessToken, body: { items } });
     expect(badIndex.statusCode).toBe(400);

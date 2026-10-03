@@ -73,7 +73,10 @@ export async function lockWallet(tx: DbOrTx, userId: string): Promise<Wallet> {
  * @returns New balance and whether the entry was applied (false = duplicate key).
  * @throws {ApiError} 402 `insufficient_funds` when a spend exceeds the balance.
  */
-export async function applyLedger(tx: DbOrTx, entry: LedgerEntry): Promise<{ balance: number; applied: boolean }> {
+export async function applyLedger(
+  tx: DbOrTx,
+  entry: LedgerEntry,
+): Promise<{ balance: number; applied: boolean }> {
   const wallet = await lockWallet(tx, entry.userId);
   const field = FIELD[entry.currency];
   if (entry.delta === 0) return { balance: wallet[field], applied: false };
@@ -127,7 +130,10 @@ export async function verifyLedger(db: DbOrTx, userId: string): Promise<LedgerAu
     .where(eq(profiles.userId, userId));
   if (!p) return { ok: false, mismatches: [] };
   const sums = await db
-    .select({ currency: currenciesLedger.currency, total: sql<string>`coalesce(sum(${currenciesLedger.delta}), 0)` })
+    .select({
+      currency: currenciesLedger.currency,
+      total: sql<string>`coalesce(sum(${currenciesLedger.delta}), 0)`,
+    })
     .from(currenciesLedger)
     .where(eq(currenciesLedger.userId, userId))
     .groupBy(currenciesLedger.currency);

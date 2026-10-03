@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { BitReader, BitWriter, KickReason, MsgType, readKick, writeHello, writeInputBatch } from '@tumble/netcode';
+import {
+  BitReader,
+  BitWriter,
+  KickReason,
+  MsgType,
+  readKick,
+  writeHello,
+  writeInputBatch,
+} from '@tumble/netcode';
 import { RoundPhase } from '@tumble/shared';
 import { ServerMetrics } from '../src/metrics.ts';
 import { RoomManager } from '../src/room/RoomManager.ts';
@@ -50,7 +58,9 @@ describe('Room', () => {
     const list = c.lowFreq('playerList').at(-1);
     expect(list && list.t === 'playerList' && list.players.length).toBe(4);
     expect(c.lowFreq('joinRound').length).toBe(1);
-    expect(c.lowFreq('roundPhase').some((m) => m.t === 'roundPhase' && m.phase === RoundPhase.Countdown)).toBe(true);
+    expect(
+      c.lowFreq('roundPhase').some((m) => m.t === 'roundPhase' && m.phase === RoundPhase.Countdown),
+    ).toBe(true);
 
     // Human inputs flow through the jitter buffer into the sim; bots through their brains.
     advance(30, [c], () => {
@@ -78,7 +88,9 @@ describe('Room', () => {
       c.input({ moveX: 0, moveZ: 0, yaw: 0, buttons: 1, emote: 0 });
       c.input({ moveX: 0, moveZ: 0, yaw: 0, buttons: 1, emote: 0 });
     });
-    const jumps = c.messages.filter((m) => m.kind === 'sim' && m.event.type === 'jump' && m.event.player === 0);
+    const jumps = c.messages.filter(
+      (m) => m.kind === 'sim' && m.event.type === 'jump' && m.event.player === 0,
+    );
     expect(jumps.length).toBe(1);
   });
 
@@ -135,7 +147,9 @@ describe('Room', () => {
     c.input({ moveX: 0, moveZ: 0, yaw: 0, buttons: 0, emote: 0 });
     // Forge a far-future sequence: one input per step can't get 100k steps ahead in 100 ms.
     const w = new BitWriter();
-    writeInputBatch(w, { newestSeq: 100_000, clientTick: 0, ackSnapshotId: -1, count: 1 }, [{ moveX: 1, moveZ: 1, yaw: 0, buttons: 0, emote: 0 }]);
+    writeInputBatch(w, { newestSeq: 100_000, clientTick: 0, ackSnapshotId: -1, count: 1 }, [
+      { moveX: 1, moveZ: 1, yaw: 0, buttons: 0, emote: 0 },
+    ]);
     c.conn.receive(w.finish());
     advance(5, [c]);
     expect(sims[0]!.applied.get(0)!.some((i) => i.moveX === 1)).toBe(false);

@@ -62,7 +62,10 @@ export const DEFAULT_KEYMAP: Readonly<Keymap> = Object.freeze({
 });
 
 /** @returns A deep, mutable copy of `base` with `overrides` applied per action. */
-export function createKeymap(overrides: Partial<Keymap> = {}, base: Readonly<Keymap> = DEFAULT_KEYMAP): Keymap {
+export function createKeymap(
+  overrides: Partial<Keymap> = {},
+  base: Readonly<Keymap> = DEFAULT_KEYMAP,
+): Keymap {
   const out = {} as Keymap;
   for (const a of INPUT_ACTIONS) out[a] = [...(overrides[a] ?? base[a])];
   return out;

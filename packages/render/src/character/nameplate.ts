@@ -13,6 +13,7 @@
  * its derived GLSL materials also can't run on the WebGPU backend. A canvas
  * atlas renders identically on both backends.
  */
+import type { Object3D } from 'three/webgpu';
 import {
   CanvasTexture,
   DoubleSide,
@@ -21,7 +22,6 @@ import {
   LinearMipmapLinearFilter,
   Matrix4,
   MeshBasicNodeMaterial,
-  Object3D,
   PlaneGeometry,
   Quaternion,
   SRGBColorSpace,
@@ -48,7 +48,13 @@ export interface NameplateStyle {
   border: string;
 }
 
-const DEFAULT_STYLE: NameplateStyle = { style: 'pill', bg: '#2a2238', bg2: '#3d3157', text: '#ffffff', border: '#ffffff' };
+const DEFAULT_STYLE: NameplateStyle = {
+  style: 'pill',
+  bg: '#2a2238',
+  bg2: '#3d3157',
+  text: '#ffffff',
+  border: '#ffffff',
+};
 
 /** Options for {@link NameplateLayer.create}. */
 export interface NameplateOptions {
@@ -116,7 +122,14 @@ function resolveStyle(id: string | undefined): NameplateStyle {
   return getCosmeticInSlot(id, 'nameplate')?.plate ?? DEFAULT_STYLE;
 }
 
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -126,7 +139,14 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
-function platePath(ctx: CanvasRenderingContext2D, s: NameplateStyle['style'], x: number, y: number, w: number, h: number): void {
+function platePath(
+  ctx: CanvasRenderingContext2D,
+  s: NameplateStyle['style'],
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
   if (s === 'ribbon') {
     const n = h * 0.35;
     ctx.beginPath();
@@ -225,7 +245,14 @@ export class NameplateLayer {
   create(name: string, opts: NameplateOptions = {}): Nameplate | null {
     const slot = this.plates.indexOf(null);
     if (slot < 0) return null;
-    const p = new Nameplate(this, slot, name, resolveStyle(opts.style), opts.teamColor ?? null, opts.height ?? 2.3);
+    const p = new Nameplate(
+      this,
+      slot,
+      name,
+      resolveStyle(opts.style),
+      opts.teamColor ?? null,
+      opts.height ?? 2.3,
+    );
     this.plates[slot] = p;
     p.redraw();
     return p;

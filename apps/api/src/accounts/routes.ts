@@ -16,12 +16,21 @@ const PatchMe = z.object({
   region: z.enum(REGIONS).optional(),
 });
 const IdParam = z.object({ id: z.string().uuid() });
-const IndexParam = z.object({ index: z.coerce.number().int().min(0).max(LOADOUT_COUNT - 1) });
+const IndexParam = z.object({
+  index: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(LOADOUT_COUNT - 1),
+});
 const PutLoadout = z.object({ name: z.string().trim().min(1).max(24).optional(), items: LoadoutItemsSchema });
 
 /** Owned cosmetic ids for a user. */
 export async function ownedSet(ctx: AppContext, userId: string): Promise<Set<string>> {
-  const rows = await ctx.db.select({ id: inventoryItems.cosmeticId }).from(inventoryItems).where(eq(inventoryItems.userId, userId));
+  const rows = await ctx.db
+    .select({ id: inventoryItems.cosmeticId })
+    .from(inventoryItems)
+    .where(eq(inventoryItems.userId, userId));
   return new Set(rows.map((r) => r.id));
 }
 
@@ -40,12 +49,19 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: AppContext): vo
       .from(users)
       .innerJoin(profiles, eq(profiles.userId, users.id))
       .where(eq(users.id, auth.userId));
-    const linked = await ctx.db.select({ provider: authIdentities.provider }).from(authIdentities).where(eq(authIdentities.userId, auth.userId));
+    const linked = await ctx.db
+      .select({ provider: authIdentities.provider })
+      .from(authIdentities)
+      .where(eq(authIdentities.userId, auth.userId));
     return {
       ...card,
       email: extra?.email ?? null,
       isGuest: extra?.isGuest ?? true,
-      wallet: { gumballs: extra?.p.gumballs ?? 0, gems: extra?.p.gems ?? 0, crownShards: extra?.p.crownShards ?? 0 },
+      wallet: {
+        gumballs: extra?.p.gumballs ?? 0,
+        gems: extra?.p.gems ?? 0,
+        crownShards: extra?.p.crownShards ?? 0,
+      },
       activeLoadout: extra?.p.activeLoadout ?? 0,
       nameChangedAt: extra?.p.nameChangedAt?.toISOString() ?? null,
       linkedProviders: [...new Set(linked.map((l) => l.provider))],
@@ -58,7 +74,13 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: AppContext): vo
     return ctx.db.transaction(async (tx) => {
       let name: { displayName: string; tag: string } | undefined;
       if (body.displayName !== undefined) {
-        name = await changeDisplayName(tx, auth.userId, body.displayName, ctx.now(), ctx.config.nameChangeCooldownDays);
+        name = await changeDisplayName(
+          tx,
+          auth.userId,
+          body.displayName,
+          ctx.now(),
+          ctx.config.nameChangeCooldownDays,
+        );
       }
       if (body.region) await tx.update(users).set({ region: body.region }).where(eq(users.id, auth.userId));
       return { ...(name ?? {}), ...(body.region ? { region: body.region } : {}) };
@@ -91,7 +113,10 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: AppContext): vo
   app.get('/loadouts', async (req) => {
     const auth = await requireUser(ctx, req);
     const rows = await ctx.db.select().from(loadouts).where(eq(loadouts.userId, auth.userId));
-    const [p] = await ctx.db.select({ active: profiles.activeLoadout }).from(profiles).where(eq(profiles.userId, auth.userId));
+    const [p] = await ctx.db
+      .select({ active: profiles.activeLoadout })
+      .from(profiles)
+      .where(eq(profiles.userId, auth.userId));
     const slots = Array.from({ length: LOADOUT_COUNT }, (_, i) => {
       const r = rows.find((x) => x.slotIndex === i);
       return r ? { index: i, name: r.name, items: r.items, updatedAt: r.updatedAt.toISOString() } : null;
@@ -109,14 +134,20 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: AppContext): vo
     await ctx.db
       .insert(loadouts)
       .values({ userId: auth.userId, slotIndex: index, name, items: body.items, updatedAt: now })
-      .onConflictDoUpdate({ target: [loadouts.userId, loadouts.slotIndex], set: { name, items: body.items, updatedAt: now } });
+      .onConflictDoUpdate({
+        target: [loadouts.userId, loadouts.slotIndex],
+        set: { name, items: body.items, updatedAt: now },
+      });
     return { index, name, items: body.items };
   });
 
   app.delete('/loadouts/:index', async (req, reply) => {
     const auth = await requireUser(ctx, req);
     const { index } = parse(IndexParam, req.params);
-    const [p] = await ctx.db.select({ active: profiles.activeLoadout }).from(profiles).where(eq(profiles.userId, auth.userId));
+    const [p] = await ctx.db
+      .select({ active: profiles.activeLoadout })
+      .from(profiles)
+      .where(eq(profiles.userId, auth.userId));
     if (p?.active === index) throw conflict('loadout_active', 'Cannot delete the active loadout');
     await ctx.db.delete(loadouts).where(and(eq(loadouts.userId, auth.userId), eq(loadouts.slotIndex, index)));
     return reply.code(204).send();

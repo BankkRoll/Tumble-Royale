@@ -91,13 +91,17 @@ export async function claimTier(ctx: AppContext, userId: string, tierNo: number,
   if (!def || rewards.length === 0) throw new ApiError(404, 'not_found', 'No reward on that tier/track');
   return ctx.db.transaction(async (tx) => {
     const row = await loadRow(tx, userId, s.id, true);
-    if (tierNo > passProgress(ctx.catalog, row.xp).tier) throw new ApiError(403, 'tier_locked', 'Tier not reached yet');
-    if (track === 'premium' && !row.premium) throw new ApiError(403, 'premium_required', 'Unlock the premium pass first');
+    if (tierNo > passProgress(ctx.catalog, row.xp).tier)
+      throw new ApiError(403, 'tier_locked', 'Tier not reached yet');
+    if (track === 'premium' && !row.premium)
+      throw new ApiError(403, 'premium_required', 'Unlock the premium pass first');
     const claimed = track === 'free' ? row.claimedFree : row.claimedPremium;
     if (claimed.includes(tierNo)) throw conflict('already_claimed', 'Reward already claimed');
     const granted = [];
     for (const [i, reward] of rewards.entries()) {
-      granted.push(await grantReward(tx, userId, reward, 'pass_reward', `${s.id}:tier:${tierNo}:${track}:${i}`));
+      granted.push(
+        await grantReward(tx, userId, reward, 'pass_reward', `${s.id}:tier:${tierNo}:${track}:${i}`),
+      );
     }
     const next = [...claimed, tierNo].sort((a, b) => a - b);
     await tx
@@ -116,10 +120,18 @@ export async function claimTier(ctx: AppContext, userId: string, tierNo: number,
 export async function unlockPremium(ctx: AppContext, userId: string, key: string) {
   const s = ctx.catalog.season;
   const findExisting = async (db: DbOrTx) =>
-    (await db.select().from(purchases).where(and(eq(purchases.userId, userId), eq(purchases.idempotencyKey, key))))[0];
+    (
+      await db
+        .select()
+        .from(purchases)
+        .where(and(eq(purchases.userId, userId), eq(purchases.idempotencyKey, key)))
+    )[0];
   const replay = (row: typeof purchases.$inferSelect) => {
     if (row.kind !== 'pass_premium' || row.itemId !== s.id) {
-      throw conflict('idempotency_key_reused', 'This Idempotency-Key was already used for a different request');
+      throw conflict(
+        'idempotency_key_reused',
+        'This Idempotency-Key was already used for a different request',
+      );
     }
     return { ...(row.response as object), replayed: true };
   };
@@ -140,13 +152,22 @@ export async function unlockPremium(ctx: AppContext, userId: string, key: string
         price: s.premiumPriceGems,
         status: 'pending',
       });
-      await applyLedger(tx, { userId, currency: 'gems', delta: -s.premiumPriceGems, reason: 'pass_premium', ref: purchaseId });
+      await applyLedger(tx, {
+        userId,
+        currency: 'gems',
+        delta: -s.premiumPriceGems,
+        reason: 'pass_premium',
+        ref: purchaseId,
+      });
       await tx
         .update(seasonPassProgress)
         .set({ premium: true })
         .where(and(eq(seasonPassProgress.userId, userId), eq(seasonPassProgress.seasonId, s.id)));
       const response = { purchaseId, seasonId: s.id, premium: true, wallet: await readWallet(tx, userId) };
-      await tx.update(purchases).set({ status: 'completed', response, completedAt: ctx.now() }).where(eq(purchases.id, purchaseId));
+      await tx
+        .update(purchases)
+        .set({ status: 'completed', response, completedAt: ctx.now() })
+        .where(eq(purchases.id, purchaseId));
       return { ...response, replayed: false };
     });
   } catch (err) {

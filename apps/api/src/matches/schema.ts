@@ -52,7 +52,11 @@ export const RoundResultSchema = z.object({
 export const MatchRoundSchema = z.object({
   roundId: z.string().min(1).max(64),
   roundType: RoundTypeSchema,
-  durationMs: z.number().int().min(0).max(30 * 60_000),
+  durationMs: z
+    .number()
+    .int()
+    .min(0)
+    .max(30 * 60_000),
   /** Every participant who started the round. */
   results: z.array(RoundResultSchema).max(60),
 });

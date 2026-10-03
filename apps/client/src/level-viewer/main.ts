@@ -181,7 +181,8 @@ class LevelSession {
 
   update(dt: number): void {
     this.wall += dt;
-    if (this.sim.phase === RoundPhase.Countdown && this.sim.time >= 0) this.sim.setPhase(RoundPhase.Playing, 0);
+    if (this.sim.phase === RoundPhase.Countdown && this.sim.time >= 0)
+      this.sim.setPhase(RoundPhase.Playing, 0);
     this.stepper.advance(dt);
     this.sim.events.drain();
 
@@ -248,7 +249,10 @@ async function main(): Promise<void> {
   const R = await loadRapier();
   const controller = await resolveController();
   const canvas = document.getElementById('game') as HTMLCanvasElement;
-  const { renderer, backend } = await createRenderer(canvas, (params.get('backend') ?? 'auto') as BackendPreference);
+  const { renderer, backend } = await createRenderer(
+    canvas,
+    (params.get('backend') ?? 'auto') as BackendPreference,
+  );
   const stats = new StatsOverlay(document.body);
   stats.set('gpu', backend);
   stats.set('ctrl', controller.name);
@@ -328,7 +332,8 @@ async function main(): Promise<void> {
       flyT += dt / fly.duration;
       if (flyT > 1) flyT = 0;
       catmull(fly.path, flyT, camera.position);
-      const target = fly.lookAt.length > 1 ? catmull(fly.lookAt, flyT, tmp) : tmp.set(look0.x, look0.y, look0.z);
+      const target =
+        fly.lookAt.length > 1 ? catmull(fly.lookAt, flyT, tmp) : tmp.set(look0.x, look0.y, look0.z);
       camera.lookAt(target);
       controls.target.copy(target);
     } else if (mode === 'follow') {
@@ -364,6 +369,5 @@ async function main(): Promise<void> {
 main().catch((err: unknown) => {
   console.error(err);
   const hud = document.getElementById('hud');
-  if (hud) hud.textContent = `Failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`;
+  if (hud) hud.textContent = `Failed: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`;
 });
-

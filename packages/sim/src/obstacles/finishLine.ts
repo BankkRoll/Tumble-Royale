@@ -109,13 +109,20 @@ export const finishLine: ObstacleModule<FinishLineParams> = {
           if (finished.has(a.id)) continue;
           const pos = a.body.translation();
           const d =
-            (pos.x - frame.pos.x) * normal.x + (pos.y - frame.pos.y) * normal.y + (pos.z - frame.pos.z) * normal.z;
+            (pos.x - frame.pos.x) * normal.x +
+            (pos.y - frame.pos.y) * normal.y +
+            (pos.z - frame.pos.z) * normal.z;
           if (d < 0) continue;
           const v = a.body.linvel();
           const vn = v.x * normal.x + v.y * normal.y + v.z * normal.z;
           finished.add(a.id);
           lastFinishTime = sctx.t;
-          sctx.events.push({ type: 'finish', player: a.id, tick: sctx.tick, subTick: finishSubTick(d, vn, sctx.dt) });
+          sctx.events.push({
+            type: 'finish',
+            player: a.id,
+            tick: sctx.tick,
+            subTick: finishSubTick(d, vn, sctx.dt),
+          });
           emitCue(sctx.events, instance.id, finished.size === 1 ? 'finishFanfare' : 'finishCross', pos);
         }
       },

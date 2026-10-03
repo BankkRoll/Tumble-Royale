@@ -7,7 +7,15 @@
 import type { RigidBody } from '@dimforge/rapier3d-compat';
 import { InteractionGroups, quatFromAxisAngle } from '@tumble/shared';
 import { z } from 'zod';
-import { DEG, KinematicRig, PhysicsBag, emitCue, ensurePoseSamples, instanceFrame, writeSample } from './helpers-b.ts';
+import {
+  DEG,
+  KinematicRig,
+  PhysicsBag,
+  emitCue,
+  ensurePoseSamples,
+  instanceFrame,
+  writeSample,
+} from './helpers-b.ts';
 import type { ObstacleModule, ObstacleRuntime, PoseSample } from './types.ts';
 
 /** Rolling Drum parameters. Metres, degrees, seconds. Origin = centre of the drum's axis (local X). */
@@ -55,7 +63,12 @@ export function drumAngularVelocity(t: number, p: RollingDrumParams, speedScale:
 const q = { x: 0, y: 0, z: 0, w: 1 };
 
 /** Pure pose: sample 0 is the drum (at the origin, rolled about +X). */
-export function rollingDrumPose(t: number, p: RollingDrumParams, out: PoseSample[], speedScale: number): void {
+export function rollingDrumPose(
+  t: number,
+  p: RollingDrumParams,
+  out: PoseSample[],
+  speedScale: number,
+): void {
   ensurePoseSamples(out, 1);
   writeSample(out[0] as PoseSample, 0, 0, 0, quatFromAxisAngle(1, 0, 0, drumAngle(t, p, speedScale), q));
 }
@@ -106,7 +119,8 @@ export const rollingDrum: ObstacleModule<RollingDrumParams> = {
         rig.apply(sctx.t, sctx.dt);
         if (p.profile === 'reversing') {
           const s = Math.sign(drumAngularVelocity(sctx.t, p, scale));
-          if (lastSign !== 0 && s !== 0 && s !== lastSign) emitCue(sctx.events, instance.id, 'drumReverse', frame.pos);
+          if (lastSign !== 0 && s !== 0 && s !== lastSign)
+            emitCue(sctx.events, instance.id, 'drumReverse', frame.pos);
           if (s !== 0) lastSign = s;
         }
       },

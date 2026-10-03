@@ -61,14 +61,22 @@ export function voiceKeepScore(priority: number, audibility: number, age: number
  * @param now - Current audio time.
  * @returns Slot index to steal, or -1 if the incoming sound is the least important and should be dropped.
  */
-export function pickVoiceToSteal(slots: readonly VoiceSlot[], priority: number, audibility: number, now: number): number {
+export function pickVoiceToSteal(
+  slots: readonly VoiceSlot[],
+  priority: number,
+  audibility: number,
+  now: number,
+): number {
   let victim = -1;
   let victimScore = Infinity;
   for (let i = 0; i < slots.length; i++) {
     const s = slots[i] as VoiceSlot;
     const score = voiceKeepScore(s.priority, s.audibility, now - s.startedAt);
     // Ties go to the older voice: it has already been heard.
-    if (score < victimScore || (score === victimScore && victim >= 0 && s.startedAt < (slots[victim] as VoiceSlot).startedAt)) {
+    if (
+      score < victimScore ||
+      (score === victimScore && victim >= 0 && s.startedAt < (slots[victim] as VoiceSlot).startedAt)
+    ) {
       victim = i;
       victimScore = score;
     }

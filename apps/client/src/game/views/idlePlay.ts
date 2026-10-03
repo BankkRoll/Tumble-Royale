@@ -66,8 +66,17 @@ export class IdlePlay {
   ) {
     this.world = createWorld(R);
     const body = this.world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(0, -0.5, 0));
-    this.world.createCollider(R.ColliderDesc.cylinder(0.5, radius).setFriction(0.9).setCollisionGroups(InteractionGroups.static), body);
-    this.ctrl = new TumblerController({ R, world: this.world, id: 0, position: { x: spawn.x, y: 0.05, z: spawn.z }, yaw: 0 });
+    this.world.createCollider(
+      R.ColliderDesc.cylinder(0.5, radius).setFriction(0.9).setCollisionGroups(InteractionGroups.static),
+      body,
+    );
+    this.ctrl = new TumblerController({
+      R,
+      world: this.world,
+      id: 0,
+      position: { x: spawn.x, y: 0.05, z: spawn.z },
+      yaw: 0,
+    });
     const events = new EventSink();
     this.ctx = {
       R,
@@ -103,7 +112,8 @@ export class IdlePlay {
     this.onStep?.(evs);
     if (this.audio) for (const e of evs) this.audio.handleSimEvent(e);
     evs.length = 0;
-    if (this.ctrl.body.translation().y < FALL_RESET_Y) this.ctrl.teleport({ x: this.spawn.x, y: 1.5, z: this.spawn.z });
+    if (this.ctrl.body.translation().y < FALL_RESET_Y)
+      this.ctrl.teleport({ x: this.spawn.x, y: 1.5, z: this.spawn.z });
   }
 
   /**

@@ -7,7 +7,17 @@
 import { Rng, hashString } from '@tumble/shared';
 import { DRUM_IDS } from '../synth/instruments.ts';
 import type { DrumId } from '../synth/instruments.ts';
-import { SCALES, chordToneToMidi, diatonicChord, generateMelodyBar, noteNameToMidi, parseChord, parsePattern, parseDrumLane, scaleDegreeToMidi } from './theory.ts';
+import {
+  SCALES,
+  chordToneToMidi,
+  diatonicChord,
+  generateMelodyBar,
+  noteNameToMidi,
+  parseChord,
+  parsePattern,
+  parseDrumLane,
+  scaleDegreeToMidi,
+} from './theory.ts';
 import type { PatternEvent } from './theory.ts';
 import type { PartDef, StemId, TrackDef } from './types.ts';
 
@@ -102,18 +112,23 @@ export function prepareTrack(def: TrackDef): PreparedTrack {
         while ((W + V) % P !== 0) V++;
         for (let j = 0; j < V; j++) {
           const chordDeg = chordDegrees[(W + j) % P] as number;
-          parsed.push(parsePattern(generateMelodyBar(next, scale.length, chordDeg, stepsPerBar, p.density ?? 0.6), 1));
+          parsed.push(
+            parsePattern(generateMelodyBar(next, scale.length, chordDeg, stepsPerBar, p.density ?? 0.6), 1),
+          );
         }
       }
     }
 
     const bars = parsed.map((evs, barIdx) => {
-      const row: Array<PreparedNote | undefined> = new Array<PreparedNote | undefined>(stepsPerBar).fill(undefined);
+      const row: Array<PreparedNote | undefined> = new Array<PreparedNote | undefined>(stepsPerBar).fill(
+        undefined,
+      );
       for (const ev of evs) {
         if (ev.step >= stepsPerBar) continue;
         let midi: number[];
         if (p.mode === 'drum') midi = [0];
-        else if (p.mode === 'scale') midi = [scaleDegreeToMidi(keyMidi, scale, ev.degree ?? 1) + ev.semis + octave];
+        else if (p.mode === 'scale')
+          midi = [scaleDegreeToMidi(keyMidi, scale, ev.degree ?? 1) + ev.semis + octave];
         else {
           // Chord-relative parts are resolved per progression bar at schedule time; store the raw index here and remap below.
           midi = [ev.degree ?? 1, ev.semis];

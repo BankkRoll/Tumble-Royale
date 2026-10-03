@@ -1,7 +1,13 @@
 import { Rng, RoundPhase, type RoundDefinition, type TriggerDef } from '@tumble/shared';
 import { describe, expect, it } from 'vitest';
 import { EventSink } from '../src/events.ts';
-import { PlayerRoundStatus, createMatchSim, createSimpleController, createTestArenaRound, testObstacleModules } from '../src/match/index.ts';
+import {
+  PlayerRoundStatus,
+  createMatchSim,
+  createSimpleController,
+  createTestArenaRound,
+  testObstacleModules,
+} from '../src/match/index.ts';
 import { loadRapier } from '../src/index.ts';
 import {
   computeQualifyTarget,
@@ -121,9 +127,14 @@ describe('quota', () => {
     expect(computeQualifyTarget(race, 2)).toBe(1);
     expect(computeQualifyTarget(race, 1)).toBe(1);
     expect(computeQualifyTarget(race, 40, 50)).toBe(39);
-    const final = createTestArenaRound({ type: 'final', qualification: { mode: 'crownGrab', ratio: 0, teams: 0, teamsEliminated: 1 } });
+    const final = createTestArenaRound({
+      type: 'final',
+      qualification: { mode: 'crownGrab', ratio: 0, teams: 0, teamsEliminated: 1 },
+    });
     expect(computeQualifyTarget(final, 7)).toBe(1);
-    const team = createTestArenaRound({ qualification: { mode: 'teamScore', ratio: 0, teams: 4, teamsEliminated: 1 } });
+    const team = createTestArenaRound({
+      qualification: { mode: 'teamScore', ratio: 0, teams: 4, teamsEliminated: 1 },
+    });
     expect(computeQualifyTarget(team, 20)).toBe(15);
   });
 });
@@ -169,7 +180,11 @@ describe('race rules (finish)', () => {
 
 describe('survival rules', () => {
   const survival = (seconds = 10) =>
-    createTestArenaRound({ type: 'survival', qualification: { mode: 'survive', ratio: 0.5, teams: 0, teamsEliminated: 1 }, duration: { seconds, overtimeSeconds: 0 } });
+    createTestArenaRound({
+      type: 'survival',
+      qualification: { mode: 'survive', ratio: 0.5, teams: 0, teamsEliminated: 1 },
+      duration: { seconds, overtimeSeconds: 0 },
+    });
 
   it('eliminates fallers and qualifies survivors at the buzzer', () => {
     const host = new FakeHost(survival(), 10);
@@ -245,13 +260,18 @@ describe('team rules', () => {
     host.rules.onPropTrigger(trigger('goal', 2), 5, true);
     host.run(0.1);
     expect(host.rules.finished).toBe(true);
-    for (const p of host.players) expect(p.status).toBe(p.team === 1 ? PlayerRoundStatus.Eliminated : PlayerRoundStatus.Qualified);
+    for (const p of host.players)
+      expect(p.status).toBe(p.team === 1 ? PlayerRoundStatus.Eliminated : PlayerRoundStatus.Qualified);
   });
 });
 
 describe('hunt rules (holdItem)', () => {
   const hunt = () =>
-    createTestArenaRound({ type: 'hunt', qualification: { mode: 'holdItem', ratio: 0.5, teams: 0, teamsEliminated: 1 }, duration: { seconds: 10, overtimeSeconds: 0 } });
+    createTestArenaRound({
+      type: 'hunt',
+      qualification: { mode: 'holdItem', ratio: 0.5, teams: 0, teamsEliminated: 1 },
+      duration: { seconds: 10, overtimeSeconds: 0 },
+    });
 
   it('hands out quota-many items, steals on grab, and qualifies holders at the buzzer', () => {
     const host = new FakeHost(hunt(), 10);
@@ -268,13 +288,17 @@ describe('hunt rules (holdItem)', () => {
     expect(thief.hasItem).toBe(true);
     host.run(9);
     expect(host.rules.finished).toBe(true);
-    for (const p of host.players) expect(p.status).toBe(p.hasItem ? PlayerRoundStatus.Qualified : PlayerRoundStatus.Eliminated);
+    for (const p of host.players)
+      expect(p.status).toBe(p.hasItem ? PlayerRoundStatus.Qualified : PlayerRoundStatus.Eliminated);
   });
 });
 
 describe('finals', () => {
   it('crown grab: first to the crown wins, everyone else out', () => {
-    const round = createTestArenaRound({ type: 'final', qualification: { mode: 'crownGrab', ratio: 0, teams: 0, teamsEliminated: 1 } });
+    const round = createTestArenaRound({
+      type: 'final',
+      qualification: { mode: 'crownGrab', ratio: 0, teams: 0, teamsEliminated: 1 },
+    });
     const host = new FakeHost(round, 7);
     host.rules.onTrigger(host.players[5]!, trigger('crown'), true);
     expect(host.rules.finished).toBe(true);
@@ -403,11 +427,14 @@ describe('finals', () => {
     expect(host.qualifiedCount).toBe(1);
     expect(host.status(1)).toBe(PlayerRoundStatus.Qualified);
 
-    const respawning = new FakeHost(createTestArenaRound({
-      type: 'final',
-      qualification: { mode: 'crownGrab', ratio: 0, teams: 0, teamsEliminated: 1 },
-      fallBehavior: 'respawnCheckpoint',
-    }), 3);
+    const respawning = new FakeHost(
+      createTestArenaRound({
+        type: 'final',
+        qualification: { mode: 'crownGrab', ratio: 0, teams: 0, teamsEliminated: 1 },
+        fallBehavior: 'respawnCheckpoint',
+      }),
+      3,
+    );
     expect(respawning.rules.onFellOut(respawning.players[0]!)).toBe('respawn');
     respawning.run(1 / 60);
     expect(respawning.status(0)).toBe(PlayerRoundStatus.Playing);

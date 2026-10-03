@@ -116,7 +116,8 @@ export function punchExtension(u: number, p: PunchWallParams): number {
 export const punchRestZ = (p: PunchWallParams): number => p.wallThickness / 2 - PUNCH_PISTON_DEPTH / 2 + 0.15;
 
 /** X of piston `i` along the wall. */
-export const punchPistonX = (i: number, p: PunchWallParams): number => (i - (p.pistonCount - 1) / 2) * p.pistonSpacing;
+export const punchPistonX = (i: number, p: PunchWallParams): number =>
+  (i - (p.pistonCount - 1) / 2) * p.pistonSpacing;
 
 /**
  * Pure pose: one sample per piston.
@@ -178,8 +179,12 @@ class PunchWallRuntime extends RuntimeBase {
     for (let i = 0; i < p.pistonCount; i++) {
       const body = this.addBody(R.RigidBodyDesc.kinematicPositionBased());
       const c = this.addCollider(
-        R.ColliderDesc.roundCuboid(half - 0.12, half - 0.12, PUNCH_PISTON_DEPTH / 2 - 0.12, 0.12)
-          .setCollisionGroups(ObstacleGroups.kinematic),
+        R.ColliderDesc.roundCuboid(
+          half - 0.12,
+          half - 0.12,
+          PUNCH_PISTON_DEPTH / 2 - 0.12,
+          0.12,
+        ).setCollisionGroups(ObstacleGroups.kinematic),
         body,
       );
       this.pistonByCollider.set(c.handle, i);

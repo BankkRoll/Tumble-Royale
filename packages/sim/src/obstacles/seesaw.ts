@@ -18,7 +18,13 @@ import {
   quatMultiply,
   toWorldPoint,
 } from './helpers-a.ts';
-import type { ObstacleBuildContext, ObstacleInstance, ObstacleModule, ObstacleRuntime, ObstacleStepContext } from './types.ts';
+import type {
+  ObstacleBuildContext,
+  ObstacleInstance,
+  ObstacleModule,
+  ObstacleRuntime,
+  ObstacleStepContext,
+} from './types.ts';
 
 /** Seesaw parameters. Origin = ground point under the fulcrum. */
 export const seesawSchema = z.object({
@@ -77,8 +83,24 @@ export class SeesawRuntime extends RuntimeBase implements SeesawView {
       const top = -0.08;
       const bottom = -p.pivotHeight;
       const pts = new Float32Array([
-        -hw, bottom, -hz, hw, bottom, -hz, 0, top, -hz,
-        -hw, bottom, hz, hw, bottom, hz, 0, top, hz,
+        -hw,
+        bottom,
+        -hz,
+        hw,
+        bottom,
+        -hz,
+        0,
+        top,
+        -hz,
+        -hw,
+        bottom,
+        hz,
+        hw,
+        bottom,
+        hz,
+        0,
+        top,
+        hz,
       ]);
       const hull = R.ColliderDesc.convexHull(pts);
       if (hull) this.addCollider(hull.setCollisionGroups(ObstacleGroups.static), base);
@@ -97,7 +119,12 @@ export class SeesawRuntime extends RuntimeBase implements SeesawView {
       this.plank,
       { kind: 'normal' },
     );
-    const joint = world.createImpulseJoint(R.JointData.revolute(vec3(), vec3(), vec3(0, 0, 1)), base, this.plank, true);
+    const joint = world.createImpulseJoint(
+      R.JointData.revolute(vec3(), vec3(), vec3(0, 0, 1)),
+      base,
+      this.plank,
+      true,
+    );
     configureHinge(R, joint, p.maxTiltDeg * DEG2RAD, p.stiffness, p.damping);
     this.joints.push(joint);
   }

@@ -7,7 +7,15 @@ import { TumblerCrowd } from '../src/character/crowd.ts';
 import { Tumbler } from '../src/character/tumbler.ts';
 import { TOTAL_BONE_COUNT } from '../src/character/rig.ts';
 
-const anim = { state: CharacterState.Idle, stateTime: 0, speed: 0, verticalSpeed: 0, facing: 0, grounded: true, emote: null };
+const anim = {
+  state: CharacterState.Idle,
+  stateTime: 0,
+  speed: 0,
+  verticalSpeed: 0,
+  facing: 0,
+  grounded: true,
+  emote: null,
+};
 
 function sync(c: TumblerCrowd, frame: number): void {
   (c as unknown as { sync(r: { info: { frame: number } }): void }).sync({ info: { frame } });
@@ -37,11 +45,13 @@ describe('TumblerCrowd', () => {
     expect(count(2)).toBeGreaterThan(0);
     // The members' own skinned meshes no longer render.
     let ownVisible = 0;
-    for (const t of ts) t.object.traverse((o) => ((o as Mesh).isMesh && o.visible && o.name !== '' ? ownVisible++ : 0));
+    for (const t of ts)
+      t.object.traverse((o) => ((o as Mesh).isMesh && o.visible && o.name !== '' ? ownVisible++ : 0));
     expect(ownVisible).toBe(0);
 
     const bones = (crowd as unknown as { boneData: Float32Array }).boneData;
-    const row = (r: number): Float32Array => bones.subarray(r * TOTAL_BONE_COUNT * 16, (r + 1) * TOTAL_BONE_COUNT * 16);
+    const row = (r: number): Float32Array =>
+      bones.subarray(r * TOTAL_BONE_COUNT * 16, (r + 1) * TOTAL_BONE_COUNT * 16);
     expect(row(0).some((v) => v !== 0)).toBe(true);
     ts[0]!.object.visible = false;
     sync(crowd, 2);

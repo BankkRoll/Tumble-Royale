@@ -33,22 +33,76 @@ const LEET: Record<string, string> = {
 
 /** Matched as substrings of the separator-free normalised text. */
 const STRONG = [
-  'fuck', 'fuk', 'fck', 'shit', 'bitch', 'cunt', 'dick', 'pussy', 'cock', 'whore', 'slut',
-  'bastard', 'asshole', 'wank', 'twat', 'nigger', 'nigga', 'faggot', 'retard', 'rapist', 'nazi',
-  'hitler', 'porn', 'penis', 'vagina', 'dildo', 'jizz', 'boob', 'tits', 'molest', 'killyourself',
-  'chink', 'kike', 'tranny',
+  'fuck',
+  'fuk',
+  'fck',
+  'shit',
+  'bitch',
+  'cunt',
+  'dick',
+  'pussy',
+  'cock',
+  'whore',
+  'slut',
+  'bastard',
+  'asshole',
+  'wank',
+  'twat',
+  'nigger',
+  'nigga',
+  'faggot',
+  'retard',
+  'rapist',
+  'nazi',
+  'hitler',
+  'porn',
+  'penis',
+  'vagina',
+  'dildo',
+  'jizz',
+  'boob',
+  'tits',
+  'molest',
+  'killyourself',
+  'chink',
+  'kike',
+  'tranny',
 ];
 
 /** Matched only as whole words (after normalisation) to avoid false positives. */
 const WORD_ONLY = [
-  'ass', 'fag', 'hoe', 'sex', 'anal', 'cum', 'rape', 'pedo', 'kys', 'spic', 'jap', 'coon', 'gook',
-  'homo', 'piss', 'crap', 'kkk',
+  'ass',
+  'fag',
+  'hoe',
+  'sex',
+  'anal',
+  'cum',
+  'rape',
+  'pedo',
+  'kys',
+  'spic',
+  'jap',
+  'coon',
+  'gook',
+  'homo',
+  'piss',
+  'crap',
+  'kkk',
 ];
 
 /** Allow-listed words that contain a strong term by accident. */
 const ALLOW = [
-  'scunthorpe', 'cocktail', 'cockpit', 'cockatoo', 'peacock', 'hancock', 'dickens', 'therapist',
-  'shitake', 'swank', 'titsworth',
+  'scunthorpe',
+  'cocktail',
+  'cockpit',
+  'cockatoo',
+  'peacock',
+  'hancock',
+  'dickens',
+  'therapist',
+  'shitake',
+  'swank',
+  'titsworth',
 ];
 
 /**
@@ -94,7 +148,8 @@ export function containsProfanity(text: string): boolean {
   const norm = normalizeForFilter(text);
   if (!norm) return false;
   for (const word of norm.split(' ')) {
-    if (WORD_EXACT.has(word) || WORD_EXACT.has(shrink(word)) || WORD_COLLAPSED.has(collapse(word))) return true;
+    if (WORD_EXACT.has(word) || WORD_EXACT.has(shrink(word)) || WORD_COLLAPSED.has(collapse(word)))
+      return true;
   }
   const joined = norm.replace(/ /g, '');
   const shrunk = stripAllowed(shrink(joined), ALLOW);

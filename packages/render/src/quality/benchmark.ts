@@ -64,7 +64,10 @@ function detectMobile(): boolean {
  * const { tier } = await runBenchmark(renderer);
  * applyQualityToRenderer(renderer, getQualityPreset(tier));
  */
-export async function runBenchmark(renderer: WebGPURenderer, opts: BenchmarkOptions = {}): Promise<BenchmarkResult> {
+export async function runBenchmark(
+  renderer: WebGPURenderer,
+  opts: BenchmarkOptions = {},
+): Promise<BenchmarkResult> {
   const duration = opts.durationMs ?? 3000;
   const batch = opts.batch ?? 4;
   const mobile = opts.mobile ?? detectMobile();
@@ -89,7 +92,11 @@ export async function runBenchmark(renderer: WebGPURenderer, opts: BenchmarkOpti
 
   const rng = new DecorRandom(1234);
   const count = 1600;
-  const inst = new InstancedMesh(new IcosahedronGeometry(0.6, 3), createToonMaterial({ color: '#ffffff' }), count);
+  const inst = new InstancedMesh(
+    new IcosahedronGeometry(0.6, 3),
+    createToonMaterial({ color: '#ffffff' }),
+    count,
+  );
   const m = new Matrix4();
   const p = new Vector3();
   const q = new Quaternion();
@@ -105,7 +112,10 @@ export async function runBenchmark(renderer: WebGPURenderer, opts: BenchmarkOpti
   inst.receiveShadow = true;
   scene.add(inst);
   for (let i = 0; i < 12; i++) {
-    const k = new Mesh(new TorusKnotGeometry(1.6, 0.5, 160, 24), createToonMaterial({ color: '#ff6fb5', rimStrength: 0.6 }));
+    const k = new Mesh(
+      new TorusKnotGeometry(1.6, 0.5, 160, 24),
+      createToonMaterial({ color: '#ff6fb5', rimStrength: 0.6 }),
+    );
     k.position.set(rng.range(-25, 25), 4, rng.range(-25, 25));
     k.castShadow = true;
     scene.add(k);

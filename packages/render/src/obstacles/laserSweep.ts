@@ -5,7 +5,13 @@
  */
 import { CylinderGeometry, Group, Mesh, SphereGeometry } from 'three/webgpu';
 import type { PoseSample } from '@tumble/sim';
-import { LaserSweepSchema, laserBeamYaw, laserLit, laserSweepPose, laserTelegraph } from '@tumble/sim/obstacles';
+import {
+  LaserSweepSchema,
+  laserBeamYaw,
+  laserLit,
+  laserSweepPose,
+  laserTelegraph,
+} from '@tumble/sim/obstacles';
 import type { ObstacleVisualFactory } from './types.ts';
 import {
   Disposer,
@@ -34,13 +40,21 @@ export const laserSweepVisual: ObstacleVisualFactory = (instance, ctx) => {
   applyInstanceTransform(root, instance);
 
   const postH = Math.max(0.4, p.height + Math.max(0, p.bobAmplitude) + 0.4);
-  const post = solid(d.track(new CylinderGeometry(0.42, 0.6, postH, 24)), stripedToon(d, PAL.ink, PAL.violet, 2.2, 'y'));
+  const post = solid(
+    d.track(new CylinderGeometry(0.42, 0.6, postH, 24)),
+    stripedToon(d, PAL.ink, PAL.violet, 2.2, 'y'),
+  );
   post.position.y = postH / 2;
   root.add(post);
 
   const rotor = new Group();
   root.add(rotor);
-  const orbMat = toon(d, { color: PAL.magenta, emissive: PAL.pink, emissiveIntensity: 0.8, rimStrength: 0.8 });
+  const orbMat = toon(d, {
+    color: PAL.magenta,
+    emissive: PAL.pink,
+    emissiveIntensity: 0.8,
+    rimStrength: 0.8,
+  });
   const orb = solid(d.track(new SphereGeometry(0.55, 24, 16)), orbMat);
   addOutline(d, orb, 0.04);
   rotor.add(orb);
@@ -102,7 +116,13 @@ export const laserSweepVisual: ObstacleVisualFactory = (instance, ctx) => {
           const u = ((t + rand01(i, 2) * life) % life) / life;
           const along = p.mode === 'arm' ? rand01(i, 3) * p.length : (rand01(i, 3) * 2 - 1) * p.length;
           const drift = (rand01(i, 4) - 0.5) * 0.5 * u;
-          sparks.set(i, cy * along - sy * drift, (rand01(i, 5) - 0.5) * 0.4 + u * 0.35, sy * along + cy * drift, lit ? Math.sin(u * Math.PI) : 0);
+          sparks.set(
+            i,
+            cy * along - sy * drift,
+            (rand01(i, 5) - 0.5) * 0.4 + u * 0.35,
+            sy * along + cy * drift,
+            lit ? Math.sin(u * Math.PI) : 0,
+          );
         }
       }
       sparks.commit();

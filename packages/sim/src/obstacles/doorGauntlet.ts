@@ -52,7 +52,8 @@ export interface DoorGauntletView extends ObstacleRuntime {
 }
 
 /** Fake doors actually used per row after clamping. */
-export const doorFakeCount = (p: DoorGauntletParams): number => Math.max(1, Math.min(p.doorsPerRow - 1, p.fakePerRow));
+export const doorFakeCount = (p: DoorGauntletParams): number =>
+  Math.max(1, Math.min(p.doorsPerRow - 1, p.fakePerRow));
 
 /**
  * Chooses which doors are fake. Consumes the Rng in a fixed order, so equal
@@ -128,7 +129,11 @@ export class DoorGauntletRuntime extends RuntimeBase implements DoorGauntletView
       }
       if (lintelH > 0.01) {
         this.addCollider(
-          R.ColliderDesc.cuboid((p.doorsPerRow * pitch + p.postWidth) / 2, lintelH / 2, p.doorThickness / 2 + 0.1)
+          R.ColliderDesc.cuboid(
+            (p.doorsPerRow * pitch + p.postWidth) / 2,
+            lintelH / 2,
+            p.doorThickness / 2 + 0.1,
+          )
             .setTranslation(0, p.doorHeight + lintelH / 2, z)
             .setCollisionGroups(ObstacleGroups.static),
           body,
@@ -150,7 +155,8 @@ export class DoorGauntletRuntime extends RuntimeBase implements DoorGauntletView
   update(ctx: ObstacleStepContext): void {
     if (this.p.resetAfter > 0) {
       for (let i = 0; i < this.doorCount; i++) {
-        if (this.doorBroken[i] && ctx.t - this.doorBrokenTime[i]! >= this.p.resetAfter) this.setBroken(i, false, 0);
+        if (this.doorBroken[i] && ctx.t - this.doorBrokenTime[i]! >= this.p.resetAfter)
+          this.setBroken(i, false, 0);
       }
     }
     this.endStep(ctx);
@@ -186,7 +192,12 @@ export class DoorGauntletRuntime extends RuntimeBase implements DoorGauntletView
     this.backAxis.x = this.forward.x * side;
     this.backAxis.y = 0;
     this.backAxis.z = this.forward.z * side;
-    knockByMotion(actor, collider.parent()!, { speed: this.p.solidKnock, lift: 2, stun: false, axis: this.backAxis });
+    knockByMotion(actor, collider.parent()!, {
+      speed: this.p.solidKnock,
+      lift: 2,
+      stun: false,
+      axis: this.backAxis,
+    });
     this.cue(ctx.events, 'doorBonk', local.x, local.y, local.z);
   }
 
@@ -198,7 +209,10 @@ export class DoorGauntletRuntime extends RuntimeBase implements DoorGauntletView
         out[i] = 0;
         continue;
       }
-      const ticks = Math.min(MAX_PACKED_TICKS, Math.max(0, Math.round((this.lastT - this.doorBrokenTime[i]!) / SIM_DT)));
+      const ticks = Math.min(
+        MAX_PACKED_TICKS,
+        Math.max(0, Math.round((this.lastT - this.doorBrokenTime[i]!) / SIM_DT)),
+      );
       out[i] = 1 + 2 * ticks;
     }
     return out;
@@ -224,6 +238,7 @@ export const doorGauntlet: ObstacleModule<DoorGauntletParams> = {
   type: 'doorGauntlet',
   displayName: 'Door Dash',
   schema: doorGauntletSchema,
-  create: (instance, ctx) => new DoorGauntletRuntime(instance, ctx, doorGauntletSchema.parse(instance.params)),
+  create: (instance, ctx) =>
+    new DoorGauntletRuntime(instance, ctx, doorGauntletSchema.parse(instance.params)),
   audioCues: ['doorBreak', 'doorBonk'],
 };

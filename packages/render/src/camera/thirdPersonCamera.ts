@@ -173,7 +173,8 @@ const damp = (halfLife: number, dt: number): number => (halfLife <= 0 ? 1 : 1 - 
 
 /** Smooth pseudo-noise in [-1, 1]; three detuned sines avoid visible periodicity. */
 const wobble = (t: number, seed: number): number =>
-  (Math.sin(t * 17.3 + seed) + Math.sin(t * 23.9 + seed * 2.1) * 0.6 + Math.sin(t * 7.1 + seed * 3.7) * 0.4) / 2;
+  (Math.sin(t * 17.3 + seed) + Math.sin(t * 23.9 + seed * 2.1) * 0.6 + Math.sin(t * 7.1 + seed * 3.7) * 0.4) /
+  2;
 
 /**
  * Third-person spring-arm camera.
@@ -264,7 +265,11 @@ export class ThirdPersonCamera {
     if (this._mode !== 'orbit' && this._mode !== 'spectate') return;
     if (dYaw === 0 && dPitch === 0) return;
     this.yaw -= dYaw * s.sensitivity;
-    this.pitch = MathUtils.clamp(this.pitch + dPitch * s.sensitivity * (s.invertY ? -1 : 1), s.pitchMin, s.pitchMax);
+    this.pitch = MathUtils.clamp(
+      this.pitch + dPitch * s.sensitivity * (s.invertY ? -1 : 1),
+      s.pitchMin,
+      s.pitchMax,
+    );
     this.idleLook = 0;
   }
 
@@ -339,7 +344,11 @@ export class ThirdPersonCamera {
 
     // FOV: base + speed + transient kick
     const speed = Math.hypot(target.velocity.x, target.velocity.z);
-    const speedT = MathUtils.clamp((speed - s.fovSpeedMin) / Math.max(0.01, s.fovSpeedMax - s.fovSpeedMin), 0, 1);
+    const speedT = MathUtils.clamp(
+      (speed - s.fovSpeedMin) / Math.max(0.01, s.fovSpeedMax - s.fovSpeedMin),
+      0,
+      1,
+    );
     const fovTarget = s.fov + s.fovSpeedKick * speedT + this.fovKick;
     this.fovCurrent += (fovTarget - this.fovCurrent) * damp(s.fovHalfLife, dt);
     if (Math.abs(this.camera.fov - this.fovCurrent) > 1e-3) {
@@ -407,7 +416,9 @@ export class ThirdPersonCamera {
     }
 
     // Camera sits behind the pivot: pivot − forward·cos(pitch)·d + up·sin(pitch)·d
-    this.dir.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)).normalize();
+    this.dir
+      .set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch))
+      .normalize();
     let arm = dist;
     if (this.collide) {
       this.probeOrigin.x = this.pivot.x;
@@ -481,7 +492,9 @@ export class ThirdPersonCamera {
     this.right.setFromMatrixColumn(this.camera.matrix, 0);
     this.tmp.setFromMatrixColumn(this.camera.matrix, 1);
     const off = s.shakeMaxOffset * shake;
-    this.camera.position.addScaledVector(this.right, wobble(t, 1.3) * off).addScaledVector(this.tmp, wobble(t, 4.7) * off);
+    this.camera.position
+      .addScaledVector(this.right, wobble(t, 1.3) * off)
+      .addScaledVector(this.tmp, wobble(t, 4.7) * off);
     this.camera.rotateZ(wobble(t, 9.1) * s.shakeMaxAngle * shake);
     this.camera.rotateX(wobble(t, 2.9) * s.shakeMaxAngle * 0.5 * shake);
   }

@@ -54,9 +54,12 @@ describe('cosmetics catalog', () => {
     const clips = new Set(COSMETICS.flatMap((c) => ('clip' in c ? [c.clip] : [])));
     for (const clip of ANIM_CLIP_IDS) expect(clips.has(clip)).toBe(true);
     const meshes = new Set(
-      COSMETICS.flatMap((c) => ('mesh' in c ? [c.mesh] : c.slot === 'face' && c.face.accessory ? [c.face.accessory] : [])),
+      COSMETICS.flatMap((c) =>
+        'mesh' in c ? [c.mesh] : c.slot === 'face' && c.face.accessory ? [c.face.accessory] : [],
+      ),
     );
-    for (const list of Object.values(ACCESSORY_MESH_IDS)) for (const m of list) expect(meshes.has(m)).toBe(true);
+    for (const list of Object.values(ACCESSORY_MESH_IDS))
+      for (const m of list) expect(meshes.has(m)).toBe(true);
   });
 
   it('wearables use meshes from their own slot', () => {
@@ -70,7 +73,11 @@ describe('cosmetics catalog', () => {
   it('stocks the season pass with varied pass-only items across every slot', () => {
     const pass = COSMETICS.filter((c) => c.source === 'pass');
     expect(pass.length).toBeGreaterThanOrEqual(120);
-    for (const slot of CosmeticSlotSchema.options) expect(pass.some((c) => c.slot === slot), slot).toBe(true);
+    for (const slot of CosmeticSlotSchema.options)
+      expect(
+        pass.some((c) => c.slot === slot),
+        slot,
+      ).toBe(true);
     expect(pass.some((c) => c.rarity === 'mythic' && c.slot === 'victory')).toBe(true);
     const names = COSMETICS.map((c) => c.name.toLowerCase());
     expect(new Set(names).size).toBe(names.length);

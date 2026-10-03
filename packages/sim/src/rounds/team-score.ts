@@ -35,7 +35,11 @@ export class TeamScoreRules extends BaseRules {
     this.obstacleApplied = new Array<number>(this.teamCount).fill(0);
     this.inZone = new Array<number>(host.players.length).fill(-1);
     const teams = host.players.map((p) => p.team);
-    assignTeams(teams, host.players.map((p) => p.id), this.teamCount);
+    assignTeams(
+      teams,
+      host.players.map((p) => p.id),
+      this.teamCount,
+    );
     host.players.forEach((p, i) => {
       p.team = teams[i] as number;
     });
@@ -142,7 +146,8 @@ export class TeamScoreRules extends BaseRules {
   /** Teams that still have a player in the round. */
   private activeTeams(): number {
     let mask = 0;
-    for (const p of this.host.players) if (p.status === PlayerRoundStatus.Playing && p.team >= 0) mask |= 1 << p.team;
+    for (const p of this.host.players)
+      if (p.status === PlayerRoundStatus.Playing && p.team >= 0) mask |= 1 << p.team;
     let n = 0;
     for (let t = 0; t < this.teamCount; t++) if (mask & (1 << t)) n++;
     return n;
@@ -155,7 +160,9 @@ export class TeamScoreRules extends BaseRules {
     for (let t = 0; t < this.teamCount; t++) order.push(t);
     const s = this.teamScores;
     const st = this.teamScoreTick;
-    order.sort((a, b) => (s[b] as number) - (s[a] as number) || (st[a] as number) - (st[b] as number) || a - b);
+    order.sort(
+      (a, b) => (s[b] as number) - (s[a] as number) || (st[a] as number) - (st[b] as number) || a - b,
+    );
     return order;
   }
 
@@ -173,7 +180,8 @@ export class TeamScoreRules extends BaseRules {
     for (let r = 0; r < order.length; r++) {
       if (r >= k) continue;
       const team = order[r] as number;
-      for (const p of players) if (p.team === team && p.status === PlayerRoundStatus.Playing) this.host.qualify(p);
+      for (const p of players)
+        if (p.team === team && p.status === PlayerRoundStatus.Playing) this.host.qualify(p);
     }
     for (let r = order.length - 1; r >= k; r--) {
       const team = order[r] as number;
@@ -199,7 +207,9 @@ export function assignTeams(teams: number[], ids: readonly number[], teamCount: 
   const n = Math.max(2, Math.min(4, teamCount || 2));
   const counts = new Array<number>(n).fill(0);
   for (const t of teams) if (t >= 0 && t < n) counts[t]!++;
-  const order = teams.map((_, i) => i).filter((i) => !((teams[i] as number) >= 0 && (teams[i] as number) < n));
+  const order = teams
+    .map((_, i) => i)
+    .filter((i) => !((teams[i] as number) >= 0 && (teams[i] as number) < n));
   order.sort((a, b) => (ids[a] as number) - (ids[b] as number));
   for (const i of order) {
     let best = 0;

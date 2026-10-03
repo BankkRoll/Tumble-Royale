@@ -14,7 +14,12 @@ export type RealtimeEvent =
   | { type: 'friend_accepted'; by: { userId: string; name: string; tag: string } }
   | { type: 'friend_removed'; userId: string }
   | { type: 'party_update'; party: unknown }
-  | { type: 'party_invite'; from: { userId: string; name: string; tag: string }; code: string; partyId: string }
+  | {
+      type: 'party_invite';
+      from: { userId: string; name: string; tag: string };
+      code: string;
+      partyId: string;
+    }
   | { type: 'party_kicked'; partyId: string }
   | { type: 'party_disbanded'; partyId: string }
   | { type: 'notification'; kind: 'info' | 'success' | 'warning' | 'reward'; title: string; body?: string }

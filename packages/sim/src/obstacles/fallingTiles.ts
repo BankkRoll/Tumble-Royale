@@ -161,8 +161,14 @@ export class FallingTilesRuntime extends RuntimeBase implements FallingTilesView
       fallingTileCenter(i, p, c);
       const desc = hull
         ? R.ColliderDesc.convexHull(hull)!.setTranslation(c.x, 0, c.z)
-        : R.ColliderDesc.cuboid(p.tileSize / 2, p.thickness / 2, p.tileSize / 2).setTranslation(c.x, -p.thickness / 2, c.z);
-      const col = this.addCollider(desc.setFriction(0.8).setCollisionGroups(ObstacleGroups.static), body, { kind: 'normal' });
+        : R.ColliderDesc.cuboid(p.tileSize / 2, p.thickness / 2, p.tileSize / 2).setTranslation(
+            c.x,
+            -p.thickness / 2,
+            c.z,
+          );
+      const col = this.addCollider(desc.setFriction(0.8).setCollisionGroups(ObstacleGroups.static), body, {
+        kind: 'normal',
+      });
       this.tileByCollider.set(col.handle, i);
       this.tileColliders.push(col);
     }
@@ -208,7 +214,12 @@ export class FallingTilesRuntime extends RuntimeBase implements FallingTilesView
         ctx.events.push({ type: 'tileFell', obstacle: this.instance.id, tile: i });
         fallingTileCenter(i, p, this.local);
         this.cue(ctx.events, 'fall', this.local.x, 0, this.local.z);
-      } else if (s === TileState.Fallen && p.respawnTime > 0 && age >= p.respawnTime && !this.occupied(i, ctx.actors)) {
+      } else if (
+        s === TileState.Fallen &&
+        p.respawnTime > 0 &&
+        age >= p.respawnTime &&
+        !this.occupied(i, ctx.actors)
+      ) {
         this.setState(i, TileState.Idle, ctx.t);
       }
     }
@@ -286,6 +297,7 @@ export const fallingTiles: ObstacleModule<FallingTilesParams> = {
   type: 'fallingTiles',
   displayName: 'Crumble Tiles',
   schema: fallingTilesSchema,
-  create: (instance, ctx) => new FallingTilesRuntime(instance, ctx, fallingTilesSchema.parse(instance.params)),
+  create: (instance, ctx) =>
+    new FallingTilesRuntime(instance, ctx, fallingTilesSchema.parse(instance.params)),
   audioCues: ['crack', 'fall'],
 };

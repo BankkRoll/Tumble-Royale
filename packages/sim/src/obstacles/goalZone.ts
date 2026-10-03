@@ -124,7 +124,12 @@ export class GoalZoneRuntime extends RuntimeBase implements GoalZoneView {
       const body = c.parent();
       if (!body) continue;
       const p = body.translation();
-      ctx.events.push({ type: 'obstacleCue', obstacle: this.instance.id, cue: 'goal', pos: { x: p.x, y: p.y, z: p.z } });
+      ctx.events.push({
+        type: 'obstacleCue',
+        obstacle: this.instance.id,
+        cue: 'goal',
+        pos: { x: p.x, y: p.y, z: p.z },
+      });
       this.goals++;
       this.lastGoalTime = ctx.t;
       // Below every spawner's respawn line: the spawner hides it and re-drops it at home after its delay.
@@ -135,7 +140,8 @@ export class GoalZoneRuntime extends RuntimeBase implements GoalZoneView {
 
   private updateNest(ctx: ObstacleStepContext): void {
     let bonus = 0;
-    for (const c of this.found) bonus += this.params.bonus[this.build.surfaces.get(c.handle)?.ownerId ?? ''] ?? 0;
+    for (const c of this.found)
+      bonus += this.params.bonus[this.build.surfaces.get(c.handle)?.ownerId ?? ''] ?? 0;
     if (this.found.length > this.inside && ctx.t >= 0) this.cue(ctx.events, 'nestDeposit', 0, 0.6, 0);
     this.inside = this.found.length;
     this.bonusNow = bonus;
@@ -149,7 +155,9 @@ export class GoalZoneRuntime extends RuntimeBase implements GoalZoneView {
   /** `[goals, ticks since last goal (-1 = never), inside, bonus]`. */
   getNetState(): number[] {
     const now = Number.isNaN(this.lastT) ? 0 : this.lastT;
-    const since = Number.isFinite(this.lastGoalTime) ? Math.min(1 << 20, Math.round((now - this.lastGoalTime) / SIM_DT)) : -1;
+    const since = Number.isFinite(this.lastGoalTime)
+      ? Math.min(1 << 20, Math.round((now - this.lastGoalTime) / SIM_DT))
+      : -1;
     return [this.goals, since, this.inside, this.bonusNow];
   }
 

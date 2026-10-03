@@ -182,12 +182,16 @@ export class DecalPool {
 function crackMask(c: Node<'vec2'>, r: Node<'float'>, seed: Node<'float'>, t: Node<'float'>): Node<'float'> {
   const branches = 7;
   const ang = atan(c.y, c.x).div(TAU).add(0.5);
-  const jag = sin(r.mul(23).add(seed.mul(10))).mul(0.045).add(sin(r.mul(57).add(seed.mul(3))).mul(0.02));
+  const jag = sin(r.mul(23).add(seed.mul(10)))
+    .mul(0.045)
+    .add(sin(r.mul(57).add(seed.mul(3))).mul(0.02));
   const a = ang.mul(branches).add(jag).add(seed.mul(7));
   const cell = a.floor();
   const reach = float(0.5).add(hash11(cell.add(seed.mul(13))).mul(0.45));
   const grow = smoothstep(0, 0.35, t);
-  const arc = abs(fract(a).sub(0.5)).mul(r).mul(TAU / branches);
+  const arc = abs(fract(a).sub(0.5))
+    .mul(r)
+    .mul(TAU / branches);
   const width = mix(float(0.03), float(0.008), r);
   const radial = float(1)
     .sub(smoothstep(width, width.add(0.012), arc))
@@ -222,7 +226,9 @@ function buildMaterial(ring: InstanceRing, time: UniformNode<'float', number>): 
   const radius = mix(a1.z, a1.w, grow).mul(alive);
 
   const material = new MeshBasicNodeMaterial();
-  material.positionNode = a0.xyz.add(vec3(positionGeometry.x, 0.03, positionGeometry.y.negate()).mul(vec3(radius, 1, radius)));
+  material.positionNode = a0.xyz.add(
+    vec3(positionGeometry.x, 0.03, positionGeometry.y.negate()).mul(vec3(radius, 1, radius)),
+  );
   material.transparent = true;
   material.depthWrite = false;
   material.polygonOffset = true;
@@ -247,20 +253,33 @@ function buildMaterial(ring: InstanceRing, time: UniformNode<'float', number>): 
   const crackAlpha = crackMask(c, r, seed, vT).mul(float(1).sub(smoothstep(life.sub(0.25), life, vT)));
   // Warning tint pulses under the crack so a falling tile also reads from afar.
   const pulse = sin(vT.mul(16)).mul(0.5).add(0.5);
-  const glowUnder = float(1).sub(smoothstep(0.2, 0.75, r)).mul(pulse).mul(0.28).mul(smoothstep(0, 0.2, vT));
+  const glowUnder = float(1)
+    .sub(smoothstep(0.2, 0.75, r))
+    .mul(pulse)
+    .mul(0.28)
+    .mul(smoothstep(0, 0.2, vT));
 
   const ang = atan(c.y, c.x);
-  const edge = float(0.6).add(sin(ang.mul(7).add(seed.mul(20))).mul(0.09)).add(sin(ang.mul(13).add(seed.mul(7))).mul(0.045));
+  const edge = float(0.6)
+    .add(sin(ang.mul(7).add(seed.mul(20))).mul(0.09))
+    .add(sin(ang.mul(13).add(seed.mul(7))).mul(0.045));
   const blob = float(1).sub(smoothstep(edge.sub(0.03), edge, r));
   const dropletsAt = sin(ang.mul(9).add(seed.mul(40))).greaterThan(0.72);
   const droplets = select(dropletsAt, float(1).sub(smoothstep(0.035, 0.06, abs(r.sub(0.82)))), float(0));
   const splatAlpha = max(blob, droplets).mul(float(1).sub(smoothstep(0.65, 1, vTn)));
-  const gloss = float(1).sub(smoothstep(0.08, 0.16, c.sub(vec2(-0.18, 0.2)).length())).mul(blob).mul(0.45);
+  const gloss = float(1)
+    .sub(smoothstep(0.08, 0.16, c.sub(vec2(-0.18, 0.2)).length()))
+    .mul(blob)
+    .mul(0.45);
 
   const alpha = select(
     kind.lessThan(0.5),
     ringAlpha,
-    select(kind.lessThan(1.5), shockAlpha, select(kind.lessThan(2.5), max(crackAlpha, glowUnder), splatAlpha)),
+    select(
+      kind.lessThan(1.5),
+      shockAlpha,
+      select(kind.lessThan(2.5), max(crackAlpha, glowUnder), splatAlpha),
+    ),
   );
   const crackColour = mix(vec3(1, 0.42, 0.18), tint, step(glowUnder, crackAlpha));
   const splatColour = tint.mul(float(0.85).add(blob.mul(0.15))).add(gloss);

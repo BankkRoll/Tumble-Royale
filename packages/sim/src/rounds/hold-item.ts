@@ -53,7 +53,9 @@ export class HoldItemRules extends BaseRules {
 
   override onForfeit(p: RulesPlayer): void {
     if (p.hasItem) {
-      const heirs = this.host.players.filter((q) => q !== p && !q.hasItem && q.status === PlayerRoundStatus.Playing);
+      const heirs = this.host.players.filter(
+        (q) => q !== p && !q.hasItem && q.status === PlayerRoundStatus.Playing,
+      );
       this.host.setHasItem(p, false);
       if (heirs.length > 0) this.give(this.host.rng.pick(heirs));
     }
@@ -73,7 +75,8 @@ export class HoldItemRules extends BaseRules {
   protected onTimeUp(): void {
     if (this.scoring === 'scoreOverTime') {
       const list = this.playingSorted();
-      for (let i = 0; i < list.length && i < this.qualifyTarget; i++) this.host.qualify(list[i] as RulesPlayer);
+      for (let i = 0; i < list.length && i < this.qualifyTarget; i++)
+        this.host.qualify(list[i] as RulesPlayer);
       this.eliminateRemaining();
       return;
     }

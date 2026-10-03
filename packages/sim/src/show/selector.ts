@@ -52,7 +52,8 @@ export function selectRound(
   const pool: Candidate[] = [];
   for (const entry of playlist.pool) {
     const round = catalog.get(entry.roundId);
-    if (round && entry.weight > 0) pool.push({ round, weight: entry.weight * (playlist.typeWeights[round.type] ?? 1) });
+    if (round && entry.weight > 0)
+      pool.push({ round, weight: entry.weight * (playlist.typeWeights[round.type] ?? 1) });
   }
 
   const isFinalType = (r: RoundDefinition): boolean => r.type === 'final';
@@ -94,5 +95,7 @@ export function selectRound(
 
 function catalogCandidates(catalog: ReadonlyMap<string, RoundDefinition>): Candidate[] {
   // Sorted by id so iteration order of the caller's map can never change the pick.
-  return [...catalog.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).map((round) => ({ round, weight: 1 }));
+  return [...catalog.values()]
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .map((round) => ({ round, weight: 1 }));
 }

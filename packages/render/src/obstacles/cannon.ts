@@ -4,7 +4,14 @@
  * outlined) rolling down their lanes, a muzzle puff on every shot and dust
  * puffs where balls land. The barrel glows hotter while taking aim.
  */
-import { CylinderGeometry, Group, IcosahedronGeometry, InstancedMesh, SphereGeometry, TorusGeometry } from 'three/webgpu';
+import {
+  CylinderGeometry,
+  Group,
+  IcosahedronGeometry,
+  InstancedMesh,
+  SphereGeometry,
+  TorusGeometry,
+} from 'three/webgpu';
 import type { PoseSample } from '@tumble/sim';
 import {
   CannonSchema,
@@ -52,7 +59,10 @@ export const cannonVisual: ObstacleVisualFactory = (instance, ctx) => {
 
   // Carriage
   const baseH = Math.max(0.2, p.pivotHeight - 0.5);
-  const base = solid(d.track(new CylinderGeometry(1.2, 1.45, baseH, 32)), stripedToon(d, PAL.pink, PAL.cream, 2.5, 'y'));
+  const base = solid(
+    d.track(new CylinderGeometry(1.2, 1.45, baseH, 32)),
+    stripedToon(d, PAL.pink, PAL.cream, 2.5, 'y'),
+  );
   base.position.y = baseH / 2;
   root.add(base);
   const cheekMat = toon(d, { color: PAL.violet, rimStrength: 0.5 });
@@ -60,7 +70,10 @@ export const cannonVisual: ObstacleVisualFactory = (instance, ctx) => {
     const cheek = solid(roundedBox(d, 0.18, 0.55, 0.7, 0.12), cheekMat);
     cheek.position.set(side * 0.85, p.pivotHeight - 0.25, 0);
     root.add(cheek);
-    const wheel = solid(d.track(new CylinderGeometry(0.75, 0.75, 0.3, 24)), toon(d, { color: PAL.ink, rimStrength: 0.3 }));
+    const wheel = solid(
+      d.track(new CylinderGeometry(0.75, 0.75, 0.3, 24)),
+      toon(d, { color: PAL.ink, rimStrength: 0.3 }),
+    );
     wheel.rotation.z = Math.PI / 2;
     wheel.position.set(side * 1.25, 0.75, -0.2);
     const hub = solid(d.track(new CylinderGeometry(0.28, 0.28, 0.34, 16)), toon(d, { color: PAL.yellow }));
@@ -71,7 +84,13 @@ export const cannonVisual: ObstacleVisualFactory = (instance, ctx) => {
   // Barrel (posed from sample 0)
   const barrel = new Group();
   root.add(barrel);
-  const barrelMat = toon(d, { color: '#4b3a78', rimColor: '#ffd6f5', rimStrength: 0.7, emissive: PAL.orange, emissiveIntensity: 0 });
+  const barrelMat = toon(d, {
+    color: '#4b3a78',
+    rimColor: '#ffd6f5',
+    rimStrength: 0.7,
+    emissive: PAL.orange,
+    emissiveIntensity: 0,
+  });
   const tubeGeo = d.track(new CylinderGeometry(0.62, 0.78, L, 32));
   tubeGeo.rotateX(Math.PI / 2);
   const tube = solid(tubeGeo, barrelMat);
@@ -94,7 +113,15 @@ export const cannonVisual: ObstacleVisualFactory = (instance, ctx) => {
   // Balls: instanced pool with a shared-matrix outline twin.
   const ballGeo = d.track(new SphereGeometry(p.ballRadius, 28, 18));
   // Balls are one InstancedMesh: 'local' keeps the stripes in the cannon's space, as they always were.
-  const ballMat = stripedToon(d, PAL.orange, PAL.cream, 1.6 / p.ballRadius, 'y', { rimStrength: 0.6 }, 'local');
+  const ballMat = stripedToon(
+    d,
+    PAL.orange,
+    PAL.cream,
+    1.6 / p.ballRadius,
+    'y',
+    { rimStrength: 0.6 },
+    'local',
+  );
   const balls = new InstancedMesh(ballGeo, ballMat, pool);
   balls.castShadow = true;
   balls.frustumCulled = false;
@@ -134,7 +161,13 @@ export const cannonVisual: ObstacleVisualFactory = (instance, ctx) => {
       for (let s = 0; s < pool; s++) {
         cannonSlotShot(ts, p, s, info);
         const left = p.flightTime + p.rollTime - info.age;
-        const scale = !info.active ? 0 : left < 0.3 ? Math.max(0, left / 0.3) : info.age < 0.05 ? info.age / 0.05 : 1;
+        const scale = !info.active
+          ? 0
+          : left < 0.3
+            ? Math.max(0, left / 0.3)
+            : info.age < 0.05
+              ? info.age / 0.05
+              : 1;
         setInstancePose(balls, s, samples[s + 1]!, scale);
         for (let j = 0; j < LAND_PUFFS; j++) {
           const idx = MUZZLE_PUFFS + s * LAND_PUFFS + j;
@@ -195,4 +228,3 @@ export const cannonVisual: ObstacleVisualFactory = (instance, ctx) => {
     },
   };
 };
-

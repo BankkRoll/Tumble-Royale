@@ -23,7 +23,9 @@
   padding: 0;
   border-radius: 50%;
   border: var(--outline) solid var(--ink) !important;
-  background: radial-gradient(circle at 35% 28%, #fff 0 18%, transparent 19%), linear-gradient(180deg, #ffe783 0%, var(--lemon) 55%, #ffb800 100%);
+  background:
+    radial-gradient(circle at 35% 28%, #fff 0 18%, transparent 19%),
+    linear-gradient(180deg, #ffe783 0%, var(--lemon) 55%, #ffb800 100%);
   box-shadow:
     0 0.28em 0 var(--ink),
     0 0.6em 1em rgba(43, 26, 94, 0.25);

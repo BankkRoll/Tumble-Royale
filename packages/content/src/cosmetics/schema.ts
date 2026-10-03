@@ -174,7 +174,9 @@ export const BannerMotifSchema = z.enum(['confetti', 'clouds', 'stripes', 'stars
 const Hex = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'expected #rrggbb');
 
 /** Price; `null` when the item is not sold directly (default, pass, challenge). */
-export const PriceSchema = z.object({ currency: CurrencySchema, amount: z.number().int().positive() }).nullable();
+export const PriceSchema = z
+  .object({ currency: CurrencySchema, amount: z.number().int().positive() })
+  .nullable();
 
 const Base = {
   /** Stable id: `<slot-prefix>.<kebab-name>`. Stored in inventories; never rename. */
@@ -189,7 +191,11 @@ const Base = {
 };
 
 /** Three body colours (primary, secondary, tertiary). */
-export const ColorItemSchema = z.object({ ...Base, slot: z.literal('color'), colors: z.tuple([Hex, Hex, Hex]) });
+export const ColorItemSchema = z.object({
+  ...Base,
+  slot: z.literal('color'),
+  colors: z.tuple([Hex, Hex, Hex]),
+});
 
 /** A procedural body pattern with its parameters. */
 export const PatternItemSchema = z.object({
@@ -230,7 +236,10 @@ const AccessoryBody = {
    * Accessory colours. `"primary" | "secondary" | "tertiary"` follow the
    * wearer's body colours; hex values are fixed.
    */
-  tint: z.array(z.union([Hex, z.enum(['primary', 'secondary', 'tertiary'])])).min(1).max(3),
+  tint: z
+    .array(z.union([Hex, z.enum(['primary', 'secondary', 'tertiary'])]))
+    .min(1)
+    .max(3),
 };
 
 /** Wearable accessory (upper, lower, headwear, back). */
@@ -269,7 +278,11 @@ export const TrailItemSchema = z.object({
 });
 
 /** Footstep SFX pack. */
-export const FootstepsItemSchema = z.object({ ...Base, slot: z.literal('footsteps'), pack: FootstepPackSchema });
+export const FootstepsItemSchema = z.object({
+  ...Base,
+  slot: z.literal('footsteps'),
+  pack: FootstepPackSchema,
+});
 
 /** Any cosmetic item. */
 export const CosmeticItemSchema = z.union([

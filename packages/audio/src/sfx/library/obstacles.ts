@@ -30,7 +30,15 @@ export const OBSTACLE_SFX: SfxDefs = {
     cooldownMs: 30,
     render: (s) => {
       noise(s, { color: 'brown', t: 0, dur: 0.05, gain: 0.45, filter: { type: 'lowpass', freq: 600 } });
-      tone(s, { freq: 110, freqEnd: 640, sweepTime: 0.12, t: 0, dur: 0.5, gain: 0.5, vibrato: { rate: 22, depth: 70, delay: 0.08 } });
+      tone(s, {
+        freq: 110,
+        freqEnd: 640,
+        sweepTime: 0.12,
+        t: 0,
+        dur: 0.5,
+        gain: 0.5,
+        vibrato: { rate: 22, depth: 70, delay: 0.08 },
+      });
       fm(s, { t: 0, freq: 300, ratio: 3.5, index: 3, indexEnd: 0.1, dur: 0.35, gain: 0.1 });
     },
   },
@@ -43,7 +51,15 @@ export const OBSTACLE_SFX: SfxDefs = {
     cooldownMs: 40,
     render: (s) => {
       noise(s, { color: 'brown', t: 0, dur: 0.05, gain: 0.5, filter: { type: 'lowpass', freq: 800 } });
-      tone(s, { freq: 95, freqEnd: 310, sweepTime: 0.08, t: 0, dur: 0.42, gain: 0.5, vibrato: { rate: 18, depth: 40, delay: 0.05 } });
+      tone(s, {
+        freq: 95,
+        freqEnd: 310,
+        sweepTime: 0.08,
+        t: 0,
+        dur: 0.42,
+        gain: 0.5,
+        vibrato: { rate: 18, depth: 40, delay: 0.05 },
+      });
       fm(s, { t: 0, freq: 190, ratio: 1.5, index: 2, indexEnd: 0.1, dur: 0.3, gain: 0.12 });
     },
   },
@@ -70,9 +86,30 @@ export const OBSTACLE_SFX: SfxDefs = {
     cooldownMs: 120,
     refDistance: 5,
     render: (s) => {
-      noise(s, { color: 'pink', t: 0, dur: 0.36, gain: 0.5, attack: 0.25, filter: { type: 'bandpass', freq: 180, freqEnd: 950, q: 3 } });
-      noise(s, { color: 'pink', t: 0.3, dur: 0.4, gain: 0.35, attack: 0.02, filter: { type: 'bandpass', freq: 950, freqEnd: 240, q: 3 } });
-      tone(s, { freq: 55, freqEnd: 80, t: 0, dur: 0.6, gain: 0.22, env: { a: 0.25, d: 0.15, s: 0.4, r: 0.2 } });
+      noise(s, {
+        color: 'pink',
+        t: 0,
+        dur: 0.36,
+        gain: 0.5,
+        attack: 0.25,
+        filter: { type: 'bandpass', freq: 180, freqEnd: 950, q: 3 },
+      });
+      noise(s, {
+        color: 'pink',
+        t: 0.3,
+        dur: 0.4,
+        gain: 0.35,
+        attack: 0.02,
+        filter: { type: 'bandpass', freq: 950, freqEnd: 240, q: 3 },
+      });
+      tone(s, {
+        freq: 55,
+        freqEnd: 80,
+        t: 0,
+        dur: 0.6,
+        gain: 0.22,
+        env: { a: 0.25, d: 0.15, s: 0.4, r: 0.2 },
+      });
     },
   },
   'punch.thwack': {
@@ -102,7 +139,12 @@ export const OBSTACLE_SFX: SfxDefs = {
       bedTone(s, len, 0.18, 'sawtooth', 55, { lowpass: 220 });
       bedTone(s, len, 0.05, 'sine', 110, { am: { rate: 4, depth: 0.3 } });
       for (let i = 0; i * 0.125 < len; i++) {
-        noise(s, { t: i * 0.125, dur: 0.012, gain: i % 2 === 0 ? 0.14 : 0.07, filter: { type: 'highpass', freq: 3000 } });
+        noise(s, {
+          t: i * 0.125,
+          dur: 0.012,
+          gain: i % 2 === 0 ? 0.14 : 0.07,
+          filter: { type: 'highpass', freq: 3000 },
+        });
         if (i % 4 === 0) fm(s, { t: i * 0.125, freq: 1200, ratio: 1.41, index: 1.5, dur: 0.06, gain: 0.025 });
       }
     },
@@ -115,8 +157,15 @@ export const OBSTACLE_SFX: SfxDefs = {
     gain: 0.55,
     cooldownMs: 40,
     render: (s) => {
-      for (let i = 0; i < 6; i++) tone(s, { type: 'triangle', freq: s.rng.range(260, 380), t: i * 0.06, dur: 0.03, gain: 0.2 });
-      noise(s, { t: 0, dur: 0.36, gain: 0.08, env: { a: 0.05, d: 0.1, s: 0.8, r: 0.1 }, filter: { type: 'bandpass', freq: 600, q: 8 } });
+      for (let i = 0; i < 6; i++)
+        tone(s, { type: 'triangle', freq: s.rng.range(260, 380), t: i * 0.06, dur: 0.03, gain: 0.2 });
+      noise(s, {
+        t: 0,
+        dur: 0.36,
+        gain: 0.08,
+        env: { a: 0.05, d: 0.1, s: 0.8, r: 0.1 },
+        filter: { type: 'bandpass', freq: 600, q: 8 },
+      });
     },
   },
   'tile.crack': {
@@ -127,7 +176,13 @@ export const OBSTACLE_SFX: SfxDefs = {
     gain: 0.65,
     cooldownMs: 30,
     render: (s) => {
-      for (let i = 0; i < 5; i++) noise(s, { t: s.rng.range(0, 0.15), dur: s.rng.range(0.015, 0.04), gain: 0.45, filter: { type: 'highpass', freq: 1500 } });
+      for (let i = 0; i < 5; i++)
+        noise(s, {
+          t: s.rng.range(0, 0.15),
+          dur: s.rng.range(0.015, 0.04),
+          gain: 0.45,
+          filter: { type: 'highpass', freq: 1500 },
+        });
       tone(s, { freq: 210, freqEnd: 80, t: 0, dur: 0.08, gain: 0.3 });
     },
   },
@@ -139,8 +194,21 @@ export const OBSTACLE_SFX: SfxDefs = {
     gain: 0.5,
     cooldownMs: 30,
     render: (s) => {
-      tone(s, { freq: 900, freqEnd: 240, t: 0, dur: 0.5, gain: 0.14, env: { a: 0.01, d: 0.1, s: 0.7, r: 0.1 } });
-      noise(s, { color: 'pink', t: 0, dur: 0.4, gain: 0.2, filter: { type: 'bandpass', freq: 1500, freqEnd: 300, q: 2 } });
+      tone(s, {
+        freq: 900,
+        freqEnd: 240,
+        t: 0,
+        dur: 0.5,
+        gain: 0.14,
+        env: { a: 0.01, d: 0.1, s: 0.7, r: 0.1 },
+      });
+      noise(s, {
+        color: 'pink',
+        t: 0,
+        dur: 0.4,
+        gain: 0.2,
+        filter: { type: 'bandpass', freq: 1500, freqEnd: 300, q: 2 },
+      });
       tone(s, { freq: 120, freqEnd: 60, t: 0.48, dur: 0.15, gain: 0.25 });
     },
   },
@@ -155,7 +223,14 @@ export const OBSTACLE_SFX: SfxDefs = {
       bedNoise(s, len, 0.45, 'brown', [{ type: 'lowpass', freq: 320 }], { rate: 1, depth: 0.3 });
       for (let i = 0; i < 11; i++) {
         const f = s.rng.range(250, 650);
-        tone(s, { freq: f, freqEnd: f * 2.3, t: s.rng.range(0, len - 0.08), dur: 0.06, gain: s.rng.range(0.07, 0.16), attack: 0.004 });
+        tone(s, {
+          freq: f,
+          freqEnd: f * 2.3,
+          t: s.rng.range(0, len - 0.08),
+          dur: 0.06,
+          gain: s.rng.range(0.07, 0.16),
+          attack: 0.004,
+        });
       }
     },
   },
@@ -167,7 +242,13 @@ export const OBSTACLE_SFX: SfxDefs = {
     gain: 0.75,
     cooldownMs: 40,
     render: (s) => {
-      noise(s, { t: 0, dur: 0.45, gain: 0.55, attack: 0.005, filter: { type: 'lowpass', freq: 4500, freqEnd: 500 } });
+      noise(s, {
+        t: 0,
+        dur: 0.45,
+        gain: 0.55,
+        attack: 0.005,
+        filter: { type: 'lowpass', freq: 4500, freqEnd: 500 },
+      });
       noise(s, { color: 'brown', t: 0, dur: 0.3, gain: 0.5, filter: { type: 'lowpass', freq: 800 } });
       for (let i = 0; i < 6; i++) {
         const f = s.rng.range(600, 1400);
@@ -199,7 +280,13 @@ export const OBSTACLE_SFX: SfxDefs = {
     render: (s) => {
       const p = punchy(s, 4);
       tone(p, { freq: 85, freqEnd: 32, t: 0, dur: 0.45, gain: 0.8 });
-      noise(p, { color: 'brown', t: 0, dur: 0.5, gain: 0.7, filter: { type: 'lowpass', freq: 900, freqEnd: 150 } });
+      noise(p, {
+        color: 'brown',
+        t: 0,
+        dur: 0.5,
+        gain: 0.7,
+        filter: { type: 'lowpass', freq: 900, freqEnd: 150 },
+      });
       noise(p, { t: 0, dur: 0.08, gain: 0.35, filter: { type: 'bandpass', freq: 900, q: 0.7 } });
       tone(p, { type: 'triangle', freq: 220, freqEnd: 110, t: 0, dur: 0.12, gain: 0.25 });
     },
@@ -262,7 +349,13 @@ export const OBSTACLE_SFX: SfxDefs = {
     cooldownMs: 40,
     render: (s) => {
       fm(s, { t: 0, freq: 200, freqEnd: 2400, ratio: 2.5, index: 5, indexEnd: 0.5, dur: 0.45, gain: 0.22 });
-      noise(s, { t: 0, dur: 0.4, gain: 0.12, attack: 0.1, filter: { type: 'bandpass', freq: 1000, freqEnd: 6000, q: 3 } });
+      noise(s, {
+        t: 0,
+        dur: 0.4,
+        gain: 0.12,
+        attack: 0.1,
+        filter: { type: 'bandpass', freq: 1000, freqEnd: 6000, q: 3 },
+      });
       sparkle(s, 0.1, 0.4, 8, 2000, 5000, 0.05);
     },
   },
@@ -300,7 +393,14 @@ export const OBSTACLE_SFX: SfxDefs = {
     render: (s) => {
       noise(s, { t: 0, dur: 0.4, gain: 0.5, filter: { type: 'lowpass', freq: 5000, freqEnd: 800 } });
       tone(s, { freq: 120, freqEnd: 50, t: 0, dur: 0.2, gain: 0.6 });
-      for (let i = 0; i < 10; i++) tone(s, { type: 'triangle', freq: s.rng.range(300, 900), t: s.rng.range(0.05, 0.5), dur: 0.03, gain: 0.12 });
+      for (let i = 0; i < 10; i++)
+        tone(s, {
+          type: 'triangle',
+          freq: s.rng.range(300, 900),
+          t: s.rng.range(0.05, 0.5),
+          dur: 0.03,
+          gain: 0.12,
+        });
     },
   },
   'boulder.loop': {
@@ -323,8 +423,23 @@ export const OBSTACLE_SFX: SfxDefs = {
     gain: 0.5,
     cooldownMs: 200,
     render: (s) => {
-      noise(s, { t: 0, dur: 0.5, gain: 0.2, env: { a: 0.05, d: 0.1, s: 0.8, r: 0.1 }, filter: { type: 'bandpass', freq: 900, q: 12 } });
-      tone(s, { type: 'sawtooth', freq: 70, freqEnd: 95, t: 0, dur: 0.5, gain: 0.08, env: { a: 0.05, d: 0.1, s: 0.8, r: 0.1 }, vibrato: { rate: 25, depth: 6 } });
+      noise(s, {
+        t: 0,
+        dur: 0.5,
+        gain: 0.2,
+        env: { a: 0.05, d: 0.1, s: 0.8, r: 0.1 },
+        filter: { type: 'bandpass', freq: 900, q: 12 },
+      });
+      tone(s, {
+        type: 'sawtooth',
+        freq: 70,
+        freqEnd: 95,
+        t: 0,
+        dur: 0.5,
+        gain: 0.08,
+        env: { a: 0.05, d: 0.1, s: 0.8, r: 0.1 },
+        vibrato: { rate: 25, depth: 6 },
+      });
     },
   },
   'prop.drop': {

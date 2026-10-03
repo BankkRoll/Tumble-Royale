@@ -53,15 +53,28 @@ const SettingsSchema = z
     spectatorSlots: z.number().int().min(0).max(10),
   })
   .partial();
-const CreateLobbyBody = z.object({ settings: SettingsSchema.default({}), region: z.string().min(2).max(8).optional() });
-const CodeParam = z.object({ code: z.string().trim().toUpperCase().regex(/^[A-Z2-9]{6}$/) });
+const CreateLobbyBody = z.object({
+  settings: SettingsSchema.default({}),
+  region: z.string().min(2).max(8).optional(),
+});
+const CodeParam = z.object({
+  code: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z2-9]{6}$/),
+});
 const JoinLobbyBody = z.object({ spectator: z.boolean().default(false) }).default({ spectator: false });
 const KickBody = z.object({ userId: z.string().min(1).max(64) });
 
 function parse<S extends z.ZodType>(schema: S, data: unknown): z.output<S> {
   const r = schema.safeParse(data);
   if (!r.success) {
-    throw new MMError(400, 'invalid_request', r.error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; '));
+    throw new MMError(
+      400,
+      'invalid_request',
+      r.error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; '),
+    );
   }
   return r.data;
 }
@@ -77,7 +90,10 @@ const bearer = (req: FastifyRequest): string | null => {
  * @param cfg - Configuration.
  * @param opts - Test overrides.
  */
-export async function buildMatchmaker(cfg: MatchmakerConfig, opts: MatchmakerAppOptions = {}): Promise<MatchmakerApp> {
+export async function buildMatchmaker(
+  cfg: MatchmakerConfig,
+  opts: MatchmakerAppOptions = {},
+): Promise<MatchmakerApp> {
   const now = opts.now ?? Date.now;
   const store = opts.store ?? createStore(cfg.redisUrl, now);
   const mm = new Matchmaker(cfg, store, now);
@@ -98,7 +114,8 @@ export async function buildMatchmaker(cfg: MatchmakerConfig, opts: MatchmakerApp
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof MMError) return reply.code(err.status).send({ error: err.code, message: err.message });
     const e = err as { statusCode?: number; message?: string };
-    if (e.statusCode && e.statusCode < 500) return reply.code(e.statusCode).send({ error: 'bad_request', message: e.message });
+    if (e.statusCode && e.statusCode < 500)
+      return reply.code(e.statusCode).send({ error: 'bad_request', message: e.message });
     req.log.error({ err }, 'unhandled error');
     return reply.code(500).send({ error: 'internal', message: 'Something went wrong' });
   });
@@ -112,7 +129,8 @@ export async function buildMatchmaker(cfg: MatchmakerConfig, opts: MatchmakerApp
   const gameServer = (req: FastifyRequest): void => {
     const token = Buffer.from(bearer(req) ?? '');
     const secret = Buffer.from(cfg.gameServerSecret);
-    if (token.length !== secret.length || !timingSafeEqual(token, secret)) throw new MMError(401, 'unauthorized', 'Invalid game server secret');
+    if (token.length !== secret.length || !timingSafeEqual(token, secret))
+      throw new MMError(401, 'unauthorized', 'Invalid game server secret');
   };
 
   app.get('/health', async () => ({
@@ -127,7 +145,12 @@ export async function buildMatchmaker(cfg: MatchmakerConfig, opts: MatchmakerApp
     const p = await player(req);
     const { ticket } = parse(QueueBody, req.body);
     const t = await verifyQueueTicket(cfg.jwtSecret, ticket, new Date(now()));
-    if (!t) throw new MMError(401, 'invalid_ticket', 'Queue ticket invalid or expired; request a new one from the API');
+    if (!t)
+      throw new MMError(
+        401,
+        'invalid_ticket',
+        'Queue ticket invalid or expired; request a new one from the API',
+      );
     const entry = await mm.enqueue(p, t);
     return { entryId: entry.id, status: await mm.status(p.userId) };
   });
@@ -147,7 +170,13 @@ export async function buildMatchmaker(cfg: MatchmakerConfig, opts: MatchmakerApp
   app.post('/servers/register', async (req) => {
     gameServer(req);
     const b = parse(RegisterBody, req.body);
-    return mm.registerServer({ id: b.serverId, url: b.url, region: b.region, capacity: b.capacity, load: b.load });
+    return mm.registerServer({
+      id: b.serverId,
+      url: b.url,
+      region: b.region,
+      capacity: b.capacity,
+      load: b.load,
+    });
   });
 
   app.post('/servers/heartbeat', async (req) => {
@@ -214,7 +243,12 @@ export async function buildMatchmaker(cfg: MatchmakerConfig, opts: MatchmakerApp
     const p = await player(req);
     const { code } = parse(CodeParam, req.params);
     const m = await mm.startLobby(p.userId, code);
-    return { matchId: m.matchId, server: { id: m.serverId, url: m.serverUrl }, players: m.humans, bots: m.botFill };
+    return {
+      matchId: m.matchId,
+      server: { id: m.serverId, url: m.serverUrl },
+      players: m.humans,
+      bots: m.botFill,
+    };
   });
 
   // --- WebSocket status stream -------------------------------------------------
@@ -246,8 +280,15 @@ export async function buildMatchmaker(cfg: MatchmakerConfig, opts: MatchmakerApp
 
   const timers: NodeJS.Timeout[] = [];
   if (cfg.tickMs > 0) {
-    timers.push(setInterval(() => void mm.tick().catch((err) => app.log.error({ err }, 'tick failed')), cfg.tickMs));
-    timers.push(setInterval(() => void mm.broadcastStatus().catch((err) => app.log.error({ err }, 'status failed')), 1000));
+    timers.push(
+      setInterval(() => void mm.tick().catch((err) => app.log.error({ err }, 'tick failed')), cfg.tickMs),
+    );
+    timers.push(
+      setInterval(
+        () => void mm.broadcastStatus().catch((err) => app.log.error({ err }, 'status failed')),
+        1000,
+      ),
+    );
   }
 
   return {

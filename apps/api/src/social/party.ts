@@ -69,11 +69,19 @@ export interface QueueTicketClaims {
   members: { userId: string; name: string; mu: number; sigma: number; ordinal: number }[];
 }
 
-const CodeBody = z.object({ code: z.string().trim().toUpperCase().regex(/^[A-Z2-9]{6}$/) });
+const CodeBody = z.object({
+  code: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z2-9]{6}$/),
+});
 const UserBody = z.object({ userId: z.string().uuid() });
 const ReadyBody = z.object({ ready: z.boolean() });
 const PlaylistBody = z.object({ playlistId: z.string().min(1).max(64) });
-const TicketBody = z.object({ playlistId: z.string().min(1).max(64).optional(), region: z.string().min(2).max(8).optional() }).optional();
+const TicketBody = z
+  .object({ playlistId: z.string().min(1).max(64).optional(), region: z.string().min(2).max(8).optional() })
+  .optional();
 
 function newCode(): string {
   let s = '';
@@ -98,7 +106,10 @@ export class PartyService {
   }
 
   private async broadcast(p: Party): Promise<void> {
-    await this.ctx.notifier.notifyMany(p.members.map((m) => m.userId), { type: 'party_update', party: this.view(p) });
+    await this.ctx.notifier.notifyMany(
+      p.members.map((m) => m.userId),
+      { type: 'party_update', party: this.view(p) },
+    );
   }
 
   /** Client-facing view including the invite link. */
@@ -124,7 +135,13 @@ export class PartyService {
       .from(profiles)
       .where(eq(profiles.userId, userId));
     if (!p) throw notFound('Profile');
-    return { userId, displayName: p.displayName, tag: p.tag, ready: false, joinedAt: this.ctx.now().getTime() };
+    return {
+      userId,
+      displayName: p.displayName,
+      tag: p.tag,
+      ready: false,
+      joinedAt: this.ctx.now().getTime(),
+    };
   }
 
   /** Creates a party led by the caller (returns the existing one if already in a party). */
@@ -234,8 +251,10 @@ export async function issueQueueTicket(
   opts: { playlistId?: string; region?: string },
 ): Promise<{ ticket: string; expiresIn: number; claims: QueueTicketClaims }> {
   const party = await parties.current(auth.userId);
-  if (party && party.leaderId !== auth.userId) throw forbidden('not_leader', 'Only the party leader can start matchmaking');
-  if (party && party.members.some((m) => !m.ready)) throw conflict('not_ready', 'Not every party member is ready');
+  if (party && party.leaderId !== auth.userId)
+    throw forbidden('not_leader', 'Only the party leader can start matchmaking');
+  if (party && party.members.some((m) => !m.ready))
+    throw conflict('not_ready', 'Not every party member is ready');
   const playlistId = opts.playlistId ?? party?.playlistId ?? ctx.catalog.playlists[0]?.id ?? 'main_show';
   const playlist = ctx.catalog.playlists.find((p) => p.id === playlistId);
   if (!playlist) throw badRequest('unknown_playlist', `Unknown playlist ${playlistId}`);
@@ -260,7 +279,13 @@ export async function issueQueueTicket(
   const rated = await ctx.db
     .select({ id: ratings.userId, mu: ratings.mu, sigma: ratings.sigma })
     .from(ratings)
-    .where(and(eq(ratings.seasonId, ctx.catalog.season.id), eq(ratings.queue, RANKED_QUEUE), inArray(ratings.userId, memberIds)));
+    .where(
+      and(
+        eq(ratings.seasonId, ctx.catalog.season.id),
+        eq(ratings.queue, RANKED_QUEUE),
+        inArray(ratings.userId, memberIds),
+      ),
+    );
   const claims: QueueTicketClaims = {
     typ: 'queue',
     pid: party?.id ?? `solo:${auth.userId}`,
@@ -275,11 +300,23 @@ export async function issueQueueTicket(
     members: memberIds.map((id) => {
       const n = names.find((x) => x.id === id);
       const r = rated.find((x) => x.id === id) ?? DEFAULT_RATING;
-      return { userId: id, name: n ? `${n.displayName}#${n.tag}` : 'Tumbler', mu: r.mu, sigma: r.sigma, ordinal: skillOrdinal(r.mu, r.sigma) };
+      return {
+        userId: id,
+        name: n ? `${n.displayName}#${n.tag}` : 'Tumbler',
+        mu: r.mu,
+        sigma: r.sigma,
+        ordinal: skillOrdinal(r.mu, r.sigma),
+      };
     }),
   };
   const nowSec = Math.floor(ctx.now().getTime() / 1000);
-  const ticket = await signServiceToken(ctx.config.jwtSecret, 'queue', { ...claims, sub: auth.userId }, QUEUE_TICKET_TTL_SEC, nowSec);
+  const ticket = await signServiceToken(
+    ctx.config.jwtSecret,
+    'queue',
+    { ...claims, sub: auth.userId },
+    QUEUE_TICKET_TTL_SEC,
+    nowSec,
+  );
   return { ticket, expiresIn: QUEUE_TICKET_TTL_SEC, claims };
 }
 
@@ -311,7 +348,13 @@ export function registerPartyRoutes(app: FastifyInstance, ctx: AppContext): void
     if (!raw) throw notFound('Party');
     const p = JSON.parse(raw) as Party;
     const leader = p.members.find((m) => m.userId === p.leaderId);
-    return { code: p.code, leader: leader ? `${leader.displayName}#${leader.tag}` : null, size: p.members.length, maxSize: MAX_PARTY_SIZE, playlistId: p.playlistId };
+    return {
+      code: p.code,
+      leader: leader ? `${leader.displayName}#${leader.tag}` : null,
+      size: p.members.length,
+      maxSize: MAX_PARTY_SIZE,
+      playlistId: p.playlistId,
+    };
   });
 
   app.post('/party/join', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req) => {
@@ -361,7 +404,8 @@ export function registerPartyRoutes(app: FastifyInstance, ctx: AppContext): void
     const playlist = ctx.catalog.playlists.find((x) => x.id === playlistId);
     if (!playlist) throw badRequest('unknown_playlist', `Unknown playlist ${playlistId}`);
     const p = await parties.mutate(auth.userId, (party) => {
-      if (party.leaderId !== auth.userId) throw forbidden('not_leader', 'Only the party leader picks the playlist');
+      if (party.leaderId !== auth.userId)
+        throw forbidden('not_leader', 'Only the party leader picks the playlist');
       if (playlist.teamSize > 1 && party.members.length > playlist.teamSize) {
         throw conflict('party_too_large', `${playlist.name} allows parties of up to ${playlist.teamSize}`);
       }
@@ -375,7 +419,8 @@ export function registerPartyRoutes(app: FastifyInstance, ctx: AppContext): void
   app.post('/party/invite', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req) => {
     const auth = await requireUser(ctx, req);
     const { userId } = parse(UserBody, req.body);
-    if (!(await friendIds(ctx.db, auth.userId)).includes(userId)) throw forbidden('not_friends', 'You can only invite friends');
+    if (!(await friendIds(ctx.db, auth.userId)).includes(userId))
+      throw forbidden('not_friends', 'You can only invite friends');
     const p = (await parties.current(auth.userId)) ?? (await parties.create(auth.userId));
     const me = p.members.find((m) => m.userId === auth.userId)!;
     await ctx.notifier.notifyUser(userId, {

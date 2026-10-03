@@ -143,7 +143,11 @@ export class RoomManager {
       const placed = this.place(session, hello.resumeToken, hello, t);
       if (!(placed instanceof Room)) {
         const reason = placed ?? (hello.resumeToken ? KickReason.ResumeExpired : KickReason.ServerFull);
-        return this.reject(conn, reason, reason === KickReason.BadTicket ? 'join ticket missing, invalid or expired' : 'no room');
+        return this.reject(
+          conn,
+          reason,
+          reason === KickReason.BadTicket ? 'join ticket missing, invalid or expired' : 'no room',
+        );
       }
       const room = placed;
       conn.onMessage = (d) => room.onMessage(session, d, this.deps.now());
@@ -157,7 +161,12 @@ export class RoomManager {
    *
    * @returns The room, or a kick reason / null (no room) on failure.
    */
-  private place(session: ClientSession, token: string, hello: Parameters<Room['join']>[1], now: number): Room | KickReasonId | null {
+  private place(
+    session: ClientSession,
+    token: string,
+    hello: Parameters<Room['join']>[1],
+    now: number,
+  ): Room | KickReasonId | null {
     if (token) {
       for (const room of this.rooms.values()) {
         if (room.state !== 'closed' && room.hasToken(token) && room.resume(session, token)) return room;
@@ -183,7 +192,9 @@ export class RoomManager {
       if (this.rooms.size >= this.maxRooms) return null;
       const id = `r${this.nextRoomId++}`;
       const createdAtTick = this.scheduler.tick;
-      target = new Room(id, this.deps, this.config, this.metrics, () => this.scheduler.dueTime(createdAtTick));
+      target = new Room(id, this.deps, this.config, this.metrics, () =>
+        this.scheduler.dueTime(createdAtTick),
+      );
       this.rooms.set(id, target);
       this.deps.log?.(`[rooms] created ${id}`);
     }
@@ -191,7 +202,12 @@ export class RoomManager {
     return target;
   }
 
-  private placeTicketed(session: ClientSession, hello: Parameters<Room['join']>[1], claims: JoinTicketClaims, now: number): Room | null {
+  private placeTicketed(
+    session: ClientSession,
+    hello: Parameters<Room['join']>[1],
+    claims: JoinTicketClaims,
+    now: number,
+  ): Room | null {
     const existingId = this.matchRooms.get(claims.mid);
     let room = existingId ? this.rooms.get(existingId) : undefined;
     if (room && room.state === 'closed') room = undefined;
@@ -213,10 +229,19 @@ export class RoomManager {
       bots: claims.custom && !claims.custom.bots ? 0 : Math.max(0, claims.bots),
       custom: claims.custom ?? null,
     };
-    room = new Room(id, this.deps, this.config, this.metrics, () => this.scheduler.dueTime(createdAtTick), match);
+    room = new Room(
+      id,
+      this.deps,
+      this.config,
+      this.metrics,
+      () => this.scheduler.dueTime(createdAtTick),
+      match,
+    );
     this.rooms.set(id, room);
     this.matchRooms.set(claims.mid, id);
-    this.deps.log?.(`[rooms] created ${id} for match ${claims.mid} (${claims.playlistId}, ${match.humans} humans + ${match.bots} bots)`);
+    this.deps.log?.(
+      `[rooms] created ${id} for match ${claims.mid} (${claims.playlistId}, ${match.humans} humans + ${match.bots} bots)`,
+    );
     room.join(session, hello, now, claims);
     return room;
   }
@@ -237,7 +262,9 @@ export class RoomManager {
         room.tick(now);
       } catch (err) {
         // One broken round (bad content, sim bug) must not take every other room in the process down with it.
-        this.deps.log?.(`[rooms] ${id} crashed and was closed: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
+        this.deps.log?.(
+          `[rooms] ${id} crashed and was closed: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
+        );
         this.metrics.roomCrashes++;
         try {
           room.dispose();
@@ -247,7 +274,8 @@ export class RoomManager {
       }
       if (room.state === 'closed') {
         this.rooms.delete(id);
-        if (room.match && this.matchRooms.get(room.match.matchId) === id) this.matchRooms.delete(room.match.matchId);
+        if (room.match && this.matchRooms.get(room.match.matchId) === id)
+          this.matchRooms.delete(room.match.matchId);
         this.deps.log?.(`[rooms] removed ${id}`);
       }
     }

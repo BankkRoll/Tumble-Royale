@@ -67,12 +67,21 @@ export interface WeatherLayer {
   dispose(): void;
 }
 
-function wrappedBoxPosition(time: Node<'float'>, box: Node<'vec3'>, fall: Node<'float'>, wind: Node<'float'>, flutter: number): Node<'vec3'> {
+function wrappedBoxPosition(
+  time: Node<'float'>,
+  box: Node<'vec3'>,
+  fall: Node<'float'>,
+  wind: Node<'float'>,
+  flutter: number,
+): Node<'vec3'> {
   const i = float(instanceIndex);
   const r = vec3(hash(i), hash(i.add(17.3)), hash(i.add(41.7)));
   const speedVar = hash(i.add(91.1)).mul(0.6).add(0.7);
   const drift = vec3(
-    time.mul(wind).mul(speedVar).add(sin(time.mul(1.3).add(r.x.mul(30.0))).mul(flutter)),
+    time
+      .mul(wind)
+      .mul(speedVar)
+      .add(sin(time.mul(1.3).add(r.x.mul(30.0))).mul(flutter)),
     time.mul(fall).mul(speedVar).negate(),
     sin(time.mul(0.9).add(r.z.mul(25.0))).mul(flutter),
   );
@@ -98,14 +107,24 @@ export function createWeather(atmosphere: Atmosphere, opts: WeatherOptions = {})
   // --- precipitation (snow or rain share one pool) ---
   const precip = opts.precipitation ?? 2500;
   const fall = uniform(1.6);
-  const precipMat = new SpriteNodeMaterial({ transparent: true, depthWrite: false, blending: NormalBlending });
+  const precipMat = new SpriteNodeMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: NormalBlending,
+  });
   const precipBox = uniform(new Vector3(70, 40, 70));
   const isRain = uniform(0);
   precipMat.positionNode = wrappedBoxPosition(time, precipBox as unknown as Node<'vec3'>, fall, wind, 0.6);
   precipMat.scaleNode = mix(vec2(0.16, 0.16), vec2(0.035, 0.9), isRain);
-  const pd = length(uv().sub(0.5).mul(vec2(1, mix(float(1), float(0.2), isRain)))).mul(2);
+  const pd = length(
+    uv()
+      .sub(0.5)
+      .mul(vec2(1, mix(float(1), float(0.2), isRain))),
+  ).mul(2);
   precipMat.colorNode = mix(vec3(1, 1, 1), vec3(0.75, 0.82, 1.0), isRain);
-  precipMat.opacityNode = smoothstep(1.0, 0.3, pd).mul(opacity).mul(mix(float(0.95), float(0.45), isRain));
+  precipMat.opacityNode = smoothstep(1.0, 0.3, pd)
+    .mul(opacity)
+    .mul(mix(float(0.95), float(0.45), isRain));
   const precipSprite = new Sprite(precipMat);
   precipSprite.count = precip;
   precipSprite.frustumCulled = false;
@@ -113,9 +132,19 @@ export function createWeather(atmosphere: Atmosphere, opts: WeatherOptions = {})
   object.add(precipSprite);
 
   // --- wind streaks ---
-  const streakMat = new SpriteNodeMaterial({ transparent: true, depthWrite: false, blending: AdditiveBlending });
+  const streakMat = new SpriteNodeMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: AdditiveBlending,
+  });
   const streakBox = uniform(new Vector3(90, 30, 90));
-  streakMat.positionNode = wrappedBoxPosition(time, streakBox as unknown as Node<'vec3'>, float(0), wind.mul(3.0), 0.2);
+  streakMat.positionNode = wrappedBoxPosition(
+    time,
+    streakBox as unknown as Node<'vec3'>,
+    float(0),
+    wind.mul(3.0),
+    0.2,
+  );
   streakMat.scaleNode = vec2(4.5, 0.06);
   streakMat.rotationNode = float(0);
   const su = uv();
@@ -138,8 +167,12 @@ export function createWeather(atmosphere: Atmosphere, opts: WeatherOptions = {})
   const bulbMat = new MeshBasicNodeMaterial();
   const night = uniform(0);
   const aPhase = attribute('aPhase', 'float') as unknown as Node<'float'>;
-  const twinkle = sin(time.mul(2.2).add(aPhase.mul(6.283))).mul(0.35).add(0.65);
-  bulbMat.colorNode = mix(vec3(0.25, 0.25, 0.3), vec3(1, 1, 1), night).mul(twinkle.mul(night).mul(2.2).add(0.4));
+  const twinkle = sin(time.mul(2.2).add(aPhase.mul(6.283)))
+    .mul(0.35)
+    .add(0.65);
+  bulbMat.colorNode = mix(vec3(0.25, 0.25, 0.3), vec3(1, 1, 1), night).mul(
+    twinkle.mul(night).mul(2.2).add(0.4),
+  );
   const fairy = new InstancedMesh(bulbGeo, bulbMat, bulbs);
   fairy.name = 'weather-fairy-lights';
   {
@@ -151,7 +184,8 @@ export function createWeather(atmosphere: Atmosphere, opts: WeatherOptions = {})
     const len = b.max.z - b.min.z + margin * 2;
     const posts = Math.max(2, Math.round(len / 14));
     for (const x of xs) {
-      for (let i = 0; i <= posts; i++) corners.push(new Vector3(x, b.max.y + 5, b.min.z - margin + (i / posts) * len));
+      for (let i = 0; i <= posts; i++)
+        corners.push(new Vector3(x, b.max.y + 5, b.min.z - margin + (i / posts) * len));
     }
     const m = new Matrix4();
     const q = new Quaternion();

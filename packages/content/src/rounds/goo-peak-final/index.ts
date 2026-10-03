@@ -25,7 +25,18 @@
  *   three-lane cannons under the summit, alternating every 4 s from 70 s.
  */
 import { defineRound } from '@tumble/shared';
-import { hash01, overrideAll, polar, r3, round3, tileField, v3, type ObstacleInput, type PieceInput, type WaypointInput } from '../tile-panic/kit.ts';
+import {
+  hash01,
+  overrideAll,
+  polar,
+  r3,
+  round3,
+  tileField,
+  v3,
+  type ObstacleInput,
+  type PieceInput,
+  type WaypointInput,
+} from '../tile-panic/kit.ts';
 
 /** Design circumradius 1.2 m ⇒ flat-to-flat 2.08 m. */
 const HEX = 2.08;
@@ -64,7 +75,10 @@ const ringFields = Array.from({ length: RING_COUNT }, (_, k) =>
     include: (x, z) => {
       const r = Math.hypot(x, z);
       // Ring 7 stops at the summit so no tile sits 1 m under another.
-      return r >= Math.max(ringIn(k) - MASK_SHIFT, k === RING_COUNT - 1 ? SUMMIT_R : 0) && r < ringOut(k) - MASK_SHIFT;
+      return (
+        r >= Math.max(ringIn(k) - MASK_SHIFT, k === RING_COUNT - 1 ? SUMMIT_R : 0) &&
+        r < ringOut(k) - MASK_SHIFT
+      );
     },
   }),
 );
@@ -157,17 +171,42 @@ const geometry: PieceInput[] = [
 for (let i = 0; i < 20; i++) {
   const p = polar(34 + hash01(9401, i) * 22, i * 18 + hash01(2, i) * 9, -3.5);
   const s = 2 + hash01(3, i) * 4;
-  geometry.push({ shape: 'sphere', position: r3(p), size: v3(s, s, s), color: i % 3 === 0 ? '#ffb347' : 'accent', decorative: true });
+  geometry.push({
+    shape: 'sphere',
+    position: r3(p),
+    size: v3(s, s, s),
+    color: i % 3 === 0 ? '#ffb347' : 'accent',
+    decorative: true,
+  });
   if (i % 2 === 0) {
-    geometry.push({ shape: 'cylinder', position: r3(v3(p.x, p.y + s * 0.8, p.z)), size: v3(0.5, 1.2, 0), color: 'danger', decorative: true });
+    geometry.push({
+      shape: 'cylinder',
+      position: r3(v3(p.x, p.y + s * 0.8, p.z)),
+      size: v3(0.5, 1.2, 0),
+      color: 'danger',
+      decorative: true,
+    });
   }
 }
 // Lab-glass spires with goo drips.
 for (let i = 0; i < 6; i++) {
   const p = polar(40, i * 60, 4);
   geometry.push(
-    { shape: 'cylinder', position: r3(p), size: v3(1.4, 18, 0), color: 'secondary', pattern: 'stripes', decorative: true },
-    { shape: 'sphere', position: r3(v3(p.x, 14, p.z)), size: v3(2.4, 2.4, 2.4), color: 'safe', decorative: true },
+    {
+      shape: 'cylinder',
+      position: r3(p),
+      size: v3(1.4, 18, 0),
+      color: 'secondary',
+      pattern: 'stripes',
+      decorative: true,
+    },
+    {
+      shape: 'sphere',
+      position: r3(v3(p.x, 14, p.z)),
+      size: v3(2.4, 2.4, 2.4),
+      color: 'safe',
+      decorative: true,
+    },
   );
 }
 
@@ -188,7 +227,8 @@ const LINE_SPACING = 3;
 function buildNav(): WaypointInput[] {
   const nav: WaypointInput[] = [{ id: 0, position: v3(0, SUMMIT_Y, 0), radius: 2, next: [] }];
   const nodeR = (k: number): number => ringIn(k) + 2.2;
-  const countOf = (k: number): number => Math.max(6, Math.round((2 * Math.PI * nodeR(0) * (nodeR(k) / nodeR(0))) / LINE_SPACING));
+  const countOf = (k: number): number =>
+    Math.max(6, Math.round((2 * Math.PI * nodeR(0) * (nodeR(k) / nodeR(0))) / LINE_SPACING));
   const idOf = (k: number, j: number): number => 1000 * (k + 1) + j;
   for (let k = 0; k < RING_COUNT; k++) {
     const n = countOf(k);

@@ -31,16 +31,29 @@ class BumperPillarVisual extends VisualBase<BumperPillarParams> {
   private readonly poses;
   private readonly bodyMat;
 
-  constructor(instance: ObstacleInstance, private readonly ctx: ObstacleVisualContext) {
+  constructor(
+    instance: ObstacleInstance,
+    private readonly ctx: ObstacleVisualContext,
+  ) {
     super(instance, bumperPillarSchema.parse(instance.params));
     const p = this.params;
     this.poses = poseBufferFor(bumperPillar, p, ctx.speedScale);
 
-    this.bodyMat = createPatternMaterial({ a: C.pink, b: C.white, pattern: 'bands', scale: 1.6, emissive: C.danger, rimStrength: 0.7 });
+    this.bodyMat = createPatternMaterial({
+      a: C.pink,
+      b: C.white,
+      pattern: 'bands',
+      scale: 1.6,
+      emissive: C.danger,
+      rimStrength: 0.7,
+    });
     const column = shadedMesh(new CylinderGeometry(p.radius, p.radius, p.height, 40), this.bodyMat);
     column.position.y = p.height / 2;
     this.body.add(column);
-    const cap = shadedMesh(new SphereGeometry(p.radius * 1.02, 32, 12, 0, Math.PI * 2, 0, Math.PI / 2), createPatternMaterial({ a: C.danger }));
+    const cap = shadedMesh(
+      new SphereGeometry(p.radius * 1.02, 32, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+      createPatternMaterial({ a: C.danger }),
+    );
     cap.position.y = p.height;
     addOutline(cap, 0.03);
     this.body.add(cap);
@@ -67,4 +80,5 @@ class BumperPillarVisual extends VisualBase<BumperPillarParams> {
 }
 
 /** Bumper pillar visual factory. */
-export const bumperPillarVisual: ObstacleVisualFactory = (instance, ctx) => new BumperPillarVisual(instance, ctx);
+export const bumperPillarVisual: ObstacleVisualFactory = (instance, ctx) =>
+  new BumperPillarVisual(instance, ctx);

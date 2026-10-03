@@ -39,7 +39,12 @@ function idle(p: Pose, c: PoseContext): void {
   p.rot(B.chest, breathe * 0.025, 0, 0).stretch(breathe * 0.012);
   const sway = noise1(c.time * 0.35, c.seed) * 0.05;
   p.rot(B.hips, 0, 0, sway).move(sway * 0.15, 0, 0);
-  p.rot(B.head, noise1(c.time * 0.3, c.seed + 3) * 0.08, noise1(c.time * 0.22, c.seed + 2) * 0.3, -sway * 0.6);
+  p.rot(
+    B.head,
+    noise1(c.time * 0.3, c.seed + 3) * 0.08,
+    noise1(c.time * 0.22, c.seed + 2) * 0.3,
+    -sway * 0.6,
+  );
   p.sym(B.upperArmL, B.upperArmR, noise1(c.time * 0.5, c.seed + 4) * 0.1, 0, 0.06 + breathe * 0.03);
   p.sym(B.lowerArmL, B.lowerArmR, -0.15, 0, 0);
   p.sym(B.upperLegL, B.upperLegR, 0, 0, 0.02);
@@ -47,7 +52,9 @@ function idle(p: Pose, c: PoseContext): void {
   const f = (c.time + c.seed * 3.7) % 7.3;
   if (f < 1.2) {
     const k = sin((f / 1.2) * PI);
-    p.rot(B.upperArmL, -0.3 * k, 0, 1.6 * k).rot(B.lowerArmL, 0, 0, 0.6 * k).rot(B.chest, 0, 0, -0.12 * k);
+    p.rot(B.upperArmL, -0.3 * k, 0, 1.6 * k)
+      .rot(B.lowerArmL, 0, 0, 0.6 * k)
+      .rot(B.chest, 0, 0, -0.12 * k);
     p.rot(B.head, -0.1 * k, 0, 0.15 * k);
   }
 }
@@ -58,7 +65,12 @@ function run(p: Pose, c: PoseContext, ampScale = 1): void {
   const s = sin(ph);
   // Legs: forward swing is −X; knees bend on the recovery half.
   p.rot(B.upperLegL, -s * 0.85 * amp, 0, 0.04).rot(B.upperLegR, s * 0.85 * amp, 0, -0.04);
-  p.rot(B.lowerLegL, (0.5 + 0.5 * cos(ph)) * 1.1 * amp, 0, 0).rot(B.lowerLegR, (0.5 - 0.5 * cos(ph)) * 1.1 * amp, 0, 0);
+  p.rot(B.lowerLegL, (0.5 + 0.5 * cos(ph)) * 1.1 * amp, 0, 0).rot(
+    B.lowerLegR,
+    (0.5 - 0.5 * cos(ph)) * 1.1 * amp,
+    0,
+    0,
+  );
   p.rot(B.footL, s * 0.3 * amp, 0, 0).rot(B.footR, -s * 0.3 * amp, 0, 0);
   // Arms counter-swing with bent elbows.
   p.rot(B.upperArmL, s * 1.0 * amp, 0, 0.18).rot(B.upperArmR, -s * 1.0 * amp, 0, -0.18);
@@ -98,7 +110,12 @@ function fall(p: Pose, c: PoseContext): void {
   const w = c.time * 14;
   p.rot(B.upperArmL, -w, 0, 0.45).rot(B.upperArmR, -w + PI, 0, -0.45);
   p.sym(B.lowerArmL, B.lowerArmR, -0.3, 0, 0);
-  p.rot(B.upperLegL, sin(c.time * 12) * 0.6 - 0.2, 0, 0.1).rot(B.upperLegR, cos(c.time * 12) * 0.6 - 0.2, 0, -0.1);
+  p.rot(B.upperLegL, sin(c.time * 12) * 0.6 - 0.2, 0, 0.1).rot(
+    B.upperLegR,
+    cos(c.time * 12) * 0.6 - 0.2,
+    0,
+    -0.1,
+  );
   p.rot(B.lowerLegL, 0.6 + sin(c.time * 12) * 0.4, 0, 0).rot(B.lowerLegR, 0.6 + cos(c.time * 12) * 0.4, 0, 0);
   p.rot(B.spine, -0.14, 0, 0).rot(B.head, -0.12, sin(c.time * 9) * 0.15, 0);
 }
@@ -149,7 +166,12 @@ function grabbed(p: Pose, c: PoseContext): void {
   idle(p, c);
   const t = c.time;
   p.rot(B.hips, 0, sin(t * 18) * 0.22, sin(t * 13) * 0.08);
-  p.rot(B.upperArmL, sin(t * 17) * 0.4, 0, 1.5 + sin(t * 20) * 0.5).rot(B.upperArmR, -sin(t * 17) * 0.4, 0, -1.5 - sin(t * 21) * 0.5);
+  p.rot(B.upperArmL, sin(t * 17) * 0.4, 0, 1.5 + sin(t * 20) * 0.5).rot(
+    B.upperArmR,
+    -sin(t * 17) * 0.4,
+    0,
+    -1.5 - sin(t * 21) * 0.5,
+  );
   p.rot(B.upperLegL, sin(t * 15) * 0.5, 0, 0.1).rot(B.upperLegR, -sin(t * 15) * 0.5, 0, -0.1);
   p.rot(B.head, 0, sin(t * 11) * 0.3, 0);
 }
@@ -166,7 +188,12 @@ function stunned(p: Pose, c: PoseContext): void {
   const t = c.t;
   p.rot(B.hips, t * 8.5, 0, sin(t * 4.3) * 0.5);
   p.move(0, 0.2 + abs(sin(t * 5)) * 0.28, 0);
-  p.rot(B.upperArmL, sin(t * 6) * 0.6, 0, 1.3 + sin(t * 7) * 0.4).rot(B.upperArmR, -sin(t * 6) * 0.6, 0, -1.3 - sin(t * 7.3) * 0.4);
+  p.rot(B.upperArmL, sin(t * 6) * 0.6, 0, 1.3 + sin(t * 7) * 0.4).rot(
+    B.upperArmR,
+    -sin(t * 6) * 0.6,
+    0,
+    -1.3 - sin(t * 7.3) * 0.4,
+  );
   p.sym(B.upperLegL, B.upperLegR, sin(t * 5) * 0.4, 0, 0.45);
   p.rot(B.head, sin(t * 5) * 0.3, sin(t * 3) * 0.2, 0);
 }
@@ -189,7 +216,12 @@ function slime(p: Pose, c: PoseContext): void {
 function ledgeHang(p: Pose, c: PoseContext): void {
   p.sym(B.upperArmL, B.upperArmR, -0.95, 0, 2.2);
   p.sym(B.lowerArmL, B.lowerArmR, -0.2, 0, 0);
-  p.rot(B.upperLegL, sin(c.time * 2.2) * 0.25 - 0.1, 0, 0.06).rot(B.upperLegR, sin(c.time * 2.2 + 1.3) * 0.25 - 0.1, 0, -0.06);
+  p.rot(B.upperLegL, sin(c.time * 2.2) * 0.25 - 0.1, 0, 0.06).rot(
+    B.upperLegR,
+    sin(c.time * 2.2 + 1.3) * 0.25 - 0.1,
+    0,
+    -0.06,
+  );
   p.sym(B.lowerLegL, B.lowerLegR, 0.3, 0, 0);
   p.rot(B.spine, -0.12, 0, 0).rot(B.head, -0.25, 0, 0).stretch(0.05);
 }

@@ -15,24 +15,24 @@ No Docker needed: without `DATABASE_URL` the API runs on embedded
 
 ## Environment
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `PORT` / `HOST` | `7360` / `0.0.0.0` | Listen address |
-| `DATABASE_URL` | – | Postgres; unset → PGlite |
-| `PGLITE_DIR` | `./.data/pglite` | PGlite data directory |
-| `REDIS_URL` | – | Redis for parties, presence, leaderboards, pub/sub; unset → memory |
-| `JWT_SECRET` | dev value | HS256 secret for access tokens and party queue tickets. **Shared with the matchmaker.** Required in production |
-| `INTERNAL_HMAC_SECRET` | dev value | Signs `/internal/match-results` from game servers. Required in production |
-| `ADMIN_TOKEN` | – | Bearer for `/internal/bans`, `/internal/flags`, `/internal/reports`, `/internal/ledger`; unset → disabled |
-| `PUBLIC_WEB_URL` | `http://localhost:5173` | Client origin (invite links, magic links, OAuth return) |
-| `PUBLIC_API_URL` | `http://localhost:7360` | Used to build OAuth redirect URIs |
-| `CORS_ORIGINS` | any (dev) / `PUBLIC_WEB_URL` (prod) | Comma-separated allow-list |
-| `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | – | Discord OAuth; unset → `/auth/discord/*` returns 503 `provider_disabled` |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | – | Google OAuth; same behaviour |
-| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | – | Stripe Checkout for Gem packs; unset → fake provider that completes instantly |
-| `NAME_CHANGE_COOLDOWN_DAYS` | `30` | Display name change cooldown (the first rename is free) |
-| `RATE_LIMIT_MAX` | `300` | Requests/minute per token (or IP) |
-| `LOG_LEVEL` | `info` | pino level |
+| Variable                                      | Default                             | Purpose                                                                                                        |
+| --------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `PORT` / `HOST`                               | `7360` / `0.0.0.0`                  | Listen address                                                                                                 |
+| `DATABASE_URL`                                | –                                   | Postgres; unset → PGlite                                                                                       |
+| `PGLITE_DIR`                                  | `./.data/pglite`                    | PGlite data directory                                                                                          |
+| `REDIS_URL`                                   | –                                   | Redis for parties, presence, leaderboards, pub/sub; unset → memory                                             |
+| `JWT_SECRET`                                  | dev value                           | HS256 secret for access tokens and party queue tickets. **Shared with the matchmaker.** Required in production |
+| `INTERNAL_HMAC_SECRET`                        | dev value                           | Signs `/internal/match-results` from game servers. Required in production                                      |
+| `ADMIN_TOKEN`                                 | –                                   | Bearer for `/internal/bans`, `/internal/flags`, `/internal/reports`, `/internal/ledger`; unset → disabled      |
+| `PUBLIC_WEB_URL`                              | `http://localhost:5173`             | Client origin (invite links, magic links, OAuth return)                                                        |
+| `PUBLIC_API_URL`                              | `http://localhost:7360`             | Used to build OAuth redirect URIs                                                                              |
+| `CORS_ORIGINS`                                | any (dev) / `PUBLIC_WEB_URL` (prod) | Comma-separated allow-list                                                                                     |
+| `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | –                                   | Discord OAuth; unset → `/auth/discord/*` returns 503 `provider_disabled`                                       |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`   | –                                   | Google OAuth; same behaviour                                                                                   |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | –                                   | Stripe Checkout for Gem packs; unset → fake provider that completes instantly                                  |
+| `NAME_CHANGE_COOLDOWN_DAYS`                   | `30`                                | Display name change cooldown (the first rename is free)                                                        |
+| `RATE_LIMIT_MAX`                              | `300`                               | Requests/minute per token (or IP)                                                                              |
+| `LOG_LEVEL`                                   | `info`                              | pino level                                                                                                     |
 
 OAuth redirect URIs to register: `${PUBLIC_API_URL}/auth/discord/callback`,
 `${PUBLIC_API_URL}/auth/google/callback`. Stripe webhook endpoint:
@@ -51,35 +51,35 @@ Errors are always `{ error: <code>, message, details? }`.
 
 ## Endpoints
 
-| Method & path | Auth | Notes |
-|---|---|---|
-| `GET /health` | – | DB/KV/payments driver |
-| `POST /auth/guest` · `/auth/refresh` · `/auth/logout` · `/auth/exchange` | – | see above |
-| `GET /auth/providers` | – | which sign-ins are configured |
-| `GET\|POST /auth/{discord,google}/start`, `GET /auth/{discord,google}/callback` | opt. | PKCE authorization-code flow |
-| `POST /auth/email/start` · `/auth/email/verify` | opt. | magic link (console mailer in dev) |
-| `GET /me` · `PATCH /me { displayName?, region? }` | ✔ | profile card + wallet + linked providers |
-| `GET /profile/:id` | ✔ | public profile card |
-| `GET /inventory` | ✔ | owned cosmetics |
-| `GET /loadouts` · `PUT /loadouts/:i` · `DELETE /loadouts/:i` · `POST /loadouts/:i/activate` | ✔ | 6 slots; ids/slots/ownership validated |
-| `GET /store` | opt. | today's featured + daily offers, `refreshesAt`, `secondsRemaining`, `owned` flags |
-| `POST /purchase { offerId, currency? }` + `Idempotency-Key` | ✔ | 402 `insufficient_funds`, 409 `already_owned` / `idempotency_key_reused` |
-| `GET /wallet` | ✔ | balances + last 50 ledger rows |
-| `GET /gems/packs` · `POST /gems/checkout { packId }` + `Idempotency-Key` | ✔ | Stripe Checkout URL, or instant fake completion |
-| `POST /webhooks/stripe` | Stripe sig | idempotent Gem grant |
-| `GET /pass` · `POST /pass/claim { tier, track }` · `POST /pass/premium` + `Idempotency-Key` | ✔ | season pass |
-| `GET /challenges` · `POST /challenges/reroll { id }` · `POST /challenges/claim { id }` | ✔ | 3 daily / 6 weekly, 1 daily reroll |
-| `GET /leaderboards/:type?scope=global\|regional\|friends&region=&limit=&offset=` | ✔ | `crowns`, `crowns_weekly`, `crowns_all_time`, `ranked`, `win_streak`; includes your own row |
-| `GET /matches/:id` · `GET /me/matches` | ✔ | show detail; last 20 shows with per-round results |
-| `GET /friends` · `POST /friends/request { nameTag }` · `/friends/accept` · `/friends/decline` · `DELETE /friends/:userId` · `POST /friends/block` · `DELETE /friends/block/:userId` · `GET /friends/recent` | ✔ | name#tag, presence |
-| `POST /presence { status }` | ✔ | `online`/`in_menu`/`in_queue`/`in_match` |
-| `GET /party` · `POST /party` · `GET /party/code/:code` · `POST /party/join { code }` · `/party/leave` · `/party/kick` · `/party/promote` · `/party/ready` · `/party/playlist` · `/party/invite` | ✔ | ≤4 members, invite link `${PUBLIC_WEB_URL}/join/<code>` |
-| `POST /party/queue-ticket { playlistId?, region? }` | ✔ | leader only, everyone ready → 120 s JWT for the matchmaker's `POST /queue` |
-| `POST /report` | ✔ | moderation queue (10/hour) |
-| `GET /flags` · `POST /events` | opt. | feature flags (sticky % rollout), analytics |
-| `POST /internal/match-results` | HMAC | game server → API (below) |
-| `GET /internal/reports` · `POST /internal/bans` · `DELETE /internal/bans/:id` · `PUT /internal/flags/:key` · `GET /internal/ledger/:userId` | `ADMIN_TOKEN` | moderation & audits |
-| `GET /ws?token=<accessToken>` | ✔ | realtime: `presence`, `friend_request`, `friend_accepted`, `party_update`, `party_invite`, `party_kicked`, `notification`, `wallet` |
+| Method & path                                                                                                                                                                                               | Auth          | Notes                                                                                                                               |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /health`                                                                                                                                                                                               | –             | DB/KV/payments driver                                                                                                               |
+| `POST /auth/guest` · `/auth/refresh` · `/auth/logout` · `/auth/exchange`                                                                                                                                    | –             | see above                                                                                                                           |
+| `GET /auth/providers`                                                                                                                                                                                       | –             | which sign-ins are configured                                                                                                       |
+| `GET\|POST /auth/{discord,google}/start`, `GET /auth/{discord,google}/callback`                                                                                                                             | opt.          | PKCE authorization-code flow                                                                                                        |
+| `POST /auth/email/start` · `/auth/email/verify`                                                                                                                                                             | opt.          | magic link (console mailer in dev)                                                                                                  |
+| `GET /me` · `PATCH /me { displayName?, region? }`                                                                                                                                                           | ✔             | profile card + wallet + linked providers                                                                                            |
+| `GET /profile/:id`                                                                                                                                                                                          | ✔             | public profile card                                                                                                                 |
+| `GET /inventory`                                                                                                                                                                                            | ✔             | owned cosmetics                                                                                                                     |
+| `GET /loadouts` · `PUT /loadouts/:i` · `DELETE /loadouts/:i` · `POST /loadouts/:i/activate`                                                                                                                 | ✔             | 6 slots; ids/slots/ownership validated                                                                                              |
+| `GET /store`                                                                                                                                                                                                | opt.          | today's featured + daily offers, `refreshesAt`, `secondsRemaining`, `owned` flags                                                   |
+| `POST /purchase { offerId, currency? }` + `Idempotency-Key`                                                                                                                                                 | ✔             | 402 `insufficient_funds`, 409 `already_owned` / `idempotency_key_reused`                                                            |
+| `GET /wallet`                                                                                                                                                                                               | ✔             | balances + last 50 ledger rows                                                                                                      |
+| `GET /gems/packs` · `POST /gems/checkout { packId }` + `Idempotency-Key`                                                                                                                                    | ✔             | Stripe Checkout URL, or instant fake completion                                                                                     |
+| `POST /webhooks/stripe`                                                                                                                                                                                     | Stripe sig    | idempotent Gem grant                                                                                                                |
+| `GET /pass` · `POST /pass/claim { tier, track }` · `POST /pass/premium` + `Idempotency-Key`                                                                                                                 | ✔             | season pass                                                                                                                         |
+| `GET /challenges` · `POST /challenges/reroll { id }` · `POST /challenges/claim { id }`                                                                                                                      | ✔             | 3 daily / 6 weekly, 1 daily reroll                                                                                                  |
+| `GET /leaderboards/:type?scope=global\|regional\|friends&region=&limit=&offset=`                                                                                                                            | ✔             | `crowns`, `crowns_weekly`, `crowns_all_time`, `ranked`, `win_streak`; includes your own row                                         |
+| `GET /matches/:id` · `GET /me/matches`                                                                                                                                                                      | ✔             | show detail; last 20 shows with per-round results                                                                                   |
+| `GET /friends` · `POST /friends/request { nameTag }` · `/friends/accept` · `/friends/decline` · `DELETE /friends/:userId` · `POST /friends/block` · `DELETE /friends/block/:userId` · `GET /friends/recent` | ✔             | name#tag, presence                                                                                                                  |
+| `POST /presence { status }`                                                                                                                                                                                 | ✔             | `online`/`in_menu`/`in_queue`/`in_match`                                                                                            |
+| `GET /party` · `POST /party` · `GET /party/code/:code` · `POST /party/join { code }` · `/party/leave` · `/party/kick` · `/party/promote` · `/party/ready` · `/party/playlist` · `/party/invite`             | ✔             | ≤4 members, invite link `${PUBLIC_WEB_URL}/join/<code>`                                                                             |
+| `POST /party/queue-ticket { playlistId?, region? }`                                                                                                                                                         | ✔             | leader only, everyone ready → 120 s JWT for the matchmaker's `POST /queue`                                                          |
+| `POST /report`                                                                                                                                                                                              | ✔             | moderation queue (10/hour)                                                                                                          |
+| `GET /flags` · `POST /events`                                                                                                                                                                               | opt.          | feature flags (sticky % rollout), analytics                                                                                         |
+| `POST /internal/match-results`                                                                                                                                                                              | HMAC          | game server → API (below)                                                                                                           |
+| `GET /internal/reports` · `POST /internal/bans` · `DELETE /internal/bans/:id` · `PUT /internal/flags/:key` · `GET /internal/ledger/:userId`                                                                 | `ADMIN_TOKEN` | moderation & audits                                                                                                                 |
+| `GET /ws?token=<accessToken>`                                                                                                                                                                               | ✔             | realtime: `presence`, `friend_request`, `friend_accepted`, `party_update`, `party_invite`, `party_kicked`, `notification`, `wallet` |
 
 ## Game server → `POST /internal/match-results`
 

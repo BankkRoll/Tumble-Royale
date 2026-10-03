@@ -14,7 +14,17 @@
  *   `landingHeight`, `flightTime`, `laneCount × laneSpacing` + `pingpong`.
  */
 import { defineRound } from '@tumble/shared';
-import { hash01, overrideAll, polar, r3, roamGrid, tileField, v3, type ObstacleInput, type PieceInput } from './kit.ts';
+import {
+  hash01,
+  overrideAll,
+  polar,
+  r3,
+  roamGrid,
+  tileField,
+  v3,
+  type ObstacleInput,
+  type PieceInput,
+} from './kit.ts';
 
 const TILE = 2.8;
 const GAP = 0.12;
@@ -27,24 +37,54 @@ const EXTENT = 6 * PITCH + 0.01;
 
 const inGrid = (x: number, z: number): boolean => Math.abs(x) <= EXTENT && Math.abs(z) <= EXTENT;
 /** Top: every cell except the 3-cell corner triangles (|i|+|j| > 10). */
-const maskL1 = (x: number, z: number): boolean => inGrid(x, z) && Math.abs(x / PITCH) + Math.abs(z / PITCH) <= 10.01;
+const maskL1 = (x: number, z: number): boolean =>
+  inGrid(x, z) && Math.abs(x / PITCH) + Math.abs(z / PITCH) <= 10.01;
 /** Middle: a disc of radius 17. */
 const maskL2 = (x: number, z: number): boolean => inGrid(x, z) && Math.hypot(x, z) <= 17;
 /** Bottom: a fat plus, |x| ≤ 7.3 or |z| ≤ 7.3, clipped to radius 19. */
 const maskL3 = (x: number, z: number): boolean =>
   inGrid(x, z) && (Math.abs(x) <= 7.3 || Math.abs(z) <= 7.3) && Math.hypot(x, z) <= 19;
 
-const square = { shape: 'square' as const, tileSize: TILE, gap: GAP, thickness: 0.5, warnTime: 0.9, extent: EXTENT };
-const layer1 = tileField({ ...square, idPrefix: 'layer-1', centre: v3(0, L1_Y, 0), include: maskL1, startTime: 0 });
+const square = {
+  shape: 'square' as const,
+  tileSize: TILE,
+  gap: GAP,
+  thickness: 0.5,
+  warnTime: 0.9,
+  extent: EXTENT,
+};
+const layer1 = tileField({
+  ...square,
+  idPrefix: 'layer-1',
+  centre: v3(0, L1_Y, 0),
+  include: maskL1,
+  startTime: 0,
+});
 /**
  * Lower layers "wake" row by row from the outside in: a row ignores players
  * until its time comes (L2 15 → 35 s, L3 40 → 70 s), so the safe middle
  * shrinks and the crowd is herded inward.
  */
-const wake = (from: number, to: number) => ({ z }: { z: number }): number =>
-  Math.round(from + (to - from) * (1 - Math.min(1, Math.abs(z) / EXTENT)));
-const layer2 = tileField({ ...square, idPrefix: 'layer-2', centre: v3(0, L2_Y, 0), include: maskL2, startTime: wake(15, 35), mergeRows: false });
-const layer3 = tileField({ ...square, idPrefix: 'layer-3', centre: v3(0, L3_Y, 0), include: maskL3, startTime: wake(40, 70), mergeRows: false });
+const wake =
+  (from: number, to: number) =>
+  ({ z }: { z: number }): number =>
+    Math.round(from + (to - from) * (1 - Math.min(1, Math.abs(z) / EXTENT)));
+const layer2 = tileField({
+  ...square,
+  idPrefix: 'layer-2',
+  centre: v3(0, L2_Y, 0),
+  include: maskL2,
+  startTime: wake(15, 35),
+  mergeRows: false,
+});
+const layer3 = tileField({
+  ...square,
+  idPrefix: 'layer-3',
+  centre: v3(0, L3_Y, 0),
+  include: maskL3,
+  startTime: wake(40, 70),
+  mergeRows: false,
+});
 /** `hex-mix` variation: the middle layer rebuilt from hexes (design circumradius 1.8 ⇒ 3.12 flat-to-flat). */
 const layer2Hex = tileField({
   shape: 'hex',
@@ -115,16 +155,40 @@ const decor: PieceInput[] = [
 for (const [x, z] of corners) {
   decor.push(
     { shape: 'cylinder', position: v3(x, 14, z), size: v3(1.2, 32, 0), color: 'accent', pattern: 'stripes' },
-    { shape: 'cylinder', position: v3(x, TOWER_TOP - 0.3, z), size: v3(1.7, 0.6, 0), color: 'neutral', bevel: 0.25 },
-    { shape: 'torus', position: v3(x, TOWER_TOP - 0.6, z), size: v3(1.7, 0.25, 0), color: 'primary', decorative: true },
-    { shape: 'cylinder', position: v3(x, -5.8, z), size: v3(2.4, 0.6, 0), color: 'neutral', decorative: true },
+    {
+      shape: 'cylinder',
+      position: v3(x, TOWER_TOP - 0.3, z),
+      size: v3(1.7, 0.6, 0),
+      color: 'neutral',
+      bevel: 0.25,
+    },
+    {
+      shape: 'torus',
+      position: v3(x, TOWER_TOP - 0.6, z),
+      size: v3(1.7, 0.25, 0),
+      color: 'primary',
+      decorative: true,
+    },
+    {
+      shape: 'cylinder',
+      position: v3(x, -5.8, z),
+      size: v3(2.4, 0.6, 0),
+      color: 'neutral',
+      decorative: true,
+    },
   );
 }
 // Marshmallow rocks in the lake.
 for (let i = 0; i < 14; i++) {
   const p = polar(24 + hash01(2201, i) * 14, i * 25.7 + hash01(7, i) * 12, -5.6);
   const s = 1.2 + hash01(11, i) * 2.2;
-  decor.push({ shape: 'sphere', position: r3(p), size: v3(s, s, s), color: i % 3 === 0 ? 'primary' : 'neutral', decorative: true });
+  decor.push({
+    shape: 'sphere',
+    position: r3(p),
+    size: v3(s, s, s),
+    color: i % 3 === 0 ? 'primary' : 'neutral',
+    decorative: true,
+  });
 }
 // Cotton-candy clouds drifting through the gaps between layers.
 for (let i = 0; i < 12; i++) {
@@ -145,9 +209,28 @@ for (let i = 0; i < 12; i++) {
 for (let i = 0; i < 6; i++) {
   const p = polar(46, i * 60 + 30, 4 + (i % 3) * 8);
   decor.push(
-    { shape: 'cylinder', position: r3(p), size: v3(4, 3, 0), color: 'secondary', pattern: 'stripes', decorative: true },
-    { shape: 'sphere', position: r3(v3(p.x, p.y + 2.4, p.z)), size: v3(4.2, 4.2, 4.2), color: i % 2 ? 'primary' : 'accent', decorative: true },
-    { shape: 'sphere', position: r3(v3(p.x, p.y + 6.6, p.z)), size: v3(0.9, 0.9, 0.9), color: 'danger', decorative: true },
+    {
+      shape: 'cylinder',
+      position: r3(p),
+      size: v3(4, 3, 0),
+      color: 'secondary',
+      pattern: 'stripes',
+      decorative: true,
+    },
+    {
+      shape: 'sphere',
+      position: r3(v3(p.x, p.y + 2.4, p.z)),
+      size: v3(4.2, 4.2, 4.2),
+      color: i % 2 ? 'primary' : 'accent',
+      decorative: true,
+    },
+    {
+      shape: 'sphere',
+      position: r3(v3(p.x, p.y + 6.6, p.z)),
+      size: v3(0.9, 0.9, 0.9),
+      color: 'danger',
+      decorative: true,
+    },
   );
 }
 
@@ -157,9 +240,30 @@ for (let i = 0; i < 6; i++) {
 
 const navSpacing = 2 * PITCH;
 const botNav = [
-  ...roamGrid({ idBase: 100, y: L1_Y, spacing: navSpacing, extent: EXTENT, include: (x, z) => maskL1(x, z) && Math.hypot(x, z) < 16, seed: 1 }),
-  ...roamGrid({ idBase: 200, y: L2_Y, spacing: navSpacing, extent: EXTENT, include: (x, z) => maskL2(x, z) && Math.hypot(x, z) < 14, seed: 2 }),
-  ...roamGrid({ idBase: 300, y: L3_Y, spacing: navSpacing, extent: EXTENT, include: (x, z) => maskL3(x, z) && Math.hypot(x, z) < 16, seed: 3 }),
+  ...roamGrid({
+    idBase: 100,
+    y: L1_Y,
+    spacing: navSpacing,
+    extent: EXTENT,
+    include: (x, z) => maskL1(x, z) && Math.hypot(x, z) < 16,
+    seed: 1,
+  }),
+  ...roamGrid({
+    idBase: 200,
+    y: L2_Y,
+    spacing: navSpacing,
+    extent: EXTENT,
+    include: (x, z) => maskL2(x, z) && Math.hypot(x, z) < 14,
+    seed: 2,
+  }),
+  ...roamGrid({
+    idBase: 300,
+    y: L3_Y,
+    spacing: navSpacing,
+    extent: EXTENT,
+    include: (x, z) => maskL3(x, z) && Math.hypot(x, z) < 16,
+    seed: 3,
+  }),
 ];
 
 export default defineRound({

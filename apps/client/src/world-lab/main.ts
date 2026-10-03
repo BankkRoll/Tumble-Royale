@@ -66,7 +66,10 @@ declare global {
 async function boot(): Promise<void> {
   const params = new URLSearchParams(location.search);
   const canvas = document.getElementById('world') as HTMLCanvasElement;
-  const { renderer, backend } = await createRenderer(canvas, (params.get('backend') ?? 'auto') as BackendPreference);
+  const { renderer, backend } = await createRenderer(
+    canvas,
+    (params.get('backend') ?? 'auto') as BackendPreference,
+  );
 
   const state = {
     theme: (params.get('theme') ?? 'candy') as ThemeId,
@@ -118,9 +121,7 @@ async function boot(): Promise<void> {
   const gui = new GUI({ title: 'World Lab' });
   const world = gui.addFolder('World');
   world.add(state, 'theme', [...THEME_IDS]).onChange(rebuildLevel);
-  world
-    .add(state, 'weather', WEATHERS)
-    .onChange((w: Weather) => levelView.env?.setWeather(w));
+  world.add(state, 'weather', WEATHERS).onChange((w: Weather) => levelView.env?.setWeather(w));
 
   const q = gui.addFolder('Quality & post');
   q.add(state, 'tier', [...QUALITY_TIERS]).onChange((t: QualityTier) => {
@@ -159,7 +160,12 @@ async function boot(): Promise<void> {
   for (const kind of VFX_KINDS) {
     actions['vfx:' + kind] = (): void => {
       if (view !== levelView) setView(levelView);
-      levelView.vfx.spawn(kind, vfxTarget(), { direction: { x: 0, y: 0, z: 1 }, team: 1, playerId: 0, duration: 3 });
+      levelView.vfx.spawn(kind, vfxTarget(), {
+        direction: { x: 0, y: 0, z: 1 },
+        team: 1,
+        playerId: 0,
+        duration: 3,
+      });
       if (kind === 'eliminationPoof' || kind === 'bounceRing') post.punch(0.5);
     };
     vfxFolder.add(actions, 'vfx:' + kind).name(kind);
@@ -175,7 +181,11 @@ async function boot(): Promise<void> {
     toastTimer = window.setTimeout(() => toast.classList.remove('show'), 1600);
   };
 
-  const sceneOpts = () => ({ theme: getTheme(state.theme), weather: state.weather, detail: preset.environment });
+  const sceneOpts = () => ({
+    theme: getTheme(state.theme),
+    weather: state.weather,
+    detail: preset.environment,
+  });
   const launch = (make: () => MenuScene, after?: (s: MenuScene) => void): void => {
     const sc = make();
     setView(sc, sc.grade);
@@ -194,7 +204,9 @@ async function boot(): Promise<void> {
       (sc) => (sc as ReturnType<typeof createMainMenuStage>).setPlayable(true),
     );
   actions['scene:preshow'] = () =>
-    launch(() => createPreShowArena({ ...sceneOpts(), players: createMockShow(40).players, localPlayerId: 'p0' }));
+    launch(() =>
+      createPreShowArena({ ...sceneOpts(), players: createMockShow(40).players, localPlayerId: 'p0' }),
+    );
   actions['scene:wall'] = () =>
     launch(
       () => createPlayerWallScene({ ...sceneOpts() }),

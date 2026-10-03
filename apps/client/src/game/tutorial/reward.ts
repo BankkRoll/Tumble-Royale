@@ -32,7 +32,8 @@ export function grantTutorialReward(profile: ProfileStore): Omit<TutorialReadyIn
   // public `answerTutorial()` call below persists it.
   // TODO: replace with `profile.grantTutorialReward()` once ProfileStore exposes one.
   const data = (profile as unknown as { data: RewardableProfile | null }).data;
-  if (!data || typeof data.totalXp !== 'number' || !Array.isArray(data.owned)) return { xp: 0, unlock: null, repeat: true };
+  if (!data || typeof data.totalXp !== 'number' || !Array.isArray(data.owned))
+    return { xp: 0, unlock: null, repeat: true };
   if (data.tutorialCompleted) return { xp: 0, unlock: null, repeat: true };
   data.tutorialCompleted = true;
   data.totalXp += TUTORIAL_XP;

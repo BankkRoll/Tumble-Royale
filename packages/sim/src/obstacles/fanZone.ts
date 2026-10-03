@@ -107,7 +107,8 @@ class FanZoneRuntime extends RuntimeBase {
     if (p.offTime > 0) {
       const period = p.onTime + p.offTime;
       if (crossedPeriodic(this.lastT - p.phase, ctx.t - p.phase, period, 0)) this.cue(ctx.events, 'fanOn');
-      if (crossedPeriodic(this.lastT - p.phase, ctx.t - p.phase, period, p.onTime)) this.cue(ctx.events, 'fanOff');
+      if (crossedPeriodic(this.lastT - p.phase, ctx.t - p.phase, period, p.onTime))
+        this.cue(ctx.events, 'fanOff');
     }
     this.endStep(ctx);
   }

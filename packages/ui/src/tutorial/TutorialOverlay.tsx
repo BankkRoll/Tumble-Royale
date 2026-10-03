@@ -35,7 +35,9 @@ export function KeyChips({ keys }: { keys: readonly string[] }): JSX.Element {
 export function PromptText({ parts }: { parts: readonly PromptPart[] }): JSX.Element {
   return (
     <>
-      {parts.map((p, i) => (typeof p === 'string' ? <span key={i}>{p}</span> : <KeyChips key={i} keys={p.keys} />))}
+      {parts.map((p, i) =>
+        typeof p === 'string' ? <span key={i}>{p}</span> : <KeyChips key={i} keys={p.keys} />,
+      )}
     </>
   );
 }
@@ -142,7 +144,14 @@ const CoachBubble = memo(function CoachBubble(): JSX.Element | null {
     <div ref={ref} className={`tt-bubble is-${coach.mood}`} aria-live="polite">
       <div key={coach.seq} className="tt-bubble-inner">
         <span className="tt-bubble-face" aria-hidden>
-          <TumblerAvatar colors={COACH_COLORS} hat="cap" expression={coach.mood === 'cheer' ? 'cheer' : 'grin'} size="2.4em" blink={false} noShadow />
+          <TumblerAvatar
+            colors={COACH_COLORS}
+            hat="cap"
+            expression={coach.mood === 'cheer' ? 'cheer' : 'grin'}
+            size="2.4em"
+            blink={false}
+            noShadow
+          />
         </span>
         <span className="tt-bubble-name">Coach Boing</span>
         <span className="tt-bubble-text">{coach.text}</span>
@@ -166,12 +175,20 @@ const SuccessBurst = memo(function SuccessBurst(): JSX.Element | null {
 });
 
 const SkipControls = memo(function SkipControls(): JSX.Element | null {
-  const { phase, confirm, keys } = useTutorialUI(useShallow((s) => ({ phase: s.phase, confirm: s.skipConfirm, keys: s.skipKeys })));
+  const { phase, confirm, keys } = useTutorialUI(
+    useShallow((s) => ({ phase: s.phase, confirm: s.skipConfirm, keys: s.skipKeys })),
+  );
   if (phase === 'hidden' || phase === 'ready') return null;
   return (
     <>
       <div className="tt-skip">
-        <Button variant="ghost" size="sm" hint={keys.join(' / ')} cue="ui.back" onClick={() => tutorialUi.setState({ skipConfirm: true })}>
+        <Button
+          variant="ghost"
+          size="sm"
+          hint={keys.join(' / ')}
+          cue="ui.back"
+          onClick={() => tutorialUi.setState({ skipConfirm: true })}
+        >
           Skip tutorial
         </Button>
       </div>
@@ -181,10 +198,19 @@ const SkipControls = memo(function SkipControls(): JSX.Element | null {
             <h2 className="tr-title tr-h3">Skip Practice Island?</h2>
             <p>No worries: your first show is extra gentle, and plenty of the bots are clumsy too!</p>
             <div className="tt-modal-actions">
-              <Button variant="go" cue="ui.confirm" hint={keys[0]} onClick={() => tutorialEvents.emit('skip', {})}>
+              <Button
+                variant="go"
+                cue="ui.confirm"
+                hint={keys[0]}
+                onClick={() => tutorialEvents.emit('skip', {})}
+              >
                 Skip
               </Button>
-              <Button variant="secondary" cue="ui.back" onClick={() => tutorialUi.setState({ skipConfirm: false })}>
+              <Button
+                variant="secondary"
+                cue="ui.back"
+                onClick={() => tutorialUi.setState({ skipConfirm: false })}
+              >
                 Keep practising
               </Button>
             </div>
@@ -222,10 +248,23 @@ const ReadyCard = memo(function ReadyCard(): JSX.Element | null {
           {ready.repeat && <span className="tr-chip">Practice makes perfect!</span>}
         </div>
         <div className="tt-modal-actions">
-          <Button variant="go" size="lg" autoFocusNav cue="ui.confirm" hint={pad ? 'Ⓐ' : 'Enter'} onClick={() => tutorialEvents.emit('readyChoice', { next: 'show' })}>
+          <Button
+            variant="go"
+            size="lg"
+            autoFocusNav
+            cue="ui.confirm"
+            hint={pad ? 'Ⓐ' : 'Enter'}
+            onClick={() => tutorialEvents.emit('readyChoice', { next: 'show' })}
+          >
             Play a show!
           </Button>
-          <Button variant="secondary" size="lg" cue="ui.back" hint={pad ? 'Ⓑ' : 'Esc'} onClick={() => tutorialEvents.emit('readyChoice', { next: 'menu' })}>
+          <Button
+            variant="secondary"
+            size="lg"
+            cue="ui.back"
+            hint={pad ? 'Ⓑ' : 'Esc'}
+            onClick={() => tutorialEvents.emit('readyChoice', { next: 'menu' })}
+          >
             Main menu
           </Button>
         </div>

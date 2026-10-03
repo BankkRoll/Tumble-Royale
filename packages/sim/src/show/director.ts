@@ -106,7 +106,10 @@ export class ShowDirector {
     this.participants = opts.participants.map((p) => ({ ...p }));
     for (const p of this.participants) this.byId.set(p.id, p);
     this.catalog = new Map();
-    const list = opts.rounds instanceof Map ? [...opts.rounds.values()] : (opts.rounds as readonly RoundDefinitionInput[]);
+    const list =
+      opts.rounds instanceof Map
+        ? [...opts.rounds.values()]
+        : (opts.rounds as readonly RoundDefinitionInput[]);
     for (const r of list) {
       const parsed = RoundDefinitionSchema.parse(r);
       this.catalog.set(parsed.id, parsed);
@@ -161,7 +164,10 @@ export class ShowDirector {
     if (this.left.has(playerId) || !this.byId.has(playerId)) return;
     this.left.add(playerId);
     const inRound =
-      this.live !== null && this.roundPhase !== null && this.roundPhase < RoundPhase.Results && this.live.entrants.includes(playerId);
+      this.live !== null &&
+      this.roundPhase !== null &&
+      this.roundPhase < RoundPhase.Results &&
+      this.live.entrants.includes(playerId);
     if (inRound) {
       this.live?.driver.forfeit?.(playerId);
     } else if (this.alive.includes(playerId)) {
@@ -212,7 +218,9 @@ export class ShowDirector {
     const t = this.timings;
     switch (this.roundPhase) {
       case RoundPhase.Loading: {
-        const allLoaded = cur.entrants.every((id) => this.byId.get(id)?.isBot || cur.loaded.has(id) || this.left.has(id));
+        const allLoaded = cur.entrants.every(
+          (id) => this.byId.get(id)?.isBot || cur.loaded.has(id) || this.left.has(id),
+        );
         if (!allLoaded && this.elapsed < this.duration) return false;
         if (this.lateLoadersEliminated) {
           for (const id of cur.entrants) {
@@ -234,7 +242,12 @@ export class ShowDirector {
         const st = cur.driver.getStatus();
         if (st.phase === RoundPhase.Overtime && this.roundPhase !== RoundPhase.Overtime) {
           this.roundPhase = RoundPhase.Overtime;
-          this.emit({ type: 'roundPhase', phase: RoundPhase.Overtime, roundIndex: cur.index, roundId: cur.round.id });
+          this.emit({
+            type: 'roundPhase',
+            phase: RoundPhase.Overtime,
+            roundIndex: cur.index,
+            roundId: cur.round.id,
+          });
         }
         if (!st.finished && this.elapsed < cur.playingLimit) return false;
         this.elapsed = st.finished ? 0 : this.elapsed - cur.playingLimit;
@@ -292,7 +305,12 @@ export class ShowDirector {
     const index = this.roundIndex + 1;
     const p = this.playlist;
     const isFinal = n <= 2 || index >= p.maxRounds - 1 || (n <= p.finalAtOrBelow && index >= p.minRounds - 1);
-    const round = selectRound(p, this.catalog, { roundIndex: index, players: n, isFinal, previousType: this.previousType, used: this.used }, this.rng);
+    const round = selectRound(
+      p,
+      this.catalog,
+      { roundIndex: index, players: n, isFinal, previousType: this.previousType, used: this.used },
+      this.rng,
+    );
     if (!round) {
       this.finishShow();
       return;
@@ -332,7 +350,12 @@ export class ShowDirector {
    * single qualifier). Team rounds decide their own count; other rounds use
    * the playlist curve when it has an entry for this index.
    */
-  private qualifyTargetFor(round: RoundDefinition, n: number, index: number, isFinal: boolean): number | null {
+  private qualifyTargetFor(
+    round: RoundDefinition,
+    n: number,
+    index: number,
+    isFinal: boolean,
+  ): number | null {
     if (isFinal) return 1;
     if (round.qualification.mode === 'teamScore') return null;
     const ratio = this.playlist.qualifyCurve[index];
@@ -395,9 +418,12 @@ export class ShowDirector {
     }
     // The safety cut-off fired before the rules decided: never strand a show with zero survivors.
     if (undecided.length > 0) {
-      if (qualified.length === 0 && !cur.isFinal) for (const id of undecided) qualified.push({ id, place: 1e6 });
-      else if (qualified.length === 0 && cur.isFinal) qualified.push({ id: undecided.shift() as number, place: 1e6 });
-      for (const id of undecided) if (!qualified.some((q) => q.id === id)) eliminated.push({ id, place: 1e6 });
+      if (qualified.length === 0 && !cur.isFinal)
+        for (const id of undecided) qualified.push({ id, place: 1e6 });
+      else if (qualified.length === 0 && cur.isFinal)
+        qualified.push({ id: undecided.shift() as number, place: 1e6 });
+      for (const id of undecided)
+        if (!qualified.some((q) => q.id === id)) eliminated.push({ id, place: 1e6 });
     }
     qualified.sort((a, b) => a.place - b.place || a.id - b.id);
     eliminated.sort((a, b) => a.place - b.place || a.id - b.id);
@@ -441,13 +467,16 @@ export class ShowDirector {
     if (winner === null) return [];
     const party = this.byId.get(winner)?.partyId;
     if (this.playlist.partySize <= 1 || party === undefined) return [winner];
-    const mates = this.participants.filter((p) => p.partyId === party && p.id !== winner && !this.left.has(p.id)).map((p) => p.id);
+    const mates = this.participants
+      .filter((p) => p.partyId === party && p.id !== winner && !this.left.has(p.id))
+      .map((p) => p.id);
     return [winner, ...mates];
   }
 
   private finishShow(): void {
     this.disposeCurrent();
-    if (this.winners.length === 0 && this.alive.length === 1) this.winners = this.crownFor(this.alive[0] as number);
+    if (this.winners.length === 0 && this.alive.length === 1)
+      this.winners = this.crownFor(this.alive[0] as number);
     this.summaryCache = this.buildSummary();
     this.roundPhase = null;
     this.setShowPhase(ShowPhase.Victory, this.timings.victory);
@@ -483,7 +512,12 @@ export class ShowDirector {
       seed: this.seed,
       playlistId: this.playlist.id,
       participants: this.participants.map((p) => ({ ...p })),
-      rounds: this.outcomes.map((o) => ({ ...o, qualified: [...o.qualified], eliminated: [...o.eliminated], carried: [...o.carried] })),
+      rounds: this.outcomes.map((o) => ({
+        ...o,
+        qualified: [...o.qualified],
+        eliminated: [...o.eliminated],
+        carried: [...o.carried],
+      })),
       winner: this.winners[0] ?? null,
       winners: [...this.winners],
       placements,

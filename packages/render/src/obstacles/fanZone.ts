@@ -59,11 +59,16 @@ class FanZoneVisual extends VisualBase<FanZoneParams> {
     const ring = this.add(shadedMesh(new TorusGeometry(R, 0.28, 14, 48), this.ringMat));
     addOutline(ring, 0.03);
     const drum = this.add(
-      shadedMesh(new CylinderGeometry(R * 0.98, R * 0.9, p.housingDepth, 40, 1, true), createPatternMaterial({ a: C.lilac, b: C.grape, pattern: 'bands', scale: 3 })),
+      shadedMesh(
+        new CylinderGeometry(R * 0.98, R * 0.9, p.housingDepth, 40, 1, true),
+        createPatternMaterial({ a: C.lilac, b: C.grape, pattern: 'bands', scale: 3 }),
+      ),
     );
     drum.rotation.x = Math.PI / 2;
     drum.position.z = -p.housingDepth / 2;
-    const back = this.add(shadedMesh(new CylinderGeometry(R * 0.92, R * 0.92, 0.2, 40), createPatternMaterial({ a: C.grape })));
+    const back = this.add(
+      shadedMesh(new CylinderGeometry(R * 0.92, R * 0.92, 0.2, 40), createPatternMaterial({ a: C.grape })),
+    );
     back.rotation.x = Math.PI / 2;
     back.position.z = -p.housingDepth;
     const grilleMat = createPatternMaterial({ a: C.cream });
@@ -89,7 +94,12 @@ class FanZoneVisual extends VisualBase<FanZoneParams> {
     this.blades.position.z = -0.25;
     this.add(this.blades);
 
-    const streakMat = new MeshBasicNodeMaterial({ color: new Color(C.white), transparent: true, opacity: 0.55, depthWrite: false });
+    const streakMat = new MeshBasicNodeMaterial({
+      color: new Color(C.white),
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+    });
     this.streaks = this.add(new InstancedMesh(new BoxGeometry(0.06, 0.06, 1), streakMat, STREAKS));
     this.streaks.frustumCulled = false;
     this.streaks.castShadow = false;

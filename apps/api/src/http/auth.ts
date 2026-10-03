@@ -48,7 +48,13 @@ export async function activeBans(ctx: AppContext, userId: string, fresh = false)
   const rows = await ctx.db
     .select({ scope: bans.scope, reason: bans.reason, expiresAt: bans.expiresAt })
     .from(bans)
-    .where(and(eq(bans.userId, userId), isNull(bans.revokedAt), or(isNull(bans.expiresAt), gt(bans.expiresAt, now))));
+    .where(
+      and(
+        eq(bans.userId, userId),
+        isNull(bans.revokedAt),
+        or(isNull(bans.expiresAt), gt(bans.expiresAt, now)),
+      ),
+    );
   banCache.set(userId, { at: now.getTime(), bans: rows });
   if (banCache.size > 50_000) banCache.clear();
   return rows;
@@ -89,7 +95,13 @@ export async function optionalUser(ctx: AppContext, req: FastifyRequest): Promis
       expiresAt: banned.expiresAt?.toISOString() ?? null,
     });
   }
-  return { userId: claims.sub, sessionId: claims.sid, name: claims.name, region: claims.region, guest: claims.guest };
+  return {
+    userId: claims.sub,
+    sessionId: claims.sid,
+    name: claims.name,
+    region: claims.region,
+    guest: claims.guest,
+  };
 }
 
 /**
@@ -98,7 +110,8 @@ export async function optionalUser(ctx: AppContext, req: FastifyRequest): Promis
  * @throws {ApiError} 503 when no admin token is configured, 401 on mismatch.
  */
 export function requireAdmin(ctx: AppContext, req: FastifyRequest): void {
-  if (!ctx.config.adminToken) throw new ApiError(503, 'admin_disabled', 'Admin routes are disabled (set ADMIN_TOKEN)');
+  if (!ctx.config.adminToken)
+    throw new ApiError(503, 'admin_disabled', 'Admin routes are disabled (set ADMIN_TOKEN)');
   const token = bearer(req);
   if (!token || !safeEqual(token, ctx.config.adminToken)) throw unauthorized('Invalid admin token');
 }

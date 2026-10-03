@@ -5,7 +5,18 @@
 import { CylinderGeometry, Group, InstancedMesh, SphereGeometry } from 'three/webgpu';
 import { StickyGooSchema } from '@tumble/sim/obstacles';
 import type { ObstacleVisualFactory } from './types.ts';
-import { Disposer, PAL, applyInstanceTransform, gooMaterial, parseParams, rand01, roundedBox, setInstanceTRS, solid, toon } from './visual-helpers-b.ts';
+import {
+  Disposer,
+  PAL,
+  applyInstanceTransform,
+  gooMaterial,
+  parseParams,
+  rand01,
+  roundedBox,
+  setInstanceTRS,
+  solid,
+  toon,
+} from './visual-helpers-b.ts';
 
 const BUBBLES = 14;
 

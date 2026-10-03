@@ -238,7 +238,10 @@ export class SnapshotInterpolator {
     const u = (timeMs - ta) / (tb - ta);
     copyNetEntityState(a, out);
     out.extrapolated = false;
-    out.stateTime = a.state === b.state ? a.stateTime + (b.stateTime - a.stateTime) * u : a.stateTime + (timeMs - ta) / 1000;
+    out.stateTime =
+      a.state === b.state
+        ? a.stateTime + (b.stateTime - a.stateTime) * u
+        : a.stateTime + (timeMs - ta) / 1000;
     if (this.snaps[bi] === 1) return true;
 
     const T = (tb - ta) / 1000;

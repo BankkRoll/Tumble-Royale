@@ -25,12 +25,30 @@ export default defineRound({
   geometry: [
     { shape: 'box', position: { x: 0, y: -0.5, z: 0 }, size: { x: 14, y: 1, z: 12 }, color: 'safe' },
     { shape: 'box', position: { x: 0, y: -0.5, z: 14 }, size: { x: 10, y: 1, z: 12 }, color: 'primary' },
-    { shape: 'ramp', position: { x: 0, y: 1, z: 24 }, size: { x: 8, y: 2, z: 8 }, color: 'secondary', pattern: 'chevron' },
+    {
+      shape: 'ramp',
+      position: { x: 0, y: 1, z: 24 },
+      size: { x: 8, y: 2, z: 8 },
+      color: 'secondary',
+      pattern: 'chevron',
+    },
     { shape: 'box', position: { x: 0, y: 1.5, z: 36 }, size: { x: 10, y: 1, z: 16 }, color: 'primary' },
     { shape: 'box', position: { x: 0, y: 1.5, z: 53 }, size: { x: 10, y: 1, z: 14 }, color: 'safe' },
     { shape: 'arch', position: { x: 0, y: 5, z: 58 }, size: { x: 11, y: 5, z: 1 }, color: 'accent' },
-    { shape: 'cylinder', position: { x: -6.5, y: 0, z: 14 }, size: { x: 0.6, y: 3, z: 0 }, decorative: true, color: 'accent' },
-    { shape: 'sphere', position: { x: 7, y: 3, z: 36 }, size: { x: 1, y: 1, z: 1 }, decorative: true, color: 'accent' },
+    {
+      shape: 'cylinder',
+      position: { x: -6.5, y: 0, z: 14 },
+      size: { x: 0.6, y: 3, z: 0 },
+      decorative: true,
+      color: 'accent',
+    },
+    {
+      shape: 'sphere',
+      position: { x: 7, y: 3, z: 36 },
+      size: { x: 1, y: 1, z: 1 },
+      decorative: true,
+      color: 'accent',
+    },
   ],
   obstacles: [
     { id: 'sweep-1', type: 'sweeperArm', position: { x: 0, y: 2, z: 36 }, params: {} },

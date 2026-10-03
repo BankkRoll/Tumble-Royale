@@ -19,7 +19,13 @@ type Waypoint = NonNullable<RoundDefinitionInput['botNav']>[number];
 
 const v = (x: number, y: number, z: number) => ({ x, y, z });
 
-const deco = (shape: Piece['shape'], pos: ReturnType<typeof v>, size: ReturnType<typeof v>, color: string, extra: Partial<Piece> = {}): Piece => ({
+const deco = (
+  shape: Piece['shape'],
+  pos: ReturnType<typeof v>,
+  size: ReturnType<typeof v>,
+  color: string,
+  extra: Partial<Piece> = {},
+): Piece => ({
   shape,
   position: pos,
   size,
@@ -47,8 +53,22 @@ const RINGS: { prefix: string; rIn: number; rOut: number; count: number; dropAt:
 // -----------------------------------------------------------------------------
 
 const geometry: Piece[] = [
-  { shape: 'cylinder', position: v(0, -0.3, 0), size: v(CORE + 0.1, 0.6, CORE + 0.1), color: 'neutral', bevel: 0.2, pattern: 'none' },
-  ...hexCore({ radius: CORE - 1.1, tile: 1.4, gap: 0.12, colors: ['primary', 'secondary'], centreRadius: 1.6, centreColor: 'accent' }),
+  {
+    shape: 'cylinder',
+    position: v(0, -0.3, 0),
+    size: v(CORE + 0.1, 0.6, CORE + 0.1),
+    color: 'neutral',
+    bevel: 0.2,
+    pattern: 'none',
+  },
+  ...hexCore({
+    radius: CORE - 1.1,
+    tile: 1.4,
+    gap: 0.12,
+    colors: ['primary', 'secondary'],
+    centreRadius: 1.6,
+    centreColor: 'accent',
+  }),
   // Neon porthole rim, glowing suds pool and the agitator column under the drum.
   deco('torus', v(0, 6, 0), v(22, 1.0, 22), 'accent'),
   deco('torus', v(0, 6.9, 0), v(22, 0.25, 22), 'safe'),
@@ -66,8 +86,12 @@ for (let k = 0; k < 4; k++) {
   const yaw = (a * 180) / Math.PI + 180;
   geometry.push(
     deco('box', v(x, 4, z), v(4, 8, 3), 'neutral', { rotation: { yaw }, bevel: 0.4 }),
-    deco('cylinder', v(x - Math.sin(a) * 1.6, 5.8, z - Math.cos(a) * 1.6), v(1.2, 0.3, 1.2), 'accent', { rotation: { yaw, pitch: 90 } }),
-    deco('cylinder', v(x - Math.sin(a) * 1.6, 2.4, z - Math.cos(a) * 1.6), v(1.5, 0.3, 1.5), 'accent', { rotation: { yaw, pitch: 90 } }),
+    deco('cylinder', v(x - Math.sin(a) * 1.6, 5.8, z - Math.cos(a) * 1.6), v(1.2, 0.3, 1.2), 'accent', {
+      rotation: { yaw, pitch: 90 },
+    }),
+    deco('cylinder', v(x - Math.sin(a) * 1.6, 2.4, z - Math.cos(a) * 1.6), v(1.5, 0.3, 1.5), 'accent', {
+      rotation: { yaw, pitch: 90 },
+    }),
   );
 }
 const rng = decorRng(9301);
@@ -76,14 +100,28 @@ for (let k = 0; k < 8; k++) {
   const x = Math.sin(a) * 34;
   const z = Math.cos(a) * 34;
   geometry.push(
-    deco('box', v(x, 5, z), v(9, 3, 4), 'secondary', { rotation: { yaw: (a * 180) / Math.PI }, pattern: 'stripes', bevel: 0.4 }),
-    deco('wedge', v(x, 8, z), v(0.15, 6, 0.15), 'accent', { rotation: { yaw: (a * 180) / Math.PI, roll: 20 + rng() * 40 } }),
-    deco('wedge', v(x, 8, z), v(0.15, 6, 0.15), 'accent', { rotation: { yaw: (a * 180) / Math.PI, roll: -20 - rng() * 40 } }),
+    deco('box', v(x, 5, z), v(9, 3, 4), 'secondary', {
+      rotation: { yaw: (a * 180) / Math.PI },
+      pattern: 'stripes',
+      bevel: 0.4,
+    }),
+    deco('wedge', v(x, 8, z), v(0.15, 6, 0.15), 'accent', {
+      rotation: { yaw: (a * 180) / Math.PI, roll: 20 + rng() * 40 },
+    }),
+    deco('wedge', v(x, 8, z), v(0.15, 6, 0.15), 'accent', {
+      rotation: { yaw: (a * 180) / Math.PI, roll: -20 - rng() * 40 },
+    }),
   );
 }
 for (let k = 0; k < 6; k++) {
   const a = (k / 6) * Math.PI * 2 + 0.3;
-  geometry.push(deco('box', v(Math.sin(a) * 40, 9 + rng() * 6, Math.cos(a) * 40), v(2.4, 4, 2), 'primary', { rotation: { yaw: (a * 180) / Math.PI }, pattern: 'dots', bevel: 0.3 }));
+  geometry.push(
+    deco('box', v(Math.sin(a) * 40, 9 + rng() * 6, Math.cos(a) * 40), v(2.4, 4, 2), 'primary', {
+      rotation: { yaw: (a * 180) / Math.PI },
+      pattern: 'dots',
+      bevel: 0.3,
+    }),
+  );
 }
 
 // -----------------------------------------------------------------------------
@@ -95,13 +133,28 @@ const rings = RINGS.map((r) => ringPanels({ ...r, offset: r.rIn * 0.01 }));
 const obstacles: Obstacle[] = [
   ...rings.flat(),
   // Hub shove stays under the 9 m/s stun threshold: a stunned Tumbler slides clean off the drum.
-  { id: 'hub', type: 'bumperPillar', position: v(0, 0, 0), params: { radius: 1.4, height: 3.0, bounceSpeed: 8, bounceLift: 3 } },
+  {
+    id: 'hub',
+    type: 'bumperPillar',
+    position: v(0, 0, 0),
+    params: { radius: 1.4, height: 3.0, bounceSpeed: 8, bounceLift: 3 },
+  },
   {
     id: 'bar-low',
     type: 'jumpRopeBeam',
     position: v(0, 0, 0),
     // Design schedule 1.0 → 2.2 rad/s (steps every 30 s, 2.2 at 165 s).
-    params: bar({ reach: 15, kind: 'low', mode: 'arm', direction: 1, startSpeed: 1.0, endSpeed: 2.2, rampUntil: 165, hubRadius: 1.3, knockImpulse: 8 }),
+    params: bar({
+      reach: 15,
+      kind: 'low',
+      mode: 'arm',
+      direction: 1,
+      startSpeed: 1.0,
+      endSpeed: 2.2,
+      rampUntil: 165,
+      hubRadius: 1.3,
+      knockImpulse: 8,
+    }),
   },
   {
     id: 'bar-high',
@@ -109,7 +162,17 @@ const obstacles: Obstacle[] = [
     position: v(0, 0, 0),
     // Design phase 0.5: half a turn from the low bar.
     rotation: { yaw: 180 },
-    params: bar({ reach: 15, kind: 'high', mode: 'arm', direction: 1, startSpeed: 0.8, endSpeed: 1.8, rampUntil: 150, hubRadius: 1.3, knockImpulse: 8 }),
+    params: bar({
+      reach: 15,
+      kind: 'high',
+      mode: 'arm',
+      direction: 1,
+      startSpeed: 0.8,
+      endSpeed: 1.8,
+      rampUntil: 150,
+      hubRadius: 1.3,
+      knockImpulse: 8,
+    }),
   },
   {
     id: 'bar-low-2',
@@ -118,7 +181,17 @@ const obstacles: Obstacle[] = [
     // Design: joins at 40 s. A resting low beam is unsafe (Tumblers pinned against a still kinematic
     // bar get squeezed out at absurd speed), so it sweeps from the start: 0.5 → 1.2 rad/s by 120 s.
     rotation: { yaw: -90 },
-    params: bar({ reach: 15, kind: 'low', mode: 'arm', direction: 1, startSpeed: 0.5, endSpeed: 1.2, rampUntil: 120, hubRadius: 1.3, knockImpulse: 8 }),
+    params: bar({
+      reach: 15,
+      kind: 'low',
+      mode: 'arm',
+      direction: 1,
+      startSpeed: 0.5,
+      endSpeed: 1.2,
+      rampUntil: 120,
+      hubRadius: 1.3,
+      knockImpulse: 8,
+    }),
   },
 ];
 
@@ -130,7 +203,13 @@ const obstacles: Obstacle[] = [
 const RING_N = 8;
 const botNav: Waypoint[] = Array.from({ length: RING_N }, (_, k) => {
   const a = (k / RING_N) * Math.PI * 2;
-  return { id: k, position: v(Math.sin(a) * 3.5, 0, Math.cos(a) * 3.5), radius: 1.2, next: [(k + 1) % RING_N], action: 'run' as const };
+  return {
+    id: k,
+    position: v(Math.sin(a) * 3.5, 0, Math.cos(a) * 3.5),
+    radius: 1.2,
+    next: [(k + 1) % RING_N],
+    action: 'run' as const,
+  };
 });
 
 export default defineRound({
@@ -139,7 +218,11 @@ export default defineRound({
   type: 'final',
   theme: 'neon',
   objective: 'Jump, dive, survive. Last one spinning wins!',
-  tips: ['Three bars now: low, high… and another low.', 'The drum shrinks every 30 seconds.', 'Push rivals into the bars — it’s a final!'],
+  tips: [
+    'Three bars now: low, high… and another low.',
+    'The drum shrinks every 30 seconds.',
+    'Push rivals into the bars — it’s a final!',
+  ],
   players: { min: 1, max: 15, ideal: 8 },
   qualification: { mode: 'lastStanding', ratio: 0.65 },
   duration: { seconds: 180, overtimeSeconds: 0 },
@@ -161,7 +244,12 @@ export default defineRound({
   botNav,
   variations: [
     { id: 'club-night', weight: 4, weather: 'night', description: 'As authored.' },
-    { id: 'strobe', weight: 1, weather: 'night', description: 'Bars flash with the beat (visual only; reduced-flash setting disables).' },
+    {
+      id: 'strobe',
+      weight: 1,
+      weather: 'night',
+      description: 'Bars flash with the beat (visual only; reduced-flash setting disables).',
+    },
     {
       id: 'heavy-final',
       weight: 2,
@@ -172,7 +260,17 @@ export default defineRound({
           id: 'bar-high-2',
           type: 'jumpRopeBeam',
           position: v(0, 0, 0),
-          params: bar({ reach: 15, kind: 'high', mode: 'arm', direction: 1, startSpeed: 0.3, endSpeed: 1.8, rampUntil: 150, hubRadius: 1.3, knockImpulse: 8 }),
+          params: bar({
+            reach: 15,
+            kind: 'high',
+            mode: 'arm',
+            direction: 1,
+            startSpeed: 0.3,
+            endSpeed: 1.8,
+            rampUntil: 150,
+            hubRadius: 1.3,
+            knockImpulse: 8,
+          }),
         },
       ],
     },

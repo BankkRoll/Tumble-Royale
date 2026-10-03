@@ -1,6 +1,6 @@
+import type { BufferGeometry } from 'three/webgpu';
 import {
   BufferAttribute,
-  BufferGeometry,
   Color,
   Group,
   InstancedBufferAttribute,
@@ -63,7 +63,8 @@ export interface Crowd {
 function painted(geo: BufferGeometry, hex: string): BufferGeometry {
   const g = geo.index ? geo.toNonIndexed() : geo;
   if (g !== geo) geo.dispose();
-  for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
+  for (const name of Object.keys(g.attributes))
+    if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
   const c = new Color(hex);
   const n = g.getAttribute('position').count;
   const arr = new Float32Array(n * 3);

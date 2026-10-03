@@ -4,7 +4,17 @@
  * checkered floor strip — plus a confetti blast for every finisher (read
  * from the runtime's `lastFinishTime`).
  */
-import { Color, CylinderGeometry, DoubleSide, Group, InstancedMesh, Mesh, MeshBasicNodeMaterial, PlaneGeometry, SphereGeometry } from 'three/webgpu';
+import {
+  Color,
+  CylinderGeometry,
+  DoubleSide,
+  Group,
+  InstancedMesh,
+  Mesh,
+  MeshBasicNodeMaterial,
+  PlaneGeometry,
+  SphereGeometry,
+} from 'three/webgpu';
 import { FinishLineSchema, archParts } from '@tumble/sim/obstacles';
 import type { ObstacleVisualFactory } from './types.ts';
 import {
@@ -40,7 +50,10 @@ export const finishLineVisual: ObstacleVisualFactory = (instance) => {
 
   const pillarMat = stripedToon(d, PAL.yellow, PAL.pink, 1.2, 'diagXY', { rimStrength: 0.6 });
   const beamMat = checkerToon(d, '#ffffff', PAL.ink, 0.5, 'xy');
-  const strip = solid(d.track(new PlaneGeometry(p.width, 1.2)), checkerToon(d, '#ffffff', PAL.ink, 0.6, 'xy'));
+  const strip = solid(
+    d.track(new PlaneGeometry(p.width, 1.2)),
+    checkerToon(d, '#ffffff', PAL.ink, 0.6, 'xy'),
+  );
   strip.rotation.x = -Math.PI / 2;
   strip.position.y = 0.02;
   strip.receiveShadow = true;
@@ -49,19 +62,27 @@ export const finishLineVisual: ObstacleVisualFactory = (instance) => {
 
   const balloonGeo = d.track(new SphereGeometry(0.42, 20, 14));
   const stringGeo = d.track(new CylinderGeometry(0.012, 0.012, 1, 4));
-  const balloons = new InstancedMesh(balloonGeo, toon(d, { color: '#ffffff', rimStrength: 0.8, rimColor: '#ffffff' }), BALLOONS_PER_SIDE * 2);
+  const balloons = new InstancedMesh(
+    balloonGeo,
+    toon(d, { color: '#ffffff', rimStrength: 0.8, rimColor: '#ffffff' }),
+    BALLOONS_PER_SIDE * 2,
+  );
   const strings = new InstancedMesh(stringGeo, toon(d, { color: '#ffffff' }), BALLOONS_PER_SIDE * 2);
   balloons.frustumCulled = false;
   strings.frustumCulled = false;
   const c = new Color();
-  for (let i = 0; i < BALLOONS_PER_SIDE * 2; i++) balloons.setColorAt(i, c.set(BALLOON_COLORS[i % BALLOON_COLORS.length]!));
+  for (let i = 0; i < BALLOONS_PER_SIDE * 2; i++)
+    balloons.setColorAt(i, c.set(BALLOON_COLORS[i % BALLOON_COLORS.length]!));
   if (balloons.instanceColor) balloons.instanceColor.needsUpdate = true;
   addOutline(d, balloons, 0.03);
 
   const signMat = toon(d, { color: PAL.magenta, rimStrength: 0.6, emissive: PAL.pink, emissiveIntensity: 0 });
   if (p.arch) {
     for (const part of archParts(p.width, p.height, p.pillarSize, p.pillarSize)) {
-      const m = solid(roundedBox(d, part.half.x, part.half.y, part.half.z, 0.22), part.role === 'beam' ? beamMat : pillarMat);
+      const m = solid(
+        roundedBox(d, part.half.x, part.half.y, part.half.z, 0.22),
+        part.role === 'beam' ? beamMat : pillarMat,
+      );
       m.position.set(part.pos.x, part.pos.y, part.pos.z);
       root.add(m);
     }
@@ -73,7 +94,7 @@ export const finishLineVisual: ObstacleVisualFactory = (instance) => {
     const tex = labelTexture(d, 'FINISH', { fill: '#ffffff', stroke: '#7a1048' });
     if (tex) {
       const labelMat = d.track(new MeshBasicNodeMaterial({ map: tex, transparent: true }));
-      const geo = d.track(new PlaneGeometry(bw * 0.95, bw * 0.95 / 4));
+      const geo = d.track(new PlaneGeometry(bw * 0.95, (bw * 0.95) / 4));
       for (const side of [-1, 1]) {
         const label = new Mesh(geo, labelMat);
         label.position.set(0, 0, side * 0.21);
@@ -89,7 +110,8 @@ export const finishLineVisual: ObstacleVisualFactory = (instance) => {
   confettiMat.side = DoubleSide;
   const confetti = new InstancedMesh(confettiGeo, confettiMat, CONFETTI);
   confetti.frustumCulled = false;
-  for (let i = 0; i < CONFETTI; i++) confetti.setColorAt(i, c.set(BALLOON_COLORS[i % BALLOON_COLORS.length]!));
+  for (let i = 0; i < CONFETTI; i++)
+    confetti.setColorAt(i, c.set(BALLOON_COLORS[i % BALLOON_COLORS.length]!));
   if (confetti.instanceColor) confetti.instanceColor.needsUpdate = true;
   root.add(confetti);
 
@@ -111,7 +133,17 @@ export const finishLineVisual: ObstacleVisualFactory = (instance) => {
           const bz = Math.sin(a) * 0.55;
           setInstanceTRS(balloons, i, bx, by, bz, null, 1, 1.15, 1);
           const sx = side * px;
-          setInstanceTRS(strings, i, (sx + bx) / 2, (topY + by - 0.45) / 2, bz / 2, null, 1, by - 0.45 - topY, 1);
+          setInstanceTRS(
+            strings,
+            i,
+            (sx + bx) / 2,
+            (topY + by - 0.45) / 2,
+            bz / 2,
+            null,
+            1,
+            by - 0.45 - topY,
+            1,
+          );
         }
         balloons.instanceMatrix.needsUpdate = true;
         strings.instanceMatrix.needsUpdate = true;

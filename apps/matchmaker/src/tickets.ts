@@ -33,7 +33,11 @@ export interface Player {
  */
 export async function verifyAccess(secret: string, token: string, now: Date): Promise<Player | null> {
   try {
-    const { payload } = await jwtVerify(token, enc(secret), { issuer: API_ISSUER, algorithms: ['HS256'], currentDate: now });
+    const { payload } = await jwtVerify(token, enc(secret), {
+      issuer: API_ISSUER,
+      algorithms: ['HS256'],
+      currentDate: now,
+    });
     if (payload.typ !== 'access' || typeof payload.sub !== 'string') return null;
     return {
       userId: payload.sub,
@@ -58,7 +62,15 @@ const QueueTicketSchema = z.object({
   botsAllowed: z.boolean().optional(),
   region: z.string().min(2).max(8),
   members: z
-    .array(z.object({ userId: z.string(), name: z.string(), mu: z.number(), sigma: z.number(), ordinal: z.number() }))
+    .array(
+      z.object({
+        userId: z.string(),
+        name: z.string(),
+        mu: z.number(),
+        sigma: z.number(),
+        ordinal: z.number(),
+      }),
+    )
     .min(1)
     .max(4),
 });
@@ -71,9 +83,17 @@ export type QueueTicket = z.infer<typeof QueueTicketSchema>;
  *
  * @returns The ticket, or null when invalid/expired/malformed.
  */
-export async function verifyQueueTicket(secret: string, token: string, now: Date): Promise<QueueTicket | null> {
+export async function verifyQueueTicket(
+  secret: string,
+  token: string,
+  now: Date,
+): Promise<QueueTicket | null> {
   try {
-    const { payload } = await jwtVerify(token, enc(secret), { issuer: API_ISSUER, algorithms: ['HS256'], currentDate: now });
+    const { payload } = await jwtVerify(token, enc(secret), {
+      issuer: API_ISSUER,
+      algorithms: ['HS256'],
+      currentDate: now,
+    });
     const parsed = QueueTicketSchema.safeParse(payload);
     return parsed.success ? parsed.data : null;
   } catch {
@@ -148,7 +168,11 @@ export async function signJoinTicket(secret: string, claims: JoinTicketClaims, n
  *
  * @returns Claims, or null when invalid/expired.
  */
-export async function verifyJoinTicket(secret: string, token: string, now: Date): Promise<JoinTicketClaims | null> {
+export async function verifyJoinTicket(
+  secret: string,
+  token: string,
+  now: Date,
+): Promise<JoinTicketClaims | null> {
   try {
     const { payload } = await jwtVerify(token, enc(secret), {
       issuer: TICKET_ISSUER,

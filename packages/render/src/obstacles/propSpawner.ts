@@ -53,7 +53,16 @@ import {
 } from '@tumble/sim/obstacles';
 import type { ObstacleVisualFactory } from './types.ts';
 import { createOutlineMaterial } from '../materials/outline.ts';
-import { Disposer, PAL, Sparkles, addEmissive, instanceMatrix, parseParams, roundedBox, toon } from './visual-helpers-b.ts';
+import {
+  Disposer,
+  PAL,
+  Sparkles,
+  addEmissive,
+  instanceMatrix,
+  parseParams,
+  roundedBox,
+  toon,
+} from './visual-helpers-b.ts';
 
 const BLOCK_COLORS = [PAL.pink, PAL.cyan, PAL.yellow, PAL.mint, PAL.violet, PAL.orange];
 const GLINTS_PER_CROWN = 8;
@@ -118,7 +127,12 @@ function kindMaterial(d: Disposer, p: PropSpawnerParams): MeshToonNodeMaterial {
     }
     case 'ball': {
       const mat = toon(d, { color: '#ffffff', rimStrength: 0.6 });
-      const seg = floor(atan(L.z, L.x).div(Math.PI * 2).add(0.5).mul(6));
+      const seg = floor(
+        atan(L.z, L.x)
+          .div(Math.PI * 2)
+          .add(0.5)
+          .mul(6),
+      );
       const k = fract(seg.div(3)).mul(3);
       const c0 = color(new Color(PAL.pink));
       const c1 = color(new Color(PAL.yellow));
@@ -133,7 +147,15 @@ function kindMaterial(d: Disposer, p: PropSpawnerParams): MeshToonNodeMaterial {
       mat.colorNode = mix(color(new Color(PAL.orange)), color(new Color(PAL.cream)), band);
       // Fluffy sway: more toward the tip (+Y).
       const tip = L.y.add(0.7).max(0);
-      mat.positionNode = L.add(vec3(sin(time.mul(7).add(L.y.mul(3))).mul(tip).mul(0.12), 0, sin(time.mul(5.3)).mul(tip).mul(0.08)));
+      mat.positionNode = L.add(
+        vec3(
+          sin(time.mul(7).add(L.y.mul(3)))
+            .mul(tip)
+            .mul(0.12),
+          0,
+          sin(time.mul(5.3)).mul(tip).mul(0.08),
+        ),
+      );
       return mat;
     }
     case 'crown': {
@@ -194,7 +216,13 @@ export const propSpawnerVisual: ObstacleVisualFactory = (instance, ctx) => {
   if (p.kind === 'crown') {
     const gems = new InstancedMesh(
       crownGems(d),
-      toon(d, { color: PAL.magenta, emissive: PAL.pink, emissiveIntensity: 0.6, rimColor: '#ffffff', rimStrength: 0.9 }),
+      toon(d, {
+        color: PAL.magenta,
+        emissive: PAL.pink,
+        emissiveIntensity: 0.6,
+        rimColor: '#ffffff',
+        rimStrength: 0.9,
+      }),
       n,
     );
     gems.instanceMatrix = mesh.instanceMatrix;
@@ -245,7 +273,13 @@ export const propSpawnerVisual: ObstacleVisualFactory = (instance, ctx) => {
             const a = t * 1.6 + (g / GLINTS_PER_CROWN) * Math.PI * 2;
             const r = size * 1.6;
             const tw = 0.5 + 0.5 * Math.sin(t * 7 + g * 2.1);
-            glints.set(i * GLINTS_PER_CROWN + g, pos.x + Math.cos(a) * r, pos.y + Math.sin(a * 2) * size * 0.4, pos.z + Math.sin(a) * r, visible ? tw : 0);
+            glints.set(
+              i * GLINTS_PER_CROWN + g,
+              pos.x + Math.cos(a) * r,
+              pos.y + Math.sin(a * 2) * size * 0.4,
+              pos.z + Math.sin(a) * r,
+              visible ? tw : 0,
+            );
           }
         }
       }

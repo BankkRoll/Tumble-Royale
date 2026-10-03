@@ -33,7 +33,17 @@ import type {
 // Patterns
 // -----------------------------------------------------------------------------
 
-const UI_PATTERNS: readonly UiPattern[] = ['plain', 'stripes', 'dots', 'checker', 'zigzag', 'stars', 'gradient', 'galaxy', 'camo'];
+const UI_PATTERNS: readonly UiPattern[] = [
+  'plain',
+  'stripes',
+  'dots',
+  'checker',
+  'zigzag',
+  'stars',
+  'gradient',
+  'galaxy',
+  'camo',
+];
 
 /**
  * Maps a UI pattern to the shader pattern id the render resolver accepts.
@@ -118,7 +128,12 @@ export function defaultUiLoadout(name: string, colors: TumblerColors): UiLoadout
  * @param l - Render loadout.
  */
 export function tumblerColors(l: TumblerLoadout): TumblerColors {
-  return { primary: l.colors[0], secondary: l.colors[1], tertiary: l.colors[2], pattern: contentPatternToUi(l.pattern) };
+  return {
+    primary: l.colors[0],
+    secondary: l.colors[1],
+    tertiary: l.colors[2],
+    pattern: contentPatternToUi(l.pattern),
+  };
 }
 
 const HATS: Readonly<Record<string, AvatarHat>> = {
@@ -186,7 +201,11 @@ export function decodeLoadout(blob: string): TumblerLoadout | null {
   try {
     const v = JSON.parse(blob) as Partial<TumblerLoadout>;
     if (!Array.isArray(v.colors) || v.colors.length !== 3 || typeof v.pattern !== 'string') return null;
-    return { ...DEFAULT_LOADOUT, ...v, emotes: (v.emotes ?? DEFAULT_LOADOUT.emotes) as TumblerLoadout['emotes'] } as TumblerLoadout;
+    return {
+      ...DEFAULT_LOADOUT,
+      ...v,
+      emotes: (v.emotes ?? DEFAULT_LOADOUT.emotes) as TumblerLoadout['emotes'],
+    } as TumblerLoadout;
   } catch {
     return null;
   }
@@ -282,7 +301,9 @@ function uiSlot(slot: ContentItem['slot']): UiSlot {
  */
 export function uiItem(item: ContentItem, owned: boolean): UiItem {
   const art: [string, string] =
-    item.slot === 'color' ? [item.colors[0], item.colors[1]] : (RARITY_ART[item.rarity] ?? ['#d6e4ff', '#a8c6ff']);
+    item.slot === 'color'
+      ? [item.colors[0], item.colors[1]]
+      : (RARITY_ART[item.rarity] ?? ['#d6e4ff', '#a8c6ff']);
   return {
     id: item.id,
     name: item.name,
@@ -332,7 +353,9 @@ export function emoteSlots(emotes: readonly string[]): EmoteSlot[] {
  * @returns A catalog item, or null when everything is owned.
  */
 export function levelUpUnlock(owned: ReadonlySet<string>, level: number): ContentItem | null {
-  const pool = COSMETICS.filter((c) => c.source !== 'default' && !owned.has(c.id) && c.rarity !== 'mythic' && c.rarity !== 'legendary');
+  const pool = COSMETICS.filter(
+    (c) => c.source !== 'default' && !owned.has(c.id) && c.rarity !== 'mythic' && c.rarity !== 'legendary',
+  );
   if (pool.length === 0) return null;
   const rng = new Rng(hashString(`level-${level}`));
   return pool[Math.floor(rng.next() * pool.length)] ?? null;

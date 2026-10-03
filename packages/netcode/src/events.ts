@@ -16,7 +16,10 @@ export type ReliableMessage =
   | { kind: 'msg'; msg: LowFreqMessage };
 
 type FieldKind = 'uint' | 'int' | 'f32' | 'vec' | 'str' | 'ostr' | readonly string[];
-type EventSchema = readonly [type: SimEvent['type'], fields: readonly (readonly [name: string, kind: FieldKind])[]];
+type EventSchema = readonly [
+  type: SimEvent['type'],
+  fields: readonly (readonly [name: string, kind: FieldKind])[],
+];
 
 /**
  * Wire table for SimEvents. The index in this array is the wire id, so only
@@ -24,28 +27,164 @@ type EventSchema = readonly [type: SimEvent['type'], fields: readonly (readonly 
  * still travel via the msgpack fallback id.
  */
 const EVENT_SCHEMAS: readonly EventSchema[] = [
-  ['jump', [['player', 'uint'], ['pos', 'vec']]],
-  ['land', [['player', 'uint'], ['pos', 'vec'], ['impact', 'f32']]],
-  ['dive', [['player', 'uint'], ['pos', 'vec']]],
+  [
+    'jump',
+    [
+      ['player', 'uint'],
+      ['pos', 'vec'],
+    ],
+  ],
+  [
+    'land',
+    [
+      ['player', 'uint'],
+      ['pos', 'vec'],
+      ['impact', 'f32'],
+    ],
+  ],
+  [
+    'dive',
+    [
+      ['player', 'uint'],
+      ['pos', 'vec'],
+    ],
+  ],
   ['getUp', [['player', 'uint']]],
-  ['stun', [['player', 'uint'], ['pos', 'vec'], ['strength', 'f32']]],
-  ['bounce', [['player', 'uint'], ['pos', 'vec'], ['obstacle', 'ostr']]],
-  ['grabStart', [['player', 'uint'], ['target', 'int'], ['targetKind', ['player', 'prop', 'ledge']]]],
-  ['grabEnd', [['player', 'uint'], ['target', 'int'], ['reason', ['release', 'broken', 'stamina']]]],
-  ['emote', [['player', 'uint'], ['emote', 'uint']]],
-  ['fellOut', [['player', 'uint'], ['pos', 'vec']]],
-  ['respawn', [['player', 'uint'], ['pos', 'vec']]],
-  ['checkpoint', [['player', 'uint'], ['index', 'uint']]],
-  ['finish', [['player', 'uint'], ['tick', 'uint'], ['subTick', 'f32']]],
-  ['qualified', [['player', 'uint'], ['place', 'uint']]],
-  ['eliminated', [['player', 'uint'], ['place', 'uint']]],
-  ['tileFell', [['obstacle', 'str'], ['tile', 'uint']]],
-  ['tileWarn', [['obstacle', 'str'], ['tile', 'uint']]],
-  ['obstacleCue', [['obstacle', 'str'], ['cue', 'str'], ['pos', 'vec']]],
-  ['teleport', [['player', 'uint'], ['from', 'vec'], ['to', 'vec']]],
-  ['score', [['team', 'int'], ['player', 'int'], ['delta', 'f32'], ['total', 'f32']]],
-  ['propPickup', [['player', 'uint'], ['prop', 'int']]],
-  ['propDrop', [['player', 'uint'], ['prop', 'int']]],
+  [
+    'stun',
+    [
+      ['player', 'uint'],
+      ['pos', 'vec'],
+      ['strength', 'f32'],
+    ],
+  ],
+  [
+    'bounce',
+    [
+      ['player', 'uint'],
+      ['pos', 'vec'],
+      ['obstacle', 'ostr'],
+    ],
+  ],
+  [
+    'grabStart',
+    [
+      ['player', 'uint'],
+      ['target', 'int'],
+      ['targetKind', ['player', 'prop', 'ledge']],
+    ],
+  ],
+  [
+    'grabEnd',
+    [
+      ['player', 'uint'],
+      ['target', 'int'],
+      ['reason', ['release', 'broken', 'stamina']],
+    ],
+  ],
+  [
+    'emote',
+    [
+      ['player', 'uint'],
+      ['emote', 'uint'],
+    ],
+  ],
+  [
+    'fellOut',
+    [
+      ['player', 'uint'],
+      ['pos', 'vec'],
+    ],
+  ],
+  [
+    'respawn',
+    [
+      ['player', 'uint'],
+      ['pos', 'vec'],
+    ],
+  ],
+  [
+    'checkpoint',
+    [
+      ['player', 'uint'],
+      ['index', 'uint'],
+    ],
+  ],
+  [
+    'finish',
+    [
+      ['player', 'uint'],
+      ['tick', 'uint'],
+      ['subTick', 'f32'],
+    ],
+  ],
+  [
+    'qualified',
+    [
+      ['player', 'uint'],
+      ['place', 'uint'],
+    ],
+  ],
+  [
+    'eliminated',
+    [
+      ['player', 'uint'],
+      ['place', 'uint'],
+    ],
+  ],
+  [
+    'tileFell',
+    [
+      ['obstacle', 'str'],
+      ['tile', 'uint'],
+    ],
+  ],
+  [
+    'tileWarn',
+    [
+      ['obstacle', 'str'],
+      ['tile', 'uint'],
+    ],
+  ],
+  [
+    'obstacleCue',
+    [
+      ['obstacle', 'str'],
+      ['cue', 'str'],
+      ['pos', 'vec'],
+    ],
+  ],
+  [
+    'teleport',
+    [
+      ['player', 'uint'],
+      ['from', 'vec'],
+      ['to', 'vec'],
+    ],
+  ],
+  [
+    'score',
+    [
+      ['team', 'int'],
+      ['player', 'int'],
+      ['delta', 'f32'],
+      ['total', 'f32'],
+    ],
+  ],
+  [
+    'propPickup',
+    [
+      ['player', 'uint'],
+      ['prop', 'int'],
+    ],
+  ],
+  [
+    'propDrop',
+    [
+      ['player', 'uint'],
+      ['prop', 'int'],
+    ],
+  ],
 ];
 
 const FALLBACK_ID = 255;

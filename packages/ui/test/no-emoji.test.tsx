@@ -15,7 +15,7 @@ import { MENU_TABS, type CosmeticItem, type PassTier, type Rarity } from '../src
 
 /** Pictographic emoji + dingbats/arrows commonly used as emoji glyphs. */
 const EMOJI =
-  /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}\u{25A0}-\u{25FF}\u{2700}-\u{27BF}\u{FE0F}]/u;
+  /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}\u{25A0}-\u{25FF}\u{2700}-\u{27BF}]|\u{FE0F}/u;
 
 // NOTE: zustand's useStore renders the store's *initial* state on the server; point it at the live state.
 (ui as unknown as { getInitialState: () => unknown }).getInitialState = ui.getState;

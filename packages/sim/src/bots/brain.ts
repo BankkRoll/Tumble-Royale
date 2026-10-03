@@ -30,7 +30,15 @@
  * the last decision (plus the cheap per-step take-off check), so the step
  * loop stays allocation-free. All randomness comes from the bot's seeded Rng.
  */
-import { Rng, RoundPhase, vec3, type RoundDefinition, type TriggerDef, type Vec3, type Waypoint } from '@tumble/shared';
+import {
+  Rng,
+  RoundPhase,
+  vec3,
+  type RoundDefinition,
+  type TriggerDef,
+  type Vec3,
+  type Waypoint,
+} from '@tumble/shared';
 import { Button, CharacterState, type CharacterInput } from '../character/types.ts';
 import { PlayerRoundStatus } from '../match/types.ts';
 import { navGraphFor, type NavGraph } from './nav.ts';
@@ -102,8 +110,22 @@ const enum Unstick {
  * - Knee-high lip: hop, lunge, take a run-up, then try elsewhere.
  * - Wall: slide along it (solid doors), take a run-up, go around.
  */
-const PLAN_OPEN: readonly Unstick[] = [Unstick.Jump, Unstick.Jump, Unstick.JumpDive, Unstick.Jump, Unstick.Repath, Unstick.JumpDive];
-const PLAN_LIP: readonly Unstick[] = [Unstick.Jump, Unstick.JumpDive, Unstick.BackOff, Unstick.Jump, Unstick.Repath, Unstick.JumpDive];
+const PLAN_OPEN: readonly Unstick[] = [
+  Unstick.Jump,
+  Unstick.Jump,
+  Unstick.JumpDive,
+  Unstick.Jump,
+  Unstick.Repath,
+  Unstick.JumpDive,
+];
+const PLAN_LIP: readonly Unstick[] = [
+  Unstick.Jump,
+  Unstick.JumpDive,
+  Unstick.BackOff,
+  Unstick.Jump,
+  Unstick.Repath,
+  Unstick.JumpDive,
+];
 const PLAN_WALL: readonly Unstick[] = [
   Unstick.Sidestep,
   Unstick.Sidestep,
@@ -238,7 +260,9 @@ export class DefaultBotBrain implements BotBrainLike {
     this.strategy = strategyFor(opts.round, this.nav);
     this.decisionPhase = ((opts.id % DECISION_TICKS) + DECISION_TICKS) % DECISION_TICKS;
     this.goalTrigger =
-      opts.round.triggers.find((t) => t.kind === 'crown') ?? opts.round.triggers.find((t) => t.kind === 'finish') ?? null;
+      opts.round.triggers.find((t) => t.kind === 'crown') ??
+      opts.round.triggers.find((t) => t.kind === 'finish') ??
+      null;
     this.anchor = { ...opts.round.spawn.origin };
     if (this.strategy !== 'course' && this.nav.size > 0) {
       let x = 0;
@@ -403,7 +427,11 @@ export class DefaultBotBrain implements BotBrainLike {
     const wp = this.nav.nodes[this.cur] as Waypoint;
     if (this.lineValid) {
       // Aim through the take-off along the jump direction so the launch heads for the landing.
-      this.setTarget(wp.position.x + this.offset.x + this.lineX * 2.5, wp.position.y, wp.position.z + this.offset.z + this.lineZ * 2.5);
+      this.setTarget(
+        wp.position.x + this.offset.x + this.lineX * 2.5,
+        wp.position.y,
+        wp.position.z + this.offset.z + this.lineZ * 2.5,
+      );
       this.fullSpeed = true;
     } else {
       this.setTarget(wp.position.x + this.offset.x, wp.position.y, wp.position.z + this.offset.z);
@@ -430,7 +458,8 @@ export class DefaultBotBrain implements BotBrainLike {
     this.succ = nav.chooseNext(i, this.rng, this.p.branchGreed, banned);
     const w = nav.nodes[i] as Waypoint;
     if (isTakeoff(w.action)) {
-      const from = this.succ >= 0 ? w.position : this.prev >= 0 ? (nav.nodes[this.prev] as Waypoint).position : null;
+      const from =
+        this.succ >= 0 ? w.position : this.prev >= 0 ? (nav.nodes[this.prev] as Waypoint).position : null;
       const to = this.succ >= 0 ? (nav.nodes[this.succ] as Waypoint).position : w.position;
       if (from) {
         const dx = to.x - from.x;
@@ -532,7 +561,8 @@ export class DefaultBotBrain implements BotBrainLike {
     this.prev = this.cur;
     const from = nav.nodes[this.prev] as Waypoint;
     let next = this.succ;
-    if (next < 0 && (nav.nextIdx[this.prev] as number[]).length > 0) next = nav.chooseNext(this.prev, this.rng, this.p.branchGreed);
+    if (next < 0 && (nav.nextIdx[this.prev] as number[]).length > 0)
+      next = nav.chooseNext(this.prev, this.rng, this.p.branchGreed);
     this.waitObstacle = null;
     if (next < 0) {
       this.atGoal = true;
@@ -610,7 +640,8 @@ export class DefaultBotBrain implements BotBrainLike {
     this.shortcutTried = true;
     if (!self.grounded || !this.rng.chance(this.p.shortcutChance)) return false;
     const to = (this.nav.nodes[this.succ] as Waypoint).position;
-    if (Math.abs(to.y - wp.position.y) > 0.4 || Math.abs(wp.position.y - (self.pos.y - CENTRE_HEIGHT)) > 0.6) return false;
+    if (Math.abs(to.y - wp.position.y) > 0.4 || Math.abs(wp.position.y - (self.pos.y - CENTRE_HEIGHT)) > 0.6)
+      return false;
     const P = this.s3;
     for (let k = 1; k <= 3; k++) {
       const f = k / 4;
@@ -908,7 +939,10 @@ export class DefaultBotBrain implements BotBrainLike {
         return;
       }
     } else if (zone) {
-      if (Math.abs(self.pos.x - zone.position.x) > zone.size.x / 2 - 0.5 || Math.abs(self.pos.z - zone.position.z) > zone.size.z / 2 - 0.5) {
+      if (
+        Math.abs(self.pos.x - zone.position.x) > zone.size.x / 2 - 0.5 ||
+        Math.abs(self.pos.z - zone.position.z) > zone.size.z / 2 - 0.5
+      ) {
         this.setTarget(zone.position.x, zone.position.y, zone.position.z);
         return;
       }
@@ -918,7 +952,12 @@ export class DefaultBotBrain implements BotBrainLike {
     this.speed = this.p.speed;
   }
 
-  private nearestProp(view: BotWorldView, self: BotSelfView, out: Vec3, excludeIn: TriggerDef | null): boolean {
+  private nearestProp(
+    view: BotWorldView,
+    self: BotSelfView,
+    out: Vec3,
+    excludeIn: TriggerDef | null,
+  ): boolean {
     const n = view.propCount();
     let best = Infinity;
     const p = this.s2;
@@ -988,7 +1027,9 @@ export class DefaultBotBrain implements BotBrainLike {
     spot.y = self.pos.y;
     spot.z = self.pos.z;
     if (view.safeSpot(spot)) {
-      const changed = !(Math.abs(spot.x - this.logicSpot.x) < 0.01 && Math.abs(spot.z - this.logicSpot.z) < 0.01);
+      const changed = !(
+        Math.abs(spot.x - this.logicSpot.x) < 0.01 && Math.abs(spot.z - this.logicSpot.z) < 0.01
+      );
       if (changed) {
         this.logicSpot.x = spot.x;
         this.logicSpot.y = spot.y;
@@ -1027,7 +1068,8 @@ export class DefaultBotBrain implements BotBrainLike {
       this.hangSince = view.time;
       this.hangWait = this.reactionDelay() + (this.skill === 'clumsy' ? this.rng.range(0, 0.6) : 0);
     }
-    if (view.time - this.hangSince < this.hangWait || this.act !== Act.None || view.tick < this.jumpUntil) return;
+    if (view.time - this.hangSince < this.hangWait || this.act !== Act.None || view.tick < this.jumpUntil)
+      return;
     const below = this.hasTarget && this.target.y < self.pos.y - CENTRE_HEIGHT - 2.5;
     this.act = below ? Act.Dive : Act.Jump;
     this.actAt = view.tick;
@@ -1063,7 +1105,11 @@ export class DefaultBotBrain implements BotBrainLike {
     }
     // A knee-high lip or step we're pushing against: hop it (clumsy bots may bonk first).
     if (this.hasTarget && this.speed > 0 && this.recover === Recover.None && this.strategy === 'course') {
-      if (Math.hypot(self.vel.x, self.vel.z) < 2.5 && this.blockedAhead(view, self) === 1 && !this.rng.chance(this.p.bonkChance)) {
+      if (
+        Math.hypot(self.vel.x, self.vel.z) < 2.5 &&
+        this.blockedAhead(view, self) === 1 &&
+        !this.rng.chance(this.p.bonkChance)
+      ) {
         this.schedule(view, Act.Jump, this.reactionDelay() * 0.5);
       }
     }
@@ -1142,7 +1188,11 @@ export class DefaultBotBrain implements BotBrainLike {
     }
     const gained = course
       ? this.stuckRef - metric
-      : Math.hypot(self.pos.x - this.stuckRefPos.x, self.pos.y - this.stuckRefPos.y, self.pos.z - this.stuckRefPos.z);
+      : Math.hypot(
+          self.pos.x - this.stuckRefPos.x,
+          self.pos.y - this.stuckRefPos.y,
+          self.pos.z - this.stuckRefPos.z,
+        );
     const windowTicks = Math.round(this.p.stuckSeconds / view.dt);
     if (gained >= STUCK_PROGRESS * (course ? 1 : 1.5)) {
       this.resetStuckWindow(tick, metric, self);
@@ -1192,7 +1242,8 @@ export class DefaultBotBrain implements BotBrainLike {
       case Unstick.SidestepFlip: {
         if (step === Unstick.SidestepFlip) this.sideDir = -this.sideDir;
         // Strafe right (+moveX) is (cos yaw, −sin yaw) = (uz, −ux) for forward (ux, uz).
-        if (!this.floorAt(view, self, uz * this.sideDir * 1.5, -ux * this.sideDir * 1.5)) this.sideDir = -this.sideDir;
+        if (!this.floorAt(view, self, uz * this.sideDir * 1.5, -ux * this.sideDir * 1.5))
+          this.sideDir = -this.sideDir;
         if (!this.floorAt(view, self, uz * this.sideDir * 1.5, -ux * this.sideDir * 1.5)) {
           this.schedule(view, Act.Jump, 0);
           break;
@@ -1271,7 +1322,11 @@ export class DefaultBotBrain implements BotBrainLike {
       const dx = this.target.x - self.pos.x;
       const dz = this.target.z - self.pos.z;
       const l = Math.hypot(dx, dz) || 1;
-      if (!this.floorAt(view, self, (dz / l) * 1.5, (-dx / l) * 1.5) || !this.floorAt(view, self, (-dz / l) * 1.5, (dx / l) * 1.5)) this.dizzyUntil = -1;
+      if (
+        !this.floorAt(view, self, (dz / l) * 1.5, (-dx / l) * 1.5) ||
+        !this.floorAt(view, self, (-dz / l) * 1.5, (dx / l) * 1.5)
+      )
+        this.dizzyUntil = -1;
     }
   }
 
@@ -1316,7 +1371,8 @@ export class DefaultBotBrain implements BotBrainLike {
 
   private steer(view: BotWorldView, self: BotSelfView, out: CharacterInput): void {
     // Smoothed random wobble: a damped spring driven by noise reads as "human" aim.
-    this.noiseVel += (this.rng.range(-1, 1) * this.p.aimNoise * 8 - this.noise * 4 - this.noiseVel * 2) * view.dt;
+    this.noiseVel +=
+      (this.rng.range(-1, 1) * this.p.aimNoise * 8 - this.noise * 4 - this.noiseVel * 2) * view.dt;
     this.noise += this.noiseVel * view.dt;
     if (!this.hasTarget) {
       out.yaw = this.yaw;

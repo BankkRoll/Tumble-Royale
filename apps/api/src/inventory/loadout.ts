@@ -61,7 +61,21 @@ export function validateLoadout(
   }
   if (issues.length) throw badRequest('invalid_loadout', issues.map((i) => i.message).join('; '), { issues });
 
-  const refs = [core.pattern, core.face, core.upper, core.lower, core.headwear, core.back, ...core.emotes, core.celebration, core.victoryPose, core.nameplate, core.trail, banner, footsteps];
+  const refs = [
+    core.pattern,
+    core.face,
+    core.upper,
+    core.lower,
+    core.headwear,
+    core.back,
+    ...core.emotes,
+    core.celebration,
+    core.victoryPose,
+    core.nameplate,
+    core.trail,
+    banner,
+    footsteps,
+  ];
   const notOwned = [...new Set(refs.filter((id): id is string => id !== null && !owned.has(id)))];
   if (notOwned.length) {
     throw new ApiError(403, 'not_owned', `You do not own: ${notOwned.join(', ')}`, { items: notOwned });

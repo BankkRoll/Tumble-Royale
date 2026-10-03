@@ -1,7 +1,12 @@
 import { Box3, PerspectiveCamera, Scene, Vector3, type Object3D } from 'three/webgpu';
 import type { ThemeDefinition, Weather } from '@tumble/content/themes';
 import type { CharacterStateId } from '@tumble/sim';
-import type { CreateTumblerVisual, TumblerAnimInput, TumblerLoadout, TumblerVisual } from '../character/types.ts';
+import type {
+  CreateTumblerVisual,
+  TumblerAnimInput,
+  TumblerLoadout,
+  TumblerVisual,
+} from '../character/types.ts';
 import { createEnvironment, type Environment, type EnvironmentDetail } from '../environment/environment.ts';
 import type { LightingRigOptions } from '../environment/lighting.ts';
 import { gradeFromTheme, type GradeParams } from '../post/pipeline.ts';

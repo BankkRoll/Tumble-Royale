@@ -11,7 +11,13 @@ import { users } from '../db/schema.ts';
 import { optionalUser, requireUser } from '../http/auth.ts';
 import { ApiError, parse } from '../http/errors.ts';
 import { completeOAuth, startOAuth, type OAuthProviderId } from './oauth.ts';
-import { revokeByRefreshToken, revokeBySessionId, rotateSession, startSession, type TokenPair } from './sessions.ts';
+import {
+  revokeByRefreshToken,
+  revokeBySessionId,
+  rotateSession,
+  startSession,
+  type TokenPair,
+} from './sessions.ts';
 import { randomToken, sha256 } from './tokens.ts';
 import { eq } from 'drizzle-orm';
 
@@ -33,19 +39,35 @@ const CallbackQuery = z.object({
   error: z.string().max(256).optional(),
 });
 const CodeBody = z.object({ code: z.string().min(16).max(128) });
-const EmailStartBody = z.object({ email: z.string().email().max(254).transform((e) => e.toLowerCase()) });
+const EmailStartBody = z.object({
+  email: z
+    .string()
+    .email()
+    .max(254)
+    .transform((e) => e.toLowerCase()),
+});
 const EmailVerifyBody = z.object({ token: z.string().min(20).max(200) });
 
 /** Signs in (or creates/links) the account behind an external identity. */
 async function resolveIdentity(
   tx: DbOrTx,
   ctx: AppContext,
-  id: { provider: IdentityProvider; subject: string; email: string | null; name: string | null; linkUserId: string | null },
+  id: {
+    provider: IdentityProvider;
+    subject: string;
+    email: string | null;
+    name: string | null;
+    linkUserId: string | null;
+  },
 ): Promise<string> {
   const owner = await findIdentity(tx, id.provider, id.subject);
   if (id.linkUserId) {
     if (owner && owner !== id.linkUserId) {
-      throw new ApiError(409, 'identity_in_use', 'That account already has a Tumble Royale profile; sign in with it instead');
+      throw new ApiError(
+        409,
+        'identity_in_use',
+        'That account already has a Tumble Royale profile; sign in with it instead',
+      );
     }
     await linkIdentity(tx, id.linkUserId, id.provider, id.subject, id.email);
     return id.linkUserId;
@@ -139,10 +161,18 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
   app.get('/auth/:provider/callback', async (req, reply) => {
     const { provider } = parse(ProviderParam, req.params);
     const q = parse(CallbackQuery, req.query);
-    const fail = (code: string) => reply.redirect(`${ctx.config.publicWebUrl}/auth/complete?error=${encodeURIComponent(code)}`);
+    const fail = (code: string) =>
+      reply.redirect(`${ctx.config.publicWebUrl}/auth/complete?error=${encodeURIComponent(code)}`);
     if (q.error || !q.code || !q.state) return fail(q.error ?? 'missing_code');
     try {
-      const identity = await completeOAuth(ctx.config, ctx.kv, ctx.fetch, provider as OAuthProviderId, q.code, q.state);
+      const identity = await completeOAuth(
+        ctx.config,
+        ctx.kv,
+        ctx.fetch,
+        provider as OAuthProviderId,
+        q.code,
+        q.state,
+      );
       const pair = await ctx.db.transaction(async (tx) => {
         const userId = await resolveIdentity(tx, ctx, identity);
         return startSession(tx, secret, userId, ctx.now(), req.headers['user-agent']);
@@ -170,7 +200,11 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     const sends = await ctx.kv.incr(`email-rate:${email}`, 60 * 60_000);
     if (sends > 5) throw new ApiError(429, 'too_many_emails', 'Too many sign-in emails; try again later');
     const token = randomToken();
-    await ctx.kv.set(`magic:${sha256(token)}`, JSON.stringify({ email, linkUserId: auth?.userId ?? null }), MAGIC_LINK_TTL_MS);
+    await ctx.kv.set(
+      `magic:${sha256(token)}`,
+      JSON.stringify({ email, linkUserId: auth?.userId ?? null }),
+      MAGIC_LINK_TTL_MS,
+    );
     const link = `${ctx.config.publicWebUrl}/auth/email?token=${token}`;
     await ctx.mailer.send({
       to: email,
@@ -186,7 +220,13 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     if (!raw) throw new ApiError(400, 'invalid_token', 'Sign-in link expired or already used');
     const { email, linkUserId } = JSON.parse(raw) as { email: string; linkUserId: string | null };
     return ctx.db.transaction(async (tx) => {
-      const userId = await resolveIdentity(tx, ctx, { provider: 'email', subject: email, email, name: null, linkUserId });
+      const userId = await resolveIdentity(tx, ctx, {
+        provider: 'email',
+        subject: email,
+        email,
+        name: null,
+        linkUserId,
+      });
       return startSession(tx, secret, userId, ctx.now(), req.headers['user-agent']);
     });
   });

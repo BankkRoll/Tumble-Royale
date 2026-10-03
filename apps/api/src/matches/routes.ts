@@ -22,11 +22,15 @@ const HistoryQuery = z.object({ limit: z.coerce.number().int().min(1).max(20).de
  * @param ctx - Shared services.
  */
 export function registerMatchRoutes(app: FastifyInstance, ctx: AppContext): void {
-  app.post('/internal/match-results', { config: { rateLimit: false }, bodyLimit: 1024 * 1024 }, async (req) => {
-    await requireInternalSignature(ctx, req);
-    const payload = parse(MatchResultSchema, req.body);
-    return ingestMatch(ctx, payload);
-  });
+  app.post(
+    '/internal/match-results',
+    { config: { rateLimit: false }, bodyLimit: 1024 * 1024 },
+    async (req) => {
+      await requireInternalSignature(ctx, req);
+      const payload = parse(MatchResultSchema, req.body);
+      return ingestMatch(ctx, payload);
+    },
+  );
 
   app.get('/matches/:id', async (req) => {
     await requireUser(ctx, req);
@@ -38,7 +42,11 @@ export function registerMatchRoutes(app: FastifyInstance, ctx: AppContext): void
       .from(matchParticipants)
       .where(eq(matchParticipants.matchId, id))
       .orderBy(asc(matchParticipants.placement));
-    const rounds = await ctx.db.select().from(matchRounds).where(eq(matchRounds.matchId, id)).orderBy(asc(matchRounds.roundIndex));
+    const rounds = await ctx.db
+      .select()
+      .from(matchRounds)
+      .where(eq(matchRounds.matchId, id))
+      .orderBy(asc(matchRounds.roundIndex));
     const results = await ctx.db.select().from(roundResults).where(eq(roundResults.matchId, id));
     return {
       id: m.id,
@@ -67,7 +75,13 @@ export function registerMatchRoutes(app: FastifyInstance, ctx: AppContext): void
         durationMs: r.durationMs,
         results: results
           .filter((x) => x.roundIndex === r.roundIndex)
-          .map((x) => ({ key: x.participantKey, qualified: x.qualified, position: x.position, score: x.score, timeMs: x.timeMs })),
+          .map((x) => ({
+            key: x.participantKey,
+            qualified: x.qualified,
+            position: x.position,
+            score: x.score,
+            timeMs: x.timeMs,
+          })),
       })),
     };
   });
@@ -88,7 +102,12 @@ export function registerMatchRoutes(app: FastifyInstance, ctx: AppContext): void
     const results = await ctx.db
       .select()
       .from(roundResults)
-      .where(and(inArray(roundResults.matchId, ids), inArray(roundResults.participantKey, [...new Set(mine.map((x) => x.p.participantKey))])));
+      .where(
+        and(
+          inArray(roundResults.matchId, ids),
+          inArray(roundResults.participantKey, [...new Set(mine.map((x) => x.p.participantKey))]),
+        ),
+      );
     return {
       matches: mine.map(({ m, p }) => ({
         id: m.id,
@@ -105,7 +124,10 @@ export function registerMatchRoutes(app: FastifyInstance, ctx: AppContext): void
           .filter((r) => r.matchId === m.id)
           .sort((a, b) => a.roundIndex - b.roundIndex)
           .map((r) => {
-            const res = results.find((x) => x.matchId === m.id && x.roundIndex === r.roundIndex && x.participantKey === p.participantKey);
+            const res = results.find(
+              (x) =>
+                x.matchId === m.id && x.roundIndex === r.roundIndex && x.participantKey === p.participantKey,
+            );
             return {
               index: r.roundIndex,
               roundId: r.roundId,

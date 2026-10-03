@@ -34,7 +34,9 @@ export interface MatchDeps {
  * @example
  * const obstacles = obstacleRegistry(obstacleSetA, obstacleSetB);
  */
-export function obstacleRegistry(...sets: readonly (readonly AnyObstacleModule[])[]): Map<string, AnyObstacleModule> {
+export function obstacleRegistry(
+  ...sets: readonly (readonly AnyObstacleModule[])[]
+): Map<string, AnyObstacleModule> {
   const map = new Map<string, AnyObstacleModule>();
   for (const set of sets) for (const m of set) map.set(m.type, m);
   return map;

@@ -41,7 +41,18 @@ import {
   type PatternBoardView,
   type PatternSeam,
 } from '@tumble/sim/obstacles';
-import { Disposer, PAL, addOutline, applyInstanceTransform, glowMaterial, parseParams, roundedBox, solid, stripedToon, toon } from './visual-helpers-b.ts';
+import {
+  Disposer,
+  PAL,
+  addOutline,
+  applyInstanceTransform,
+  glowMaterial,
+  parseParams,
+  roundedBox,
+  solid,
+  stripedToon,
+  toon,
+} from './visual-helpers-b.ts';
 import { drawCross, drawSymbol, drawText, makeCanvas, type Ctx2D } from './patternSymbols.ts';
 import type { ObstacleVisualFactory } from './types.ts';
 
@@ -271,19 +282,28 @@ class PatternBoardVisual {
     this.object.add(this.screen.mesh);
 
     // Sweeper: hub post (always) and the bar (shown while lowered or lowering).
-    const hub = solid(d.track(new CylinderGeometry(p.hubRadius, p.hubRadius * 1.1, p.hubHeight + 4, 24)), stripedToon(d, PAL.yellow, PAL.cream, 2.5, 'y'));
+    const hub = solid(
+      d.track(new CylinderGeometry(p.hubRadius, p.hubRadius * 1.1, p.hubHeight + 4, 24)),
+      stripedToon(d, PAL.yellow, PAL.cream, 2.5, 'y'),
+    );
     hub.position.y = (p.hubHeight - 4) / 2;
     this.object.add(hub);
     const reach = p.sweeperLength - p.hubRadius;
     const barMat = stripedToon(d, PAL.magenta, PAL.orange, 1.6, 'y');
-    const bar = solid(d.track(new CapsuleGeometry(p.sweeperRadius, Math.max(0.05, reach - 2 * p.sweeperRadius), 6, 14)), barMat);
+    const bar = solid(
+      d.track(new CapsuleGeometry(p.sweeperRadius, Math.max(0.05, reach - 2 * p.sweeperRadius), 6, 14)),
+      barMat,
+    );
     bar.rotation.z = Math.PI / 2;
     bar.position.x = p.hubRadius + reach / 2;
     addOutline(d, bar, 0.04);
     this.bar.add(bar);
     const glow = glowMaterial(d, PAL.magenta, { additive: true });
     this.barGlow = glow.intensity;
-    const halo = new Mesh(d.track(new CapsuleGeometry(p.sweeperRadius * 1.9, Math.max(0.05, reach - 2 * p.sweeperRadius), 4, 12)), glow.mat);
+    const halo = new Mesh(
+      d.track(new CapsuleGeometry(p.sweeperRadius * 1.9, Math.max(0.05, reach - 2 * p.sweeperRadius), 4, 12)),
+      glow.mat,
+    );
     halo.rotation.z = Math.PI / 2;
     halo.position.x = bar.position.x;
     this.bar.add(halo);
@@ -397,11 +417,18 @@ class PatternBoardVisual {
       const sx = up ? s.sizeX : 0;
       const sz = up ? s.sizeZ : 0;
       this.q.identity();
-      this.seamBody.setMatrixAt(k, this.m.compose(this.v.set(s.x, -p.seamDepth, s.z), this.q, this.s.set(sx, 1, sz)));
+      this.seamBody.setMatrixAt(
+        k,
+        this.m.compose(this.v.set(s.x, -p.seamDepth, s.z), this.q, this.s.set(sx, 1, sz)),
+      );
       const thin = Math.min(s.sizeX, s.sizeZ) * 0.3;
       this.seamGlow.setMatrixAt(
         k,
-        this.m.compose(this.v.set(s.x, -p.seamDepth + 0.015, s.z), this.q, this.s.set(s.sizeX < s.sizeZ ? thin : sx, 1, s.sizeZ < s.sizeX ? thin : sz)),
+        this.m.compose(
+          this.v.set(s.x, -p.seamDepth + 0.015, s.z),
+          this.q,
+          this.s.set(s.sizeX < s.sizeZ ? thin : sx, 1, s.sizeZ < s.sizeX ? thin : sz),
+        ),
       );
       if (!up) this.seamGlow.setMatrixAt(k, this.m.makeScale(0, 0, 0));
     }
@@ -477,6 +504,6 @@ class PatternBoardVisual {
   }
 }
 
-
 /** Pattern Board visual factory. */
-export const patternBoardVisual: ObstacleVisualFactory = (instance, ctx) => new PatternBoardVisual(instance, ctx);
+export const patternBoardVisual: ObstacleVisualFactory = (instance, ctx) =>
+  new PatternBoardVisual(instance, ctx);

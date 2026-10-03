@@ -18,7 +18,12 @@ export interface Presence {
 const key = (userId: string) => `presence:${userId}`;
 
 /** Sets (or clears, with `offline`) a user's presence. */
-export async function setPresence(kv: KV, userId: string, status: PresenceStatus, now: number): Promise<void> {
+export async function setPresence(
+  kv: KV,
+  userId: string,
+  status: PresenceStatus,
+  now: number,
+): Promise<void> {
   if (status === 'offline') await kv.del(key(userId));
   else await kv.set(key(userId), JSON.stringify({ status, at: now } satisfies Presence), PRESENCE_TTL_MS);
 }

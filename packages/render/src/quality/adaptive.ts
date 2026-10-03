@@ -37,7 +37,8 @@ export class AdaptiveResolution {
   private overFor = 0;
   private underFor = 0;
   private cooldown = 0;
-  private readonly opts: Required<Omit<AdaptiveResolutionOptions, 'onChange'>> & Pick<AdaptiveResolutionOptions, 'onChange'>;
+  private readonly opts: Required<Omit<AdaptiveResolutionOptions, 'onChange'>> &
+    Pick<AdaptiveResolutionOptions, 'onChange'>;
 
   constructor(opts: AdaptiveResolutionOptions) {
     this.opts = {

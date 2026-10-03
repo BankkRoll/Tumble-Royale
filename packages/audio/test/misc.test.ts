@@ -40,7 +40,9 @@ describe('loop baking', () => {
     const period = 500;
     const xfade = 100;
     // A ramp has a hard discontinuity at the period boundary if not crossfaded.
-    const data = new Float32Array(period + xfade).map((_v, i) => Math.sin(i * 0.37) * 0.5 + (i / (period + xfade)) * 0.5);
+    const data = new Float32Array(period + xfade).map(
+      (_v, i) => Math.sin(i * 0.37) * 0.5 + (i / (period + xfade)) * 0.5,
+    );
     const out = bakeLoop(data, period, xfade);
     expect(out).toHaveLength(period);
     let maxStep = 0;

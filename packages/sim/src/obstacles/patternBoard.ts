@@ -23,9 +23,25 @@
 import type { Collider, RigidBody } from '@dimforge/rapier3d-compat';
 import { SIM_DT, quatFromYaw, vec3, type Rng, type Vec3 } from '@tumble/shared';
 import { z } from 'zod';
-import { ActorCooldown, KinematicDriver, ObstacleGroups, RuntimeBase, actorLocal, createPoseBuffer, knockByMotion, toWorldPoint } from './helpers-a.ts';
+import {
+  ActorCooldown,
+  KinematicDriver,
+  ObstacleGroups,
+  RuntimeBase,
+  actorLocal,
+  createPoseBuffer,
+  knockByMotion,
+  toWorldPoint,
+} from './helpers-a.ts';
 import { ensurePoseSamples, writeSample } from './helpers-b.ts';
-import type { ObstacleActor, ObstacleBuildContext, ObstacleInstance, ObstacleModule, ObstacleStepContext, PoseSample } from './types.ts';
+import type {
+  ObstacleActor,
+  ObstacleBuildContext,
+  ObstacleInstance,
+  ObstacleModule,
+  ObstacleStepContext,
+  PoseSample,
+} from './types.ts';
 
 // -----------------------------------------------------------------------------
 // Params
@@ -78,7 +94,13 @@ export const PatternBoardSchema = z.object({
   maxRounds: z.number().int().min(1).max(60).default(40),
   /** Big screen centre relative to the origin, and its size (visual). */
   screen: z
-    .object({ x: z.number(), y: z.number(), z: z.number(), width: z.number().positive(), height: z.number().positive() })
+    .object({
+      x: z.number(),
+      y: z.number(),
+      z: z.number(),
+      width: z.number().positive(),
+      height: z.number().positive(),
+    })
     .default({ x: 0, y: 12, z: 21.4, width: 22, height: 10.5 }),
 });
 
@@ -93,7 +115,16 @@ export type PatternBoardParams = z.output<typeof PatternBoardSchema>;
 export const PATTERN_SYMBOLS = ['star', 'heart', 'moon', 'bolt', 'flower', 'drop', 'crown', 'cloud'] as const;
 
 /** Symbol display colours (shape carries the meaning; colour reinforces it). */
-export const PATTERN_SYMBOL_COLORS = ['#ffd23f', '#ff4f8b', '#b9a6ff', '#ff8a3d', '#6ee7a8', '#3fa9ff', '#ffb8f0', '#e8f4ff'] as const;
+export const PATTERN_SYMBOL_COLORS = [
+  '#ffd23f',
+  '#ff4f8b',
+  '#b9a6ff',
+  '#ff8a3d',
+  '#6ee7a8',
+  '#3fa9ff',
+  '#ffb8f0',
+  '#e8f4ff',
+] as const;
 
 /** Board round twist. */
 export const PatternKind = { Normal: 0, Double: 1, Not: 2 } as const;
@@ -148,7 +179,14 @@ function baseTiming(n: number, p: PatternBoardParams): PhaseTiming {
   else if (n === 4) t = { show: 4, hide: 1, decide: 4, litDecide: false, sweeper };
   else if (n === 5) t = { show: 3.5, hide: 1, decide: 4, litDecide: false, sweeper };
   else if (n <= 7) t = { show: 3, hide: 1, decide: 4, litDecide: false, sweeper };
-  else t = { show: Math.max(1.5, 2.5 - 0.25 * (n - 8)), hide: 0.75, decide: Math.max(3, 3.5 - 0.1 * (n - 8)), litDecide: false, sweeper };
+  else
+    t = {
+      show: Math.max(1.5, 2.5 - 0.25 * (n - 8)),
+      hide: 0.75,
+      decide: Math.max(3, 3.5 - 0.1 * (n - 8)),
+      litDecide: false,
+      sweeper,
+    };
   if (p.showFlat > 0 && n >= 2) {
     t.show = p.showFlat;
     t.decide += 0.5;
@@ -200,7 +238,13 @@ function inOneLine(sym: Uint8Array, symbol: number, cols: number): boolean {
 }
 
 /** Shuffles a symbol multiset into the grid, keeping the layout with the fewest identical neighbours. */
-function scatter(multiset: number[], cols: number, rows: number, rng: Rng, avoid: (sym: Uint8Array) => boolean): Uint8Array {
+function scatter(
+  multiset: number[],
+  cols: number,
+  rows: number,
+  rng: Rng,
+  avoid: (sym: Uint8Array) => boolean,
+): Uint8Array {
   let best: Uint8Array | null = null;
   let bestCost = Infinity;
   const sym = new Uint8Array(multiset.length);
@@ -220,7 +264,11 @@ function scatter(multiset: number[], cols: number, rows: number, rng: Rng, avoid
 function symbolsInPlay(n: number, rng: Rng): number[] {
   if (n <= 2) return [0, 1, 2, 3];
   const all = [0, 1, 2, 3, 4, 5, 6, 7];
-  if (n === 3) return rng.shuffle(all).slice(0, 6).sort((a, b) => a - b);
+  if (n === 3)
+    return rng
+      .shuffle(all)
+      .slice(0, 6)
+      .sort((a, b) => a - b);
   return all;
 }
 
@@ -281,7 +329,11 @@ function generateRound(
   let targets: [number, number];
   if (kind === PatternKind.Double) {
     const a = pickTarget(play, prevTarget, rng);
-    const b = pickTarget(play.filter((s) => s !== a), prevTarget, rng);
+    const b = pickTarget(
+      play.filter((s) => s !== a),
+      prevTarget,
+      rng,
+    );
     targets = [a, b];
   } else if (n === 3) {
     const pairs = play.filter((s) => !quads.includes(s));
@@ -290,12 +342,20 @@ function generateRound(
     targets = [pickTarget(play, prevTarget, rng), -1];
   }
   const lineCheck = n >= 4 && kind !== PatternKind.Not;
-  symbols = scatter(multiset, cols, rows, rng, (sym) => lineCheck && targets.some((t) => t >= 0 && inOneLine(sym, t, cols)));
+  symbols = scatter(
+    multiset,
+    cols,
+    rows,
+    rng,
+    (sym) => lineCheck && targets.some((t) => t >= 0 && inOneLine(sym, t, cols)),
+  );
 
   if (kind === PatternKind.Not) {
     // NOT rounds use a symbol with a centre tile, so hugging the edge is never the answer.
     const centre = cols === 4 && rows === 4 ? CENTRE_TILES_4X4 : [];
-    const withCentre = play.filter((s) => s !== prevTarget && tilesOf(symbols, s).some((i) => centre.includes(i)));
+    const withCentre = play.filter(
+      (s) => s !== prevTarget && tilesOf(symbols, s).some((i) => centre.includes(i)),
+    );
     targets = [withCentre.length > 0 ? rng.pick(withCentre) : pickTarget(play, prevTarget, rng), -1];
   }
   return { symbols, targets };
@@ -453,10 +513,18 @@ export function patternSeams(p: PatternBoardParams): PatternSeam[] {
   for (let r = 0; r < p.rows; r++) {
     for (let c = 0; c < p.cols; c++) {
       const i = r * p.cols + c;
-      if (c + 1 < p.cols) out.push({ x: cx(c) + pitch / 2, z: cz(r), sizeX: p.gap, sizeZ: p.tileSize, tiles: [i, i + 1] });
-      if (r + 1 < p.rows) out.push({ x: cx(c), z: cz(r) + pitch / 2, sizeX: p.tileSize, sizeZ: p.gap, tiles: [i, i + p.cols] });
+      if (c + 1 < p.cols)
+        out.push({ x: cx(c) + pitch / 2, z: cz(r), sizeX: p.gap, sizeZ: p.tileSize, tiles: [i, i + 1] });
+      if (r + 1 < p.rows)
+        out.push({ x: cx(c), z: cz(r) + pitch / 2, sizeX: p.tileSize, sizeZ: p.gap, tiles: [i, i + p.cols] });
       if (c + 1 < p.cols && r + 1 < p.rows) {
-        out.push({ x: cx(c) + pitch / 2, z: cz(r) + pitch / 2, sizeX: p.gap, sizeZ: p.gap, tiles: [i, i + 1, i + p.cols, i + p.cols + 1] });
+        out.push({
+          x: cx(c) + pitch / 2,
+          z: cz(r) + pitch / 2,
+          sizeX: p.gap,
+          sizeZ: p.gap,
+          tiles: [i, i + 1, i + p.cols, i + p.cols + 1],
+        });
       }
     }
   }
@@ -484,7 +552,12 @@ const sweepQ = { x: 0, y: 0, z: 0, w: 1 };
  * h(t) rotated by its sweep angle. Parked high (harmless) outside DECIDE of
  * sweeper rounds, lowering and lifting over 0.6 s at the window edges.
  */
-export function patternBoardPose(t: number, p: PatternBoardParams, out: PoseSample[], speedScale: number): void {
+export function patternBoardPose(
+  t: number,
+  p: PatternBoardParams,
+  out: PoseSample[],
+  speedScale: number,
+): void {
   ensurePoseSamples(out, 1);
   const tl = cachedTimeline(p, speedScale);
   let h = p.sweeperParkHeight;
@@ -682,7 +755,11 @@ export class PatternBoardRuntime extends RuntimeBase implements PatternBoardView
   onContact(actor: ObstacleActor, collider: Collider, ctx: ObstacleStepContext): void {
     if (!this.barColliders.has(collider.handle) || actor.isGhost) return;
     if (!this.cooldown.ready(actor.id, ctx.t, 0.5)) return;
-    knockByMotion(actor, this.bar, { speed: this.params.knockSpeed, lift: this.params.knockLift, stun: false });
+    knockByMotion(actor, this.bar, {
+      speed: this.params.knockSpeed,
+      lift: this.params.knockLift,
+      stun: false,
+    });
     this.cue(ctx.events, 'trip', 0, this.params.sweeperHeight, 0);
   }
 
@@ -730,7 +807,12 @@ export class PatternBoardRuntime extends RuntimeBase implements PatternBoardView
 
   /** `[voided bits 0–29, voided bits 30–59, judged bits 0–29, judged bits 30–59]`. */
   getNetState(): number[] {
-    return [packBits(this.voided, 0), packBits(this.voided, WORD_BITS), packBits(this.judged, 0), packBits(this.judged, WORD_BITS)];
+    return [
+      packBits(this.voided, 0),
+      packBits(this.voided, WORD_BITS),
+      packBits(this.judged, 0),
+      packBits(this.judged, WORD_BITS),
+    ];
   }
 
   setNetState(state: readonly number[]): void {
@@ -758,6 +840,7 @@ export const patternBoard: ObstacleModule<PatternBoardParams> = {
   schema: PatternBoardSchema,
   pose: patternBoardPose,
   poseCount: () => 1,
-  create: (instance, ctx) => new PatternBoardRuntime(instance, ctx, PatternBoardSchema.parse(instance.params)),
+  create: (instance, ctx) =>
+    new PatternBoardRuntime(instance, ctx, PatternBoardSchema.parse(instance.params)),
   audioCues: ['reveal', 'void', 'trip'],
 };

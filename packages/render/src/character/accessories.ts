@@ -10,9 +10,9 @@
  * Colours: tint entries that name a body colour (`primary`…) become palette
  * kinds so the same geometry serves every wearer; hex tints are baked.
  */
+import type { BufferGeometry } from 'three/webgpu';
 import {
   BoxGeometry,
-  BufferGeometry,
   ConeGeometry,
   CylinderGeometry,
   ExtrudeGeometry,
@@ -123,7 +123,15 @@ class Builder {
     return g;
   }
 
-  cyl(rt: number, rb: number, h: number, x: number, y: number, z: number, radial: number = this.seg.limb + 6): CylinderGeometry {
+  cyl(
+    rt: number,
+    rb: number,
+    h: number,
+    x: number,
+    y: number,
+    z: number,
+    radial: number = this.seg.limb + 6,
+  ): CylinderGeometry {
     const g = new CylinderGeometry(rt, rb, h, radial, 1);
     g.translate(x, y, z);
     return g;
@@ -192,7 +200,15 @@ export function starGeometry(outer: number, inner: number, depth: number): Buffe
 }
 
 /** Thin slab strip that hangs along a chain (capes, scarf tails). */
-function strip(top: Vector3, bottom: Vector3, wTop: number, wBottom: number, rows: number, thick: number, wrap: number): BufferGeometry {
+function strip(
+  top: Vector3,
+  bottom: Vector3,
+  wTop: number,
+  wBottom: number,
+  rows: number,
+  thick: number,
+  wrap: number,
+): BufferGeometry {
   const h = top.distanceTo(bottom);
   const g = new BoxGeometry(1, h, thick, 4, rows, 1);
   const pos = g.getAttribute('position') as BufferAttribute;
@@ -238,7 +254,15 @@ const headwear: Record<string, (b: Builder) => void> = {
     cuff.rotateX(Math.PI / 2);
     cuff.translate(0, 1.5, 0);
     b.add(cuff, 1, H);
-    const c = b.chain({ type: 'verlet', attach: H, points: [v(0, 1.81, 0), v(0, 1.95, -0.02)], stiffness: 0.22, damping: 0.08, gravity: 1, radius: 0.08 });
+    const c = b.chain({
+      type: 'verlet',
+      attach: H,
+      points: [v(0, 1.81, 0), v(0, 1.95, -0.02)],
+      stiffness: 0.22,
+      damping: 0.08,
+      gravity: 1,
+      radius: 0.08,
+    });
     b.addChained(b.sphere(0.095, 0, 1.97, -0.02), 1, c);
   },
 
@@ -256,7 +280,12 @@ const headwear: Record<string, (b: Builder) => void> = {
       const spike = new ConeGeometry(0.035, h, 6);
       spike.translate(Math.sin(a) * 0.27, 1.68 + h / 2, Math.cos(a) * 0.27 + 0.02);
       b.add(spike, 0, H, Kind.Shiny);
-      b.add(b.sphere(i === 2 ? 0.045 : 0.03, Math.sin(a) * 0.29, 1.69 + h * 0.35, Math.cos(a) * 0.29 + 0.02), 1, H, Kind.Glow);
+      b.add(
+        b.sphere(i === 2 ? 0.045 : 0.03, Math.sin(a) * 0.29, 1.69 + h * 0.35, Math.cos(a) * 0.29 + 0.02),
+        1,
+        H,
+        Kind.Glow,
+      );
     }
   },
 
@@ -285,7 +314,12 @@ const headwear: Record<string, (b: Builder) => void> = {
         const t = Math.min(1, Math.floor(i / (b.seg.limb + 1)) / 8);
         const c = curve.getPoint(t);
         const k = 1 - t * 0.75;
-        tp.setXYZ(i, c.x + (tp.getX(i) - c.x) * k, c.y + (tp.getY(i) - c.y) * k, c.z + (tp.getZ(i) - c.z) * k);
+        tp.setXYZ(
+          i,
+          c.x + (tp.getX(i) - c.x) * k,
+          c.y + (tp.getY(i) - c.y) * k,
+          c.z + (tp.getZ(i) - c.z) * k,
+        );
       }
       tube.computeVertexNormals();
       b.add(tube, 1, H);
@@ -300,7 +334,14 @@ const headwear: Record<string, (b: Builder) => void> = {
     brim.translate(0, 1.56, 0.26);
     b.add(brim, 1, H);
     b.add(b.cyl(0.018, 0.018, 0.1, 0, 1.86, 0), 1, H);
-    const c = b.chain({ type: 'spin', attach: H, points: [v(0, 1.92, 0)], axis: v(0, 1, 0), speed: 4, speedGain: 3 });
+    const c = b.chain({
+      type: 'spin',
+      attach: H,
+      points: [v(0, 1.92, 0)],
+      axis: v(0, 1, 0),
+      speed: 4,
+      speedGain: 3,
+    });
     for (const s of [1, -1]) {
       b.addChained(b.sphere(0.13, s * 0.13, 1.92, 0, 1, 0.12, 0.32), 2, c);
     }
@@ -309,21 +350,49 @@ const headwear: Record<string, (b: Builder) => void> = {
 
   'bunny-ears': (b) => {
     for (const s of [1, -1]) {
-      const pts = [v(s * 0.12, 1.72, -0.02), v(s * 0.15, 1.92, -0.03), v(s * 0.17, 2.1, -0.04), v(s * 0.18, 2.24, -0.05)];
-      const c = b.chain({ type: 'verlet', attach: H, points: pts, stiffness: 0.1, damping: 0.06, gravity: 1, radius: 0.06 });
+      const pts = [
+        v(s * 0.12, 1.72, -0.02),
+        v(s * 0.15, 1.92, -0.03),
+        v(s * 0.17, 2.1, -0.04),
+        v(s * 0.18, 2.24, -0.05),
+      ];
+      const c = b.chain({
+        type: 'verlet',
+        attach: H,
+        points: pts,
+        stiffness: 0.1,
+        damping: 0.06,
+        gravity: 1,
+        radius: 0.06,
+      });
       const top = pts[3]!;
       const bot = pts[0]!;
-      const ear = alignBetween(new SphereGeometry(0.075, b.seg.sphereW, b.seg.sphereH * 2).scale(1, 3.6, 0.45), bot, top);
+      const ear = alignBetween(
+        new SphereGeometry(0.075, b.seg.sphereW, b.seg.sphereH * 2).scale(1, 3.6, 0.45),
+        bot,
+        top,
+      );
       ear.translate((top.x - bot.x) * 0.02, 0.05, 0);
       b.addChained(ear, 0, c);
-      const inner = alignBetween(new SphereGeometry(0.05, b.seg.sphereW, b.seg.sphereH * 2).scale(1, 3.6, 0.3), bot, top);
+      const inner = alignBetween(
+        new SphereGeometry(0.05, b.seg.sphereW, b.seg.sphereH * 2).scale(1, 3.6, 0.3),
+        bot,
+        top,
+      );
       inner.translate(0, 0.06, 0.02);
       b.addChained(inner, 1, c);
     }
   },
 
   halo: (b) => {
-    const c = b.chain({ type: 'bob', attach: H, points: [v(0, 2.0, 0)], axis: v(0, 1, 0), amp: 0.035, freq: 0.7 });
+    const c = b.chain({
+      type: 'bob',
+      attach: H,
+      points: [v(0, 2.0, 0)],
+      axis: v(0, 1, 0),
+      amp: 0.035,
+      freq: 0.7,
+    });
     const ring = b.torus(0.24, 0.032);
     ring.rotateX(Math.PI / 2 - 0.15);
     ring.translate(0, 2.0, 0);
@@ -355,7 +424,15 @@ const headwear: Record<string, (b: Builder) => void> = {
   antenna: (b) => {
     for (const s of [1, -1]) {
       const pts = [v(s * 0.09, 1.76, 0.02), v(s * 0.12, 1.92, 0.03), v(s * 0.16, 2.06, 0.05)];
-      const c = b.chain({ type: 'verlet', attach: H, points: pts, stiffness: 0.18, damping: 0.05, gravity: 0.6, radius: 0.04 });
+      const c = b.chain({
+        type: 'verlet',
+        attach: H,
+        points: pts,
+        stiffness: 0.18,
+        damping: 0.05,
+        gravity: 0.6,
+        radius: 0.04,
+      });
       b.addChained(b.rod(pts[0]!, pts[1]!, 0.018), 0, c);
       b.addChained(b.rod(pts[1]!, pts[2]!, 0.016), 0, c);
       b.addChained(b.sphere(0.055, pts[2]!.x, pts[2]!.y + 0.02, pts[2]!.z), 1, c, Kind.Glow);
@@ -380,7 +457,15 @@ const headwear: Record<string, (b: Builder) => void> = {
 
   sprout: (b) => {
     const pts = [v(0, 1.79, 0), v(0.01, 1.9, 0.01)];
-    const c = b.chain({ type: 'verlet', attach: H, points: pts, stiffness: 0.3, damping: 0.08, gravity: 0.5, radius: 0.04 });
+    const c = b.chain({
+      type: 'verlet',
+      attach: H,
+      points: pts,
+      stiffness: 0.3,
+      damping: 0.08,
+      gravity: 0.5,
+      radius: 0.04,
+    });
     b.addChained(b.rod(pts[0]!, pts[1]!, 0.018), 0, c);
     for (const s of [1, -1]) {
       const leaf = new SphereGeometry(0.06, b.seg.sphereW, b.seg.sphereH).scale(1.7, 0.4, 0.9);
@@ -416,8 +501,22 @@ const C = Bone.chest;
 const back: Record<string, (b: Builder) => void> = {
   cape: (b) => {
     const rows = b.lod === 0 ? 8 : 4;
-    const pts = [v(0, 1.12, -0.41), v(0, 0.92, -0.5), v(0, 0.72, -0.56), v(0, 0.52, -0.58), v(0, 0.32, -0.58)];
-    const c = b.chain({ type: 'verlet', attach: C, points: pts, stiffness: 0.035, damping: 0.05, gravity: 1, radius: 0.05 });
+    const pts = [
+      v(0, 1.12, -0.41),
+      v(0, 0.92, -0.5),
+      v(0, 0.72, -0.56),
+      v(0, 0.52, -0.58),
+      v(0, 0.32, -0.58),
+    ];
+    const c = b.chain({
+      type: 'verlet',
+      attach: C,
+      points: pts,
+      stiffness: 0.035,
+      damping: 0.05,
+      gravity: 1,
+      radius: 0.05,
+    });
     const cape = strip(pts[0]!, pts[pts.length - 1]!, 0.62, 0.78, rows, 0.025, 0.55);
     // Lining in the second tint: colour faces that point towards the body.
     finishPart(cape, b.style(0), Bone.root);
@@ -440,7 +539,14 @@ const back: Record<string, (b: Builder) => void> = {
   wings: (b) => {
     for (const s of [1, -1]) {
       const pivot = v(s * 0.1, 1.1, -0.42);
-      const c = b.chain({ type: 'flap', attach: C, points: [pivot], axis: v(0, 1, 0), amp: s * 0.35, freq: 2.6 });
+      const c = b.chain({
+        type: 'flap',
+        attach: C,
+        points: [pivot],
+        axis: v(0, 1, 0),
+        amp: s * 0.35,
+        freq: 2.6,
+      });
       const upper = new SphereGeometry(0.2, b.seg.sphereW, b.seg.sphereH).scale(1.5, 1.1, 0.12);
       upper.rotateZ(s * 0.5);
       upper.translate(pivot.x + s * 0.27, pivot.y + 0.16, pivot.z - 0.08);
@@ -456,9 +562,24 @@ const back: Record<string, (b: Builder) => void> = {
     b.add(new BoxGeometry(0.36, 0.3, 0.12).translate(0, 1.0, -0.47), 0, C, Kind.Shiny);
     for (const s of [1, -1]) {
       b.add(b.cyl(0.1, 0.1, 0.42, s * 0.15, 1.0, -0.56), 0, C, Kind.Shiny);
-      b.add(new SphereGeometry(0.1, b.seg.sphereW, b.seg.sphereH, 0, Math.PI * 2, 0, Math.PI / 2).translate(s * 0.15, 1.21, -0.56), 1, C);
+      b.add(
+        new SphereGeometry(0.1, b.seg.sphereW, b.seg.sphereH, 0, Math.PI * 2, 0, Math.PI / 2).translate(
+          s * 0.15,
+          1.21,
+          -0.56,
+        ),
+        1,
+        C,
+      );
       b.add(b.cyl(0.06, 0.09, 0.08, s * 0.15, 0.75, -0.56), 1, C);
-      const c = b.chain({ type: 'bob', attach: C, points: [v(s * 0.15, 0.7, -0.56)], axis: v(0, 1, 0), amp: 0.025, freq: 9 + s });
+      const c = b.chain({
+        type: 'bob',
+        attach: C,
+        points: [v(s * 0.15, 0.7, -0.56)],
+        axis: v(0, 1, 0),
+        amp: 0.025,
+        freq: 9 + s,
+      });
       const flame = new ConeGeometry(0.065, 0.2, 10);
       flame.rotateX(Math.PI);
       flame.translate(s * 0.15, 0.61, -0.56);
@@ -467,8 +588,23 @@ const back: Record<string, (b: Builder) => void> = {
   },
 
   tail: (b) => {
-    const pts = [v(0, 0.45, -0.44), v(0, 0.43, -0.58), v(0, 0.47, -0.72), v(0, 0.56, -0.84), v(0, 0.68, -0.92)];
-    const c = b.chain({ type: 'verlet', attach: Bone.hips, points: pts, stiffness: 0.09, damping: 0.06, gravity: 0.5, radius: 0.05, wag: 1 });
+    const pts = [
+      v(0, 0.45, -0.44),
+      v(0, 0.43, -0.58),
+      v(0, 0.47, -0.72),
+      v(0, 0.56, -0.84),
+      v(0, 0.68, -0.92),
+    ];
+    const c = b.chain({
+      type: 'verlet',
+      attach: Bone.hips,
+      points: pts,
+      stiffness: 0.09,
+      damping: 0.06,
+      gravity: 0.5,
+      radius: 0.05,
+      wag: 1,
+    });
     const curve = new CatmullRomCurve3(pts);
     const tube = new TubeGeometry(curve, b.lod === 0 ? 16 : 8, 0.055, b.seg.limb, false);
     b.addChained(tube, 0, c);
@@ -510,7 +646,7 @@ const upper: Record<string, (b: Builder) => void> = {
     const p = surface(0, 0.96, 0.03);
     for (const s of [1, -1]) {
       const wing = new ConeGeometry(0.07, 0.13, 8);
-      wing.rotateZ(s * Math.PI / 2);
+      wing.rotateZ((s * Math.PI) / 2);
       wing.scale(1, 1, 0.55);
       wing.translate(p.x + s * 0.07, p.y, p.z);
       b.add(wing, 0, C);
@@ -524,8 +660,21 @@ const upper: Record<string, (b: Builder) => void> = {
     ring.translate(0, 1.0, 0);
     b.add(ring, 0, C);
     for (const s of [1, -1]) {
-      const pts = [v(s * 0.1, 0.98, -0.47), v(s * 0.13, 0.85, -0.53), v(s * 0.15, 0.72, -0.56), v(s * 0.16, 0.6, -0.57)];
-      const c = b.chain({ type: 'verlet', attach: C, points: pts, stiffness: 0.04, damping: 0.05, gravity: 1, radius: 0.05 });
+      const pts = [
+        v(s * 0.1, 0.98, -0.47),
+        v(s * 0.13, 0.85, -0.53),
+        v(s * 0.15, 0.72, -0.56),
+        v(s * 0.16, 0.6, -0.57),
+      ];
+      const c = b.chain({
+        type: 'verlet',
+        attach: C,
+        points: pts,
+        stiffness: 0.04,
+        damping: 0.05,
+        gravity: 1,
+        radius: 0.05,
+      });
       const tail = strip(pts[0]!, pts[pts.length - 1]!, 0.1, 0.11, b.lod === 0 ? 6 : 3, 0.03, 0);
       finishPart(tail, b.style(0), Bone.root);
       // Stripe the tail every other row in the second tint.
@@ -606,7 +755,13 @@ const lower: Record<string, (b: Builder) => void> = {
   floatie: (b) => {
     const n = 8;
     for (let i = 0; i < n; i++) {
-      const arc = new TorusGeometry(0.58, 0.13, Math.max(6, b.seg.limb), Math.max(3, b.seg.radial >> 3), (Math.PI * 2) / n);
+      const arc = new TorusGeometry(
+        0.58,
+        0.13,
+        Math.max(6, b.seg.limb),
+        Math.max(3, b.seg.radial >> 3),
+        (Math.PI * 2) / n,
+      );
       arc.rotateZ((i / n) * Math.PI * 2);
       arc.rotateX(Math.PI / 2);
       arc.translate(0, 0.62, 0);
@@ -704,7 +859,11 @@ const BUILDERS: Record<string, (b: Builder) => void> = { ...headwear, ...back, .
  * @param lod - Level of detail.
  * @returns Parts and chains, or `null` for an unknown id.
  */
-export function buildAccessory(mesh: AccessoryMeshId | string, tint: readonly string[], lod: Lod): AccessoryBuild | null {
+export function buildAccessory(
+  mesh: AccessoryMeshId | string,
+  tint: readonly string[],
+  lod: Lod,
+): AccessoryBuild | null {
   const fn = BUILDERS[mesh];
   if (!fn) return null;
   const b = new Builder(lod, tint);

@@ -1,7 +1,7 @@
+import type { BufferGeometry } from 'three/webgpu';
 import {
   AdditiveBlending,
   BufferAttribute,
-  BufferGeometry,
   CanvasTexture,
   CircleGeometry,
   Color,
@@ -49,7 +49,8 @@ import { DecorRandom } from '../level/toolkit.ts';
 function painted(geo: BufferGeometry, hex: string): BufferGeometry {
   const g = geo.index ? geo.toNonIndexed() : geo;
   if (g !== geo) geo.dispose();
-  for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
+  for (const name of Object.keys(g.attributes))
+    if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
   const c = new Color(hex);
   const n = g.getAttribute('position').count;
   const arr = new Float32Array(n * 3);
@@ -87,18 +88,35 @@ export function createFloatingPlatform(theme: ThemeDefinition, radius: number, s
   b.add('cyl', 0, -0.35, 0, radius, 0.7, radius, p.neutral);
   b.add('cyl', 0, -0.95, 0, radius * 1.02, 0.6, radius * 1.02, p.primary);
   b.add('cyl', 0, -1.6, 0, radius * 0.94, 0.8, radius * 0.94, p.secondary);
-  b.add('cone', 0, -1.95 - radius * 0.55, 0, radius * 0.9, radius * 1.1, radius * 0.9, p.structure, [Math.PI, 0, 0]);
+  b.add('cone', 0, -1.95 - radius * 0.55, 0, radius * 0.9, radius * 1.1, radius * 0.9, p.structure, [
+    Math.PI,
+    0,
+    0,
+  ]);
   const drips = Math.round(radius * 3.2);
   for (let i = 0; i < drips; i++) {
     const a = (i / drips) * Math.PI * 2 + rng.range(-0.08, 0.08);
     const len = rng.range(0.35, 0.9);
-    b.add('capsule', Math.cos(a) * radius * 1.0, -0.62 - len * 0.35, Math.sin(a) * radius * 1.0, 0.36, len, 0.36, p.neutral);
+    b.add(
+      'capsule',
+      Math.cos(a) * radius * 1.0,
+      -0.62 - len * 0.35,
+      Math.sin(a) * radius * 1.0,
+      0.36,
+      len,
+      0.36,
+      p.neutral,
+    );
   }
   const sprinkles = Math.round(radius * radius * 1.2);
   for (let i = 0; i < sprinkles; i++) {
     const a = rng.range(0, Math.PI * 2);
     const r = Math.sqrt(rng.next()) * radius * 0.92;
-    b.add('capsule', Math.cos(a) * r, 0.02, Math.sin(a) * r, 0.07, 0.16, 0.07, rng.pick(theme.decor.colors), [Math.PI / 2, rng.range(0, Math.PI), 0]);
+    b.add('capsule', Math.cos(a) * r, 0.02, Math.sin(a) * r, 0.07, 0.16, 0.07, rng.pick(theme.decor.colors), [
+      Math.PI / 2,
+      rng.range(0, Math.PI),
+      0,
+    ]);
   }
   const posts = Math.max(4, Math.round(radius * 0.8));
   for (let i = 0; i < posts; i++) {
@@ -156,12 +174,18 @@ export function createCrownMesh(scale = 1): Mesh {
   for (const g of parts) g.dispose();
   geo.scale(scale, scale, scale);
 
-  const mat: MeshToonNodeMaterial = createToonMaterial({ color: '#ffffff', rimColor: '#fff3c0', rimStrength: 0.9 });
+  const mat: MeshToonNodeMaterial = createToonMaterial({
+    color: '#ffffff',
+    rimColor: '#fff3c0',
+    rimStrength: 0.9,
+  });
   mat.vertexColors = true;
   const viewDir = cameraPosition.sub(positionWorld).normalize();
   const glint = smoothstep(0.75, 0.98, abs(normalWorld.normalize().dot(viewDir)).oneMinus().oneMinus());
   const base = (mat as MeshToonNodeMaterial & { emissiveNode: Node<'vec3'> }).emissiveNode;
-  (mat as MeshToonNodeMaterial & { emissiveNode: Node<'vec3'> }).emissiveNode = base.add(vec3(1.0, 0.8, 0.3).mul(glint.mul(0.35)));
+  (mat as MeshToonNodeMaterial & { emissiveNode: Node<'vec3'> }).emissiveNode = base.add(
+    vec3(1.0, 0.8, 0.3).mul(glint.mul(0.35)),
+  );
   const mesh = new Mesh(geo, mat);
   mesh.castShadow = true;
   mesh.name = 'crown';
@@ -190,11 +214,20 @@ export function createLightBeam(color: string, length = 12, radius = 2.2): Light
   geo.translate(0, -length / 2, 0);
   const intensity = uniform(1);
   const col = uniform(new Color(color));
-  const mat = new MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: AdditiveBlending, side: DoubleSide });
+  const mat = new MeshBasicNodeMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: AdditiveBlending,
+    side: DoubleSide,
+  });
   const along = positionLocal.y.negate().div(length);
   const viewDir = cameraPosition.sub(positionWorld).normalize();
   const facing = abs(normalWorld.normalize().dot(viewDir));
-  const alpha = smoothstep(1.0, 0.1, along).mul(smoothstep(0.0, 0.06, along)).mul(facing.pow(1.5)).mul(0.35).mul(intensity);
+  const alpha = smoothstep(1.0, 0.1, along)
+    .mul(smoothstep(0.0, 0.06, along))
+    .mul(facing.pow(1.5))
+    .mul(0.35)
+    .mul(intensity);
   mat.colorNode = col.mul(alpha);
   mat.opacityNode = alpha;
   const mesh = new Mesh(geo, mat);
@@ -233,7 +266,9 @@ export function createSunburst(colorA: string, colorB: string, radius = 60, rays
   const b = uniform(new Color(colorB));
   const mat = new MeshBasicNodeMaterial({ fog: false, depthWrite: false });
   const st = uv().sub(0.5);
-  const ang = atan(st.y, st.x).div(Math.PI * 2).add(0.5);
+  const ang = atan(st.y, st.x)
+    .div(Math.PI * 2)
+    .add(0.5);
   const stripe = smoothstep(0.48, 0.52, fract(ang.mul(rays).add(time.mul(0.15))));
   const r = st.length().mul(2);
   const center = smoothstep(0.0, 0.35, r);

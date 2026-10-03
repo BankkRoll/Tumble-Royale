@@ -277,7 +277,9 @@
   border-radius: 1.2em;
   border: 0.16em solid var(--ink);
   background: var(--cloud);
-  box-shadow: 0 0.22em 0 var(--ink), 0 0.6em 1.2em rgba(43, 26, 94, 0.25);
+  box-shadow:
+    0 0.22em 0 var(--ink),
+    0 0.6em 1.2em rgba(43, 26, 94, 0.25);
   animation: tt-bubble-in 380ms var(--ease-spring) backwards;
 }
 .tt-bubble-inner::after {

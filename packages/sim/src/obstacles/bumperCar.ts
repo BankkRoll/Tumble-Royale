@@ -111,7 +111,9 @@ export function bumperTrackLut(p: BumperCarParams): TrackLut {
 function catmull(p0: number, p1: number, p2: number, p3: number, u: number): number {
   const u2 = u * u;
   const u3 = u2 * u;
-  return 0.5 * (2 * p1 + (-p0 + p2) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u2 + (-p0 + 3 * p1 - 3 * p2 + p3) * u3);
+  return (
+    0.5 * (2 * p1 + (-p0 + p2) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u2 + (-p0 + 3 * p1 - 3 * p2 + p3) * u3)
+  );
 }
 
 /**
@@ -146,7 +148,13 @@ export function sampleTrack(lut: TrackLut, s: number, out: Vec3): number {
  * s(t) = offset + dir·v0·(t − a·(cos(ωt+φ) − cos φ)/ω), the exact integral of
  * v(t) = v0·(1 + a·sin(ωt+φ)).
  */
-export function bumperCarDistance(t: number, p: BumperCarParams, i: number, speedScale: number, loop: number): number {
+export function bumperCarDistance(
+  t: number,
+  p: BumperCarParams,
+  i: number,
+  speedScale: number,
+  loop: number,
+): number {
   const ts = t * speedScale;
   const w = (Math.PI * 2) / p.variationPeriod;
   const phi = hash3(p.seed, i, 0xb0) * Math.PI * 2;

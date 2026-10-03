@@ -48,7 +48,13 @@ export function seedMeta(): void {
   s.setLeaderboard('weekly', makeLeaderboard(23, 0.2));
   s.setLeaderboard('crowns_all_time', makeLeaderboard(25, 3));
   s.setLeaderboard('win_streak', makeLeaderboard(26, 0.05));
-  for (const b of ['crowns', 'ranked', 'weekly', 'crowns_all_time', 'win_streak'] as const) ui.setState((st) => ({ leaderboardInfo: { ...st.leaderboardInfo, [b]: { scope: 'global', source: 'api', updatedAt: Date.now() } } }));
+  for (const b of ['crowns', 'ranked', 'weekly', 'crowns_all_time', 'win_streak'] as const)
+    ui.setState((st) => ({
+      leaderboardInfo: {
+        ...st.leaderboardInfo,
+        [b]: { scope: 'global', source: 'api', updatedAt: Date.now() },
+      },
+    }));
   s.setOnlineStatus({ state: 'online', playersOnline: 1284 });
   ui.setState({ playMode: 'online' });
   s.setLeaderboard(

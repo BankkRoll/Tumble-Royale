@@ -53,7 +53,10 @@ const STANDARD_WEIGHTS: Readonly<Record<string, number>> = {
 };
 
 function pool(ids: readonly string[], scale: Readonly<Record<string, number>> = {}): Pool {
-  return ids.map((roundId) => ({ roundId, weight: (STANDARD_WEIGHTS[roundId] ?? 1) * (scale[roundId] ?? 1) }));
+  return ids.map((roundId) => ({
+    roundId,
+    weight: (STANDARD_WEIGHTS[roundId] ?? 1) * (scale[roundId] ?? 1),
+  }));
 }
 
 /** The default 40-player solo show. */
@@ -112,7 +115,12 @@ export const CHAOS_MODE: ShowPlaylistInput = {
   stageOffset: 2,
   typeWeights: { survival: 1.6, logic: 0.6 },
   botSkillMix: { clumsy: 0, average: 2, sharp: 3 },
-  pool: pool(PLANNED_ROUND_IDS, { 'cannonball-canyon': 1.5, 'hammer-highway': 1.4, 'tile-panic': 1.3, 'spin-cycle': 1.3 }),
+  pool: pool(PLANNED_ROUND_IDS, {
+    'cannonball-canyon': 1.5,
+    'hammer-highway': 1.4,
+    'tile-panic': 1.3,
+    'spin-cycle': 1.3,
+  }),
 };
 
 /** Rated shows: humans only, standard cuts, no hunt randomness. */
@@ -160,9 +168,14 @@ export const FIRST_SHOW: ShowPlaylistInput = {
 };
 
 /** Every playlist, validated (defaults applied). */
-export const PLAYLISTS: readonly ShowPlaylist[] = [MAIN_SHOW, DUOS, SQUADS, CHAOS_MODE, RANKED, FIRST_SHOW].map((p) =>
-  ShowPlaylistSchema.parse(p),
-);
+export const PLAYLISTS: readonly ShowPlaylist[] = [
+  MAIN_SHOW,
+  DUOS,
+  SQUADS,
+  CHAOS_MODE,
+  RANKED,
+  FIRST_SHOW,
+].map((p) => ShowPlaylistSchema.parse(p));
 
 /**
  * Looks up a validated playlist.

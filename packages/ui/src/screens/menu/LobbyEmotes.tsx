@@ -42,7 +42,12 @@ function buildEntries(inv: InventoryData | null, pass: SeasonPassData | null): E
   rest.sort((a, b) => Number(b.owned) - Number(a.owned) || a.name.localeCompare(b.name));
   for (const item of rest) {
     const tier = item.owned ? undefined : passTierOf(pass, item.id);
-    out.push({ item, slot: -1, source: tier !== undefined ? 'pass' : 'store', ...(tier !== undefined ? { tier } : {}) });
+    out.push({
+      item,
+      slot: -1,
+      source: tier !== undefined ? 'pass' : 'store',
+      ...(tier !== undefined ? { tier } : {}),
+    });
   }
   return out;
 }
@@ -137,7 +142,10 @@ export const LobbyEmotes = memo(function LobbyEmotes({ className }: LobbyEmotesP
   };
 
   return (
-    <div ref={rootRef} className={`tr-lobby-emotes${open ? ' is-open' : ''}${className ? ` ${className}` : ''}`}>
+    <div
+      ref={rootRef}
+      className={`tr-lobby-emotes${open ? ' is-open' : ''}${className ? ` ${className}` : ''}`}
+    >
       {open && (
         <div className="tr-lobby-emote-panel" role="menu" aria-label="Emotes">
           <div className="tr-lobby-emote-head">
@@ -158,8 +166,14 @@ export const LobbyEmotes = memo(function LobbyEmotes({ className }: LobbyEmotesP
                   data-nav
                   data-autofocus={i === 0 ? true : undefined}
                   className={`tr-lobby-emote-item${locked ? ' is-locked' : ''}${entry.slot >= 0 ? ' is-equipped' : ''}`}
-                  style={{ ['--art-a' as string]: item.art[0], ['--art-b' as string]: item.art[1], animationDelay: `${Math.min(i, 12) * 22}ms` }}
-                  title={locked ? `Unlock in the ${entry.source === 'pass' ? 'Season Pass' : 'Store'}` : item.name}
+                  style={{
+                    ['--art-a' as string]: item.art[0],
+                    ['--art-b' as string]: item.art[1],
+                    animationDelay: `${Math.min(i, 12) * 22}ms`,
+                  }}
+                  title={
+                    locked ? `Unlock in the ${entry.source === 'pass' ? 'Season Pass' : 'Store'}` : item.name
+                  }
                   onClick={() => pick(entry)}
                   onPointerEnter={() => playCue('ui.hover')}
                 >
@@ -173,7 +187,11 @@ export const LobbyEmotes = memo(function LobbyEmotes({ className }: LobbyEmotesP
                       <span className="tr-lobby-emote-lock" aria-hidden>
                         <Icon name="lock" size="1.15em" />
                       </span>
-                      <span className="tr-lobby-emote-where">{entry.source === 'pass' ? `Pass${entry.tier !== undefined ? ` · T${entry.tier}` : ''}` : 'Store'}</span>
+                      <span className="tr-lobby-emote-where">
+                        {entry.source === 'pass'
+                          ? `Pass${entry.tier !== undefined ? ` · T${entry.tier}` : ''}`
+                          : 'Store'}
+                      </span>
                     </>
                   )}
                 </button>
@@ -181,7 +199,8 @@ export const LobbyEmotes = memo(function LobbyEmotes({ className }: LobbyEmotesP
             })}
           </div>
           <div className="tr-lobby-emote-foot">
-            <span className="tr-lobby-emote-kbd">1</span>–<span className="tr-lobby-emote-kbd">4</span> quick emote
+            <span className="tr-lobby-emote-kbd">1</span>–<span className="tr-lobby-emote-kbd">4</span> quick
+            emote
             <span className="tr-lobby-emote-sep" />
             <span className="tr-lobby-emote-kbd">B</span> close
           </div>

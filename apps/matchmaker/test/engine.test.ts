@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_ENGINE, formLobbies, queueStatus, ratingBand, type EngineConfig, type QueueEntry } from '../src/engine.ts';
+import {
+  DEFAULT_ENGINE,
+  formLobbies,
+  queueStatus,
+  ratingBand,
+  type EngineConfig,
+  type QueueEntry,
+} from '../src/engine.ts';
 
 let seq = 0;
 function entry(size: number, opts: Partial<QueueEntry> = {}): QueueEntry {
@@ -8,7 +15,11 @@ function entry(size: number, opts: Partial<QueueEntry> = {}): QueueEntry {
     id,
     partyId: size > 1 ? `party-${id}` : `solo:${id}`,
     leaderId: `${id}-u0`,
-    members: Array.from({ length: size }, (_, i) => ({ userId: `${id}-u${i}`, name: `P${id}${i}`, ordinal: opts.members?.[0]?.ordinal ?? 0 })),
+    members: Array.from({ length: size }, (_, i) => ({
+      userId: `${id}-u${i}`,
+      name: `P${id}${i}`,
+      ordinal: opts.members?.[0]?.ordinal ?? 0,
+    })),
     playlistId: 'main-show',
     queue: 'casual',
     region: 'na',
@@ -59,13 +70,27 @@ describe('wait-time release with bot fill', () => {
 
   it('reports a countdown ETA', () => {
     const q = solos(3);
-    expect(queueStatus(q[0]!, q, 5_000, cfg)).toMatchObject({ searching: 3, waitedSec: 5, etaSec: 20, band: null });
+    expect(queueStatus(q[0]!, q, 5_000, cfg)).toMatchObject({
+      searching: 3,
+      waitedSec: 5,
+      etaSec: 20,
+      band: null,
+    });
   });
 
   it('does not bot-fill playlists that forbid bots until minPlayers humans are present', () => {
     const q = solos(5, { botsAllowed: false, minPlayers: 6, queue: 'ranked', playlistId: 'ranked' });
     expect(formLobbies(q, 60_000, cfg)).toHaveLength(0);
-    const more = [...q, entry(1, { botsAllowed: false, minPlayers: 6, queue: 'ranked', playlistId: 'ranked', enqueuedAt: 59_000 })];
+    const more = [
+      ...q,
+      entry(1, {
+        botsAllowed: false,
+        minPlayers: 6,
+        queue: 'ranked',
+        playlistId: 'ranked',
+        enqueuedAt: 59_000,
+      }),
+    ];
     expect(formLobbies(more, 60_000, cfg)[0]).toMatchObject({ humans: 6, botFill: 0 });
   });
 });
@@ -85,7 +110,12 @@ describe('party integrity', () => {
   });
 
   it('assembles squads from parties of different sizes', () => {
-    const q = [entry(2, { teamSize: 4, playlistId: 'squads', lobbySize: 8 }), entry(3, { teamSize: 4, playlistId: 'squads', lobbySize: 8 }), entry(1, { teamSize: 4, playlistId: 'squads', lobbySize: 8 }), entry(2, { teamSize: 4, playlistId: 'squads', lobbySize: 8 })];
+    const q = [
+      entry(2, { teamSize: 4, playlistId: 'squads', lobbySize: 8 }),
+      entry(3, { teamSize: 4, playlistId: 'squads', lobbySize: 8 }),
+      entry(1, { teamSize: 4, playlistId: 'squads', lobbySize: 8 }),
+      entry(2, { teamSize: 4, playlistId: 'squads', lobbySize: 8 }),
+    ];
     const [lobby] = formLobbies(q, 0, cfg);
     expect(lobby).toMatchObject({ reason: 'full', humans: 8 });
     expect(lobby!.teams.map((t) => t.length)).toEqual([4, 4]);
@@ -105,7 +135,13 @@ describe('party integrity', () => {
 
 describe('ranked rating bands', () => {
   const ranked = (ordinal: number, enqueuedAt = 0) =>
-    entry(1, { queue: 'ranked', playlistId: 'ranked', lobbySize: 2, members: [{ userId: 'x', name: 'x', ordinal }], enqueuedAt });
+    entry(1, {
+      queue: 'ranked',
+      playlistId: 'ranked',
+      lobbySize: 2,
+      members: [{ userId: 'x', name: 'x', ordinal }],
+      enqueuedAt,
+    });
 
   it('widens with wait time', () => {
     expect(ratingBand(cfg, 0)).toBe(cfg.band.base);

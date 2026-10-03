@@ -1,6 +1,11 @@
 import { RoundPhase, type RoundDefinition } from '@tumble/shared';
 import { afterEach, describe, expect, it } from 'vitest';
-import { CharacterState, createTumblerController, emptyInput, type CharacterInput } from '../src/character/index.ts';
+import {
+  CharacterState,
+  createTumblerController,
+  emptyInput,
+  type CharacterInput,
+} from '../src/character/index.ts';
 import { loadRapier } from '../src/index.ts';
 import { createMatchSim, createTestArenaRound, type MatchSimHandle } from '../src/match/index.ts';
 import { OBSTACLE_REGISTRY } from '../src/obstacles/index.ts';
@@ -32,7 +37,9 @@ async function ropeSim(params: Record<string, unknown>): Promise<MatchSimHandle>
       R,
       round: createTestArenaRound({
         // Input shape: createTestArenaRound parses it, filling the piece defaults.
-        geometry: [{ shape: 'cylinder', position: { x: 0, y: -0.5, z: 0 }, size: { x: ARENA_R, y: 1, z: 0 } }] as RoundDefinition['geometry'],
+        geometry: [
+          { shape: 'cylinder', position: { x: 0, y: -0.5, z: 0 }, size: { x: ARENA_R, y: 1, z: 0 } },
+        ] as RoundDefinition['geometry'],
         obstacles: [rope],
       }),
       seed: 9,

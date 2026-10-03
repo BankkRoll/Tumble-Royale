@@ -112,7 +112,9 @@ export function pieceParts(R: Rapier, piece: StaticPiece): Part[] {
     if (!desc) return;
     const off = rotateVec(rot, local);
     const r = localRot ? quatMul(rot, localRot) : rot;
-    desc.setTranslation(piece.position.x + off.x, piece.position.y + off.y, piece.position.z + off.z).setRotation(r);
+    desc
+      .setTranslation(piece.position.x + off.x, piece.position.y + off.y, piece.position.z + off.z)
+      .setRotation(r);
     parts.push({ desc });
   };
   const hx = Math.max(s.x / 2, 0.01);

@@ -82,7 +82,11 @@ export class RoundView implements GameView {
   private mode: RoundCameraMode = 'follow';
   private targetId: number;
   private flyoverDone: (() => void) | null = null;
-  private readonly follow: CameraFollowTarget = { position: { x: 0, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, grounded: true };
+  private readonly follow: CameraFollowTarget = {
+    position: { x: 0, y: 0, z: 0 },
+    velocity: { x: 0, y: 0, z: 0 },
+    grounded: true,
+  };
   private readonly focus = new Vector3();
   private readonly camPos = new Vector3();
   private readonly ray: InstanceType<Rapier['Ray']>;
@@ -107,7 +111,12 @@ export class RoundView implements GameView {
       courseBounds: Number.isFinite(b.min.x) ? { min: b.min, max: b.max } : round.bounds,
       seed: round.decorSeed,
       detail: preset.environment,
-      lighting: { shadows: preset.shadows, mapSize: preset.shadowMapSize, cascades: preset.cascades, shadowDistance: preset.shadowDistance },
+      lighting: {
+        shadows: preset.shadows,
+        mapSize: preset.shadowMapSize,
+        cascades: preset.cascades,
+        shadowDistance: preset.shadowDistance,
+      },
     });
     this.env.attach(this.scene);
     const level = this.level;
@@ -122,7 +131,8 @@ export class RoundView implements GameView {
     this.scene.add(this.vfx.object);
 
     const scales = round.speedScaleByStage;
-    const speedScale = scales.length > 0 ? (scales[Math.max(0, Math.min(opts.stage, scales.length - 1))] ?? 1) : 1;
+    const speedScale =
+      scales.length > 0 ? (scales[Math.max(0, Math.min(opts.stage, scales.length - 1))] ?? 1) : 1;
     for (const runtime of source.sim.obstacleRuntimes) {
       const inst = runtime.instance;
       this.obstaclePos.set(inst.id, inst.position);
@@ -194,13 +204,24 @@ export class RoundView implements GameView {
   // Physics queries (only while the sim is alive)
   // ---------------------------------------------------------------------------
 
-  private probe(x: number, y: number, z: number, out: { y: number; nx: number; ny: number; nz: number }): boolean {
+  private probe(
+    x: number,
+    y: number,
+    z: number,
+    out: { y: number; nx: number; ny: number; nz: number },
+  ): boolean {
     const src = this.opts.source;
     if (!src.alive) return false;
     this.ray.origin.x = x;
     this.ray.origin.y = y;
     this.ray.origin.z = z;
-    const hit = src.sim.world.castRayAndGetNormal(this.ray, 40, true, EXCLUDE_SENSORS, InteractionGroups.groundQuery);
+    const hit = src.sim.world.castRayAndGetNormal(
+      this.ray,
+      40,
+      true,
+      EXCLUDE_SENSORS,
+      InteractionGroups.groundQuery,
+    );
     if (!hit) return false;
     out.y = y - hit.timeOfImpact;
     out.nx = hit.normal.x;
@@ -212,7 +233,17 @@ export class RoundView implements GameView {
   private collide(o: CameraVec3, d: CameraVec3, max: number): number {
     const src = this.opts.source;
     if (!src.alive) return max;
-    const hit = src.sim.world.castShape(o, IDENTITY, d, this.camBall, 0, max, false, EXCLUDE_SENSORS, this.camGroups);
+    const hit = src.sim.world.castShape(
+      o,
+      IDENTITY,
+      d,
+      this.camBall,
+      0,
+      max,
+      false,
+      EXCLUDE_SENSORS,
+      this.camGroups,
+    );
     return hit ? hit.time_of_impact : max;
   }
 
@@ -261,7 +292,13 @@ export class RoundView implements GameView {
         { x: o.x + 18, y: o.y + 10, z: o.z + 12 },
       ];
     }
-    this.rig.playFlyover({ points, lookAts: f.lookAt.length ? f.lookAt : [this.opts.round.spawn.origin], duration: Math.max(1, f.duration), then: 'orbit', onDone: done });
+    this.rig.playFlyover({
+      points,
+      lookAts: f.lookAt.length ? f.lookAt : [this.opts.round.spawn.origin],
+      duration: Math.max(1, f.duration),
+      then: 'orbit',
+      onDone: done,
+    });
   }
 
   /** Cuts from the flyover to behind the local player at the start gate. */
@@ -273,7 +310,8 @@ export class RoundView implements GameView {
     this.rig.setMode('orbit');
     this.rig.yaw = this.opts.round.spawn.yaw;
     this.rig.pitch = this.rig.settings.defaultPitch;
-    if (this.targetId >= 0 && this.players.feetOf(this.targetId, this.follow.position)) this.rig.snapTo(this.follow);
+    if (this.targetId >= 0 && this.players.feetOf(this.targetId, this.follow.position))
+      this.rig.snapTo(this.follow);
     else this.placeAtSpawn();
   }
 

@@ -223,7 +223,11 @@ export function RewardsScreen(): JSX.Element | null {
           >
             {inBurst && (
               // Floats above the panel so the slam never overlaps the badge or the XP bar.
-              <span key={`lvl-${shownLevel}`} className="tr-levelup-ribbon tr-title tr-h3 tr-title--lemon tr-slam" role="status">
+              <span
+                key={`lvl-${shownLevel}`}
+                className="tr-levelup-ribbon tr-title tr-h3 tr-title--lemon tr-slam"
+                role="status"
+              >
                 Level up!
               </span>
             )}
@@ -257,7 +261,8 @@ export function RewardsScreen(): JSX.Element | null {
                 )}
                 {r.pass && (
                   <span className="tr-chip tr-chip--grape">
-                    <Icon name="star" size="1em" /> Tier {r.pass.tierFrom + Math.round((r.pass.tierTo - r.pass.tierFrom) * gumP)}
+                    <Icon name="star" size="1em" /> Tier{' '}
+                    {r.pass.tierFrom + Math.round((r.pass.tierTo - r.pass.tierFrom) * gumP)}
                     {r.pass.tierTo > r.pass.tierFrom ? ` (+${r.pass.tierTo - r.pass.tierFrom})` : ''}
                   </span>
                 )}

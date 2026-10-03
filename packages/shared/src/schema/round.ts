@@ -100,7 +100,9 @@ export const WaypointSchema = z.object({
    * be under the whole leg, then boards (also used to ride it: put the next
    * leg's waitForPlatform on the boarding waypoint's successor).
    */
-  action: z.enum(['run', 'jump', 'dive', 'jumpDive', 'waitForGap', 'grab', 'climb', 'waitForPlatform']).default('run'),
+  action: z
+    .enum(['run', 'jump', 'dive', 'jumpDive', 'waitForGap', 'grab', 'climb', 'waitForPlatform'])
+    .default('run'),
   /** Obstacle to time against for waitForGap / waitForPlatform. */
   timeAgainst: z.string().optional(),
 });
@@ -135,7 +137,18 @@ export const RoundDefinitionSchema = z.object({
   id: z.string(),
   name: z.string(),
   type: z.enum(['race', 'survival', 'team', 'hunt', 'logic', 'final']),
-  theme: z.enum(['candy', 'factory', 'frosty', 'jungle', 'sunset', 'space', 'beach', 'neon', 'castle', 'goo']),
+  theme: z.enum([
+    'candy',
+    'factory',
+    'frosty',
+    'jungle',
+    'sunset',
+    'space',
+    'beach',
+    'neon',
+    'castle',
+    'goo',
+  ]),
   /** One-line objective shown on the rules card. */
   objective: z.string(),
   /** Tips carousel during intro. */

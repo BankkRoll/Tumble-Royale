@@ -36,65 +36,84 @@ const createdAt = () => ts('created_at').notNull().defaultNow();
 // -----------------------------------------------------------------------------
 
 /** One row per player account (guest or upgraded). */
-export const users = pgTable('users', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  isGuest: boolean('is_guest').notNull().default(true),
-  email: text('email'),
-  /** Matchmaking / leaderboard region (`na`, `eu`, `asia`, `sa`, `oce`). */
-  region: text('region').notNull().default('na'),
-  createdAt: createdAt(),
-  lastSeenAt: ts('last_seen_at').notNull().defaultNow(),
-}, (t) => [uniqueIndex('users_email_uq').on(t.email)]);
+export const users = pgTable(
+  'users',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    isGuest: boolean('is_guest').notNull().default(true),
+    email: text('email'),
+    /** Matchmaking / leaderboard region (`na`, `eu`, `asia`, `sa`, `oce`). */
+    region: text('region').notNull().default('na'),
+    createdAt: createdAt(),
+    lastSeenAt: ts('last_seen_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('users_email_uq').on(t.email)],
+);
 
 /** External identities linked to a user: device token, Discord, Google, email. */
-export const authIdentities = pgTable('auth_identities', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  provider: text('provider').notNull(),
-  /** Provider user id; for `device` the SHA-256 of the device secret. */
-  subject: text('subject').notNull(),
-  createdAt: createdAt(),
-}, (t) => [
-  uniqueIndex('auth_identities_provider_subject_uq').on(t.provider, t.subject),
-  index('auth_identities_user_idx').on(t.userId),
-]);
+export const authIdentities = pgTable(
+  'auth_identities',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(),
+    /** Provider user id; for `device` the SHA-256 of the device secret. */
+    subject: text('subject').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('auth_identities_provider_subject_uq').on(t.provider, t.subject),
+    index('auth_identities_user_idx').on(t.userId),
+  ],
+);
 
 /**
  * Refresh-token sessions. Each refresh rotates to a new row in the same family;
  * presenting a revoked token revokes the whole family (reuse detection).
  */
-export const sessions = pgTable('sessions', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  familyId: uuid('family_id').notNull(),
-  /** SHA-256 of the refresh token; the token itself is never stored. */
-  tokenHash: text('token_hash').notNull(),
-  createdAt: createdAt(),
-  expiresAt: ts('expires_at').notNull(),
-  revokedAt: ts('revoked_at'),
-  replacedBy: uuid('replaced_by'),
-  userAgent: text('user_agent'),
-}, (t) => [
-  uniqueIndex('sessions_token_hash_uq').on(t.tokenHash),
-  index('sessions_family_idx').on(t.familyId),
-]);
+export const sessions = pgTable(
+  'sessions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    familyId: uuid('family_id').notNull(),
+    /** SHA-256 of the refresh token; the token itself is never stored. */
+    tokenHash: text('token_hash').notNull(),
+    createdAt: createdAt(),
+    expiresAt: ts('expires_at').notNull(),
+    revokedAt: ts('revoked_at'),
+    replacedBy: uuid('replaced_by'),
+    userAgent: text('user_agent'),
+  },
+  (t) => [uniqueIndex('sessions_token_hash_uq').on(t.tokenHash), index('sessions_family_idx').on(t.familyId)],
+);
 
 /** Public profile + cached balances (the ledger is the source of truth). */
-export const profiles = pgTable('profiles', {
-  userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
-  displayName: text('display_name').notNull(),
-  /** Four-digit discriminator; `name#tag` is unique (case-insensitive on name). */
-  tag: text('tag').notNull(),
-  nameChangedAt: ts('name_changed_at'),
-  level: integer('level').notNull().default(1),
-  xp: integer('xp').notNull().default(0),
-  crowns: integer('crowns').notNull().default(0),
-  crownShards: integer('crown_shards').notNull().default(0),
-  gumballs: integer('gumballs').notNull().default(0),
-  gems: integer('gems').notNull().default(0),
-  activeLoadout: integer('active_loadout').notNull().default(0),
-  updatedAt: ts('updated_at').notNull().defaultNow(),
-}, (t) => [uniqueIndex('profiles_name_tag_uq').on(sql`lower(${t.displayName})`, t.tag)]);
+export const profiles = pgTable(
+  'profiles',
+  {
+    userId: uuid('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    displayName: text('display_name').notNull(),
+    /** Four-digit discriminator; `name#tag` is unique (case-insensitive on name). */
+    tag: text('tag').notNull(),
+    nameChangedAt: ts('name_changed_at'),
+    level: integer('level').notNull().default(1),
+    xp: integer('xp').notNull().default(0),
+    crowns: integer('crowns').notNull().default(0),
+    crownShards: integer('crown_shards').notNull().default(0),
+    gumballs: integer('gumballs').notNull().default(0),
+    gems: integer('gems').notNull().default(0),
+    activeLoadout: integer('active_loadout').notNull().default(0),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('profiles_name_tag_uq').on(sql`lower(${t.displayName})`, t.tag)],
+);
 
 // -----------------------------------------------------------------------------
 // Stats
@@ -102,7 +121,9 @@ export const profiles = pgTable('profiles', {
 
 /** Lifetime aggregate stats per player. */
 export const playerStats = pgTable('player_stats', {
-  userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
   showsPlayed: integer('shows_played').notNull().default(0),
   wins: integer('wins').notNull().default(0),
   finals: integer('finals').notNull().default(0),
@@ -115,13 +136,19 @@ export const playerStats = pgTable('player_stats', {
 });
 
 /** Per-round-definition stats per player (favourite round, qualify rate). */
-export const playerRoundStats = pgTable('player_round_stats', {
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  roundId: text('round_id').notNull(),
-  played: integer('played').notNull().default(0),
-  qualified: integer('qualified').notNull().default(0),
-  bestTimeMs: integer('best_time_ms'),
-}, (t) => [primaryKey({ columns: [t.userId, t.roundId] })]);
+export const playerRoundStats = pgTable(
+  'player_round_stats',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    roundId: text('round_id').notNull(),
+    played: integer('played').notNull().default(0),
+    qualified: integer('qualified').notNull().default(0),
+    bestTimeMs: integer('best_time_ms'),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.roundId] })],
+);
 
 // -----------------------------------------------------------------------------
 // Cosmetics, inventory, loadouts
@@ -142,22 +169,34 @@ export const cosmeticsCatalog = pgTable('cosmetics_catalog', {
 });
 
 /** Cosmetics a player owns. */
-export const inventoryItems = pgTable('inventory_items', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  cosmeticId: text('cosmetic_id').notNull(),
-  source: text('source').notNull(),
-  acquiredAt: ts('acquired_at').notNull().defaultNow(),
-}, (t) => [uniqueIndex('inventory_user_item_uq').on(t.userId, t.cosmeticId)]);
+export const inventoryItems = pgTable(
+  'inventory_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    cosmeticId: text('cosmetic_id').notNull(),
+    source: text('source').notNull(),
+    acquiredAt: ts('acquired_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('inventory_user_item_uq').on(t.userId, t.cosmeticId)],
+);
 
 /** Six loadout slots per player; `items` maps slot → cosmetic id. */
-export const loadouts = pgTable('loadouts', {
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  slotIndex: integer('slot_index').notNull(),
-  name: text('name').notNull(),
-  items: jsonb('items').notNull(),
-  updatedAt: ts('updated_at').notNull().defaultNow(),
-}, (t) => [primaryKey({ columns: [t.userId, t.slotIndex] })]);
+export const loadouts = pgTable(
+  'loadouts',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    slotIndex: integer('slot_index').notNull(),
+    name: text('name').notNull(),
+    items: jsonb('items').notNull(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.slotIndex] })],
+);
 
 // -----------------------------------------------------------------------------
 // Economy
@@ -167,40 +206,52 @@ export const loadouts = pgTable('loadouts', {
  * Append-only currency ledger. `(user, currency, reason, ref)` is unique so a
  * grant keyed by an external id (match, purchase, tier) can never apply twice.
  */
-export const currenciesLedger = pgTable('currencies_ledger', {
-  id: bigserial('id', { mode: 'number' }).primaryKey(),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  currency: text('currency').notNull(),
-  delta: integer('delta').notNull(),
-  balanceAfter: integer('balance_after').notNull(),
-  reason: text('reason').notNull(),
-  ref: text('ref').notNull(),
-  createdAt: createdAt(),
-}, (t) => [
-  uniqueIndex('ledger_idempotency_uq').on(t.userId, t.currency, t.reason, t.ref),
-  index('ledger_user_idx').on(t.userId, t.currency),
-]);
+export const currenciesLedger = pgTable(
+  'currencies_ledger',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    currency: text('currency').notNull(),
+    delta: integer('delta').notNull(),
+    balanceAfter: integer('balance_after').notNull(),
+    reason: text('reason').notNull(),
+    ref: text('ref').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('ledger_idempotency_uq').on(t.userId, t.currency, t.reason, t.ref),
+    index('ledger_user_idx').on(t.userId, t.currency),
+  ],
+);
 
 /** Purchases (store items, gem packs, premium pass), idempotent per user + key. */
-export const purchases = pgTable('purchases', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  idempotencyKey: text('idempotency_key').notNull(),
-  kind: text('kind').notNull(),
-  itemId: text('item_id').notNull(),
-  currency: text('currency').notNull(),
-  price: integer('price').notNull(),
-  status: text('status').notNull(),
-  provider: text('provider'),
-  providerRef: text('provider_ref'),
-  /** Response returned to the client, replayed verbatim on a retried request. */
-  response: jsonb('response'),
-  createdAt: createdAt(),
-  completedAt: ts('completed_at'),
-}, (t) => [
-  uniqueIndex('purchases_user_key_uq').on(t.userId, t.idempotencyKey),
-  uniqueIndex('purchases_provider_ref_uq').on(t.providerRef),
-]);
+export const purchases = pgTable(
+  'purchases',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    idempotencyKey: text('idempotency_key').notNull(),
+    kind: text('kind').notNull(),
+    itemId: text('item_id').notNull(),
+    currency: text('currency').notNull(),
+    price: integer('price').notNull(),
+    status: text('status').notNull(),
+    provider: text('provider'),
+    providerRef: text('provider_ref'),
+    /** Response returned to the client, replayed verbatim on a retried request. */
+    response: jsonb('response'),
+    createdAt: createdAt(),
+    completedAt: ts('completed_at'),
+  },
+  (t) => [
+    uniqueIndex('purchases_user_key_uq').on(t.userId, t.idempotencyKey),
+    uniqueIndex('purchases_provider_ref_uq').on(t.providerRef),
+  ],
+);
 
 /** Persisted daily store rotations (deterministic; stored for audit and support). */
 export const storeRotations = pgTable('store_rotations', {
@@ -215,15 +266,21 @@ export const storeRotations = pgTable('store_rotations', {
 // -----------------------------------------------------------------------------
 
 /** Season pass progress per player per season. */
-export const seasonPassProgress = pgTable('season_pass_progress', {
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  seasonId: text('season_id').notNull(),
-  xp: integer('xp').notNull().default(0),
-  premium: boolean('premium').notNull().default(false),
-  claimedFree: jsonb('claimed_free').$type<number[]>().notNull().default([]),
-  claimedPremium: jsonb('claimed_premium').$type<number[]>().notNull().default([]),
-  updatedAt: ts('updated_at').notNull().defaultNow(),
-}, (t) => [primaryKey({ columns: [t.userId, t.seasonId] })]);
+export const seasonPassProgress = pgTable(
+  'season_pass_progress',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    seasonId: text('season_id').notNull(),
+    xp: integer('xp').notNull().default(0),
+    premium: boolean('premium').notNull().default(false),
+    claimedFree: jsonb('claimed_free').$type<number[]>().notNull().default([]),
+    claimedPremium: jsonb('claimed_premium').$type<number[]>().notNull().default([]),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.seasonId] })],
+);
 
 /** Challenge definitions, synced from content. */
 export const challenges = pgTable('challenges', {
@@ -238,118 +295,158 @@ export const challenges = pgTable('challenges', {
 });
 
 /** A challenge assigned to a player for one period (day or ISO week). */
-export const challengeProgress = pgTable('challenge_progress', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  challengeId: text('challenge_id').notNull(),
-  period: text('period').notNull(),
-  periodKey: text('period_key').notNull(),
-  slot: integer('slot').notNull(),
-  progress: integer('progress').notNull().default(0),
-  target: integer('target').notNull(),
-  completedAt: ts('completed_at'),
-  claimedAt: ts('claimed_at'),
-  rerolled: boolean('rerolled').notNull().default(false),
-  createdAt: createdAt(),
-}, (t) => [uniqueIndex('challenge_progress_slot_uq').on(t.userId, t.period, t.periodKey, t.slot)]);
+export const challengeProgress = pgTable(
+  'challenge_progress',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    challengeId: text('challenge_id').notNull(),
+    period: text('period').notNull(),
+    periodKey: text('period_key').notNull(),
+    slot: integer('slot').notNull(),
+    progress: integer('progress').notNull().default(0),
+    target: integer('target').notNull(),
+    completedAt: ts('completed_at'),
+    claimedAt: ts('claimed_at'),
+    rerolled: boolean('rerolled').notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('challenge_progress_slot_uq').on(t.userId, t.period, t.periodKey, t.slot)],
+);
 
 // -----------------------------------------------------------------------------
 // Ranked
 // -----------------------------------------------------------------------------
 
 /** Hidden OpenSkill rating + visible RP, per season and queue. */
-export const ratings = pgTable('ratings', {
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  seasonId: text('season_id').notNull(),
-  queue: text('queue').notNull(),
-  mu: doublePrecision('mu').notNull(),
-  sigma: doublePrecision('sigma').notNull(),
-  rp: integer('rp').notNull().default(0),
-  tier: text('tier').notNull(),
-  division: integer('division').notNull(),
-  placementsLeft: integer('placements_left').notNull(),
-  matches: integer('matches').notNull().default(0),
-  updatedAt: ts('updated_at').notNull().defaultNow(),
-}, (t) => [primaryKey({ columns: [t.userId, t.seasonId, t.queue] })]);
+export const ratings = pgTable(
+  'ratings',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    seasonId: text('season_id').notNull(),
+    queue: text('queue').notNull(),
+    mu: doublePrecision('mu').notNull(),
+    sigma: doublePrecision('sigma').notNull(),
+    rp: integer('rp').notNull().default(0),
+    tier: text('tier').notNull(),
+    division: integer('division').notNull(),
+    placementsLeft: integer('placements_left').notNull(),
+    matches: integer('matches').notNull().default(0),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.seasonId, t.queue] })],
+);
 
 /** One row per ranked match per player. */
-export const rankHistory = pgTable('rank_history', {
-  id: bigserial('id', { mode: 'number' }).primaryKey(),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  seasonId: text('season_id').notNull(),
-  queue: text('queue').notNull(),
-  matchId: text('match_id').notNull(),
-  placement: integer('placement').notNull(),
-  muBefore: doublePrecision('mu_before').notNull(),
-  muAfter: doublePrecision('mu_after').notNull(),
-  sigmaBefore: doublePrecision('sigma_before').notNull(),
-  sigmaAfter: doublePrecision('sigma_after').notNull(),
-  rpBefore: integer('rp_before').notNull(),
-  rpAfter: integer('rp_after').notNull(),
-  tier: text('tier').notNull(),
-  division: integer('division').notNull(),
-  createdAt: createdAt(),
-}, (t) => [uniqueIndex('rank_history_match_user_uq').on(t.matchId, t.userId)]);
+export const rankHistory = pgTable(
+  'rank_history',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    seasonId: text('season_id').notNull(),
+    queue: text('queue').notNull(),
+    matchId: text('match_id').notNull(),
+    placement: integer('placement').notNull(),
+    muBefore: doublePrecision('mu_before').notNull(),
+    muAfter: doublePrecision('mu_after').notNull(),
+    sigmaBefore: doublePrecision('sigma_before').notNull(),
+    sigmaAfter: doublePrecision('sigma_after').notNull(),
+    rpBefore: integer('rp_before').notNull(),
+    rpAfter: integer('rp_after').notNull(),
+    tier: text('tier').notNull(),
+    division: integer('division').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('rank_history_match_user_uq').on(t.matchId, t.userId)],
+);
 
 // -----------------------------------------------------------------------------
 // Matches
 // -----------------------------------------------------------------------------
 
 /** A completed show, as reported by the game server. */
-export const matches = pgTable('matches', {
-  id: text('id').primaryKey(),
-  queue: text('queue').notNull(),
-  playlistId: text('playlist_id').notNull(),
-  seasonId: text('season_id').notNull(),
-  region: text('region').notNull(),
-  playerCount: integer('player_count').notNull(),
-  botCount: integer('bot_count').notNull(),
-  startedAt: ts('started_at').notNull(),
-  endedAt: ts('ended_at').notNull(),
-  ingestedAt: createdAt(),
-  /** Per-player reward summaries returned to the game server; replayed on retries. */
-  rewards: jsonb('rewards').notNull(),
-}, (t) => [index('matches_season_idx').on(t.seasonId)]);
+export const matches = pgTable(
+  'matches',
+  {
+    id: text('id').primaryKey(),
+    queue: text('queue').notNull(),
+    playlistId: text('playlist_id').notNull(),
+    seasonId: text('season_id').notNull(),
+    region: text('region').notNull(),
+    playerCount: integer('player_count').notNull(),
+    botCount: integer('bot_count').notNull(),
+    startedAt: ts('started_at').notNull(),
+    endedAt: ts('ended_at').notNull(),
+    ingestedAt: createdAt(),
+    /** Per-player reward summaries returned to the game server; replayed on retries. */
+    rewards: jsonb('rewards').notNull(),
+  },
+  (t) => [index('matches_season_idx').on(t.seasonId)],
+);
 
 /** Every participant (human or bot) of a show. */
-export const matchParticipants = pgTable('match_participants', {
-  matchId: text('match_id').notNull().references(() => matches.id, { onDelete: 'cascade' }),
-  participantKey: text('participant_key').notNull(),
-  userId: uuid('user_id'),
-  isBot: boolean('is_bot').notNull(),
-  name: text('name').notNull(),
-  team: integer('team'),
-  placement: integer('placement').notNull(),
-  crowned: boolean('crowned').notNull(),
-  roundsSurvived: integer('rounds_survived').notNull(),
-  xp: integer('xp').notNull().default(0),
-  gumballs: integer('gumballs').notNull().default(0),
-  crownShards: integer('crown_shards').notNull().default(0),
-  rpDelta: integer('rp_delta'),
-}, (t) => [
-  primaryKey({ columns: [t.matchId, t.participantKey] }),
-  index('match_participants_user_idx').on(t.userId),
-]);
+export const matchParticipants = pgTable(
+  'match_participants',
+  {
+    matchId: text('match_id')
+      .notNull()
+      .references(() => matches.id, { onDelete: 'cascade' }),
+    participantKey: text('participant_key').notNull(),
+    userId: uuid('user_id'),
+    isBot: boolean('is_bot').notNull(),
+    name: text('name').notNull(),
+    team: integer('team'),
+    placement: integer('placement').notNull(),
+    crowned: boolean('crowned').notNull(),
+    roundsSurvived: integer('rounds_survived').notNull(),
+    xp: integer('xp').notNull().default(0),
+    gumballs: integer('gumballs').notNull().default(0),
+    crownShards: integer('crown_shards').notNull().default(0),
+    rpDelta: integer('rp_delta'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.matchId, t.participantKey] }),
+    index('match_participants_user_idx').on(t.userId),
+  ],
+);
 
 /** Rounds played in a show, in order. */
-export const matchRounds = pgTable('match_rounds', {
-  matchId: text('match_id').notNull().references(() => matches.id, { onDelete: 'cascade' }),
-  roundIndex: integer('round_index').notNull(),
-  roundId: text('round_id').notNull(),
-  roundType: text('round_type').notNull(),
-  durationMs: integer('duration_ms').notNull(),
-}, (t) => [primaryKey({ columns: [t.matchId, t.roundIndex] })]);
+export const matchRounds = pgTable(
+  'match_rounds',
+  {
+    matchId: text('match_id')
+      .notNull()
+      .references(() => matches.id, { onDelete: 'cascade' }),
+    roundIndex: integer('round_index').notNull(),
+    roundId: text('round_id').notNull(),
+    roundType: text('round_type').notNull(),
+    durationMs: integer('duration_ms').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.matchId, t.roundIndex] })],
+);
 
 /** Per-participant outcome of each round. */
-export const roundResults = pgTable('round_results', {
-  matchId: text('match_id').notNull().references(() => matches.id, { onDelete: 'cascade' }),
-  roundIndex: integer('round_index').notNull(),
-  participantKey: text('participant_key').notNull(),
-  qualified: boolean('qualified').notNull(),
-  position: integer('position'),
-  score: integer('score'),
-  timeMs: integer('time_ms'),
-}, (t) => [primaryKey({ columns: [t.matchId, t.roundIndex, t.participantKey] })]);
+export const roundResults = pgTable(
+  'round_results',
+  {
+    matchId: text('match_id')
+      .notNull()
+      .references(() => matches.id, { onDelete: 'cascade' }),
+    roundIndex: integer('round_index').notNull(),
+    participantKey: text('participant_key').notNull(),
+    qualified: boolean('qualified').notNull(),
+    position: integer('position'),
+    score: integer('score'),
+    timeMs: integer('time_ms'),
+  },
+  (t) => [primaryKey({ columns: [t.matchId, t.roundIndex, t.participantKey] })],
+);
 
 // -----------------------------------------------------------------------------
 // Social & moderation
@@ -359,39 +456,58 @@ export const roundResults = pgTable('round_results', {
  * Directed relationship rows. `pending`: userId requested friendId. `accepted`:
  * stored once, by the original requester. `blocked`: userId blocked friendId.
  */
-export const friendships = pgTable('friendships', {
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  friendId: uuid('friend_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  status: text('status').notNull(),
-  createdAt: createdAt(),
-  updatedAt: ts('updated_at').notNull().defaultNow(),
-}, (t) => [
-  primaryKey({ columns: [t.userId, t.friendId] }),
-  index('friendships_friend_idx').on(t.friendId),
-]);
+export const friendships = pgTable(
+  'friendships',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    friendId: uuid('friend_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    status: text('status').notNull(),
+    createdAt: createdAt(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.friendId] }), index('friendships_friend_idx').on(t.friendId)],
+);
 
 /** Player reports (moderation queue). */
-export const reports = pgTable('reports', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  reporterId: uuid('reporter_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  targetUserId: uuid('target_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  matchId: text('match_id'),
-  reason: text('reason').notNull(),
-  details: text('details'),
-  status: text('status').notNull().default('open'),
-  createdAt: createdAt(),
-}, (t) => [index('reports_status_idx').on(t.status)]);
+export const reports = pgTable(
+  'reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    reporterId: uuid('reporter_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    targetUserId: uuid('target_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    matchId: text('match_id'),
+    reason: text('reason').notNull(),
+    details: text('details'),
+    status: text('status').notNull().default('open'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('reports_status_idx').on(t.status)],
+);
 
 /** Bans; `scope` = `all` blocks every authenticated call, `ranked` only ranked queueing. */
-export const bans = pgTable('bans', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  scope: text('scope').notNull().default('all'),
-  reason: text('reason').notNull(),
-  expiresAt: ts('expires_at'),
-  revokedAt: ts('revoked_at'),
-  createdAt: createdAt(),
-}, (t) => [index('bans_user_idx').on(t.userId)]);
+export const bans = pgTable(
+  'bans',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    scope: text('scope').notNull().default('all'),
+    reason: text('reason').notNull(),
+    expiresAt: ts('expires_at'),
+    revokedAt: ts('revoked_at'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('bans_user_idx').on(t.userId)],
+);
 
 /** Feature flags with percentage rollout. */
 export const featureFlags = pgTable('feature_flags', {
@@ -403,10 +519,14 @@ export const featureFlags = pgTable('feature_flags', {
 });
 
 /** Analytics events. */
-export const events = pgTable('events', {
-  id: bigserial('id', { mode: 'number' }).primaryKey(),
-  userId: uuid('user_id'),
-  name: text('name').notNull(),
-  props: jsonb('props'),
-  createdAt: createdAt(),
-}, (t) => [index('events_name_idx').on(t.name, t.createdAt)]);
+export const events = pgTable(
+  'events',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    userId: uuid('user_id'),
+    name: text('name').notNull(),
+    props: jsonb('props'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('events_name_idx').on(t.name, t.createdAt)],
+);

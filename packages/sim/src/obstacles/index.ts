@@ -19,7 +19,11 @@ export * from './set-c.ts';
  * module validates its own params with its zod schema at build time.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see doc comment: per-module params differ
-export const ALL_OBSTACLES: readonly ObstacleModule<any>[] = [...obstacleSetA, ...obstacleSetB, ...obstacleSetC];
+export const ALL_OBSTACLES: readonly ObstacleModule<any>[] = [
+  ...obstacleSetA,
+  ...obstacleSetB,
+  ...obstacleSetC,
+];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- same heterogeneous param types as above
 const byType = new Map<string, ObstacleModule<any>>(ALL_OBSTACLES.map((m) => [m.type, m]));

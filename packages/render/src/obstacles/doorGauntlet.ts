@@ -57,10 +57,20 @@ class DoorGauntletVisual extends VisualBase<DoorGauntletParams> {
     const pitch = p.doorWidth + p.postWidth;
 
     const frameMat = createPatternMaterial({ a: C.grape, b: C.lilac, pattern: 'bands', scale: 1.5 });
-    const posts = this.add(new InstancedMesh(roundedBox(p.postWidth, p.wallHeight, p.doorThickness + 0.2, 0.12), frameMat, p.rows * (p.doorsPerRow + 1)));
+    const posts = this.add(
+      new InstancedMesh(
+        roundedBox(p.postWidth, p.wallHeight, p.doorThickness + 0.2, 0.12),
+        frameMat,
+        p.rows * (p.doorsPerRow + 1),
+      ),
+    );
     const lintelH = Math.max(0.3, p.wallHeight - p.doorHeight);
     const lintels = this.add(
-      new InstancedMesh(roundedBox(p.doorsPerRow * pitch + p.postWidth, lintelH, p.doorThickness + 0.2, 0.15), createPatternMaterial({ a: C.interact, b: C.cream, pattern: 'stripes', scale: 1.2 }), p.rows),
+      new InstancedMesh(
+        roundedBox(p.doorsPerRow * pitch + p.postWidth, lintelH, p.doorThickness + 0.2, 0.15),
+        createPatternMaterial({ a: C.interact, b: C.cream, pattern: 'stripes', scale: 1.2 }),
+        p.rows,
+      ),
     );
     let k = 0;
     for (let r = 0; r < p.rows; r++) {
@@ -77,8 +87,20 @@ class DoorGauntletVisual extends VisualBase<DoorGauntletParams> {
       im.receiveShadow = true;
     }
 
-    this.doors = this.add(new InstancedMesh(roundedBox(p.doorWidth, p.doorHeight, p.doorThickness, 0.14), createPatternMaterial({ a: C.white }), this.count));
-    this.knobs = this.add(new InstancedMesh(new SphereGeometry(0.16, 12, 8), createPatternMaterial({ a: C.interact }), this.count * 2));
+    this.doors = this.add(
+      new InstancedMesh(
+        roundedBox(p.doorWidth, p.doorHeight, p.doorThickness, 0.14),
+        createPatternMaterial({ a: C.white }),
+        this.count,
+      ),
+    );
+    this.knobs = this.add(
+      new InstancedMesh(
+        new SphereGeometry(0.16, 12, 8),
+        createPatternMaterial({ a: C.interact }),
+        this.count * 2,
+      ),
+    );
     const tint = new Color();
     for (let i = 0; i < this.count; i++) {
       const row = Math.floor(i / p.doorsPerRow);
@@ -88,7 +110,9 @@ class DoorGauntletVisual extends VisualBase<DoorGauntletParams> {
     this.doors.receiveShadow = true;
     this.knobs.castShadow = true;
 
-    this.crumbs = this.add(new InstancedMesh(new IcosahedronGeometry(0.18, 0), createPatternMaterial({ a: C.white }), CRUMB_POOL));
+    this.crumbs = this.add(
+      new InstancedMesh(new IcosahedronGeometry(0.18, 0), createPatternMaterial({ a: C.white }), CRUMB_POOL),
+    );
     for (let i = 0; i < CRUMB_POOL; i++) {
       this.crumbs.setMatrixAt(i, this.zero);
       this.crumbs.setColorAt(i, tint.set(ROW_COLORS[i % ROW_COLORS.length]!));
@@ -120,7 +144,8 @@ class DoorGauntletVisual extends VisualBase<DoorGauntletParams> {
         const k = Math.min(1, Math.max(0, tau) / TIP_TIME);
         angle = k * k * (Math.PI / 2);
         scale = tau < TIP_TIME ? 1 : Math.max(0, 1 - (tau - TIP_TIME) / (BURST_TIME - TIP_TIME));
-        for (let c = 0; c < CRUMBS_PER_DOOR && crumb < CRUMB_POOL; c++, crumb++) this.placeCrumb(crumb, i, c, x, z, Math.max(0, tau));
+        for (let c = 0; c < CRUMBS_PER_DOOR && crumb < CRUMB_POOL; c++, crumb++)
+          this.placeCrumb(crumb, i, c, x, z, Math.max(0, tau));
       }
       // Hinge about the door's bottom-front edge so it slaps down onto the course.
       const half = p.doorHeight / 2;
@@ -138,7 +163,11 @@ class DoorGauntletVisual extends VisualBase<DoorGauntletParams> {
         const ky = 0.15 - p.doorHeight * 0.05;
         const ly = ky * Math.cos(angle) - kz * Math.sin(angle);
         const lz = ky * Math.sin(angle) + kz * Math.cos(angle);
-        this.v.set(x + p.doorWidth * 0.32 * scale, (cy + ly) * scale, z + p.doorThickness / 2 + (cz + lz) * scale);
+        this.v.set(
+          x + p.doorWidth * 0.32 * scale,
+          (cy + ly) * scale,
+          z + p.doorThickness / 2 + (cz + lz) * scale,
+        );
         this.m.compose(this.v, this.q, this.s);
         this.knobs.setMatrixAt(i * 2 + side, this.m);
       }
@@ -175,4 +204,5 @@ class DoorGauntletVisual extends VisualBase<DoorGauntletParams> {
 }
 
 /** Door gauntlet visual factory. */
-export const doorGauntletVisual: ObstacleVisualFactory = (instance, ctx) => new DoorGauntletVisual(instance, ctx);
+export const doorGauntletVisual: ObstacleVisualFactory = (instance, ctx) =>
+  new DoorGauntletVisual(instance, ctx);

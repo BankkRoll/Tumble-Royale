@@ -63,11 +63,21 @@ function piece(shape: Piece['shape'], pos: Vec, size: Vec, o: PieceOpts = {}): P
 
 const box = (x: number, y: number, z: number, sx: number, sy: number, sz: number, o?: PieceOpts): Piece =>
   piece('box', v(x, y, z), v(sx, sy, sz), o);
-const cyl = (x: number, y: number, z: number, r: number, h: number, o?: PieceOpts): Piece => piece('cylinder', v(x, y, z), v(r, h, r), o);
-const ball = (x: number, y: number, z: number, r: number, o?: PieceOpts): Piece => piece('sphere', v(x, y, z), v(r, r, r), o);
-const decal = (x: number, top: number, z: number, sx: number, sz: number, color: string, pattern: Piece['pattern']): Piece =>
-  box(x, top + 0.01, z, sx, 0.02, sz, { color, pattern, deco: true, bevel: 0 });
-const respawnRow = (top: number, z: number, xs = [-7.5, -4.5, -1.5, 1.5, 4.5, 7.5]): Vec[] => xs.map((x) => v(x, top + 0.1, z));
+const cyl = (x: number, y: number, z: number, r: number, h: number, o?: PieceOpts): Piece =>
+  piece('cylinder', v(x, y, z), v(r, h, r), o);
+const ball = (x: number, y: number, z: number, r: number, o?: PieceOpts): Piece =>
+  piece('sphere', v(x, y, z), v(r, r, r), o);
+const decal = (
+  x: number,
+  top: number,
+  z: number,
+  sx: number,
+  sz: number,
+  color: string,
+  pattern: Piece['pattern'],
+): Piece => box(x, top + 0.01, z, sx, 0.02, sz, { color, pattern, deco: true, bevel: 0 });
+const respawnRow = (top: number, z: number, xs = [-7.5, -4.5, -1.5, 1.5, 4.5, 7.5]): Vec[] =>
+  xs.map((x) => v(x, top + 0.1, z));
 
 /** Squashed floating-rock underside hanging below a platform top (decor). */
 const rockUnder = (x: number, top: number, z: number, r: number): Piece[] => [
@@ -124,7 +134,16 @@ function updraft(id: string, x: number, baseY: number, z: number, o: LiftOpts): 
  * Bounce pad whose launch is solved for an apex `apex` m above the pad top and
  * a landing `range` m ahead, `landDelta` m above the pad top.
  */
-function pad(id: string, x: number, y: number, z: number, radius: number, apex: number, range: number, landDelta: number): Obstacle {
+function pad(
+  id: string,
+  x: number,
+  y: number,
+  z: number,
+  radius: number,
+  apex: number,
+  range: number,
+  landDelta: number,
+): Obstacle {
   const vy = Math.sqrt(2 * G * apex);
   const flight = vy / G + Math.sqrt((2 * (apex - landDelta)) / (2 * G));
   return {
@@ -132,7 +151,12 @@ function pad(id: string, x: number, y: number, z: number, radius: number, apex: 
     type: 'bouncePad',
     position: v(x, y, z),
     // NOTE: pads stay under the 0.35 m step height; a taller pad's bouncy rim launches runners backwards.
-    params: { radius, height: 0.3, launch: { x: 0, y: Math.round(vy * 100) / 100, z: Math.round((range / flight) * 100) / 100 }, cooldown: 0.35 },
+    params: {
+      radius,
+      height: 0.3,
+      launch: { x: 0, y: Math.round(vy * 100) / 100, z: Math.round((range / flight) * 100) / 100 },
+      cooldown: 0.35,
+    },
   };
 }
 
@@ -142,7 +166,19 @@ const gust = (id: string, z: number, phase: number, strength = 14): Obstacle => 
   type: 'fanZone',
   position: v(-4.9, 8, z),
   rotation: { yaw: 90 },
-  params: { width: 10, height: 4, length: 10, strength, falloff: 0.2, onTime: 2, offTime: 2, spinUp: 0.4, phase, telegraphLead: 0.8, housingDepth: 1.2 },
+  params: {
+    width: 10,
+    height: 4,
+    length: 10,
+    strength,
+    falloff: 0.2,
+    onTime: 2,
+    offTime: 2,
+    spinUp: 0.4,
+    phase,
+    telegraphLead: 0.8,
+    housingDepth: 1.2,
+  },
 });
 
 /** Low-gravity column over one asteroid gap (z0 → z1): lift without un-grounding walkers. */
@@ -152,7 +188,19 @@ const lowG = (id: string, z0: number, z1: number, width = 14): Obstacle => ({
   // The fan sits below killY so its housing can never catch a falling Tumbler.
   position: v(0, -12, (z0 + z1) / 2),
   rotation: { pitch: -90 },
-  params: { width, height: z1 - z0, length: 72, strength: 16, falloff: 0, onTime: 1, offTime: 0, spinUp: 0.1, phase: 0, telegraphLead: 0, housingDepth: 0.8 },
+  params: {
+    width,
+    height: z1 - z0,
+    length: 72,
+    strength: 16,
+    falloff: 0,
+    onTime: 1,
+    offTime: 0,
+    spinUp: 0.1,
+    phase: 0,
+    telegraphLead: 0,
+    housingDepth: 0.8,
+  },
 });
 
 // -----------------------------------------------------------------------------
@@ -172,18 +220,32 @@ const JET_DEG = (Math.atan(JET_SLOPE) * 180) / Math.PI;
 // §0 Launch Pad
 add(box(0, -0.5, 0, 26, 1, 20, { color: 'safe', bevel: 0.3 }));
 add(decal(0, 0, 0, 12, 12, 'safe', 'checker'), decal(0, 0, 8.5, 26, 3, 'accent', 'chevron'));
-add(box(-13.25, 0.5, 0, 0.5, 1, 20, { color: 'neutral' }), box(13.25, 0.5, 0, 0.5, 1, 20, { color: 'neutral' }));
+add(
+  box(-13.25, 0.5, 0, 0.5, 1, 20, { color: 'neutral' }),
+  box(13.25, 0.5, 0, 0.5, 1, 20, { color: 'neutral' }),
+);
 // Rocket gantry behind the start.
-add(box(-9, 9, -11.5, 1.2, 18, 1.2, { color: 'neutral', pattern: 'stripes', deco: true }), box(9, 9, -11.5, 1.2, 18, 1.2, { color: 'neutral', pattern: 'stripes', deco: true }));
+add(
+  box(-9, 9, -11.5, 1.2, 18, 1.2, { color: 'neutral', pattern: 'stripes', deco: true }),
+  box(9, 9, -11.5, 1.2, 18, 1.2, { color: 'neutral', pattern: 'stripes', deco: true }),
+);
 for (const y of [5, 10, 15]) add(box(0, y, -11.5, 19, 0.6, 0.8, { color: 'secondary', deco: true }));
-add(cyl(0, 11, -16, 2.6, 20, { color: 'neutral', pattern: 'stripes', deco: true }), ball(0, 21.5, -16, 2.6, { color: 'danger', deco: true }));
-for (const x of [-2.6, 2.6]) add(piece('wedge', v(x, 2.5, -16), v(1.6, 4, 2), { color: 'accent', deco: true }));
+add(
+  cyl(0, 11, -16, 2.6, 20, { color: 'neutral', pattern: 'stripes', deco: true }),
+  ball(0, 21.5, -16, 2.6, { color: 'danger', deco: true }),
+);
+for (const x of [-2.6, 2.6])
+  add(piece('wedge', v(x, 2.5, -16), v(1.6, 4, 2), { color: 'accent', deco: true }));
 add(...rockUnder(0, -1, 0, 9));
 
 // §1 Breezy Base (z 10 → 50)
 add(box(0, -0.5, 20, 26, 1, 20, { color: 'primary', bevel: 0.3 }));
 add(box(0, 2.5, 40, 26, 7, 20, { color: 'secondary', grab: true, bevel: 0.3 }));
-add(box(11, 0.75, 28.5, 3, 1.5, 3, { color: 'accent' }), box(8, 1.5, 28.5, 3, 3, 3, { color: 'accent' }), box(5, 2.25, 28.5, 3, 4.5, 3, { color: 'accent' }));
+add(
+  box(11, 0.75, 28.5, 3, 1.5, 3, { color: 'accent' }),
+  box(8, 1.5, 28.5, 3, 3, 3, { color: 'accent' }),
+  box(5, 2.25, 28.5, 3, 4.5, 3, { color: 'accent' }),
+);
 add(cyl(-8, 0.02, 28.5, 1.6, 0.04, { color: 'safe', pattern: 'dots', deco: true }));
 add(decal(0, 6, 31, 26, 1, 'danger', 'hazard'));
 add(...rockUnder(0, -1, 30, 11));
@@ -202,13 +264,30 @@ add(decal(0, 12, 116, 16, 2, 'safe', 'checker'));
 add(...rockUnder(0, 5, 80, 6), ...rockUnder(0, -1, 120, 9));
 
 // §3 Thermal Stairs (z 130 → 187)
-add(cyl(-6, 16, 138, 5, 4, { color: 'primary', grab: true }), cyl(-6, 22, 152, 5, 4, { color: 'primary', grab: true }));
-add(box(-6, 24.5, 161, 6, 2, 4, { color: 'accent', grab: true }), box(-6, 25.6, 165, 6, 4.2, 4, { color: 'accent', grab: true }));
-add(box(6, 16, 137, 6, 4, 6, { color: 'secondary', grab: true }), box(6, 22, 148, 6, 4, 8, { color: 'secondary', grab: true }));
-add(box(6, 28, 159.5, 6, 4, 7, { color: 'secondary', grab: true }), box(6, 28, 165, 6, 4, 4, { color: 'secondary' }));
+add(
+  cyl(-6, 16, 138, 5, 4, { color: 'primary', grab: true }),
+  cyl(-6, 22, 152, 5, 4, { color: 'primary', grab: true }),
+);
+add(
+  box(-6, 24.5, 161, 6, 2, 4, { color: 'accent', grab: true }),
+  box(-6, 25.6, 165, 6, 4.2, 4, { color: 'accent', grab: true }),
+);
+add(
+  box(6, 16, 137, 6, 4, 6, { color: 'secondary', grab: true }),
+  box(6, 22, 148, 6, 4, 8, { color: 'secondary', grab: true }),
+);
+add(
+  box(6, 28, 159.5, 6, 4, 7, { color: 'secondary', grab: true }),
+  box(6, 28, 165, 6, 4, 4, { color: 'secondary' }),
+);
 add(box(0, 26, 177, 20, 8, 20, { color: 'secondary', grab: true, bevel: 0.3 }));
 add(decal(0, 30, 172, 20, 2, 'safe', 'checker'));
-add(...rockUnder(-6, 14, 138, 4), ...rockUnder(-6, 20, 152, 4), ...rockUnder(6, 14, 137, 3.5), ...rockUnder(6, 20, 148, 4));
+add(
+  ...rockUnder(-6, 14, 138, 4),
+  ...rockUnder(-6, 20, 152, 4),
+  ...rockUnder(6, 14, 137, 3.5),
+  ...rockUnder(6, 20, 148, 4),
+);
 add(...rockUnder(6, 26, 161, 4), ...rockUnder(0, 22, 177, 9));
 // Cloud layer the climb punches through (y 22–28).
 for (const [x, y, z, s] of [
@@ -219,14 +298,21 @@ for (const [x, y, z, s] of [
   [-14, 26, 262, 8],
   [24, 28, 300, 10],
 ] as const) {
-  add(box(x, y, z, s * 1.8, 1.2, s, { color: '#ffffff', deco: true, bevel: 0.6 }), box(x + s * 0.3, y + 0.8, z - s * 0.1, s, 1.2, s * 0.6, { color: '#ffffff', deco: true, bevel: 0.6 }));
+  add(
+    box(x, y, z, s * 1.8, 1.2, s, { color: '#ffffff', deco: true, bevel: 0.6 }),
+    box(x + s * 0.3, y + 0.8, z - s * 0.1, s, 1.2, s * 0.6, { color: '#ffffff', deco: true, bevel: 0.6 }),
+  );
 }
 
 // §4 Satellite Spin (z 187 → 263)
 add(box(0, 29.5, 253, 22, 1, 20, { color: 'safe', bevel: 0.3 }));
 add(decal(0, 30, 248, 22, 2, 'safe', 'checker'));
-add(cyl(0, 22, 196.2, 1, 16, { color: 'neutral', pattern: 'stripes', deco: true }), cyl(0, 22, 213, 1, 16, { color: 'neutral', pattern: 'stripes', deco: true }));
-for (const z of [196.2, 213]) add(piece('torus', v(0, 28.8, z), v(6.6, 0.5, 6.6), { color: 'accent', deco: true }));
+add(
+  cyl(0, 22, 196.2, 1, 16, { color: 'neutral', pattern: 'stripes', deco: true }),
+  cyl(0, 22, 213, 1, 16, { color: 'neutral', pattern: 'stripes', deco: true }),
+);
+for (const z of [196.2, 213])
+  add(piece('torus', v(0, 28.8, z), v(6.6, 0.5, 6.6), { color: 'accent', deco: true }));
 // Maintenance catwalk beside the shuttle: narrow, slow, certain.
 add(box(4.6, 29.7, 231.25, 2, 0.6, 23.5, { color: 'primary', pattern: 'stripes' }));
 for (const z of [224, 232, 240]) add(cyl(4.6, 24, z, 0.25, 11, { color: 'neutral', deco: true }));
@@ -242,7 +328,8 @@ for (const [x, z] of [
   add(box(x, jetY(z) + 0.85, z, 3, 2.5, 2, { color: 'secondary', bevel: 0.6 }));
 }
 const wallLen = 50 / Math.cos(Math.atan(JET_SLOPE));
-for (const x of [-6.25, 6.25]) add(box(x, jetY(288) + 1, 288, 0.5, 2.5, wallLen, { color: 'neutral', rot: { pitch: -JET_DEG } }));
+for (const x of [-6.25, 6.25])
+  add(box(x, jetY(288) + 1, 288, 0.5, 2.5, wallLen, { color: 'neutral', rot: { pitch: -JET_DEG } }));
 for (const z of [270, 282, 294, 306]) {
   // Gust-light gantries: red/green beacon above the slope every 12 m.
   add(piece('arch', v(0, jetY(z) + 3.2, z), v(14, 6.4, 0.6), { color: 'neutral', deco: true }));
@@ -258,7 +345,12 @@ add(cyl(1.5, 49.5, 352, 3, 2, { color: 'secondary', grab: true, pattern: 'dots' 
 add(cyl(0, 50.5, 372, 3, 2, { color: 'secondary', grab: true, pattern: 'dots' }));
 add(box(0, 51.5, 393, 22, 1, 28, { color: 'safe', bevel: 0.3 }));
 add(decal(0, 52, 390, 20, 2, 'safe', 'checker'));
-add(...rockUnder(0, 46.5, 332, 2.6), ...rockUnder(1.5, 48.5, 352, 2.6), ...rockUnder(0, 49.5, 372, 2.6), ...rockUnder(0, 51, 393, 9));
+add(
+  ...rockUnder(0, 46.5, 332, 2.6),
+  ...rockUnder(1.5, 48.5, 352, 2.6),
+  ...rockUnder(0, 49.5, 372, 2.6),
+  ...rockUnder(0, 51, 393, 9),
+);
 {
   // Background asteroids tumbling slowly around the low-G zone.
   let s = 1601;
@@ -268,7 +360,12 @@ add(...rockUnder(0, 46.5, 332, 2.6), ...rockUnder(1.5, 48.5, 352, 2.6), ...rockU
   };
   for (let k = 0; k < 12; k++) {
     const side = k % 2 === 0 ? -1 : 1;
-    add(ball(side * (12 + rnd() * 13), 40 + rnd() * 30, 325 + rnd() * 75, 1 + rnd() * 2, { color: k % 3 === 0 ? 'secondary' : 'neutral', deco: true }));
+    add(
+      ball(side * (12 + rnd() * 13), 40 + rnd() * 30, 325 + rnd() * 75, 1 + rnd() * 2, {
+        color: k % 3 === 0 ? 'secondary' : 'neutral',
+        deco: true,
+      }),
+    );
   }
 }
 
@@ -280,12 +377,27 @@ add(box(8, 58.3, 406.25, 2.5, 0.6, 1.5, { color: 'accent', grab: true }));
 add(box(10.5, 60.5, 406.25, 2.5, 0.6, 1.5, { color: 'accent', grab: true }));
 add(box(8, 62.7, 406.25, 2.5, 0.6, 1.5, { color: 'accent', grab: true }));
 add(decal(0, 64, 412, 22, 2, 'safe', 'checker'));
-add(cyl(0, 70, 422, 2, 12, { color: 'accent', pattern: 'stripes', deco: true }), ball(0, 76.5, 422, 2, { color: 'danger', deco: true }));
-for (const x of [-2.2, 2.2]) add(piece('wedge', v(x, 65.5, 422), v(1.4, 3, 2), { color: 'neutral', deco: true }));
+add(
+  cyl(0, 70, 422, 2, 12, { color: 'accent', pattern: 'stripes', deco: true }),
+  ball(0, 76.5, 422, 2, { color: 'danger', deco: true }),
+);
+for (const x of [-2.2, 2.2])
+  add(piece('wedge', v(x, 65.5, 422), v(1.4, 3, 2), { color: 'neutral', deco: true }));
 add(...rockUnder(0, 50.5, 416, 10));
 // Space-station crowd ring above the finish, ringed planet and moon on the horizon.
-add(piece('torus', v(0, 86, 412), v(26, 1.6, 26), { color: 'neutral', deco: true }), piece('torus', v(0, 86, 412), v(26, 2.4, 26), { color: 'accent', pattern: 'stripes', deco: true, rot: { yaw: 15 } }));
-add(ball(-70, 120, 300, 26, { color: 'secondary', deco: true }), piece('torus', v(-70, 120, 300), v(42, 2, 42), { color: 'accent', deco: true, rot: { roll: 18 } }));
+add(
+  piece('torus', v(0, 86, 412), v(26, 1.6, 26), { color: 'neutral', deco: true }),
+  piece('torus', v(0, 86, 412), v(26, 2.4, 26), {
+    color: 'accent',
+    pattern: 'stripes',
+    deco: true,
+    rot: { yaw: 15 },
+  }),
+);
+add(
+  ball(-70, 120, 300, 26, { color: 'secondary', deco: true }),
+  piece('torus', v(-70, 120, 300), v(42, 2, 42), { color: 'accent', deco: true, rot: { roll: 18 } }),
+);
 add(ball(80, 90, 120, 9, { color: 'neutral', deco: true }));
 
 // -----------------------------------------------------------------------------
@@ -319,33 +431,97 @@ const obstacles: Obstacle[] = [
 
   updraft('s3-lift-I', -6, 12, 131, { width: 4, depth: 3, rise: 6 }),
   pad('s3-pad-I', -6, 18, 140, 1.2, 7, 10, 5.6),
-  updraft('s3-lift-R1', 6, 12, 131.5, { width: 4, depth: 3, rise: 6, onTime: 3, offTime: 1.5, phase: 0, telegraph: 1 }),
-  updraft('s3-lift-R2', 6, 18, 141.5, { width: 4, depth: 3, rise: 6, onTime: 3, offTime: 1.5, phase: 1.5, telegraph: 1 }),
-  updraft('s3-lift-R3', 6, 24, 153.5, { width: 4, depth: 3, rise: 6, onTime: 3, offTime: 1.5, phase: 3, telegraph: 1 }),
+  updraft('s3-lift-R1', 6, 12, 131.5, {
+    width: 4,
+    depth: 3,
+    rise: 6,
+    onTime: 3,
+    offTime: 1.5,
+    phase: 0,
+    telegraph: 1,
+  }),
+  updraft('s3-lift-R2', 6, 18, 141.5, {
+    width: 4,
+    depth: 3,
+    rise: 6,
+    onTime: 3,
+    offTime: 1.5,
+    phase: 1.5,
+    telegraph: 1,
+  }),
+  updraft('s3-lift-R3', 6, 24, 153.5, {
+    width: 4,
+    depth: 3,
+    rise: 6,
+    onTime: 3,
+    offTime: 1.5,
+    phase: 3,
+    telegraph: 1,
+  }),
   { id: 's3-cpgate', type: 'checkpointGate', position: v(0, 30, 172), params: { index: 2, width: 18.2 } },
 
-  { id: 's4-dish-1', type: 'spinningDisc', position: v(0, 30, 196.2), params: { radius: 7, thickness: 0.8, speed: 0.7, bumps: 3, bumpRadius: 0.8, bumpKnock: 6 } },
-  { id: 's4-dish-2', type: 'spinningDisc', position: v(0, 30, 213), params: { radius: 7.5, thickness: 0.8, speed: -0.9, bumps: 0 } },
+  {
+    id: 's4-dish-1',
+    type: 'spinningDisc',
+    position: v(0, 30, 196.2),
+    params: { radius: 7, thickness: 0.8, speed: 0.7, bumps: 3, bumpRadius: 0.8, bumpKnock: 6 },
+  },
+  {
+    id: 's4-dish-2',
+    type: 'spinningDisc',
+    position: v(0, 30, 213),
+    params: { radius: 7.5, thickness: 0.8, speed: -0.9, bumps: 0 },
+  },
   {
     id: 's4-wind-2a',
     type: 'fanZone',
     position: v(-9.5, 32, 209.5),
     rotation: { yaw: 90 },
-    params: { width: 7, height: 4, length: 19, strength: 8, falloff: 0.3, onTime: 2.5, offTime: 1.5, spinUp: 0.6, phase: 0, telegraphLead: 0.8 },
+    params: {
+      width: 7,
+      height: 4,
+      length: 19,
+      strength: 8,
+      falloff: 0.3,
+      onTime: 2.5,
+      offTime: 1.5,
+      spinUp: 0.6,
+      phase: 0,
+      telegraphLead: 0.8,
+    },
   },
   {
     id: 's4-wind-2b',
     type: 'fanZone',
     position: v(-9.5, 32, 216.5),
     rotation: { yaw: 90 },
-    params: { width: 7, height: 4, length: 19, strength: 8, falloff: 0.3, onTime: 2.5, offTime: 1.5, spinUp: 0.6, phase: 0.6, telegraphLead: 0.8 },
+    params: {
+      width: 7,
+      height: 4,
+      length: 19,
+      strength: 8,
+      falloff: 0.3,
+      onTime: 2.5,
+      offTime: 1.5,
+      spinUp: 0.6,
+      phase: 0.6,
+      telegraphLead: 0.8,
+    },
   },
   {
     id: 's4-shuttle',
     type: 'movingPlatform',
     position: v(0, 30, 225),
     // Design period 5 s with 1 s holds ⇒ 26 m of travel in 3 s (13 m reach, near end 1.5 m from dish 2).
-    params: { points: [v(0, 0, 0), v(0, 0, 13)], size: v(6, 0.8, 6), speed: 8.7, mode: 'pingPong', pauseTime: 1, pauseAt: 'ends', easing: 'sine' },
+    params: {
+      points: [v(0, 0, 0), v(0, 0, 13)],
+      size: v(6, 0.8, 6),
+      speed: 8.7,
+      mode: 'pingPong',
+      pauseTime: 1,
+      pauseAt: 'ends',
+      easing: 'sine',
+    },
   },
   { id: 's4-cpgate', type: 'checkpointGate', position: v(0, 30, 248), params: { index: 3, width: 20.2 } },
 
@@ -376,13 +552,29 @@ const obstacles: Obstacle[] = [
     id: 's6-rock-2',
     type: 'movingPlatform',
     position: v(0, 49.5, 342),
-    params: { points: [v(0, 0, -1), v(0, 0, 1)], size: v(6, 2, 6), speed: 1.4, mode: 'pingPong', pauseTime: 0.5, pauseAt: 'ends', easing: 'sine' },
+    params: {
+      points: [v(0, 0, -1), v(0, 0, 1)],
+      size: v(6, 2, 6),
+      speed: 1.4,
+      mode: 'pingPong',
+      pauseTime: 0.5,
+      pauseAt: 'ends',
+      easing: 'sine',
+    },
   },
   {
     id: 's6-rock-4',
     type: 'movingPlatform',
     position: v(0, 51, 362),
-    params: { points: [v(0, -1, 0), v(0, 1, 0)], size: v(6, 2, 6), speed: 1.55, mode: 'pingPong', pauseTime: 0.2, pauseAt: 'ends', easing: 'sine' },
+    params: {
+      points: [v(0, -1, 0), v(0, 1, 0)],
+      size: v(6, 2, 6),
+      speed: 1.55,
+      mode: 'pingPong',
+      pauseTime: 0.2,
+      pauseAt: 'ends',
+      easing: 'sine',
+    },
   },
   { id: 's6-cpgate', type: 'checkpointGate', position: v(0, 52, 390), params: { index: 5, width: 18.2 } },
 
@@ -401,12 +593,60 @@ const obstacles: Obstacle[] = [
 // -----------------------------------------------------------------------------
 
 const triggers: Trigger[] = [
-  { id: 'cp-0', kind: 'checkpoint', index: 0, position: v(0, 2, 0), size: v(26, 4, 20), respawn: respawnRow(0, -1, [-6, -3.6, -1.2, 1.2, 3.6, 6]), respawnYaw: 0 },
-  { id: 'cp-1', kind: 'checkpoint', index: 1, position: v(0, 14, 116), size: v(16, 4, 2), respawn: respawnRow(12, 119, [-6, -3.6, -1.2, 1.2, 3.6, 6]), respawnYaw: 0 },
-  { id: 'cp-2', kind: 'checkpoint', index: 2, position: v(0, 32, 172), size: v(20, 4, 2), respawn: respawnRow(30, 175), respawnYaw: 0 },
-  { id: 'cp-3', kind: 'checkpoint', index: 3, position: v(0, 32, 248), size: v(22, 4, 2), respawn: respawnRow(30, 251), respawnYaw: 0 },
-  { id: 'cp-4', kind: 'checkpoint', index: 4, position: v(0, 50, 317), size: v(20, 4, 2), respawn: respawnRow(48, 320), respawnYaw: 0 },
-  { id: 'cp-5', kind: 'checkpoint', index: 5, position: v(0, 54, 390), size: v(20, 4, 2), respawn: respawnRow(52, 393), respawnYaw: 0 },
+  {
+    id: 'cp-0',
+    kind: 'checkpoint',
+    index: 0,
+    position: v(0, 2, 0),
+    size: v(26, 4, 20),
+    respawn: respawnRow(0, -1, [-6, -3.6, -1.2, 1.2, 3.6, 6]),
+    respawnYaw: 0,
+  },
+  {
+    id: 'cp-1',
+    kind: 'checkpoint',
+    index: 1,
+    position: v(0, 14, 116),
+    size: v(16, 4, 2),
+    respawn: respawnRow(12, 119, [-6, -3.6, -1.2, 1.2, 3.6, 6]),
+    respawnYaw: 0,
+  },
+  {
+    id: 'cp-2',
+    kind: 'checkpoint',
+    index: 2,
+    position: v(0, 32, 172),
+    size: v(20, 4, 2),
+    respawn: respawnRow(30, 175),
+    respawnYaw: 0,
+  },
+  {
+    id: 'cp-3',
+    kind: 'checkpoint',
+    index: 3,
+    position: v(0, 32, 248),
+    size: v(22, 4, 2),
+    respawn: respawnRow(30, 251),
+    respawnYaw: 0,
+  },
+  {
+    id: 'cp-4',
+    kind: 'checkpoint',
+    index: 4,
+    position: v(0, 50, 317),
+    size: v(20, 4, 2),
+    respawn: respawnRow(48, 320),
+    respawnYaw: 0,
+  },
+  {
+    id: 'cp-5',
+    kind: 'checkpoint',
+    index: 5,
+    position: v(0, 54, 390),
+    size: v(20, 4, 2),
+    respawn: respawnRow(52, 393),
+    respawnYaw: 0,
+  },
   { id: 'void-high', kind: 'void', position: v(0, 20, 305), size: v(60, 2, 230) },
   { id: 'finish', kind: 'finish', position: v(0, 66, 412), size: v(22, 4, 2) },
 ];
@@ -415,7 +655,14 @@ const triggers: Trigger[] = [
 // Bot nav
 // -----------------------------------------------------------------------------
 
-const wp = (id: number, x: number, y: number, z: number, next: number[], o: Partial<Waypoint> = {}): Waypoint => ({
+const wp = (
+  id: number,
+  x: number,
+  y: number,
+  z: number,
+  next: number[],
+  o: Partial<Waypoint> = {},
+): Waypoint => ({
   id,
   position: v(x, y, z),
   radius: 1.5,
@@ -527,8 +774,24 @@ export default defineRound({
   obstacles,
   triggers,
   flyover: {
-    path: [v(0, 6, -18), v(16, 14, 80), v(-18, 26, 150), v(20, 38, 210), v(-16, 50, 290), v(18, 60, 360), v(0, 80, 430)],
-    lookAt: [v(0, 6, 30), v(0, 6, 80), v(0, 20, 150), v(0, 30, 205), v(0, 40, 290), v(0, 50, 360), v(0, 30, 250)],
+    path: [
+      v(0, 6, -18),
+      v(16, 14, 80),
+      v(-18, 26, 150),
+      v(20, 38, 210),
+      v(-16, 50, 290),
+      v(18, 60, 360),
+      v(0, 80, 430),
+    ],
+    lookAt: [
+      v(0, 6, 30),
+      v(0, 6, 80),
+      v(0, 20, 150),
+      v(0, 30, 205),
+      v(0, 40, 290),
+      v(0, 50, 360),
+      v(0, 30, 250),
+    ],
     duration: 9,
   },
   cameraMode: 'orbit',
@@ -553,7 +816,11 @@ export default defineRound({
       weight: 1,
       weather: 'night',
       description: 'Starry from the start; low gravity reaches the Satellite Spin gaps too.',
-      addObstacles: [lowG('s4-lowg-1', 187, 189.2, 16), lowG('s4-lowg-2', 203.2, 205.5, 16), lowG('s4-lowg-3', 220.5, 222, 16)],
+      addObstacles: [
+        lowG('s4-lowg-1', 187, 189.2, 16),
+        lowG('s4-lowg-2', 203.2, 205.5, 16),
+        lowG('s4-lowg-3', 220.5, 222, 16),
+      ],
     },
     {
       id: 'dead-calm',
@@ -579,14 +846,32 @@ export default defineRound({
           type: 'boulderLane',
           position: v(-11, 30, 253),
           rotation: { yaw: 90 },
-          params: { lanes: 1, length: 22, radius: 1.2, speed: 7, spawnPeriod: 3.5, phase: 0, dropHeight: 5, knockSpeed: 11 },
+          params: {
+            lanes: 1,
+            length: 22,
+            radius: 1.2,
+            speed: 7,
+            spawnPeriod: 3.5,
+            phase: 0,
+            dropHeight: 5,
+            knockSpeed: 11,
+          },
         },
         {
           id: 's6-meteor',
           type: 'boulderLane',
           position: v(11, 52, 395),
           rotation: { yaw: -90 },
-          params: { lanes: 1, length: 22, radius: 1.2, speed: 7, spawnPeriod: 3.5, phase: 1.75, dropHeight: 5, knockSpeed: 11 },
+          params: {
+            lanes: 1,
+            length: 22,
+            radius: 1.2,
+            speed: 7,
+            spawnPeriod: 3.5,
+            phase: 1.75,
+            dropHeight: 5,
+            knockSpeed: 11,
+          },
         },
       ],
     },

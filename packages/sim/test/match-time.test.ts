@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { RoundPhase } from '@tumble/shared';
 import { loadRapier } from '../src/index.ts';
-import { createMatchSim, createSimpleController, createTestArenaRound, testObstacleModules } from '../src/match/index.ts';
+import {
+  createMatchSim,
+  createSimpleController,
+  createTestArenaRound,
+  testObstacleModules,
+} from '../src/match/index.ts';
 
 async function makeSim() {
   const R = await loadRapier();

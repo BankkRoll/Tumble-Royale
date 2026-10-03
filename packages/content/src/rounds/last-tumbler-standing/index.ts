@@ -18,7 +18,17 @@
  *   the layer above.
  */
 import { defineRound } from '@tumble/shared';
-import { hash01, overrideAll, polar, r3, roamGrid, tileField, v3, type ObstacleInput, type PieceInput } from '../tile-panic/kit.ts';
+import {
+  hash01,
+  overrideAll,
+  polar,
+  r3,
+  roamGrid,
+  tileField,
+  v3,
+  type ObstacleInput,
+  type PieceInput,
+} from '../tile-panic/kit.ts';
 
 /** Design circumradius 1.5 m ⇒ flat-to-flat 2.6 m. */
 const HEX = 2.6;
@@ -118,15 +128,51 @@ const geometry: PieceInput[] = [];
 for (const side of [1, -1]) {
   geometry.push(
     // Striped cannon pylon (collides; out of reach) and perches for the lower cannons.
-    { shape: 'cylinder', position: v3(0, 14, side * PYLON_Z), size: v3(1.5, 40, 0), color: 'neutral', pattern: 'stripes' },
-    { shape: 'cylinder', position: v3(0, 33.7, side * PYLON_Z), size: v3(1.9, 0.6, 0), color: 'secondary', bevel: 0.25 },
-    { shape: 'cylinder', position: v3(0, 13.7, side * (PYLON_Z - 1)), size: v3(1.8, 0.6, 0), color: 'secondary', bevel: 0.25 },
-    { shape: 'cylinder', position: v3(0, 3.7, side * (PYLON_Z - 1)), size: v3(1.8, 0.6, 0), color: 'secondary', bevel: 0.25 },
-    { shape: 'sphere', position: v3(0, 38.6, side * PYLON_Z), size: v3(1.2, 1.2, 1.2), color: 'accent', decorative: true },
+    {
+      shape: 'cylinder',
+      position: v3(0, 14, side * PYLON_Z),
+      size: v3(1.5, 40, 0),
+      color: 'neutral',
+      pattern: 'stripes',
+    },
+    {
+      shape: 'cylinder',
+      position: v3(0, 33.7, side * PYLON_Z),
+      size: v3(1.9, 0.6, 0),
+      color: 'secondary',
+      bevel: 0.25,
+    },
+    {
+      shape: 'cylinder',
+      position: v3(0, 13.7, side * (PYLON_Z - 1)),
+      size: v3(1.8, 0.6, 0),
+      color: 'secondary',
+      bevel: 0.25,
+    },
+    {
+      shape: 'cylinder',
+      position: v3(0, 3.7, side * (PYLON_Z - 1)),
+      size: v3(1.8, 0.6, 0),
+      color: 'secondary',
+      bevel: 0.25,
+    },
+    {
+      shape: 'sphere',
+      position: v3(0, 38.6, side * PYLON_Z),
+      size: v3(1.2, 1.2, 1.2),
+      color: 'accent',
+      decorative: true,
+    },
   );
 }
 // Snowfield far below (the snow-globe floor) with drifts.
-geometry.push({ shape: 'cylinder', position: v3(0, -16, 0), size: v3(60, 1, 0), color: '#e8f6ff', decorative: true });
+geometry.push({
+  shape: 'cylinder',
+  position: v3(0, -16, 0),
+  size: v3(60, 1, 0),
+  color: '#e8f6ff',
+  decorative: true,
+});
 for (let i = 0; i < 16; i++) {
   const p = polar(14 + hash01(9201, i) * 34, i * 22.5 + hash01(3, i) * 10, -15.5);
   const s = 2 + hash01(4, i) * 4;
@@ -152,7 +198,14 @@ for (let i = 0; i < 10; i++) {
 
 const navSpacing = 2 * (HEX + 0.08);
 const botNav = LAYERS.flatMap((l, k) =>
-  roamGrid({ idBase: 100 * (k + 1), y: l.y, spacing: navSpacing, extent: l.radius, include: (x, z) => Math.hypot(x, z) <= l.radius - 2.5, seed: 9201 + k }),
+  roamGrid({
+    idBase: 100 * (k + 1),
+    y: l.y,
+    spacing: navSpacing,
+    extent: l.radius,
+    include: (x, z) => Math.hypot(x, z) <= l.radius - 2.5,
+    seed: 9201 + k,
+  }),
 );
 
 export default defineRound({
@@ -209,7 +262,10 @@ export default defineRound({
       obstacleParams: Object.fromEntries(
         cannons.map((c) => {
           const start = Number((c.params as Record<string, unknown>).startDelay);
-          return [c.id, { period: 1.75, startDelay: start < 100 ? 30 + (c.id.includes('-2') ? 0.875 : 0) : start }];
+          return [
+            c.id,
+            { period: 1.75, startDelay: start < 100 ? 30 + (c.id.includes('-2') ? 0.875 : 0) : start },
+          ];
         }),
       ),
     },

@@ -115,7 +115,13 @@ export function FriendsSheet(): JSX.Element {
                     window.setTimeout(() => setCopied(false), 1600);
                   }}
                 >
-                  {copied ? 'Copied!' : <><Icon name="copy" size="1em" /> Copy</>}
+                  {copied ? (
+                    'Copied!'
+                  ) : (
+                    <>
+                      <Icon name="copy" size="1em" /> Copy
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
@@ -134,7 +140,13 @@ export function FriendsSheet(): JSX.Element {
                     {m.isSelf ? ' (you)' : ''}
                   </b>
                   <span className={`tr-chip ${m.ready ? 'tr-chip--good' : ''}`}>
-                    {m.ready ? <><Icon name="check" size="0.85em" /> Ready</> : 'Not ready'}
+                    {m.ready ? (
+                      <>
+                        <Icon name="check" size="0.85em" /> Ready
+                      </>
+                    ) : (
+                      'Not ready'
+                    )}
                   </span>
                   {self?.isLeader && !m.isSelf && (
                     <Button

@@ -1,6 +1,6 @@
+import type { BufferGeometry } from 'three/webgpu';
 import {
   BufferAttribute,
-  BufferGeometry,
   Color,
   Group,
   IcosahedronGeometry,
@@ -175,7 +175,8 @@ interface TimelineAction {
 function painted(geo: BufferGeometry, hex: string): BufferGeometry {
   const g = geo.index ? geo.toNonIndexed() : geo;
   if (g !== geo) geo.dispose();
-  for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
+  for (const name of Object.keys(g.attributes))
+    if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
   const c = new Color(hex);
   const n = g.getAttribute('position').count;
   const arr = new Float32Array(n * 3);
@@ -188,7 +189,16 @@ function painted(geo: BufferGeometry, hex: string): BufferGeometry {
   return g;
 }
 
-function box(w: number, h: number, d: number, x: number, y: number, z: number, hex: string, r = 0.08): BufferGeometry {
+function box(
+  w: number,
+  h: number,
+  d: number,
+  x: number,
+  y: number,
+  z: number,
+  hex: string,
+  r = 0.08,
+): BufferGeometry {
   const g = new RoundedBoxGeometry(w, h, d, 2, Math.min(r, Math.min(w, h, d) * 0.45));
   g.translate(x, y, z);
   return painted(g, hex);
@@ -248,7 +258,9 @@ export function createPlayerWallScene(opts: PlayerWallOptions): PlayerWallScene 
   plainParts.push(box(wallW + 3, 1.6, CD + 3.4, 0, BASE_Y - 0.8, -CD / 2 + 0.6, pal.secondary, 0.4));
   plainParts.push(box(wallW + 1.6, 1.4, CD + 2, 0, BASE_Y - 2.2, -CD / 2 + 0.3, pal.structure, 0.4));
   for (const sx of [-1, 1]) {
-    stripeParts.push(box(1.4, wallH + 3, 1.4, sx * (wallW / 2 + 0.9), BASE_Y + (wallH + 3) / 2, 0.1, pal.secondary, 0.5));
+    stripeParts.push(
+      box(1.4, wallH + 3, 1.4, sx * (wallW / 2 + 0.9), BASE_Y + (wallH + 3) / 2, 0.1, pal.secondary, 0.5),
+    );
   }
 
   const plainMat = createLevelMaterial(levelU, { surface: 'normal', pattern: 'none' });
@@ -303,7 +315,9 @@ export function createPlayerWallScene(opts: PlayerWallOptions): PlayerWallScene 
   const bulbMat = new MeshBasicNodeMaterial();
   const chase = smoothstep(0.35, 0.5, fract(float(instanceIndex).div(4).sub(bulbTime.mul(2.5))));
   bulbMat.colorNode = vec3(1.0, 0.86, 0.45).mul(chase.mul(2.2).add(0.35).mul(bulbBoost));
-  (bulbMat as MeshBasicNodeMaterial & { emissiveNode: Node | null }).emissiveNode = vec3(1.0, 0.8, 0.35).mul(chase.mul(1.2).mul(bulbBoost));
+  (bulbMat as MeshBasicNodeMaterial & { emissiveNode: Node | null }).emissiveNode = vec3(1.0, 0.8, 0.35).mul(
+    chase.mul(1.2).mul(bulbBoost),
+  );
   const bulbs = new InstancedMesh(new IcosahedronGeometry(0.17, 1), bulbMat, bulbPositions.length);
   {
     const m = new Matrix4();
@@ -520,13 +534,19 @@ export function createPlayerWallScene(opts: PlayerWallOptions): PlayerWallScene 
     }
     at = 2.6;
     summary.rounds.forEach((round, ri) => {
-      const victims = round.eliminatedIds.map((id) => byPlayer.get(id)).filter((c): c is Cubby => !!c && c !== winner);
-      schedule(at, () => {
-        shot = 'wide';
-        header.draw(`ROUND ${ri + 1}`, round.name);
-        header.mesh.rotation.x = -Math.PI / 2;
-        callbacks.onRoundStart?.(ri, round);
-      }, true);
+      const victims = round.eliminatedIds
+        .map((id) => byPlayer.get(id))
+        .filter((c): c is Cubby => !!c && c !== winner);
+      schedule(
+        at,
+        () => {
+          shot = 'wide';
+          header.draw(`ROUND ${ri + 1}`, round.name);
+          header.mesh.rotation.x = -Math.PI / 2;
+          callbacks.onRoundStart?.(ri, round);
+        },
+        true,
+      );
       at += 1.3;
       if (victims.length === 0) {
         at += 0.8;
@@ -561,56 +581,91 @@ export function createPlayerWallScene(opts: PlayerWallOptions): PlayerWallScene 
       at += 0.4;
     });
 
-    schedule(at, () => {
-      for (const c of cubbies) if ((c.state === 'idle' || c.state === 'blink') && c !== winner) eliminate(c, summary.rounds.length, c.index);
-    }, true);
+    schedule(
+      at,
+      () => {
+        for (const c of cubbies)
+          if ((c.state === 'idle' || c.state === 'blink') && c !== winner)
+            eliminate(c, summary.rounds.length, c.index);
+      },
+      true,
+    );
     at += winner ? 1.2 : 0.4;
 
     if (winner) {
       const w = winner;
-      schedule(at, () => {
-        header.draw('WINNER!', summary.players.find((p) => p.id === w.playerId)?.name ?? '');
-        header.mesh.rotation.x = -Math.PI / 2;
-        dimTarget = 1;
-        w.state = 'winner';
-        // Crown rests with its band hugging the head top (band half-height ≈ 0.18 m).
-        if (opts.crownHeight === undefined && w.actor) crownHeight = measureHeadHeight(w.holder) + 0.1;
-        shot = 'winner';
-        winnerBeam.mesh.position.set(w.center.x, w.floorY + 12, 2.5);
-        winnerBeam.mesh.lookAt(w.center.x, w.floorY, -CD / 2);
-        winnerBeam.mesh.rotateX(-Math.PI / 2);
-        spot.position.set(w.center.x, w.floorY + 9, 6);
-        spot.target.position.set(w.center.x, w.floorY + 0.6, -CD / 2);
-        post?.setFocusVignette(0.35);
-      }, true);
+      schedule(
+        at,
+        () => {
+          header.draw('WINNER!', summary.players.find((p) => p.id === w.playerId)?.name ?? '');
+          header.mesh.rotation.x = -Math.PI / 2;
+          dimTarget = 1;
+          w.state = 'winner';
+          // Crown rests with its band hugging the head top (band half-height ≈ 0.18 m).
+          if (opts.crownHeight === undefined && w.actor) crownHeight = measureHeadHeight(w.holder) + 0.1;
+          shot = 'winner';
+          winnerBeam.mesh.position.set(w.center.x, w.floorY + 12, 2.5);
+          winnerBeam.mesh.lookAt(w.center.x, w.floorY, -CD / 2);
+          winnerBeam.mesh.rotateX(-Math.PI / 2);
+          spot.position.set(w.center.x, w.floorY + 9, 6);
+          spot.target.position.set(w.center.x, w.floorY + 0.6, -CD / 2);
+          post?.setFocusVignette(0.35);
+        },
+        true,
+      );
       at += 1.2;
-      schedule(at, () => {
-        shake.add(0.6);
-        post?.punch(0.6);
-        crown.visible = true;
-        crownT = 0;
-      }, true);
+      schedule(
+        at,
+        () => {
+          shake.add(0.6);
+          post?.punch(0.6);
+          crown.visible = true;
+          crownT = 0;
+        },
+        true,
+      );
       at += 1.7;
-      schedule(at, () => {
-        finishCrown();
-        post?.flash(0.5);
-        w.actor?.playEmote('cheer', 6);
-        vfx.spawn('confetti', { x: w.center.x, y: w.floorY + 2.4, z: 0.6 }, { intensity: 1.6 });
-        vfx.spawn('crownShine', { x: w.center.x, y: w.floorY + crownHeight + 0.3, z: w.holder.position.z }, { duration: 8 });
-        for (let k = 0; k < 4; k++) {
-          vfx.spawn('fireworks', { x: (k - 1.5) * (wallW / 3.2), y: BASE_Y + wallH + 2, z: 3 }, { delay: k * 0.35 });
-        }
-      }, true);
+      schedule(
+        at,
+        () => {
+          finishCrown();
+          post?.flash(0.5);
+          w.actor?.playEmote('cheer', 6);
+          vfx.spawn('confetti', { x: w.center.x, y: w.floorY + 2.4, z: 0.6 }, { intensity: 1.6 });
+          vfx.spawn(
+            'crownShine',
+            { x: w.center.x, y: w.floorY + crownHeight + 0.3, z: w.holder.position.z },
+            { duration: 8 },
+          );
+          for (let k = 0; k < 4; k++) {
+            vfx.spawn(
+              'fireworks',
+              { x: (k - 1.5) * (wallW / 3.2), y: BASE_Y + wallH + 2, z: 3 },
+              { delay: k * 0.35 },
+            );
+          }
+        },
+        true,
+      );
       at += 3.2;
       schedule(at, () => {
-        for (let k = 0; k < 3; k++) vfx.spawn('fireworks', { x: (k - 1) * 6, y: BASE_Y + wallH + 4, z: 2 }, { delay: k * 0.25, scale: 1.3 });
+        for (let k = 0; k < 3; k++)
+          vfx.spawn(
+            'fireworks',
+            { x: (k - 1) * 6, y: BASE_Y + wallH + 4, z: 2 },
+            { delay: k * 0.25, scale: 1.3 },
+          );
       });
       at += 2.5;
     }
-    schedule(at, () => {
-      playing = false;
-      callbacks.onDone?.();
-    }, true);
+    schedule(
+      at,
+      () => {
+        playing = false;
+        callbacks.onDone?.();
+      },
+      true,
+    );
     timeline.sort((a, b) => a.at - b.at);
   };
 
@@ -715,7 +770,9 @@ export function createPlayerWallScene(opts: PlayerWallOptions): PlayerWallScene 
           return;
         case 'winnerFocus': {
           // Anyone the recap never dropped (left mid-show) goes now, so the winner stands alone.
-          for (const c of cubbies) if ((c.state === 'idle' || c.state === 'blink') && c !== winner) eliminate(c, summary.rounds.length, c.index);
+          for (const c of cubbies)
+            if ((c.state === 'idle' || c.state === 'blink') && c !== winner)
+              eliminate(c, summary.rounds.length, c.index);
           const w = winner;
           if (!w) return;
           header.draw('WINNER!', summary.players.find((p) => p.id === w.playerId)?.name ?? '');
@@ -751,12 +808,26 @@ export function createPlayerWallScene(opts: PlayerWallOptions): PlayerWallScene 
           post?.flash(0.5);
           w.actor?.playEmote('cheer', 6);
           vfx.spawn('confetti', { x: w.center.x, y: w.floorY + 2.4, z: 0.6 }, { intensity: 1.6 });
-          vfx.spawn('crownShine', { x: w.center.x, y: w.floorY + crownHeight + 0.3, z: w.holder.position.z }, { duration: 8 });
-          for (let k = 0; k < 4; k++) vfx.spawn('fireworks', { x: (k - 1.5) * (wallW / 3.2), y: BASE_Y + wallH + 2, z: 3 }, { delay: k * 0.35 });
+          vfx.spawn(
+            'crownShine',
+            { x: w.center.x, y: w.floorY + crownHeight + 0.3, z: w.holder.position.z },
+            { duration: 8 },
+          );
+          for (let k = 0; k < 4; k++)
+            vfx.spawn(
+              'fireworks',
+              { x: (k - 1.5) * (wallW / 3.2), y: BASE_Y + wallH + 2, z: 3 },
+              { delay: k * 0.35 },
+            );
           return;
         }
         case 'end':
-          for (let k = 0; k < 3; k++) vfx.spawn('fireworks', { x: (k - 1) * 6, y: BASE_Y + wallH + 4, z: 2 }, { delay: k * 0.25, scale: 1.3 });
+          for (let k = 0; k < 3; k++)
+            vfx.spawn(
+              'fireworks',
+              { x: (k - 1) * 6, y: BASE_Y + wallH + 4, z: 2 },
+              { delay: k * 0.25, scale: 1.3 },
+            );
           playing = false;
           callbacks.onDone?.();
           return;
@@ -770,7 +841,8 @@ export function createPlayerWallScene(opts: PlayerWallOptions): PlayerWallScene 
       }
       // A driven recap has no schedule to fast-forward: everyone but the winner just leaves.
       if (drivenSummary) {
-        for (const c of cubbies) if ((c.state === 'idle' || c.state === 'blink') && c !== winner) c.state = 'falling';
+        for (const c of cubbies)
+          if ((c.state === 'idle' || c.state === 'blink') && c !== winner) c.state = 'falling';
         if (winner) winner.state = 'winner';
       }
       for (const c of cubbies) {
@@ -835,7 +907,11 @@ export function createPlayerWallScene(opts: PlayerWallOptions): PlayerWallScene 
             if (c.fallTime > 0.9 && c.doorTarget !== 0) c.doorTarget = 0;
             if (!c.poofed && c.holder.position.y < BASE_Y - 3.5) {
               c.poofed = true;
-              vfx.spawn('eliminationPoof', { x: c.holder.position.x, y: c.holder.position.y, z: c.holder.position.z });
+              vfx.spawn('eliminationPoof', {
+                x: c.holder.position.x,
+                y: c.holder.position.y,
+                z: c.holder.position.z,
+              });
             }
             if (c.fallTime > 3) {
               c.state = 'gone';

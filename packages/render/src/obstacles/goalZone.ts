@@ -28,7 +28,17 @@ import { abs, color, float, fract, max, mix, smoothstep, uniform, uv, vec2 } fro
 import { TEAM_COLORS, hash01 } from '@tumble/shared';
 import type { ObstacleRuntime } from '@tumble/sim';
 import { GoalZoneSchema, type GoalZoneParams, type GoalZoneView } from '@tumble/sim/obstacles';
-import { Disposer, PAL, Sparkles, addEmissive, applyInstanceTransform, glowMaterial, labelTexture, parseParams, toon } from './visual-helpers-b.ts';
+import {
+  Disposer,
+  PAL,
+  Sparkles,
+  addEmissive,
+  applyInstanceTransform,
+  glowMaterial,
+  labelTexture,
+  parseParams,
+  toon,
+} from './visual-helpers-b.ts';
 import type { ObstacleVisualFactory } from './types.ts';
 
 const CONFETTI = 90;
@@ -71,9 +81,14 @@ class GoalZoneVisual {
 
   /** Rope-grid material: bright knotted lines, see-through cells, flashes on goals. */
   private netMaterial(): MeshBasicNodeMaterial {
-    const mat = this.d.track(new MeshBasicNodeMaterial({ transparent: true, side: DoubleSide, depthWrite: false }));
+    const mat = this.d.track(
+      new MeshBasicNodeMaterial({ transparent: true, side: DoubleSide, depthWrite: false }),
+    );
     const cell = fract(uv().mul(vec2(14, 7)));
-    const line = max(smoothstep(float(0.4), float(0.5), abs(cell.x.sub(0.5))), smoothstep(float(0.4), float(0.5), abs(cell.y.sub(0.5))));
+    const line = max(
+      smoothstep(float(0.4), float(0.5), abs(cell.x.sub(0.5))),
+      smoothstep(float(0.4), float(0.5), abs(cell.y.sub(0.5))),
+    );
     const rope = mix(color(new Color('#fff6ea')), color(this.teamColor), float(0.35));
     mat.colorNode = rope.add(color(this.teamColor).mul(this.netFlash.mul(1.5)));
     mat.opacityNode = line.mul(0.85).add(this.netFlash.mul(0.25));
@@ -114,9 +129,15 @@ class GoalZoneVisual {
     strip.position.set(0, 0.04, front);
     this.object.add(strip);
 
-    const tex = labelTexture(d, 'GOAL!', { fill: '#ffffff', stroke: PAL.ink, background: TEAM_COLORS[p.team % 4]! });
+    const tex = labelTexture(d, 'GOAL!', {
+      fill: '#ffffff',
+      stroke: PAL.ink,
+      background: TEAM_COLORS[p.team % 4]!,
+    });
     if (tex) {
-      const signMat = d.track(new MeshBasicNodeMaterial({ map: tex, transparent: true, depthWrite: false, side: DoubleSide }));
+      const signMat = d.track(
+        new MeshBasicNodeMaterial({ map: tex, transparent: true, depthWrite: false, side: DoubleSide }),
+      );
       this.sign = new Mesh(d.track(new PlaneGeometry(8, 2)), signMat);
       this.sign.position.set(0, h + 2.6, front);
       this.sign.visible = false;
@@ -138,7 +159,10 @@ class GoalZoneVisual {
       const a = (i / sticks) * Math.PI * 2;
       const r = p.basketRadius + 0.32;
       // Alternate lean directions so the ring reads as weave.
-      this.q.setFromAxisAngle(this.v.set(Math.cos(a + Math.PI / 2), 0, -Math.sin(a + Math.PI / 2)), i % 2 ? 0.35 : -0.35);
+      this.q.setFromAxisAngle(
+        this.v.set(Math.cos(a + Math.PI / 2), 0, -Math.sin(a + Math.PI / 2)),
+        i % 2 ? 0.35 : -0.35,
+      );
       this.m.compose(this.v.set(Math.cos(a) * r, 1.05, -Math.sin(a) * r), this.q, this.s.set(1, 1, 1));
       ring.setMatrixAt(i, this.m);
       ring.setColorAt(i, i % 2 ? this.teamColor : cream);
@@ -194,7 +218,13 @@ class GoalZoneVisual {
       const up = 7 + this.seeds[i * 3 + 1]! * 8;
       const out = 2 + this.seeds[i * 3 + 2]! * 6;
       const tt = since;
-      c.set(i, Math.cos(a) * out * tt, 2.5 + up * tt - 7 * tt * tt, front + Math.abs(Math.sin(a)) * out * tt, Math.max(0, 1.6 - tt * 0.6));
+      c.set(
+        i,
+        Math.cos(a) * out * tt,
+        2.5 + up * tt - 7 * tt * tt,
+        front + Math.abs(Math.sin(a)) * out * tt,
+        Math.max(0, 1.6 - tt * 0.6),
+      );
     }
     c.commit();
   }

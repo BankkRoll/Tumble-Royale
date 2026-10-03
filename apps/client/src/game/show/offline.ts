@@ -11,7 +11,13 @@ import { showRoundCatalog } from '@tumble/content/rounds';
 import { RoundPhase, Rng, SIM_DT, ShowPhase, hashString, type RoundDefinition } from '@tumble/shared';
 import { FixedStepper, emptyInput } from '@tumble/sim';
 import { PlayerRoundStatus, type MatchPlayerInfo, type MatchSimHandle } from '@tumble/sim/match';
-import { createOfflineShow, type OfflineShow, type ShowEvent, type ShowPlaylist, type ShowSummary } from '@tumble/sim/show';
+import {
+  createOfflineShow,
+  type OfflineShow,
+  type ShowEvent,
+  type ShowPlaylist,
+  type ShowSummary,
+} from '@tumble/sim/show';
 import { ui } from '@tumble/ui';
 import { botLoadout } from '../cosmetics.ts';
 import type { HudInput, HudPlayerStatus } from '../round/hud.ts';
@@ -95,10 +101,22 @@ export class OfflineShowSession extends ShowSession {
   start(): void {
     const s = ui.getState();
     const n = this.order.length;
-    s.setQueue({ status: 'searching', startedAt: Date.now(), playersFound: 1, playersNeeded: n, etaSec: 4, region: 'Local' });
+    s.setQueue({
+      status: 'searching',
+      startedAt: Date.now(),
+      playersFound: 1,
+      playersNeeded: n,
+      etaSec: 4,
+      region: 'Local',
+    });
     s.setScreen('matchmaking');
     for (let k = 1; k <= 10; k++) {
-      this.after(0.3 * k, () => ui.getState().setQueue({ playersFound: Math.min(n, Math.round((n * k) / 10)), etaSec: Math.max(0, Math.round((10 - k) * 0.3)) }));
+      this.after(0.3 * k, () =>
+        ui.getState().setQueue({
+          playersFound: Math.min(n, Math.round((n * k) / 10)),
+          etaSec: Math.max(0, Math.round((10 - k) * 0.3)),
+        }),
+      );
     }
     this.after(3.3, () => {
       ui.getState().setQueue({ status: 'found', playersFound: n });
@@ -135,7 +153,9 @@ export class OfflineShowSession extends ShowSession {
   }
 
   protected createSource(rs: RoundStart): RoundSource | null {
-    return this.source && this.source.sim === this.show.match && rs.round.id === this.source.sim.round.id ? this.source : null;
+    return this.source && this.source.sim === this.show.match && rs.round.id === this.source.sim.round.id
+      ? this.source
+      : null;
   }
 
   protected liveStatus(): HudInput | null {
@@ -171,10 +191,20 @@ export class OfflineShowSession extends ShowSession {
         const players: MatchPlayerInfo[] = [];
         for (const [id, p] of st.players) {
           const sp = this.players.get(id);
-          players.push({ id, name: sp?.name ?? `Tumbler ${id}`, isBot: sp?.isBot ?? true, team: p.team ?? -1 });
+          players.push({
+            id,
+            name: sp?.name ?? `Tumbler ${id}`,
+            isBot: sp?.isBot ?? true,
+            team: p.team ?? -1,
+          });
         }
         const inRound = players.some((p) => p.id === this.localId);
-        this.source = new OfflineRoundSource(m as MatchSimHandle, players, inRound ? this.localId : -1, () => this.show.match === m);
+        this.source = new OfflineRoundSource(
+          m as MatchSimHandle,
+          players,
+          inRound ? this.localId : -1,
+          () => this.show.match === m,
+        );
         this.stepper.reset();
         this.source.capture();
         this.onRoundSelected({
@@ -217,7 +247,14 @@ export class OfflineShowSession extends ShowSession {
       placements,
       rounds: summary.rounds.map((o) => {
         const carried = new Set(o.carried);
-        return { roundId: o.roundId, name: o.name, type: o.type, isFinal: o.isFinal, qualified: [...o.qualified, ...o.carried], eliminated: o.eliminated.filter((id) => !carried.has(id)) };
+        return {
+          roundId: o.roundId,
+          name: o.name,
+          type: o.type,
+          isFinal: o.isFinal,
+          qualified: [...o.qualified, ...o.carried],
+          eliminated: o.eliminated.filter((id) => !carried.has(id)),
+        };
       }),
     });
   }
@@ -241,7 +278,12 @@ export class OfflineShowSession extends ShowSession {
       return;
     }
     const finish = m.round.triggers.find((t) => t.kind === 'finish');
-    if (finish) m.controller(this.localId)?.teleport({ x: finish.position.x, y: finish.position.y, z: finish.position.z });
+    if (finish)
+      m.controller(this.localId)?.teleport({
+        x: finish.position.x,
+        y: finish.position.y,
+        z: finish.position.z,
+      });
   }
 
   override teleportToCheckpoint(): void {
@@ -250,7 +292,9 @@ export class OfflineShowSession extends ShowSession {
     const ctrl = m.controller(this.localId);
     if (!ctrl) return;
     const z = ctrl.body.translation().z;
-    const cps = m.round.triggers.filter((t) => t.kind === 'checkpoint').sort((a, b) => a.position.z - b.position.z);
+    const cps = m.round.triggers
+      .filter((t) => t.kind === 'checkpoint')
+      .sort((a, b) => a.position.z - b.position.z);
     const next = cps.find((c) => c.position.z > z + 1) ?? cps[0];
     const spot = next?.respawn?.[0] ?? next?.position;
     if (spot) ctrl.teleport({ x: spot.x, y: spot.y + 0.5, z: spot.z });

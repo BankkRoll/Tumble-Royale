@@ -61,10 +61,15 @@ class TiltPlatformVisual extends VisualBase<TiltPlatformParams> {
     if (p.column) {
       const top = -p.thickness / 2 - 0.45;
       const col = this.add(
-        shadedMesh(new CylinderGeometry(0.55, 0.75, p.columnHeight, 32), createPatternMaterial({ a: C.white, b: C.pink, pattern: 'stripes', scale: 1.8 })),
+        shadedMesh(
+          new CylinderGeometry(0.55, 0.75, p.columnHeight, 32),
+          createPatternMaterial({ a: C.white, b: C.pink, pattern: 'stripes', scale: 1.8 }),
+        ),
       );
       col.position.y = top - p.columnHeight / 2;
-      const cup = this.add(shadedMesh(new CylinderGeometry(0.8, 0.6, 0.35, 32), createTopSheenMaterial(C.cream, C.lilac)));
+      const cup = this.add(
+        shadedMesh(new CylinderGeometry(0.8, 0.6, 0.35, 32), createTopSheenMaterial(C.cream, C.lilac)),
+      );
       cup.position.y = top - 0.05;
     }
   }
@@ -77,4 +82,5 @@ class TiltPlatformVisual extends VisualBase<TiltPlatformParams> {
 }
 
 /** Tilt platform visual factory. */
-export const tiltPlatformVisual: ObstacleVisualFactory = (instance, ctx) => new TiltPlatformVisual(instance, ctx);
+export const tiltPlatformVisual: ObstacleVisualFactory = (instance, ctx) =>
+  new TiltPlatformVisual(instance, ctx);

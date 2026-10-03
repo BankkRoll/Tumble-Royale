@@ -70,7 +70,8 @@ describe('bounce pad', () => {
       sim.setInput(0, input);
       sim.step();
       const evs = sim.events.drain() as SimEvent[];
-      if (evs.some((e) => e.type === 'bounce' && e.player === 0 && ctrl.body.linvel().y > 15)) launched = { ...ctrl.body.linvel() };
+      if (evs.some((e) => e.type === 'bounce' && e.player === 0 && ctrl.body.linvel().y > 15))
+        launched = { ...ctrl.body.linvel() };
     }
     expect(launched).toBeDefined();
     expect(launched!.x).toBeCloseTo(LAUNCH.z, 3);

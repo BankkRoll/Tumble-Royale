@@ -33,7 +33,20 @@ export interface PlayerSample {
 
 /** @returns A zeroed sample (preallocate; sources fill in place). */
 export function createPlayerSample(): PlayerSample {
-  return { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, state: 0, stateTime: 0, facing: 0, grounded: true, flags: 0, emote: 0 };
+  return {
+    x: 0,
+    y: 0,
+    z: 0,
+    vx: 0,
+    vy: 0,
+    vz: 0,
+    state: 0,
+    stateTime: 0,
+    facing: 0,
+    grounded: true,
+    flags: 0,
+    emote: 0,
+  };
 }
 
 /** Render-side view of a running round. */
@@ -50,7 +63,14 @@ export interface RoundSource {
   sample(id: number, out: PlayerSample): boolean;
 }
 
-const AIRBORNE = new Set<number>([CharacterState.Jump, CharacterState.Fall, CharacterState.Dive, CharacterState.Bounce, CharacterState.Stunned, CharacterState.LedgeHang]);
+const AIRBORNE = new Set<number>([
+  CharacterState.Jump,
+  CharacterState.Fall,
+  CharacterState.Dive,
+  CharacterState.Bounce,
+  CharacterState.Stunned,
+  CharacterState.LedgeHang,
+]);
 
 function lerpAngle(a: number, b: number, t: number): number {
   let d = b - a;
@@ -121,7 +141,11 @@ export class OfflineRoundSource implements RoundSource {
 
   renderTime(): number {
     const p = this.sim.phase;
-    const advancing = p === RoundPhase.Countdown || p === RoundPhase.Playing || p === RoundPhase.Overtime || p === RoundPhase.RoundEnd;
+    const advancing =
+      p === RoundPhase.Countdown ||
+      p === RoundPhase.Playing ||
+      p === RoundPhase.Overtime ||
+      p === RoundPhase.RoundEnd;
     return advancing ? this.sim.time - SIM_DT + this.alpha * SIM_DT : this.sim.time;
   }
 

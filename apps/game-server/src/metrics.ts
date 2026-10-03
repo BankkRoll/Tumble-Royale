@@ -128,12 +128,19 @@ export class ServerMetrics {
   prometheus(): string {
     const lines: string[] = [];
     const gauge = (name: string, help: string, value: number, labels = ''): void => {
-      lines.push(`# HELP ${name} ${help}`, `# TYPE ${name} gauge`, `${name}${labels} ${Number.isFinite(value) ? value : 0}`);
+      lines.push(
+        `# HELP ${name} ${help}`,
+        `# TYPE ${name} gauge`,
+        `${name}${labels} ${Number.isFinite(value) ? value : 0}`,
+      );
     };
     const counter = (name: string, help: string, value: number): void => {
       lines.push(`# HELP ${name} ${help}`, `# TYPE ${name} counter`, `${name} ${value}`);
     };
-    lines.push('# HELP tumble_tick_ms Server tick duration over the last ~10 s, by phase.', '# TYPE tumble_tick_ms gauge');
+    lines.push(
+      '# HELP tumble_tick_ms Server tick duration over the last ~10 s, by phase.',
+      '# TYPE tumble_tick_ms gauge',
+    );
     for (const phase of Object.keys(this.tick) as TickPhase[]) {
       const w = this.tick[phase];
       lines.push(`tumble_tick_ms{phase="${phase}",stat="avg"} ${w.mean().toFixed(4)}`);
@@ -151,9 +158,17 @@ export class ServerMetrics {
     gauge('tumble_rtt_ms_avg', 'Mean client RTT (ms).', this.rtt.mean());
     gauge('tumble_rtt_ms_p95', 'p95 client RTT (ms).', this.rtt.percentile(0.95));
     counter('tumble_snapshots_sent_total', 'Snapshots sent.', this.snapshotsSent);
-    counter('tumble_snapshots_dropped_total', 'Snapshots skipped due to socket backpressure.', this.snapshotsDropped);
+    counter(
+      'tumble_snapshots_dropped_total',
+      'Snapshots skipped due to socket backpressure.',
+      this.snapshotsDropped,
+    );
     counter('tumble_kicks_total', 'Sessions kicked.', this.kicks);
-    counter('tumble_rate_limited_total', 'Messages rejected by rate limits or sanity checks.', this.rateLimited);
+    counter(
+      'tumble_rate_limited_total',
+      'Messages rejected by rate limits or sanity checks.',
+      this.rateLimited,
+    );
     counter('tumble_input_missed_total', 'Inputs that never arrived (repeated instead).', this.inputMissed);
     counter('tumble_input_late_total', 'Inputs that arrived after their step.', this.inputLate);
     counter('tumble_room_crashes_total', 'Rooms closed after an exception in their tick.', this.roomCrashes);

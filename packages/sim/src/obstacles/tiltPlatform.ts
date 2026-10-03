@@ -20,7 +20,13 @@ import {
   toWorldPoint,
   type HingeAxis,
 } from './helpers-a.ts';
-import type { ObstacleBuildContext, ObstacleInstance, ObstacleModule, ObstacleRuntime, ObstacleStepContext } from './types.ts';
+import type {
+  ObstacleBuildContext,
+  ObstacleInstance,
+  ObstacleModule,
+  ObstacleRuntime,
+  ObstacleStepContext,
+} from './types.ts';
 
 /** Tilt platform parameters. Origin = centre of the plate at rest. */
 export const tiltPlatformSchema = z.object({
@@ -145,7 +151,12 @@ export class TiltPlatformRuntime extends RuntimeBase implements TiltPlatformView
         );
       }
       const axis = this.axes[i] === 'x' ? vec3(1, 0, 0) : vec3(0, 0, 1);
-      const joint: ImpulseJoint = world.createImpulseJoint(R.JointData.revolute(vec3(), vec3(), axis), parent, body, true);
+      const joint: ImpulseJoint = world.createImpulseJoint(
+        R.JointData.revolute(vec3(), vec3(), axis),
+        parent,
+        body,
+        true,
+      );
       configureHinge(R, joint, maxA, p.stiffness, p.damping);
       this.joints.push(joint);
       this.chain.push(body);
@@ -247,6 +258,7 @@ export const tiltPlatform: ObstacleModule<TiltPlatformParams> = {
   type: 'tiltPlatform',
   displayName: 'Wobble Plate',
   schema: tiltPlatformSchema,
-  create: (instance, ctx) => new TiltPlatformRuntime(instance, ctx, tiltPlatformSchema.parse(instance.params)),
+  create: (instance, ctx) =>
+    new TiltPlatformRuntime(instance, ctx, tiltPlatformSchema.parse(instance.params)),
   audioCues: ['creak'],
 };

@@ -7,7 +7,14 @@
 import type { RigidBody } from '@dimforge/rapier3d-compat';
 import { InteractionGroups, quatIdentity } from '@tumble/shared';
 import { z } from 'zod';
-import { KinematicRig, PhysicsBag, emitCue, ensurePoseSamples, instanceFrame, writeSample } from './helpers-b.ts';
+import {
+  KinematicRig,
+  PhysicsBag,
+  emitCue,
+  ensurePoseSamples,
+  instanceFrame,
+  writeSample,
+} from './helpers-b.ts';
 import type { ObstacleModule, ObstacleRuntime, PoseSample } from './types.ts';
 
 /**
@@ -89,7 +96,9 @@ export const startGate: ObstacleModule<StartGateParams> = {
     for (let i = 0; i < 2; i++) {
       const b = bag.kinematic(frame);
       bag.collider(
-        R.ColliderDesc.cuboid(p.width / 4, p.height / 2, p.thickness / 2).setCollisionGroups(InteractionGroups.kinematic),
+        R.ColliderDesc.cuboid(p.width / 4, p.height / 2, p.thickness / 2).setCollisionGroups(
+          InteractionGroups.kinematic,
+        ),
         b,
         { kind: 'normal', ownerId: instance.id },
       );

@@ -271,9 +271,11 @@ function decodeRecord(
 
 function diffMask(a: Int32Array, oa: number, b: Int32Array, ob: number): number {
   let m = 0;
-  if (a[oa + PX] !== b[ob + PX] || a[oa + PY] !== b[ob + PY] || a[oa + PZ] !== b[ob + PZ]) m |= EntityField.Pos;
+  if (a[oa + PX] !== b[ob + PX] || a[oa + PY] !== b[ob + PY] || a[oa + PZ] !== b[ob + PZ])
+    m |= EntityField.Pos;
   if (a[oa + ROTK] !== b[ob + ROTK] || a[oa + ROT] !== b[ob + ROT]) m |= EntityField.Rot;
-  if (a[oa + VX] !== b[ob + VX] || a[oa + VY] !== b[ob + VY] || a[oa + VZ] !== b[ob + VZ]) m |= EntityField.Vel;
+  if (a[oa + VX] !== b[ob + VX] || a[oa + VY] !== b[ob + VY] || a[oa + VZ] !== b[ob + VZ])
+    m |= EntityField.Vel;
   if (a[oa + STATE] !== b[ob + STATE] || a[oa + START] !== b[ob + START]) m |= EntityField.State;
   if (a[oa + FACING] !== b[ob + FACING]) m |= EntityField.Facing;
   if (a[oa + FLAGS] !== b[ob + FLAGS]) m |= EntityField.Flags;
@@ -658,7 +660,10 @@ export class SnapshotEncoder {
 
     // Interest: score every changed entity, then write the most overdue first.
     const q = frame.quantizer;
-    const ref = viewer.spectateTarget >= 0 && cur.present[viewer.spectateTarget] ? viewer.spectateTarget : viewer.playerId;
+    const ref =
+      viewer.spectateTarget >= 0 && cur.present[viewer.spectateTarget]
+        ? viewer.spectateTarget
+        : viewer.playerId;
     const hasRef = ref >= 0 && ref < MAX_ENTITIES && cur.present[ref] === 1;
     const rx = hasRef ? cur.data[ref * ENTITY_STRIDE + PX]! : 0;
     const ry = hasRef ? cur.data[ref * ENTITY_STRIDE + PY]! : 0;

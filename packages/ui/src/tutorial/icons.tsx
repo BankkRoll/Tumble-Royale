@@ -98,7 +98,13 @@ const PATHS: Record<TutorialIconName, JSX.Element> = {
  * @example
  * <TutorialIcon name="jump" />
  */
-export function TutorialIcon({ name, className }: { name: TutorialIconName; className?: string }): JSX.Element {
+export function TutorialIcon({
+  name,
+  className,
+}: {
+  name: TutorialIconName;
+  className?: string;
+}): JSX.Element {
   return (
     <svg
       className={`tt-icon${className ? ` ${className}` : ''}`}

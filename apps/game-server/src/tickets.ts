@@ -98,7 +98,8 @@ export function verifyJoinTicket(secret: string, token: string, nowMs: number): 
   if (!(aud === TICKET_AUDIENCE || (Array.isArray(aud) && aud.includes(TICKET_AUDIENCE)))) return null;
   if (!isInt(c.exp) || c.exp <= nowSec) return null;
   if (c.nbf !== undefined && (!isInt(c.nbf) || c.nbf > nowSec + 5)) return null;
-  if (typeof c.sub !== 'string' || typeof c.mid !== 'string' || !/^[A-Za-z0-9_-]{6,64}$/.test(c.mid)) return null;
+  if (typeof c.sub !== 'string' || typeof c.mid !== 'string' || !/^[A-Za-z0-9_-]{6,64}$/.test(c.mid))
+    return null;
   if (!isInt(c.size) || !isInt(c.humans) || c.size < 1 || c.size > 60 || c.humans < 0) return null;
   const role = c.role === 'spectator' ? 'spectator' : 'player';
   const queue = c.queue === 'ranked' || c.queue === 'custom' ? c.queue : 'casual';
@@ -133,7 +134,16 @@ export function signJoinTicket(secret: string, claims: JoinTicketClaims, nowMs: 
   const iat = Math.floor(nowMs / 1000);
   const header = b64url(Buffer.from(JSON.stringify({ alg: 'HS256' })));
   const payload = b64url(
-    Buffer.from(JSON.stringify({ ...claims, typ: 'join', iss: TICKET_ISSUER, aud: TICKET_AUDIENCE, iat, exp: iat + ttlSec })),
+    Buffer.from(
+      JSON.stringify({
+        ...claims,
+        typ: 'join',
+        iss: TICKET_ISSUER,
+        aud: TICKET_AUDIENCE,
+        iat,
+        exp: iat + ttlSec,
+      }),
+    ),
   );
   const sig = b64url(createHmac('sha256', secret).update(`${header}.${payload}`).digest());
   return `${header}.${payload}.${sig}`;

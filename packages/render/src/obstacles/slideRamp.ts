@@ -39,7 +39,10 @@ export const slideRampVisual: ObstacleVisualFactory = (instance) => {
 
   for (const part of slideRampParts(p)) {
     const mat = part.role === 'deck' ? deckMat : part.role === 'rail' ? railMat : wallMat;
-    const m = solid(roundedBox(d, part.half.x, part.half.y, part.half.z, part.role === 'deck' ? 0.18 : 0.12), mat);
+    const m = solid(
+      roundedBox(d, part.half.x, part.half.y, part.half.z, part.role === 'deck' ? 0.18 : 0.12),
+      mat,
+    );
     m.position.set(part.pos.x, part.pos.y, part.pos.z);
     m.quaternion.set(part.rot.x, part.rot.y, part.rot.z, part.rot.w);
     root.add(m);
@@ -81,4 +84,3 @@ export const slideRampVisual: ObstacleVisualFactory = (instance) => {
     },
   };
 };
-

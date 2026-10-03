@@ -1,5 +1,5 @@
+import type { BufferGeometry } from 'three/webgpu';
 import {
-  BufferGeometry,
   CapsuleGeometry,
   Color,
   Euler,

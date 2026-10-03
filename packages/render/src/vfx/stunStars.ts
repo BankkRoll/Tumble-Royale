@@ -1,4 +1,13 @@
-import { Euler, ExtrudeGeometry, InstancedMesh, Matrix4, Quaternion, Shape, Vector3, type MeshToonNodeMaterial } from 'three/webgpu';
+import {
+  Euler,
+  ExtrudeGeometry,
+  InstancedMesh,
+  Matrix4,
+  Quaternion,
+  Shape,
+  Vector3,
+  type MeshToonNodeMaterial,
+} from 'three/webgpu';
 import { createToonMaterial } from '../materials/toon.ts';
 import { GOLD_COLORS } from './palette.ts';
 
@@ -118,7 +127,16 @@ export class StunStars {
    * @param now - Current effect time.
    * @param delay - Seconds before it appears.
    */
-  add(x: number, y: number, z: number, playerId: number, duration: number, scale: number, now: number, delay = 0): void {
+  add(
+    x: number,
+    y: number,
+    z: number,
+    playerId: number,
+    duration: number,
+    scale: number,
+    now: number,
+    delay = 0,
+  ): void {
     let slot = -1;
     if (playerId >= 0) {
       for (let i = 0; i < MAX_STUN_RINGS; i++) {

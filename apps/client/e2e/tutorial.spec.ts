@@ -27,7 +27,8 @@ function trackErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(`${e.name}: ${e.message}`));
   page.on('console', (m) => {
-    if (m.type() === 'error' && !/ERR_CONNECTION_REFUSED|Failed to load resource/.test(m.text())) console.log('[console.error]', m.text().slice(0, 300));
+    if (m.type() === 'error' && !/ERR_CONNECTION_REFUSED|Failed to load resource/.test(m.text()))
+      console.log('[console.error]', m.text().slice(0, 300));
   });
   return errors;
 }
@@ -36,7 +37,9 @@ test('autopilot completes every Practice Island station and the mini race', asyn
   test.setTimeout(8 * 60_000);
   const errors = trackErrors(page);
   await page.setViewportSize({ width: 1280, height: 720 });
-  await page.goto(`${process.env.GAME_URL ?? ''}/tutorial.html?autoplay=1&ts=${TS}&fresh=1&seed=5&tier=high&backend=${BACKEND}`);
+  await page.goto(
+    `${process.env.GAME_URL ?? ''}/tutorial.html?autoplay=1&ts=${TS}&fresh=1&seed=5&tier=high&backend=${BACKEND}`,
+  );
   await page.waitForFunction(() => window.__tumble?.ready === true, undefined, { timeout: 120_000 });
   console.log('[tutorial] backend', await page.evaluate(() => window.__tumble!.backend));
 
@@ -47,12 +50,21 @@ test('autopilot completes every Practice Island station and the mini race', asyn
   await snap(page, '00-intro');
 
   for (const [i, id] of STATIONS.entries()) {
-    await page.waitForFunction((sid) => window.__tutorial?.station() === sid || window.__tutorial?.completed().includes(sid), id, { timeout: 90_000, polling: 100 });
+    await page.waitForFunction(
+      (sid) => window.__tutorial?.station() === sid || window.__tutorial?.completed().includes(sid),
+      id,
+      { timeout: 90_000, polling: 100 },
+    );
     // Mid-demo: the coach is showing the move and the objective card is up.
     await page.waitForTimeout(1800 / Math.min(2, TS));
     await snap(page, `${String(i + 1).padStart(2, '0')}-${id}`);
-    await page.waitForFunction((sid) => window.__tutorial?.completed().includes(sid), id, { timeout: 120_000, polling: 100 });
-    console.log(`[tutorial] ${id} done at ${(await page.evaluate(() => window.__tutorial!.elapsed())).toFixed(1)} s`);
+    await page.waitForFunction((sid) => window.__tutorial?.completed().includes(sid), id, {
+      timeout: 120_000,
+      polling: 100,
+    });
+    console.log(
+      `[tutorial] ${id} done at ${(await page.evaluate(() => window.__tutorial!.elapsed())).toFixed(1)} s`,
+    );
   }
 
   await waitFor(page, () => window.__tutorial?.stage() === 'race', 60_000);

@@ -31,26 +31,52 @@ const periodKey = (period: Period, now: Date): string => (period === 'daily' ? d
  *
  * @returns Current rows for both periods, ordered by period then slot.
  */
-export async function ensureChallenges(tx: DbOrTx, catalog: Catalog, userId: string, now: Date): Promise<Row[]> {
+export async function ensureChallenges(
+  tx: DbOrTx,
+  catalog: Catalog,
+  userId: string,
+  now: Date,
+): Promise<Row[]> {
   const out: Row[] = [];
   for (const period of ['daily', 'weekly'] as const) {
     const key = periodKey(period, now);
     let rows = await tx
       .select()
       .from(challengeProgress)
-      .where(and(eq(challengeProgress.userId, userId), eq(challengeProgress.period, period), eq(challengeProgress.periodKey, key)));
+      .where(
+        and(
+          eq(challengeProgress.userId, userId),
+          eq(challengeProgress.period, period),
+          eq(challengeProgress.periodKey, key),
+        ),
+      );
     if (rows.length === 0) {
       const picks = catalog.pickChallenges(period, key).slice(0, CHALLENGE_SLOTS[period]);
       if (picks.length) {
         await tx
           .insert(challengeProgress)
-          .values(picks.map((c, slot) => ({ userId, challengeId: c.id, period, periodKey: key, slot, target: c.target })))
+          .values(
+            picks.map((c, slot) => ({
+              userId,
+              challengeId: c.id,
+              period,
+              periodKey: key,
+              slot,
+              target: c.target,
+            })),
+          )
           .onConflictDoNothing();
       }
       rows = await tx
         .select()
         .from(challengeProgress)
-        .where(and(eq(challengeProgress.userId, userId), eq(challengeProgress.period, period), eq(challengeProgress.periodKey, key)));
+        .where(
+          and(
+            eq(challengeProgress.userId, userId),
+            eq(challengeProgress.period, period),
+            eq(challengeProgress.periodKey, key),
+          ),
+        );
     }
     out.push(...rows.sort((a, b) => a.slot - b.slot));
   }
@@ -95,7 +121,15 @@ export async function applyChallengeProgress(
       .update(challengeProgress)
       .set({ progress, ...(completed ? { completedAt: now } : {}) })
       .where(eq(challengeProgress.id, row.id));
-    updates.push({ challengeId: def.id, title: def.title, period: row.period as Period, before: row.progress, progress, target: row.target, completed });
+    updates.push({
+      challengeId: def.id,
+      title: def.title,
+      period: row.period as Period,
+      before: row.progress,
+      progress,
+      target: row.target,
+      completed,
+    });
   }
   return updates;
 }
@@ -135,14 +169,22 @@ export async function challengesView(tx: DbOrTx, catalog: Catalog, userId: strin
  *
  * @throws {ApiError} 404, 409 `reroll_used` / `challenge_completed`, 400 for weekly.
  */
-export async function rerollChallenge(tx: DbOrTx, catalog: Catalog, userId: string, rowId: string, now: Date) {
+export async function rerollChallenge(
+  tx: DbOrTx,
+  catalog: Catalog,
+  userId: string,
+  rowId: string,
+  now: Date,
+) {
   const rows = await ensureChallenges(tx, catalog, userId, now);
   const row = rows.find((r) => r.id === rowId);
   if (!row) throw notFound('Challenge');
-  if (row.period !== 'daily') throw new ApiError(400, 'not_rerollable', 'Only daily challenges can be rerolled');
+  if (row.period !== 'daily')
+    throw new ApiError(400, 'not_rerollable', 'Only daily challenges can be rerolled');
   if (row.completedAt) throw conflict('challenge_completed', 'Completed challenges cannot be rerolled');
   const daily = rows.filter((r) => r.period === 'daily');
-  if (daily.filter((r) => r.rerolled).length >= DAILY_REROLLS) throw conflict('reroll_used', 'Daily reroll already used');
+  if (daily.filter((r) => r.rerolled).length >= DAILY_REROLLS)
+    throw conflict('reroll_used', 'Daily reroll already used');
   const assigned = new Set(daily.map((r) => r.challengeId));
   const pool = catalog.challenges.filter((c) => c.period === 'daily' && !assigned.has(c.id));
   if (!pool.length) throw conflict('no_alternatives', 'No other daily challenges available');
@@ -178,7 +220,13 @@ export async function claimChallenge(tx: DbOrTx, catalog: Catalog, userId: strin
   if (!claimed.length) throw conflict('already_claimed', 'Challenge already claimed');
   const xp = await addXp(tx, catalog, userId, def?.rewardXp ?? 0);
   if (def?.rewardGumballs) {
-    await grantReward(tx, userId, { type: 'gumballs', amount: def.rewardGumballs }, 'challenge_reward', `challenge:${row.id}`);
+    await grantReward(
+      tx,
+      userId,
+      { type: 'gumballs', amount: def.rewardGumballs },
+      'challenge_reward',
+      `challenge:${row.id}`,
+    );
   }
   return { id: row.id, xp, gumballs: def?.rewardGumballs ?? 0, wallet: await readWallet(tx, userId) };
 }

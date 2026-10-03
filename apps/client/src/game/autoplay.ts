@@ -30,7 +30,10 @@ export function installAutoplay(shows = 1): () => void {
       case 'welcome':
         later(900, () => {
           const primary = tumblerSwatches[Math.floor(Math.random() * tumblerSwatches.length)] ?? '#ff6fb5';
-          uiEvents.emit('welcomeDone', { name: randomTumblerName(Math.random), colors: { primary, secondary: '#ffd23f', pattern: 'dots' } });
+          uiEvents.emit('welcomeDone', {
+            name: randomTumblerName(Math.random),
+            colors: { primary, secondary: '#ffd23f', pattern: 'dots' },
+          });
         });
         break;
       case 'tutorialPrompt':
@@ -43,7 +46,8 @@ export function installAutoplay(shows = 1): () => void {
             played++;
             const st = ui.getState();
             // Same path as a player pressing PLAY on the Play tab's start card.
-            const mode = st.playMode === 'online' && st.onlineStatus.state === 'online' ? 'online' : 'offline';
+            const mode =
+              st.playMode === 'online' && st.onlineStatus.state === 'online' ? 'online' : 'offline';
             uiEvents.emit('play', { playlistId: st.selectedPlaylist, mode });
           });
         }

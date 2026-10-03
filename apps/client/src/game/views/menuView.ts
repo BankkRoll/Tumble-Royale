@@ -98,7 +98,11 @@ export class MenuView implements GameView {
   constructor(private readonly opts: MenuViewOptions) {
     this.loadout = opts.loadout;
     this.party = opts.party ?? [];
-    this.stage = createMainMenuStage({ ...sceneOptions(getTheme('candy'), opts.preset, opts.createTumbler), player: opts.loadout, party: opts.party ?? [] });
+    this.stage = createMainMenuStage({
+      ...sceneOptions(getTheme('candy'), opts.preset, opts.createTumbler),
+      player: opts.loadout,
+      party: opts.party ?? [],
+    });
     this.baseFov = this.stage.camera.fov;
     this.idle = new IdlePlay(opts.R, this.stage.platformRadius + 0.6, opts.input, opts.audio);
     this.idle.addRimWall(LOBBY_WALL_RADIUS);
@@ -202,17 +206,28 @@ export class MenuView implements GameView {
     if (this.playing) {
       const c = this.idle.ctrl;
       const { feet } = this.idle.sample();
-      return { state: c.state, position: { x: feet.x, y: feet.y, z: feet.z }, idlePlaying: true, cameraPitch: pitch };
+      return {
+        state: c.state,
+        position: { x: feet.x, y: feet.y, z: feet.z },
+        idlePlaying: true,
+        cameraPitch: pitch,
+      };
     }
     const p = this.stage.playerObject.position;
-    return { state: this.stage.playerAnim.state, position: { x: p.x, y: p.y, z: p.z }, idlePlaying: false, cameraPitch: pitch };
+    return {
+      state: this.stage.playerAnim.state,
+      position: { x: p.x, y: p.y, z: p.z },
+      idlePlaying: false,
+      cameraPitch: pitch,
+    };
   }
 
   update(dt: number, realDt: number): void {
     this.t += realDt;
     // NOTE: re-asserted every frame because a new MenuView can be built before the previous one is disposed.
     this.opts.input.setMouseActions(false);
-    if (!this.playing && !this.dressing && this.canIdlePlay() && this.opts.input.movementKeyHeld(true)) this.setIdlePlay(true);
+    if (!this.playing && !this.dressing && this.canIdlePlay() && this.opts.input.movementKeyHeld(true))
+      this.setIdlePlay(true);
     else if (this.playing && !this.canIdlePlay()) this.setIdlePlay(false);
 
     if (this.playing) this.updateIdlePlay(realDt);
@@ -265,7 +280,11 @@ export class MenuView implements GameView {
     a.emote = emoting ? (this.emoteOverride ?? slotEmote) : null;
     a.lookAt = this.camera.getWorldPosition(this.camTarget);
 
-    const active = this.opts.input.movementKeyHeld() || speed > 0.4 || !c.grounded || (c.state !== CharacterState.Idle && !emoting);
+    const active =
+      this.opts.input.movementKeyHeld() ||
+      speed > 0.4 ||
+      !c.grounded ||
+      (c.state !== CharacterState.Idle && !emoting);
     this.stillTime = active ? 0 : this.stillTime + realDt;
   }
 

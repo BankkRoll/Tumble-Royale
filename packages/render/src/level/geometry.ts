@@ -1,5 +1,5 @@
+import type { BufferGeometry } from 'three/webgpu';
 import {
-  BufferGeometry,
   ExtrudeGeometry,
   LatheGeometry,
   Matrix4,
@@ -62,7 +62,13 @@ function clampBevel(bevel: number, ...dims: number[]): number {
 }
 
 /** Lathe profile for a cylinder with rounded top and bottom rims. */
-function beveledCylinder(radius: number, height: number, bevel: number, detail: GeometryDetail, sides?: number): BufferGeometry {
+function beveledCylinder(
+  radius: number,
+  height: number,
+  bevel: number,
+  detail: GeometryDetail,
+  sides?: number,
+): BufferGeometry {
   const b = clampBevel(bevel, radius, height);
   const steps = SEGMENTS[detail].bevel * 2 + 1;
   const pts: Vector2[] = [new Vector2(0, -height / 2)];
@@ -136,7 +142,13 @@ function hexPrism(radius: number, height: number, bevel: number, detail: Geometr
 }
 
 /** Doorway arch: two legs joined by an elliptical top, open along Z. */
-function arch(width: number, height: number, depth: number, bevel: number, detail: GeometryDetail): BufferGeometry {
+function arch(
+  width: number,
+  height: number,
+  depth: number,
+  bevel: number,
+  detail: GeometryDetail,
+): BufferGeometry {
   const t = Math.min(width * 0.2, 0.9, height * 0.3);
   const ry = Math.min(width / 2, height * 0.6);
   const rx = width / 2;
@@ -199,7 +211,9 @@ export function createPieceGeometry(piece: StaticPiece, detail: GeometryDetail =
       break;
     case 'torus':
       // Lies flat like the collider ring; designers use pitch 90 to stand a hoop up.
-      geo = new TorusGeometry(x, Math.max(y, 0.02), Math.round(seg.radial / 2), seg.radial * 2).rotateX(Math.PI / 2);
+      geo = new TorusGeometry(x, Math.max(y, 0.02), Math.round(seg.radial / 2), seg.radial * 2).rotateX(
+        Math.PI / 2,
+      );
       break;
     case 'arch':
       geo = arch(x, y, z, piece.bevel, detail);
@@ -245,7 +259,12 @@ export function createRimRingGeometry(radius: number, thickness: number): Buffer
 }
 
 /** Hex prism helper exported for decor (crystal pillars, basalt steps). */
-export function createHexPrismGeometry(radius: number, height: number, bevel = 0.1, detail: GeometryDetail = 1): BufferGeometry {
+export function createHexPrismGeometry(
+  radius: number,
+  height: number,
+  bevel = 0.1,
+  detail: GeometryDetail = 1,
+): BufferGeometry {
   return hexPrism(radius, height, bevel, detail);
 }
 

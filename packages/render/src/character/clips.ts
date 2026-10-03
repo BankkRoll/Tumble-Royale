@@ -56,7 +56,9 @@ export const CLIPS: Readonly<Record<AnimClipId, ClipDef>> = {
     loop: true,
     pose(p, t) {
       p.rot(B.upperArmR, -0.15, 0, -2.45).rot(B.lowerArmR, 0, 0, -0.45 - sin(t * 12) * 0.45);
-      p.rot(B.head, 0, -0.15, 0.12).rot(B.chest, 0, -0.1, -0.06).stretch(sin(t * 6) * 0.02);
+      p.rot(B.head, 0, -0.15, 0.12)
+        .rot(B.chest, 0, -0.1, -0.06)
+        .stretch(sin(t * 6) * 0.02);
     },
     face: () => 'happy',
   },
@@ -68,7 +70,9 @@ export const CLIPS: Readonly<Record<AnimClipId, ClipDef>> = {
       const beat = sin(t * TAU * 2);
       const sway = sin(t * TAU);
       const bounce = abs(beat);
-      p.rot(B.hips, 0, sway * 0.2, sway * 0.15).move(sway * 0.05, -bounce * 0.05, 0).stretch(-bounce * 0.03);
+      p.rot(B.hips, 0, sway * 0.2, sway * 0.15)
+        .move(sway * 0.05, -bounce * 0.05, 0)
+        .stretch(-bounce * 0.03);
       p.rot(B.upperArmL, -0.3, 0, 0.6 + 1.2 * max(0, beat)).rot(B.lowerArmL, 0, 0, 0.7);
       p.rot(B.upperArmR, -0.3, 0, -0.6 - 1.2 * max(0, -beat)).rot(B.lowerArmR, 0, 0, -0.7);
       p.rot(B.head, 0, sway * 0.25, -sway * 0.12);
@@ -83,7 +87,9 @@ export const CLIPS: Readonly<Record<AnimClipId, ClipDef>> = {
     loop: true,
     pose(p, t) {
       const shake = sin(t * 26);
-      p.rot(B.spine, -0.25 + shake * 0.04, 0, 0).rot(B.head, -0.22 + shake * 0.05, 0, 0).stretch(shake * 0.02);
+      p.rot(B.spine, -0.25 + shake * 0.04, 0, 0)
+        .rot(B.head, -0.22 + shake * 0.05, 0, 0)
+        .stretch(shake * 0.02);
       p.sym(B.upperArmL, B.upperArmR, -0.7, 0, -0.25);
       p.sym(B.lowerArmL, B.lowerArmR, -1.2, 0, -0.3);
     },
@@ -143,7 +149,9 @@ export const CLIPS: Readonly<Record<AnimClipId, ClipDef>> = {
     loop: false,
     pose(p, t) {
       const k = kf(t, [0, 0, 0.5, 1, 1.8, 1, 2.4, 0]);
-      p.rot(B.spine, 0.7 * k, 0, 0).rot(B.hips, 0.15 * k, 0, 0).rot(B.head, 0.2 * k, 0, 0);
+      p.rot(B.spine, 0.7 * k, 0, 0)
+        .rot(B.hips, 0.15 * k, 0, 0)
+        .rot(B.head, 0.2 * k, 0, 0);
       p.rot(B.upperArmR, -0.9 * k, 0, 0.7 * k).rot(B.lowerArmR, -1.2 * k, 0, 0);
       p.rot(B.upperArmL, 0.7 * k, 0, 0.2 * k);
     },
@@ -186,7 +194,9 @@ export const CLIPS: Readonly<Record<AnimClipId, ClipDef>> = {
       const k = abs(sin(t * PI * 2));
       p.rot(B.upperArmR, -0.3, 0, -1.1 - 1.4 * k).rot(B.lowerArmR, 0, 0, -1.3 + 1.1 * k);
       p.rot(B.upperArmL, 0.35, 0, 0.55).rot(B.lowerArmL, 0, 0, -1.5);
-      p.rot(B.chest, -0.08, 0, 0.1 * k).stretch(0.04 * k).rot(B.head, -0.15 * k, 0, 0);
+      p.rot(B.chest, -0.08, 0, 0.1 * k)
+        .stretch(0.04 * k)
+        .rot(B.head, -0.15 * k, 0, 0);
     },
     face: () => 'grin',
   },
@@ -217,7 +227,9 @@ export const CLIPS: Readonly<Record<AnimClipId, ClipDef>> = {
       const w = sin((t / 1.5) * TAU);
       p.sym(B.upperArmL, B.upperArmR, -0.15, 0, 2.3 + w * 0.15);
       p.sym(B.lowerArmL, B.lowerArmR, 0, 0, 0.2);
-      p.rot(B.hips, 0, 0, w * 0.08).rot(B.head, -0.15, w * 0.2, 0).stretch(0.03 + abs(w) * 0.02);
+      p.rot(B.hips, 0, 0, w * 0.08)
+        .rot(B.head, -0.15, w * 0.2, 0)
+        .stretch(0.03 + abs(w) * 0.02);
     },
     face: () => 'grin',
   },
@@ -230,7 +242,9 @@ export const CLIPS: Readonly<Record<AnimClipId, ClipDef>> = {
       const b = sin(t * 2.1);
       p.sym(B.upperArmL, B.upperArmR, 0.35, 0, 0.6);
       p.sym(B.lowerArmL, B.lowerArmR, 0.3, 0, -1.5);
-      p.rot(B.chest, -0.12 + b * 0.02, 0, 0).rot(B.head, -0.15, 0.35, 0).stretch(0.03 + b * 0.01);
+      p.rot(B.chest, -0.12 + b * 0.02, 0, 0)
+        .rot(B.head, -0.15, 0.35, 0)
+        .stretch(0.03 + b * 0.01);
       p.sym(B.upperLegL, B.upperLegR, 0, 0, 0.12);
     },
     face: () => 'smug',
@@ -249,9 +263,10 @@ export const CLIPS: Readonly<Record<AnimClipId, ClipDef>> = {
       p.sym(B.upperArmL, B.upperArmR, 0.2 * curtsey, 0, 1.3 * out + 0.6 * curtsey + 2.3 * vee);
       p.rot(B.upperLegL, 0.3 * curtsey, 0, -0.1 * curtsey).rot(B.upperLegR, -0.2 * curtsey, 0, 0);
       p.sym(B.lowerLegL, B.lowerLegR, 0.5 * curtsey, 0, 0);
-      p.move(0, -0.1 * curtsey, 0).rot(B.spine, 0.25 * curtsey, 0, 0).stretch(0.05 * out);
+      p.move(0, -0.1 * curtsey, 0)
+        .rot(B.spine, 0.25 * curtsey, 0, 0)
+        .stretch(0.05 * out);
     },
     face: (t) => (t < 2 ? 'content' : 'grin'),
   },
 };
-

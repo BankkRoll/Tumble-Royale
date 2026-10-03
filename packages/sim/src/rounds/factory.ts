@@ -17,7 +17,11 @@ import type { RoundRules, RoundRulesOptions } from './types.ts';
  * @example
  * const rules = createRoundRules(round, 40, { qualifyTarget: 26 });
  */
-export function createRoundRules(round: RoundDefinition, entrants: number, options: RoundRulesOptions = {}): RoundRules {
+export function createRoundRules(
+  round: RoundDefinition,
+  entrants: number,
+  options: RoundRulesOptions = {},
+): RoundRules {
   const target = computeQualifyTarget(round, entrants, options.qualifyTarget);
   switch (round.qualification.mode) {
     case 'finish':

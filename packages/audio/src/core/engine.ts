@@ -126,7 +126,9 @@ export function isMobileDevice(): boolean {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent;
   // iPadOS reports as Macintosh; touch points give it away.
-  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  return (
+    /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
+  );
 }
 
 function clamp01(v: number): number {
@@ -183,7 +185,10 @@ export class AudioEngine {
   private monoNode: GainNode | null = null;
   private readonly pool: VoicePool;
   private readonly panningModel: PanningModelType;
-  private readonly lastPlayed = new Map<string, { t: number; x: number; y: number; z: number; spatial: boolean }>();
+  private readonly lastPlayed = new Map<
+    string,
+    { t: number; x: number; y: number; z: number; spatial: boolean }
+  >();
   private readonly emitters = new Set<LoopEmitter>();
   private readonly unlockListeners = new Set<() => void>();
   private duckCount = 0;
@@ -251,7 +256,9 @@ export class AudioEngine {
    */
   ensureContext(): AudioContext {
     if (this.context) return this.context;
-    const ctx = this.opts.createContext ? this.opts.createContext() : new AudioContext({ latencyHint: 'interactive' });
+    const ctx = this.opts.createContext
+      ? this.opts.createContext()
+      : new AudioContext({ latencyHint: 'interactive' });
     this.context = ctx;
     this.buildGraph(ctx);
     this.watchVisibility();
@@ -401,7 +408,8 @@ export class AudioEngine {
   applySettings(patch: Partial<AudioSettings>): void {
     const monoBefore = this.settings.monoAudio;
     this.settings = { ...this.settings, ...patch };
-    for (const k of ['master', 'music', 'sfx', 'voice', 'ui'] as const) this.settings[k] = clamp01(this.settings[k]);
+    for (const k of ['master', 'music', 'sfx', 'voice', 'ui'] as const)
+      this.settings[k] = clamp01(this.settings[k]);
     if (monoBefore !== this.settings.monoAudio) this.routeOutput();
     this.applyVolumes(false);
     if (patch.muteWhenHidden !== undefined) this.setHidden(this.hidden);
@@ -561,7 +569,12 @@ export class AudioEngine {
     if (last && now - last.t < (def.cooldownMs as number) / 1000) {
       // The retrigger guard is per emitter: only repeats from (roughly) the same spot are spam.
       const p = opts.pos;
-      if (!p || !last.spatial || (p.x - last.x) ** 2 + (p.y - last.y) ** 2 + (p.z - last.z) ** 2 < SAME_EMITTER_DIST2) return null;
+      if (
+        !p ||
+        !last.spatial ||
+        (p.x - last.x) ** 2 + (p.y - last.y) ** 2 + (p.z - last.z) ** 2 < SAME_EMITTER_DIST2
+      )
+        return null;
     }
     const spatial = (def.bus ?? 'sfx') === 'sfx' && opts.pos != null;
     let volume = (def.gain ?? 1) * (opts.volume ?? 1);
@@ -603,14 +616,26 @@ export class AudioEngine {
     return this.startVoice(ctx, def, buffer, volume, semis, audibility, opts);
   }
 
-  private startVoice(ctx: AudioContext, def: SfxDef, buffer: AudioBuffer, volume: number, semis: number, audibility: number, opts: PlayOptions): VoiceHandle | null {
+  private startVoice(
+    ctx: AudioContext,
+    def: SfxDef,
+    buffer: AudioBuffer,
+    volume: number,
+    semis: number,
+    audibility: number,
+    opts: PlayOptions,
+  ): VoiceHandle | null {
     const busName = def.bus ?? 'sfx';
     const pooled = busName === 'sfx';
     const now = ctx.currentTime;
     let slot = -1;
     let id = 0;
     if (pooled) {
-      const acq = this.pool.acquire(opts.priority ?? def.priority ?? VoicePriority.Normal, Math.min(1, audibility), now);
+      const acq = this.pool.acquire(
+        opts.priority ?? def.priority ?? VoicePriority.Normal,
+        Math.min(1, audibility),
+        now,
+      );
       if (acq.slot < 0) return null;
       slot = acq.slot;
       id = acq.id;
@@ -711,7 +736,8 @@ export class AudioEngine {
   dispose(): void {
     for (const e of [...this.emitters]) e.dispose();
     this.pool.stopAll();
-    if (this.visibilityHandler && typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.visibilityHandler);
+    if (this.visibilityHandler && typeof document !== 'undefined')
+      document.removeEventListener('visibilitychange', this.visibilityHandler);
     if (this.suspendTimer) clearTimeout(this.suspendTimer);
     void this.context?.close();
     this.context = null;
@@ -812,7 +838,8 @@ export class LoopEmitter {
   setVolume(volume: number, ramp = 0.1): void {
     this.volume = volume;
     const ctx = this.engine.ctx;
-    if (this.gainNode && ctx) setParam(this.gainNode.gain, volume * (this.def?.gain ?? 1), ctx.currentTime, ramp);
+    if (this.gainNode && ctx)
+      setParam(this.gainNode.gain, volume * (this.def?.gain ?? 1), ctx.currentTime, ramp);
   }
 
   /**

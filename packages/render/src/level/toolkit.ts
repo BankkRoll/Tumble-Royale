@@ -1,4 +1,5 @@
-import { Color, Quaternion, type Material, type Object3D, type Texture } from 'three/webgpu';
+import type { Quaternion } from 'three/webgpu';
+import { Color, type Material, type Object3D, type Texture } from 'three/webgpu';
 import { quatFromEulerYXZ, type Quat } from '@tumble/shared';
 
 /**

@@ -4,7 +4,16 @@
  * and tumble away, respawned tiles pop back in. Idle tiles are only rewritten
  * when their state changes, so large fields cost almost nothing per frame.
  */
-import { Color, CylinderGeometry, Euler, InstancedMesh, Matrix4, Quaternion, Vector3, type BufferGeometry } from 'three/webgpu';
+import {
+  Color,
+  CylinderGeometry,
+  Euler,
+  InstancedMesh,
+  Matrix4,
+  Quaternion,
+  Vector3,
+  type BufferGeometry,
+} from 'three/webgpu';
 import type { ObstacleInstance, ObstacleRuntime } from '@tumble/sim';
 import { hash01, vec3 } from '@tumble/shared';
 import {
@@ -16,7 +25,13 @@ import {
   type FallingTilesView,
 } from '../../../sim/src/obstacles/fallingTiles.ts';
 import type { ObstacleVisualContext, ObstacleVisualFactory } from './types.ts';
-import { ObstacleColors as C, VisualBase, createPatternMaterial, roundedBox, runtimeView } from './visual-helpers-a.ts';
+import {
+  ObstacleColors as C,
+  VisualBase,
+  createPatternMaterial,
+  roundedBox,
+  runtimeView,
+} from './visual-helpers-a.ts';
 
 const DROP_TIME = 1.6;
 const POP_TIME = 0.35;
@@ -51,7 +66,9 @@ class FallingTilesVisual extends VisualBase<FallingTilesParams> {
       geo = roundedBox(p.tileSize, p.thickness, p.tileSize, 0.12);
     }
     geo.translate(0, -p.thickness / 2, 0);
-    this.mesh = this.add(new InstancedMesh(geo, createPatternMaterial({ a: C.white, rimStrength: 0.55 }), this.count));
+    this.mesh = this.add(
+      new InstancedMesh(geo, createPatternMaterial({ a: C.white, rimStrength: 0.55 }), this.count),
+    );
     this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;
     const palette = [C.safe, C.mint, C.sky, C.lilac];
@@ -73,7 +90,8 @@ class FallingTilesVisual extends VisualBase<FallingTilesParams> {
       const state = view ? view.tileState[i]! : TileState.Idle;
       const age = view ? t - view.tileTime[i]! : Infinity;
       // tileTime 0 means "never changed" — only genuine respawns pop in.
-      const popping = state === TileState.Idle && view !== null && view.tileTime[i] !== 0 && age >= 0 && age < POP_TIME;
+      const popping =
+        state === TileState.Idle && view !== null && view.tileTime[i] !== 0 && age >= 0 && age < POP_TIME;
       if (state === TileState.Idle && !popping && this.settled[i]) continue;
       this.settled[i] = state === TileState.Idle && !popping ? 1 : 0;
       dirty = true;
@@ -128,4 +146,5 @@ class FallingTilesVisual extends VisualBase<FallingTilesParams> {
 }
 
 /** Falling tiles visual factory. */
-export const fallingTilesVisual: ObstacleVisualFactory = (instance, ctx) => new FallingTilesVisual(instance, ctx);
+export const fallingTilesVisual: ObstacleVisualFactory = (instance, ctx) =>
+  new FallingTilesVisual(instance, ctx);

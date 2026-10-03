@@ -6,7 +6,13 @@
  * respawn after touching lethal surfaces).
  */
 import type { Collider, RigidBody, World } from '@tumble/sim';
-import type { ObstacleActor, ObstacleRuntime, ObstacleStepContext, Rapier, SurfaceRegistry } from '@tumble/sim';
+import type {
+  ObstacleActor,
+  ObstacleRuntime,
+  ObstacleStepContext,
+  Rapier,
+  SurfaceRegistry,
+} from '@tumble/sim';
 import { InteractionGroups, type Vec3 } from '@tumble/shared';
 
 /** Radius of a demo ball (roughly a Tumbler's capsule radius). */
@@ -28,9 +34,14 @@ export class BallActor implements ObstacleActor {
     world: World,
     readonly id: number,
   ) {
-    this.body = world.createRigidBody(R.RigidBodyDesc.dynamic().setCanSleep(false).setLinearDamping(0.15).setAngularDamping(0.6));
+    this.body = world.createRigidBody(
+      R.RigidBodyDesc.dynamic().setCanSleep(false).setLinearDamping(0.15).setAngularDamping(0.6),
+    );
     this.collider = world.createCollider(
-      R.ColliderDesc.ball(BALL_RADIUS).setRestitution(0.3).setFriction(0.8).setCollisionGroups(InteractionGroups.player),
+      R.ColliderDesc.ball(BALL_RADIUS)
+        .setRestitution(0.3)
+        .setFriction(0.8)
+        .setCollisionGroups(InteractionGroups.player),
       this.body,
     );
   }

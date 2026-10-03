@@ -66,23 +66,45 @@ const cyl = (x: number, y: number, z: number, r: number, h: number, o?: PieceOpt
   piece('cylinder', v(x, y, z), v(r, h, r), o);
 
 /** Thin decorative strip lying on a surface (checkpoint pads, hazard edges). */
-const decal = (x: number, top: number, z: number, sx: number, sz: number, color: string, pattern: Piece['pattern']): Piece =>
-  box(x, top + 0.01, z, sx, 0.02, sz, { color, pattern, deco: true, bevel: 0 });
+const decal = (
+  x: number,
+  top: number,
+  z: number,
+  sx: number,
+  sz: number,
+  color: string,
+  pattern: Piece['pattern'],
+): Piece => box(x, top + 0.01, z, sx, 0.02, sz, { color, pattern, deco: true, bevel: 0 });
 
 /** Six respawn points across the width, `z` past the trigger, standing on `top`. */
-const respawnRow = (top: number, z: number, xs = [-7.5, -4.5, -1.5, 1.5, 4.5, 7.5]): Vec[] => xs.map((x) => v(x, top + 0.1, z));
+const respawnRow = (top: number, z: number, xs = [-7.5, -4.5, -1.5, 1.5, 4.5, 7.5]): Vec[] =>
+  xs.map((x) => v(x, top + 0.1, z));
 
 /** Castle tower: round shaft from `baseY` to `topY`, crenellated cap ring. */
 function tower(x: number, z: number, baseY: number, topY: number, r: number, color = 'neutral'): Piece[] {
   const h = topY - baseY;
-  const out: Piece[] = [cyl(x, baseY + h / 2, z, r, h, { color, deco: true }), cyl(x, topY + 0.3, z, r + 0.35, 0.6, { color: 'secondary', deco: true })];
+  const out: Piece[] = [
+    cyl(x, baseY + h / 2, z, r, h, { color, deco: true }),
+    cyl(x, topY + 0.3, z, r + 0.35, 0.6, { color: 'secondary', deco: true }),
+  ];
   for (let k = 0; k < 6; k++) {
     const a = (k / 6) * Math.PI * 2;
-    out.push(box(x + Math.cos(a) * r, topY + 1, z + Math.sin(a) * r, 0.7, 0.8, 0.7, { color: 'secondary', deco: true }));
+    out.push(
+      box(x + Math.cos(a) * r, topY + 1, z + Math.sin(a) * r, 0.7, 0.8, 0.7, {
+        color: 'secondary',
+        deco: true,
+      }),
+    );
   }
   // Pennant pole + flag in accent (non-team heraldry).
   out.push(cyl(x, topY + 2.6, z, 0.08, 3.2, { color: 'neutral', deco: true }));
-  out.push(piece('wedge', v(x + 0.55, topY + 3.6, z), v(0.08, 0.9, 1.1), { color: 'accent', deco: true, rot: { roll: 90 } }));
+  out.push(
+    piece('wedge', v(x + 0.55, topY + 3.6, z), v(0.08, 0.9, 1.1), {
+      color: 'accent',
+      deco: true,
+      rot: { roll: 90 },
+    }),
+  );
   return out;
 }
 
@@ -116,7 +138,11 @@ function hammer(id: string, pos: Vec, h: HammerSpec, along = false): Obstacle {
     position: pos,
     ...(along ? { rotation: { yaw: 90 } } : {}),
     // Rams shove along the walkway (|knock| < the 9 m/s stun threshold): you lose ground, not the bridge.
-    params: { ...h, supports: false, ...(along ? { knockSpeed: 8.5, knockLift: 2.5, stun: false } : { knockLift: 7, stun: true }) },
+    params: {
+      ...h,
+      supports: false,
+      ...(along ? { knockSpeed: 8.5, knockLift: 2.5, stun: false } : { knockLift: 7, stun: true }),
+    },
   };
 }
 
@@ -238,10 +264,14 @@ for (let k = 0; k < 14; k++) {
 // §0 Gate Plaza (z −10 → 10)
 add(slab(0, 0, 0, 26, 20, { color: 'neutral' }));
 add(decal(0, 0, 8.5, 26, 3, 'safe', 'checker'));
-add(box(-13.25, 0.5, 0, 0.5, 1, 20, { color: 'neutral' }), box(13.25, 0.5, 0, 0.5, 1, 20, { color: 'neutral' }));
+add(
+  box(-13.25, 0.5, 0, 0.5, 1, 20, { color: 'neutral' }),
+  box(13.25, 0.5, 0, 0.5, 1, 20, { color: 'neutral' }),
+);
 add(box(0, 4, -10.75, 30, 8, 1.5, { color: 'neutral', bevel: 0.3 }));
 add(piece('arch', v(0, 3.75, -10), v(9, 7.5, 2), { color: 'secondary', deco: true }));
-for (let k = -3; k <= 3; k++) add(box(k * 1.1, 4.2, -9.85, 0.18, 6.4, 0.18, { color: 'neutral', deco: true, bevel: 0.05 }));
+for (let k = -3; k <= 3; k++)
+  add(box(k * 1.1, 4.2, -9.85, 0.18, 6.4, 0.18, { color: 'neutral', deco: true, bevel: 0.05 }));
 add(...tower(-15, -10.5, -10, 12, 2.6), ...tower(15, -10.5, -10, 12, 2.6));
 
 // §1 Moat Bridges (z 10 → 64)
@@ -260,14 +290,18 @@ add(decal(-2.9, 0, 92, 0.2, 56, 'danger', 'hazard'), decal(2.9, 0, 92, 0.2, 56, 
 add(slab(0, 0, 124.5, 20, 9, { color: 'safe' }));
 add(decal(0, 0, 124, 20, 2, 'safe', 'checker'));
 for (const z of [74, 88, 102]) {
-  add(cyl(-4.6, 0.25, z, 0.5, 20.5, { color: 'neutral', deco: true }), cyl(4.6, 0.25, z, 0.5, 20.5, { color: 'neutral', deco: true }));
+  add(
+    cyl(-4.6, 0.25, z, 0.5, 20.5, { color: 'neutral', deco: true }),
+    cyl(4.6, 0.25, z, 0.5, 20.5, { color: 'neutral', deco: true }),
+  );
   add(beam(z, 10.1, 10, 1));
 }
 
 // §3 Crumbling Causeway (z 129 → 209)
 add(slab(0, 0, 203, 24, 12, { color: 'safe' }));
 add(decal(0, 0, 202, 24, 2, 'safe', 'checker'));
-for (const z of [150, 176]) add(piece('arch', v(0, 3, z), v(34, 26, 2), { color: 'neutral', pattern: 'stripes', deco: true }));
+for (const z of [150, 176])
+  add(piece('arch', v(0, 3, z), v(34, 26, 2), { color: 'neutral', pattern: 'stripes', deco: true }));
 for (const x of [-5, 5]) {
   for (let j = 0; j <= 8; j++) {
     const z0 = CAUSE_START + j * CAUSE_PITCH;
@@ -285,16 +319,28 @@ add(slab(0, 0, 233, 18, 2, { color: 'secondary', pattern: 'stripes' }));
 add(slab(0, 0, 257, 18, 2, { color: 'secondary', pattern: 'stripes' }));
 add(slab(0, 0, 283, 20, 8, { color: 'safe' }));
 for (const x of [-4.9, -2.1, 2.1, 4.9]) {
-  add(decal(x, 0, 222, 0.2, 21, 'danger', 'hazard'), decal(x, 0, 245, 0.2, 22, 'danger', 'hazard'), decal(x, 0, 268.5, 0.2, 21, 'danger', 'hazard'));
+  add(
+    decal(x, 0, 222, 0.2, 21, 'danger', 'hazard'),
+    decal(x, 0, 245, 0.2, 22, 'danger', 'hazard'),
+    decal(x, 0, 268.5, 0.2, 21, 'danger', 'hazard'),
+  );
 }
 // Hall walls stand outside the side hammers' arc (±13.8 m) so heads never clip.
 for (const x of [-15.5, 15.5]) {
   add(box(x, 0, 248, 1, 20, 82, { color: 'neutral', bevel: 0.3 }));
   for (const z of [215, 233, 251, 269]) {
-    add(box(x - Math.sign(x) * 0.55, 6.5, z, 0.1, 5, 2.4, { color: 'accent', pattern: 'stripes', deco: true, bevel: 0.05 }));
+    add(
+      box(x - Math.sign(x) * 0.55, 6.5, z, 0.1, 5, 2.4, {
+        color: 'accent',
+        pattern: 'stripes',
+        deco: true,
+        bevel: 0.05,
+      }),
+    );
   }
 }
-for (const z of [221, 245, 269]) add(box(0, 9.5, z, 32, 0.8, 1.2, { color: 'secondary', pattern: 'stripes', deco: true, bevel: 0.25 }));
+for (const z of [221, 245, 269])
+  add(box(0, 9.5, z, 32, 0.8, 1.2, { color: 'secondary', pattern: 'stripes', deco: true, bevel: 0.25 }));
 
 // §5 Rampart Climb (z 287 → 341)
 add(piece('ramp', v(-3, 4, 306), v(12, 8, 38), { color: 'primary', pattern: 'chevron' }));
@@ -312,7 +358,8 @@ for (const [y, z] of [
 add(box(0, 7.5, 333, 22, 1, 16, { color: 'safe', bevel: 0.3 }));
 add(decal(0, 8, 333, 22, 2, 'safe', 'checker'));
 add(box(3.5, 4.5, 306, 1, 9, 38, { color: 'neutral' }));
-for (const x of [-10.5, 10.5]) for (const z of [326, 329.5, 333, 336.5, 340]) add(box(x, 9, z, 1, 2, 1.2, { color: 'neutral' }));
+for (const x of [-10.5, 10.5])
+  for (const z of [326, 329.5, 333, 336.5, 340]) add(box(x, 9, z, 1, 2, 1.2, { color: 'neutral' }));
 // Low parapet on the open left edge of the barrel ramp.
 add(box(-9.2, 4.5, 306, 0.4, 1.2, 38.9, { color: 'neutral', rot: { pitch: -11.9 } }));
 // Barrel stack the lanes roll out of, and hay bales where they burst.
@@ -323,7 +370,8 @@ for (const [x, z] of [
 ] as const) {
   add(cyl(x, 8.9, z, 0.8, 1.8, { color: 'secondary', pattern: 'stripes', deco: true }));
 }
-for (const x of [-6, 0]) add(box(x, 0.6, 285.4, 2.6, 1.2, 1.2, { color: 'accent', pattern: 'stripes', deco: true }));
+for (const x of [-6, 0])
+  add(box(x, 0.6, 285.4, 2.6, 1.2, 1.2, { color: 'accent', pattern: 'stripes', deco: true }));
 
 // §6 The Highway (z 341 → 432)
 add(box(0, 7.5, 353.5, 3, 1, 25, { color: 'primary' }));
@@ -336,11 +384,17 @@ add(decal(-1.45, 8, 386, 0.1, 24, 'danger', 'hazard'), decal(1.45, 8, 386, 0.1, 
 add(box(0, 7.5, 426, 24, 1, 12, { color: 'safe', bevel: 0.3 }));
 add(decal(0, 8, 424, 24, 2, 'safe', 'checker'));
 for (const z of [348, 358, 381, 391]) {
-  add(cyl(-11, 3.5, z, 0.9, 31, { color: 'neutral', deco: true }), cyl(11, 3.5, z, 0.9, 31, { color: 'neutral', deco: true }));
+  add(
+    cyl(-11, 3.5, z, 0.9, 31, { color: 'neutral', deco: true }),
+    cyl(11, 3.5, z, 0.9, 31, { color: 'neutral', deco: true }),
+  );
   add(beam(z, 18.8, 24, 1));
 }
 // Rest-tower pennants: the flyover frames them as the Highway's breathing spots.
-add(cyl(-3.2, 10.5, 370, 0.08, 5, { color: 'neutral', deco: true }), cyl(3.2, 10.5, 402, 0.08, 5, { color: 'neutral', deco: true }));
+add(
+  cyl(-3.2, 10.5, 370, 0.08, 5, { color: 'neutral', deco: true }),
+  cyl(3.2, 10.5, 402, 0.08, 5, { color: 'neutral', deco: true }),
+);
 add(piece('wedge', v(-2.7, 12.4, 370), v(0.08, 1, 1.2), { color: 'accent', deco: true, rot: { roll: 90 } }));
 add(piece('wedge', v(3.7, 12.4, 402), v(0.08, 1, 1.2), { color: 'accent', deco: true, rot: { roll: 90 } }));
 
@@ -360,7 +414,12 @@ for (const z of [444, 458]) {
 add(...tower(-12.5, 492, -12, 18, 2.4), ...tower(12.5, 492, -12, 18, 2.4));
 
 // Floating-island dressing: corner keeps, a waterfall and cardboard clouds on sticks.
-add(...tower(-26, 60, -12, 16, 3), ...tower(26, 140, -12, 18, 3), ...tower(-26, 250, -12, 14, 3), ...tower(27, 340, -12, 20, 3));
+add(
+  ...tower(-26, 60, -12, 16, 3),
+  ...tower(26, 140, -12, 18, 3),
+  ...tower(-26, 250, -12, 14, 3),
+  ...tower(27, 340, -12, 20, 3),
+);
 add(box(-34, -2, 300, 4, 14, 10, { color: '#bfe9ff', pattern: 'stripes', deco: true, bevel: 0.5 }));
 for (const [x, y, z] of [
   [-33, 26, 90],
@@ -411,14 +470,36 @@ const obstacles: Obstacle[] = [
     type: 'boulderLane',
     position: v(-6, 8, 325),
     rotation: { yaw: 180, pitch: 11.9 },
-    params: { lanes: 1, length: 38.8, radius: 1.2, speed: 8, spawnPeriod: 3.5, phase: 0, dropHeight: 2.5, dropTime: 0.4, knockSpeed: 9, knockLift: 3 },
+    params: {
+      lanes: 1,
+      length: 38.8,
+      radius: 1.2,
+      speed: 8,
+      spawnPeriod: 3.5,
+      phase: 0,
+      dropHeight: 2.5,
+      dropTime: 0.4,
+      knockSpeed: 9,
+      knockLift: 3,
+    },
   },
   {
     id: 's5-barrel-C',
     type: 'boulderLane',
     position: v(0, 8, 325),
     rotation: { yaw: 180, pitch: 11.9 },
-    params: { lanes: 1, length: 38.8, radius: 1.2, speed: 8, spawnPeriod: 3.5, phase: 1.75, dropHeight: 2.5, dropTime: 0.4, knockSpeed: 9, knockLift: 3 },
+    params: {
+      lanes: 1,
+      length: 38.8,
+      radius: 1.2,
+      speed: 8,
+      spawnPeriod: 3.5,
+      phase: 1.75,
+      dropHeight: 2.5,
+      dropTime: 0.4,
+      knockSpeed: 9,
+      knockLift: 3,
+    },
   },
   { id: 's5-cpgate', type: 'checkpointGate', position: v(0, 8, 333), params: { index: 3, width: 20.2 } },
 
@@ -456,13 +537,29 @@ const obstacles: Obstacle[] = [
     id: 's7-guard-L',
     type: 'bumperPillar',
     position: v(-8, 8, 451),
-    params: { radius: 1.0, height: 2.4, bounceSpeed: 8.5, bounceLift: 2.5, orbitRadius: 3, orbitSpeed: 2.09, phase: 0 },
+    params: {
+      radius: 1.0,
+      height: 2.4,
+      bounceSpeed: 8.5,
+      bounceLift: 2.5,
+      orbitRadius: 3,
+      orbitSpeed: 2.09,
+      phase: 0,
+    },
   },
   {
     id: 's7-guard-R',
     type: 'bumperPillar',
     position: v(8, 8, 451),
-    params: { radius: 1.0, height: 2.4, bounceSpeed: 8.5, bounceLift: 2.5, orbitRadius: 3, orbitSpeed: 2.09, phase: Math.PI },
+    params: {
+      radius: 1.0,
+      height: 2.4,
+      bounceSpeed: 8.5,
+      bounceLift: 2.5,
+      orbitRadius: 3,
+      orbitSpeed: 2.09,
+      phase: Math.PI,
+    },
   },
   { id: 's7-finish', type: 'finishLine', position: v(0, 10, 486), params: { width: 19.6, height: 6.5 } },
 ];
@@ -472,11 +569,51 @@ const obstacles: Obstacle[] = [
 // -----------------------------------------------------------------------------
 
 const triggers: Trigger[] = [
-  { id: 'cp-0', kind: 'checkpoint', index: 0, position: v(0, 2, 0), size: v(26, 4, 20), respawn: respawnRow(0, -1, [-6, -3.6, -1.2, 1.2, 3.6, 6]), respawnYaw: 0 },
-  { id: 'cp-1', kind: 'checkpoint', index: 1, position: v(0, 2, 124), size: v(20, 4, 2), respawn: respawnRow(0, 126.5), respawnYaw: 0 },
-  { id: 'cp-2', kind: 'checkpoint', index: 2, position: v(0, 2, 202), size: v(24, 4, 2), respawn: respawnRow(0, 205), respawnYaw: 0 },
-  { id: 'cp-3', kind: 'checkpoint', index: 3, position: v(0, 10, 333), size: v(22, 4, 2), respawn: respawnRow(8, 336), respawnYaw: 0 },
-  { id: 'cp-4', kind: 'checkpoint', index: 4, position: v(0, 10, 424), size: v(24, 4, 2), respawn: respawnRow(8, 427), respawnYaw: 0 },
+  {
+    id: 'cp-0',
+    kind: 'checkpoint',
+    index: 0,
+    position: v(0, 2, 0),
+    size: v(26, 4, 20),
+    respawn: respawnRow(0, -1, [-6, -3.6, -1.2, 1.2, 3.6, 6]),
+    respawnYaw: 0,
+  },
+  {
+    id: 'cp-1',
+    kind: 'checkpoint',
+    index: 1,
+    position: v(0, 2, 124),
+    size: v(20, 4, 2),
+    respawn: respawnRow(0, 126.5),
+    respawnYaw: 0,
+  },
+  {
+    id: 'cp-2',
+    kind: 'checkpoint',
+    index: 2,
+    position: v(0, 2, 202),
+    size: v(24, 4, 2),
+    respawn: respawnRow(0, 205),
+    respawnYaw: 0,
+  },
+  {
+    id: 'cp-3',
+    kind: 'checkpoint',
+    index: 3,
+    position: v(0, 10, 333),
+    size: v(22, 4, 2),
+    respawn: respawnRow(8, 336),
+    respawnYaw: 0,
+  },
+  {
+    id: 'cp-4',
+    kind: 'checkpoint',
+    index: 4,
+    position: v(0, 10, 424),
+    size: v(24, 4, 2),
+    respawn: respawnRow(8, 427),
+    respawnYaw: 0,
+  },
   { id: 'finish', kind: 'finish', position: v(0, 12, 486), size: v(22, 4, 2) },
 ];
 
@@ -484,7 +621,14 @@ const triggers: Trigger[] = [
 // Bot nav
 // -----------------------------------------------------------------------------
 
-const wp = (id: number, x: number, y: number, z: number, next: number[], o: Partial<Waypoint> = {}): Waypoint => ({
+const wp = (
+  id: number,
+  x: number,
+  y: number,
+  z: number,
+  next: number[],
+  o: Partial<Waypoint> = {},
+): Waypoint => ({
   id,
   position: v(x, y, z),
   radius: 1.5,
@@ -506,7 +650,8 @@ const HALL_IDS = [
  * node within ~2.5 m of every respawn point stops them skipping the safe
  * approach between the checkpoint and where they fell.
  */
-const cpNode = (id: number, x: number, y: number, z: number, next: number[]): Waypoint => wp(id, x, y, z, next, { radius: 2.6 });
+const cpNode = (id: number, x: number, y: number, z: number, next: number[]): Waypoint =>
+  wp(id, x, y, z, next, { radius: 2.6 });
 
 const botNav: Waypoint[] = [
   // §0–§1: pick the least crowded bridge, time its hammer.
@@ -533,8 +678,12 @@ const botNav: Waypoint[] = [
   // §3 Causeway: outer strips dodge the giant hammers; hop anchor to anchor over the crumbling stones.
   wp(200, -6.2, 0, 130.5, [220], { radius: 1 }),
   wp(201, 6.2, 0, 130.5, [240], { radius: 1 }),
-  ...[0, 1, 2, 3, 4, 5, 6, 7].map((k) => wp(220 + k, -6.2, 0, 133.4 + 8 * k, [k < 7 ? 221 + k : 206], { radius: 0.7, action: 'jump' })),
-  ...[0, 1, 2, 3, 4, 5, 6, 7].map((k) => wp(240 + k, 6.2, 0, 133.4 + 8 * k, [k < 7 ? 241 + k : 207], { radius: 0.7, action: 'jump' })),
+  ...[0, 1, 2, 3, 4, 5, 6, 7].map((k) =>
+    wp(220 + k, -6.2, 0, 133.4 + 8 * k, [k < 7 ? 221 + k : 206], { radius: 0.7, action: 'jump' }),
+  ),
+  ...[0, 1, 2, 3, 4, 5, 6, 7].map((k) =>
+    wp(240 + k, 6.2, 0, 133.4 + 8 * k, [k < 7 ? 241 + k : 207], { radius: 0.7, action: 'jump' }),
+  ),
   wp(206, -5.5, 0, 199, [208, 211], { radius: 1.2 }),
   wp(207, 5.5, 0, 199, [208, 212], { radius: 1.2 }),
   cpNode(211, -5, 0, 205.5, [290, 291]),
@@ -542,13 +691,37 @@ const botNav: Waypoint[] = [
   cpNode(212, 5, 0, 205.5, [291, 292]),
   // §4 Hammer Hall: line up on the entry sill, per-lane timing, lane swaps on the cross-bridges.
   ...LANES.map((x, i) => wp(290 + i, x, 0, 210, [300 + i], { radius: 1 })),
-  ...LANES.map((x, i) => wp(300 + i, x, 0, 213.5, [310 + i], { radius: 1, action: 'waitForGap', timeAgainst: HALL_IDS[i]![0] })),
-  ...LANES.map((x, i) => wp(310 + i, x, 0, 233, LANES.map((_, j) => 320 + j).filter((_, j) => Math.abs(j - i) <= 1), { radius: 1 })),
+  ...LANES.map((x, i) =>
+    wp(300 + i, x, 0, 213.5, [310 + i], { radius: 1, action: 'waitForGap', timeAgainst: HALL_IDS[i]![0] }),
+  ),
+  ...LANES.map((x, i) =>
+    wp(
+      310 + i,
+      x,
+      0,
+      233,
+      LANES.map((_, j) => 320 + j).filter((_, j) => Math.abs(j - i) <= 1),
+      { radius: 1 },
+    ),
+  ),
   ...LANES.map((x, j) => wp(320 + j, x, 0, 233.5, [330 + j], { radius: 1 })),
-  ...LANES.map((x, j) => wp(330 + j, x, 0, 237.5, [340 + j], { radius: 1, action: 'waitForGap', timeAgainst: HALL_IDS[j]![1] })),
-  ...LANES.map((x, j) => wp(340 + j, x, 0, 257, LANES.map((_, k) => 350 + k).filter((_, k) => Math.abs(k - j) <= 1), { radius: 1 })),
+  ...LANES.map((x, j) =>
+    wp(330 + j, x, 0, 237.5, [340 + j], { radius: 1, action: 'waitForGap', timeAgainst: HALL_IDS[j]![1] }),
+  ),
+  ...LANES.map((x, j) =>
+    wp(
+      340 + j,
+      x,
+      0,
+      257,
+      LANES.map((_, k) => 350 + k).filter((_, k) => Math.abs(k - j) <= 1),
+      { radius: 1 },
+    ),
+  ),
   ...LANES.map((x, k) => wp(350 + k, x, 0, 257.5, [360 + k], { radius: 1 })),
-  ...LANES.map((x, k) => wp(360 + k, x, 0, 261.5, [370 + k], { radius: 1, action: 'waitForGap', timeAgainst: HALL_IDS[k]![2] })),
+  ...LANES.map((x, k) =>
+    wp(360 + k, x, 0, 261.5, [370 + k], { radius: 1, action: 'waitForGap', timeAgainst: HALL_IDS[k]![2] }),
+  ),
   ...LANES.map((x, k) => wp(370 + k, x, 0, 281, [380], { radius: 1.2 })),
   wp(380, 0, 0, 284, [400, 410], { radius: 2.5 }),
   // §5 Rampart: barrel ramp (dodge strips) or the grab-ledge ladder.
@@ -596,7 +769,18 @@ const crosswind: Obstacle[] = [345, 360, 375, 390, 405, 420].map((z, k) => ({
   type: 'fanZone',
   position: v(-14, 12, z),
   rotation: { yaw: 90 },
-  params: { width: 15, height: 8, length: 26, strength: 3.5, falloff: 0.3, onTime: 2.6, offTime: 1.8, spinUp: 0.6, phase: k * 0.35, telegraphLead: 0.8 },
+  params: {
+    width: 15,
+    height: 8,
+    length: 26,
+    strength: 3.5,
+    falloff: 0.3,
+    onTime: 2.6,
+    offTime: 1.8,
+    spinUp: 0.6,
+    phase: k * 0.35,
+    telegraphLead: 0.8,
+  },
 }));
 
 const lockStep: Record<string, Record<string, unknown>> = {};
@@ -624,7 +808,15 @@ export default defineRound({
   obstacles,
   triggers,
   flyover: {
-    path: [v(0, 14, -22), v(18, 10, 92), v(-24, 20, 165), v(0, 26, 230), v(20, 18, 305), v(-14, 14, 360), v(0, 24, 510)],
+    path: [
+      v(0, 14, -22),
+      v(18, 10, 92),
+      v(-24, 20, 165),
+      v(0, 26, 230),
+      v(20, 18, 305),
+      v(-14, 14, 360),
+      v(0, 24, 510),
+    ],
     lookAt: [v(0, 4, 20), v(0, 2, 92), v(0, 2, 165), v(0, 0, 250), v(0, 5, 310), v(0, 9, 386), v(0, 10, 470)],
     duration: 9,
   },
@@ -665,7 +857,11 @@ export default defineRound({
       weight: 1,
       weather: 'night',
       description: 'Torch-lit; hammers have glowing heads; rams faster.',
-      obstacleParams: { 's2-ram-1': { period: 2.8 }, 's2-ram-2': { period: 2.8 }, 's2-ram-3': { period: 2.8 } },
+      obstacleParams: {
+        's2-ram-1': { period: 2.8 },
+        's2-ram-2': { period: 2.8 },
+        's2-ram-3': { period: 2.8 },
+      },
     },
   ],
   decorSeed: 1501,

@@ -33,7 +33,12 @@ function applause(s: SynthContext, t: number, dur: number, density: number, leve
   for (let i = 0; i < n; i++) {
     const at = t + s.rng.range(0, dur);
     const fade = 1 - Math.max(0, (at - t) / dur - 0.6) / 0.4;
-    noise(crowdVoice(s, 0.9), { t: at, dur: s.rng.range(0.008, 0.02), gain: level * s.rng.range(0.4, 1) * fade, filter: { type: 'bandpass', freq: s.rng.range(1200, 3200), q: 1.5 } });
+    noise(crowdVoice(s, 0.9), {
+      t: at,
+      dur: s.rng.range(0.008, 0.02),
+      gain: level * s.rng.range(0.4, 1) * fade,
+      filter: { type: 'bandpass', freq: s.rng.range(1200, 3200), q: 1.5 },
+    });
   }
 }
 
@@ -67,7 +72,14 @@ export const SHOW_SFX: SfxDefs = {
       INSTRUMENTS.kick(s, 0, 0, 0, 1);
       for (const m of [60, 64, 67, 72, 76]) INSTRUMENTS.brass(w, 0, m, 0.35, 1);
       INSTRUMENTS.crash(w, 0, 0, 0, 0.9);
-      noise(s, { color: 'pink', t: 0, dur: 0.4, gain: 0.25, attack: 0.01, filter: { type: 'bandpass', freq: 800, freqEnd: 5000, q: 1.5 } });
+      noise(s, {
+        color: 'pink',
+        t: 0,
+        dur: 0.4,
+        gain: 0.25,
+        attack: 0.01,
+        filter: { type: 'bandpass', freq: 800, freqEnd: 5000, q: 1.5 },
+      });
       sparkle(w, 0.05, 0.4, 8, 2500, 6000, 0.05);
     },
   },
@@ -79,8 +91,22 @@ export const SHOW_SFX: SfxDefs = {
     volVar: 0.05,
     render: (s) => {
       const blast = (t: number, dur: number): void => {
-        tone(s, { freq: 2900, t, dur, gain: 0.2, env: { a: 0.01, d: 0.05, s: 0.85, r: 0.05 }, tremolo: { rate: 32, depth: 0.6 }, vibrato: { rate: 32, depth: 80 } });
-        noise(s, { t, dur, gain: 0.04, env: { a: 0.01, d: 0.05, s: 0.8, r: 0.05 }, filter: { type: 'bandpass', freq: 2900, q: 6 } });
+        tone(s, {
+          freq: 2900,
+          t,
+          dur,
+          gain: 0.2,
+          env: { a: 0.01, d: 0.05, s: 0.85, r: 0.05 },
+          tremolo: { rate: 32, depth: 0.6 },
+          vibrato: { rate: 32, depth: 80 },
+        });
+        noise(s, {
+          t,
+          dur,
+          gain: 0.04,
+          env: { a: 0.01, d: 0.05, s: 0.8, r: 0.05 },
+          filter: { type: 'bandpass', freq: 2900, q: 6 },
+        });
       };
       blast(0, 0.14);
       blast(0.22, 0.6);
@@ -122,9 +148,16 @@ export const SHOW_SFX: SfxDefs = {
     volVar: 0.05,
     render: (s) => {
       const w = wet(s, 1.4, 0.3);
-      const notes: Array<readonly [number, number, number, number]> = [72, 76, 79, 84, 88].map((m, i) => [i * 0.075, m, 0.2, 0.9] as const);
+      const notes: Array<readonly [number, number, number, number]> = [72, 76, 79, 84, 88].map(
+        (m, i) => [i * 0.075, m, 0.2, 0.9] as const,
+      );
       phrase(w, 'marimba', 0, notes);
-      phrase(w, 'glock', 0, notes.map(([t, m, d, v]) => [t, m + 12, d, v * 0.6] as const));
+      phrase(
+        w,
+        'glock',
+        0,
+        notes.map(([t, m, d, v]) => [t, m + 12, d, v * 0.6] as const),
+      );
       for (const m of [72, 76, 79, 84]) INSTRUMENTS.kalimba(w, 0.4, m, 0.5, 0.7);
       sparkle(w, 0.4, 0.6, 10, 3000, 7000, 0.04);
     },
@@ -184,7 +217,13 @@ export const SHOW_SFX: SfxDefs = {
     render: (s) => {
       tone(s, { freq: 620, freqEnd: 150, t: 0, dur: 0.05, gain: 0.45 });
       noise(s, { t: 0, dur: 0.025, gain: 0.6, filter: { type: 'bandpass', freq: 2500, q: 1 } });
-      for (let i = 0; i < 14; i++) noise(crowdVoice(s, 0.8), { t: s.rng.range(0.04, 0.55), dur: 0.006, gain: s.rng.range(0.08, 0.2), filter: { type: 'highpass', freq: 4000 } });
+      for (let i = 0; i < 14; i++)
+        noise(crowdVoice(s, 0.8), {
+          t: s.rng.range(0.04, 0.55),
+          dur: 0.006,
+          gain: s.rng.range(0.08, 0.2),
+          filter: { type: 'highpass', freq: 4000 },
+        });
       sparkle(crowdVoice(s, 0.6), 0.05, 0.5, 7, 3000, 7000, 0.04);
     },
   },
@@ -196,8 +235,22 @@ export const SHOW_SFX: SfxDefs = {
     render: (s) => {
       const w = wet(s, 1.5, 0.45);
       sparkle(w, 0, 0.9, 18, 2500, 7500, 0.06);
-      tone(w, { freq: 2093, t: 0, dur: 0.9, gain: 0.05, env: { a: 0.1, d: 0.2, s: 0.6, r: 0.4 }, tremolo: { rate: 9, depth: 0.6 } });
-      tone(w, { freq: 3136, t: 0.1, dur: 0.8, gain: 0.04, env: { a: 0.1, d: 0.2, s: 0.6, r: 0.4 }, tremolo: { rate: 11, depth: 0.6 } });
+      tone(w, {
+        freq: 2093,
+        t: 0,
+        dur: 0.9,
+        gain: 0.05,
+        env: { a: 0.1, d: 0.2, s: 0.6, r: 0.4 },
+        tremolo: { rate: 9, depth: 0.6 },
+      });
+      tone(w, {
+        freq: 3136,
+        t: 0.1,
+        dur: 0.8,
+        gain: 0.04,
+        env: { a: 0.1, d: 0.2, s: 0.6, r: 0.4 },
+        tremolo: { rate: 11, depth: 0.6 },
+      });
     },
   },
   'team.horn': {
@@ -216,7 +269,17 @@ export const SHOW_SFX: SfxDefs = {
       ] as const) {
         const lp = filter(s.ctx, 'lowpass', 1800, 2);
         lp.connect(bus);
-        tone(into(b, lp), { type: 'sawtooth', freq: f * 0.98, freqEnd: f, sweepTime: 0.05, detune: det, t: 0, dur: 0.75, gain: 0.12, env: { a: 0.02, d: 0.1, s: 0.8, r: 0.15 } });
+        tone(into(b, lp), {
+          type: 'sawtooth',
+          freq: f * 0.98,
+          freqEnd: f,
+          sweepTime: 0.05,
+          detune: det,
+          t: 0,
+          dur: 0.75,
+          gain: 0.12,
+          env: { a: 0.02, d: 0.1, s: 0.8, r: 0.15 },
+        });
       }
     },
   },
@@ -247,7 +310,15 @@ export const SHOW_SFX: SfxDefs = {
       applause(s, 0.1, 2.3, 70, 0.22);
       for (let i = 0; i < 2; i++) {
         const t = s.rng.range(0.2, 0.9);
-        tone(crowdVoice(s, 0.8), { freq: 1900, freqEnd: 2700, sweepTime: 0.25, t, dur: 0.4, gain: 0.06, env: { a: 0.02, d: 0.05, s: 0.9, r: 0.1 } });
+        tone(crowdVoice(s, 0.8), {
+          freq: 1900,
+          freqEnd: 2700,
+          sweepTime: 0.25,
+          t,
+          dur: 0.4,
+          gain: 0.06,
+          env: { a: 0.02, d: 0.05, s: 0.9, r: 0.1 },
+        });
       }
     },
   },
@@ -262,7 +333,19 @@ export const SHOW_SFX: SfxDefs = {
     render: (s) => {
       for (let i = 0; i < 12; i++) {
         const f0 = s.rng.range(260, 430);
-        vocal(crowdVoice(s, 0.9), { t: s.rng.range(0, 0.12), dur: s.rng.range(0.9, 1.3), f0, f0End: f0 * 0.68, vowel: 'aw', vowelEnd: 'o', gain: 0.05, attack: 0.15, release: 0.35, vibrato: 0.02, formantShift: s.rng.range(0.95, 1.25) });
+        vocal(crowdVoice(s, 0.9), {
+          t: s.rng.range(0, 0.12),
+          dur: s.rng.range(0.9, 1.3),
+          f0,
+          f0End: f0 * 0.68,
+          vowel: 'aw',
+          vowelEnd: 'o',
+          gain: 0.05,
+          attack: 0.15,
+          release: 0.35,
+          vibrato: 0.02,
+          formantShift: s.rng.range(0.95, 1.25),
+        });
       }
     },
   },
@@ -275,10 +358,27 @@ export const SHOW_SFX: SfxDefs = {
     gain: 0.8,
     cooldownMs: 400,
     render: (s) => {
-      noise(s, { color: 'pink', t: 0, dur: 0.25, gain: 0.2, attack: 0.15, filter: { type: 'bandpass', freq: 1200, freqEnd: 2200, q: 1.2 } });
+      noise(s, {
+        color: 'pink',
+        t: 0,
+        dur: 0.25,
+        gain: 0.2,
+        attack: 0.15,
+        filter: { type: 'bandpass', freq: 1200, freqEnd: 2200, q: 1.2 },
+      });
       for (let i = 0; i < 10; i++) {
         const f0 = s.rng.range(250, 460);
-        vocal(crowdVoice(s, 0.9), { t: 0.12 + s.rng.range(0, 0.06), dur: s.rng.range(0.25, 0.4), f0, f0End: f0 * 1.15, vowel: 'o', gain: 0.05, attack: 0.02, release: 0.12, formantShift: s.rng.range(0.95, 1.25) });
+        vocal(crowdVoice(s, 0.9), {
+          t: 0.12 + s.rng.range(0, 0.06),
+          dur: s.rng.range(0.25, 0.4),
+          f0,
+          f0End: f0 * 1.15,
+          vowel: 'o',
+          gain: 0.05,
+          attack: 0.02,
+          release: 0.12,
+          formantShift: s.rng.range(0.95, 1.25),
+        });
       }
     },
   },
@@ -299,8 +399,23 @@ export const SHOW_SFX: SfxDefs = {
         const gap = s.rng.range(0.12, 0.17);
         for (let i = 0; i < n; i++) {
           const f0 = base * (1 - i * 0.03) * s.rng.range(0.97, 1.03);
-          vocal(out, { t: start + i * gap, dur: 0.085, f0, f0End: f0 * 0.92, vowel: 'a', gain: 0.05 * (1 - i / (n + 2)), attack: 0.008, release: 0.04, formantShift: s.rng.range(1, 1.3) });
-          noise(out, { t: start + i * gap, dur: 0.05, gain: 0.012, filter: { type: 'bandpass', freq: 1800, q: 1 } });
+          vocal(out, {
+            t: start + i * gap,
+            dur: 0.085,
+            f0,
+            f0End: f0 * 0.92,
+            vowel: 'a',
+            gain: 0.05 * (1 - i / (n + 2)),
+            attack: 0.008,
+            release: 0.04,
+            formantShift: s.rng.range(1, 1.3),
+          });
+          noise(out, {
+            t: start + i * gap,
+            dur: 0.05,
+            gain: 0.012,
+            filter: { type: 'bandpass', freq: 1800, q: 1 },
+          });
         }
       }
     },

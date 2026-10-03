@@ -97,7 +97,8 @@ export class RouteFollower {
     let bestD = Infinity;
     for (let k = 0; k < this.nodes.length; k++) {
       const p = (this.nodes[k] as Waypoint).position;
-      const d = Math.hypot(p.x - pos.x, p.z - pos.z) + Math.max(0, pos.z - p.z) * 3 + Math.abs(p.y - pos.y) * 2;
+      const d =
+        Math.hypot(p.x - pos.x, p.z - pos.z) + Math.max(0, pos.z - p.z) * 3 + Math.abs(p.y - pos.y) * 2;
       if (d < bestD) {
         bestD = d;
         best = k;
@@ -163,7 +164,8 @@ export class RouteFollower {
       this.lastProgress = tick;
     }
     this.stalled = tick - this.lastProgress;
-    if (this.stalled > STUCK_HOP_TICKS && self.grounded && this.stalled % 60 === 0) this.jumpUntil = tick + JUMP_HOLD;
+    if (this.stalled > STUCK_HOP_TICKS && self.grounded && this.stalled % 60 === 0)
+      this.jumpUntil = tick + JUMP_HOLD;
     if (last && d <= radius) {
       out.moveZ = 0;
       return 'done';

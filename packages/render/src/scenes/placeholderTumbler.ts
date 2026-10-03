@@ -1,5 +1,10 @@
 import { Group, Mesh, SphereGeometry, type BufferGeometry, type MeshToonNodeMaterial } from 'three/webgpu';
-import type { CreateTumblerVisual, TumblerAnimInput, TumblerLoadout, TumblerVisual } from '../character/types.ts';
+import type {
+  CreateTumblerVisual,
+  TumblerAnimInput,
+  TumblerLoadout,
+  TumblerVisual,
+} from '../character/types.ts';
 import { createToonMaterial } from '../materials/toon.ts';
 import { createOutlineMaterial } from '../materials/outline.ts';
 import { createGumdropGeometry } from '../environment/crowd.ts';
@@ -25,7 +30,11 @@ function sphereGeometry(): BufferGeometry {
 }
 
 /** A neutral default loadout for mock players and lab scenes. */
-export function defaultLoadout(primary = '#ff6fb5', secondary = '#ffd23f', tertiary = '#ffffff'): TumblerLoadout {
+export function defaultLoadout(
+  primary = '#ff6fb5',
+  secondary = '#ffd23f',
+  tertiary = '#ffffff',
+): TumblerLoadout {
   return {
     colors: [primary, secondary, tertiary],
     pattern: 'none',

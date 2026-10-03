@@ -48,7 +48,17 @@ interface QueuedLine {
 }
 
 /** Voice names (substring match) that sound upbeat, in preference order. */
-const PREFERRED_VOICES = ['Google US English', 'Samantha', 'Microsoft Aria', 'Microsoft Jenny', 'Karen', 'Google UK English Female', 'Microsoft Zira', 'Tessa', 'Moira'];
+const PREFERRED_VOICES = [
+  'Google US English',
+  'Samantha',
+  'Microsoft Aria',
+  'Microsoft Jenny',
+  'Karen',
+  'Google UK English Female',
+  'Microsoft Zira',
+  'Tessa',
+  'Moira',
+];
 
 const BLIP_VOWELS: readonly Vowel[] = ['a', 'e', 'o', 'i', 'aw', 'uh'];
 
@@ -56,7 +66,10 @@ const BLIP_VOWELS: readonly Vowel[] = ['a', 'e', 'o', 'i', 'aw', 'uh'];
  * @returns The browser's speech synthesis, if present.
  */
 function getSpeech(): SpeechSynthesis | null {
-  return typeof globalThis.speechSynthesis !== 'undefined' && typeof globalThis.SpeechSynthesisUtterance !== 'undefined' ? globalThis.speechSynthesis : null;
+  return typeof globalThis.speechSynthesis !== 'undefined' &&
+    typeof globalThis.SpeechSynthesisUtterance !== 'undefined'
+    ? globalThis.speechSynthesis
+    : null;
 }
 
 /**
@@ -282,7 +295,17 @@ export class Announcer {
         const contour = exclaim || question ? 1 + prog * 0.35 : 1.15 - prog * 0.25;
         const f0 = 210 * contour * this.rng.range(0.94, 1.08);
         const dur = this.rng.range(0.085, 0.13);
-        vocal(s, { t, dur, f0, f0End: f0 * this.rng.range(0.92, 1.1), vowel: this.rng.pick(BLIP_VOWELS), gain: 0.28, attack: 0.012, release: 0.04, formantShift: 1.15 });
+        vocal(s, {
+          t,
+          dur,
+          f0,
+          f0End: f0 * this.rng.range(0.92, 1.1),
+          vowel: this.rng.pick(BLIP_VOWELS),
+          gain: 0.28,
+          attack: 0.012,
+          release: 0.04,
+          formantShift: 1.15,
+        });
         t += dur + 0.02;
         i++;
       }

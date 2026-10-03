@@ -62,7 +62,13 @@ function stepSim(sim: Sim, rng: Rng, t: number): void {
   });
 }
 
-function frameFor(sim: Sim, table: EntityTable, snapshotId: number, serverTick: number, obstacles: ObstacleTable): SnapshotFrame {
+function frameFor(
+  sim: Sim,
+  table: EntityTable,
+  snapshotId: number,
+  serverTick: number,
+  obstacles: ObstacleTable,
+): SnapshotFrame {
   table.clear();
   sim.states.forEach((s, id) => table.set(id, s, q, simTickOf(serverTick)));
   return {
@@ -129,7 +135,8 @@ describe('snapshot delta compression', () => {
       // With an unlimited budget nothing is deferred, so the reconstructed view must match the truth exactly.
       const n = dec.readView(out.snapshotId, out.serverTick, q, view);
       expect(n).toBe(40);
-      for (let i = 0; i < n; i++) expectStateClose(view[i]!, table.get(view[i]!.id, q, simTickOf(tick), truth));
+      for (let i = 0; i < n; i++)
+        expectStateClose(view[i]!, table.get(view[i]!.id, q, simTickOf(tick), truth));
     }
     expect(deltas).toBeGreaterThan(200);
   });
@@ -171,7 +178,11 @@ describe('snapshot delta compression', () => {
     let total = 0;
     for (let tick = 1; tick <= 120; tick++) {
       stepSim(sim, rng, tick / 30);
-      enc.encode(w.reset(), frameFor(sim, table, tick, tick, obstacles), { playerId: 3, spectateTarget: -1, ackedInputSeq: -1 });
+      enc.encode(w.reset(), frameFor(sim, table, tick, tick, obstacles), {
+        playerId: 3,
+        spectateTarget: -1,
+        ackedInputSeq: -1,
+      });
       maxBytes = Math.max(maxBytes, enc.stats.bytes);
       if (tick > 1) total += enc.stats.bytes;
       r.reset(w.finish().slice());

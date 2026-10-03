@@ -1,4 +1,11 @@
-import { Color, DataTexture, LinearFilter, MeshToonNodeMaterial, RedFormat, type ColorRepresentation } from 'three/webgpu';
+import {
+  Color,
+  DataTexture,
+  LinearFilter,
+  MeshToonNodeMaterial,
+  RedFormat,
+  type ColorRepresentation,
+} from 'three/webgpu';
 import { float, normalView, positionViewDirection, smoothstep, uniform } from 'three/tsl';
 import type { Node } from 'three/webgpu';
 

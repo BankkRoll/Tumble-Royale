@@ -263,8 +263,14 @@ function buildPattern(u: PatternInputs): Node<'vec4'> {
     // every later branch reads an unassigned variable.
     const theta = atan(p.x, p.z).toVar();
     const N = floor(float(14).mul(S).add(0.5)).max(4).toVar();
-    const cu = theta.div(Math.PI * 2).mul(N).toVar();
-    const cv = p.y.mul(N).div(Math.PI * 2 * 0.42).toVar();
+    const cu = theta
+      .div(Math.PI * 2)
+      .mul(N)
+      .toVar();
+    const cv = p.y
+      .mul(N)
+      .div(Math.PI * 2 * 0.42)
+      .toVar();
     const dir = vec3(sin(A), cos(A), 0).toVar();
     const d = dot(p, dir).toVar();
 
@@ -302,32 +308,55 @@ function buildPattern(u: PatternInputs): Node<'vec4'> {
       })
       .ElseIf(idx.lessThan(4.5), () => {
         // gradient
-        const t = clamp(dot(p.sub(vec3(0, 1, 0)), dir).div(1.6).add(0.5), 0, 1);
+        const t = clamp(
+          dot(p.sub(vec3(0, 1, 0)), dir)
+            .div(1.6)
+            .add(0.5),
+          0,
+          1,
+        );
         col.assign(mix(mix(P, Sc, smoothstep(0, 0.55, t)), T, smoothstep(0.5, 1, t)));
       })
       .ElseIf(idx.lessThan(5.5), () => {
         // galaxy: dark base, coloured nebula, twinkling star points
         const n = mx_fractal_noise_float(p.mul(S.mul(1.8)), 4, 2.0, 0.5, 1.0);
-        const base = mix(T.mul(0.22), P.mul(0.35), smoothstep(-0.4, 0.4, mx_noise_float(p.mul(S.mul(1.1)).add(3.3))));
+        const base = mix(
+          T.mul(0.22),
+          P.mul(0.35),
+          smoothstep(-0.4, 0.4, mx_noise_float(p.mul(S.mul(1.1)).add(3.3))),
+        );
         const neb = smoothstep(0.0, 0.55, n);
         col.assign(mix(base, Sc.mul(1.05), neb.mul(0.75)));
         const cell = floor(p.mul(S.mul(26)));
         const h = hash31(cell);
-        const off = vec3(hash31(cell.add(11.1)), hash31(cell.add(23.7)), hash31(cell.add(37.3))).mul(0.6).add(0.2);
+        const off = vec3(hash31(cell.add(11.1)), hash31(cell.add(23.7)), hash31(cell.add(37.3)))
+          .mul(0.6)
+          .add(0.2);
         const dist = length(fract(p.mul(S.mul(26))).sub(off));
-        const twinkle = sin(u.time.mul(h.mul(5).add(2)).add(h.mul(40))).mul(0.35).add(0.65);
-        const star = smoothstep(0.16, 0.0, dist).mul(select(h.greaterThan(0.86), float(1), float(0))).mul(twinkle);
+        const twinkle = sin(u.time.mul(h.mul(5).add(2)).add(h.mul(40)))
+          .mul(0.35)
+          .add(0.65);
+        const star = smoothstep(0.16, 0.0, dist)
+          .mul(select(h.greaterThan(0.86), float(1), float(0)))
+          .mul(twinkle);
         col.addAssign(vec3(star));
         glow.assign(star.mul(1.4).add(neb.mul(0.12)));
       })
       .ElseIf(idx.lessThan(6.5), () => {
         // checker (3D sine checker: seamless and antialiasable)
         const k = S.mul(Math.PI * 4.2);
-        x0.assign(sin(p.x.mul(k)).mul(sin(p.y.mul(k))).mul(sin(p.z.mul(k).add(0.5))));
+        x0.assign(
+          sin(p.x.mul(k))
+            .mul(sin(p.y.mul(k)))
+            .mul(sin(p.z.mul(k).add(0.5))),
+        );
       })
       .ElseIf(idx.lessThan(7.5), () => {
         // zigzag
-        const zz = p.y.mul(S).mul(5.5).add(abs(fract(cu.mul(0.5)).sub(0.5)).mul(1.4));
+        const zz = p.y
+          .mul(S)
+          .mul(5.5)
+          .add(abs(fract(cu.mul(0.5)).sub(0.5)).mul(1.4));
         const band = mod(floor(zz), 3);
         col.assign(select(band.lessThan(0.5), P, select(band.lessThan(1.5), Sc, T)));
       })
@@ -350,7 +379,12 @@ function buildPattern(u: PatternInputs): Node<'vec4'> {
       })
       .ElseIf(idx.lessThan(10.5), () => {
         // swirl
-        const sw = fract(theta.div(Math.PI * 2).mul(3).add(p.y.mul(S).mul(2.6)));
+        const sw = fract(
+          theta
+            .div(Math.PI * 2)
+            .mul(3)
+            .add(p.y.mul(S).mul(2.6)),
+        );
         const tri = abs(sw.sub(0.5));
         x0.assign(tri);
         e0.assign(0.25);
@@ -393,7 +427,10 @@ function buildPattern(u: PatternInputs): Node<'vec4'> {
       })
       .ElseIf(idx.lessThan(14.5), () => {
         // waves
-        const w = p.y.mul(S).mul(6).add(sin(theta.mul(4).add(p.y.mul(3))).mul(0.4));
+        const w = p.y
+          .mul(S)
+          .mul(6)
+          .add(sin(theta.mul(4).add(p.y.mul(3))).mul(0.4));
         const band = mod(floor(w), 3);
         col.assign(select(band.lessThan(0.5), P, select(band.lessThan(1.5), Sc, T)));
       })
@@ -484,127 +521,196 @@ function buildFace(u: FaceInputs, q: V2, aa: F): { color: V3; mask: F; gloss: F 
   // Visor gloss: a crescent reflection in the upper-left of the plate.
   const g1 = length(plateN.sub(vec2(-0.32, 0.42)));
   const g2 = length(plateN.sub(vec2(-0.2, 0.3)));
-  const gloss = smoothstep(0.42, 0.36, g1).mul(smoothstep(0.32, 0.4, g2)).mul(mask);
+  const gloss = smoothstep(0.42, 0.36, g1)
+    .mul(smoothstep(0.32, 0.4, g2))
+    .mul(mask);
 
   const color = Fn(() => {
-  const col = vec3(u.plate).toVar();
-  // Soft inner shade near the plate rim adds depth to the visor.
-  col.assign(mix(col, col.mul(0.9), smoothstep(-0.25, 0, plateD)));
+    const col = vec3(u.plate).toVar();
+    // Soft inner shade near the plate rim adds depth to the visor.
+    col.assign(mix(col, col.mul(0.9), smoothstep(-0.25, 0, plateD)));
 
-  const t = u.faceE.w;
-  const side = select(q.x.greaterThan(0), float(1), float(-1));
-  const qm = vec2(abs(q.x), q.y);
+    const t = u.faceE.w;
+    const side = select(q.x.greaterThan(0), float(1), float(-1));
+    const qm = vec2(abs(q.x), q.y);
 
-  // Blush and freckles under the eyes.
-  const blushD = length(qm.sub(vec2(0.19, -0.085)).div(vec2(0.055, 0.032)));
-  col.assign(mix(col, vec3(1.0, 0.42, 0.55), smoothstep(1, 0.2, blushD).mul(0.45).mul(u.faceE.x)));
-  const fr1 = length(qm.sub(vec2(0.15, -0.035)));
-  const fr2 = length(qm.sub(vec2(0.18, -0.02)));
-  const fr3 = length(qm.sub(vec2(0.195, -0.05)));
-  const freck = float(1).sub(smoothstep(0.004, 0.0075, min(fr1, min(fr2, fr3))));
-  col.assign(mix(col, vec3(0.55, 0.3, 0.2), freck.mul(u.faceE.y).mul(0.75)));
+    // Blush and freckles under the eyes.
+    const blushD = length(qm.sub(vec2(0.19, -0.085)).div(vec2(0.055, 0.032)));
+    col.assign(mix(col, vec3(1.0, 0.42, 0.55), smoothstep(1, 0.2, blushD).mul(0.45).mul(u.faceE.x)));
+    const fr1 = length(qm.sub(vec2(0.15, -0.035)));
+    const fr2 = length(qm.sub(vec2(0.18, -0.02)));
+    const fr3 = length(qm.sub(vec2(0.195, -0.05)));
+    const freck = float(1).sub(smoothstep(0.004, 0.0075, min(fr1, min(fr2, fr3))));
+    col.assign(mix(col, vec3(0.55, 0.3, 0.2), freck.mul(u.faceE.y).mul(0.75)));
 
-  // Eyes, in each eye's normalised ellipse space.
-  const wide = u.fx.w;
-  const r = vec2(EYE_R[0], EYE_R[1]).mul(u.faceD.y).mul(wide.mul(0.14).add(1));
-  const e = qm.sub(vec2(EYE_C[0], EYE_C[1])).div(r);
-  const aaE = aa.div(r.y).mul(1.3);
-  const eyeD = length(e).sub(1);
-  const happy = u.faceA.w;
-  const eyeMask = float(1).sub(smoothstep(aaE.negate(), aaE, eyeD)).mul(float(1).sub(happy));
+    // Eyes, in each eye's normalised ellipse space.
+    const wide = u.fx.w;
+    const r = vec2(EYE_R[0], EYE_R[1]).mul(u.faceD.y).mul(wide.mul(0.14).add(1));
+    const e = qm.sub(vec2(EYE_C[0], EYE_C[1])).div(r);
+    const aaE = aa.div(r.y).mul(1.3);
+    const eyeD = length(e).sub(1);
+    const happy = u.faceA.w;
+    const eyeMask = float(1)
+      .sub(smoothstep(aaE.negate(), aaE, eyeD))
+      .mul(float(1).sub(happy));
 
-  const look = vec2(u.faceA.x.mul(side), u.faceA.y).mul(0.3);
-  const pr = u.faceD.z.mul(0.55);
-  const pe = e.sub(look).div(pr);
-  const pd = length(pe);
-  const ang = atan(pe.y, pe.x);
-  const shape = select(u.faceD.w.greaterThan(0.5), float(4), u.faceD.x);
+    const look = vec2(u.faceA.x.mul(side), u.faceA.y).mul(0.3);
+    const pr = u.faceD.z.mul(0.55);
+    const pe = e.sub(look).div(pr);
+    const pd = length(pe);
+    const ang = atan(pe.y, pe.x);
+    const shape = select(u.faceD.w.greaterThan(0.5), float(4), u.faceD.x);
 
-  const starR = mix(float(0.48), float(1.08), pow(cos(ang.sub(Math.PI / 2).mul(5)).mul(0.5).add(0.5), 2.2));
-  const dStar = pd.sub(starR);
-  const dHeart = sdHeart(pe.mul(0.8).add(vec2(0, 0.5))).mul(1.3);
-  const dCat = length(pe.mul(vec2(2.8, 1.05))).sub(0.95);
-  const spin = ang.add(pd.mul(5)).sub(t.mul(7));
-  const dSpiral = abs(fract(spin.div(Math.PI * 2).mul(2)).sub(0.5)).sub(0.22).mul(0.6);
+    const starR = mix(
+      float(0.48),
+      float(1.08),
+      pow(
+        cos(ang.sub(Math.PI / 2).mul(5))
+          .mul(0.5)
+          .add(0.5),
+        2.2,
+      ),
+    );
+    const dStar = pd.sub(starR);
+    const dHeart = sdHeart(pe.mul(0.8).add(vec2(0, 0.5))).mul(1.3);
+    const dCat = length(pe.mul(vec2(2.8, 1.05))).sub(0.95);
+    const spin = ang.add(pd.mul(5)).sub(t.mul(7));
+    const dSpiral = abs(fract(spin.div(Math.PI * 2).mul(2)).sub(0.5))
+      .sub(0.22)
+      .mul(0.6);
 
-  const irisD = select(shape.lessThan(0.5), pd.sub(1), select(shape.lessThan(1.5), dStar, select(shape.lessThan(2.5), dHeart, pd.sub(1))));
-  const coreD = select(
-    shape.lessThan(0.5),
-    pd.sub(0.56),
-    select(shape.lessThan(1.5), dStar.add(0.32), select(shape.lessThan(2.5), dHeart.add(0.28), select(shape.lessThan(3.5), dCat.mul(0.45), dSpiral))),
-  );
-  const aaP = aaE.div(pr);
-  const irisM = float(1).sub(smoothstep(aaP.negate(), aaP, irisD));
-  const coreM = float(1).sub(smoothstep(aaP.negate(), aaP, coreD));
+    const irisD = select(
+      shape.lessThan(0.5),
+      pd.sub(1),
+      select(shape.lessThan(1.5), dStar, select(shape.lessThan(2.5), dHeart, pd.sub(1))),
+    );
+    const coreD = select(
+      shape.lessThan(0.5),
+      pd.sub(0.56),
+      select(
+        shape.lessThan(1.5),
+        dStar.add(0.32),
+        select(shape.lessThan(2.5), dHeart.add(0.28), select(shape.lessThan(3.5), dCat.mul(0.45), dSpiral)),
+      ),
+    );
+    const aaP = aaE.div(pr);
+    const irisM = float(1).sub(smoothstep(aaP.negate(), aaP, irisD));
+    const coreM = float(1).sub(smoothstep(aaP.negate(), aaP, coreD));
 
-  const eyeCol = vec3(1, 1, 1).toVar();
-  eyeCol.assign(mix(eyeCol, u.iris, irisM));
-  eyeCol.assign(mix(eyeCol, mix(u.iris, INK, 0.75), irisM.mul(smoothstep(0.1, 1.0, pd)).mul(0.35)));
-  eyeCol.assign(mix(eyeCol, INK, coreM));
-  const hl1 = length(pe.sub(vec2(-0.32, 0.36)));
-  const hl2 = length(pe.sub(vec2(0.3, -0.32)));
-  const hl = float(1).sub(smoothstep(0.2, 0.2 + 0.08, hl1)).add(float(1).sub(smoothstep(0.09, 0.15, hl2)).mul(0.8));
-  eyeCol.assign(mix(eyeCol, vec3(1, 1, 1), clamp(hl, 0, 1).mul(select(shape.greaterThan(3.5), float(0.5), float(1)))));
-  // Dark rim around the sclera.
-  eyeCol.assign(mix(eyeCol, INK, smoothstep(aaE.negate().sub(0.15), aaE.sub(0.15), eyeD)));
+    const eyeCol = vec3(1, 1, 1).toVar();
+    eyeCol.assign(mix(eyeCol, u.iris, irisM));
+    eyeCol.assign(mix(eyeCol, mix(u.iris, INK, 0.75), irisM.mul(smoothstep(0.1, 1.0, pd)).mul(0.35)));
+    eyeCol.assign(mix(eyeCol, INK, coreM));
+    const hl1 = length(pe.sub(vec2(-0.32, 0.36)));
+    const hl2 = length(pe.sub(vec2(0.3, -0.32)));
+    const hl = float(1)
+      .sub(smoothstep(0.2, 0.2 + 0.08, hl1))
+      .add(
+        float(1)
+          .sub(smoothstep(0.09, 0.15, hl2))
+          .mul(0.8),
+      );
+    eyeCol.assign(
+      mix(eyeCol, vec3(1, 1, 1), clamp(hl, 0, 1).mul(select(shape.greaterThan(3.5), float(0.5), float(1)))),
+    );
+    // Dark rim around the sclera.
+    eyeCol.assign(mix(eyeCol, INK, smoothstep(aaE.negate().sub(0.15), aaE.sub(0.15), eyeD)));
 
-  // Upper lid: closure + tilt (determined/angry tilts the inner corner down).
-  const closure = clamp(u.faceA.z, 0, 1);
-  const lidY = float(1.05).sub(closure.mul(2.1)).add(u.fx.z.mul(e.x).mul(0.55));
-  const lidM = smoothstep(lidY.sub(aaE), lidY.add(aaE), e.y);
-  const lidCol = mix(u.plate, u.primary, 0.45).mul(0.92);
-  eyeCol.assign(mix(eyeCol, lidCol, lidM));
-  const lash = float(1).sub(smoothstep(float(0.06), aaE.mul(2).add(0.06), abs(e.y.sub(lidY)))).mul(smoothstep(0.02, 0.08, closure));
-  eyeCol.assign(mix(eyeCol, INK, lash));
-  col.assign(mix(col, eyeCol, eyeMask));
+    // Upper lid: closure + tilt (determined/angry tilts the inner corner down).
+    const closure = clamp(u.faceA.z, 0, 1);
+    const lidY = float(1.05).sub(closure.mul(2.1)).add(u.fx.z.mul(e.x).mul(0.55));
+    const lidM = smoothstep(lidY.sub(aaE), lidY.add(aaE), e.y);
+    const lidCol = mix(u.plate, u.primary, 0.45).mul(0.92);
+    eyeCol.assign(mix(eyeCol, lidCol, lidM));
+    const lash = float(1)
+      .sub(smoothstep(float(0.06), aaE.mul(2).add(0.06), abs(e.y.sub(lidY))))
+      .mul(smoothstep(0.02, 0.08, closure));
+    eyeCol.assign(mix(eyeCol, INK, lash));
+    col.assign(mix(col, eyeCol, eyeMask));
 
-  // Lashes: three little flicks at the outer corner.
-  const lashTip = length(e.sub(vec2(0.95, 0.55))).sub(0.14);
-  const lashM = float(1).sub(smoothstep(0, aaE.mul(2), lashTip)).mul(u.faceE.z).mul(float(1).sub(happy));
-  col.assign(mix(col, INK, lashM));
+    // Lashes: three little flicks at the outer corner.
+    const lashTip = length(e.sub(vec2(0.95, 0.55))).sub(0.14);
+    const lashM = float(1)
+      .sub(smoothstep(0, aaE.mul(2), lashTip))
+      .mul(u.faceE.z)
+      .mul(float(1).sub(happy));
+    col.assign(mix(col, INK, lashM));
 
-  // Happy closed "^" eyes.
-  const arc = abs(length(e.sub(vec2(0, -0.75))).sub(0.95)).sub(0.11);
-  const arcM = float(1).sub(smoothstep(aaE.negate(), aaE, arc)).mul(select(e.y.greaterThan(-0.35), float(1), float(0))).mul(select(abs(e.x).lessThan(0.85), float(1), float(0)));
-  col.assign(mix(col, INK, arcM.mul(happy)));
+    // Happy closed "^" eyes.
+    const arc = abs(length(e.sub(vec2(0, -0.75))).sub(0.95)).sub(0.11);
+    const arcM = float(1)
+      .sub(smoothstep(aaE.negate(), aaE, arc))
+      .mul(select(e.y.greaterThan(-0.35), float(1), float(0)))
+      .mul(select(abs(e.x).lessThan(0.85), float(1), float(0)));
+    col.assign(mix(col, INK, arcM.mul(happy)));
 
-  // Brows.
-  const browC = vec2(EYE_C[0], r.y.add(EYE_C[1] + 0.05).add(u.faceC.w.mul(0.025)));
-  const bq = qm.sub(browC);
-  const bx = clamp(bq.x, -0.05, 0.05);
-  const by = u.faceC.z.mul(bx).mul(0.7).sub(bx.mul(bx).mul(7));
-  const browD = length(vec2(max(abs(bq.x).sub(0.05), 0), bq.y.sub(by))).sub(0.011);
-  col.assign(mix(col, INK, float(1).sub(smoothstep(aa.negate(), aa, browD))));
+    // Brows.
+    const browC = vec2(EYE_C[0], r.y.add(EYE_C[1] + 0.05).add(u.faceC.w.mul(0.025)));
+    const bq = qm.sub(browC);
+    const bx = clamp(bq.x, -0.05, 0.05);
+    const by = u.faceC.z.mul(bx).mul(0.7).sub(bx.mul(bx).mul(7));
+    const browD = length(vec2(max(abs(bq.x).sub(0.05), 0), bq.y.sub(by))).sub(0.011);
+    col.assign(mix(col, INK, float(1).sub(smoothstep(aa.negate(), aa, browD))));
 
-  // Mouth.
-  const m = q.sub(vec2(0, -0.125));
-  const w = max(u.faceB.z, 0.015);
-  const xn = clamp(m.x.div(w), -1, 1);
-  const curve = u.faceB.y.mul(0.03).mul(xn.mul(xn).sub(1)).add(u.faceB.w.mul(0.012).mul(sin(xn.mul(Math.PI * 2.5).add(t.mul(6)))));
-  const env = sqrt(max(float(1).sub(xn.mul(xn)), 0));
-  const open = u.faceB.x;
-  const yl = curve.sub(open.mul(0.075).mul(env));
-  const yu = curve.add(open.mul(0.022).mul(env).mul(float(1).sub(u.faceB.y.mul(0.5))));
-  const insideD = max(abs(m.x).sub(w), max(m.y.sub(yu), yl.sub(m.y)));
-  const interior = float(1).sub(smoothstep(aa.negate(), aa, insideD)).mul(smoothstep(0.02, 0.08, open));
-  const mouthCol = vec3(0.36, 0.08, 0.2).toVar();
-  const teeth = smoothstep(yu.sub(0.022).sub(aa), yu.sub(0.022).add(aa), m.y).mul(u.faceC.y);
-  mouthCol.assign(mix(mouthCol, vec3(1, 1, 1), teeth));
-  const tongueIn = float(1).sub(smoothstep(0.03 - 0.004, 0.03 + 0.004, length(m.sub(vec2(0.008, yl.add(0.012))))));
-  mouthCol.assign(mix(mouthCol, vec3(1.0, 0.42, 0.55), tongueIn.mul(0.85)));
-  col.assign(mix(col, mouthCol, interior));
-  const lineD = length(vec2(max(abs(m.x).sub(w), 0), m.y.sub(curve))).sub(0.0095);
-  const edge = float(1).sub(smoothstep(aa.negate(), aa, abs(insideD).sub(0.006))).mul(smoothstep(0.02, 0.08, open));
-  const lineM = max(float(1).sub(smoothstep(aa.negate(), aa, lineD)).mul(float(1).sub(smoothstep(0.02, 0.08, open))), edge);
-  col.assign(mix(col, INK, lineM));
-  // Tongue sticking out past the lower lip.
-  const tongueOut = m.sub(vec2(0.012, yl.sub(u.faceC.x.mul(0.012))));
-  const tD = length(tongueOut.mul(vec2(1, 0.85))).sub(0.032);
-  const tM = float(1).sub(smoothstep(aa.negate(), aa, tD)).mul(smoothstep(0.4, 0.7, u.faceC.x)).mul(select(tongueOut.y.lessThan(0.006), float(1), float(0)));
-  col.assign(mix(col, vec3(1.0, 0.45, 0.58), tM));
-  col.assign(mix(col, INK, float(1).sub(smoothstep(0, aa.mul(2), abs(tD).sub(0.004))).mul(tM)));
+    // Mouth.
+    const m = q.sub(vec2(0, -0.125));
+    const w = max(u.faceB.z, 0.015);
+    const xn = clamp(m.x.div(w), -1, 1);
+    const curve = u.faceB.y
+      .mul(0.03)
+      .mul(xn.mul(xn).sub(1))
+      .add(u.faceB.w.mul(0.012).mul(sin(xn.mul(Math.PI * 2.5).add(t.mul(6)))));
+    const env = sqrt(max(float(1).sub(xn.mul(xn)), 0));
+    const open = u.faceB.x;
+    const yl = curve.sub(open.mul(0.075).mul(env));
+    const yu = curve.add(
+      open
+        .mul(0.022)
+        .mul(env)
+        .mul(float(1).sub(u.faceB.y.mul(0.5))),
+    );
+    const insideD = max(abs(m.x).sub(w), max(m.y.sub(yu), yl.sub(m.y)));
+    const interior = float(1)
+      .sub(smoothstep(aa.negate(), aa, insideD))
+      .mul(smoothstep(0.02, 0.08, open));
+    const mouthCol = vec3(0.36, 0.08, 0.2).toVar();
+    const teeth = smoothstep(yu.sub(0.022).sub(aa), yu.sub(0.022).add(aa), m.y).mul(u.faceC.y);
+    mouthCol.assign(mix(mouthCol, vec3(1, 1, 1), teeth));
+    const tongueIn = float(1).sub(
+      smoothstep(0.03 - 0.004, 0.03 + 0.004, length(m.sub(vec2(0.008, yl.add(0.012))))),
+    );
+    mouthCol.assign(mix(mouthCol, vec3(1.0, 0.42, 0.55), tongueIn.mul(0.85)));
+    col.assign(mix(col, mouthCol, interior));
+    const lineD = length(vec2(max(abs(m.x).sub(w), 0), m.y.sub(curve))).sub(0.0095);
+    const edge = float(1)
+      .sub(smoothstep(aa.negate(), aa, abs(insideD).sub(0.006)))
+      .mul(smoothstep(0.02, 0.08, open));
+    const lineM = max(
+      float(1)
+        .sub(smoothstep(aa.negate(), aa, lineD))
+        .mul(float(1).sub(smoothstep(0.02, 0.08, open))),
+      edge,
+    );
+    col.assign(mix(col, INK, lineM));
+    // Tongue sticking out past the lower lip.
+    const tongueOut = m.sub(vec2(0.012, yl.sub(u.faceC.x.mul(0.012))));
+    const tD = length(tongueOut.mul(vec2(1, 0.85))).sub(0.032);
+    const tM = float(1)
+      .sub(smoothstep(aa.negate(), aa, tD))
+      .mul(smoothstep(0.4, 0.7, u.faceC.x))
+      .mul(select(tongueOut.y.lessThan(0.006), float(1), float(0)));
+    col.assign(mix(col, vec3(1.0, 0.45, 0.58), tM));
+    col.assign(
+      mix(
+        col,
+        INK,
+        float(1)
+          .sub(smoothstep(0, aa.mul(2), abs(tD).sub(0.004)))
+          .mul(tM),
+      ),
+    );
 
-  return col;
+    return col;
   })();
 
   return { color, mask, gloss };
@@ -695,9 +801,25 @@ function buildBodyGraph(body: TumblerToonMaterial, u: TumblerParamNodes): void {
   const faceUV = attribute('aFace', 'vec2') as unknown as V2;
   const aa = max(fwidth(faceUV.y), 0.0004);
 
-  const pat = buildPattern({ primary: u.primary, secondary: u.secondary, tertiary: u.tertiary, pattern: u.pattern, time: u.faceE.w });
+  const pat = buildPattern({
+    primary: u.primary,
+    secondary: u.secondary,
+    tertiary: u.tertiary,
+    pattern: u.pattern,
+    time: u.faceE.w,
+  });
   const face = buildFace(
-    { primary: u.primary, plate: u.plate, iris: u.iris, faceA: u.faceA, faceB: u.faceB, faceC: u.faceC, faceD: u.faceD, faceE: u.faceE, fx: u.fx },
+    {
+      primary: u.primary,
+      plate: u.plate,
+      iris: u.iris,
+      faceA: u.faceA,
+      faceB: u.faceB,
+      faceC: u.faceC,
+      faceD: u.faceD,
+      faceE: u.faceE,
+      fx: u.fx,
+    },
     faceUV,
     aa,
   );
@@ -705,7 +827,15 @@ function buildBodyGraph(body: TumblerToonMaterial, u: TumblerParamNodes): void {
   const P = u.primary;
   const isPattern = kind.lessThan(0.5);
   const bodyCol = mix(pat.xyz, face.color, face.mask);
-  const albedo = select(isPattern, bodyCol, select(kind.lessThan(1.5), P, select(kind.lessThan(2.5), u.secondary, select(kind.lessThan(3.5), u.tertiary, vcol))));
+  const albedo = select(
+    isPattern,
+    bodyCol,
+    select(
+      kind.lessThan(1.5),
+      P,
+      select(kind.lessThan(2.5), u.secondary, select(kind.lessThan(3.5), u.tertiary, vcol)),
+    ),
+  );
 
   body.albedoNode = Fn(() => {
     for (const n of u.prime ?? []) n.toStack();
@@ -728,14 +858,29 @@ function buildBodyGraph(body: TumblerToonMaterial, u: TumblerParamNodes): void {
   const isGlass = kind.greaterThan(6.5);
 
   const rim = smoothstep(0.58, 0.88, float(1).sub(NdotV)).mul(0.32);
-  const terminator = float(1).sub(smoothstep(0, 0.42, abs(NdotL))).mul(0.16);
-  const backlit = pow(clamp(dot(V, L.negate()), 0, 1), 4).mul(float(1).sub(NdotV)).mul(0.35);
-  const sss = albedo.mul(warmTint).mul(terminator.add(backlit)).mul(select(isPal, float(1), float(0.4)));
+  const terminator = float(1)
+    .sub(smoothstep(0, 0.42, abs(NdotL)))
+    .mul(0.16);
+  const backlit = pow(clamp(dot(V, L.negate()), 0, 1), 4)
+    .mul(float(1).sub(NdotV))
+    .mul(0.35);
+  const sss = albedo
+    .mul(warmTint)
+    .mul(terminator.add(backlit))
+    .mul(select(isPal, float(1), float(0.4)));
   const specEdge = select(isShiny, float(0.93), float(0.962));
-  const specAmt = select(isShiny, float(1.1), select(isGlass, float(0.9), float(0.45))).add(face.mask.mul(0.45));
-  const spec = smoothstep(specEdge, specEdge.add(0.018), NdotH).mul(specAmt).mul(smoothstep(-0.1, 0.25, NdotL));
-  const glassSheen = pow(float(1).sub(NdotV), 2).mul(0.6).mul(select(isGlass, float(1), float(0)));
-  const glow = albedo.mul(select(isGlow, float(0.85), float(0))).add(vec3(pat.w.mul(select(isPattern, float(1), float(0))).mul(float(1).sub(face.mask))));
+  const specAmt = select(isShiny, float(1.1), select(isGlass, float(0.9), float(0.45))).add(
+    face.mask.mul(0.45),
+  );
+  const spec = smoothstep(specEdge, specEdge.add(0.018), NdotH)
+    .mul(specAmt)
+    .mul(smoothstep(-0.1, 0.25, NdotL));
+  const glassSheen = pow(float(1).sub(NdotV), 2)
+    .mul(0.6)
+    .mul(select(isGlass, float(1), float(0)));
+  const glow = albedo
+    .mul(select(isGlow, float(0.85), float(0)))
+    .add(vec3(pat.w.mul(select(isPattern, float(1), float(0))).mul(float(1).sub(face.mask))));
   const flash = u.fx.y;
 
   body.emissiveNode = rimColor
@@ -758,7 +903,8 @@ function outlineColor(u: TumblerParamNodes): Node<'vec4'> {
 }
 
 /** Outline push distance for a Tumbler whose feet are at `origin` (world space). */
-const outlinePush = (origin: V3): F => outlineThickness.mul(clamp(origin.distance(cameraPosition).mul(0.1), 1, 2.6));
+const outlinePush = (origin: V3): F =>
+  outlineThickness.mul(clamp(origin.distance(cameraPosition).mul(0.1), 1, 2.6));
 
 /**
  * The shared Tumbler materials. Created on first use; never disposed while
@@ -808,7 +954,14 @@ const ORIGIN_TEXEL = 12;
  * @param oy - World origin y.
  * @param oz - World origin z.
  */
-export function writeCrowdParams(out: Float32Array, slot: number, s: TumblerShaderState, ox: number, oy: number, oz: number): void {
+export function writeCrowdParams(
+  out: Float32Array,
+  slot: number,
+  s: TumblerShaderState,
+  ox: number,
+  oy: number,
+  oz: number,
+): void {
   let o = slot * CROWD_PARAM_TEXELS * 4;
   const col = (c: Color): void => {
     out[o] = c.r;
@@ -884,7 +1037,12 @@ export function createTumblerCrowdMaterials(bones: DataTexture, params: DataText
   const by = bone(skinIndex.y);
   const bz = bone(skinIndex.z);
   const bw = bone(skinIndex.w);
-  const skinMatrix = add(skinWeight.x.mul(bx), skinWeight.y.mul(by), skinWeight.z.mul(bz), skinWeight.w.mul(bw)).toVar();
+  const skinMatrix = add(
+    skinWeight.x.mul(bx),
+    skinWeight.y.mul(by),
+    skinWeight.z.mul(bz),
+    skinWeight.w.mul(bw),
+  ).toVar();
   const skinnedPosition = skinMatrix.mul(vec4(positionGeometry, 1)).xyz.toVar() as unknown as V3;
   const skinnedNormal = mat3(skinMatrix).mul(normalGeometry).toVar() as unknown as V3;
   const vertexOrigin = paramTex.load(ivec2(ORIGIN_TEXEL, slotV)).xyz as unknown as V3;

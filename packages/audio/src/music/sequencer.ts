@@ -74,7 +74,14 @@ class TrackPlayer {
   private readonly swing: number;
   private readonly intro: number;
   /** Stems whose target level is audible (scheduling continues while they fade in). */
-  private readonly rising: Record<StemId, boolean> = { drums: true, bass: true, chords: true, lead: false, intensity: false, final: false };
+  private readonly rising: Record<StemId, boolean> = {
+    drums: true,
+    bass: true,
+    chords: true,
+    lead: false,
+    intensity: false,
+    final: false,
+  };
 
   constructor(
     readonly track: PreparedTrack,
@@ -295,7 +302,14 @@ export class MusicSystem {
     let start = now + 0.06;
     if (old && q === 'bar') start = old.nextBar(now + 0.05);
     else if (old && q === 'beat') start = old.nextBeat(now + 0.05);
-    const player = new TrackPlayer(getPreparedTrack(id), ctx, this.loopBus as GainNode, this.reverbIn as GainNode, start, this.rng);
+    const player = new TrackPlayer(
+      getPreparedTrack(id),
+      ctx,
+      this.loopBus as GainNode,
+      this.reverbIn as GainNode,
+      start,
+      this.rng,
+    );
     stemLevels(this.intensity, this.final30, this.levels);
     player.setLevels(this.levels, start, true);
     player.markRising(this.levels);

@@ -4,8 +4,22 @@
  * point). Kinematic, pure function of time.
  */
 import { z } from 'zod';
-import { KinematicDriver, ObstacleGroups, RuntimeBase, createPoseBuffer, easeInOutCubic, modPos, setPose } from './helpers-a.ts';
-import type { ObstacleBuildContext, ObstacleInstance, ObstacleModule, ObstacleStepContext, PoseSample } from './types.ts';
+import {
+  KinematicDriver,
+  ObstacleGroups,
+  RuntimeBase,
+  createPoseBuffer,
+  easeInOutCubic,
+  modPos,
+  setPose,
+} from './helpers-a.ts';
+import type {
+  ObstacleBuildContext,
+  ObstacleInstance,
+  ObstacleModule,
+  ObstacleStepContext,
+  PoseSample,
+} from './types.ts';
 
 const Vec3Param = z.object({ x: z.number(), y: z.number(), z: z.number() });
 
@@ -94,7 +108,12 @@ export function movingPlatformCycle(p: MovingPlatformParams, speedScale: number)
  * @param out - At least one sample.
  * @param speedScale - Multiplies travel speed (pauses unchanged).
  */
-export function movingPlatformPose(t: number, p: MovingPlatformParams, out: PoseSample[], speedScale: number): void {
+export function movingPlatformPose(
+  t: number,
+  p: MovingPlatformParams,
+  out: PoseSample[],
+  speedScale: number,
+): void {
   const o = out[0];
   if (!o) return;
   const yaw = p.spin * t;
@@ -167,6 +186,7 @@ export const movingPlatform: ObstacleModule<MovingPlatformParams> = {
   schema: movingPlatformSchema,
   pose: movingPlatformPose,
   poseCount: () => 1,
-  create: (instance, ctx) => new MovingPlatformRuntime(instance, ctx, movingPlatformSchema.parse(instance.params)),
+  create: (instance, ctx) =>
+    new MovingPlatformRuntime(instance, ctx, movingPlatformSchema.parse(instance.params)),
   audioCues: [],
 };

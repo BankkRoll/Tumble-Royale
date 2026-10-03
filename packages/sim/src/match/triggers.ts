@@ -1,5 +1,13 @@
 import type { Collider, RigidBody, World } from '@dimforge/rapier3d-compat';
-import { InteractionGroups, quatFromEulerYXZ, rotateVec, type Quat, type RoundDefinition, type TriggerDef, type Vec3 } from '@tumble/shared';
+import {
+  InteractionGroups,
+  quatFromEulerYXZ,
+  rotateVec,
+  type Quat,
+  type RoundDefinition,
+  type TriggerDef,
+  type Vec3,
+} from '@tumble/shared';
 import type { Rapier } from '../physics/rapier.ts';
 
 const DEG = Math.PI / 180;

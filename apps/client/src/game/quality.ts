@@ -62,7 +62,11 @@ export class QualityManager {
    * @param setting - Player's graphics setting.
    * @param onProgress - Called while the benchmark runs.
    */
-  async init(forced: QualityTier | null, setting: Settings['graphics']['quality'], onProgress?: (label: string) => void): Promise<void> {
+  async init(
+    forced: QualityTier | null,
+    setting: Settings['graphics']['quality'],
+    onProgress?: (label: string) => void,
+  ): Promise<void> {
     const saved = loadJson<SavedQuality>('quality');
     if (saved) {
       this.autoTier = saved.tier;
@@ -73,7 +77,11 @@ export class QualityManager {
         const r = await runBenchmark(this.renderer, { durationMs: 1800 });
         this.autoTier = r.tier;
         this.benchmarkMs = r.avgFrameMs;
-        saveJson('quality', { tier: r.tier, avgFrameMs: r.avgFrameMs, at: Date.now() } satisfies SavedQuality);
+        saveJson('quality', {
+          tier: r.tier,
+          avgFrameMs: r.avgFrameMs,
+          at: Date.now(),
+        } satisfies SavedQuality);
       } catch (err) {
         console.warn('[quality] benchmark failed, using medium', err);
         this.autoTier = 'medium';
@@ -140,6 +148,10 @@ export class QualityManager {
 
   private pushPost(): void {
     if (!this.post) return;
-    this.post.setSettings({ ...this.preset.post, enabled: this.postFx, resolutionScale: this.adaptive.scale * this.userScale });
+    this.post.setSettings({
+      ...this.preset.post,
+      enabled: this.postFx,
+      resolutionScale: this.adaptive.scale * this.userScale,
+    });
   }
 }

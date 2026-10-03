@@ -26,7 +26,13 @@ import {
 } from '../../../sim/src/obstacles/boulderLane.ts';
 import { createToonMaterial } from '../materials/toon.ts';
 import type { ObstacleVisualContext, ObstacleVisualFactory } from './types.ts';
-import { ObstacleColors as C, VisualBase, createPatternMaterial, poseBufferFor, shadedMesh } from './visual-helpers-a.ts';
+import {
+  ObstacleColors as C,
+  VisualBase,
+  createPatternMaterial,
+  poseBufferFor,
+  shadedMesh,
+} from './visual-helpers-a.ts';
 
 const BALL_COLORS = [C.danger, C.dangerAlt, C.grape, C.safe, C.interact];
 
@@ -38,7 +44,10 @@ class BoulderLaneVisual extends VisualBase<BoulderLaneParams> {
   private readonly q = new Quaternion();
   private readonly s = new Vector3();
 
-  constructor(instance: ObstacleInstance, private readonly ctx: ObstacleVisualContext) {
+  constructor(
+    instance: ObstacleInstance,
+    private readonly ctx: ObstacleVisualContext,
+  ) {
     super(instance, boulderLaneSchema.parse(instance.params));
     const p = this.params;
     this.poses = poseBufferFor(boulderLane, p, ctx.speedScale);
@@ -50,7 +59,12 @@ class BoulderLaneVisual extends VisualBase<BoulderLaneParams> {
     const tint = instancedBufferAttribute<'vec3'>(new InstancedBufferAttribute(tints, 3), 'vec3');
     const mat = createToonMaterial({ color: C.white, rimStrength: 0.75 });
     const g = positionGeometry;
-    const swirl = fract(atan(g.z, g.x).div(Math.PI * 2).mul(5).add(g.y.div(p.radius).mul(0.9)));
+    const swirl = fract(
+      atan(g.z, g.x)
+        .div(Math.PI * 2)
+        .mul(5)
+        .add(g.y.div(p.radius).mul(0.9)),
+    );
     const band = smoothstep(0.42, 0.46, swirl).mul(smoothstep(0.62, 0.58, swirl));
     mat.colorNode = mix(tint, vec3(1, 0.97, 0.94), band);
     this.balls = this.add(new InstancedMesh(new SphereGeometry(p.radius, 40, 24), mat, pool));
@@ -93,4 +107,5 @@ class BoulderLaneVisual extends VisualBase<BoulderLaneParams> {
 }
 
 /** Boulder lane visual factory. */
-export const boulderLaneVisual: ObstacleVisualFactory = (instance, ctx) => new BoulderLaneVisual(instance, ctx);
+export const boulderLaneVisual: ObstacleVisualFactory = (instance, ctx) =>
+  new BoulderLaneVisual(instance, ctx);

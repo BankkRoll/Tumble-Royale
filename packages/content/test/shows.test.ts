@@ -1,5 +1,10 @@
 import { RoundPhase, ShowPhase, type RoundPhaseId } from '@tumble/shared';
-import { PlayerRoundStatus, createMatchSim, createSimpleController, testObstacleModules } from '@tumble/sim/match';
+import {
+  PlayerRoundStatus,
+  createMatchSim,
+  createSimpleController,
+  testObstacleModules,
+} from '@tumble/sim/match';
 import { ShowDirector, type ShowParticipant } from '@tumble/sim/show';
 import { describe, expect, it } from 'vitest';
 import { loadRapier } from '@tumble/sim';
@@ -8,7 +13,14 @@ import { DUOS, PLANNED_ROUND_IDS, PLAYLISTS, getPlaylist } from '../src/shows/in
 
 describe('playlists', () => {
   it('validate and cover all 20 planned rounds', () => {
-    expect(PLAYLISTS.map((p) => p.id)).toEqual(['main-show', 'duos', 'squads', 'chaos-mode', 'ranked', 'first-show']);
+    expect(PLAYLISTS.map((p) => p.id)).toEqual([
+      'main-show',
+      'duos',
+      'squads',
+      'chaos-mode',
+      'ranked',
+      'first-show',
+    ]);
     expect(PLANNED_ROUND_IDS).toHaveLength(20);
     const main = getPlaylist('main-show')!;
     expect(main.pool.map((r) => r.roundId).sort()).toEqual([...PLANNED_ROUND_IDS].sort());
@@ -34,7 +46,11 @@ describe('round registry', () => {
   });
 
   it('runs a whole show over the registry with whatever rounds exist', () => {
-    const participants: ShowParticipant[] = Array.from({ length: 40 }, (_, i) => ({ id: i, name: `P${i}`, isBot: true }));
+    const participants: ShowParticipant[] = Array.from({ length: 40 }, (_, i) => ({
+      id: i,
+      name: `P${i}`,
+      isBot: true,
+    }));
     let finishedRounds = 0;
     const director = new ShowDirector({
       seed: 5,
@@ -44,8 +60,14 @@ describe('round registry', () => {
       host: {
         startRound(info) {
           let phase: RoundPhaseId = RoundPhase.Loading;
-          const players = new Map(info.players.map((p, i) => [p.id, { status: 0 as 0 | 1 | 2 | 3, score: 0, progress: 0, place: 0, idx: i }]));
-          const target = info.qualifyTarget ?? Math.ceil(info.players.length * info.round.qualification.ratio);
+          const players = new Map(
+            info.players.map((p, i) => [
+              p.id,
+              { status: 0 as 0 | 1 | 2 | 3, score: 0, progress: 0, place: 0, idx: i },
+            ]),
+          );
+          const target =
+            info.qualifyTarget ?? Math.ceil(info.players.length * info.round.qualification.ratio);
           return {
             setPhase(p) {
               phase = p;
@@ -80,7 +102,13 @@ describe('test arena', () => {
         round,
         seed: 3,
         stage: 0,
-        players: Array.from({ length: 10 }, (_, i) => ({ id: i, name: `B${i}`, isBot: true, team: -1, botSkill: 'sharp' as const })),
+        players: Array.from({ length: 10 }, (_, i) => ({
+          id: i,
+          name: `B${i}`,
+          isBot: true,
+          team: -1,
+          botSkill: 'sharp' as const,
+        })),
         mode: 'offline',
         qualifyTarget: 8,
       },

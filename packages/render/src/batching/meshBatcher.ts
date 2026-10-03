@@ -29,7 +29,14 @@ import {
   type Mesh,
   type Object3D,
 } from 'three/webgpu';
-import { instanceIndex, modelPosition, modelScale, modelWorldMatrix, normalLocal, positionLocal } from 'three/tsl';
+import {
+  instanceIndex,
+  modelPosition,
+  modelScale,
+  modelWorldMatrix,
+  normalLocal,
+  positionLocal,
+} from 'three/tsl';
 
 // -----------------------------------------------------------------------------
 // Identity helpers
@@ -69,11 +76,14 @@ function geometryKey(g: BufferGeometry): string {
   let h2 = 5381;
   for (const name of Object.keys(g.attributes).sort()) {
     const a = g.attributes[name]!;
-    if ((a as { isInterleavedBufferAttribute?: boolean }).isInterleavedBufferAttribute) return `uuid:${g.uuid}`;
+    if ((a as { isInterleavedBufferAttribute?: boolean }).isInterleavedBufferAttribute)
+      return `uuid:${g.uuid}`;
     const w = wordsOf(a.array as ArrayBufferView);
     h = hashWords(h, w);
     h2 = hashWords(h2 ^ 0x9e3779b9, w);
-    parts.push(`${name}:${a.itemSize}:${a.count}:${a.normalized ? 1 : 0}:${(a.array as object).constructor.name}`);
+    parts.push(
+      `${name}:${a.itemSize}:${a.count}:${a.normalized ? 1 : 0}:${(a.array as object).constructor.name}`,
+    );
   }
   if (g.index) {
     const w = wordsOf(g.index.array as ArrayBufferView);
@@ -93,7 +103,13 @@ function geometryKey(g: BufferGeometry): string {
 // Material analysis
 // -----------------------------------------------------------------------------
 
-type AnyNode = { isNode: true; type: string; updateType?: string; isUniformNode?: boolean; value?: unknown } & Record<string, unknown>;
+type AnyNode = {
+  isNode: true;
+  type: string;
+  updateType?: string;
+  isUniformNode?: boolean;
+  value?: unknown;
+} & Record<string, unknown>;
 
 /** Nodes whose meaning changes when the mesh becomes one instance of many. */
 const OBJECT_SPACE_NODES = new Set<unknown>([positionLocal, normalLocal]);
@@ -137,7 +153,13 @@ function valueSig(v: unknown): string {
  * order) for per-frame comparison rather than hashed, constants are hashed by
  * value, and anything opaque (functions, foreign objects) by identity.
  */
-function graphSig(root: AnyNode, slot: string, info: MaterialInfo, memo: Map<AnyNode, string>, budget: { n: number }): string | null {
+function graphSig(
+  root: AnyNode,
+  slot: string,
+  info: MaterialInfo,
+  memo: Map<AnyNode, string>,
+  budget: { n: number },
+): string | null {
   const fail = (why: string): null => {
     info.reason = why;
     return null;
@@ -146,8 +168,10 @@ function graphSig(root: AnyNode, slot: string, info: MaterialInfo, memo: Map<Any
     const hit = memo.get(node);
     if (hit !== undefined) return hit;
     if (--budget.n < 0) return fail('graph too large');
-    if (MODEL_NODES.has(node) || node.type === 'ModelNode' || node.type === 'Object3DNode') return fail(`${slot}: model accessor`);
-    if (OBJECT_SPACE_NODES.has(node) && slot !== 'positionNode') return fail(`${slot}: object-space accessor`);
+    if (MODEL_NODES.has(node) || node.type === 'ModelNode' || node.type === 'Object3DNode')
+      return fail(`${slot}: model accessor`);
+    if (OBJECT_SPACE_NODES.has(node) && slot !== 'positionNode')
+      return fail(`${slot}: object-space accessor`);
     memo.set(node, `#${memo.size}`);
     let out = node.type ?? 'Node';
     if (node.isUniformNode) {
@@ -202,19 +226,33 @@ function analyzeMaterial(mat: Material): MaterialInfo {
   // Transparent instances of one material blend order-independently among themselves only when
   // they don't depth-test against each other's writes.
   if (m.transparent && m.depthWrite) return Object.assign(info, { reason: 'transparent with depth write' });
-  if (mat.onBeforeRender !== Object.getPrototypeOf(mat).onBeforeRender) return Object.assign(info, { reason: 'material render hook' });
+  if (mat.onBeforeRender !== Object.getPrototypeOf(mat).onBeforeRender)
+    return Object.assign(info, { reason: 'material render hook' });
 
   const parts: string[] = [`${mat.type}#${idOf(mat.constructor)}`];
   const memo = new Map<AnyNode, string>();
   const budget = { n: 4000 };
   for (const key of Object.keys(m).sort()) {
-    if (key.startsWith('_') || key === 'uuid' || key === 'id' || key === 'name' || key === 'userData' || key === 'version') continue;
+    if (
+      key.startsWith('_') ||
+      key === 'uuid' ||
+      key === 'id' ||
+      key === 'name' ||
+      key === 'userData' ||
+      key === 'version'
+    )
+      continue;
     const v = m[key];
     if (isNode(v)) {
       const s = graphSig(v, key, info, memo, budget);
       if (s === null) return info;
       parts.push(`${key}=${s}`);
-    } else if (v !== null && typeof v === 'object' && !(v as { isTexture?: boolean }).isTexture && typeof (v as { toArray?: unknown }).toArray === 'function') {
+    } else if (
+      v !== null &&
+      typeof v === 'object' &&
+      !(v as { isTexture?: boolean }).isTexture &&
+      typeof (v as { toArray?: unknown }).toArray === 'function'
+    ) {
       info.stateKeys.push(key);
       parts.push(`${key}=${valueSig(v)}`);
     } else {
@@ -237,7 +275,15 @@ function pushValue(v: unknown, out: number[]): void {
   if (typeof v === 'number') out.push(v);
   else if (typeof v === 'boolean') out.push(v ? 1 : 0);
   else if (v !== null && typeof v === 'object') {
-    const o = v as { isColor?: boolean; isVector2?: boolean; isVector3?: boolean; isVector4?: boolean; isQuaternion?: boolean; isEuler?: boolean; elements?: ArrayLike<number> } & Record<string, number>;
+    const o = v as {
+      isColor?: boolean;
+      isVector2?: boolean;
+      isVector3?: boolean;
+      isVector4?: boolean;
+      isQuaternion?: boolean;
+      isEuler?: boolean;
+      elements?: ArrayLike<number>;
+    } & Record<string, number>;
     if (o.isColor) out.push(o.r!, o.g!, o.b!);
     else if (o.isVector2) out.push(o.x!, o.y!);
     else if (o.isVector3) out.push(o.x!, o.y!, o.z!);
@@ -246,7 +292,8 @@ function pushValue(v: unknown, out: number[]): void {
     else if (o.elements) for (let i = 0; i < o.elements.length; i++) out.push(o.elements[i]!);
     else if (typeof (o as { toArray?: unknown }).toArray === 'function') {
       // Euler and other value types: compare by value (rare, so the array allocation is fine).
-      for (const x of (o as unknown as { toArray(): unknown[] }).toArray()) out.push(typeof x === 'number' ? x : NaN);
+      for (const x of (o as unknown as { toArray(): unknown[] }).toArray())
+        out.push(typeof x === 'number' ? x : NaN);
     } else out.push(idOf(v));
   } else out.push(NaN);
 }
@@ -342,7 +389,9 @@ export class MeshBatcher {
         const info = analyzeMaterial(material);
         if (info.sig === null) return;
         if (mesh.matrixWorld.determinant() < 0) return;
-        const instanced = (mesh as Mesh & { isInstancedMesh?: boolean }).isInstancedMesh ? (mesh as unknown as InstancedMesh) : null;
+        const instanced = (mesh as Mesh & { isInstancedMesh?: boolean }).isInstancedMesh
+          ? (mesh as unknown as InstancedMesh)
+          : null;
         const colored = instanced?.instanceColor ? 1 : 0;
         const key = `${geometryKey(mesh.geometry)}\n${info.sig}\n${mesh.castShadow ? 1 : 0}${mesh.receiveShadow ? 1 : 0}|${mesh.renderOrder}|c${colored}`;
         let list = groups.get(key);
@@ -456,7 +505,8 @@ export class MeshBatcher {
       readState(m.material, m.info, b.scratch);
       const r = b.repState;
       if (b.scratch.length !== r.length) return false;
-      for (let i = 0; i < r.length; i++) if (b.scratch[i] !== r[i] && !(Number.isNaN(r[i]) && Number.isNaN(b.scratch[i]))) return false;
+      for (let i = 0; i < r.length; i++)
+        if (b.scratch[i] !== r[i] && !(Number.isNaN(r[i]) && Number.isNaN(b.scratch[i]))) return false;
     }
     return true;
   }

@@ -93,9 +93,16 @@ describe('ranked rating update (40 players)', () => {
   });
 
   it('runs placements before showing RP', () => {
-    let prior = { mu: DEFAULT_RATING.mu, sigma: DEFAULT_RATING.sigma, rp: 0, placementsLeft: PLACEMENT_MATCHES };
+    let prior = {
+      mu: DEFAULT_RATING.mu,
+      sigma: DEFAULT_RATING.sigma,
+      rp: 0,
+      placementsLeft: PLACEMENT_MATCHES,
+    };
     for (let match = 1; match <= PLACEMENT_MATCHES; match++) {
-      const res = computeRankedUpdate(lobby().map((e) => (e.key === 'k00' ? { ...e, prior } : e))).find((o) => o.key === 'k00')!;
+      const res = computeRankedUpdate(lobby().map((e) => (e.key === 'k00' ? { ...e, prior } : e))).find(
+        (o) => o.key === 'k00',
+      )!;
       prior = { mu: res.muAfter, sigma: res.sigmaAfter, rp: res.rpAfter, placementsLeft: res.placementsLeft };
       if (match < PLACEMENT_MATCHES) {
         expect(res.tierAfter.tier).toBe('unranked');
@@ -136,12 +143,27 @@ describe('ranked ingest', () => {
     const top = await api.guest();
     const bottom = await api.guest();
     const res = await api.postMatch(
-      buildShow({ queue: 'ranked', humans: [{ userId: top.id, placement: 2 }, { userId: bottom.id, placement: 39 }] }),
+      buildShow({
+        queue: 'ranked',
+        humans: [
+          { userId: top.id, placement: 2 },
+          { userId: bottom.id, placement: 39 },
+        ],
+      }),
     );
     expect(res.statusCode).toBe(200);
-    const rewards = res.json().rewards as { userId: string; ranked: { placementsLeft: number; tierAfter: { tier: string } } }[];
-    for (const r of rewards) expect(r.ranked).toMatchObject({ placementsLeft: PLACEMENT_MATCHES - 1, tierAfter: { tier: 'unranked' } });
+    const rewards = res.json().rewards as {
+      userId: string;
+      ranked: { placementsLeft: number; tierAfter: { tier: string } };
+    }[];
+    for (const r of rewards)
+      expect(r.ranked).toMatchObject({
+        placementsLeft: PLACEMENT_MATCHES - 1,
+        tierAfter: { tier: 'unranked' },
+      });
     const topCard = (await api.req('GET', `/profile/${top.id}`, { token: bottom.accessToken })).json();
-    expect(topCard.ranked).toEqual([expect.objectContaining({ queue: 'ranked', placementsLeft: PLACEMENT_MATCHES - 1 })]);
+    expect(topCard.ranked).toEqual([
+      expect.objectContaining({ queue: 'ranked', placementsLeft: PLACEMENT_MATCHES - 1 }),
+    ]);
   });
 });

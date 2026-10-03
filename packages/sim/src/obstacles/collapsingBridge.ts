@@ -105,7 +105,12 @@ export function bridgeRank(p: CollapsingBridgeParams, i: number, c: number): num
 /**
  * Phase of segment `i` at scaled time `ts`. Pure.
  */
-export function bridgeSegmentState(ts: number, p: CollapsingBridgeParams, i: number, out: BridgeSegmentState): BridgeSegmentState {
+export function bridgeSegmentState(
+  ts: number,
+  p: CollapsingBridgeParams,
+  i: number,
+  out: BridgeSegmentState,
+): BridgeSegmentState {
   const P = bridgePeriod(p);
   const u = ts - p.startDelay;
   const c = u < 0 || !Number.isFinite(P) ? 0 : Math.floor(u / P);
@@ -154,7 +159,12 @@ export const bridgeSegmentZ = (p: CollapsingBridgeParams, i: number): number => 
  * segments wobble slightly; falling ones accelerate down and tumble; gone ones
  * are parked far below.
  */
-export function collapsingBridgePose(t: number, p: CollapsingBridgeParams, out: PoseSample[], speedScale: number): void {
+export function collapsingBridgePose(
+  t: number,
+  p: CollapsingBridgeParams,
+  out: PoseSample[],
+  speedScale: number,
+): void {
   ensurePoseSamples(out, p.segments);
   const ts = t * speedScale;
   const hy = -p.thickness / 2;
@@ -214,7 +224,9 @@ export const collapsingBridge: ObstacleModule<CollapsingBridgeParams> = {
     for (let i = 0; i < p.segments; i++) {
       const b = bag.kinematic(frame);
       bag.collider(
-        R.ColliderDesc.cuboid(p.width / 2, p.thickness / 2, hl).setCollisionGroups(InteractionGroups.kinematic),
+        R.ColliderDesc.cuboid(p.width / 2, p.thickness / 2, hl).setCollisionGroups(
+          InteractionGroups.kinematic,
+        ),
         b,
         { kind: 'normal', ownerId: instance.id },
       );
@@ -262,7 +274,8 @@ export const collapsingBridge: ObstacleModule<CollapsingBridgeParams> = {
         let m = 0;
         for (let i = 0; i < p.segments; i++) {
           bridgeSegmentState(ts, p, i, segState);
-          if (segState.phase === BridgePhase.Warn) m = Math.max(m, segState.time / Math.max(p.warnTime, 1e-3));
+          if (segState.phase === BridgePhase.Warn)
+            m = Math.max(m, segState.time / Math.max(p.warnTime, 1e-3));
         }
         return m;
       },

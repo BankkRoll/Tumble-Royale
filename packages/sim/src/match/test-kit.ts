@@ -384,7 +384,9 @@ const testSweeper: ObstacleModule<SweeperParams> = {
       ),
     );
     const col = world.createCollider(
-      R.ColliderDesc.cuboid(instance.params.length / 2, 0.22, 0.22).setCollisionGroups(InteractionGroups.kinematic),
+      R.ColliderDesc.cuboid(instance.params.length / 2, 0.22, 0.22).setCollisionGroups(
+        InteractionGroups.kinematic,
+      ),
       body,
     );
     const rot: Quat = quatIdentity();
@@ -440,7 +442,12 @@ const testBouncePad: ObstacleModule<BouncePadParams> = {
         if (!entered || actor.isGhost) return;
         bounces++;
         actor.push(up);
-        sctx.events.push({ type: 'bounce', player: actor.id, pos: { ...instance.position }, obstacle: instance.id });
+        sctx.events.push({
+          type: 'bounce',
+          player: actor.id,
+          pos: { ...instance.position },
+          obstacle: instance.id,
+        });
       },
       getNetState() {
         return [bounces];
@@ -498,18 +505,39 @@ export function createTestArenaRound(overrides: Partial<RoundDefinition> = {}): 
       { shape: 'ramp', position: { x: 0, y: 1, z: 24 }, size: { x: 8, y: 2, z: 8 } },
       { shape: 'box', position: { x: 0, y: 1.5, z: 36 }, size: { x: 10, y: 1, z: 16 } },
       { shape: 'box', position: { x: 0, y: 1.5, z: 52 }, size: { x: 10, y: 1, z: 12 } },
-      { shape: 'cylinder', position: { x: -5.5, y: 3, z: 52 }, size: { x: 0.5, y: 2, z: 0 }, decorative: true },
+      {
+        shape: 'cylinder',
+        position: { x: -5.5, y: 3, z: 52 },
+        size: { x: 0.5, y: 2, z: 0 },
+        decorative: true,
+      },
     ],
     obstacles: [
       { id: 'sweep-1', type: 'sweeperArm', position: { x: 0, y: 2, z: 36 }, params: { length: 9, speed: 1 } },
       { id: 'pad-1', type: 'bouncePad', position: { x: 3.5, y: 0, z: 16 }, params: {} },
     ],
     triggers: [
-      { id: 'cp-1', kind: 'checkpoint', index: 1, position: { x: 0, y: 3.5, z: 30 }, size: { x: 10, y: 3, z: 2 }, respawn: [{ x: -2, y: 2, z: 30 }, { x: 2, y: 2, z: 30 }] },
+      {
+        id: 'cp-1',
+        kind: 'checkpoint',
+        index: 1,
+        position: { x: 0, y: 3.5, z: 30 },
+        size: { x: 10, y: 3, z: 2 },
+        respawn: [
+          { x: -2, y: 2, z: 30 },
+          { x: 2, y: 2, z: 30 },
+        ],
+      },
       { id: 'finish', kind: 'finish', position: { x: 0, y: 3.5, z: 55 }, size: { x: 10, y: 3, z: 2 } },
       { id: 'void', kind: 'void', position: { x: 0, y: -7, z: 28 }, size: { x: 80, y: 2, z: 120 } },
     ],
-    flyover: { path: [{ x: 0, y: 12, z: 70 }, { x: 0, y: 10, z: -10 }], lookAt: [{ x: 0, y: 0, z: 28 }] },
+    flyover: {
+      path: [
+        { x: 0, y: 12, z: 70 },
+        { x: 0, y: 10, z: -10 },
+      ],
+      lookAt: [{ x: 0, y: 0, z: 28 }],
+    },
     music: 'test',
     fallBehavior: 'respawnCheckpoint',
     botNav: [

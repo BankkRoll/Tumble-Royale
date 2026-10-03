@@ -81,7 +81,10 @@ export interface RewardBreakdown {
  * @param rules - Reward table (defaults to {@link REWARD_RULES}).
  * @returns The itemised payout.
  */
-export function computeShowRewards(facts: ShowResultFacts, rules: RewardRules = REWARD_RULES): RewardBreakdown {
+export function computeShowRewards(
+  facts: ShowResultFacts,
+  rules: RewardRules = REWARD_RULES,
+): RewardBreakdown {
   const lines: RewardBreakdown['lines'] = [];
   const add = (label: string, p: z.output<typeof PayoutSchema>, times = 1): void => {
     if (times <= 0) return;
@@ -97,7 +100,13 @@ export function computeShowRewards(facts: ShowResultFacts, rules: RewardRules = 
     if (facts.wonCrown) add('CROWN!', rules.crown);
     const pct = facts.participants > 0 ? facts.place / facts.participants : 1;
     const bonus =
-      pct <= 0.1 ? rules.placementBonus.top10 : pct <= 0.25 ? rules.placementBonus.top25 : pct <= 0.5 ? rules.placementBonus.top50 : 0;
+      pct <= 0.1
+        ? rules.placementBonus.top10
+        : pct <= 0.25
+          ? rules.placementBonus.top25
+          : pct <= 0.5
+            ? rules.placementBonus.top50
+            : 0;
     if (bonus > 0) lines.push({ label: 'Placement bonus', xp: bonus, gumballs: 0, crownShards: 0 });
   }
   let xp = lines.reduce((s, l) => s + l.xp, 0);

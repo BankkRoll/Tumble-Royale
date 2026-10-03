@@ -12,12 +12,7 @@
  * The online API (when reachable) is the authority for a signed-in account;
  * this store remains the offline source of truth and the cache the UI reads.
  */
-import {
-  COSMETICS,
-  DEFAULT_LOADOUT,
-  getCosmetic,
-  randomLoadout,
-} from '@tumble/content/cosmetics';
+import { COSMETICS, DEFAULT_LOADOUT, getCosmetic, randomLoadout } from '@tumble/content/cosmetics';
 import {
   CHALLENGE_POOL,
   SEASON_PASS,
@@ -144,7 +139,8 @@ const RARITY_RANK = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'
 export function profileDressing(l: UiLoadout): Pick<ProfileData, 'banner' | 'nameplate'> {
   const out: Pick<ProfileData, 'banner' | 'nameplate'> = {};
   const banner = l.items.banner ? getCosmetic(l.items.banner) : getCosmetic('banner.confetti');
-  if (banner?.slot === 'banner') out.banner = { name: banner.name, motif: banner.banner.motif, colors: [...banner.banner.colors] };
+  if (banner?.slot === 'banner')
+    out.banner = { name: banner.name, motif: banner.banner.motif, colors: [...banner.banner.colors] };
   const plate = getCosmetic(l.items.nameplate ?? DEFAULT_LOADOUT.nameplate);
   if (plate?.slot === 'nameplate') out.nameplate = { name: plate.name, ...plate.plate };
   return out;
@@ -159,7 +155,11 @@ function isoWeek(): string {
   const day = (d.getUTCDay() + 6) % 7;
   d.setUTCDate(d.getUTCDate() - day + 3);
   const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
-  const week = 1 + Math.round(((d.getTime() - firstThursday.getTime()) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
+  const week =
+    1 +
+    Math.round(
+      ((d.getTime() - firstThursday.getTime()) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7,
+    );
   return `${d.getUTCFullYear()}-W${week}`;
 }
 
@@ -190,10 +190,15 @@ function randomId(): string {
  * @returns The new loadout.
  */
 export function loadoutWithItem(l: UiLoadout, slot: UiSlot, itemId: string): UiLoadout {
-  if (slot === 'emote') return { ...l, emotes: [itemId, ...l.emotes.filter((e) => e !== itemId)].slice(0, 4) };
+  if (slot === 'emote')
+    return { ...l, emotes: [itemId, ...l.emotes.filter((e) => e !== itemId)].slice(0, 4) };
   if (slot === 'colors') {
     const c = getCosmetic(itemId);
-    if (c && c.slot === 'color') return { ...l, colors: { ...l.colors, primary: c.colors[0], secondary: c.colors[1], tertiary: c.colors[2] } };
+    if (c && c.slot === 'color')
+      return {
+        ...l,
+        colors: { ...l.colors, primary: c.colors[0], secondary: c.colors[1], tertiary: c.colors[2] },
+      };
     return l;
   }
   if (slot === 'pattern') return { ...l, colors: { ...l.colors, pattern: contentPatternToUi(itemId) } };
@@ -212,7 +217,12 @@ export function randomizedLoadout(l: UiLoadout, owns: (id: string) => boolean, s
   const pickOwned = (id: string | null): string | undefined => (id && owns(id) ? id : undefined);
   return {
     ...l,
-    colors: { primary: rnd.colors[0], secondary: rnd.colors[1], tertiary: rnd.colors[2], pattern: owns(rnd.pattern) ? contentPatternToUi(rnd.pattern) : l.colors.pattern },
+    colors: {
+      primary: rnd.colors[0],
+      secondary: rnd.colors[1],
+      tertiary: rnd.colors[2],
+      pattern: owns(rnd.pattern) ? contentPatternToUi(rnd.pattern) : l.colors.pattern,
+    },
     items: {
       ...l.items,
       face: pickOwned(rnd.face) ?? l.items.face,
@@ -225,7 +235,12 @@ export function randomizedLoadout(l: UiLoadout, owns: (id: string) => boolean, s
 }
 
 /** Default colours for a brand new Tumbler (overwritten by the welcome screen). */
-const NEW_COLORS: TumblerColors = { primary: '#ff6fb5', secondary: '#ffd23f', tertiary: '#7c5cff', pattern: 'plain' };
+const NEW_COLORS: TumblerColors = {
+  primary: '#ff6fb5',
+  secondary: '#ffd23f',
+  tertiary: '#7c5cff',
+  pattern: 'plain',
+};
 
 /**
  * The local profile store.
@@ -284,7 +299,9 @@ export class ProfileStore {
    * @param colors - Picked colours.
    */
   create(name: string, colors: TumblerColors): void {
-    const loadouts = Array.from({ length: LOADOUT_SLOTS }, (_, i) => defaultUiLoadout(`Loadout ${i + 1}`, { ...colors }));
+    const loadouts = Array.from({ length: LOADOUT_SLOTS }, (_, i) =>
+      defaultUiLoadout(`Loadout ${i + 1}`, { ...colors }),
+    );
     this.data = {
       version: 1,
       id: randomId(),
@@ -400,7 +417,11 @@ export class ProfileStore {
   randomize(): void {
     const d = this.data;
     if (!d) return;
-    d.loadouts[d.activeLoadout] = randomizedLoadout(this.loadout, (id) => this.owns(id), (Date.now() ^ hashString(d.id)) >>> 0);
+    d.loadouts[d.activeLoadout] = randomizedLoadout(
+      this.loadout,
+      (id) => this.owns(id),
+      (Date.now() ^ hashString(d.id)) >>> 0,
+    );
     this.save();
   }
 
@@ -495,7 +516,11 @@ export class ProfileStore {
     });
     const featured = shuffled.filter((c) => c.rarity === 'legendary' || c.rarity === 'epic').slice(0, 3);
     const daily = shuffled.filter((c) => !featured.includes(c)).slice(0, 8);
-    return { featured: featured.map((c) => offer(c, true)), daily: daily.map((c) => offer(c, false)), rotationEndsAt: nextMidnight() };
+    return {
+      featured: featured.map((c) => offer(c, true)),
+      daily: daily.map((c) => offer(c, false)),
+      rotationEndsAt: nextMidnight(),
+    };
   }
 
   /**
@@ -531,7 +556,8 @@ export class ProfileStore {
         if (item) return { item: uiItem(item, owned.has(item.id)), claimed: claimed.has(key) };
         return { currency: { kind: 'gumballs', amount: 100 }, claimed: claimed.has(key) };
       }
-      if (r.kind === 'crownShards') return { currency: { kind: 'xp', amount: r.amount * 100 }, claimed: claimed.has(key) };
+      if (r.kind === 'crownShards')
+        return { currency: { kind: 'xp', amount: r.amount * 100 }, claimed: claimed.has(key) };
       return { currency: { kind: r.kind, amount: r.amount }, claimed: claimed.has(key) };
     };
     return {
@@ -602,7 +628,10 @@ export class ProfileStore {
     this.rollPeriods();
     return [
       ...pickChallenges('daily', d.daily.period, CHALLENGE_POOL).map((def) => ({ def, counters: d.daily })),
-      ...pickChallenges('weekly', d.weekly.period, CHALLENGE_POOL).map((def) => ({ def, counters: d.weekly })),
+      ...pickChallenges('weekly', d.weekly.period, CHALLENGE_POOL).map((def) => ({
+        def,
+        counters: d.weekly,
+      })),
     ];
   }
 
@@ -633,10 +662,15 @@ export class ProfileStore {
         title: def.description.replace('{n}', String(def.target)),
         icon: icon[def.metric] ?? '⭐',
         metric: def.metric,
-        ...(def.rewardGumballs > 0 && def.rewardXp > 0 ? { bonus: { kind: 'xp' as const, amount: def.rewardXp } } : {}),
+        ...(def.rewardGumballs > 0 && def.rewardXp > 0
+          ? { bonus: { kind: 'xp' as const, amount: def.rewardXp } }
+          : {}),
         progress: Math.min(def.target, counters.counts[def.metric] ?? 0),
         goal: def.target,
-        reward: def.rewardGumballs > 0 ? { kind: 'gumballs' as const, amount: def.rewardGumballs } : { kind: 'xp' as const, amount: def.rewardXp },
+        reward:
+          def.rewardGumballs > 0
+            ? { kind: 'gumballs' as const, amount: def.rewardGumballs }
+            : { kind: 'xp' as const, amount: def.rewardXp },
         claimed: counters.claimed.includes(def.id),
         canReroll: false,
       })),
@@ -683,7 +717,9 @@ export class ProfileStore {
     if (!d) this.create(this.name, NEW_COLORS);
     const p = this.data as SavedProfile;
     this.rollPeriods();
-    const qualifiedNonFinal = r.rounds.filter((x, i) => x.qualified && !(r.reachedFinal && i === r.rounds.length - 1)).length;
+    const qualifiedNonFinal = r.rounds.filter(
+      (x, i) => x.qualified && !(r.reachedFinal && i === r.rounds.length - 1),
+    ).length;
     const firstShowOfDay = p.lastShowDay !== today();
     const breakdown = computeShowRewards({
       roundsPlayed: r.rounds.length,
@@ -698,7 +734,10 @@ export class ProfileStore {
 
     const before = levelForXp(p.totalXp);
     const passBefore = passTierForXp(p.seasonXp);
-    const challengeBefore = this.activeChallenges().map(({ def, counters }) => ({ def, from: counters.counts[def.metric] ?? 0 }));
+    const challengeBefore = this.activeChallenges().map(({ def, counters }) => ({
+      def,
+      from: counters.counts[def.metric] ?? 0,
+    }));
 
     p.totalXp += breakdown.xp;
     p.seasonXp += breakdown.xp;
@@ -712,7 +751,8 @@ export class ProfileStore {
     p.stats.streak = r.wonCrown ? p.stats.streak + 1 : 0;
     p.stats.bestStreak = Math.max(p.stats.bestStreak, p.stats.streak);
     for (const x of r.rounds) p.stats.roundCounts[x.name] = (p.stats.roundCounts[x.name] ?? 0) + 1;
-    p.stats.roundsPlayed = (p.stats.roundsPlayed ?? p.history.reduce((n, h) => n + h.rounds.length, 0)) + r.rounds.length;
+    p.stats.roundsPlayed =
+      (p.stats.roundsPlayed ?? p.history.reduce((n, h) => n + h.rounds.length, 0)) + r.rounds.length;
     const totals = (p.stats.totals ??= { jumps: 0, dives: 0, grabs: 0, emotes: 0 });
     totals.jumps += r.counters.jumps ?? 0;
     totals.dives += r.counters.dives ?? 0;
@@ -723,12 +763,20 @@ export class ProfileStore {
       const rec = (perRound[x.name] ??= { type: x.type, played: 0, qualified: 0 });
       rec.played++;
       if (x.qualified) rec.qualified++;
-      if (x.timeSec !== undefined && (rec.bestTime === undefined || x.timeSec < rec.bestTime)) rec.bestTime = x.timeSec;
+      if (x.timeSec !== undefined && (rec.bestTime === undefined || x.timeSec < rec.bestTime))
+        rec.bestTime = x.timeSec;
     }
     if (r.field) {
       const opp = (p.opponents ??= {});
       for (const o of r.field) {
-        const rec = (opp[o.name] ??= { colors: o.colors, isBot: o.isBot, faced: 0, crowns: 0, best: o.place, lastSeen: 0 });
+        const rec = (opp[o.name] ??= {
+          colors: o.colors,
+          isBot: o.isBot,
+          faced: 0,
+          crowns: 0,
+          best: o.place,
+          lastSeen: 0,
+        });
         rec.faced++;
         rec.colors = o.colors;
         if (o.crowned) rec.crowns++;
@@ -739,7 +787,12 @@ export class ProfileStore {
       const names = Object.keys(opp);
       if (names.length > 300) {
         names
-          .sort((a, b) => opp[a]!.crowns - opp[b]!.crowns || opp[a]!.faced - opp[b]!.faced || opp[a]!.lastSeen - opp[b]!.lastSeen)
+          .sort(
+            (a, b) =>
+              opp[a]!.crowns - opp[b]!.crowns ||
+              opp[a]!.faced - opp[b]!.faced ||
+              opp[a]!.lastSeen - opp[b]!.lastSeen,
+          )
           .slice(0, names.length - 300)
           .forEach((n) => delete opp[n]);
       }
@@ -760,7 +813,8 @@ export class ProfileStore {
       topTenFinishes: r.place <= 10 ? 1 : 0,
     };
     for (const box of [p.daily, p.weekly]) {
-      for (const [k, v] of Object.entries(counters) as [ChallengeMetric, number][]) box.counts[k] = (box.counts[k] ?? 0) + v;
+      for (const [k, v] of Object.entries(counters) as [ChallengeMetric, number][])
+        box.counts[k] = (box.counts[k] ?? 0) + v;
     }
 
     const after = levelForXp(p.totalXp);
@@ -790,10 +844,19 @@ export class ProfileStore {
     this.save();
 
     const challenges = challengeBefore
-      .map(({ def, from }) => ({ def, from, to: (def.cadence === 'daily' ? p.daily : p.weekly).counts[def.metric] ?? 0 }))
+      .map(({ def, from }) => ({
+        def,
+        from,
+        to: (def.cadence === 'daily' ? p.daily : p.weekly).counts[def.metric] ?? 0,
+      }))
       .filter((c) => c.to > c.from)
       .slice(0, 3)
-      .map((c) => ({ title: c.def.description.replace('{n}', String(c.def.target)), from: Math.min(c.from, c.def.target), to: Math.min(c.to, c.def.target), goal: c.def.target }));
+      .map((c) => ({
+        title: c.def.description.replace('{n}', String(c.def.target)),
+        from: Math.min(c.from, c.def.target),
+        to: Math.min(c.to, c.def.target),
+        goal: c.def.target,
+      }));
 
     return {
       xpLines: breakdown.lines.filter((l) => l.xp > 0).map((l) => ({ label: l.label, xp: l.xp })),
@@ -818,7 +881,14 @@ export class ProfileStore {
 
   private load(): SavedProfile | null {
     const p = loadJson<SavedProfile>('profile');
-    if (!p || p.version !== 1 || typeof p.name !== 'string' || !Array.isArray(p.loadouts) || p.loadouts.length === 0) return null;
+    if (
+      !p ||
+      p.version !== 1 ||
+      typeof p.name !== 'string' ||
+      !Array.isArray(p.loadouts) ||
+      p.loadouts.length === 0
+    )
+      return null;
     p.activeLoadout = Math.max(0, Math.min(p.loadouts.length - 1, p.activeLoadout | 0));
     p.owned = Array.isArray(p.owned) ? p.owned : [];
     p.passClaimed = Array.isArray(p.passClaimed) ? p.passClaimed : [];

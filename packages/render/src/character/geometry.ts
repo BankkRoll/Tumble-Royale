@@ -9,9 +9,9 @@
  *   procedurally to the core bones, at three levels of detail.
  * - Small helpers accessory builders use to emit parts.
  */
+import type { BufferGeometry } from 'three/webgpu';
 import {
   BufferAttribute,
-  BufferGeometry,
   CapsuleGeometry,
   Color,
   Float32BufferAttribute,
@@ -296,7 +296,12 @@ function buildArm(lod: Lod, side: 1 | -1): BufferGeometry[] {
   const r = 0.08;
   const start = sh.clone().addScaledVector(dir, -0.05);
   const end = wr.clone().addScaledVector(dir, 0.01);
-  const arm = new CapsuleGeometry(r, start.distanceTo(end) - r * 2 + 0.06, Math.max(2, seg.limb >> 1), seg.limb);
+  const arm = new CapsuleGeometry(
+    r,
+    start.distanceTo(end) - r * 2 + 0.06,
+    Math.max(2, seg.limb >> 1),
+    seg.limb,
+  );
   alignBetween(arm, start, end);
   finishPart(arm, { kind: Kind.Pattern }, upper);
   const pos = arm.getAttribute('position') as BufferAttribute;
@@ -359,5 +364,11 @@ function buildLeg(lod: Lod, side: 1 | -1): BufferGeometry[] {
  * @returns Geometry in mesh rest space with the shared attribute layout.
  */
 export function buildBaseGeometry(lod: Lod): BufferGeometry {
-  return mergeParts([buildTrunk(lod), ...buildArm(lod, 1), ...buildArm(lod, -1), ...buildLeg(lod, 1), ...buildLeg(lod, -1)]);
+  return mergeParts([
+    buildTrunk(lod),
+    ...buildArm(lod, 1),
+    ...buildArm(lod, -1),
+    ...buildLeg(lod, 1),
+    ...buildLeg(lod, -1),
+  ]);
 }

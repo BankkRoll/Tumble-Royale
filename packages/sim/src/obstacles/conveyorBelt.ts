@@ -5,7 +5,15 @@
  */
 import { z } from 'zod';
 import { rotateVec, vec3, type Vec3 } from '@tumble/shared';
-import { ObstacleGroups, RuntimeBase, crossedPeriodic, leadTelegraph, squareWave, squareWaveIntegral, timeToSwitch } from './helpers-a.ts';
+import {
+  ObstacleGroups,
+  RuntimeBase,
+  crossedPeriodic,
+  leadTelegraph,
+  squareWave,
+  squareWaveIntegral,
+  timeToSwitch,
+} from './helpers-a.ts';
 import type { SurfaceInfo } from '../physics/surfaces.ts';
 import type { ObstacleBuildContext, ObstacleInstance, ObstacleModule, ObstacleStepContext } from './types.ts';
 
@@ -121,6 +129,7 @@ export const conveyorBelt: ObstacleModule<ConveyorBeltParams> = {
   type: 'conveyorBelt',
   displayName: 'Treadmill Trouble',
   schema: conveyorBeltSchema,
-  create: (instance, ctx) => new ConveyorBeltRuntime(instance, ctx, conveyorBeltSchema.parse(instance.params)),
+  create: (instance, ctx) =>
+    new ConveyorBeltRuntime(instance, ctx, conveyorBeltSchema.parse(instance.params)),
   audioCues: ['hum', 'switch'],
 };

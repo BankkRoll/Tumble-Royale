@@ -23,9 +23,20 @@ import { SIM_DT, vec3, type Vec3 } from '@tumble/shared';
 import { z } from 'zod';
 import { CharacterState } from '../character/types.ts';
 import { RuntimeBase, actorLocal, toWorldPoint } from './helpers-a.ts';
-import type { ObstacleActor, ObstacleBuildContext, ObstacleInstance, ObstacleModule, ObstacleStepContext } from './types.ts';
+import type {
+  ObstacleActor,
+  ObstacleBuildContext,
+  ObstacleInstance,
+  ObstacleModule,
+  ObstacleStepContext,
+} from './types.ts';
 
-const Rect = z.object({ x: z.number(), z: z.number(), sizeX: z.number().positive(), sizeZ: z.number().positive() });
+const Rect = z.object({
+  x: z.number(),
+  z: z.number(),
+  sizeX: z.number().positive(),
+  sizeZ: z.number().positive(),
+});
 
 /** Paint Grid parameters. Metres, seconds, rad/s. Origin = centre of the grid at floor height. */
 export const PaintGridSchema = z.object({
@@ -36,7 +47,9 @@ export const PaintGridSchema = z.object({
   /** Teams that can paint (cells store 0…teams-1). */
   teams: z.number().int().min(2).max(4).default(4),
   /** Raised stages: cells whose centre lies inside count `mult`× and sit at `height`. */
-  stages: z.array(Rect.extend({ height: z.number().default(0), mult: z.number().int().min(1).default(2) })).default([]),
+  stages: z
+    .array(Rect.extend({ height: z.number().default(0), mult: z.number().int().min(1).default(2) }))
+    .default([]),
   /** Unpaintable areas (ramps, fountain base). */
   blocked: z.array(Rect).default([]),
   /** Areas painted for a team at the start (corner spawn pads). */
@@ -220,7 +233,8 @@ export class PaintGridRuntime extends RuntimeBase implements PaintGridView {
       paintCellCenter(i, p, c);
       this.cellCenters[i * 2] = c.x;
       this.cellCenters[i * 2 + 1] = c.z;
-      for (const pre of p.prepaint) if (pre.team < p.teams && inRect(c.x, c.z, pre)) this.setOwner(i, pre.team, -Infinity);
+      for (const pre of p.prepaint)
+        if (pre.team < p.teams && inRect(c.x, c.z, pre)) this.setOwner(i, pre.team, -Infinity);
     }
   }
 
@@ -238,7 +252,8 @@ export class PaintGridRuntime extends RuntimeBase implements PaintGridView {
   private paintBlock(ci: number, cr: number, radius: number, team: number, t: number): void {
     const p = this.params;
     for (let r = Math.max(0, cr - radius); r <= Math.min(p.rows - 1, cr + radius); r++) {
-      for (let c = Math.max(0, ci - radius); c <= Math.min(p.cols - 1, ci + radius); c++) this.setOwner(r * p.cols + c, team, t);
+      for (let c = Math.max(0, ci - radius); c <= Math.min(p.cols - 1, ci + radius); c++)
+        this.setOwner(r * p.cols + c, team, t);
     }
   }
 
@@ -272,7 +287,13 @@ export class PaintGridRuntime extends RuntimeBase implements PaintGridView {
     if (diving && !this.splashed.get(actor.id)) {
       this.splashed.set(actor.id, true);
       this.paintBlock(c, r, p.splashRadius, team, t);
-      this.cue(ctx.events, 'splash', this.cellCenters[i * 2]!, this.layout.height[i]!, this.cellCenters[i * 2 + 1]!);
+      this.cue(
+        ctx.events,
+        'splash',
+        this.cellCenters[i * 2]!,
+        this.layout.height[i]!,
+        this.cellCenters[i * 2 + 1]!,
+      );
       return;
     }
     if ((this.rollerUntil.get(actor.id) ?? -Infinity) > t) {
@@ -324,7 +345,8 @@ export class PaintGridRuntime extends RuntimeBase implements PaintGridView {
 
   /** Adds painted value per team (team rules read this every step). */
   addTeamScores(out: number[]): void {
-    for (let team = 0; team < this.params.teams && team < out.length; team++) out[team] = (out[team] ?? 0) + this.teamValue[team]!;
+    for (let team = 0; team < this.params.teams && team < out.length; team++)
+      out[team] = (out[team] ?? 0) + this.teamValue[team]!;
   }
 
   /**
@@ -423,7 +445,8 @@ export class PaintGridRuntime extends RuntimeBase implements PaintGridView {
     for (let b = 0; b < this.bucketReadyAt.length; b += 2) {
       const w = state[o++] ?? 0;
       this.bucketReadyAt[b] = (w % (MAX_TIMER_TICKS + 1)) * SIM_DT;
-      if (b + 1 < this.bucketReadyAt.length) this.bucketReadyAt[b + 1] = Math.floor(w / (MAX_TIMER_TICKS + 1)) * SIM_DT;
+      if (b + 1 < this.bucketReadyAt.length)
+        this.bucketReadyAt[b + 1] = Math.floor(w / (MAX_TIMER_TICKS + 1)) * SIM_DT;
     }
   }
 }

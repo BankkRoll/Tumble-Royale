@@ -6,9 +6,26 @@
 import { Color, Group, InstancedMesh } from 'three/webgpu';
 import { abs, color, float, mx_noise_float, positionLocal, smoothstep } from 'three/tsl';
 import type { PoseSample } from '@tumble/sim';
-import { BridgePhase, CollapsingBridgeSchema, bridgeSegmentState, collapsingBridgePose, type BridgeSegmentState } from '@tumble/sim/obstacles';
+import {
+  BridgePhase,
+  CollapsingBridgeSchema,
+  bridgeSegmentState,
+  collapsingBridgePose,
+  type BridgeSegmentState,
+} from '@tumble/sim/obstacles';
 import type { ObstacleVisualFactory } from './types.ts';
-import { Disposer, PAL, applyInstanceTransform, instanceGlow, parseParams, pulse, roundedBox, setInstancePose, solid, toon } from './visual-helpers-b.ts';
+import {
+  Disposer,
+  PAL,
+  applyInstanceTransform,
+  instanceGlow,
+  parseParams,
+  pulse,
+  roundedBox,
+  setInstancePose,
+  solid,
+  toon,
+} from './visual-helpers-b.ts';
 
 const PLANKS = ['#ffe2a8', '#ffc4de'];
 

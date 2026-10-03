@@ -16,11 +16,29 @@
  * {@link PropSpawnerRuntime.pickup}; `autoPickup` kinds (keys) also pick up on touch.
  */
 import type { Collider, ColliderDesc, RigidBody } from '@dimforge/rapier3d-compat';
-import { InteractionGroups, quatFromYaw, quatIdentity, quatMul, rotateVec, vec3, type Quat, type Vec3 } from '@tumble/shared';
+import {
+  InteractionGroups,
+  quatFromYaw,
+  quatIdentity,
+  quatMul,
+  rotateVec,
+  vec3,
+  type Quat,
+  type Vec3,
+} from '@tumble/shared';
 import { z } from 'zod';
 import type { EventSink } from '../events.ts';
 import type { Rapier } from '../physics/rapier.ts';
-import { DEG, PARK_Y, PhysicsBag, emitCue, ensurePoseSamples, instanceFrame, toWorld, writeSample } from './helpers-b.ts';
+import {
+  DEG,
+  PARK_Y,
+  PhysicsBag,
+  emitCue,
+  ensurePoseSamples,
+  instanceFrame,
+  toWorld,
+  writeSample,
+} from './helpers-b.ts';
 import type { ObstacleActor, ObstacleModule, ObstacleRuntime, PoseSample } from './types.ts';
 
 const LocalPoint = z.object({ x: z.number(), y: z.number(), z: z.number() });
@@ -38,7 +56,10 @@ export const PROP_ID_BASE = 1000;
 export const PropSpawnerSchema = z.object({
   kind: z.enum(PROP_KINDS).default('egg'),
   /** Spawn points, local space (prop rests/floats here). */
-  points: z.array(LocalPoint).min(1).default([{ x: 0, y: 0, z: 0 }]),
+  points: z
+    .array(LocalPoint)
+    .min(1)
+    .default([{ x: 0, y: 0, z: 0 }]),
   /** Props per point, arranged in a small ring around it. */
   perPoint: z.number().int().min(1).max(32).default(1),
   /**
@@ -84,12 +105,60 @@ export interface PropKindSpec {
 
 /** Defaults per prop kind. */
 export const PROP_SPECS: Readonly<Record<PropKind, PropKindSpec>> = {
-  egg: { size: 0.42, density: 0.6, restitution: 0.3, carry: vec3(0, 1.35, 0.2), carryable: true, floating: false, autoPickup: false },
-  ball: { size: 1.6, density: 0.04, restitution: 0.75, carry: vec3(0, 2.4, 0), carryable: false, floating: false, autoPickup: false },
-  tail: { size: 0.5, density: 0.3, restitution: 0.2, carry: vec3(0, 0.15, -0.55), carryable: true, floating: false, autoPickup: false },
-  crown: { size: 0.55, density: 0.5, restitution: 0.2, carry: vec3(0, 1.55, 0), carryable: true, floating: true, autoPickup: false },
-  key: { size: 0.45, density: 0.5, restitution: 0.3, carry: vec3(0, 1.45, 0), carryable: true, floating: true, autoPickup: true },
-  block: { size: 0.6, density: 0.4, restitution: 0.1, carry: vec3(0, 1.6, 0.25), carryable: true, floating: false, autoPickup: false },
+  egg: {
+    size: 0.42,
+    density: 0.6,
+    restitution: 0.3,
+    carry: vec3(0, 1.35, 0.2),
+    carryable: true,
+    floating: false,
+    autoPickup: false,
+  },
+  ball: {
+    size: 1.6,
+    density: 0.04,
+    restitution: 0.75,
+    carry: vec3(0, 2.4, 0),
+    carryable: false,
+    floating: false,
+    autoPickup: false,
+  },
+  tail: {
+    size: 0.5,
+    density: 0.3,
+    restitution: 0.2,
+    carry: vec3(0, 0.15, -0.55),
+    carryable: true,
+    floating: false,
+    autoPickup: false,
+  },
+  crown: {
+    size: 0.55,
+    density: 0.5,
+    restitution: 0.2,
+    carry: vec3(0, 1.55, 0),
+    carryable: true,
+    floating: true,
+    autoPickup: false,
+  },
+  key: {
+    size: 0.45,
+    density: 0.5,
+    restitution: 0.3,
+    carry: vec3(0, 1.45, 0),
+    carryable: true,
+    floating: true,
+    autoPickup: true,
+  },
+  block: {
+    size: 0.6,
+    density: 0.4,
+    restitution: 0.1,
+    carry: vec3(0, 1.6, 0.25),
+    carryable: true,
+    floating: false,
+    autoPickup: false,
+  },
 };
 
 /** Prop lifecycle modes (replicated). */
@@ -129,7 +198,12 @@ const qSpin = quatIdentity();
  * Pure pose of props sitting at home: floating kinds bob and spin; others rest.
  * One sample per prop, local space.
  */
-export function propSpawnerPose(t: number, p: PropSpawnerParams, out: PoseSample[], _speedScale: number): void {
+export function propSpawnerPose(
+  t: number,
+  p: PropSpawnerParams,
+  out: PoseSample[],
+  _speedScale: number,
+): void {
   const n = propCount(p);
   ensurePoseSamples(out, n);
   const floats = propFloats(p);
@@ -415,7 +489,8 @@ export const propSpawner: ObstacleModule<PropSpawnerParams> = {
               }
               if (p.idleRespawn > 0) {
                 const h = home[i]!;
-                const away = Math.abs(pos.x - h.x) + Math.abs(pos.z - h.z) > 1.5 || Math.abs(pos.y - h.y) > 1.5;
+                const away =
+                  Math.abs(pos.x - h.x) + Math.abs(pos.z - h.z) > 1.5 || Math.abs(pos.y - h.y) > 1.5;
                 timers[i] = away ? (timers[i] ?? 0) + sctx.dt : 0;
                 if ((timers[i] ?? 0) >= p.idleRespawn) runtime.respawn(i, true);
               }

@@ -48,7 +48,9 @@ export function checkpointRespawnPoints(p: CheckpointGateParams): Vec3[] {
   const pts: Vec3[] = [];
   for (let r = 0; r < p.respawnRows; r++)
     for (let c = 0; c < p.respawnCols; c++)
-      pts.push(vec3((c - (p.respawnCols - 1) / 2) * p.respawnSpacing, 0, p.respawnDistance + r * p.respawnSpacing));
+      pts.push(
+        vec3((c - (p.respawnCols - 1) / 2) * p.respawnSpacing, 0, p.respawnDistance + r * p.respawnSpacing),
+      );
   return pts;
 }
 

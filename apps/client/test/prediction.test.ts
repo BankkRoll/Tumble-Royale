@@ -38,10 +38,23 @@ describe('prediction + interpolation under 150 ms RTT and 2% loss', () => {
   it('keeps local movement uncorrected in normal play and remotes continuous', async () => {
     const R = await loadRapier();
     const round = createDevRound();
-    const players: MatchPlayerInfo[] = [0, 1, 2, 3].map((id) => ({ id, name: `p${id}`, isBot: id !== LOCAL, team: -1 }));
+    const players: MatchPlayerInfo[] = [0, 1, 2, 3].map((id) => ({
+      id,
+      name: `p${id}`,
+      isBot: id !== LOCAL,
+      team: -1,
+    }));
     // Spread players so bots never bump the local player (contacts with interpolated proxies are a separate, expected source of corrections).
     const server = createCapsuleMatchSim({ R, round, seed: 1, stage: 0, players, mode: 'authority' });
-    const client = createCapsuleMatchSim({ R, round, seed: 1, stage: 0, players, mode: 'predict', localPlayerId: LOCAL });
+    const client = createCapsuleMatchSim({
+      R,
+      round,
+      seed: 1,
+      stage: 0,
+      players,
+      mode: 'predict',
+      localPlayerId: LOCAL,
+    });
     server.setPhase(RoundPhase.Playing, 0);
 
     let now = 0;
@@ -57,7 +70,13 @@ describe('prediction + interpolation under 150 ms RTT and 2% loss', () => {
     const status = createNetRoundStatus();
     const sw = new BitWriter(2048);
     const sr = new BitReader();
-    const batch: CharacterInput[] = [0, 1, 2].map(() => ({ moveX: 0, moveZ: 0, yaw: 0, buttons: 0, emote: 0 }));
+    const batch: CharacterInput[] = [0, 1, 2].map(() => ({
+      moveX: 0,
+      moveZ: 0,
+      yaw: 0,
+      buttons: 0,
+      emote: 0,
+    }));
     const header: InputBatchHeader = { newestSeq: 0, clientTick: 0, ackSnapshotId: -1, count: 0 };
     const st = createCharacterFullState();
     const botRng = new Rng(3);
@@ -73,32 +92,49 @@ describe('prediction + interpolation under 150 ms RTT and 2% loss', () => {
     let anchorServerMs = 0;
     let anchorMatch = 0;
 
-    const toServer = new NetworkConditioner({ ...link, seed: 1 }, (d) => {
-      sr.reset(d);
-      sr.readBits(8);
-      readInputBatch(sr, batch, header);
-      encoder.ack(header.ackSnapshotId);
-      for (let i = header.count - 1; i >= 0; i--) jitter.push(header.newestSeq - i, batch[i]!, now);
-    }, clock);
-    const toClient = new NetworkConditioner({ ...link, seed: 2 }, (d) => {
-      cr.reset(d);
-      expect(cr.readBits(8)).toBe(MsgType.Snapshot);
-      if (decoder.decode(cr, q, decoded) !== 'ok') return;
-      anchorServerMs = decoded.serverTick * (1000 / 30);
-      anchorMatch = decoded.matchTime;
-      remotes.onSnapshot(decoded, now, decoded.serverTick * (1000 / 30));
-      for (let i = 0; i < decoded.entityCount; i++) {
-        const e = decoded.entities[i]!;
-        if (e.id === LOCAL && prediction.reconcile(decoded.ackedInputSeq, e, decoded.matchTime) && now > 3000) steadyCorrections++;
-      }
-    }, clock);
+    const toServer = new NetworkConditioner(
+      { ...link, seed: 1 },
+      (d) => {
+        sr.reset(d);
+        sr.readBits(8);
+        readInputBatch(sr, batch, header);
+        encoder.ack(header.ackSnapshotId);
+        for (let i = header.count - 1; i >= 0; i--) jitter.push(header.newestSeq - i, batch[i]!, now);
+      },
+      clock,
+    );
+    const toClient = new NetworkConditioner(
+      { ...link, seed: 2 },
+      (d) => {
+        cr.reset(d);
+        expect(cr.readBits(8)).toBe(MsgType.Snapshot);
+        if (decoder.decode(cr, q, decoded) !== 'ok') return;
+        anchorServerMs = decoded.serverTick * (1000 / 30);
+        anchorMatch = decoded.matchTime;
+        remotes.onSnapshot(decoded, now, decoded.serverTick * (1000 / 30));
+        for (let i = 0; i < decoded.entityCount; i++) {
+          const e = decoded.entities[i]!;
+          if (
+            e.id === LOCAL &&
+            prediction.reconcile(decoded.ackedInputSeq, e, decoded.matchTime) &&
+            now > 3000
+          )
+            steadyCorrections++;
+        }
+      },
+      clock,
+    );
 
     const prediction = new PredictionController(client, LOCAL, {
       matchTime: () => anchorMatch + (now - anchorServerMs) / 1000,
       rttMs: () => 150,
       sendInput: (seq: number, history: InputHistory) => {
         const n = history.collectRecent(seq, 3, batch);
-        writeInputBatch(cw.reset(), { newestSeq: seq, clientTick: seq, ackSnapshotId: decoder.newestId, count: n }, batch);
+        writeInputBatch(
+          cw.reset(),
+          { newestSeq: seq, clientTick: seq, ackSnapshotId: decoder.newestId, count: n },
+          batch,
+        );
         toServer.send(cw.finish());
       },
     });
@@ -141,7 +177,10 @@ describe('prediction + interpolation under 150 ms RTT and 2% loss', () => {
           server.setInput(LOCAL, inp);
           for (let b = 1; b <= 3; b++) {
             server.getPlayerState(b, st);
-            botInput.yaw = Math.hypot(st.pos.x, st.pos.z) > 25 ? Math.atan2(-st.pos.x, -st.pos.z) : Math.sin(now / 1500 + b) * 2;
+            botInput.yaw =
+              Math.hypot(st.pos.x, st.pos.z) > 25
+                ? Math.atan2(-st.pos.x, -st.pos.z)
+                : Math.sin(now / 1500 + b) * 2;
             botInput.buttons = botRng.chance(0.01) ? Button.Jump : 0;
             server.setInput(b, botInput);
           }
@@ -149,19 +188,24 @@ describe('prediction + interpolation under 150 ms RTT and 2% loss', () => {
           server.events.drain();
         }
         table.clear();
-        for (const p of players) if (server.getPlayerState(p.id, st)) table.set(p.id, st, q, simTickOf(serverTick));
+        for (const p of players)
+          if (server.getPlayerState(p.id, st)) table.set(p.id, st, q, simTickOf(serverTick));
         obstacles.update(server.getObstacleNetStates());
-        encoder.encode(sw.reset(), {
-          snapshotId: serverTick & 0xffff,
-          serverTick,
-          epoch: 1,
-          matchTime: server.time,
-          entities: table,
-          obstacles,
-          status,
-          leaders: [],
-          quantizer: q,
-        }, { playerId: LOCAL, spectateTarget: -1, ackedInputSeq: jitter.lastConsumedSeq });
+        encoder.encode(
+          sw.reset(),
+          {
+            snapshotId: serverTick & 0xffff,
+            serverTick,
+            epoch: 1,
+            matchTime: server.time,
+            entities: table,
+            obstacles,
+            status,
+            leaders: [],
+            quantizer: q,
+          },
+          { playerId: LOCAL, spectateTarget: -1, ackedInputSeq: jitter.lastConsumedSeq },
+        );
         toClient.send(sw.finish());
       }
       if (now >= nextFrame) {
@@ -171,7 +215,10 @@ describe('prediction + interpolation under 150 ms RTT and 2% loss', () => {
         prediction.renderPosition(renderPos);
         if (now > 3000) {
           if (!Number.isNaN(prevRender.x)) {
-            maxLocalJump = Math.max(maxLocalJump, Math.hypot(renderPos.x - prevRender.x, renderPos.z - prevRender.z));
+            maxLocalJump = Math.max(
+              maxLocalJump,
+              Math.hypot(renderPos.x - prevRender.x, renderPos.z - prevRender.z),
+            );
           }
           remotes.forEach((e) => {
             const prev = remotePrev.get(e.id);

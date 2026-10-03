@@ -25,7 +25,13 @@ import {
 import { CourseMetric } from '../src/rounds/index.ts';
 
 function bots(n: number, skill: 'clumsy' | 'average' | 'sharp'): MatchPlayerInfo[] {
-  return Array.from({ length: n }, (_, i) => ({ id: i, name: `Bot${i}`, isBot: true, team: -1, botSkill: skill }));
+  return Array.from({ length: n }, (_, i) => ({
+    id: i,
+    name: `Bot${i}`,
+    isBot: true,
+    team: -1,
+    botSkill: skill,
+  }));
 }
 
 function runRace(sim: MatchSimHandle, maxSeconds: number): void {
@@ -72,7 +78,14 @@ describe('bots', () => {
     const R = await loadRapier();
     const run = (): number[] => {
       const sim = createMatchSim(
-        { R, round: createTestArenaRound(), seed: 5, stage: 0, players: bots(10, 'average'), mode: 'offline' },
+        {
+          R,
+          round: createTestArenaRound(),
+          seed: 5,
+          stage: 0,
+          players: bots(10, 'average'),
+          mode: 'offline',
+        },
         { createController: createSimpleController, obstacles: testObstacleModules() },
       );
       runRace(sim, 20);
@@ -257,7 +270,14 @@ describe('bot recovery', () => {
   it('waits for a moving platform to bridge the gap before boarding', () => {
     const { view, self, step } = brainHarness(
       [
-        { id: 0, position: { x: 0, y: 0, z: 0 }, radius: 1, next: [1], action: 'waitForPlatform', timeAgainst: 'lift' },
+        {
+          id: 0,
+          position: { x: 0, y: 0, z: 0 },
+          radius: 1,
+          next: [1],
+          action: 'waitForPlatform',
+          timeAgainst: 'lift',
+        },
         { id: 1, position: { x: 0, y: 0, z: 5 }, radius: 1, next: [2], action: 'run' },
         { id: 2, position: { x: 0, y: 0, z: 30 }, radius: 1.5, next: [], action: 'run' },
       ],
@@ -291,6 +311,8 @@ describe('bot names', () => {
       expect(n.length).toBeLessThanOrEqual(20);
       expect(n).toMatch(/^[A-Za-z]+\d*$/);
     }
-    expect(generateBotNames(5, new Rng(1), [generateBotName(new Rng(1))])).not.toContain(generateBotName(new Rng(1)));
+    expect(generateBotNames(5, new Rng(1), [generateBotName(new Rng(1))])).not.toContain(
+      generateBotName(new Rng(1)),
+    );
   });
 });

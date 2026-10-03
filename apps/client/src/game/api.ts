@@ -49,7 +49,15 @@ export interface ApiMe {
   level: number;
   xp: { total: number; intoLevel: number; toNext: number };
   crowns: number;
-  stats: { showsPlayed: number; wins: number; finals: number; roundsPlayed: number; roundsQualified: number; currentWinStreak: number; bestWinStreak: number };
+  stats: {
+    showsPlayed: number;
+    wins: number;
+    finals: number;
+    roundsPlayed: number;
+    roundsQualified: number;
+    currentWinStreak: number;
+    bestWinStreak: number;
+  };
   ranked: { queue: string; tier: string; division: number; rp: number; placementsLeft: number }[];
   isGuest: boolean;
   wallet: { gumballs: number; gems: number; crownShards: number };
@@ -108,7 +116,8 @@ export interface ApiGemPack {
 }
 
 /** A pass reward. */
-export type ApiPassReward = { type: 'cosmetic'; id: string } | { type: 'gumballs' | 'gems' | 'crown_shards'; amount: number };
+export type ApiPassReward =
+  { type: 'cosmetic'; id: string } | { type: 'gumballs' | 'gems' | 'crown_shards'; amount: number };
 
 /** `GET /pass`. */
 export interface ApiPass {
@@ -122,7 +131,15 @@ export interface ApiPass {
   nextTierXp: number;
   premium: boolean;
   premiumPriceGems: number;
-  tiers: { tier: number; xp: number; free: ApiPassReward[]; premium: ApiPassReward[]; freeClaimed: boolean; premiumClaimed: boolean; unlocked: boolean }[];
+  tiers: {
+    tier: number;
+    xp: number;
+    free: ApiPassReward[];
+    premium: ApiPassReward[];
+    freeClaimed: boolean;
+    premiumClaimed: boolean;
+    unlocked: boolean;
+  }[];
 }
 
 /** One challenge row. */
@@ -202,7 +219,15 @@ export interface ApiProfileCard {
   level: number;
   xp?: { total: number; intoLevel: number; toNext: number };
   crowns?: number;
-  stats?: { showsPlayed: number; wins: number; finals: number; roundsPlayed: number; roundsQualified: number; currentWinStreak: number; bestWinStreak: number };
+  stats?: {
+    showsPlayed: number;
+    wins: number;
+    finals: number;
+    roundsPlayed: number;
+    roundsQualified: number;
+    currentWinStreak: number;
+    bestWinStreak: number;
+  };
   ranked?: { queue: string; tier: string; division: number; rp: number; placementsLeft: number }[];
   loadout: ApiLoadoutItems | null;
 }
@@ -238,7 +263,10 @@ function secondsLeft(jwt: string): number {
  * @param prefix - Readable prefix for logs.
  */
 export function idempotencyKey(prefix: string): string {
-  const rnd = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const rnd =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `${prefix}-${rnd}`.replace(/[^A-Za-z0-9_\-:.]/g, '').slice(0, 128);
 }
 
@@ -274,7 +302,11 @@ export class ApiClient {
    * @returns True when reachable.
    */
   async probe(): Promise<boolean> {
-    const r = await fetchJson<{ ok?: boolean }>(`${this.baseUrl}/health`, { method: 'GET' }, PROBE_TIMEOUT_MS);
+    const r = await fetchJson<{ ok?: boolean }>(
+      `${this.baseUrl}/health`,
+      { method: 'GET' },
+      PROBE_TIMEOUT_MS,
+    );
     this.online = r !== null;
     return this.online;
   }
@@ -288,7 +320,10 @@ export class ApiClient {
    */
   async signInGuest(displayName: string): Promise<boolean> {
     if (!this.online) return false;
-    const body = { displayName, ...(this.tokens?.deviceToken ? { deviceToken: this.tokens.deviceToken } : {}) };
+    const body = {
+      displayName,
+      ...(this.tokens?.deviceToken ? { deviceToken: this.tokens.deviceToken } : {}),
+    };
     const r = await fetchJson<AuthTokens>(
       `${this.baseUrl}/auth/guest`,
       { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) },
@@ -319,7 +354,11 @@ export class ApiClient {
     this.refreshing = (async () => {
       const r = await fetchJson<{ accessToken: string; refreshToken: string }>(
         `${this.baseUrl}/auth/refresh`,
-        { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refreshToken: tokens.refreshToken }) },
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ refreshToken: tokens.refreshToken }),
+        },
         REQUEST_TIMEOUT_MS,
       );
       if (!r?.accessToken) return false;
@@ -347,7 +386,12 @@ export class ApiClient {
    *
    * @throws {ApiError} On any non-2xx answer or network failure.
    */
-  async request<T>(method: string, path: string, body?: unknown, opts: { idempotencyKey?: string; auth?: boolean } = {}): Promise<T> {
+  async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    opts: { idempotencyKey?: string; auth?: boolean } = {},
+  ): Promise<T> {
     const send = async (): Promise<Response> => {
       const headers: Record<string, string> = {};
       if (body !== undefined) headers['content-type'] = 'application/json';
@@ -377,8 +421,18 @@ export class ApiClient {
       throw new ApiError(0, 'network', err instanceof Error ? err.message : 'Network error');
     }
     if (res.status === 204) return undefined as T;
-    const data = (await res.json().catch(() => null)) as { error?: string; message?: string; details?: unknown } | null;
-    if (!res.ok) throw new ApiError(res.status, data?.error ?? 'http_error', data?.message ?? `HTTP ${res.status}`, data?.details);
+    const data = (await res.json().catch(() => null)) as {
+      error?: string;
+      message?: string;
+      details?: unknown;
+    } | null;
+    if (!res.ok)
+      throw new ApiError(
+        res.status,
+        data?.error ?? 'http_error',
+        data?.message ?? `HTTP ${res.status}`,
+        data?.details,
+      );
     return data as T;
   }
 
@@ -387,25 +441,37 @@ export class ApiClient {
   // ---------------------------------------------------------------------------
 
   me = (): Promise<ApiMe> => this.request('GET', '/me');
-  patchMe = (patch: { displayName?: string; region?: string }): Promise<{ displayName?: string; tag?: string }> => this.request('PATCH', '/me', patch);
-  profileCard = (userId: string): Promise<ApiProfileCard> => this.request('GET', `/profile/${encodeURIComponent(userId)}`);
+  patchMe = (patch: {
+    displayName?: string;
+    region?: string;
+  }): Promise<{ displayName?: string; tag?: string }> => this.request('PATCH', '/me', patch);
+  profileCard = (userId: string): Promise<ApiProfileCard> =>
+    this.request('GET', `/profile/${encodeURIComponent(userId)}`);
   inventory = (): Promise<{ items: { id: string; source: string }[] }> => this.request('GET', '/inventory');
   loadouts = (): Promise<ApiLoadouts> => this.request('GET', '/loadouts');
-  putLoadout = (index: number, name: string, items: ApiLoadoutItems): Promise<{ index: number }> => this.request('PUT', `/loadouts/${index}`, { name, items });
-  activateLoadout = (index: number): Promise<{ activeIndex: number; items: ApiLoadoutItems }> => this.request('POST', `/loadouts/${index}/activate`);
+  putLoadout = (index: number, name: string, items: ApiLoadoutItems): Promise<{ index: number }> =>
+    this.request('PUT', `/loadouts/${index}`, { name, items });
+  activateLoadout = (index: number): Promise<{ activeIndex: number; items: ApiLoadoutItems }> =>
+    this.request('POST', `/loadouts/${index}/activate`);
 
   // ---------------------------------------------------------------------------
   // Economy & progression
   // ---------------------------------------------------------------------------
 
   store = (): Promise<ApiStore> => this.request('GET', '/store');
-  purchase = (offerId: string, key: string): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> => this.request('POST', '/purchase', { offerId }, { idempotencyKey: key });
+  purchase = (offerId: string, key: string): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> =>
+    this.request('POST', '/purchase', { offerId }, { idempotencyKey: key });
   gemPacks = (): Promise<{ provider: string; packs: ApiGemPack[] }> => this.request('GET', '/gems/packs');
-  gemCheckout = (packId: string, key: string): Promise<{ status: string; checkoutUrl: string; gems: number; provider: string }> =>
+  gemCheckout = (
+    packId: string,
+    key: string,
+  ): Promise<{ status: string; checkoutUrl: string; gems: number; provider: string }> =>
     this.request('POST', '/gems/checkout', { packId }, { idempotencyKey: key });
   pass = (): Promise<ApiPass> => this.request('GET', '/pass');
-  claimPassTier = (tier: number, track: 'free' | 'premium'): Promise<unknown> => this.request('POST', '/pass/claim', { tier, track });
-  unlockPremium = (key: string): Promise<unknown> => this.request('POST', '/pass/premium', undefined, { idempotencyKey: key });
+  claimPassTier = (tier: number, track: 'free' | 'premium'): Promise<unknown> =>
+    this.request('POST', '/pass/claim', { tier, track });
+  unlockPremium = (key: string): Promise<unknown> =>
+    this.request('POST', '/pass/premium', undefined, { idempotencyKey: key });
   challenges = (): Promise<ApiChallenges> => this.request('GET', '/challenges');
   rerollChallenge = (id: string): Promise<unknown> => this.request('POST', '/challenges/reroll', { id });
   claimChallenge = (id: string): Promise<unknown> => this.request('POST', '/challenges/claim', { id });
@@ -419,17 +485,26 @@ export class ApiClient {
 
   friends = (): Promise<ApiFriends> => this.request('GET', '/friends');
   recentPlayers = (): Promise<{ players: ApiFriendCard[] }> => this.request('GET', '/friends/recent');
-  friendRequest = (nameTag: string): Promise<{ status: 'pending' | 'accepted'; user: { displayName: string; tag: string } }> => this.request('POST', '/friends/request', { nameTag });
+  friendRequest = (
+    nameTag: string,
+  ): Promise<{ status: 'pending' | 'accepted'; user: { displayName: string; tag: string } }> =>
+    this.request('POST', '/friends/request', { nameTag });
   acceptFriend = (userId: string): Promise<unknown> => this.request('POST', '/friends/accept', { userId });
   declineFriend = (userId: string): Promise<unknown> => this.request('POST', '/friends/decline', { userId });
-  presence = (status: 'online' | 'in_menu' | 'in_queue' | 'in_match'): Promise<unknown> => this.request('POST', '/presence', { status });
+  presence = (status: 'online' | 'in_menu' | 'in_queue' | 'in_match'): Promise<unknown> =>
+    this.request('POST', '/presence', { status });
   party = (): Promise<{ party: ApiParty | null }> => this.request('GET', '/party');
   createParty = (): Promise<{ party: ApiParty }> => this.request('POST', '/party');
   joinParty = (code: string): Promise<{ party: ApiParty }> => this.request('POST', '/party/join', { code });
   leaveParty = (): Promise<void> => this.request('POST', '/party/leave');
-  kickFromParty = (userId: string): Promise<{ party: ApiParty }> => this.request('POST', '/party/kick', { userId });
-  setReady = (ready: boolean): Promise<{ party: ApiParty }> => this.request('POST', '/party/ready', { ready });
-  setPartyPlaylist = (playlistId: string): Promise<{ party: ApiParty }> => this.request('POST', '/party/playlist', { playlistId });
-  inviteToParty = (userId: string): Promise<{ party: ApiParty }> => this.request('POST', '/party/invite', { userId });
-  queueTicket = (playlistId: string): Promise<{ ticket: string; expiresIn: number }> => this.request('POST', '/party/queue-ticket', { playlistId });
+  kickFromParty = (userId: string): Promise<{ party: ApiParty }> =>
+    this.request('POST', '/party/kick', { userId });
+  setReady = (ready: boolean): Promise<{ party: ApiParty }> =>
+    this.request('POST', '/party/ready', { ready });
+  setPartyPlaylist = (playlistId: string): Promise<{ party: ApiParty }> =>
+    this.request('POST', '/party/playlist', { playlistId });
+  inviteToParty = (userId: string): Promise<{ party: ApiParty }> =>
+    this.request('POST', '/party/invite', { userId });
+  queueTicket = (playlistId: string): Promise<{ ticket: string; expiresIn: number }> =>
+    this.request('POST', '/party/queue-ticket', { playlistId });
 }

@@ -519,7 +519,9 @@ export function PlayerWall({
       </div>
 
       <div className="tr-wall-bottom tr-interactive" data-nav-scope="1">
-        <span className="tr-chip tr-chip--ink"><Icon name="ticket" size="1em" /> {summary.showName}</span>
+        <span className="tr-chip tr-chip--ink">
+          <Icon name="ticket" size="1em" /> {summary.showName}
+        </span>
         <span className="tr-spacer" />
         {state.ended ? (
           <Button

@@ -67,8 +67,18 @@ test.beforeAll(async () => {
   test.setTimeout(180_000);
   if (process.env.META_EXTERNAL !== '1') {
     dataDir = mkdtempSync(join(tmpdir(), 'tumble-meta-'));
-    start('apps/api', { PORT: String(BASE + 360), PGLITE_DIR: join(dataDir, 'pglite'), PUBLIC_WEB_URL: GAME, RATE_LIMIT_MAX: '5000' });
-    start('apps/matchmaker', { PORT: String(BASE + 370), MAX_WAIT_MS: '3000', HOT_MAX_WAIT_MS: '3000', DEFAULT_GAME_SERVER_URL: `ws://localhost:${GS_PORT}/ws` });
+    start('apps/api', {
+      PORT: String(BASE + 360),
+      PGLITE_DIR: join(dataDir, 'pglite'),
+      PUBLIC_WEB_URL: GAME,
+      RATE_LIMIT_MAX: '5000',
+    });
+    start('apps/matchmaker', {
+      PORT: String(BASE + 370),
+      MAX_WAIT_MS: '3000',
+      HOT_MAX_WAIT_MS: '3000',
+      DEFAULT_GAME_SERVER_URL: `ws://localhost:${GS_PORT}/ws`,
+    });
     start('apps/game-server', {
       PORT: String(GS_PORT),
       API_URL: API,
@@ -76,7 +86,11 @@ test.beforeAll(async () => {
       TICKET_FILL_WAIT_MS: '10000',
     });
   }
-  await Promise.all([healthy(`${API}/health`, 120_000), healthy(`${MM}/health`, 60_000), healthy(`http://localhost:${GS_PORT}/health`, 120_000)]);
+  await Promise.all([
+    healthy(`${API}/health`, 120_000),
+    healthy(`${MM}/health`, 60_000),
+    healthy(`http://localhost:${GS_PORT}/health`, 120_000),
+  ]);
 });
 
 test.afterAll(() => {
@@ -106,10 +120,16 @@ async function apiAs<T>(page: Page, path: string): Promise<T> {
   return page.evaluate(
     async ([api, p]) => {
       const auth = JSON.parse(localStorage.getItem('tumble.v1.auth') ?? '{}') as { refreshToken?: string };
-      const r = await fetch(`${api}/auth/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refreshToken: auth.refreshToken }) });
+      const r = await fetch(`${api}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken: auth.refreshToken }),
+      });
       const tokens = (await r.json()) as { accessToken: string; refreshToken: string };
       localStorage.setItem('tumble.v1.auth', JSON.stringify({ ...auth, ...tokens }));
-      return (await fetch(`${api}${p}`, { headers: { authorization: `Bearer ${tokens.accessToken}` } })).json();
+      return (
+        await fetch(`${api}${p}`, { headers: { authorization: `Bearer ${tokens.accessToken}` } })
+      ).json();
     },
     [API, path] as const,
   ) as Promise<T>;
@@ -122,43 +142,67 @@ test('account → customize → party queue → show → XP & unlock persisted',
   const a = await boot(browser, '/', 'A');
   const accA = (await account(a)) as Account;
   console.log('[meta] A signed in as', accA.name);
-  await a.waitForFunction(() => window.__tumble!.ui!.getState().wipe.phase === 'idle', undefined, { timeout: 15_000 });
-  await a.waitForFunction(() => window.__tumble!.ui!.getState().onlineStatus.state === 'online', undefined, { timeout: 15_000 });
+  await a.waitForFunction(() => window.__tumble!.ui!.getState().wipe.phase === 'idle', undefined, {
+    timeout: 15_000,
+  });
+  await a.waitForFunction(() => window.__tumble!.ui!.getState().onlineStatus.state === 'online', undefined, {
+    timeout: 15_000,
+  });
   await a.waitForTimeout(1500);
   await a.screenshot({ path: `${SHOTS}/01-menu-signed-in.png` });
 
   // The client only sells Gems through Stripe; the dev API's fake checkout grants them for the test.
   await a.evaluate(async (api) => {
     const auth = JSON.parse(localStorage.getItem('tumble.v1.auth') ?? '{}') as { refreshToken?: string };
-    const r = await fetch(`${api}/auth/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refreshToken: auth.refreshToken }) });
+    const r = await fetch(`${api}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ refreshToken: auth.refreshToken }),
+    });
     const tokens = (await r.json()) as { accessToken: string; refreshToken: string };
     localStorage.setItem('tumble.v1.auth', JSON.stringify({ ...auth, ...tokens }));
     const res = await fetch(`${api}/gems/checkout`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${tokens.accessToken}`, 'idempotency-key': `e2e-gems-${Date.now()}` },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${tokens.accessToken}`,
+        'idempotency-key': `e2e-gems-${Date.now()}`,
+      },
       body: JSON.stringify({ packId: 'gems.2800' }),
     });
     if (!res.ok) throw new Error(`gem checkout ${res.status}`);
   }, API);
   await emit(a, 'buyGems', { packId: 'gems.2800' }); // UI path: must say "coming soon", not grant
-  await a.waitForFunction(() => (window.__tumble!.ui!.getState().profile?.gems ?? 0) >= 2800, undefined, { timeout: 30_000 });
+  await a.waitForFunction(() => (window.__tumble!.ui!.getState().profile?.gems ?? 0) >= 2800, undefined, {
+    timeout: 30_000,
+  });
   const offer = await a.evaluate(() => {
     const s = window.__tumble!.ui!.getState().store!;
-    const gems = s.featured.concat(s.daily).filter((o) => o.currency === 'gems' && !o.item.owned).sort((x, y) => x.price - y.price);
+    const gems = s.featured
+      .concat(s.daily)
+      .filter((o) => o.currency === 'gems' && !o.item.owned)
+      .sort((x, y) => x.price - y.price);
     const o = gems[0];
     return o ? { id: o.id, slot: o.item.slot, name: o.item.name } : null;
   });
-  expect(offer, 'a Gem-priced offer in today\'s store').toBeTruthy();
+  expect(offer, "a Gem-priced offer in today's store").toBeTruthy();
   await a.evaluate(() => window.__tumble!.ui!.getState().setMenuTab('store'));
   await emit(a, 'tryOn', { slot: offer!.slot, itemId: offer!.id });
   await emit(a, 'purchase', { offerId: offer!.id });
-  await a.waitForFunction((id) => window.__tumble!.ui!.getState().inventory?.items.some((i) => i.id === id && i.owned), offer!.id, { timeout: 20_000 });
+  await a.waitForFunction(
+    (id) => window.__tumble!.ui!.getState().inventory?.items.some((i) => i.id === id && i.owned),
+    offer!.id,
+    { timeout: 20_000 },
+  );
   await emit(a, 'equip', { slot: offer!.slot, itemId: offer!.id });
   await a.waitForTimeout(2500);
   await a.screenshot({ path: `${SHOTS}/02-store-purchase-equipped.png` });
   const inv = await apiAs<{ items: { id: string }[] }>(a, '/inventory');
   expect(inv.items.map((i) => i.id)).toContain(offer!.id);
-  const lo = await apiAs<{ activeIndex: number; slots: ({ items: Record<string, unknown> } | null)[] }>(a, '/loadouts');
+  const lo = await apiAs<{ activeIndex: number; slots: ({ items: Record<string, unknown> } | null)[] }>(
+    a,
+    '/loadouts',
+  );
   expect(JSON.stringify(lo.slots[lo.activeIndex]?.items)).toContain(offer!.id);
   console.log('[meta] bought + equipped', offer!.name);
 
@@ -173,15 +217,24 @@ test('account → customize → party queue → show → XP & unlock persisted',
   await b.waitForFunction(() => window.__tumble!.account!()?.partySize === 2, undefined, { timeout: 30_000 });
   await a.waitForFunction(() => window.__tumble!.account!()?.partySize === 2, undefined, { timeout: 30_000 });
   await emit(b, 'ready', { ready: true });
-  await a.waitForFunction(() => window.__tumble!.ui!.getState().party?.members.every((m) => m.ready) === true, undefined, { timeout: 20_000 });
+  await a.waitForFunction(
+    () => window.__tumble!.ui!.getState().party?.members.every((m) => m.ready) === true,
+    undefined,
+    { timeout: 20_000 },
+  );
   await a.waitForTimeout(800);
   await a.screenshot({ path: `${SHOTS}/03-party.png` });
   await a.evaluate(() => window.__tumble!.ui!.getState().setOverlay('none'));
 
   // --- Queue → match_found on both → play the whole show ----------------------
   await emit(a, 'play', { playlistId: 'main-show' });
-  for (const [p, l] of [[a, 'A'], [b, 'B']] as const) {
-    await p.waitForFunction(() => ['matchFound', 'preShow'].includes(window.__tumble!.screen!()), undefined, { timeout: 90_000 });
+  for (const [p, l] of [
+    [a, 'A'],
+    [b, 'B'],
+  ] as const) {
+    await p.waitForFunction(() => ['matchFound', 'preShow'].includes(window.__tumble!.screen!()), undefined, {
+      timeout: 90_000,
+    });
     console.log(`[meta] ${l} matched`);
   }
   await a.waitForFunction(() => window.__tumble!.screen!() === 'preShow', undefined, { timeout: 90_000 });
@@ -190,7 +243,10 @@ test('account → customize → party queue → show → XP & unlock persisted',
 
   const finish = async (p: Page, l: string): Promise<void> => {
     // The show runs at real time on the server; a full 40-player show takes several minutes.
-    await p.waitForFunction(() => window.__tumble!.screen!() === 'rewards', undefined, { timeout: 20 * 60_000, polling: 1000 });
+    await p.waitForFunction(() => window.__tumble!.screen!() === 'rewards', undefined, {
+      timeout: 20 * 60_000,
+      polling: 1000,
+    });
     console.log(`[meta] ${l} reached rewards`);
   };
   await Promise.all([finish(a, 'A'), finish(b, 'B')]);
@@ -202,13 +258,25 @@ test('account → customize → party queue → show → XP & unlock persisted',
   await a.waitForTimeout(20_000);
 
   // --- Persisted -----------------------------------------------------------------
-  for (const [p, l] of [[a, 'A'], [b, 'B']] as const) {
-    expect(await p.evaluate(() => window.__tumble!.ui!.getState().dialog), `${l} no dialog over rewards`).toBeNull();
+  for (const [p, l] of [
+    [a, 'A'],
+    [b, 'B'],
+  ] as const) {
+    expect(
+      await p.evaluate(() => window.__tumble!.ui!.getState().dialog),
+      `${l} no dialog over rewards`,
+    ).toBeNull();
     const rewards = await p.evaluate(() => window.__tumble!.ui!.getState().rewards);
     expect(rewards?.xpLines.length, `${l} rewards lines`).toBeGreaterThan(0);
-    const me = await apiAs<{ xp: { total: number }; stats: { showsPlayed: number }; wallet: { gumballs: number } }>(p, '/me');
+    const me = await apiAs<{
+      xp: { total: number };
+      stats: { showsPlayed: number };
+      wallet: { gumballs: number };
+    }>(p, '/me');
     const shown = rewards!.xpLines.reduce((n, x) => n + x.xp, 0);
-    console.log(`[meta] ${l} /me xp ${me.xp.total}, shows ${me.stats.showsPlayed}, gumballs ${me.wallet.gumballs}; rewards screen xp ${shown}`);
+    console.log(
+      `[meta] ${l} /me xp ${me.xp.total}, shows ${me.stats.showsPlayed}, gumballs ${me.wallet.gumballs}; rewards screen xp ${shown}`,
+    );
     expect(me.stats.showsPlayed).toBe(1);
     expect(me.xp.total).toBeGreaterThan(0);
     expect(shown).toBe(me.xp.total);

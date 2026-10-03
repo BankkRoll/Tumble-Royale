@@ -54,7 +54,12 @@ describe('SimpleShowController', () => {
         if (e.type === 'showEnd') ended = true;
       }
     }
-    expect(phases).toEqual([RoundPhase.Countdown, RoundPhase.Playing, RoundPhase.RoundEnd, RoundPhase.Results]);
+    expect(phases).toEqual([
+      RoundPhase.Countdown,
+      RoundPhase.Playing,
+      RoundPhase.RoundEnd,
+      RoundPhase.Results,
+    ]);
     expect(ended).toBe(true);
     expect(show.showPhase).toBe(ShowPhase.Ended);
   });
@@ -65,9 +70,17 @@ describe('WebSocket transport', () => {
     const sims: FakeMatchSim[] = [];
     const clock = { now: 0 };
     const deps = { ...testDeps(clock, sims), now: () => performance.now() };
-    const server = await startGameServer({ port: 0, host: '127.0.0.1', deps, config: { fillWaitMs: 50, capacity: 4 }, profileLogMs: 0 });
+    const server = await startGameServer({
+      port: 0,
+      host: '127.0.0.1',
+      deps,
+      config: { fillWaitMs: 50, capacity: 4 },
+      profileLogMs: 0,
+    });
     try {
-      const health = (await (await fetch(`http://127.0.0.1:${server.port}/health`)).json()) as { ok: boolean };
+      const health = (await (await fetch(`http://127.0.0.1:${server.port}/health`)).json()) as {
+        ok: boolean;
+      };
       expect(health.ok).toBe(true);
       const ws = new WebSocket(`ws://127.0.0.1:${server.port}/ws`);
       const types: number[] = [];

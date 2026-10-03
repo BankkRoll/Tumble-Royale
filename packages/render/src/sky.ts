@@ -1,4 +1,11 @@
-import { BackSide, Color, Mesh, MeshBasicNodeMaterial, SphereGeometry, type ColorRepresentation } from 'three/webgpu';
+import {
+  BackSide,
+  Color,
+  Mesh,
+  MeshBasicNodeMaterial,
+  SphereGeometry,
+  type ColorRepresentation,
+} from 'three/webgpu';
 import { mix, positionLocal, smoothstep, uniform } from 'three/tsl';
 
 /** Colours for {@link createSkyDome}. */

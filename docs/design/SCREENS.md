@@ -327,11 +327,11 @@ against bots.
 
 ### 4.3 Tabs and the 3D lobby
 
-| Tab            | Panel | 3D layer |
-| -------------- | ----- | -------- |
-| `play`         | §4.1  | 3/4 lobby framing; idle play on movement keys (3rd-person follow, eases back when idle) |
+| Tab                       | Panel                    | 3D layer                                                                                                          |
+| ------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `play`                    | §4.1                     | 3/4 lobby framing; idle play on movement keys (3rd-person follow, eases back when idle)                           |
 | `locker`, `store`, `pass` | dressing room (§5.1–5.3) | Tumbler eases (~400 ms) into the left 40% (top on phones); drag spins, wheel/pinch zooms; selection = live try-on |
-| other tabs     | §5.4–5.7 | lobby framing |
+| other tabs                | §5.4–5.7                 | lobby framing                                                                                                     |
 
 - **Tab change**: the incoming panel slides/fades in (200 ms) while the old
   one fades out underneath — no wipe, never a blank frame.
@@ -342,44 +342,44 @@ against bots.
 Every clickable on the menu and where it goes. `apps/client/e2e/menu.spec.ts`
 clicks each top-level control and asserts the destination.
 
-| Control | Where | Result |
-| --- | --- | --- |
-| Tabs (8) | top bar | `menuTab` = that tab; panel cross-fades in |
-| Q / E (LB / RB) | keyboard / pad | previous / next tab |
-| Level badge + XP | top bar | Profile tab |
-| Gumballs `+` (or pill) | top bar | "Earn Gumballs" popover: shows, challenges, pass; buttons → Challenges, Season Pass, Store. Never a purchase |
-| Gems `+` (or pill) | top bar | Gems popover: what Gems are for + packs in a disabled "Coming soon — secure checkout via Stripe" state (live packs only when `gemCheckout === 'enabled'`) |
-| Bell | top bar | notifications drop-down (toggle) |
-| Friends | top bar | Party & friends sheet (toggle) |
-| Gear | top bar | Settings sheet (toggle); Esc/back on the root menu also opens it |
-| Season card | Play, left | **Season Pass** tab |
-| Today's challenges card ("All") | Play, left | Challenges tab |
-| News card | Play, left | News tab with that post open in the reader |
-| Play Online tile | start card | `playMode = 'online'`; when servers are offline: Retry (`retryOnline`) |
-| Vs Bots tile | start card | `playMode = 'offline'` |
-| Custom Show tile | start card | `customLobby` screen |
-| ◀ / ▶ playlist | start card | cycle playlists (`selectPlaylist`) |
-| Party `+` slots | start card | Party & friends sheet |
-| PLAY | start card | `play { playlistId, mode }` → matchmaking (online) or pre-show vs bots |
-| Ready up (party member) | start card | `ready` toggle |
-| Cancel | matchmaking card | `cancelQueue` |
-| Emote button / B, 1–4 | Play, bottom-left | lobby emote wheel; plays owned emotes on the 3D Tumbler, locked → Store |
-| Item card | Store / Locker | live try-on (emotes play), docked detail; "Trying on" chip + Reset |
-| Buy → Confirm | Store detail | `purchase`; then "Equip now" (`equip`) |
-| Find in Store | Locker detail | Store tab |
-| Reward card | Pass track | select (3D try-on + preview card); claimable → `claimPassTier` |
-| Claim all | Pass header | claims every cleared, unclaimed reward |
-| Unlock Premium | Pass header | `buyPremiumPass` (disabled with "Gems coming soon" when unaffordable) |
-| Milestone chips | Pass board | scroll the track to that tier |
-| Claim / Swap | Challenge card | `claimChallenge` (confetti) / `rerollChallenge` (only when swaps left today) |
-| Season progress strip | Challenges | Season Pass tab |
-| Edit banner / Change nameplate | Profile card | Locker on that slot |
-| History row | Profile | expands per-round results |
-| Leaderboard row / podium | Ranks | that player's profile card overlay (`inspectPlayer`) |
-| Board / scope chips | Ranks | `leaderboardQuery { board, scope }` |
-| Post / featured | News | reader view; `newsRead` clears the unread badges |
-| All news / Esc | News reader | back to the list |
-| Results / Rewards / Eliminated sheet | show flow | Spectate (`spectate`), Back to lobby (`backToLobby`), Play again (`playAgain`, same mode), Continue (`continue`) |
+| Control                              | Where             | Result                                                                                                                                                    |
+| ------------------------------------ | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tabs (8)                             | top bar           | `menuTab` = that tab; panel cross-fades in                                                                                                                |
+| Q / E (LB / RB)                      | keyboard / pad    | previous / next tab                                                                                                                                       |
+| Level badge + XP                     | top bar           | Profile tab                                                                                                                                               |
+| Gumballs `+` (or pill)               | top bar           | "Earn Gumballs" popover: shows, challenges, pass; buttons → Challenges, Season Pass, Store. Never a purchase                                              |
+| Gems `+` (or pill)                   | top bar           | Gems popover: what Gems are for + packs in a disabled "Coming soon — secure checkout via Stripe" state (live packs only when `gemCheckout === 'enabled'`) |
+| Bell                                 | top bar           | notifications drop-down (toggle)                                                                                                                          |
+| Friends                              | top bar           | Party & friends sheet (toggle)                                                                                                                            |
+| Gear                                 | top bar           | Settings sheet (toggle); Esc/back on the root menu also opens it                                                                                          |
+| Season card                          | Play, left        | **Season Pass** tab                                                                                                                                       |
+| Today's challenges card ("All")      | Play, left        | Challenges tab                                                                                                                                            |
+| News card                            | Play, left        | News tab with that post open in the reader                                                                                                                |
+| Play Online tile                     | start card        | `playMode = 'online'`; when servers are offline: Retry (`retryOnline`)                                                                                    |
+| Vs Bots tile                         | start card        | `playMode = 'offline'`                                                                                                                                    |
+| Custom Show tile                     | start card        | `customLobby` screen                                                                                                                                      |
+| ◀ / ▶ playlist                       | start card        | cycle playlists (`selectPlaylist`)                                                                                                                        |
+| Party `+` slots                      | start card        | Party & friends sheet                                                                                                                                     |
+| PLAY                                 | start card        | `play { playlistId, mode }` → matchmaking (online) or pre-show vs bots                                                                                    |
+| Ready up (party member)              | start card        | `ready` toggle                                                                                                                                            |
+| Cancel                               | matchmaking card  | `cancelQueue`                                                                                                                                             |
+| Emote button / B, 1–4                | Play, bottom-left | lobby emote wheel; plays owned emotes on the 3D Tumbler, locked → Store                                                                                   |
+| Item card                            | Store / Locker    | live try-on (emotes play), docked detail; "Trying on" chip + Reset                                                                                        |
+| Buy → Confirm                        | Store detail      | `purchase`; then "Equip now" (`equip`)                                                                                                                    |
+| Find in Store                        | Locker detail     | Store tab                                                                                                                                                 |
+| Reward card                          | Pass track        | select (3D try-on + preview card); claimable → `claimPassTier`                                                                                            |
+| Claim all                            | Pass header       | claims every cleared, unclaimed reward                                                                                                                    |
+| Unlock Premium                       | Pass header       | `buyPremiumPass` (disabled with "Gems coming soon" when unaffordable)                                                                                     |
+| Milestone chips                      | Pass board        | scroll the track to that tier                                                                                                                             |
+| Claim / Swap                         | Challenge card    | `claimChallenge` (confetti) / `rerollChallenge` (only when swaps left today)                                                                              |
+| Season progress strip                | Challenges        | Season Pass tab                                                                                                                                           |
+| Edit banner / Change nameplate       | Profile card      | Locker on that slot                                                                                                                                       |
+| History row                          | Profile           | expands per-round results                                                                                                                                 |
+| Leaderboard row / podium             | Ranks             | that player's profile card overlay (`inspectPlayer`)                                                                                                      |
+| Board / scope chips                  | Ranks             | `leaderboardQuery { board, scope }`                                                                                                                       |
+| Post / featured                      | News              | reader view; `newsRead` clears the unread badges                                                                                                          |
+| All news / Esc                       | News reader       | back to the list                                                                                                                                          |
+| Results / Rewards / Eliminated sheet | show flow         | Spectate (`spectate`), Back to lobby (`backToLobby`), Play again (`playAgain`, same mode), Continue (`continue`)                                          |
 
 ---
 

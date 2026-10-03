@@ -33,7 +33,15 @@ import {
 } from '@tumble/content/rounds/practice-island';
 import type { TumblerLoadout } from '@tumble/render/scenes';
 import { RoundPhase, Rng, SIM_DT, hashString, type RoundDefinition, type Vec3 } from '@tumble/shared';
-import { Button, CharacterState, FixedStepper, emptyInput, type CharacterFullState, type CharacterInput, type SimEvent } from '@tumble/sim';
+import {
+  Button,
+  CharacterState,
+  FixedStepper,
+  emptyInput,
+  type CharacterFullState,
+  type CharacterInput,
+  type SimEvent,
+} from '@tumble/sim';
 import { generateBotNames } from '@tumble/sim/bots';
 import { createCharacterFullState } from '@tumble/sim/character';
 import { createMatchSim, type MatchPlayerInfo, type MatchSimHandle } from '@tumble/sim/match';
@@ -255,7 +263,11 @@ export class TutorialSession extends ShowSession {
       spawn: { ...TUTORIAL_ROUND.spawn, ...RACE_SPAWN, origin: { ...RACE_SPAWN.origin } },
       duration: { seconds: RACE_SECONDS, overtimeSeconds: 0 },
     };
-    this.stepper = new FixedStepper((tick) => this.step(tick), SIM_DT, Math.max(8, Math.ceil(8 * ctx.cfg.timeScale)));
+    this.stepper = new FixedStepper(
+      (tick) => this.step(tick),
+      SIM_DT,
+      Math.max(8, Math.ceil(8 * ctx.cfg.timeScale)),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -346,7 +358,9 @@ export class TutorialSession extends ShowSession {
       () => window.removeEventListener('keydown', onKey, true),
       () => window.removeEventListener('pointerdown', onPointer),
       tutorialEvents.on('skip', () => this.finish('backToLobby')),
-      tutorialEvents.on('readyChoice', ({ next }) => this.finish(next === 'show' ? 'playAgain' : 'backToLobby')),
+      tutorialEvents.on('readyChoice', ({ next }) =>
+        this.finish(next === 'show' ? 'playAgain' : 'backToLobby'),
+      ),
     );
   }
 
@@ -406,7 +420,15 @@ export class TutorialSession extends ShowSession {
     this.source = new OfflineRoundSource(sim, players, HUMAN, () => this.sim === sim);
     this.stepper.reset();
     this.source.capture();
-    const start: RoundStart = { index: 0, isFinal: false, round, players, seed: this.seed, stage: 0, qualifyTarget };
+    const start: RoundStart = {
+      index: 0,
+      isFinal: false,
+      round,
+      players,
+      seed: this.seed,
+      stage: 0,
+      qualifyTarget,
+    };
     this.round = {
       start,
       source: null,
@@ -433,9 +455,17 @@ export class TutorialSession extends ShowSession {
       { id: PRACTICE_COACH, name: COACH_NAME, isBot: false, team: -1 },
     ];
     this.players.set(HUMAN, { id: HUMAN, name, isBot: false, loadout: this.ctx.look() });
-    this.players.set(PRACTICE_COACH, { id: PRACTICE_COACH, name: COACH_NAME, isBot: true, loadout: coachLoadout() });
+    this.players.set(PRACTICE_COACH, {
+      id: PRACTICE_COACH,
+      name: COACH_NAME,
+      isBot: true,
+      loadout: coachLoadout(),
+    });
     this.order = [HUMAN, PRACTICE_COACH];
-    this.sim = createMatchSim({ R: this.ctx.R, round: this.practiceRound, seed: this.seed, stage: 0, players, mode: 'offline' }, this.ctx.matchDeps);
+    this.sim = createMatchSim(
+      { R: this.ctx.R, round: this.practiceRound, seed: this.seed, stage: 0, players, mode: 'offline' },
+      this.ctx.matchDeps,
+    );
     for (const w of this.sim.warnings) console.warn('[tutorial]', w);
     this.sim.setPhase(RoundPhase.Playing, 0);
     this.coachId = PRACTICE_COACH;
@@ -468,8 +498,17 @@ export class TutorialSession extends ShowSession {
     tutorialUi.setState({
       phase: 'intro',
       device: this.device,
-      title: { title: 'Practice Island', subtitle: 'A 2-minute warm-up with Coach Boing', skipKeys: this.introSkipKeys() },
-      steps: PRACTICE_STATIONS.map((s): TutorialStep => ({ id: s.id, label: SCRIPT[s.id].label, icon: SCRIPT[s.id].icon, state: 'todo' })),
+      title: {
+        title: 'Practice Island',
+        subtitle: 'A 2-minute warm-up with Coach Boing',
+        skipKeys: this.introSkipKeys(),
+      },
+      steps: PRACTICE_STATIONS.map((s): TutorialStep => ({
+        id: s.id,
+        label: SCRIPT[s.id].label,
+        icon: SCRIPT[s.id].icon,
+        state: 'todo',
+      })),
       skipKeys: this.keys('skip'),
     });
     view.playFlyover(() => this.endIntro());
@@ -620,8 +659,10 @@ export class TutorialSession extends ShowSession {
           break;
         case 'fellOut':
           this.stationFails++;
-          if (this.flags.checkpointSaved && this.currentStation()?.id === 'checkpoint') this.flags.fellAfterCheckpoint = true;
-          else if (this.stage === 'practice') this.say(LINES.oops[this.stationFails % LINES.oops.length] as string, 'talk');
+          if (this.flags.checkpointSaved && this.currentStation()?.id === 'checkpoint')
+            this.flags.fellAfterCheckpoint = true;
+          else if (this.stage === 'practice')
+            this.say(LINES.oops[this.stationFails % LINES.oops.length] as string, 'talk');
           break;
         case 'respawn':
           if (this.flags.fellAfterCheckpoint) this.flags.respawnedAfterCheckpoint = true;
@@ -663,7 +704,9 @@ export class TutorialSession extends ShowSession {
     this.pilotFor = '';
     this.pilotFall = false;
     tutorialUi.setState({
-      steps: tutorialUi.getState().steps.map((s, k) => ({ ...s, state: k < i ? 'done' : k === i ? 'active' : 'todo' })),
+      steps: tutorialUi
+        .getState()
+        .steps.map((s, k) => ({ ...s, state: k < i ? 'done' : k === i ? 'active' : 'todo' })),
     });
     this.refreshPrompt();
     this.say(SCRIPT[st.id].intro, 'talk');
@@ -671,7 +714,10 @@ export class TutorialSession extends ShowSession {
     const sim = this.sim;
     if (sim?.getPlayerState(this.coachId, this.coachState)) {
       const c = this.coachState.pos;
-      if (Math.hypot(c.x - st.start.x, c.z - st.start.z) > 6 || Math.abs(c.y - FOOT_OFFSET - st.start.y) > 1.5) {
+      if (
+        Math.hypot(c.x - st.start.x, c.z - st.start.z) > 6 ||
+        Math.abs(c.y - FOOT_OFFSET - st.start.y) > 1.5
+      ) {
         sim.controller(this.coachId)?.teleport({ ...st.start }, 0);
       }
     }
@@ -687,7 +733,13 @@ export class TutorialSession extends ShowSession {
     if (this.stage === 'race' || this.stage === 'raceOver') {
       if (this.racePromptHidden) return;
       tutorialUi.setState({
-        prompt: { id: 'race', icon: 'race', title: LINES.raceTitle, parts: renderPrompt(LINES.raceObjective, keys), hint: null },
+        prompt: {
+          id: 'race',
+          icon: 'race',
+          title: LINES.raceTitle,
+          parts: renderPrompt(LINES.raceObjective, keys),
+          hint: null,
+        },
       });
       return;
     }
@@ -741,7 +793,12 @@ export class TutorialSession extends ShowSession {
       return;
     }
     // Ran past the station without the move (e.g. climbed before grabbing the coach): count it and carry on.
-    if (st.id !== 'race' && this.feet.z > st.goal.max.z + 1 && this.feet.y > st.goal.min.y - 0.5 && this.human.grounded) {
+    if (
+      st.id !== 'race' &&
+      this.feet.z > st.goal.max.z + 1 &&
+      this.feet.y > st.goal.min.y - 0.5 &&
+      this.human.grounded
+    ) {
       this.completeStation(st);
       return;
     }
@@ -840,7 +897,11 @@ export class TutorialSession extends ShowSession {
     out.emote = 0;
     const sim = this.sim;
     if (!sim || !sim.getPlayerState(this.coachId, this.coachState)) return out;
-    const self = { pos: this.coachState.pos, state: this.coachState.state, grounded: this.coachState.grounded };
+    const self = {
+      pos: this.coachState.pos,
+      state: this.coachState.state,
+      grounded: this.coachState.grounded,
+    };
     const st = this.currentStation();
     switch (this.coachMode) {
       case 'demo': {
@@ -863,7 +924,8 @@ export class TutorialSession extends ShowSession {
         steerTo(self.pos, { x: FALL_BOARD.x + 3, y: FALL_BOARD.y, z: FALL_BOARD.z }, out);
         break;
       case 'afterFall':
-        if (st && steerTo(self.pos, { x: st.end.x, y: st.end.y, z: st.end.z }, out, 0.8) < 0.5) this.onCoachDemoDone();
+        if (st && steerTo(self.pos, { x: st.end.x, y: st.end.y, z: st.end.z }, out, 0.8) < 0.5)
+          this.onCoachDemoDone();
         break;
       case 'podium':
       case 'idle':
@@ -887,11 +949,18 @@ export class TutorialSession extends ShowSession {
   /** Projects the coach's head to the screen for the speech bubble. */
   private updateCoachAnchor(): void {
     const view = this.round?.view;
-    if (!view || this.stage === 'loading' || this.stage === 'done' || !view.players.feetOf(this.coachId, this.feetScratch)) {
+    if (
+      !view ||
+      this.stage === 'loading' ||
+      this.stage === 'done' ||
+      !view.players.feetOf(this.coachId, this.feetScratch)
+    ) {
       setCoachAnchor(0, 0, false);
       return;
     }
-    const p = this.headScratch.set(this.feetScratch.x, this.feetScratch.y + 2.4, this.feetScratch.z).project(view.camera);
+    const p = this.headScratch
+      .set(this.feetScratch.x, this.feetScratch.y + 2.4, this.feetScratch.z)
+      .project(view.camera);
     const visible = p.z > -1 && p.z < 1;
     setCoachAnchor(((p.x + 1) / 2) * window.innerWidth, ((1 - p.y) / 2) * window.innerHeight, visible);
   }
@@ -916,7 +985,13 @@ export class TutorialSession extends ShowSession {
     }
     const st = this.currentStation();
     // Watch the demo first (that's the point of a coach), unless the coach is slow.
-    if (!st || this.stationPhase === 'done' || this.stationPhase === 'intro' || (this.stationPhase === 'demo' && this.stationTime < 7)) return;
+    if (
+      !st ||
+      this.stationPhase === 'done' ||
+      this.stationPhase === 'intro' ||
+      (this.stationPhase === 'demo' && this.stationTime < 7)
+    )
+      return;
     if (st.id === 'grab') {
       if (steerTo(self.pos, this.coachState.pos, out) < 1.4) out.buttons |= Button.Grab;
       return;
@@ -925,14 +1000,17 @@ export class TutorialSession extends ShowSession {
       this.pilotFor = st.id;
       const next = PRACTICE_STATIONS[this.stationIndex + 1];
       const nav = this.practiceRound.botNav;
-      const route = st.id === 'race' ? routeBetween(nav, 701, 801) : routeBetween(nav, st.navFrom, next?.navFrom ?? null);
+      const route =
+        st.id === 'race' ? routeBetween(nav, 701, 801) : routeBetween(nav, st.navFrom, next?.navFrom ?? null);
       const end = { x: st.end.x - 1.6, y: st.end.y, z: st.end.z };
       this.pilotFollower = new RouteFollower(route, st.id === 'race' ? null : end);
       this.pilotFall = false;
     }
-    if (st.id === 'checkpoint' && this.flags.checkpointSaved && !this.flags.fellAfterCheckpoint) this.pilotFall = true;
+    if (st.id === 'checkpoint' && this.flags.checkpointSaved && !this.flags.fellAfterCheckpoint)
+      this.pilotFall = true;
     if (this.pilotFall) {
-      if (!this.flags.fellAfterCheckpoint) steerTo(self.pos, { x: FALL_BOARD.x + 3, y: FALL_BOARD.y, z: FALL_BOARD.z }, out);
+      if (!this.flags.fellAfterCheckpoint)
+        steerTo(self.pos, { x: FALL_BOARD.x + 3, y: FALL_BOARD.y, z: FALL_BOARD.z }, out);
       return;
     }
     this.pilotFollower?.step(self, tick, out);
@@ -951,8 +1029,15 @@ export class TutorialSession extends ShowSession {
     });
     playCue('ui.confirm');
     this.say(SCRIPT.race.cheer, 'cheer');
-    ui.getState().setRoundIntro(this.loadingInfo('Mini Race', ['Use everything you learned!', 'Dive over the last gap for a speed boost.']));
-    this.after(1.1, () => this.swapUnder('roundLoading', { transition: 'wipe', hold: true }, () => this.loadRace()));
+    ui.getState().setRoundIntro(
+      this.loadingInfo('Mini Race', [
+        'Use everything you learned!',
+        'Dive over the last gap for a speed boost.',
+      ]),
+    );
+    this.after(1.1, () =>
+      this.swapUnder('roundLoading', { transition: 'wipe', hold: true }, () => this.loadRace()),
+    );
   }
 
   private loadRace(): void {
@@ -971,7 +1056,15 @@ export class TutorialSession extends ShowSession {
 
     const old = this.sim;
     this.sim = createMatchSim(
-      { R: this.ctx.R, round: this.raceRound, seed: this.seed, stage: 0, players: all, mode: 'offline', qualifyTarget: players.length },
+      {
+        R: this.ctx.R,
+        round: this.raceRound,
+        seed: this.seed,
+        stage: 0,
+        players: all,
+        mode: 'offline',
+        qualifyTarget: players.length,
+      },
       this.ctx.matchDeps,
     );
     old?.dispose();
@@ -992,10 +1085,17 @@ export class TutorialSession extends ShowSession {
     const r = this.round;
     if (!r?.view) return;
     // Own HUD mapper without the audio sink: its milestone lines would go through the announcer.
-    r.hud = new HudMapper(this.raceRound, players.length, HUMAN, (id) => {
-      const p = this.players.get(id);
-      return p ? { name: p.name, color: p.loadout.colors[0] } : null;
-    }, null, false);
+    r.hud = new HudMapper(
+      this.raceRound,
+      players.length,
+      HUMAN,
+      (id) => {
+        const p = this.players.get(id);
+        return p ? { name: p.name, color: p.loadout.colors[0] } : null;
+      },
+      null,
+      false,
+    );
     r.hud.begin(emoteSlots(human?.loadout.emotes ?? []), false, this.ctx.input.lastDevice, players.length);
     ui.getState().setHud({ controlsHint: false });
     r.view.settleBehindPlayer();

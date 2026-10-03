@@ -34,15 +34,28 @@ export interface XpResult {
  */
 export async function addXp(tx: DbOrTx, catalog: Catalog, userId: string, amount: number): Promise<XpResult> {
   const gain = Math.max(0, Math.round(amount));
-  const [p] = await tx.select({ xp: profiles.xp }).from(profiles).where(eq(profiles.userId, userId)).for('update');
+  const [p] = await tx
+    .select({ xp: profiles.xp })
+    .from(profiles)
+    .where(eq(profiles.userId, userId))
+    .for('update');
   const xpBefore = p?.xp ?? 0;
   const xpAfter = xpBefore + gain;
   const levelBefore = catalog.levelForXp(xpBefore).level;
   const levelAfter = catalog.levelForXp(xpAfter).level;
-  await tx.update(profiles).set({ xp: xpAfter, level: levelAfter, updatedAt: sql`now()` }).where(eq(profiles.userId, userId));
+  await tx
+    .update(profiles)
+    .set({ xp: xpAfter, level: levelAfter, updatedAt: sql`now()` })
+    .where(eq(profiles.userId, userId));
   let levelGumballs = 0;
   for (let lv = levelBefore + 1; lv <= levelAfter; lv++) {
-    const r = await applyLedger(tx, { userId, currency: 'gumballs', delta: catalog.gumballsPerLevel, reason: 'level_reward', ref: `level:${lv}` });
+    const r = await applyLedger(tx, {
+      userId,
+      currency: 'gumballs',
+      delta: catalog.gumballsPerLevel,
+      reason: 'level_reward',
+      ref: `level:${lv}`,
+    });
     if (r.applied) levelGumballs += catalog.gumballsPerLevel;
   }
   const pass = await addPassXp(tx, catalog, userId, gain);
@@ -59,11 +72,21 @@ export async function addPassXp(
   const seasonId = catalog.season.id;
   await tx.insert(seasonPassProgress).values({ userId, seasonId }).onConflictDoNothing();
   const where = and(eq(seasonPassProgress.userId, userId), eq(seasonPassProgress.seasonId, seasonId));
-  const [row] = await tx.select({ xp: seasonPassProgress.xp }).from(seasonPassProgress).where(where).for('update');
+  const [row] = await tx
+    .select({ xp: seasonPassProgress.xp })
+    .from(seasonPassProgress)
+    .where(where)
+    .for('update');
   const before = row?.xp ?? 0;
   const after = before + Math.max(0, amount);
-  await tx.update(seasonPassProgress).set({ xp: after, updatedAt: sql`now()` }).where(where);
-  return { passTierBefore: passProgress(catalog, before).tier, passTierAfter: passProgress(catalog, after).tier };
+  await tx
+    .update(seasonPassProgress)
+    .set({ xp: after, updatedAt: sql`now()` })
+    .where(where);
+  return {
+    passTierBefore: passProgress(catalog, before).tier,
+    passTierAfter: passProgress(catalog, after).tier,
+  };
 }
 
 /**
@@ -80,7 +103,12 @@ export async function grantReward(
   ref: string,
 ): Promise<CatalogReward & { granted: boolean }> {
   if (reward.type === 'cosmetic') {
-    const granted = await grantCosmetic(tx, userId, reward.id, reason === 'pass_reward' ? 'pass' : 'challenge');
+    const granted = await grantCosmetic(
+      tx,
+      userId,
+      reward.id,
+      reason === 'pass_reward' ? 'pass' : 'challenge',
+    );
     return { ...reward, granted };
   }
   const r = await applyLedger(tx, { userId, currency: reward.type, delta: reward.amount, reason, ref });

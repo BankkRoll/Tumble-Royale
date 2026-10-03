@@ -7,7 +7,14 @@
  * recycled round-robin, so nothing about the barrage ever needs replication.
  */
 import type { Collider, RigidBody } from '@dimforge/rapier3d-compat';
-import { InteractionGroups, quatFromAxisAngle, quatFromEulerYXZ, quatIdentity, vec3, type Vec3 } from '@tumble/shared';
+import {
+  InteractionGroups,
+  quatFromAxisAngle,
+  quatFromEulerYXZ,
+  quatIdentity,
+  vec3,
+  type Vec3,
+} from '@tumble/shared';
 import { z } from 'zod';
 import {
   ActorCooldowns,
@@ -80,7 +87,8 @@ export interface CannonShotInfo {
 }
 
 /** Size of the recycled ball pool. */
-export const cannonPoolSize = (p: CannonParams): number => Math.ceil((p.flightTime + p.rollTime) / p.period) + 1;
+export const cannonPoolSize = (p: CannonParams): number =>
+  Math.ceil((p.flightTime + p.rollTime) / p.period) + 1;
 
 /** Lane index for shot `k`. Pure. */
 export function cannonLane(p: CannonParams, k: number): number {
@@ -95,7 +103,8 @@ export function cannonLane(p: CannonParams, k: number): number {
 }
 
 /** Local X of a lane's landing point. */
-export const cannonLaneX = (p: CannonParams, lane: number): number => (lane - (p.laneCount - 1) / 2) * p.laneSpacing;
+export const cannonLaneX = (p: CannonParams, lane: number): number =>
+  (lane - (p.laneCount - 1) / 2) * p.laneSpacing;
 
 /** Most recent shot index at scaled time `ts` (-1 before the first shot). */
 export const cannonShotIndex = (ts: number, p: CannonParams): number =>
@@ -104,7 +113,12 @@ export const cannonShotIndex = (ts: number, p: CannonParams): number =>
 /**
  * Which shot ball slot `slot` carries at scaled time `ts`. Pure.
  */
-export function cannonSlotShot(ts: number, p: CannonParams, slot: number, out: CannonShotInfo): CannonShotInfo {
+export function cannonSlotShot(
+  ts: number,
+  p: CannonParams,
+  slot: number,
+  out: CannonShotInfo,
+): CannonShotInfo {
   const n = cannonPoolSize(p);
   const now = cannonShotIndex(ts, p);
   const k = now - mod(now - slot, n);
@@ -135,7 +149,13 @@ export function cannonLaunchVelocity(p: CannonParams, lane: number, out: Vec3): 
  * Local position and spin of a ball `age` seconds after firing down `lane`.
  * Starts at the barrel pivot (inside the barrel mesh), arcs, then bounce-rolls.
  */
-export function cannonBallAt(p: CannonParams, lane: number, age: number, outPos: Vec3, outRot: { x: number; y: number; z: number; w: number }): void {
+export function cannonBallAt(
+  p: CannonParams,
+  lane: number,
+  age: number,
+  outPos: Vec3,
+  outRot: { x: number; y: number; z: number; w: number },
+): void {
   cannonLaunchVelocity(p, lane, v0);
   const hx = v0.x;
   const hz = v0.z;
@@ -154,7 +174,8 @@ export function cannonBallAt(p: CannonParams, lane: number, age: number, outPos:
     const landZ = hz * p.flightTime;
     outPos.x = landX + dx * p.rollSpeed * u;
     outPos.z = landZ + dz * p.rollSpeed * u;
-    outPos.y = p.landingHeight + p.ballRadius + p.bounceHeight * Math.abs(Math.sin(u * 5.5)) * Math.exp(-2.2 * u);
+    outPos.y =
+      p.landingHeight + p.ballRadius + p.bounceHeight * Math.abs(Math.sin(u * 5.5)) * Math.exp(-2.2 * u);
     dist = hlen * p.flightTime + p.rollSpeed * u;
   }
   // Rolling about (up × dir) by distance / radius, so the stripes read as a real roll.
@@ -163,7 +184,11 @@ export function cannonBallAt(p: CannonParams, lane: number, age: number, outPos:
 const v0 = vec3();
 
 /** Barrel aim (yaw, elevation in radians) and recoil (metres) at scaled time `ts`. Pure. */
-export function cannonAim(ts: number, p: CannonParams, out: { yaw: number; pitch: number; recoil: number }): void {
+export function cannonAim(
+  ts: number,
+  p: CannonParams,
+  out: { yaw: number; pitch: number; recoil: number },
+): void {
   const now = cannonShotIndex(ts, p);
   const nextT = p.startDelay + (now + 1) * p.period;
   const laneNow = cannonLane(p, Math.max(now, 0));
@@ -214,7 +239,13 @@ export function cannonPose(t: number, p: CannonParams, out: PoseSample[], speedS
   const bx = Math.sin(aim.yaw) * cp;
   const by = Math.sin(aim.pitch);
   const bz = Math.cos(aim.yaw) * cp;
-  writeSample(out[0] as PoseSample, -bx * aim.recoil, p.pivotHeight - by * aim.recoil, -bz * aim.recoil, qTmp);
+  writeSample(
+    out[0] as PoseSample,
+    -bx * aim.recoil,
+    p.pivotHeight - by * aim.recoil,
+    -bz * aim.recoil,
+    qTmp,
+  );
   for (let s = 0; s < pool; s++) {
     const sample = out[s + 1] as PoseSample;
     cannonSlotShot(ts, p, s, slotInfo);
@@ -245,7 +276,9 @@ export const cannon: ObstacleModule<CannonParams> = {
     const base = bag.fixed(frame);
     const baseH = Math.max(0.2, p.pivotHeight - 0.5);
     bag.collider(
-      R.ColliderDesc.cylinder(baseH / 2, 1.3).setTranslation(0, baseH / 2, 0).setCollisionGroups(InteractionGroups.static),
+      R.ColliderDesc.cylinder(baseH / 2, 1.3)
+        .setTranslation(0, baseH / 2, 0)
+        .setCollisionGroups(InteractionGroups.static),
       base,
       { kind: 'normal', ownerId: instance.id },
     );

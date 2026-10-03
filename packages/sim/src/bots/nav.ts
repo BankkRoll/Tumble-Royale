@@ -48,7 +48,9 @@ export class NavGraph {
     this.nodes = round.botNav;
     const idx = new Map<number, number>();
     this.nodes.forEach((w, i) => idx.set(w.id, i));
-    this.nextIdx = this.nodes.map((w) => w.next.map((n) => idx.get(n)).filter((n): n is number => n !== undefined));
+    this.nextIdx = this.nodes.map((w) =>
+      w.next.map((n) => idx.get(n)).filter((n): n is number => n !== undefined),
+    );
     const dist = waypointDistancesToGoal(this.nodes);
     this.goalDist = Float64Array.from(this.nodes, (w) => {
       const d = dist.get(w.id);
@@ -58,8 +60,11 @@ export class NavGraph {
     const hasIncoming = new Array<boolean>(this.nodes.length).fill(false);
     for (const list of this.nextIdx) for (const n of list) hasIncoming[n] = true;
     this.hasEdges = this.nextIdx.some((l) => l.length > 0);
-    this.meanOutDegree = this.nodes.length > 0 ? this.nextIdx.reduce((n, l) => n + l.length, 0) / this.nodes.length : 0;
-    this.hasGoal = this.nodes.some((_, i) => hasIncoming[i] === true && (this.nextIdx[i] as number[]).length === 0);
+    this.meanOutDegree =
+      this.nodes.length > 0 ? this.nextIdx.reduce((n, l) => n + l.length, 0) / this.nodes.length : 0;
+    this.hasGoal = this.nodes.some(
+      (_, i) => hasIncoming[i] === true && (this.nextIdx[i] as number[]).length === 0,
+    );
     const queue: number[] = [];
     this.nodes.forEach((_, i) => {
       if (!hasIncoming[i]) {
@@ -160,7 +165,8 @@ export class NavGraph {
         let pick = s >= 1 ? n : s <= 0 ? i : START_BOUND_ACTIONS.has(from.action) && s < 0.5 ? i : n;
         // Fan-out edges from a hub all pass close by; among them prefer the one whose node is nearest.
         const pw = (this.nodes[pick] as Waypoint).position;
-        d += NODE_DIST_WEIGHT * ((pw.x - pos.x) ** 2 + ((pw.y - pos.y) * Y_WEIGHT) ** 2 + (pw.z - pos.z) ** 2);
+        d +=
+          NODE_DIST_WEIGHT * ((pw.x - pos.x) ** 2 + ((pw.y - pos.y) * Y_WEIGHT) ** 2 + (pw.z - pos.z) ** 2);
         // Edges into the avoided node lose to any comparable alternative; if one still wins, back up to its start.
         if (n === avoid) {
           d *= 9;

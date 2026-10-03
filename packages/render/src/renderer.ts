@@ -24,7 +24,12 @@ export async function createRenderer(
   const hasWebGPU = typeof navigator !== 'undefined' && 'gpu' in navigator;
   const forceWebGL = preference === 'webgl' || !hasWebGPU;
 
-  const renderer = new WebGPURenderer({ canvas, antialias: true, forceWebGL, powerPreference: 'high-performance' });
+  const renderer = new WebGPURenderer({
+    canvas,
+    antialias: true,
+    forceWebGL,
+    powerPreference: 'high-performance',
+  });
   await renderer.init();
 
   renderer.outputColorSpace = SRGBColorSpace;

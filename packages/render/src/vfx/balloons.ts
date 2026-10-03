@@ -246,7 +246,11 @@ function buildMaterial(ring: InstanceRing, time: UniformNode<'float', number>): 
 
   const appear = smoothstep(0, 0.22, t).mul(float(1).add(sin(smoothstep(0, 0.4, t).mul(Math.PI)).mul(0.15)));
   const inflate = smoothstep(life.sub(0.18), life.sub(0.02), t);
-  const squash = vec3(float(1).add(inflate.mul(0.4)), float(1).add(inflate.mul(0.22)), float(1).add(inflate.mul(0.4)));
+  const squash = vec3(
+    float(1).add(inflate.mul(0.4)),
+    float(1).add(inflate.mul(0.22)),
+    float(1).add(inflate.mul(0.4)),
+  );
   const scale = a2.z.mul(appear).mul(alive);
   const local = positionGeometry.mul(squash).mul(scale);
 
@@ -262,6 +266,8 @@ function buildMaterial(ring: InstanceRing, time: UniformNode<'float', number>): 
     .mul(0.55);
   const withEmissive = material as MeshToonNodeMaterial & { emissiveNode: Node | null };
   const rim = withEmissive.emissiveNode as Node<'vec3'> | null;
-  withEmissive.emissiveNode = rim ? rim.add(vec3(highlight, highlight, highlight)) : vec3(highlight, highlight, highlight);
+  withEmissive.emissiveNode = rim
+    ? rim.add(vec3(highlight, highlight, highlight))
+    : vec3(highlight, highlight, highlight);
   return material;
 }

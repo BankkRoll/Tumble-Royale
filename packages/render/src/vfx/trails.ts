@@ -31,7 +31,14 @@ import { COLORS, GOLD_COLORS, RAINBOW_COLORS, hexColor } from './palette.ts';
  */
 
 /** Every trail style, for UI and lab pages. */
-export const TRAIL_STYLES: readonly TrailStyle[] = ['rainbow', 'sparkle', 'bubbles', 'flame', 'candy', 'plain'];
+export const TRAIL_STYLES: readonly TrailStyle[] = [
+  'rainbow',
+  'sparkle',
+  'bubbles',
+  'flame',
+  'candy',
+  'plain',
+];
 
 /** Points per ribbon (ring size). */
 const POINTS = 28;
@@ -40,7 +47,14 @@ const SEGMENT = 0.14;
 /** Commit a new point at least this often, so slow motion still renders. */
 const SEGMENT_TIME = 0.06;
 
-const STYLE_ID: Record<TrailStyle, number> = { rainbow: 0, sparkle: 1, bubbles: 2, flame: 3, candy: 4, plain: 5 };
+const STYLE_ID: Record<TrailStyle, number> = {
+  rainbow: 0,
+  sparkle: 1,
+  bubbles: 2,
+  flame: 3,
+  candy: 4,
+  plain: 5,
+};
 
 interface StyleLook {
   /** Seconds a point survives. */
@@ -208,7 +222,11 @@ class Trail {
       const pz = p[o + 2] ?? 0;
       const a = ((this.head - Math.max(0, i - 1) + POINTS) % POINTS) * 4;
       const b = ((this.head - Math.min(m - 1, i + 1) + POINTS) % POINTS) * 4;
-      tangent.set((p[a] ?? 0) - (p[b] ?? 0), (p[a + 1] ?? 0) - (p[b + 1] ?? 0), (p[a + 2] ?? 0) - (p[b + 2] ?? 0));
+      tangent.set(
+        (p[a] ?? 0) - (p[b] ?? 0),
+        (p[a + 1] ?? 0) - (p[b + 1] ?? 0),
+        (p[a + 2] ?? 0) - (p[b + 2] ?? 0),
+      );
       toCam.set(camPos.x - px, camPos.y - py, camPos.z - pz);
       side.crossVectors(tangent, toCam);
       const len = side.length();
@@ -260,7 +278,10 @@ class Trail {
       this.emitClock += 1;
       const every = this.style === 1 ? 3 : 5;
       if (this.emitClock % every === 0) {
-        const c = this.style === 1 ? (GOLD_COLORS[(this.emitClock / every) % GOLD_COLORS.length | 0] ?? COLORS.gold) : BUBBLE;
+        const c =
+          this.style === 1
+            ? (GOLD_COLORS[((this.emitClock / every) % GOLD_COLORS.length) | 0] ?? COLORS.gold)
+            : BUBBLE;
         emit(this.style, this.ex, this.ey, this.ez, c);
       }
     }
@@ -352,7 +373,11 @@ export class TrailPool {
     }
     if (!free || live >= this.limit) return null;
     const trail = free;
-    trail.start(STYLE_ID[style] ?? 5, color ? hexColor(color) : style === 'candy' ? COLORS.danger : null, this.now);
+    trail.start(
+      STYLE_ID[style] ?? 5,
+      color ? hexColor(color) : style === 'candy' ? COLORS.danger : null,
+      this.now,
+    );
     const generation = trail.generation;
     return {
       update: (x: number, y: number, z: number) => {
@@ -416,7 +441,9 @@ function buildMaterial(time: UniformNode<'float', number>): MeshBasicNodeMateria
   const isFlame = style.greaterThan(2.5).and(style.lessThan(3.5));
   const stripe = step(0.5, fract(dist.mul(2.4)));
   const candy = mix(color.xyz, vec3(1, 1, 1), stripe.mul(0.85));
-  const flicker = sin(time.mul(31).add(dist.mul(9))).mul(0.18).add(0.82);
+  const flicker = sin(time.mul(31).add(dist.mul(9)))
+    .mul(0.18)
+    .add(0.82);
   const flame = mix(color.xyz, vec3(1, 0.97, 0.8), core.mul(float(1).sub(u)));
   const rgb = select(isCandy, candy, select(isFlame, flame, mix(color.xyz, vec3(1, 1, 1), core.mul(0.35))));
   const alpha = color.w.mul(edge).mul(select(isFlame, flicker, float(1)));

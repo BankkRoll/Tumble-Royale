@@ -83,7 +83,13 @@ interface PropSpec {
   y: number;
   z: number;
   collider: (R: Rapier) => ReturnType<Rapier['ColliderDesc']['ball']>;
-  parts: { kind: PrimitiveKind; p: [number, number, number]; s: [number, number, number]; color: string; rot?: [number, number, number] }[];
+  parts: {
+    kind: PrimitiveKind;
+    p: [number, number, number];
+    s: [number, number, number];
+    color: string;
+    rot?: [number, number, number];
+  }[];
 }
 
 const gumdrop = (x: number, z: number, r: number, color: string): PropSpec => ({
@@ -229,7 +235,11 @@ export class LobbyStage {
     const R = this.R;
     const b = new PropBuilder();
     b.add('cyl', PAD.x, 0.07, PAD.z, PAD.radius + 0.18, 0.16, PAD.radius + 0.18, '#7a5cff');
-    b.add('torus', PAD.x, 0.16, PAD.z, PAD.radius + 0.06, PAD.radius + 0.06, 0.55, '#ffd23f', [Math.PI / 2, 0, 0]);
+    b.add('torus', PAD.x, 0.16, PAD.z, PAD.radius + 0.06, PAD.radius + 0.06, 0.55, '#ffd23f', [
+      Math.PI / 2,
+      0,
+      0,
+    ]);
 
     // Cannon: a striped barrel on a gumdrop mount, tilted up toward the stage.
     const cx = CANNON.x;
@@ -241,7 +251,17 @@ export class LobbyStage {
     const base = new Vector3(cx, 0.55, cz);
     for (let i = 0; i < 3; i++) {
       const p = base.clone().addScaledVector(dir, 0.25 + i * 0.32);
-      b.add('cyl', p.x, p.y, p.z, 0.3 - i * 0.015, 0.3, 0.3 - i * 0.015, i % 2 === 0 ? '#ffffff' : '#5aa9ff', [tilt, yaw, 0]);
+      b.add(
+        'cyl',
+        p.x,
+        p.y,
+        p.z,
+        0.3 - i * 0.015,
+        0.3,
+        0.3 - i * 0.015,
+        i % 2 === 0 ? '#ffffff' : '#5aa9ff',
+        [tilt, yaw, 0],
+      );
     }
     const mouth = base.clone().addScaledVector(dir, 1.05);
     b.add('torus', mouth.x, mouth.y, mouth.z, 0.29, 0.29, 0.6, '#ffd23f', [tilt + Math.PI / 2, yaw, 0]);
@@ -258,7 +278,18 @@ export class LobbyStage {
     const back = new PropBuilder();
     for (const w of PINWHEELS) {
       back.add('cyl', w.x, w.y - w.stick / 2, w.z - 0.1, 0.2, w.stick, 0.2, '#fff3f8');
-      back.add('sphere', w.x + Math.sin(w.face) * 0.15, w.y, w.z + Math.cos(w.face) * 0.15, 0.4, 0.4, 0.25, '#ffffff', [0, w.face, 0], 0.5);
+      back.add(
+        'sphere',
+        w.x + Math.sin(w.face) * 0.15,
+        w.y,
+        w.z + Math.cos(w.face) * 0.15,
+        0.4,
+        0.4,
+        0.25,
+        '#ffffff',
+        [0, w.face, 0],
+        0.5,
+      );
     }
     this.backdrop = back.build(false);
     for (const m of this.backdrop.meshes) this.root.add(m);
@@ -267,10 +298,17 @@ export class LobbyStage {
     const world = this.idle.world;
     const fixed = world.createRigidBody(R.RigidBodyDesc.fixed());
     world.createCollider(
-      R.ColliderDesc.cylinder(0.08, PAD.radius + 0.18).setTranslation(PAD.x, 0.06, PAD.z).setCollisionGroups(InteractionGroups.static),
+      R.ColliderDesc.cylinder(0.08, PAD.radius + 0.18)
+        .setTranslation(PAD.x, 0.06, PAD.z)
+        .setCollisionGroups(InteractionGroups.static),
       fixed,
     );
-    world.createCollider(R.ColliderDesc.cylinder(0.5, 0.6).setTranslation(cx, 0.5, cz).setCollisionGroups(InteractionGroups.static), fixed);
+    world.createCollider(
+      R.ColliderDesc.cylinder(0.5, 0.6)
+        .setTranslation(cx, 0.5, cz)
+        .setCollisionGroups(InteractionGroups.static),
+      fixed,
+    );
     for (let i = 0; i < POSTS; i++) {
       const a = (i / POSTS) * Math.PI * 2 + Math.PI / POSTS;
       world.createCollider(
@@ -351,10 +389,18 @@ export class LobbyStage {
     }
     for (const { spec, parts } of pending) {
       const body = this.idle.world.createRigidBody(
-        R.RigidBodyDesc.dynamic().setTranslation(spec.x, spec.y, spec.z).setLinearDamping(0.8).setAngularDamping(1.2),
+        R.RigidBodyDesc.dynamic()
+          .setTranslation(spec.x, spec.y, spec.z)
+          .setLinearDamping(0.8)
+          .setAngularDamping(1.2),
       );
       this.idle.world.createCollider(
-        spec.collider(R).setDensity(0.35).setFriction(0.7).setRestitution(0.35).setCollisionGroups(InteractionGroups.prop),
+        spec
+          .collider(R)
+          .setDensity(0.35)
+          .setFriction(0.7)
+          .setRestitution(0.35)
+          .setCollisionGroups(InteractionGroups.prop),
         body,
       );
       this.bodies.push({ body, home: new Vector3(spec.x, spec.y, spec.z), parts });
@@ -366,10 +412,26 @@ export class LobbyStage {
     const R = this.R;
     const geo = this.track(new IcosahedronGeometry(1, 4));
     const mat = this.track(createToonMaterial({ color: '#ffffff', rimStrength: 0.4 }));
-    const wedge = fract(atan(positionLocal.z, positionLocal.x).div(Math.PI * 2).add(0.5).mul(6));
+    const wedge = fract(
+      atan(positionLocal.z, positionLocal.x)
+        .div(Math.PI * 2)
+        .add(0.5)
+        .mul(6),
+    );
     const white = smoothstep(0.47, 0.53, wedge);
-    const which = fract(atan(positionLocal.z, positionLocal.x).div(Math.PI * 2).add(0.5).mul(3)).mul(3).floor();
-    const hue = mix(mix(vec3(1.0, 0.3, 0.55), vec3(1.0, 0.82, 0.25), which.clamp(0, 1)), vec3(0.35, 0.68, 1.0), which.sub(1).clamp(0, 1));
+    const which = fract(
+      atan(positionLocal.z, positionLocal.x)
+        .div(Math.PI * 2)
+        .add(0.5)
+        .mul(3),
+    )
+      .mul(3)
+      .floor();
+    const hue = mix(
+      mix(vec3(1.0, 0.3, 0.55), vec3(1.0, 0.82, 0.25), which.clamp(0, 1)),
+      vec3(0.35, 0.68, 1.0),
+      which.sub(1).clamp(0, 1),
+    );
     const cap = smoothstep(0.82, 0.86, positionLocal.y.abs());
     mat.colorNode = mix(mix(hue, vec3(1, 0.98, 0.95), white), vec3(1, 0.98, 0.95), cap);
     const mesh = new InstancedMesh(geo, mat, 1);
@@ -379,10 +441,17 @@ export class LobbyStage {
     mesh.name = 'lobby-ball';
     this.props.add(mesh);
     const body = this.idle.world.createRigidBody(
-      R.RigidBodyDesc.dynamic().setTranslation(BALL.x, BALL.r, BALL.z).setLinearDamping(0.35).setAngularDamping(0.4),
+      R.RigidBodyDesc.dynamic()
+        .setTranslation(BALL.x, BALL.r, BALL.z)
+        .setLinearDamping(0.35)
+        .setAngularDamping(0.4),
     );
     this.idle.world.createCollider(
-      R.ColliderDesc.ball(BALL.r).setDensity(0.12).setRestitution(0.7).setFriction(0.6).setCollisionGroups(InteractionGroups.prop),
+      R.ColliderDesc.ball(BALL.r)
+        .setDensity(0.12)
+        .setRestitution(0.7)
+        .setFriction(0.6)
+        .setCollisionGroups(InteractionGroups.prop),
       body,
     );
     return { mesh, body };
@@ -393,7 +462,9 @@ export class LobbyStage {
     const mat = this.track(new MeshBasicNodeMaterial({ side: DoubleSide }));
     const st = uv().sub(0.5);
     const r = st.length().mul(2);
-    const ang = atan(st.y, st.x).div(Math.PI * 2).add(0.5);
+    const ang = atan(st.y, st.x)
+      .div(Math.PI * 2)
+      .add(0.5);
     const swirl = fract(ang.mul(5).add(r.mul(1.4)));
     const stripe = smoothstep(0.46, 0.5, swirl).mul(smoothstep(1.0, 0.96, swirl));
     const tint = attribute('aTint', 'vec3') as unknown as Node<'vec3'>;
@@ -442,8 +513,16 @@ export class LobbyStage {
     if (!cannon) return;
     const m = this.cannonMouth;
     this.vfx.spawn('pop', { x: m.x, y: m.y, z: m.z }, { scale: 0.8 });
-    this.vfx.spawn('confetti', { x: m.x + this.cannonDir.x * 0.6, y: m.y + 0.8, z: m.z + this.cannonDir.z * 0.6 }, { colors: CONFETTI, intensity: 1.1, delay: 0.05 });
-    this.vfx.spawn('confetti', { x: m.x + this.cannonDir.x * 1.6, y: m.y + 2.2, z: m.z + this.cannonDir.z * 1.6 }, { colors: CONFETTI, intensity: 0.8, delay: 0.18 });
+    this.vfx.spawn(
+      'confetti',
+      { x: m.x + this.cannonDir.x * 0.6, y: m.y + 0.8, z: m.z + this.cannonDir.z * 0.6 },
+      { colors: CONFETTI, intensity: 1.1, delay: 0.05 },
+    );
+    this.vfx.spawn(
+      'confetti',
+      { x: m.x + this.cannonDir.x * 1.6, y: m.y + 2.2, z: m.z + this.cannonDir.z * 1.6 },
+      { colors: CONFETTI, intensity: 0.8, delay: 0.18 },
+    );
   }
 
   /** Puff where the Tumbler disappears/appears when idle play ends. */
@@ -544,7 +623,16 @@ export class LobbyStage {
 }
 
 /** Backdrop lollipop pinwheels: position, radius, stick length, facing, spin (rad/s) and swirl tint. */
-const PINWHEELS: { x: number; y: number; z: number; r: number; stick: number; face: number; spin: number; tint: [number, number, number] }[] = [
+const PINWHEELS: {
+  x: number;
+  y: number;
+  z: number;
+  r: number;
+  stick: number;
+  face: number;
+  spin: number;
+  tint: [number, number, number];
+}[] = [
   { x: -15, y: 9, z: -26, r: 3.4, stick: 12, face: 0.25, spin: 0.25, tint: [1, 0.36, 0.62] },
   { x: 17, y: 7.5, z: -24, r: 2.8, stick: 10, face: -0.3, spin: -0.32, tint: [0.42, 0.72, 1] },
   { x: 7, y: 13, z: -38, r: 3.8, stick: 15, face: -0.1, spin: 0.2, tint: [1, 0.78, 0.25] },

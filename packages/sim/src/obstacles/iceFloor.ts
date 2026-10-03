@@ -51,7 +51,8 @@ export const iceFloor: ObstacleModule<IceFloorParams> = {
     const body = bag.fixed(instanceFrame(instance));
     const ht = p.thickness / 2;
     let desc;
-    if (p.shape === 'box') desc = R.ColliderDesc.cuboid(p.sizeX / 2, ht, p.sizeZ / 2).setTranslation(0, -ht, 0);
+    if (p.shape === 'box')
+      desc = R.ColliderDesc.cuboid(p.sizeX / 2, ht, p.sizeZ / 2).setTranslation(0, -ht, 0);
     else if (p.shape === 'hex') desc = R.ColliderDesc.convexHull(iceHexHull(p.radius, p.thickness));
     // NOTE: convexHull returns null for degenerate input; a disc is the closest safe stand-in.
     desc ??= R.ColliderDesc.cylinder(ht, p.radius).setTranslation(0, -ht, 0);

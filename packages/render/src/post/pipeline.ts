@@ -105,7 +105,15 @@ export interface GradeParams {
 export type PhotoFilter = 'none' | 'vivid' | 'dream' | 'mono' | 'sepia' | 'noir' | 'pop';
 
 /** Every photo filter id, for UIs. */
-export const PHOTO_FILTERS: readonly PhotoFilter[] = ['none', 'vivid', 'dream', 'mono', 'sepia', 'noir', 'pop'];
+export const PHOTO_FILTERS: readonly PhotoFilter[] = [
+  'none',
+  'vivid',
+  'dream',
+  'mono',
+  'sepia',
+  'noir',
+  'pop',
+];
 
 /** Default settings (Medium). */
 export const DEFAULT_POST_SETTINGS: PostSettings = {
@@ -274,7 +282,12 @@ export function createPostPipeline(
     }
 
     if (current.bloom) {
-      bloomNode = bloom(scenePass.getTextureNode('emissive'), u.bloomStrength.value, u.bloomRadius.value, u.bloomThreshold.value);
+      bloomNode = bloom(
+        scenePass.getTextureNode('emissive'),
+        u.bloomStrength.value,
+        u.bloomRadius.value,
+        u.bloomThreshold.value,
+      );
       bloomNode.strength = u.bloomStrength;
       bloomNode.threshold = u.bloomThreshold;
       bloomNode.radius = u.bloomRadius;
@@ -365,7 +378,8 @@ export function createPostPipeline(
         (patch.chromatic !== undefined && patch.chromatic !== current.chromatic) ||
         (patch.enabled !== undefined && patch.enabled !== current.enabled) ||
         (patch.toneMapping !== undefined && patch.toneMapping !== current.toneMapping);
-      const scaleChanged = patch.resolutionScale !== undefined && patch.resolutionScale !== current.resolutionScale;
+      const scaleChanged =
+        patch.resolutionScale !== undefined && patch.resolutionScale !== current.resolutionScale;
       Object.assign(current, patch);
       if (structural && current.enabled) build();
       // Adaptive resolution steps often: resize the scene pass in place instead of recompiling the graph.

@@ -57,12 +57,20 @@ async function toMenu(page: Page, width = 1440, height = 900): Promise<void> {
     await page.evaluate((s) => {
       const t = window.__tumble!;
       if (s === 'splash') t.emit!('start');
-      else if (s === 'welcome') t.emit!('welcomeDone', { name: 'Lobby Tester', colors: { primary: '#ff5fa8', secondary: '#ffd23f', pattern: 'plain' } });
+      else if (s === 'welcome')
+        t.emit!('welcomeDone', {
+          name: 'Lobby Tester',
+          colors: { primary: '#ff5fa8', secondary: '#ffd23f', pattern: 'plain' },
+        });
       else if (s === 'tutorialPrompt') t.emit!('tutorialChoice', { accept: false, dontAskAgain: true });
     }, screen);
     await page.waitForTimeout(500);
   }
-  await page.waitForFunction(() => window.__tumble?.screen?.() === 'menu' && window.__tumble.ui!.getState().menuTab === 'play', undefined, { timeout: 30_000 });
+  await page.waitForFunction(
+    () => window.__tumble?.screen?.() === 'menu' && window.__tumble.ui!.getState().menuTab === 'play',
+    undefined,
+    { timeout: 30_000 },
+  );
   await page.waitForFunction(() => window.__tumble?.lobbyState?.() != null, undefined, { timeout: 30_000 });
   // Wipe transition and the menu intro animations.
   await page.waitForTimeout(2200);
@@ -126,7 +134,12 @@ test.describe('main-menu lobby', () => {
 
     // Opening and closing the emote picker and hopping between tabs are UI clicks, not gameplay presses.
     await page.keyboard.press('Escape');
-    for (const sel of ['.tr-lobby-emote-btn', '.tr-lobby-emote-btn', '[data-tab="locker"]', '[data-tab="play"]']) {
+    for (const sel of [
+      '.tr-lobby-emote-btn',
+      '.tr-lobby-emote-btn',
+      '[data-tab="locker"]',
+      '[data-tab="play"]',
+    ]) {
       await page.locator(sel).first().click();
       for (let k = 0; k < 4; k++) {
         await sample();
@@ -144,7 +157,10 @@ test.describe('main-menu lobby', () => {
     }
     await page.locator('[data-tab="play"]').first().click();
 
-    expect(states.filter((s) => s === DIVE || s === DIVE_SLIDE), `states seen: ${states.join(',')}`).toHaveLength(0);
+    expect(
+      states.filter((s) => s === DIVE || s === DIVE_SLIDE),
+      `states seen: ${states.join(',')}`,
+    ).toHaveLength(0);
     expect(await page.evaluate(() => document.pointerLockElement)).toBeNull();
     expect(errors, errors.join('\n')).toHaveLength(0);
   });
@@ -180,7 +196,9 @@ test.describe('main-menu lobby', () => {
       await page.keyboard.up(key);
     }
     const end = await lobby(page);
-    console.log(`[lobby] max radius ${maxR.toFixed(2)} m, min y ${minY.toFixed(2)} m, pitch ${Math.min(...pitches).toFixed(1)}–${Math.max(...pitches).toFixed(1)}°`);
+    console.log(
+      `[lobby] max radius ${maxR.toFixed(2)} m, min y ${minY.toFixed(2)} m, pitch ${Math.min(...pitches).toFixed(1)}–${Math.max(...pitches).toFixed(1)}°`,
+    );
     expect(end.idlePlaying).toBe(true);
     expect(maxR, 'reached the rim').toBeGreaterThan(WALL_RADIUS - 1.2);
     expect(maxR, 'never past the rim wall').toBeLessThan(WALL_RADIUS + 0.2);
@@ -209,7 +227,10 @@ test.describe('main-menu lobby', () => {
       await snap(page, '03-emote-wheel');
       expect(await page.locator('.tr-lobby-emotes').textContent()).not.toMatch(/\p{Extended_Pictographic}/u);
       await item.click();
-      await page.waitForFunction((e) => window.__tumble?.lobbyState?.()?.state === e, EMOTE, { timeout: 5000, polling: 50 });
+      await page.waitForFunction((e) => window.__tumble?.lobbyState?.()?.state === e, EMOTE, {
+        timeout: 5000,
+        polling: 50,
+      });
       await page.waitForTimeout(700);
       await snap(page, '04-confetti');
       expect(await page.locator('.tr-lobby-emote-panel').count(), 'picker closes after a pick').toBe(0);
@@ -222,7 +243,10 @@ test.describe('main-menu lobby', () => {
       await expect(page.locator('.tr-lobby-emote-panel')).toHaveCount(0);
       expect(await page.evaluate(() => window.__tumble!.screen!())).toBe('menu');
       await page.keyboard.press('Digit1');
-      await page.waitForFunction((e) => window.__tumble?.lobbyState?.()?.state === e, EMOTE, { timeout: 5000, polling: 50 });
+      await page.waitForFunction((e) => window.__tumble?.lobbyState?.()?.state === e, EMOTE, {
+        timeout: 5000,
+        polling: 50,
+      });
 
       // Emote during idle play too.
       await page.waitForTimeout(2800);
@@ -233,7 +257,10 @@ test.describe('main-menu lobby', () => {
       expect((await lobby(page)).idlePlaying).toBe(true);
       await page.locator('.tr-lobby-emote-btn').click();
       await page.locator('.tr-lobby-emote-item:not(.is-locked)').first().click();
-      await page.waitForFunction((e) => window.__tumble?.lobbyState?.()?.state === e, EMOTE, { timeout: 5000, polling: 50 });
+      await page.waitForFunction((e) => window.__tumble?.lobbyState?.()?.state === e, EMOTE, {
+        timeout: 5000,
+        polling: 50,
+      });
       await page.waitForTimeout(600);
       await snap(page, '05-idle-emote');
       expect(errors, errors.join('\n')).toHaveLength(0);

@@ -12,7 +12,14 @@ import {
   type Vec3,
 } from '@tumble/shared';
 import { loadRapier, type Rapier } from '@tumble/sim';
-import { createMatchSim, createSimpleController, resolveObstacles, spawnSlots, type MatchPlayerInfo, type MatchSimHandle } from '@tumble/sim/match';
+import {
+  createMatchSim,
+  createSimpleController,
+  resolveObstacles,
+  spawnSlots,
+  type MatchPlayerInfo,
+  type MatchSimHandle,
+} from '@tumble/sim/match';
 import { OBSTACLE_REGISTRY, getObstacleModule } from '@tumble/sim/obstacles';
 import { appendFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -21,7 +28,13 @@ import { CHARACTER_TUNING } from '../src/tuning/character.ts';
 import { GRAVITY_Y } from '@tumble/shared';
 import { HIGH_BAR, LOW_BAR } from '../src/rounds/spin-cycle/drum.ts';
 
-const EXPECTED = ['hammer-highway', 'wind-tunnel-peaks', 'cannonball-canyon', 'spin-cycle', 'spin-cycle-finale'];
+const EXPECTED = [
+  'hammer-highway',
+  'wind-tunnel-peaks',
+  'cannonball-canyon',
+  'spin-cycle',
+  'spin-cycle-finale',
+];
 
 const rounds: RoundDefinition[] = ROUNDS_GROUP_2.map((r) => RoundDefinitionSchema.parse(r));
 
@@ -78,7 +91,9 @@ function bridgeTopUnder(o: RoundDefinition['obstacles'][number], x: number, z: n
   if (o.type === 'movingPlatform') {
     const p = o.params as { size: Vec3; points?: Vec3[] };
     const first = p.points?.[0] ?? { x: 0, y: 0, z: 0 };
-    return Math.abs(lx - first.x) <= p.size.x / 2 && Math.abs(lz - first.z) <= p.size.z / 2 ? o.position.y + first.y : null;
+    return Math.abs(lx - first.x) <= p.size.x / 2 && Math.abs(lz - first.z) <= p.size.z / 2
+      ? o.position.y + first.y
+      : null;
   }
   return null;
 }
@@ -86,13 +101,21 @@ function bridgeTopUnder(o: RoundDefinition['obstacles'][number], x: number, z: n
 /** True when a solid surface (static piece or drum floor panel) lies just under `p` (feet height). */
 function onGround(round: RoundDefinition, p: Vec3): boolean {
   const near = (top: number | null): boolean => top !== null && p.y - top >= -0.05 && p.y - top <= 0.6;
-  return round.geometry.some((g) => near(topUnder(g as StaticPiece, p.x, p.z))) || round.obstacles.some((o) => near(bridgeTopUnder(o, p.x, p.z)));
+  return (
+    round.geometry.some((g) => near(topUnder(g as StaticPiece, p.x, p.z))) ||
+    round.obstacles.some((o) => near(bridgeTopUnder(o, p.x, p.z)))
+  );
 }
 
 function inside(round: RoundDefinition, p: Vec3, margin = 0): boolean {
   const { min, max } = round.bounds;
   return (
-    p.x >= min.x + margin && p.x <= max.x - margin && p.y >= min.y + margin && p.y <= max.y - margin && p.z >= min.z + margin && p.z <= max.z - margin
+    p.x >= min.x + margin &&
+    p.x <= max.x - margin &&
+    p.y >= min.y + margin &&
+    p.y <= max.y - margin &&
+    p.z >= min.z + margin &&
+    p.z <= max.z - margin
   );
 }
 
@@ -121,23 +144,34 @@ describe.each(rounds.map((r) => [r.id, r] as const))('%s', (_id, round) => {
         expect(mod, `${inst.id}: unknown type ${inst.type}`).toBeDefined();
         const parsed = mod!.schema.parse(inst.params) as Record<string, unknown>;
         for (const key of Object.keys(inst.params)) {
-          expect(key in parsed, `${variation?.id ?? 'base'} ${inst.id}: param "${key}" is not in the ${inst.type} schema`).toBe(true);
+          expect(
+            key in parsed,
+            `${variation?.id ?? 'base'} ${inst.id}: param "${key}" is not in the ${inst.type} schema`,
+          ).toBe(true);
         }
       }
     }
     for (const variation of round.variations) {
       for (const id of [...Object.keys(variation.obstacleParams), ...variation.removeObstacles]) {
-        expect(round.obstacles.some((o) => o.id === id), `${variation.id}: unknown obstacle ${id}`).toBe(true);
+        expect(
+          round.obstacles.some((o) => o.id === id),
+          `${variation.id}: unknown obstacle ${id}`,
+        ).toBe(true);
       }
     }
   });
 
   it('spawns and respawns stand on solid ground', () => {
-    const slots = spawnSlots(round, 7, Array.from({ length: round.players.max }, () => -1));
+    const slots = spawnSlots(
+      round,
+      7,
+      Array.from({ length: round.players.max }, () => -1),
+    );
     for (const s of slots) expect(onGround(round, s.pos), `spawn ${JSON.stringify(s.pos)}`).toBe(true);
     for (const t of round.triggers.filter((tr) => tr.kind === 'checkpoint')) {
       expect(t.respawn.length, `${t.id} respawns`).toBeGreaterThan(0);
-      for (const p of t.respawn) expect(onGround(round, p), `${t.id} respawn ${JSON.stringify(p)}`).toBe(true);
+      for (const p of t.respawn)
+        expect(onGround(round, p), `${t.id} respawn ${JSON.stringify(p)}`).toBe(true);
     }
   });
 
@@ -155,7 +189,12 @@ describe.each(rounds.map((r) => [r.id, r] as const))('%s', (_id, round) => {
   it('bot nav is well formed', () => {
     const ids = new Set(round.botNav.map((w) => w.id));
     for (const w of round.botNav) for (const n of w.next) expect(ids.has(n), `wp ${w.id} → ${n}`).toBe(true);
-    for (const w of round.botNav) if (w.timeAgainst) expect(round.obstacles.some((o) => o.id === w.timeAgainst), `wp ${w.id} timeAgainst`).toBe(true);
+    for (const w of round.botNav)
+      if (w.timeAgainst)
+        expect(
+          round.obstacles.some((o) => o.id === w.timeAgainst),
+          `wp ${w.id} timeAgainst`,
+        ).toBe(true);
     if (round.type !== 'race') return;
     // Every node is reachable from an entry node on the start plaza and can reach the finish sink.
     const byId = new Map(round.botNav.map((w) => [w.id, w]));
@@ -163,16 +202,26 @@ describe.each(rounds.map((r) => [r.id, r] as const))('%s', (_id, round) => {
     const entries = round.botNav.filter((w) => !incoming.has(w.id));
     expect(entries.length).toBeGreaterThan(0);
     for (const e of entries) {
-      expect(Math.hypot(e.position.x - round.spawn.origin.x, e.position.z - round.spawn.origin.z), `entry wp ${e.id}`).toBeLessThan(12);
+      expect(
+        Math.hypot(e.position.x - round.spawn.origin.x, e.position.z - round.spawn.origin.z),
+        `entry wp ${e.id}`,
+      ).toBeLessThan(12);
     }
     const seen = new Set<number>(entries.map((e) => e.id));
     const queue = entries.map((e) => e.id);
-    while (queue.length) for (const n of byId.get(queue.shift()!)!.next) if (!seen.has(n)) seen.add(n), queue.push(n);
+    while (queue.length)
+      for (const n of byId.get(queue.shift()!)!.next)
+        if (!seen.has(n)) {
+          seen.add(n);
+          queue.push(n);
+        }
     expect(seen.size).toBe(round.botNav.length);
     const sinks = round.botNav.filter((w) => w.next.length === 0);
     expect(sinks).toHaveLength(1);
     const finish = round.triggers.find((t) => t.kind === 'finish')!;
-    expect(Math.hypot(sinks[0]!.position.x - finish.position.x, sinks[0]!.position.z - finish.position.z)).toBeLessThan(3);
+    expect(
+      Math.hypot(sinks[0]!.position.x - finish.position.x, sinks[0]!.position.z - finish.position.z),
+    ).toBeLessThan(3);
     const reach = new Map<number, boolean>();
     const canFinish = (id: number, stack = new Set<number>()): boolean => {
       if (reach.has(id)) return reach.get(id)!;
@@ -224,7 +273,15 @@ describe.runIf(!!process.env.G2_DIAG)('balance probe', () => {
       const round = rounds.find((r) => r.id === id)!;
       const n = Number(process.env.G2_BOTS ?? (round.type === 'race' ? 24 : round.players.ideal));
       const sim = createMatchSim(
-        { R, round, seed: 7, stage: 0, players: players(n), mode: 'offline', ...(process.env.G2_VAR ? { variationId: process.env.G2_VAR } : {}) },
+        {
+          R,
+          round,
+          seed: 7,
+          stage: 0,
+          players: players(n),
+          mode: 'offline',
+          ...(process.env.G2_VAR ? { variationId: process.env.G2_VAR } : {}),
+        },
         { createController: createTumblerController, obstacles: OBSTACLE_REGISTRY },
       );
       startPlaying(sim);
@@ -233,25 +290,36 @@ describe.runIf(!!process.env.G2_DIAG)('balance probe', () => {
       const hits = new Map<string, number>();
       const walkOffs: string[] = [];
       const bySkill = [0, 0, 0];
-      const fs = { pos: { x: 0, y: 0, z: 0 }, rot: { x: 0, y: 0, z: 0, w: 1 }, vel: { x: 0, y: 0, z: 0 }, angVel: { x: 0, y: 0, z: 0 } } as unknown as Parameters<MatchSimHandle['getPlayerState']>[1];
+      const fs = {
+        pos: { x: 0, y: 0, z: 0 },
+        rot: { x: 0, y: 0, z: 0, w: 1 },
+        vel: { x: 0, y: 0, z: 0 },
+        angVel: { x: 0, y: 0, z: 0 },
+      } as unknown as Parameters<MatchSimHandle['getPlayerState']>[1];
       const lines: string[] = [`${id} (${sim.variationId}) ${n} bots`];
       for (let s = 1; s <= seconds * 60; s++) {
         sim.step();
         for (const e of sim.events.drain()) {
           if (e.type === 'stun') lastStun.set(e.player, s);
-          if (e.type === 'obstacleCue' && /bonk|squash|trip|ropeHit|hit/i.test(e.cue)) hits.set(e.obstacle, (hits.get(e.obstacle) ?? 0) + 1);
+          if (e.type === 'obstacleCue' && /bonk|squash|trip|ropeHit|hit/i.test(e.cue))
+            hits.set(e.obstacle, (hits.get(e.obstacle) ?? 0) + 1);
           if (e.type !== 'fellOut') continue;
           const knocked = s - (lastStun.get(e.player) ?? -1e9) < 240;
-          const k = (round.type === 'race' ? Math.floor(e.pos.z / 20) * 20 : Math.round(s / 600) * 10) + (knocked ? 'k' : 'w');
+          const k =
+            (round.type === 'race' ? Math.floor(e.pos.z / 20) * 20 : Math.round(s / 600) * 10) +
+            (knocked ? 'k' : 'w');
           fell.set(k, (fell.get(k) ?? 0) + 1);
           bySkill[e.player % 3]!++;
-          if (!knocked && walkOffs.length < 40) walkOffs.push(`(${e.pos.x.toFixed(1)},${e.pos.z.toFixed(0)})`);
+          if (!knocked && walkOffs.length < 40)
+            walkOffs.push(`(${e.pos.x.toFixed(1)},${e.pos.z.toFixed(0)})`);
         }
         if (process.env.G2_TRACE && s % 12 === 0) {
           const pid = Number(process.env.G2_TRACE);
           sim.getPlayerState(pid, fs);
           const p = fs.pos;
-          lines.push(`  trace t=${(s / 60).toFixed(1)} p=(${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)}) st=${fs.state}`);
+          lines.push(
+            `  trace t=${(s / 60).toFixed(1)} p=(${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)}) st=${fs.state}`,
+          );
         }
         if (s % 600 === 0) {
           const st = sim.getStatus();
@@ -263,11 +331,19 @@ describe.runIf(!!process.env.G2_DIAG)('balance probe', () => {
             const k = round.type === 'race' ? Math.floor(p.z / 20) * 20 : Math.round(Math.hypot(p.x, p.z));
             bins.set(k, (bins.get(k) ?? 0) + 1);
           }
-          const hist = [...bins.entries()].sort((a, b) => a[0] - b[0]).map(([k, c]) => `${k}:${c}`).join(' ');
+          const hist = [...bins.entries()]
+            .sort((a, b) => a[0] - b[0])
+            .map(([k, c]) => `${k}:${c}`)
+            .join(' ');
           lines.push(`t=${s / 60}s q=${st.qualifiedCount} e=${st.eliminatedCount} hist ${hist}`);
         }
       }
-      lines.push(`falls (k=knocked w=walked): ${[...fell.entries()].sort((a, b) => parseFloat(a[0]) - parseFloat(b[0])).map(([k, c]) => `${k}:${c}`).join(' ')}`);
+      lines.push(
+        `falls (k=knocked w=walked): ${[...fell.entries()]
+          .sort((a, b) => parseFloat(a[0]) - parseFloat(b[0]))
+          .map(([k, c]) => `${k}:${c}`)
+          .join(' ')}`,
+      );
       lines.push(`hits: ${[...hits.entries()].map(([k, c]) => `${k}:${c}`).join(' ')}`);
       lines.push(`walk-offs: ${walkOffs.join(' ')}`);
       lines.push(`falls by skill clumsy/average/sharp: ${bySkill.join('/')}`);

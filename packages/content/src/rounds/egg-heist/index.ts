@@ -8,7 +8,19 @@
  * and 2, so the arena is 3-fold symmetric by construction.
  */
 import { defineRound } from '@tumble/shared';
-import { crestBoard, crowdStand, radial, rotObstacle, rotPiece, rotPoint, rotTrigger, team, teamBanner, v, wrapDeg } from '../group-4-kit.ts';
+import {
+  crestBoard,
+  crowdStand,
+  radial,
+  rotObstacle,
+  rotPiece,
+  rotPoint,
+  rotTrigger,
+  team,
+  teamBanner,
+  v,
+  wrapDeg,
+} from '../group-4-kit.ts';
 
 type Def = Parameters<typeof defineRound>[0];
 type Piece = Def['geometry'][number];
@@ -28,7 +40,14 @@ const NEST_R = 26;
 function spokePieces(t: number): Piece[] {
   return [
     // a.3 dais ramp toward the nest.
-    { shape: 'ramp', position: v(0, 0.5, 9.5), size: v(4, 1, 3), rotation: { yaw: 180 }, color: 'secondary', pattern: 'chevron' },
+    {
+      shape: 'ramp',
+      position: v(0, 0.5, 9.5),
+      size: v(4, 1, 3),
+      rotation: { yaw: 180 },
+      color: 'secondary',
+      pattern: 'chevron',
+    },
     // a.4 nest platform and a.5 basket rim (eggs stay in; players hop the 0.35 m tube).
     { shape: 'cylinder', position: v(0, 0.3, NEST_R), size: v(5, 0.6, 0), color: team(t), pattern: 'dots' },
     { shape: 'torus', position: v(0, 0.9, NEST_R), size: v(4.6, 0.35, 0), color: team(t) },
@@ -36,16 +55,14 @@ function spokePieces(t: number): Piece[] {
     { shape: 'box', position: v(0, 2, 32), size: v(10, 4, 1), color: 'neutral', bevel: 0.3 },
     ...crestBoard(t, v(0, 2.6, 31.35), 180, 2.6),
     // Woven basket posts around the nest.
-    ...[-50, -25, 25, 50].map(
-      (a): Piece => ({
-        shape: 'cylinder',
-        position: v(5.4 * Math.sin((a * Math.PI) / 180), 1.0, NEST_R + 5.4 * Math.cos((a * Math.PI) / 180)),
-        size: v(0.22, 2, 0),
-        color: team(t),
-        pattern: 'stripes',
-        decorative: true,
-      }),
-    ),
+    ...[-50, -25, 25, 50].map((a): Piece => ({
+      shape: 'cylinder',
+      position: v(5.4 * Math.sin((a * Math.PI) / 180), 1.0, NEST_R + 5.4 * Math.cos((a * Math.PI) / 180)),
+      size: v(0.22, 2, 0),
+      color: team(t),
+      pattern: 'stripes',
+      decorative: true,
+    })),
     ...teamBanner(t, v(-4.6, 0, 30.6), 180, 6.5),
     ...teamBanner(t, v(4.6, 0, 30.6), 180, 6.5),
   ];
@@ -59,7 +76,11 @@ function ruinWalls(): Piece[] {
     // θ is measured from +X toward +Z; the long side runs along the rim.
     out.push({
       shape: 'box',
-      position: v(Math.round(33 * Math.cos(a) * 1000) / 1000, 1.5, Math.round(33 * Math.sin(a) * 1000) / 1000),
+      position: v(
+        Math.round(33 * Math.cos(a) * 1000) / 1000,
+        1.5,
+        Math.round(33 * Math.sin(a) * 1000) / 1000,
+      ),
       size: v(6, 3, 2),
       rotation: { yaw: wrapDeg(90 - theta) },
       color: 'neutral',
@@ -96,36 +117,124 @@ function decor(): Piece[] {
     const yaw = teamRot(k) + 180;
     const base = rotPoint(v(0, 0, -42), teamRot(k));
     out.push(
-      { shape: 'box', position: v(base.x, 4, base.z), size: v(5, 8, 4), rotation: { yaw }, color: 'neutral', bevel: 0.6, decorative: true },
-      { shape: 'box', position: rotPoint(v(0, 5, -39.8), teamRot(k)), size: v(3.6, 1.0, 0.6), rotation: { yaw }, color: 'secondary', decorative: true },
-      { shape: 'sphere', position: rotPoint(v(-1.1, 6.2, -39.9), teamRot(k)), size: v(0.6, 0, 0), color: '#ffffff', decorative: true },
-      { shape: 'sphere', position: rotPoint(v(1.1, 6.2, -39.9), teamRot(k)), size: v(0.6, 0, 0), color: '#ffffff', decorative: true },
+      {
+        shape: 'box',
+        position: v(base.x, 4, base.z),
+        size: v(5, 8, 4),
+        rotation: { yaw },
+        color: 'neutral',
+        bevel: 0.6,
+        decorative: true,
+      },
+      {
+        shape: 'box',
+        position: rotPoint(v(0, 5, -39.8), teamRot(k)),
+        size: v(3.6, 1.0, 0.6),
+        rotation: { yaw },
+        color: 'secondary',
+        decorative: true,
+      },
+      {
+        shape: 'sphere',
+        position: rotPoint(v(-1.1, 6.2, -39.9), teamRot(k)),
+        size: v(0.6, 0, 0),
+        color: '#ffffff',
+        decorative: true,
+      },
+      {
+        shape: 'sphere',
+        position: rotPoint(v(1.1, 6.2, -39.9), teamRot(k)),
+        size: v(0.6, 0, 0),
+        color: '#ffffff',
+        decorative: true,
+      },
     );
   }
   // Waterfalls pouring off the rim into the void, and lily-pad frog spectators.
   for (let i = 0; i < 6; i++) {
     const yaw = 30 + i * 60;
     out.push(
-      { ...rotPiece({ shape: 'box', position: v(0, -4, 38), size: v(5, 12, 0.6), color: '#7fd8ff', decorative: true, pattern: 'stripes' }, yaw) },
-      { ...rotPiece({ shape: 'cylinder', position: v(0, -0.3, 47), size: v(3.2, 0.3, 0), color: 'primary', decorative: true }, yaw + 30) },
-      ...crowdStand(rotPoint(v(0, 0, 47), yaw + 30), wrapDeg(yaw + 30 + 180), 4.5, 1, ['#6ee7a8', '#8cc45a', '#3ce6e0'], i),
+      {
+        ...rotPiece(
+          {
+            shape: 'box',
+            position: v(0, -4, 38),
+            size: v(5, 12, 0.6),
+            color: '#7fd8ff',
+            decorative: true,
+            pattern: 'stripes',
+          },
+          yaw,
+        ),
+      },
+      {
+        ...rotPiece(
+          {
+            shape: 'cylinder',
+            position: v(0, -0.3, 47),
+            size: v(3.2, 0.3, 0),
+            color: 'primary',
+            decorative: true,
+          },
+          yaw + 30,
+        ),
+      },
+      ...crowdStand(
+        rotPoint(v(0, 0, 47), yaw + 30),
+        wrapDeg(yaw + 30 + 180),
+        4.5,
+        1,
+        ['#6ee7a8', '#8cc45a', '#3ce6e0'],
+        i,
+      ),
     );
   }
   // Floating root islands with jungle trees, and glowing flowers around the clearing edge.
   for (let i = 0; i < 6; i++) {
     const p = rotPoint(v(0, 0, 41), i * 60);
     out.push(
-      { shape: 'cylinder', position: v(p.x, -1.5, p.z), size: v(3.4, 3, 0), color: '#b8956a', decorative: true },
-      { shape: 'cylinder', position: v(p.x, 4, p.z), size: v(0.45, 8, 0), color: '#b8956a', decorative: true, pattern: 'stripes' },
+      {
+        shape: 'cylinder',
+        position: v(p.x, -1.5, p.z),
+        size: v(3.4, 3, 0),
+        color: '#b8956a',
+        decorative: true,
+      },
+      {
+        shape: 'cylinder',
+        position: v(p.x, 4, p.z),
+        size: v(0.45, 8, 0),
+        color: '#b8956a',
+        decorative: true,
+        pattern: 'stripes',
+      },
       { shape: 'sphere', position: v(p.x, 8.6, p.z), size: v(2.6, 0, 0), color: 'primary', decorative: true },
-      { shape: 'sphere', position: v(p.x + 1.4, 7.6, p.z + 0.6), size: v(1.6, 0, 0), color: 'primary', decorative: true },
+      {
+        shape: 'sphere',
+        position: v(p.x + 1.4, 7.6, p.z + 0.6),
+        size: v(1.6, 0, 0),
+        color: 'primary',
+        decorative: true,
+      },
     );
   }
   for (let i = 0; i < 12; i++) {
     const p = rotPoint(v(0, 0.6, 32.6), i * 30 + 15);
     out.push(
-      { shape: 'cylinder', position: v(p.x, 0.6, p.z), size: v(0.12, 1.2, 0), color: 'primary', decorative: true },
-      { shape: 'sphere', position: v(p.x, 1.4, p.z), size: v(0.45, 0, 0), color: i % 2 ? 'accent' : 'danger', decorative: true },
+      {
+        shape: 'cylinder',
+        position: v(p.x, 0.6, p.z),
+        size: v(0.12, 1.2, 0),
+        color: 'primary',
+        decorative: true,
+      },
+      {
+        shape: 'sphere',
+        position: v(p.x, 1.4, p.z),
+        size: v(0.45, 0, 0),
+        color: i % 2 ? 'accent' : 'danger',
+        decorative: true,
+      },
     );
   }
   return out;
@@ -152,15 +261,40 @@ const pilePoints = [0, 60, 120, 180, 240, 300].map((a) => {
 });
 
 const perTeam: Obstacle[] = [
-  { id: 'bump-0a', type: 'bumperPillar', position: v(-3, 0, 14), params: { radius: 0.9, height: 2.4, bounceSpeed: 8 } },
-  { id: 'bump-0b', type: 'bumperPillar', position: v(3, 0, 14), params: { radius: 0.9, height: 2.4, bounceSpeed: 8 } },
+  {
+    id: 'bump-0a',
+    type: 'bumperPillar',
+    position: v(-3, 0, 14),
+    params: { radius: 0.9, height: 2.4, bounceSpeed: 8 },
+  },
+  {
+    id: 'bump-0b',
+    type: 'bumperPillar',
+    position: v(3, 0, 14),
+    params: { radius: 0.9, height: 2.4, bounceSpeed: 8 },
+  },
   // Negative spin carries the top toward local +Z (the nest): helps carriers home, slows raiders leaving.
-  { id: 'log-0', type: 'rollingDrum', position: v(0, 0.6, 19), rotation: { yaw: 0 }, params: { length: 6, radius: 0.6, spinSpeed: -114.6, ridges: 6, ridgeHeight: 0.12 } },
+  {
+    id: 'log-0',
+    type: 'rollingDrum',
+    position: v(0, 0.6, 19),
+    rotation: { yaw: 0 },
+    params: { length: 6, radius: 0.6, spinSpeed: -114.6, ridges: 6, ridgeHeight: 0.12 },
+  },
   {
     id: 'nest-zone-0',
     type: 'goalZone',
     position: v(0, 0, NEST_R),
-    params: { mode: 'nest', team: 0, sizeX: 8, sizeY: 3, sizeZ: 8, spawners: ['eggs', 'eggs-gold'], bonus: { 'eggs-gold': 4 }, basketRadius: 4.6 },
+    params: {
+      mode: 'nest',
+      team: 0,
+      sizeX: 8,
+      sizeY: 3,
+      sizeZ: 8,
+      spawners: ['eggs', 'eggs-gold'],
+      bonus: { 'eggs-gold': 4 },
+      basketRadius: 4.6,
+    },
   },
 ];
 
@@ -172,7 +306,15 @@ const vault: Obstacle[] = [0, 90, 180, 270].map((yaw, i) => {
     type: 'startGate',
     position: p,
     rotation: { yaw },
-    params: { width: 3.8, height: 2.8, thickness: 0.3, openTime: 60, style: 'drop', openDuration: 0.6, countdown: 2 },
+    params: {
+      width: 3.8,
+      height: 2.8,
+      thickness: 0.3,
+      openTime: 60,
+      style: 'drop',
+      openDuration: 0.6,
+      countdown: 2,
+    },
   };
 });
 
@@ -181,13 +323,28 @@ const obstacles: Obstacle[] = [
     id: 'eggs',
     type: 'propSpawner',
     position: v(0, 1, 0),
-    params: { kind: 'egg', points: pilePoints, perPoint: 5, idBase: 1000, respawnDelay: 3, respawnBelow: -12 },
+    params: {
+      kind: 'egg',
+      points: pilePoints,
+      perPoint: 5,
+      idBase: 1000,
+      respawnDelay: 3,
+      respawnBelow: -12,
+    },
   },
   {
     id: 'eggs-gold',
     type: 'propSpawner',
     position: v(0, 1.2, 0),
-    params: { kind: 'egg', points: [v(0, 0, 0)], perPoint: 3, idBase: 1100, scale: 1.3, respawnDelay: 3, respawnBelow: -12 },
+    params: {
+      kind: 'egg',
+      points: [v(0, 0, 0)],
+      perPoint: 3,
+      idBase: 1100,
+      scale: 1.3,
+      respawnDelay: 3,
+      respawnBelow: -12,
+    },
   },
   ...vault,
   ...TEAMS.flatMap((k) =>
@@ -225,7 +382,10 @@ const nest0: Trigger = {
 // Team rounds respawn at the checkpoint whose index is the player's team: the own nest.
 const cp0: Trigger = { ...nest0, id: 'cp-0', kind: 'checkpoint', size: v(9, 3, 9) };
 
-const triggers: Trigger[] = TEAMS.flatMap((k) => [rotTrigger(nest0, teamRot(k), `nest-${k}`, k), rotTrigger(cp0, teamRot(k), `cp-${k}`, k)]);
+const triggers: Trigger[] = TEAMS.flatMap((k) => [
+  rotTrigger(nest0, teamRot(k), `nest-${k}`, k),
+  rotTrigger(cp0, teamRot(k), `cp-${k}`, k),
+]);
 
 // -----------------------------------------------------------------------------
 // Bot hints: centre, spoke points at R 14 / 22, nest centres
@@ -234,7 +394,12 @@ const triggers: Trigger[] = TEAMS.flatMap((k) => [rotTrigger(nest0, teamRot(k), 
 const botNav: NonNullable<Def['botNav']> = [
   { id: 0, position: v(0, 1, 0), radius: 4, next: [] },
   ...TEAMS.flatMap((k) =>
-    [14, 22, NEST_R].map((r, j) => ({ id: 100 * (k + 1) + j, position: rotPoint(v(0, 0, r), teamRot(k)), radius: j === 2 ? 3 : 2, next: [] as number[] })),
+    [14, 22, NEST_R].map((r, j) => ({
+      id: 100 * (k + 1) + j,
+      position: rotPoint(v(0, 0, r), teamRot(k)),
+      radius: j === 2 ? 3 : 2,
+      next: [] as number[],
+    })),
   ),
 ];
 
@@ -295,7 +460,10 @@ export default defineRound({
             idBase: 1200,
             respawnDelay: 15,
             respawnBelow: -25,
-            points: [0, 40, 80, 120, 160, 200, 240, 280, 320].flatMap((a) => [rotPoint(v(0, 0, 13), a), rotPoint(v(0, 0, 21), a + 20)]),
+            points: [0, 40, 80, 120, 160, 200, 240, 280, 320].flatMap((a) => [
+              rotPoint(v(0, 0, 13), a),
+              rotPoint(v(0, 0, 21), a + 20),
+            ]),
           },
         },
       ],
@@ -315,14 +483,28 @@ export default defineRound({
       weight: 1,
       weather: 'stormy',
       description: 'Gusting wind across the clearing and slick mud lanes.',
-      obstacleParams: { 'mud-0': { surface: 'slime' }, 'mud-1': { surface: 'slime' }, 'mud-2': { surface: 'slime' } },
+      obstacleParams: {
+        'mud-0': { surface: 'slime' },
+        'mud-1': { surface: 'slime' },
+        'mud-2': { surface: 'slime' },
+      },
       addObstacles: [
         {
           id: 'w-gust',
           type: 'fanZone',
           position: v(-36, 2.5, 0),
           rotation: { yaw: 90 },
-          params: { width: 70, height: 5, length: 72, strength: 3, falloff: 0, onTime: 5, offTime: 2, telegraphLead: 1, housingDepth: 0.8 },
+          params: {
+            width: 70,
+            height: 5,
+            length: 72,
+            strength: 3,
+            falloff: 0,
+            onTime: 5,
+            offTime: 2,
+            telegraphLead: 1,
+            housingDepth: 0.8,
+          },
         },
       ],
     },

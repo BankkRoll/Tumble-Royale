@@ -31,7 +31,13 @@ import type { AnimClipId } from '@tumble/content/cosmetics';
 import { CharacterState } from '@tumble/sim';
 import { starGeometry } from './accessories.ts';
 import { Animator } from './animator.ts';
-import { TUMBLER_BOUNDS, acquireAssembly, releaseAssembly, type AccessorySpec, type Assembly } from './assembly.ts';
+import {
+  TUMBLER_BOUNDS,
+  acquireAssembly,
+  releaseAssembly,
+  type AccessorySpec,
+  type Assembly,
+} from './assembly.ts';
 import { ChainRuntime, SecondOrder } from './dynamics.ts';
 import { FaceController } from './face.ts';
 import type { Lod } from './geometry.ts';
@@ -243,7 +249,8 @@ export class Tumbler implements TumblerVisual, RagdollHost {
     }
     const rest = this.rig.rest;
     this.chains = next.chains.map(
-      (c) => new ChainRuntime(c, new Vector3(rest[c.attach * 3], rest[c.attach * 3 + 1], rest[c.attach * 3 + 2])),
+      (c) =>
+        new ChainRuntime(c, new Vector3(rest[c.attach * 3], rest[c.attach * 3 + 1], rest[c.attach * 3 + 2])),
     );
   }
 
@@ -345,7 +352,8 @@ export class Tumbler implements TumblerVisual, RagdollHost {
       this.ragdollWanted = false;
     }
     const autoWant = this.autoRagdoll && this.lastState === S.Stunned;
-    const want = !!mgr && this.lod < 2 && !NO_RAGDOLL_STATES.has(this.lastState) && (this.manualRagdoll || autoWant);
+    const want =
+      !!mgr && this.lod < 2 && !NO_RAGDOLL_STATES.has(this.lastState) && (this.manualRagdoll || autoWant);
     if (want === this.ragdollWanted) return;
     this.ragdollWanted = want;
     if (!mgr) return;
@@ -398,7 +406,8 @@ export class Tumbler implements TumblerVisual, RagdollHost {
 
     this.object.updateWorldMatrix(true, false);
     tmpV.setFromMatrixPosition(this.object.matrixWorld);
-    if (this.hasLastWorld && dt > 0) this.velocity.subVectors(tmpV, this.lastWorld).divideScalar(dt).clampLength(0, 15);
+    if (this.hasLastWorld && dt > 0)
+      this.velocity.subVectors(tmpV, this.lastWorld).divideScalar(dt).clampLength(0, 15);
     this.lastWorld.copy(tmpV);
     this.hasLastWorld = true;
 
@@ -433,7 +442,10 @@ export class Tumbler implements TumblerVisual, RagdollHost {
     let pitchT = 0;
     let has = false;
     if (anim.lookAt && !NO_HEAD_LOOK.has(state)) {
-      tmpV.set(anim.lookAt.x, anim.lookAt.y, anim.lookAt.z).applyMatrix4(this.pivotInv).sub(tmpV2.set(0, 1.35, 0));
+      tmpV
+        .set(anim.lookAt.x, anim.lookAt.y, anim.lookAt.z)
+        .applyMatrix4(this.pivotInv)
+        .sub(tmpV2.set(0, 1.35, 0));
       const yaw = Math.atan2(tmpV.x, tmpV.z);
       const pitch = Math.atan2(tmpV.y, Math.hypot(tmpV.x, tmpV.z));
       if (Math.abs(yaw) < 2.3) {
@@ -459,7 +471,12 @@ export class Tumbler implements TumblerVisual, RagdollHost {
       b.quaternion.setFromEuler(tmpEuler.set(v[i * 3]!, v[i * 3 + 1]!, v[i * 3 + 2]!));
       // Ragdolls overwrite local positions too, so restore the rest offsets every frame.
       const p = BONE_PARENT[i]!;
-      if (p >= 0) b.position.set(rest[i * 3]! - rest[p * 3]!, rest[i * 3 + 1]! - rest[p * 3 + 1]!, rest[i * 3 + 2]! - rest[p * 3 + 2]!);
+      if (p >= 0)
+        b.position.set(
+          rest[i * 3]! - rest[p * 3]!,
+          rest[i * 3 + 1]! - rest[p * 3 + 1]!,
+          rest[i * 3 + 2]! - rest[p * 3 + 2]!,
+        );
       b.scale.set(1, 1, 1);
     }
     const root = bones[Bone.root]!;
@@ -468,7 +485,11 @@ export class Tumbler implements TumblerVisual, RagdollHost {
     const xz = 1 / Math.sqrt(1 + st);
     root.scale.set(xz, 1 + st, xz);
 
-    const needWorld = this.ragdoll !== null || this.ragdollBlend > 0 || this.chains.length > 0 || this.lastState === S.Stunned;
+    const needWorld =
+      this.ragdoll !== null ||
+      this.ragdollBlend > 0 ||
+      this.chains.length > 0 ||
+      this.lastState === S.Stunned;
     if (!needWorld) return;
 
     if (this.ragdoll) {
@@ -512,7 +533,11 @@ export class Tumbler implements TumblerVisual, RagdollHost {
     const v = this.animator.out.v;
     const g = this.lod2Group;
     g.position.set(v[CH.pos]!, 0.55 + v[CH.pos + 1]!, v[CH.pos + 2]!);
-    g.rotation.set(v[Bone.hips * 3]! + v[Bone.spine * 3]!, v[1]! + v[Bone.hips * 3 + 1]!, v[Bone.hips * 3 + 2]!);
+    g.rotation.set(
+      v[Bone.hips * 3]! + v[Bone.spine * 3]!,
+      v[1]! + v[Bone.hips * 3 + 1]!,
+      v[Bone.hips * 3 + 2]!,
+    );
     const st = v[CH.stretch]!;
     const xz = 1 / Math.sqrt(1 + st);
     g.scale.set(xz, 1 + st, xz);

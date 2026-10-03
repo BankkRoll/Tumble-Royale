@@ -175,13 +175,11 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof ApiError) {
-      return reply
-        .code(err.status)
-        .send({
-          error: err.code,
-          message: err.message,
-          ...(err.details !== undefined ? { details: err.details } : {}),
-        });
+      return reply.code(err.status).send({
+        error: err.code,
+        message: err.message,
+        ...(err.details !== undefined ? { details: err.details } : {}),
+      });
     }
     const e = err as { statusCode?: number; code?: string; message?: string; error?: string };
     if (e.statusCode === 429)

@@ -87,7 +87,8 @@ const qTmp = { x: 0, y: 0, z: 0, w: 1 };
 /** Pure pose: sample 0 is the rotor (beam hub) — all beams are rigidly attached to it. */
 export function laserSweepPose(t: number, p: LaserSweepParams, out: PoseSample[], speedScale: number): void {
   ensurePoseSamples(out, 1);
-  const bob = p.bobAmplitude > 0 ? p.bobAmplitude * Math.sin((t * speedScale * Math.PI * 2) / p.bobPeriod) : 0;
+  const bob =
+    p.bobAmplitude > 0 ? p.bobAmplitude * Math.sin((t * speedScale * Math.PI * 2) / p.bobPeriod) : 0;
   writeSample(out[0] as PoseSample, 0, p.height + bob, 0, quatFromYaw(laserAngle(t, p, speedScale), qTmp));
 }
 

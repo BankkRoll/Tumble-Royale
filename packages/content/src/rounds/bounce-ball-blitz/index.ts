@@ -12,7 +12,17 @@
  * at the trigger's base) stays hidden under it and the dressing reads cleanly.
  */
 import { defineRound } from '@tumble/shared';
-import { crestBoard, crowdStand, rotObstacle, rotPiece, rotPoint, rotTrigger, team, teamBanner, v } from '../group-4-kit.ts';
+import {
+  crestBoard,
+  crowdStand,
+  rotObstacle,
+  rotPiece,
+  rotPoint,
+  rotTrigger,
+  team,
+  teamBanner,
+  v,
+} from '../group-4-kit.ts';
 
 type Def = Parameters<typeof defineRound>[0];
 type Piece = Def['geometry'][number];
@@ -42,11 +52,37 @@ const mirror = 180;
 function endPieces(t: number): Piece[] {
   return [
     // f.6 bouncy end walls either side of the goal.
-    { shape: 'box', position: v(-13, 2, -32.5), size: v(14, 4, 1), surface: 'bouncy', color: 'neutral', pattern: 'dots' },
-    { shape: 'box', position: v(13, 2, -32.5), size: v(14, 4, 1), surface: 'bouncy', color: 'neutral', pattern: 'dots' },
+    {
+      shape: 'box',
+      position: v(-13, 2, -32.5),
+      size: v(14, 4, 1),
+      surface: 'bouncy',
+      color: 'neutral',
+      pattern: 'dots',
+    },
+    {
+      shape: 'box',
+      position: v(13, 2, -32.5),
+      size: v(14, 4, 1),
+      surface: 'bouncy',
+      color: 'neutral',
+      pattern: 'dots',
+    },
     // f.7 goal frame (12 × 5 m clear mouth) in the defending team's colour.
-    { shape: 'box', position: v(-6.25, 2.75, -32), size: v(0.5, 5.5, 0.5), color: team(t), pattern: 'stripes' },
-    { shape: 'box', position: v(6.25, 2.75, -32), size: v(0.5, 5.5, 0.5), color: team(t), pattern: 'stripes' },
+    {
+      shape: 'box',
+      position: v(-6.25, 2.75, -32),
+      size: v(0.5, 5.5, 0.5),
+      color: team(t),
+      pattern: 'stripes',
+    },
+    {
+      shape: 'box',
+      position: v(6.25, 2.75, -32),
+      size: v(0.5, 5.5, 0.5),
+      color: team(t),
+      pattern: 'stripes',
+    },
     { shape: 'box', position: v(0, 5.25, -32), size: v(13, 0.5, 0.5), color: team(t), pattern: 'stripes' },
     // f.8 – f.10 goal back wall, side walls and floor.
     { shape: 'box', position: v(0, 2.5, -36.5), size: v(12, 5, 1), color: 'neutral' },
@@ -57,9 +93,21 @@ function endPieces(t: number): Piece[] {
     ...crestBoard(t, v(0, 7.4, -36.4), 0, 3),
     { shape: 'sphere', position: v(0, 4, -42), size: v(3.6, 0, 0), color: team(t), decorative: true },
     { shape: 'sphere', position: v(0, 8.6, -42), size: v(2.4, 0, 0), color: team(t), decorative: true },
-    { shape: 'sphere', position: v(-0.9, 9.2, -39.8), size: v(0.5, 0, 0), color: '#ffffff', decorative: true },
+    {
+      shape: 'sphere',
+      position: v(-0.9, 9.2, -39.8),
+      size: v(0.5, 0, 0),
+      color: '#ffffff',
+      decorative: true,
+    },
     { shape: 'sphere', position: v(0.9, 9.2, -39.8), size: v(0.5, 0, 0), color: '#ffffff', decorative: true },
-    { shape: 'cylinder', position: v(0, -1.6, -42), size: v(4, 1.2, 0), color: 'secondary', decorative: true },
+    {
+      shape: 'cylinder',
+      position: v(0, -1.6, -42),
+      size: v(4, 1.2, 0),
+      color: 'secondary',
+      decorative: true,
+    },
     ...teamBanner(t, v(-17, 0, -34), 0, 7),
     ...teamBanner(t, v(17, 0, -34), 0, 7),
     // Stand section on this half: team-coloured banners hang on the stand front.
@@ -73,9 +121,25 @@ function stands(): Piece[] {
   const crowd = ['#ff9a6b', '#c77dff', '#ffd36e', '#5ef2d0', '#fff0e3', '#ff2f6d'];
   const out: Piece[] = [];
   for (const side of [-1, 1]) {
-    out.push({ shape: 'box', position: v(side * 26, 0.25, 0), size: v(10, 0.5, 70), color: 'neutral', pattern: 'stripes', decorative: true });
+    out.push({
+      shape: 'box',
+      position: v(side * 26, 0.25, 0),
+      size: v(10, 0.5, 70),
+      color: 'neutral',
+      pattern: 'stripes',
+      decorative: true,
+    });
     for (let k = 0; k < 4; k++) {
-      out.push(...crowdStand(v(side * 22.5, 0.5, -24 + k * 16), side * 90 + 180, 13, 3, crowd, k + (side > 0 ? 4 : 0)));
+      out.push(
+        ...crowdStand(
+          v(side * 22.5, 0.5, -24 + k * 16),
+          side * 90 + 180,
+          13,
+          3,
+          crowd,
+          k + (side > 0 ? 4 : 0),
+        ),
+      );
     }
   }
   return out;
@@ -89,16 +153,55 @@ function boardwalk(): Piece[] {
     for (const side of [-1, 1]) {
       const z = -30 + i * 12;
       out.push(
-        { shape: 'box', position: v(side * 34, 3, z), size: v(5, 6, 6), color: huts[(i + (side > 0 ? 1 : 0)) % 4]!, decorative: true, pattern: 'stripes' },
-        { shape: 'wedge', position: v(side * 34, 7, z), size: v(6, 2, 6.4), color: 'neutral', decorative: true },
-        { shape: 'cylinder', position: v(side * 31, 6, z + 6), size: v(0.25, 12, 0), color: '#6a4f8f', decorative: true },
-        { shape: 'sphere', position: v(side * 31, 12.4, z + 6), size: v(0.5, 0, 0), color: 'accent', decorative: true },
+        {
+          shape: 'box',
+          position: v(side * 34, 3, z),
+          size: v(5, 6, 6),
+          color: huts[(i + (side > 0 ? 1 : 0)) % 4]!,
+          decorative: true,
+          pattern: 'stripes',
+        },
+        {
+          shape: 'wedge',
+          position: v(side * 34, 7, z),
+          size: v(6, 2, 6.4),
+          color: 'neutral',
+          decorative: true,
+        },
+        {
+          shape: 'cylinder',
+          position: v(side * 31, 6, z + 6),
+          size: v(0.25, 12, 0),
+          color: '#6a4f8f',
+          decorative: true,
+        },
+        {
+          shape: 'sphere',
+          position: v(side * 31, 12.4, z + 6),
+          size: v(0.5, 0, 0),
+          color: 'accent',
+          decorative: true,
+        },
       );
     }
   }
-  for (const [x, z] of [[-30, -44], [30, -44], [-30, 44], [30, 44], [-12, 46], [12, -46]] as const) {
+  for (const [x, z] of [
+    [-30, -44],
+    [30, -44],
+    [-30, 44],
+    [30, 44],
+    [-12, 46],
+    [12, -46],
+  ] as const) {
     out.push(
-      { shape: 'cylinder', position: v(x, 4, z), size: v(0.5, 9, 0), color: '#6a4f8f', decorative: true, pattern: 'stripes' },
+      {
+        shape: 'cylinder',
+        position: v(x, 4, z),
+        size: v(0.5, 9, 0),
+        color: '#6a4f8f',
+        decorative: true,
+        pattern: 'stripes',
+      },
       { shape: 'sphere', position: v(x, 9, z), size: v(2.4, 0, 0), color: '#5a3f8f', decorative: true },
     );
   }
@@ -108,7 +211,14 @@ function boardwalk(): Piece[] {
     { shape: 'sphere', position: v(0, 21.4, 3.2), size: v(2.6, 0, 0), color: 'secondary', decorative: true },
     { shape: 'sphere', position: v(0, 21.4, -3.2), size: v(2.6, 0, 0), color: 'secondary', decorative: true },
     { shape: 'wedge', position: v(0, 24.2, -5), size: v(0.4, 2.4, 3), color: 'accent', decorative: true },
-    { shape: 'box', position: v(0, 17.4, 0), size: v(4.8, 1.2, 5.4), color: 'neutral', decorative: true, pattern: 'stripes' },
+    {
+      shape: 'box',
+      position: v(0, 17.4, 0),
+      size: v(4.8, 1.2, 5.4),
+      color: 'neutral',
+      decorative: true,
+      pattern: 'stripes',
+    },
   );
   return out;
 }
@@ -125,32 +235,82 @@ const geometry: Piece[] = [
   { shape: 'torus', position: v(0, 0.02, 0), size: v(9.5, 0.15, 0), color: '#ffffff', decorative: true },
   // Goal boxes in front of each mouth.
   ...[1, -1].flatMap((s): Piece[] => [
-    { shape: 'box', position: v(0, 0.01, s * 24.5), size: v(18, 0.02, 0.3), color: '#ffffff', decorative: true },
-    { shape: 'box', position: v(-9, 0.01, s * 28.25), size: v(0.3, 0.02, 7.5), color: '#ffffff', decorative: true },
-    { shape: 'box', position: v(9, 0.01, s * 28.25), size: v(0.3, 0.02, 7.5), color: '#ffffff', decorative: true },
-    { shape: 'box', position: v(0, 0.01, s * 31.9), size: v(12, 0.02, 0.2), color: '#ffffff', decorative: true },
+    {
+      shape: 'box',
+      position: v(0, 0.01, s * 24.5),
+      size: v(18, 0.02, 0.3),
+      color: '#ffffff',
+      decorative: true,
+    },
+    {
+      shape: 'box',
+      position: v(-9, 0.01, s * 28.25),
+      size: v(0.3, 0.02, 7.5),
+      color: '#ffffff',
+      decorative: true,
+    },
+    {
+      shape: 'box',
+      position: v(9, 0.01, s * 28.25),
+      size: v(0.3, 0.02, 7.5),
+      color: '#ffffff',
+      decorative: true,
+    },
+    {
+      shape: 'box',
+      position: v(0, 0.01, s * 31.9),
+      size: v(12, 0.02, 0.2),
+      color: '#ffffff',
+      decorative: true,
+    },
   ]),
   { shape: 'ramp', position: v(0, 0.4, -4), size: v(16, 0.8, 8), rotation: { yaw: 0 }, color: 'secondary' },
   { shape: 'ramp', position: v(0, 0.4, 4), size: v(16, 0.8, 8), rotation: { yaw: 180 }, color: 'secondary' },
   // Banked edges and corner deflectors roll a pinned ball back into play (bots love wall scrums).
-  { shape: 'ramp', position: v(18.75, 0.4, 0), size: v(56, 0.8, 2.5), rotation: { yaw: 90 }, color: 'secondary', pattern: 'chevron' },
-  { shape: 'ramp', position: v(-18.75, 0.4, 0), size: v(56, 0.8, 2.5), rotation: { yaw: -90 }, color: 'secondary', pattern: 'chevron' },
-  ...[45, 135, -135, -45].map(
-    (yaw): Piece => {
-      const c = rotPoint(v(0, 0, 1), yaw);
-      return {
-        shape: 'ramp',
-        position: v(Math.sign(c.x) * 18.2, 0.6, Math.sign(c.z) * 30.2),
-        size: v(7, 1.2, 3),
-        rotation: { yaw },
-        color: 'secondary',
-        pattern: 'chevron',
-      };
-    },
-  ),
+  {
+    shape: 'ramp',
+    position: v(18.75, 0.4, 0),
+    size: v(56, 0.8, 2.5),
+    rotation: { yaw: 90 },
+    color: 'secondary',
+    pattern: 'chevron',
+  },
+  {
+    shape: 'ramp',
+    position: v(-18.75, 0.4, 0),
+    size: v(56, 0.8, 2.5),
+    rotation: { yaw: -90 },
+    color: 'secondary',
+    pattern: 'chevron',
+  },
+  ...[45, 135, -135, -45].map((yaw): Piece => {
+    const c = rotPoint(v(0, 0, 1), yaw);
+    return {
+      shape: 'ramp',
+      position: v(Math.sign(c.x) * 18.2, 0.6, Math.sign(c.z) * 30.2),
+      size: v(7, 1.2, 3),
+      rotation: { yaw },
+      color: 'secondary',
+      pattern: 'chevron',
+    };
+  }),
   // f.5 bouncy side boards.
-  { shape: 'box', position: v(-20.5, 2, 0), size: v(1, 4, 64), surface: 'bouncy', color: 'neutral', pattern: 'dots' },
-  { shape: 'box', position: v(20.5, 2, 0), size: v(1, 4, 64), surface: 'bouncy', color: 'neutral', pattern: 'dots' },
+  {
+    shape: 'box',
+    position: v(-20.5, 2, 0),
+    size: v(1, 4, 64),
+    surface: 'bouncy',
+    color: 'neutral',
+    pattern: 'dots',
+  },
+  {
+    shape: 'box',
+    position: v(20.5, 2, 0),
+    size: v(1, 4, 64),
+    surface: 'bouncy',
+    color: 'neutral',
+    pattern: 'dots',
+  },
   ...halfPieces(0),
   ...halfPieces(1).map((p) => rotPiece(p, mirror)),
   ...stands(),
@@ -162,17 +322,50 @@ const geometry: Piece[] = [
 // -----------------------------------------------------------------------------
 
 const halfObstacles: Obstacle[] = [
-  { id: 'bump-1', type: 'bumperPillar', position: v(-10, 0, -12), params: { radius: 1, height: 2.4, bounceSpeed: 10 } },
-  { id: 'bump-2', type: 'bumperPillar', position: v(10, 0, -12), params: { radius: 1, height: 2.4, bounceSpeed: 10 } },
+  {
+    id: 'bump-1',
+    type: 'bumperPillar',
+    position: v(-10, 0, -12),
+    params: { radius: 1, height: 2.4, bounceSpeed: 10 },
+  },
+  {
+    id: 'bump-2',
+    type: 'bumperPillar',
+    position: v(10, 0, -12),
+    params: { radius: 1, height: 2.4, bounceSpeed: 10 },
+  },
   // Launches toward +Z: favours team 0's attack (pad-B is its point mirror).
-  { id: 'pad-A', type: 'bouncePad', position: v(-16, 0, -6), rotation: { yaw: 0 }, params: { radius: 1.5, launch: padLaunch(6, 14) } },
-  { id: 'pad-gk-0', type: 'bouncePad', position: v(0, 0, -27), rotation: { yaw: 0 }, params: { radius: 1.2, launch: padLaunch(4, 10) } },
+  {
+    id: 'pad-A',
+    type: 'bouncePad',
+    position: v(-16, 0, -6),
+    rotation: { yaw: 0 },
+    params: { radius: 1.5, launch: padLaunch(6, 14) },
+  },
+  {
+    id: 'pad-gk-0',
+    type: 'bouncePad',
+    position: v(0, 0, -27),
+    rotation: { yaw: 0 },
+    params: { radius: 1.2, launch: padLaunch(4, 10) },
+  },
   {
     id: 'goal-zone-0',
     type: 'goalZone',
     position: v(0, 0, -35.15),
     rotation: { yaw: 0 },
-    params: { mode: 'goal', team: 0, sizeX: 11.4, sizeY: 6, sizeZ: 2.3, bottom: -1.1, mouthOffset: 3.15, spawners: ['ball', 'ball-2'], mouthWidth: 12, mouthHeight: 5 },
+    params: {
+      mode: 'goal',
+      team: 0,
+      sizeX: 11.4,
+      sizeY: 6,
+      sizeZ: 2.3,
+      bottom: -1.1,
+      mouthOffset: 3.15,
+      spawners: ['ball', 'ball-2'],
+      mouthWidth: 12,
+      mouthHeight: 5,
+    },
   },
 ];
 const mirroredIds: Record<string, string> = {
@@ -210,7 +403,15 @@ const obstacles: Obstacle[] = [
     // Pitched flat: the barrier's height runs along +Z from here, its top face at y 13.
     position: v(0, 12.75, -3),
     rotation: { pitch: 90 },
-    params: { width: 6, height: 6, thickness: 0.5, openTime: 60, style: 'split', openDuration: 0.5, countdown: 2 },
+    params: {
+      width: 6,
+      height: 6,
+      thickness: 0.5,
+      openTime: 60,
+      style: 'split',
+      openDuration: 0.5,
+      countdown: 2,
+    },
   },
 ];
 
@@ -219,7 +420,13 @@ const obstacles: Obstacle[] = [
 // -----------------------------------------------------------------------------
 
 /** Goal at −Z: defended by team 0, scored by team 1 (index = scoring team). */
-const goal0: Trigger = { id: 'goal-0', kind: 'goal', position: v(0, 1.9, -35.15), size: v(11.4, 6, 2.3), index: 1 };
+const goal0: Trigger = {
+  id: 'goal-0',
+  kind: 'goal',
+  position: v(0, 1.9, -35.15),
+  size: v(11.4, 6, 2.3),
+  index: 1,
+};
 const cp0: Trigger = {
   id: 'cp-t0',
   kind: 'checkpoint',
@@ -229,7 +436,12 @@ const cp0: Trigger = {
   respawn: [-9, -5, -1.5, 1.5, 5, 9].map((x) => v(x, 0.1, -22)),
   respawnYaw: 0,
 };
-const triggers: Trigger[] = [goal0, rotTrigger(goal0, mirror, 'goal-1', 0), cp0, rotTrigger(cp0, mirror, 'cp-t1', 1)];
+const triggers: Trigger[] = [
+  goal0,
+  rotTrigger(goal0, mirror, 'goal-1', 0),
+  cp0,
+  rotTrigger(cp0, mirror, 'cp-t1', 1),
+];
 
 export default defineRound({
   id: 'bounce-ball-blitz',
@@ -283,10 +495,30 @@ export default defineRound({
       weather: 'night',
       description: 'Extra bumpers under the floodlights.',
       addObstacles: [
-        { id: 'bump-5', type: 'bumperPillar', position: v(0, 0, -14), params: { radius: 1, height: 2.4, bounceSpeed: 10 } },
-        { id: 'bump-6', type: 'bumperPillar', position: v(0, 0, 14), params: { radius: 1, height: 2.4, bounceSpeed: 10 } },
-        { id: 'bump-7', type: 'bumperPillar', position: v(-16, 0, 0), params: { radius: 1, height: 2.4, bounceSpeed: 10 } },
-        { id: 'bump-8', type: 'bumperPillar', position: v(16, 0, 0), params: { radius: 1, height: 2.4, bounceSpeed: 10 } },
+        {
+          id: 'bump-5',
+          type: 'bumperPillar',
+          position: v(0, 0, -14),
+          params: { radius: 1, height: 2.4, bounceSpeed: 10 },
+        },
+        {
+          id: 'bump-6',
+          type: 'bumperPillar',
+          position: v(0, 0, 14),
+          params: { radius: 1, height: 2.4, bounceSpeed: 10 },
+        },
+        {
+          id: 'bump-7',
+          type: 'bumperPillar',
+          position: v(-16, 0, 0),
+          params: { radius: 1, height: 2.4, bounceSpeed: 10 },
+        },
+        {
+          id: 'bump-8',
+          type: 'bumperPillar',
+          position: v(16, 0, 0),
+          params: { radius: 1, height: 2.4, bounceSpeed: 10 },
+        },
       ],
     },
     {
@@ -300,7 +532,17 @@ export default defineRound({
           type: 'fanZone',
           position: v(-21, 4, 0),
           rotation: { yaw: 90 },
-          params: { width: 64, height: 8, length: 42, strength: 3, falloff: 0, onTime: 15, offTime: 15, telegraphLead: 1.5, housingDepth: 0.8 },
+          params: {
+            width: 64,
+            height: 8,
+            length: 42,
+            strength: 3,
+            falloff: 0,
+            onTime: 15,
+            offTime: 15,
+            telegraphLead: 1.5,
+            housingDepth: 0.8,
+          },
         },
       ],
     },

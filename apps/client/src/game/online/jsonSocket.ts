@@ -96,7 +96,8 @@ export class JsonSocket {
       this.connected = true;
       this.attempts = 0;
       window.clearInterval(this.pingTimer);
-      if (this.opts.ping) this.pingTimer = window.setInterval(() => this.send(this.opts.ping as TypedMessage), 25_000);
+      if (this.opts.ping)
+        this.pingTimer = window.setInterval(() => this.send(this.opts.ping as TypedMessage), 25_000);
       this.dispatch({ type: 'socket_open' });
     };
     ws.onmessage = (ev) => {
@@ -107,7 +108,8 @@ export class JsonSocket {
       } catch {
         return;
       }
-      if (m && typeof m === 'object' && typeof (m as TypedMessage).type === 'string') this.dispatch(m as TypedMessage);
+      if (m && typeof m === 'object' && typeof (m as TypedMessage).type === 'string')
+        this.dispatch(m as TypedMessage);
     };
     ws.onclose = () => {
       if (this.ws !== ws) return;

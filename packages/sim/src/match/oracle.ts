@@ -100,7 +100,8 @@ export class ObstacleOracle {
   private readonly props: RigidBody[] = [];
   private readonly ray: Ray;
   private predicateBody = -1;
-  private readonly onlyBody = (c: Collider): boolean => c.parent()?.handle === this.predicateBody && isBotRelevant(c);
+  private readonly onlyBody = (c: Collider): boolean =>
+    c.parent()?.handle === this.predicateBody && isBotRelevant(c);
   private readonly hazardGroups = groups(0xffff, CollisionGroup.KinematicObstacle | CollisionGroup.Hazard);
   /** Match time the bodies' current transforms correspond to. */
   poseTime = 0;
@@ -126,7 +127,13 @@ export class ObstacleOracle {
   }
 
   /** Registers a built obstacle. */
-  add(instance: ObstacleInstance, runtime: ObstacleRuntime, module: AnyObstacleModule, params: unknown, speedScale: number): void {
+  add(
+    instance: ObstacleInstance,
+    runtime: ObstacleRuntime,
+    module: AnyObstacleModule,
+    params: unknown,
+    speedScale: number,
+  ): void {
     const r = instance.rotation;
     const entry: TrackedObstacle = {
       id: instance.id,
@@ -254,7 +261,9 @@ export class ObstacleOracle {
       c.y = hint.y;
       c.z = hint.z;
       if (!t.runtime.botSafeSpot(time, c)) continue;
-      const d = hinted ? (c.x - hint.x) ** 2 + ((c.y - hint.y) * SAFE_SPOT_Y_WEIGHT) ** 2 + (c.z - hint.z) ** 2 : 0;
+      const d = hinted
+        ? (c.x - hint.x) ** 2 + ((c.y - hint.y) * SAFE_SPOT_Y_WEIGHT) ** 2 + (c.z - hint.z) ** 2
+        : 0;
       if (d < best) {
         best = d;
         out.x = c.x;
@@ -336,7 +345,8 @@ export class ObstacleOracle {
       for (const b of t.bodies) b.sample = -1;
       return;
     }
-    if (t.samples.length === 0) for (let i = 0; i < 8; i++) t.samples.push({ pos: vec3(), rot: quatIdentity() });
+    if (t.samples.length === 0)
+      for (let i = 0; i < 8; i++) t.samples.push({ pos: vec3(), rot: quatIdentity() });
     t.matchAttempts++;
     t.lastMatchTime = this.poseTime;
     pose(this.poseTime, t.params, t.samples, t.speedScale);

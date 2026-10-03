@@ -4,8 +4,29 @@
  * bubbles that swell and pop. Height follows `risingSlimePose` exactly; the
  * surface glows while a rise is telegraphed.
  */
-import { BoxGeometry, Color, Group, InstancedMesh, Matrix4, Mesh, PlaneGeometry, Quaternion, SphereGeometry, Vector3 } from 'three/webgpu';
-import { float, mix, mx_noise_float, positionGeometry, positionLocal, sin, smoothstep, uniform, vec3 } from 'three/tsl';
+import {
+  BoxGeometry,
+  Color,
+  Group,
+  InstancedMesh,
+  Matrix4,
+  Mesh,
+  PlaneGeometry,
+  Quaternion,
+  SphereGeometry,
+  Vector3,
+} from 'three/webgpu';
+import {
+  float,
+  mix,
+  mx_noise_float,
+  positionGeometry,
+  positionLocal,
+  sin,
+  smoothstep,
+  uniform,
+  vec3,
+} from 'three/tsl';
 import type { ObstacleInstance } from '@tumble/sim';
 import { hash01 } from '@tumble/shared';
 import {
@@ -36,7 +57,10 @@ class RisingSlimeVisual extends VisualBase<RisingSlimeParams> {
   private readonly q = new Quaternion();
   private readonly s = new Vector3();
 
-  constructor(instance: ObstacleInstance, private readonly ctx: ObstacleVisualContext) {
+  constructor(
+    instance: ObstacleInstance,
+    private readonly ctx: ObstacleVisualContext,
+  ) {
     super(instance, risingSlimeSchema.parse(instance.params));
     const p = this.params;
     this.poses = poseBufferFor(risingSlime, p, ctx.speedScale);
@@ -50,10 +74,17 @@ class RisingSlimeVisual extends VisualBase<RisingSlimeParams> {
       .add(sin(g.y.mul(0.5).sub(tm.mul(1.1))).mul(0.08))
       .add(mx_noise_float(vec3(g.x.mul(0.2), g.y.mul(0.2), tm.mul(0.35))).mul(0.12));
 
-    this.surfaceMat = createToonMaterial({ color: GOO, emissive: GOO, emissiveIntensity: 0.15, rimStrength: 0.8 });
+    this.surfaceMat = createToonMaterial({
+      color: GOO,
+      emissive: GOO,
+      emissiveIntensity: 0.15,
+      rimStrength: 0.8,
+    });
     // Plane-local Z becomes world +Y once the sheet is laid flat.
     this.surfaceMat.positionNode = positionLocal.add(vec3(0, 0, wave));
-    const marble = mx_noise_float(vec3(g.x.mul(0.12), g.y.mul(0.12), tm.mul(0.18))).mul(0.5).add(0.5);
+    const marble = mx_noise_float(vec3(g.x.mul(0.12), g.y.mul(0.12), tm.mul(0.18)))
+      .mul(0.5)
+      .add(0.5);
     const foamN = mx_noise_float(vec3(g.x.mul(0.6).add(tm.mul(0.4)), g.y.mul(0.6), tm.mul(0.5)));
     const foam = smoothstep(float(0.48), float(0.6), foamN);
     const goo = mix(uniform(new Color(GOO_DEEP)), uniform(new Color(GOO)), marble);
@@ -63,11 +94,18 @@ class RisingSlimeVisual extends VisualBase<RisingSlimeParams> {
     sheet.receiveShadow = true;
     this.level.add(sheet);
 
-    const body = new Mesh(new BoxGeometry(p.width, BODY_DEPTH, p.depth), createPatternMaterial({ a: GOO_DEEP, b: GOO, pattern: 'bands', scale: 0.4, emissive: GOO }));
+    const body = new Mesh(
+      new BoxGeometry(p.width, BODY_DEPTH, p.depth),
+      createPatternMaterial({ a: GOO_DEEP, b: GOO, pattern: 'bands', scale: 0.4, emissive: GOO }),
+    );
     body.position.y = -BODY_DEPTH / 2 - 0.05;
     this.level.add(body);
 
-    this.bubbles = new InstancedMesh(new SphereGeometry(0.35, 14, 8), createPatternMaterial({ a: FOAM, emissive: GOO }), BUBBLES);
+    this.bubbles = new InstancedMesh(
+      new SphereGeometry(0.35, 14, 8),
+      createPatternMaterial({ a: FOAM, emissive: GOO }),
+      BUBBLES,
+    );
     this.bubbles.frustumCulled = false;
     this.level.add(this.bubbles);
     this.add(this.level);
@@ -85,7 +123,11 @@ class RisingSlimeVisual extends VisualBase<RisingSlimeParams> {
       const u = ((((t + hash01(i) * life) % life) + life) % life) / life;
       const seed = i * 131 + cycle * 7919;
       const sc = u < 0.85 ? Math.sin((u / 0.85) * Math.PI * 0.5) * (0.4 + hash01(seed) * 0.9) : 0;
-      this.v.set((hash01(seed + 1) - 0.5) * p.width * 0.9, 0.05 + sc * 0.1, (hash01(seed + 2) - 0.5) * p.depth * 0.9);
+      this.v.set(
+        (hash01(seed + 1) - 0.5) * p.width * 0.9,
+        0.05 + sc * 0.1,
+        (hash01(seed + 2) - 0.5) * p.depth * 0.9,
+      );
       this.s.set(sc, sc * 0.6, sc);
       this.m.compose(this.v, this.q, this.s);
       this.bubbles.setMatrixAt(i, this.m);
@@ -95,4 +137,5 @@ class RisingSlimeVisual extends VisualBase<RisingSlimeParams> {
 }
 
 /** Rising slime visual factory. */
-export const risingSlimeVisual: ObstacleVisualFactory = (instance, ctx) => new RisingSlimeVisual(instance, ctx);
+export const risingSlimeVisual: ObstacleVisualFactory = (instance, ctx) =>
+  new RisingSlimeVisual(instance, ctx);

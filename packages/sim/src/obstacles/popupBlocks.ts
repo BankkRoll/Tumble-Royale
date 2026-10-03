@@ -150,7 +150,12 @@ const xz = { x: 0, y: 0, z: 0 };
 /**
  * Pure pose: one sample per block (row-major), centre positions in local space.
  */
-export function popupBlocksPose(t: number, p: PopupBlocksParams, out: PoseSample[], speedScale: number): void {
+export function popupBlocksPose(
+  t: number,
+  p: PopupBlocksParams,
+  out: PoseSample[],
+  speedScale: number,
+): void {
   const n = p.cols * p.rows;
   ensurePoseSamples(out, n);
   const ts = t * speedScale;

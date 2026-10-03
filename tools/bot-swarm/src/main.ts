@@ -152,12 +152,20 @@ function report(a: Aggregate, args: Args): void {
   const perClientSec = Math.max(1e-6, a.activeSeconds);
   const f1 = (v: number): string => v.toFixed(1);
   console.log('\n=== bot-swarm summary ===');
-  console.log(`clients        ${a.clients} (welcomed ${a.welcomed}, kicked ${a.kicked}) over ${args.duration}s, ${args.procs} proc(s)`);
+  console.log(
+    `clients        ${a.clients} (welcomed ${a.welcomed}, kicked ${a.kicked}) over ${args.duration}s, ${args.procs} proc(s)`,
+  );
   console.log(`snapshots/s    ${f1(a.snapshots / perClientSec)} per client (target 30)`);
-  console.log(`snapshot size  avg ${f1(a.snapshotBytes / Math.max(1, a.snapshots))} B, delta ${f1((100 * a.deltaSnapshots) / Math.max(1, a.snapshots))}%`);
-  console.log(`down           ${f1(a.bytesIn / perClientSec / 1024)} KB/s per client, ${f1(a.bytesIn / args.duration / 1024)} KB/s total`);
+  console.log(
+    `snapshot size  avg ${f1(a.snapshotBytes / Math.max(1, a.snapshots))} B, delta ${f1((100 * a.deltaSnapshots) / Math.max(1, a.snapshots))}%`,
+  );
+  console.log(
+    `down           ${f1(a.bytesIn / perClientSec / 1024)} KB/s per client, ${f1(a.bytesIn / args.duration / 1024)} KB/s total`,
+  );
   console.log(`up             ${f1(a.bytesOut / perClientSec / 1024)} KB/s per client`);
-  console.log(`rtt            avg ${f1(a.rtts.reduce((s, v) => s + v, 0) / Math.max(1, a.rtts.length))} ms, p95 ${f1(pct(a.rtts, 0.95))} ms (${a.rtts.length} samples)`);
+  console.log(
+    `rtt            avg ${f1(a.rtts.reduce((s, v) => s + v, 0) / Math.max(1, a.rtts.length))} ms, p95 ${f1(pct(a.rtts, 0.95))} ms (${a.rtts.length} samples)`,
+  );
   console.log(`decode errors  ${a.decodeErrors}`);
 }
 
@@ -167,7 +175,9 @@ async function printServerMetrics(wsUrl: string): Promise<void> {
     u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
     u.pathname = '/metrics';
     const text = await (await fetch(u)).text();
-    const pick = text.split('\n').filter((l) => /^tumble_(tick_ms|snapshot_bytes|bytes_out|players|rooms|rtt)/.test(l));
+    const pick = text
+      .split('\n')
+      .filter((l) => /^tumble_(tick_ms|snapshot_bytes|bytes_out|players|rooms|rtt)/.test(l));
     console.log('\n=== server /metrics ===');
     for (const l of pick) console.log(l);
   } catch (e) {

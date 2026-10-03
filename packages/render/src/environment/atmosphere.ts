@@ -62,7 +62,10 @@ function desaturate(col: Color, amount: number): Color {
  *   still works (modifiers are generic) but designers should prefer allowed ones.
  * @returns A fresh {@link Atmosphere}.
  */
-export function resolveAtmosphere(theme: ThemeDefinition, weather: Weather = theme.weather.default): Atmosphere {
+export function resolveAtmosphere(
+  theme: ThemeDefinition,
+  weather: Weather = theme.weather.default,
+): Atmosphere {
   const a: Atmosphere = {
     skyTop: c(theme.sky.top),
     skyHorizon: c(theme.sky.horizon),
@@ -75,7 +78,11 @@ export function resolveAtmosphere(theme: ThemeDefinition, weather: Weather = the
     fogFar: theme.fog.far,
     sunColor: c(theme.sun.color),
     sunIntensity: theme.sun.intensity,
-    sunDirection: new Vector3(theme.sun.direction.x, theme.sun.direction.y, theme.sun.direction.z).normalize(),
+    sunDirection: new Vector3(
+      theme.sun.direction.x,
+      theme.sun.direction.y,
+      theme.sun.direction.z,
+    ).normalize(),
     hemiSky: c(theme.hemisphere.sky),
     hemiGround: c(theme.hemisphere.ground),
     hemiIntensity: theme.hemisphere.intensity,

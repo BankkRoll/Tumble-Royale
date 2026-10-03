@@ -49,11 +49,23 @@ import { MAX_PLAYERS, SERVER_TICK_HZ, SIM_STEPS_PER_TICK, type RoundDefinition }
 import { InputSequenceGuard, sanitizeChat, sanitizeName } from '../antiCheat.ts';
 import { LagCompensator } from '../lagcomp.ts';
 import type { ServerMetrics } from '../metrics.ts';
-import { computePlacements, type MatchResultPayload, type PlayerStatsCounters, type ResultRound } from '../results.ts';
+import {
+  computePlacements,
+  type MatchResultPayload,
+  type PlayerStatsCounters,
+  type ResultRound,
+} from '../results.ts';
 import type { JoinTicketClaims } from '../tickets.ts';
 import type { ClientSession } from './session.ts';
-import type { MatchSettings, RoomConfig, RoomDeps, ServerBotBrain, ShowController, ShowEvent, ShowRoundPlan } from './types.ts';
-
+import type {
+  MatchSettings,
+  RoomConfig,
+  RoomDeps,
+  ServerBotBrain,
+  ShowController,
+  ShowEvent,
+  ShowRoundPlan,
+} from './types.ts';
 
 /** Lifecycle of a room. */
 export type RoomState = 'lobby' | 'show' | 'ended' | 'closed';
@@ -87,7 +99,14 @@ interface RoundRecord extends ResultRound {
   qualifiedIds: number[];
 }
 
-const newStats = (): PlayerStatsCounters => ({ jumps: 0, dives: 0, grabs: 0, checkpoints: 0, bounces: 0, emotes: 0 });
+const newStats = (): PlayerStatsCounters => ({
+  jumps: 0,
+  dives: 0,
+  grabs: 0,
+  checkpoints: 0,
+  bounces: 0,
+  emotes: 0,
+});
 
 /** Sim events that count toward a player's challenge stats. */
 const STAT_EVENTS: Partial<Record<SimEvent['type'], keyof PlayerStatsCounters>> = {
@@ -112,8 +131,34 @@ export interface RoomInfo {
 }
 
 const SPECTATOR_ID_BASE = 64;
-const BOT_NAMES_A = ['Bouncy', 'Wobbly', 'Zippy', 'Fizzy', 'Jelly', 'Sprinkle', 'Bubbly', 'Gummy', 'Snappy', 'Dizzy', 'Puffy', 'Squishy'];
-const BOT_NAMES_B = ['Tumbler', 'Noodle', 'Pebble', 'Muffin', 'Biscuit', 'Comet', 'Pickle', 'Waffle', 'Sprout', 'Button', 'Marble', 'Turnip'];
+const BOT_NAMES_A = [
+  'Bouncy',
+  'Wobbly',
+  'Zippy',
+  'Fizzy',
+  'Jelly',
+  'Sprinkle',
+  'Bubbly',
+  'Gummy',
+  'Snappy',
+  'Dizzy',
+  'Puffy',
+  'Squishy',
+];
+const BOT_NAMES_B = [
+  'Tumbler',
+  'Noodle',
+  'Pebble',
+  'Muffin',
+  'Biscuit',
+  'Comet',
+  'Pickle',
+  'Waffle',
+  'Sprout',
+  'Button',
+  'Marble',
+  'Turnip',
+];
 
 /**
  * Authoritative room.
@@ -161,7 +206,12 @@ export class Room {
     buttons: 0,
     emote: 0,
   }));
-  private readonly batchHeader: InputBatchHeader = { newestSeq: 0, clientTick: 0, ackSnapshotId: -1, count: 0 };
+  private readonly batchHeader: InputBatchHeader = {
+    newestSeq: 0,
+    clientTick: 0,
+    ackSnapshotId: -1,
+    count: 0,
+  };
   private readonly presentPlayers = new Set<number>();
   private readonly log: (msg: string) => void;
   private readonly config: RoomConfig;
@@ -378,7 +428,8 @@ export class Room {
         this.onInputBatch(session, slot, r, now);
         return;
       case MsgType.Reliable:
-        if (!session.reliable.receive(r, (p) => this.onReliable(session, slot, p, now))) this.violation(session, now);
+        if (!session.reliable.receive(r, (p) => this.onReliable(session, slot, p, now)))
+          this.violation(session, now);
         return;
       case MsgType.Ping: {
         const t0 = readPing(r);
@@ -410,7 +461,9 @@ export class Room {
     slot.disconnectedAt = now;
     slot.jitter.reset();
     slot.jitter.setIdle(slot.lastYaw);
-    this.log(`[room ${this.id}] player ${slot.id} disconnected (resumable for ${this.config.resumeWindowMs / 1000}s)`);
+    this.log(
+      `[room ${this.id}] player ${slot.id} disconnected (resumable for ${this.config.resumeWindowMs / 1000}s)`,
+    );
     this.broadcastPlayerList();
   }
 
@@ -494,7 +547,10 @@ export class Room {
       const humans = this.humanCount;
       if (humans === 0) {
         this.firstJoinAt = -1;
-      } else if (now - this.firstJoinAt >= this.config.fillWaitMs || humans >= Math.min(this.config.startAtHumans, this.config.capacity)) {
+      } else if (
+        now - this.firstJoinAt >= this.config.fillWaitMs ||
+        humans >= Math.min(this.config.startAtHumans, this.config.capacity)
+      ) {
         this.startShow();
       } else if (now - this.lastLobbyBroadcast >= 1000) {
         this.lastLobbyBroadcast = now;
@@ -508,12 +564,18 @@ export class Room {
     }
 
     let anyHuman = this.sessions.size > 0;
-    if (!anyHuman) for (const s of this.slots.values()) if (!s.isBot && !s.left && s.disconnectedAt >= 0) anyHuman = true;
+    if (!anyHuman)
+      for (const s of this.slots.values()) if (!s.isBot && !s.left && s.disconnectedAt >= 0) anyHuman = true;
     if (anyHuman) this.emptySince = -1;
     else if (this.emptySince < 0) this.emptySince = now;
-    const idle = this.state !== 'lobby' && this.emptySince >= 0 && now - this.emptySince > this.config.idleCloseMs;
+    const idle =
+      this.state !== 'lobby' && this.emptySince >= 0 && now - this.emptySince > this.config.idleCloseMs;
     const over = this.state === 'ended' && now - this.endedAt > this.config.idleCloseMs;
-    if (idle || over || (this.state === 'lobby' && this.slots.size === 0 && this.serverTick > SERVER_TICK_HZ * 60)) {
+    if (
+      idle ||
+      over ||
+      (this.state === 'lobby' && this.slots.size === 0 && this.serverTick > SERVER_TICK_HZ * 60)
+    ) {
       this.log(`[room ${this.id}] closing (${over ? 'show over' : 'empty'})`);
       this.dispose();
     }
@@ -563,7 +625,11 @@ export class Room {
     const out: MatchPlayerInfo[] = [];
     for (const s of this.slots.values()) {
       if (s.spectator) continue;
-      out.push(s.isBot ? { id: s.id, name: s.name, isBot: true, team: -1, botSkill: 'average' } : { id: s.id, name: s.name, isBot: false, team: -1 });
+      out.push(
+        s.isBot
+          ? { id: s.id, name: s.name, isBot: true, team: -1, botSkill: 'average' }
+          : { id: s.id, name: s.name, isBot: false, team: -1 },
+      );
     }
     return out.sort((a, b) => a.id - b.id);
   }
@@ -650,7 +716,8 @@ export class Room {
         return;
       }
       case 'spectate':
-        session.spectateTarget = typeof msg.target === 'number' && this.roundPlayers.includes(msg.target) ? msg.target : -1;
+        session.spectateTarget =
+          typeof msg.target === 'number' && this.roundPlayers.includes(msg.target) ? msg.target : -1;
         return;
       case 'loaded':
         if (this.round && msg.roundId === this.round.id) this.show.onPlayerLoaded?.(slot.id);
@@ -729,7 +796,9 @@ export class Room {
     this.frame.quantizer = this.quantizer;
     this.frame.epoch = this.epoch;
     for (const s of this.sessions) this.sendJoinRound(s);
-    this.log(`[room ${this.id}] round ${round.id} (stage ${plan.stage}) with ${players.length} players, epoch ${this.epoch}`);
+    this.log(
+      `[room ${this.id}] round ${round.id} (stage ${plan.stage}) with ${players.length} players, epoch ${this.epoch}`,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -806,7 +875,8 @@ export class Room {
     if (this.sim) this.sendJoinRound(session);
     this.sendRewards(session);
     this.broadcastPlayerList();
-    if (this.sim && this.status) session.sendLowFreq({ t: 'roundPhase', phase: this.status.phase, time: this.sim.time });
+    if (this.sim && this.status)
+      session.sendLowFreq({ t: 'roundPhase', phase: this.status.phase, time: this.sim.time });
     this.flushSession(session, performance.now());
   }
 
@@ -872,9 +942,14 @@ export class Room {
   // Results → account API
   // ---------------------------------------------------------------------------
 
-  private recordRound(roundId: string, results: readonly { id: number; status: number; place: number; score: number }[], now: number): void {
+  private recordRound(
+    roundId: string,
+    results: readonly { id: number; status: number; place: number; score: number }[],
+    now: number,
+  ): void {
     const round = this.round?.id === roundId ? this.round : null;
-    const entrants = this.currentPlan?.roundId === roundId ? [...this.currentPlan.playerIds] : results.map((r) => r.id);
+    const entrants =
+      this.currentPlan?.roundId === roundId ? [...this.currentPlan.playerIds] : results.map((r) => r.id);
     const qualifiedIds = results.filter((r) => r.status === 1).map((r) => r.id);
     const isRace = round?.type === 'race' || round?.qualification.mode === 'finish';
     this.roundRecords.push({
@@ -904,7 +979,10 @@ export class Room {
     const keys = new Set(players.map((s) => String(s.id)));
     const placements = computePlacements(
       players.map((s) => String(s.id)),
-      this.roundRecords.map((r) => ({ entrants: r.entrants.map(String).filter((k) => keys.has(k)), qualified: r.qualifiedIds.map(String).filter((k) => keys.has(k)) })),
+      this.roundRecords.map((r) => ({
+        entrants: r.entrants.map(String).filter((k) => keys.has(k)),
+        qualified: r.qualifiedIds.map(String).filter((k) => keys.has(k)),
+      })),
       winners.map(String).filter((k) => keys.has(k)),
     );
     return {
@@ -942,7 +1020,9 @@ export class Room {
     void sink
       .post(payload)
       .then((res) => {
-        this.log(`[room ${this.id}] results for ${payload.matchId} ${res ? `recorded (${res.rewards.length} rewards${res.alreadyProcessed ? ', replayed' : ''})` : 'not recorded'}`);
+        this.log(
+          `[room ${this.id}] results for ${payload.matchId} ${res ? `recorded (${res.rewards.length} rewards${res.alreadyProcessed ? ', replayed' : ''})` : 'not recorded'}`,
+        );
         this.finishRewards(res?.rewards ?? null);
       })
       .catch(() => this.finishRewards(null));
@@ -971,7 +1051,13 @@ export class Room {
     const players: NetPlayerInfo[] = [];
     for (const s of this.slots.values()) {
       if (s.spectator) continue;
-      players.push({ id: s.id, name: s.name, isBot: s.isBot, loadout: s.loadout, connected: s.isBot || s.session !== null });
+      players.push({
+        id: s.id,
+        name: s.name,
+        isBot: s.isBot,
+        loadout: s.loadout,
+        connected: s.isBot || s.session !== null,
+      });
     }
     this.broadcast({ t: 'playerList', players });
   }

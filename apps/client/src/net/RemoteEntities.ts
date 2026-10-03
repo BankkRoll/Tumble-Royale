@@ -26,8 +26,13 @@ import {
  */
 export class RemoteEntities {
   readonly clock: InterpolationClock;
-  private readonly interps: (SnapshotInterpolator | null)[] = new Array<SnapshotInterpolator | null>(MAX_ENTITIES).fill(null);
-  private readonly states: RenderEntityState[] = Array.from({ length: MAX_ENTITIES }, createRenderEntityState);
+  private readonly interps: (SnapshotInterpolator | null)[] = new Array<SnapshotInterpolator | null>(
+    MAX_ENTITIES,
+  ).fill(null);
+  private readonly states: RenderEntityState[] = Array.from(
+    { length: MAX_ENTITIES },
+    createRenderEntityState,
+  );
   private readonly visible = new Uint8Array(MAX_ENTITIES);
   /** Render time on the snapshot timeline used by the last {@link update} (ms). */
   renderTimeMs = 0;
@@ -89,7 +94,8 @@ export class RemoteEntities {
 
   /** Calls `fn` for every visible remote. */
   forEach(fn: (state: RenderEntityState) => void): void {
-    for (let id = 0; id < MAX_ENTITIES; id++) if (this.visible[id] && this.interps[id]?.size) fn(this.states[id]!);
+    for (let id = 0; id < MAX_ENTITIES; id++)
+      if (this.visible[id] && this.interps[id]?.size) fn(this.states[id]!);
   }
 
   /** Forgets every entity (new round). */

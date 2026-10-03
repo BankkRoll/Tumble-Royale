@@ -61,7 +61,13 @@ export function createDevRound(): RoundDefinition {
     spawn: { origin: { x: 0, y: STAND_Y + 0.05, z: -30 }, cols: 8, spacing: 1.6 },
     geometry: [{ shape: 'box', position: { x: 0, y: -0.5, z: 0 }, size: { x: 80, y: 1, z: 80 } }],
     obstacles: [{ id: 'blinker', type: 'devBlinker', position: { x: 0, y: 0, z: 0 } }],
-    flyover: { path: [{ x: 0, y: 30, z: -60 }, { x: 0, y: 20, z: 0 }], lookAt: [{ x: 0, y: 0, z: 0 }] },
+    flyover: {
+      path: [
+        { x: 0, y: 30, z: -60 },
+        { x: 0, y: 20, z: 0 },
+      ],
+      lookAt: [{ x: 0, y: 0, z: 0 }],
+    },
     music: 'none',
     fallBehavior: 'respawnCheckpoint',
   });
@@ -128,8 +134,13 @@ class CapsuleMatchSim implements MatchSim {
       floor,
     );
     for (const p of SWEEPERS) {
-      const b = this.world.createRigidBody(R.RigidBodyDesc.kinematicPositionBased().setTranslation(p.x, p.y, p.z));
-      this.world.createCollider(R.ColliderDesc.cuboid(7, 0.3, 0.3).setCollisionGroups(InteractionGroups.kinematic), b);
+      const b = this.world.createRigidBody(
+        R.RigidBodyDesc.kinematicPositionBased().setTranslation(p.x, p.y, p.z),
+      );
+      this.world.createCollider(
+        R.ColliderDesc.cuboid(7, 0.3, 0.3).setCollisionGroups(InteractionGroups.kinematic),
+        b,
+      );
       this.sweepers.push(b);
     }
     const spawn = opts.round.spawn;
@@ -138,10 +149,14 @@ class CapsuleMatchSim implements MatchSim {
       const x = spawn.origin.x + ((i % cols) - (cols - 1) / 2) * spawn.spacing;
       const z = spawn.origin.z - Math.floor(i / cols) * spawn.spacing;
       const remote = this.mode === 'predict' && info.id !== this.localId;
-      const desc = remote ? R.RigidBodyDesc.kinematicPositionBased() : R.RigidBodyDesc.dynamic().lockRotations();
+      const desc = remote
+        ? R.RigidBodyDesc.kinematicPositionBased()
+        : R.RigidBodyDesc.dynamic().lockRotations();
       const body = this.world.createRigidBody(desc.setTranslation(x, spawn.origin.y, z).setCcdEnabled(false));
       this.world.createCollider(
-        R.ColliderDesc.capsule(CAPSULE_HALF, CAPSULE_RADIUS).setFriction(0).setCollisionGroups(InteractionGroups.player),
+        R.ColliderDesc.capsule(CAPSULE_HALF, CAPSULE_RADIUS)
+          .setFriction(0)
+          .setCollisionGroups(InteractionGroups.player),
         body,
       );
       this.players.set(info.id, {
@@ -244,9 +259,17 @@ class CapsuleMatchSim implements MatchSim {
   }
 
   getStatus(): RoundStatus {
-    const players = new Map<number, { status: 0 | 1 | 2 | 3; score: number; progress: number; place: number }>();
+    const players = new Map<
+      number,
+      { status: 0 | 1 | 2 | 3; score: number; progress: number; place: number }
+    >();
     for (const p of this.players.values()) {
-      players.set(p.id, { status: 0, score: 0, progress: (p.state.pos.z + ARENA_HALF) / (2 * ARENA_HALF), place: 0 });
+      players.set(p.id, {
+        status: 0,
+        score: 0,
+        progress: (p.state.pos.z + ARENA_HALF) / (2 * ARENA_HALF),
+        place: 0,
+      });
     }
     return {
       phase: this.currentPhase,
@@ -316,7 +339,12 @@ class CapsuleMatchSim implements MatchSim {
     s.grounded = t.y <= STAND_Y + 0.06 && Math.abs(v.y) < 1.5;
     if (s.grounded) s.coyoteTimer = 0.12;
     if (s.grounded && !wasGrounded) {
-      this.events.push({ type: 'land', player: p.id, pos: { x: t.x, y: t.y, z: t.z }, impact: Math.abs(v.y) });
+      this.events.push({
+        type: 'land',
+        player: p.id,
+        pos: { x: t.x, y: t.y, z: t.z },
+        impact: Math.abs(v.y),
+      });
     }
     s.pos.x = t.x;
     s.pos.y = t.y;
@@ -326,7 +354,13 @@ class CapsuleMatchSim implements MatchSim {
     s.vel.z = v.z;
     quatFromYaw(s.facing, s.rot);
     const speed = Math.hypot(v.x, v.z);
-    const next = !s.grounded ? (v.y > 0 ? CharacterState.Jump : CharacterState.Fall) : speed > 0.5 ? CharacterState.Run : CharacterState.Idle;
+    const next = !s.grounded
+      ? v.y > 0
+        ? CharacterState.Jump
+        : CharacterState.Fall
+      : speed > 0.5
+        ? CharacterState.Run
+        : CharacterState.Idle;
     if (next !== s.state) {
       s.state = next;
       s.stateTime = 0;

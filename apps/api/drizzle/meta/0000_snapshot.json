@@ -84,12 +84,8 @@
           "name": "auth_identities_user_id_users_id_fk",
           "tableFrom": "auth_identities",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -172,12 +168,8 @@
           "name": "bans_user_id_users_id_fk",
           "tableFrom": "bans",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -309,12 +301,8 @@
           "name": "challenge_progress_user_id_users_id_fk",
           "tableFrom": "challenge_progress",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -579,12 +567,8 @@
           "name": "currencies_ledger_user_id_users_id_fk",
           "tableFrom": "currencies_ledger",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -766,12 +750,8 @@
           "name": "friendships_user_id_users_id_fk",
           "tableFrom": "friendships",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -779,12 +759,8 @@
           "name": "friendships_friend_id_users_id_fk",
           "tableFrom": "friendships",
           "tableTo": "users",
-          "columnsFrom": [
-            "friend_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["friend_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -792,10 +768,7 @@
       "compositePrimaryKeys": {
         "friendships_user_id_friend_id_pk": {
           "name": "friendships_user_id_friend_id_pk",
-          "columns": [
-            "user_id",
-            "friend_id"
-          ]
+          "columns": ["user_id", "friend_id"]
         }
       },
       "uniqueConstraints": {},
@@ -868,12 +841,8 @@
           "name": "inventory_items_user_id_users_id_fk",
           "tableFrom": "inventory_items",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -926,12 +895,8 @@
           "name": "loadouts_user_id_users_id_fk",
           "tableFrom": "loadouts",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -939,10 +904,7 @@
       "compositePrimaryKeys": {
         "loadouts_user_id_slot_index_pk": {
           "name": "loadouts_user_id_slot_index_pk",
-          "columns": [
-            "user_id",
-            "slot_index"
-          ]
+          "columns": ["user_id", "slot_index"]
         }
       },
       "uniqueConstraints": {},
@@ -1058,12 +1020,8 @@
           "name": "match_participants_match_id_matches_id_fk",
           "tableFrom": "match_participants",
           "tableTo": "matches",
-          "columnsFrom": [
-            "match_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["match_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1071,10 +1029,7 @@
       "compositePrimaryKeys": {
         "match_participants_match_id_participant_key_pk": {
           "name": "match_participants_match_id_participant_key_pk",
-          "columns": [
-            "match_id",
-            "participant_key"
-          ]
+          "columns": ["match_id", "participant_key"]
         }
       },
       "uniqueConstraints": {},
@@ -1123,12 +1078,8 @@
           "name": "match_rounds_match_id_matches_id_fk",
           "tableFrom": "match_rounds",
           "tableTo": "matches",
-          "columnsFrom": [
-            "match_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["match_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1136,10 +1087,7 @@
       "compositePrimaryKeys": {
         "match_rounds_match_id_round_index_pk": {
           "name": "match_rounds_match_id_round_index_pk",
-          "columns": [
-            "match_id",
-            "round_index"
-          ]
+          "columns": ["match_id", "round_index"]
         }
       },
       "uniqueConstraints": {},
@@ -1286,12 +1234,8 @@
           "name": "player_round_stats_user_id_users_id_fk",
           "tableFrom": "player_round_stats",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1299,10 +1243,7 @@
       "compositePrimaryKeys": {
         "player_round_stats_user_id_round_id_pk": {
           "name": "player_round_stats_user_id_round_id_pk",
-          "columns": [
-            "user_id",
-            "round_id"
-          ]
+          "columns": ["user_id", "round_id"]
         }
       },
       "uniqueConstraints": {},
@@ -1389,12 +1330,8 @@
           "name": "player_stats_user_id_users_id_fk",
           "tableFrom": "player_stats",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1518,12 +1455,8 @@
           "name": "profiles_user_id_users_id_fk",
           "tableFrom": "profiles",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1662,12 +1595,8 @@
           "name": "purchases_user_id_users_id_fk",
           "tableFrom": "purchases",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1802,12 +1731,8 @@
           "name": "rank_history_user_id_users_id_fk",
           "tableFrom": "rank_history",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1898,12 +1823,8 @@
           "name": "ratings_user_id_users_id_fk",
           "tableFrom": "ratings",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1911,11 +1832,7 @@
       "compositePrimaryKeys": {
         "ratings_user_id_season_id_queue_pk": {
           "name": "ratings_user_id_season_id_queue_pk",
-          "columns": [
-            "user_id",
-            "season_id",
-            "queue"
-          ]
+          "columns": ["user_id", "season_id", "queue"]
         }
       },
       "uniqueConstraints": {},
@@ -2001,12 +1918,8 @@
           "name": "reports_reporter_id_users_id_fk",
           "tableFrom": "reports",
           "tableTo": "users",
-          "columnsFrom": [
-            "reporter_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["reporter_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2014,12 +1927,8 @@
           "name": "reports_target_user_id_users_id_fk",
           "tableFrom": "reports",
           "tableTo": "users",
-          "columnsFrom": [
-            "target_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["target_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2083,12 +1992,8 @@
           "name": "round_results_match_id_matches_id_fk",
           "tableFrom": "round_results",
           "tableTo": "matches",
-          "columnsFrom": [
-            "match_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["match_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2096,11 +2001,7 @@
       "compositePrimaryKeys": {
         "round_results_match_id_round_index_participant_key_pk": {
           "name": "round_results_match_id_round_index_participant_key_pk",
-          "columns": [
-            "match_id",
-            "round_index",
-            "participant_key"
-          ]
+          "columns": ["match_id", "round_index", "participant_key"]
         }
       },
       "uniqueConstraints": {},
@@ -2166,12 +2067,8 @@
           "name": "season_pass_progress_user_id_users_id_fk",
           "tableFrom": "season_pass_progress",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2179,10 +2076,7 @@
       "compositePrimaryKeys": {
         "season_pass_progress_user_id_season_id_pk": {
           "name": "season_pass_progress_user_id_season_id_pk",
-          "columns": [
-            "user_id",
-            "season_id"
-          ]
+          "columns": ["user_id", "season_id"]
         }
       },
       "uniqueConstraints": {},
@@ -2288,12 +2182,8 @@
           "name": "sessions_user_id_users_id_fk",
           "tableFrom": "sessions",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }

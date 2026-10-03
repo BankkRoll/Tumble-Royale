@@ -60,7 +60,8 @@ export function startMatchmakerLink(opts: MatchmakerLinkOptions): MatchmakerLink
       return;
     }
     // A matchmaker restart forgets us; re-register when the heartbeat is refused.
-    if (!(await call('/servers/heartbeat', 'POST', { serverId: opts.serverId, load: opts.load() }))) registered = false;
+    if (!(await call('/servers/heartbeat', 'POST', { serverId: opts.serverId, load: opts.load() })))
+      registered = false;
   };
   void beat();
   const timer = setInterval(() => void beat(), 5000);

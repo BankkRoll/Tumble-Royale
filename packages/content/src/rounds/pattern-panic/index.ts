@@ -20,7 +20,14 @@ const tileCentre = (i: number) => v(((i % 4) - 1.5) * PITCH, 0, (Math.floor(i / 
 function studio(): Piece[] {
   const out: Piece[] = [
     // b.2 the Big Screen housing (the board's visual draws the live screen face on its front).
-    { shape: 'box', position: v(0, 12, 22), size: v(24, 12, 1), color: 'neutral', bevel: 0.3, decorative: true },
+    {
+      shape: 'box',
+      position: v(0, 12, 22),
+      size: v(24, 12, 1),
+      color: 'neutral',
+      bevel: 0.3,
+      decorative: true,
+    },
     { shape: 'box', position: v(-9, 3, 22.4), size: v(1.2, 6, 1.2), color: 'neutral', decorative: true },
     { shape: 'box', position: v(9, 3, 22.4), size: v(1.2, 6, 1.2), color: 'neutral', decorative: true },
     { shape: 'box', position: v(0, 18.4, 22), size: v(25, 0.4, 1.4), color: 'accent', decorative: true },
@@ -31,10 +38,38 @@ function studio(): Piece[] {
     // Host podium island in front of the screen.
     { shape: 'cylinder', position: v(0, -1, 18), size: v(3, 2, 0), color: 'primary', decorative: true },
     // Confetti cannons either side of the screen.
-    { shape: 'cylinder', position: v(-14.5, 4, 21), size: v(1, 2.2, 0), rotation: { pitch: -35 }, color: 'secondary', decorative: true, pattern: 'stripes' },
-    { shape: 'cylinder', position: v(14.5, 4, 21), size: v(1, 2.2, 0), rotation: { pitch: -35 }, color: 'secondary', decorative: true, pattern: 'stripes' },
-    { shape: 'cylinder', position: v(-14.5, 1.5, 21.6), size: v(1.6, 3, 0), color: 'neutral', decorative: true },
-    { shape: 'cylinder', position: v(14.5, 1.5, 21.6), size: v(1.6, 3, 0), color: 'neutral', decorative: true },
+    {
+      shape: 'cylinder',
+      position: v(-14.5, 4, 21),
+      size: v(1, 2.2, 0),
+      rotation: { pitch: -35 },
+      color: 'secondary',
+      decorative: true,
+      pattern: 'stripes',
+    },
+    {
+      shape: 'cylinder',
+      position: v(14.5, 4, 21),
+      size: v(1, 2.2, 0),
+      rotation: { pitch: -35 },
+      color: 'secondary',
+      decorative: true,
+      pattern: 'stripes',
+    },
+    {
+      shape: 'cylinder',
+      position: v(-14.5, 1.5, 21.6),
+      size: v(1.6, 3, 0),
+      color: 'neutral',
+      decorative: true,
+    },
+    {
+      shape: 'cylinder',
+      position: v(14.5, 1.5, 21.6),
+      size: v(1.6, 3, 0),
+      color: 'neutral',
+      decorative: true,
+    },
   ];
   // Tiered neon audience stands behind and beside the board.
   const crowd = ['#ff3df2', '#00e5ff', '#2bffb8', '#ffd23f', '#cfd3ff', '#ff7a1a'];
@@ -43,14 +78,27 @@ function studio(): Piece[] {
     [24, 4, -90, 26],
     [0, -26, 0, 30],
   ] as const) {
-    out.push({ shape: 'box', position: v(x, -0.6, z), size: yaw === 0 ? v(w + 2, 1.2, 6) : v(6, 1.2, w + 2), color: 'primary', decorative: true });
+    out.push({
+      shape: 'box',
+      position: v(x, -0.6, z),
+      size: yaw === 0 ? v(w + 2, 1.2, 6) : v(6, 1.2, w + 2),
+      color: 'primary',
+      decorative: true,
+    });
     out.push(...crowdStand(v(x, 0, z), yaw, w, 4, crowd, Math.abs(x) + 3));
   }
   // Laser-fan pylons at the four corners (decor lasers are accent/neutral, never danger).
   for (let k = 0; k < 4; k++) {
     const p = rotPoint(v(0, 0, 21), 45 + k * 90);
     out.push(
-      { shape: 'cylinder', position: v(p.x, -2, p.z), size: v(1.2, 8, 0), color: 'neutral', decorative: true, pattern: 'stripes' },
+      {
+        shape: 'cylinder',
+        position: v(p.x, -2, p.z),
+        size: v(1.2, 8, 0),
+        color: 'neutral',
+        decorative: true,
+        pattern: 'stripes',
+      },
       { shape: 'sphere', position: v(p.x, 2.4, p.z), size: v(0.9, 0, 0), color: 'accent', decorative: true },
     );
   }
@@ -121,7 +169,13 @@ export default defineRound({
   })),
   variations: [
     { id: 'classic-show', weight: 4, weather: 'night', description: 'As authored.' },
-    { id: 'speed-round', weight: 2, weather: 'night', description: 'Starts at board round 3 timings.', obstacleParams: { board: { startRound: 3 } } },
+    {
+      id: 'speed-round',
+      weight: 2,
+      weather: 'night',
+      description: 'Starts at board round 3 timings.',
+      obstacleParams: { board: { startRound: 3 } },
+    },
     {
       id: 'shifting-floor',
       weight: 1,

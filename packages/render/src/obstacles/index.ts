@@ -13,7 +13,11 @@ export { obstacleVisualSetB } from './set-b.ts';
 export { obstacleVisualSetC } from './set-c.ts';
 
 /** Every obstacle visual factory, keyed by obstacle type. */
-export const OBSTACLE_VISUALS: ObstacleVisualSet = { ...obstacleVisualSetA, ...obstacleVisualSetB, ...obstacleVisualSetC };
+export const OBSTACLE_VISUALS: ObstacleVisualSet = {
+  ...obstacleVisualSetA,
+  ...obstacleVisualSetB,
+  ...obstacleVisualSetC,
+};
 
 /**
  * Looks up the visual factory for an obstacle type.

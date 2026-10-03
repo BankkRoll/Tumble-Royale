@@ -30,7 +30,8 @@ export function createDevRoomDeps(R: Rapier, opts: DevDepsOptions = {}): RoomDep
     R,
     createMatchSim: createCapsuleMatchSim,
     loadRound: () => round,
-    createShowController: () => new SimpleShowController({ roundId: round.id, playSeconds: opts.playSeconds ?? 120 }),
+    createShowController: () =>
+      new SimpleShowController({ roundId: round.id, playSeconds: opts.playSeconds ?? 120 }),
     createBot: randomWalkBots,
     now: () => performance.now(),
     randomSeed: () => randomInt(0, 2 ** 31),

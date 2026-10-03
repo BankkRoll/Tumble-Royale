@@ -1,4 +1,12 @@
-import { PerspectiveCamera, Raycaster, Scene, Vector3, type Mesh, type Object3D, type WebGPURenderer } from 'three/webgpu';
+import {
+  PerspectiveCamera,
+  Raycaster,
+  Scene,
+  Vector3,
+  type Mesh,
+  type Object3D,
+  type WebGPURenderer,
+} from 'three/webgpu';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { RoundDefinition } from '@tumble/shared';
 import { getTheme, type Weather } from '@tumble/content/themes';
@@ -69,7 +77,12 @@ export class LevelView {
       courseBounds: { min: b.min, max: b.max },
       seed: this.round.decorSeed,
       detail: preset.environment,
-      lighting: { shadows: preset.shadows, mapSize: preset.shadowMapSize, cascades: preset.cascades, shadowDistance: preset.shadowDistance },
+      lighting: {
+        shadows: preset.shadows,
+        mapSize: preset.shadowMapSize,
+        cascades: preset.cascades,
+        shadowDistance: preset.shadowDistance,
+      },
     });
     this.env.attach(this.scene);
     const level = this.level;
@@ -85,11 +98,21 @@ export class LevelView {
 
     if (this.runners.length === 0) {
       for (let i = 0; i < 6; i++) {
-        const actor = new TumblerActor(this.createTumbler, defaultLoadout(RUNNER_COLORS[i % RUNNER_COLORS.length]));
+        const actor = new TumblerActor(
+          this.createTumbler,
+          defaultLoadout(RUNNER_COLORS[i % RUNNER_COLORS.length]),
+        );
         actor.setState(SceneState.Run);
         actor.anim.speed = 5;
         const holder = actor.object;
-        this.runners.push({ actor, holder, t: i * 0.17, speed: 0.012 + i * 0.0015, lane: (i - 2.5) * 1.3, trail: i < 2 ? this.vfx.acquireTrail(i === 0 ? 'rainbow' : 'sparkle') : null });
+        this.runners.push({
+          actor,
+          holder,
+          t: i * 0.17,
+          speed: 0.012 + i * 0.0015,
+          lane: (i - 2.5) * 1.3,
+          trail: i < 2 ? this.vfx.acquireTrail(i === 0 ? 'rainbow' : 'sparkle') : null,
+        });
       }
     }
     for (const r of this.runners) this.scene.add(r.holder);

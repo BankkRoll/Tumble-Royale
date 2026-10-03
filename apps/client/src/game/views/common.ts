@@ -26,7 +26,12 @@ export function sceneOptions(
     theme,
     createTumbler,
     detail: preset.environment,
-    lighting: { shadows: preset.shadows, mapSize: preset.shadowMapSize, cascades: preset.cascades, shadowDistance: preset.shadowDistance },
+    lighting: {
+      shadows: preset.shadows,
+      mapSize: preset.shadowMapSize,
+      cascades: preset.cascades,
+      shadowDistance: preset.shadowDistance,
+    },
     ...(weather ? { weather } : {}),
   };
 }

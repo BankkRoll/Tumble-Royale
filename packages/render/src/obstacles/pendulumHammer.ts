@@ -30,7 +30,10 @@ class PendulumHammerVisual extends VisualBase<PendulumHammerParams> {
   private readonly poses;
   private readonly headMat;
 
-  constructor(instance: ObstacleInstance, private readonly ctx: ObstacleVisualContext) {
+  constructor(
+    instance: ObstacleInstance,
+    private readonly ctx: ObstacleVisualContext,
+  ) {
     super(instance, pendulumHammerSchema.parse(instance.params));
     const p = this.params;
     this.poses = poseBufferFor(pendulumHammer, p, ctx.speedScale);
@@ -44,11 +47,16 @@ class PendulumHammerVisual extends VisualBase<PendulumHammerParams> {
         const post = this.add(shadedMesh(postGeo, postMat));
         post.position.set(side * span, postH / 2, 0);
       }
-      const beam = this.add(shadedMesh(roundedBox(span * 2 + 0.9, 0.8, 1, 0.3), createPatternMaterial({ a: C.grape })));
+      const beam = this.add(
+        shadedMesh(roundedBox(span * 2 + 0.9, 0.8, 1, 0.3), createPatternMaterial({ a: C.grape })),
+      );
       beam.position.y = p.pivotHeight + 0.6;
     }
 
-    const axle = shadedMesh(new CylinderGeometry(0.35, 0.35, 1.3, 20), createPatternMaterial({ a: C.interact }));
+    const axle = shadedMesh(
+      new CylinderGeometry(0.35, 0.35, 1.3, 20),
+      createPatternMaterial({ a: C.interact }),
+    );
     axle.rotation.x = Math.PI / 2;
     this.swing.add(axle);
 
@@ -59,8 +67,17 @@ class PendulumHammerVisual extends VisualBase<PendulumHammerParams> {
     arm.position.y = -p.armLength / 2;
     this.swing.add(arm);
 
-    this.headMat = createPatternMaterial({ a: C.danger, b: C.dangerAlt, pattern: 'stripes', scale: 1.1, emissive: C.glowDanger });
-    const head = shadedMesh(new CylinderGeometry(p.headRadius, p.headRadius, p.headLength, 40, 1), this.headMat);
+    this.headMat = createPatternMaterial({
+      a: C.danger,
+      b: C.dangerAlt,
+      pattern: 'stripes',
+      scale: 1.1,
+      emissive: C.glowDanger,
+    });
+    const head = shadedMesh(
+      new CylinderGeometry(p.headRadius, p.headRadius, p.headLength, 40, 1),
+      this.headMat,
+    );
     head.rotation.z = Math.PI / 2;
     head.position.y = -p.armLength;
     addOutline(head, 0.04);
@@ -85,4 +102,5 @@ class PendulumHammerVisual extends VisualBase<PendulumHammerParams> {
 }
 
 /** Pendulum hammer visual factory. */
-export const pendulumHammerVisual: ObstacleVisualFactory = (instance, ctx) => new PendulumHammerVisual(instance, ctx);
+export const pendulumHammerVisual: ObstacleVisualFactory = (instance, ctx) =>
+  new PendulumHammerVisual(instance, ctx);

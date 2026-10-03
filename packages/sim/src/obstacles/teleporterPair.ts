@@ -7,7 +7,16 @@
  */
 import { InteractionGroups, vec3, yawFromQuat, type Vec3 } from '@tumble/shared';
 import { z } from 'zod';
-import { ActorCooldowns, ActorSet, DEG, PhysicsBag, emitCue, hash3, instanceFrame, toWorld } from './helpers-b.ts';
+import {
+  ActorCooldowns,
+  ActorSet,
+  DEG,
+  PhysicsBag,
+  emitCue,
+  hash3,
+  instanceFrame,
+  toWorld,
+} from './helpers-b.ts';
 import type { EventSink } from '../events.ts';
 import type { ObstacleActor, ObstacleModule, ObstacleRuntime } from './types.ts';
 
@@ -17,7 +26,10 @@ const LocalPoint = z.object({ x: z.number(), y: z.number(), z: z.number() });
 export const TeleporterPairSchema = z.object({
   padRadius: z.number().positive().default(1.2),
   /** Exit pad centres in local space (floor level). At least one. */
-  exits: z.array(LocalPoint).min(1).default([{ x: 0, y: 0, z: 14 }]),
+  exits: z
+    .array(LocalPoint)
+    .min(1)
+    .default([{ x: 0, y: 0, z: 14 }]),
   /** How an exit is chosen when there are several. */
   mode: z.enum(['first', 'random', 'roundRobin']).default('first'),
   /** Exit pads also send players back to the entrance. */
@@ -183,4 +195,3 @@ export const teleporterPair: ObstacleModule<TeleporterPairParams> = {
     };
   },
 };
-

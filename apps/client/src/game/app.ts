@@ -18,7 +18,16 @@
  *   listener, adaptive resolution, stats;
  * - settings persistence and live application; debug panel and hooks.
  */
-import { DEFAULT_KEYBINDS, bindUI, mountUI, ui, uiEvents, type BindAction, type CustomLobbyState, type Settings } from '@tumble/ui';
+import {
+  DEFAULT_KEYBINDS,
+  bindUI,
+  mountUI,
+  ui,
+  uiEvents,
+  type BindAction,
+  type CustomLobbyState,
+  type Settings,
+} from '@tumble/ui';
 import { createRenderer } from '@tumble/render';
 import { createPostPipeline, type PostPipeline } from '@tumble/render/post';
 import type { TumblerLoadout } from '@tumble/render/scenes';
@@ -39,7 +48,15 @@ import type { GameConfig } from './config.ts';
 import { botLoadout, tumblerColors } from './cosmetics.ts';
 import { createDebugPanel } from './debugPanel.ts';
 import type { TumbleHooks } from './hooks.ts';
-import { customPlaylist, localPlayerCard, markNewsRead, pushLeaderboard, pushMeta, pushStaticMeta, resolvePlaylist } from './meta.ts';
+import {
+  customPlaylist,
+  localPlayerCard,
+  markNewsRead,
+  pushLeaderboard,
+  pushMeta,
+  pushStaticMeta,
+  resolvePlaylist,
+} from './meta.ts';
 import { OnlineAccount } from './online/account.ts';
 import { MatchmakerClient, gameSocketUrl, type Lobby, type MatchFound } from './online/matchmaker.ts';
 import { ProfileStore } from './profile.ts';
@@ -77,7 +94,11 @@ function mergeSettings(base: Settings, saved: Partial<Settings> | null): Setting
   if (!saved) return base;
   return {
     graphics: { ...base.graphics, ...saved.graphics },
-    controls: { ...base.controls, ...saved.controls, keybinds: { ...base.controls.keybinds, ...saved.controls?.keybinds } },
+    controls: {
+      ...base.controls,
+      ...saved.controls,
+      keybinds: { ...base.controls.keybinds, ...saved.controls?.keybinds },
+    },
     audio: { ...base.audio, ...saved.audio },
     accessibility: { ...base.accessibility, ...saved.accessibility },
     gameplay: { ...base.gameplay, ...saved.gameplay },
@@ -190,7 +211,10 @@ export class GameApp {
       roundId: () => this.session?.roundId() ?? null,
       roundPhase: () => this.session?.roundPhase() ?? null,
       summary: () => this.lastSummary,
-      memory: () => ({ geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures }),
+      memory: () => ({
+        geometries: renderer.info.memory.geometries,
+        textures: renderer.info.memory.textures,
+      }),
       drawCalls: () => renderer.info.render.drawCalls,
       tumblers: () => this.session?.visibleTumblers() ?? 0,
       tier: () => quality.tier,
@@ -198,7 +222,13 @@ export class GameApp {
       account: () => {
         const a = this.account;
         if (!a?.active || !a.userId) return null;
-        return { userId: a.userId, name: a.name, partyCode: a.party?.code ?? null, partySize: a.party?.members.length ?? 1, leader: a.isLeader };
+        return {
+          userId: a.userId,
+          name: a.name,
+          partyCode: a.party?.code ?? null,
+          partySize: a.party?.members.length ?? 1,
+          leader: a.isLeader,
+        };
       },
       queued: () => this.queued,
       lobbyState: () => (this.menu && this.director.view === this.menu ? this.menu.debugState() : null),
@@ -250,10 +280,14 @@ export class GameApp {
         }
       }),
     );
-    const progress: Progress = (f, label) => ui.getState().setBoot({ progress: Math.max(ui.getState().boot.progress, f), label });
+    const progress: Progress = (f, label) =>
+      ui.getState().setBoot({ progress: Math.max(ui.getState().boot.progress, f), label });
 
     progress(0.1, 'Teaching physics to behave…');
-    const fonts = Promise.race([document.fonts?.ready ?? Promise.resolve(), new Promise((r) => window.setTimeout(r, 2500))]);
+    const fonts = Promise.race([
+      document.fonts?.ready ?? Promise.resolve(),
+      new Promise((r) => window.setTimeout(r, 2500)),
+    ]);
     const R = await loadRapier();
     progress(0.3, 'Waking up the GPU…');
 
@@ -286,7 +320,21 @@ export class GameApp {
     const post = createPostPipeline(renderer, new Scene(), new PerspectiveCamera(), quality.preset.post);
     quality.attachPost(post);
     const director = new SceneDirector(post);
-    const app = new GameApp(cfg, R, renderer, backend, post, quality, director, audio, input, profile, api, tumblers, stats);
+    const app = new GameApp(
+      cfg,
+      R,
+      renderer,
+      backend,
+      post,
+      quality,
+      director,
+      audio,
+      input,
+      profile,
+      api,
+      tumblers,
+      stats,
+    );
     progress(0.85, 'Building the lobby…');
     app.applySettings(ui.getState().settings);
     app.showMenuScene();
@@ -302,7 +350,8 @@ export class GameApp {
 
     app.bindIntents();
     app.start();
-    if (cfg.debug) createDebugPanel({ renderer, quality, stats, session: () => app.session, timeScale: app.timeScale });
+    if (cfg.debug)
+      createDebugPanel({ renderer, quality, stats, session: () => app.session, timeScale: app.timeScale });
     if (cfg.autoplay) installAutoplay(cfg.autoShows);
     if (cfg.api) void app.connectAccount(null).finally(() => void app.refreshOnlineStatus());
     else void app.refreshOnlineStatus();
@@ -316,7 +365,9 @@ export class GameApp {
    *
    * @param welcome - Name and colours from the welcome screen for a brand new guest.
    */
-  private async connectAccount(welcome: { name: string; colors: Parameters<ProfileStore['create']>[1] } | null): Promise<void> {
+  private async connectAccount(
+    welcome: { name: string; colors: Parameters<ProfileStore['create']>[1] } | null,
+  ): Promise<void> {
     const account = this.account;
     if (!account || account.active) return;
     if (!(await this.api.probe())) return;
@@ -340,7 +391,12 @@ export class GameApp {
     }
     // The boot-time check ran before this sign-in (welcome screen); publish the real online state now.
     void this.refreshOnlineStatus();
-    ui.getState().pushToast({ kind: 'success', title: `Signed in as ${account.name}`, body: 'Progress now saves to your account.', icon: '☁️' });
+    ui.getState().pushToast({
+      kind: 'success',
+      title: `Signed in as ${account.name}`,
+      body: 'Progress now saves to your account.',
+      icon: '☁️',
+    });
     if (this.pendingJoin) {
       const code = this.pendingJoin;
       this.pendingJoin = null;
@@ -461,7 +517,14 @@ export class GameApp {
     let up = false;
     if (this.cfg.online) up = await gameServerAvailable();
     else if (this.account?.active && this.mm) up = await this.mm.probe();
-    s.setOnlineStatus(up ? { state: 'online', ...(this.mm && this.mm.searching > 0 ? { playersOnline: this.mm.searching } : {}) } : { state: 'offline', message: 'The game servers are offline right now.' });
+    s.setOnlineStatus(
+      up
+        ? {
+            state: 'online',
+            ...(this.mm && this.mm.searching > 0 ? { playersOnline: this.mm.searching } : {}),
+          }
+        : { state: 'offline', message: 'The game servers are offline right now.' },
+    );
     if (up && !this.modePicked) s.setPlayMode('online');
     if (!up && s.playMode === 'online') ui.setState({ playMode: 'offline' });
   }
@@ -494,12 +557,26 @@ export class GameApp {
     let session: ShowSession | null = null;
     if (this.cfg.online) {
       if (await gameServerAvailable()) session = new OnlineShowSession(this.ctx);
-      else ui.getState().pushToast({ kind: 'warning', title: 'Game server unreachable', body: 'Playing an offline show with bots instead.', icon: '🤖' });
+      else
+        ui.getState().pushToast({
+          kind: 'warning',
+          title: 'Game server unreachable',
+          body: 'Playing an offline show with bots instead.',
+          icon: '🤖',
+        });
     } else if (this.account?.active && this.mm && !this.mm.online) {
-      ui.getState().pushToast({ kind: 'info', title: 'Matchmaking is offline', body: 'Playing a show with bots — progress stays on this device.', icon: '🤖' });
+      ui.getState().pushToast({
+        kind: 'info',
+        title: 'Matchmaking is offline',
+        body: 'Playing a show with bots — progress stays on this device.',
+        icon: '🤖',
+      });
     }
     if (!session) {
-      const playlist = resolvePlaylist(this.cfg.playlist ?? playlistId, this.profile.showsPlayed === 0 && !this.cfg.playlist && !this.account?.active);
+      const playlist = resolvePlaylist(
+        this.cfg.playlist ?? playlistId,
+        this.profile.showsPlayed === 0 && !this.cfg.playlist && !this.account?.active,
+      );
       const seed = this.cfg.seed ?? (Math.floor(Math.random() * 0x7fffffff) ^ Date.now()) >>> 0;
       session = new OfflineShowSession(this.ctx, playlist, seed);
     }
@@ -514,7 +591,12 @@ export class GameApp {
     if (!account || !mm || this.queued) return;
     const s = ui.getState();
     if (!account.isLeader) {
-      s.pushToast({ kind: 'info', title: 'The party leader starts the show', body: 'Hit Ready and hang tight!', icon: '👑' });
+      s.pushToast({
+        kind: 'info',
+        title: 'The party leader starts the show',
+        body: 'Hit Ready and hang tight!',
+        icon: '👑',
+      });
       return;
     }
     this.showSearching(account.party?.members.length ?? 1);
@@ -540,7 +622,14 @@ export class GameApp {
 
   private showSearching(partySize: number): void {
     const s = ui.getState();
-    s.setQueue({ status: 'searching', startedAt: Date.now(), playersFound: partySize, playersNeeded: 40, etaSec: -1, region: (this.account?.me?.region ?? 'na').toUpperCase() });
+    s.setQueue({
+      status: 'searching',
+      startedAt: Date.now(),
+      playersFound: partySize,
+      playersNeeded: 40,
+      etaSec: -1,
+      region: (this.account?.me?.region ?? 'na').toUpperCase(),
+    });
     if (s.screen !== 'matchmaking') s.setScreen('matchmaking');
   }
 
@@ -554,15 +643,26 @@ export class GameApp {
     });
     mm.on('status', (m) => {
       if (this.session) return;
-      ui.getState().setQueue({ playersFound: Math.max(1, Number(m.searching ?? 1)), etaSec: Number(m.etaSec ?? -1) });
+      ui.getState().setQueue({
+        playersFound: Math.max(1, Number(m.searching ?? 1)),
+        etaSec: Number(m.etaSec ?? -1),
+      });
     });
-    mm.on('waiting_for_server', () => ui.getState().pushToast({ kind: 'info', title: 'Finding a game server…', icon: '🛰️' }));
+    mm.on('waiting_for_server', () =>
+      ui.getState().pushToast({ kind: 'info', title: 'Finding a game server…', icon: '🛰️' }),
+    );
     mm.on('queue_cancelled', (m) => {
       this.queued = false;
       if (this.session) return;
       ui.getState().setQueue({ status: 'idle' });
       if (ui.getState().screen === 'matchmaking') this.goMenu();
-      if (m.reason && m.reason !== 'cancelled') ui.getState().pushToast({ kind: 'warning', title: 'Matchmaking stopped', body: String(m.reason), icon: '⏹️' });
+      if (m.reason && m.reason !== 'cancelled')
+        ui.getState().pushToast({
+          kind: 'warning',
+          title: 'Matchmaking stopped',
+          body: String(m.reason),
+          icon: '⏹️',
+        });
     });
     mm.on('match_found', (m) => this.startMatchmadeShow(m as unknown as MatchFound));
     mm.on('lobby_update', (m) => this.applyLobby(m.lobby as Lobby));
@@ -583,7 +683,12 @@ export class GameApp {
     this.lastSummary = null;
     this.lastPlaylist = m.playlistId;
     this.applyLobby(null);
-    const session = new OnlineShowSession(this.ctx, { url: gameSocketUrl(m.server.url), ticket: m.ticket, matchId: m.matchId, playlistId: m.playlistId });
+    const session = new OnlineShowSession(this.ctx, {
+      url: gameSocketUrl(m.server.url),
+      ticket: m.ticket,
+      matchId: m.matchId,
+      playlistId: m.playlistId,
+    });
     this.session = session;
     this.account?.setPresence('in_match');
     session.start();
@@ -629,7 +734,10 @@ export class GameApp {
       players: lobby.players.map((p) => ({
         id: p.userId,
         name: p.name.replace(/#\d+$/, ''),
-        colors: p.userId === me ? (ui.getState().profile?.colors ?? tumblerColors(this.look())) : tumblerColors(botLoadout(1, p.name.length, p.name)),
+        colors:
+          p.userId === me
+            ? (ui.getState().profile?.colors ?? tumblerColors(this.look()))
+            : tumblerColors(botLoadout(1, p.name.length, p.name)),
       })),
       options: {
         rounds: lobby.settings.rounds,
@@ -645,7 +753,13 @@ export class GameApp {
 
   private customUnavailable(): boolean {
     if (this.mm?.online && this.account?.active) return false;
-    ui.getState().showDialog({ id: 'custom-offline', kind: 'error', title: 'Custom shows need the online server', body: 'Sign in and make sure matchmaking is reachable.', code: 'E-LOBBY-503' });
+    ui.getState().showDialog({
+      id: 'custom-offline',
+      kind: 'error',
+      title: 'Custom shows need the online server',
+      body: 'Sign in and make sure matchmaking is reachable.',
+      code: 'E-LOBBY-503',
+    });
     return true;
   }
 
@@ -663,7 +777,8 @@ export class GameApp {
         if (!this.profile.exists) s().setScreen('welcome', { transition: 'wipe' });
         else this.goMenu();
       },
-      onPreviewColors: ({ colors, pattern }) => this.menu?.setLoadout(this.profile.previewLoadout({ ...colors, pattern })),
+      onPreviewColors: ({ colors, pattern }) =>
+        this.menu?.setLoadout(this.profile.previewLoadout({ ...colors, pattern })),
       onWelcomeDone: ({ name, colors }) => {
         this.profile.create(name, colors);
         this.pushMeta();
@@ -688,12 +803,17 @@ export class GameApp {
         if (overlay === 'friends') void online()?.ensureParty();
       },
       onTryOn: ({ slot, itemId }) => {
-        this.menu?.setLoadout(online()?.tryOnLoadout(slot, itemId) ?? this.profile.tryOnLoadout(slot, itemId));
+        this.menu?.setLoadout(
+          online()?.tryOnLoadout(slot, itemId) ?? this.profile.tryOnLoadout(slot, itemId),
+        );
         // Emotes, celebrations and victory poses are previewed by playing them.
-        if (itemId && (slot === 'emote' || slot === 'celebration' || slot === 'victory')) this.menu?.emote(itemId);
+        if (itemId && (slot === 'emote' || slot === 'celebration' || slot === 'victory'))
+          this.menu?.emote(itemId);
       },
       onTryOnBundle: ({ items }) => {
-        this.menu?.setLoadout(items.length === 0 ? this.look() : (online()?.tryOnMany(items) ?? this.profile.tryOnMany(items)));
+        this.menu?.setLoadout(
+          items.length === 0 ? this.look() : (online()?.tryOnMany(items) ?? this.profile.tryOnMany(items)),
+        );
       },
       onDressingRoom: ({ active }) => {
         this.menu?.setDressingRoom(active);
@@ -757,7 +877,12 @@ export class GameApp {
           s().pushToast({ kind: 'reward', title: `${r.item.name} is yours!`, icon: r.item.icon });
           this.pushMeta();
         } else {
-          const msg = r.error === 'funds' ? 'Not enough currency — play a few shows!' : r.error === 'owned' ? 'You already own that.' : 'That offer is gone.';
+          const msg =
+            r.error === 'funds'
+              ? 'Not enough currency — play a few shows!'
+              : r.error === 'owned'
+                ? 'You already own that.'
+                : 'That offer is gone.';
           s().showDialog({ id: 'purchase-failed', kind: 'error', title: 'Purchase failed', body: msg });
         }
       },
@@ -784,7 +909,13 @@ export class GameApp {
           return;
         }
         if (this.profile.buyPremiumPass()) this.pushMeta();
-        else s().showDialog({ id: 'pass-funds', kind: 'error', title: 'Not enough Gems', body: 'Gems come from the store and the pass.' });
+        else
+          s().showDialog({
+            id: 'pass-funds',
+            kind: 'error',
+            title: 'Not enough Gems',
+            body: 'Gems come from the store and the pass.',
+          });
       },
       onClaimChallenge: ({ id }) => {
         const a = online();
@@ -800,7 +931,9 @@ export class GameApp {
         this.modePicked = true;
       },
       onRetryOnline: () => {
-        void (this.account && !this.account.active ? this.connectAccount(null) : Promise.resolve()).finally(() => void this.refreshOnlineStatus());
+        void (this.account && !this.account.active ? this.connectAccount(null) : Promise.resolve()).finally(
+          () => void this.refreshOnlineStatus(),
+        );
       },
       onPlayCustomOffline: ({ options }) => {
         if (options.rounds.length === 0) return;
@@ -817,10 +950,12 @@ export class GameApp {
           s().pushToast({ kind: 'info', title: `${name ?? 'That Tumbler'} has no public card yet` });
           return;
         }
-        void online()!.inspect(playerId).then((card) => {
-          if (card) s().setInspectedProfile(card);
-          else s().pushToast({ kind: 'info', title: "Couldn't load that profile" });
-        });
+        void online()!
+          .inspect(playerId)
+          .then((card) => {
+            if (card) s().setInspectedProfile(card);
+            else s().pushToast({ kind: 'info', title: "Couldn't load that profile" });
+          });
       },
       onNewsRead: ({ ids }) => markNewsRead(ids),
       onLeaderboardQuery: ({ board, scope }) => {
@@ -850,17 +985,34 @@ export class GameApp {
             (err) =>
               s().pushToast({
                 kind: 'info',
-                title: err instanceof ApiError && err.code === 'provider_disabled' ? `${provider === 'discord' ? 'Discord' : 'Google'} sign-in isn't set up on this server` : "Couldn't start sign-in",
-                body: err instanceof ApiError && err.code === 'provider_disabled' ? 'Your guest account keeps saving progress.' : errorText(err),
+                title:
+                  err instanceof ApiError && err.code === 'provider_disabled'
+                    ? `${provider === 'discord' ? 'Discord' : 'Google'} sign-in isn't set up on this server`
+                    : "Couldn't start sign-in",
+                body:
+                  err instanceof ApiError && err.code === 'provider_disabled'
+                    ? 'Your guest account keeps saving progress.'
+                    : errorText(err),
                 icon: '🔒',
               }),
           );
-        } else s().pushToast({ kind: 'info', title: a ? 'That needs a linked account' : 'Accounts are offline right now', body: 'Your guest Tumbler is saved.', icon: '🔒' });
+        } else
+          s().pushToast({
+            kind: 'info',
+            title: a ? 'That needs a linked account' : 'Accounts are offline right now',
+            body: 'Your guest Tumbler is saved.',
+            icon: '🔒',
+          });
       },
       onPlay: ({ playlistId, mode }) => {
         if (mode === 'offline' && !this.cfg.online) {
           this.lastPlaylist = playlistId;
-          this.startOfflineShow(resolvePlaylist(this.cfg.playlist ?? playlistId, this.profile.showsPlayed === 0 && !this.cfg.playlist && !this.account?.active));
+          this.startOfflineShow(
+            resolvePlaylist(
+              this.cfg.playlist ?? playlistId,
+              this.profile.showsPlayed === 0 && !this.cfg.playlist && !this.account?.active,
+            ),
+          );
           return;
         }
         void this.startShow(playlistId);
@@ -892,7 +1044,13 @@ export class GameApp {
       onEmote: ({ id }) => {
         if (!this.session) this.menu?.emote(id);
       },
-      onPhotoMode: () => s().pushToast({ kind: 'info', title: 'Say cheese!', body: 'Press F12 for a screenshot — photo mode controls are coming soon.', icon: '📸' }),
+      onPhotoMode: () =>
+        s().pushToast({
+          kind: 'info',
+          title: 'Say cheese!',
+          body: 'Press F12 for a screenshot — photo mode controls are coming soon.',
+          icon: '📸',
+        }),
       onCreateCustom: ({ options }) => {
         if (this.customUnavailable() || !this.mm) return;
         void this.mm
@@ -905,20 +1063,40 @@ export class GameApp {
           })
           .then(
             ({ lobby }) => this.applyLobby(lobby),
-            (err) => s().showDialog({ id: 'custom-failed', kind: 'error', title: "Couldn't create the lobby", body: errorText(err) }),
+            (err) =>
+              s().showDialog({
+                id: 'custom-failed',
+                kind: 'error',
+                title: "Couldn't create the lobby",
+                body: errorText(err),
+              }),
           );
       },
       onJoinCode: ({ code }) => {
         if (this.customUnavailable() || !this.mm) return;
         void this.mm.joinLobby(code.toUpperCase()).then(
           ({ lobby }) => this.applyLobby(lobby),
-          (err) => s().showDialog({ id: 'badcode', kind: 'error', title: 'No show with that code', body: errorText(err), code: 'E-LOBBY-404' }),
+          (err) =>
+            s().showDialog({
+              id: 'badcode',
+              kind: 'error',
+              title: 'No show with that code',
+              body: errorText(err),
+              code: 'E-LOBBY-404',
+            }),
         );
       },
       onStartCustom: () => {
         const lobby = this.lobby;
         if (!lobby || !this.mm) return;
-        void this.mm.startLobby(lobby.code).catch((err) => s().showDialog({ id: 'custom-start-failed', kind: 'error', title: "Couldn't start the show", body: errorText(err) }));
+        void this.mm.startLobby(lobby.code).catch((err) =>
+          s().showDialog({
+            id: 'custom-start-failed',
+            kind: 'error',
+            title: "Couldn't start the show",
+            body: errorText(err),
+          }),
+        );
       },
       onLeaveCustom: () => {
         const lobby = this.lobby;
@@ -954,7 +1132,14 @@ export class GameApp {
     const canvas = this.renderer.domElement;
     canvas.addEventListener('pointerdown', () => {
       const st = s();
-      if (this.session || st.screen !== 'menu' || st.menuTab !== 'play' || st.overlay !== 'none' || !this.menu) return;
+      if (
+        this.session ||
+        st.screen !== 'menu' ||
+        st.menuTab !== 'play' ||
+        st.overlay !== 'none' ||
+        !this.menu
+      )
+        return;
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       canvas.focus({ preventScroll: true });
       this.menu.setIdlePlay(true);
@@ -994,7 +1179,10 @@ export class GameApp {
       const defaults = DEFAULT_KEYBINDS[bind];
       // Untouched defaults keep the input layer's richer bindings (e.g. C and Right Ctrl for dive).
       if (!codes || (codes[0] === defaults[0] && codes[1] === defaults[1])) continue;
-      this.input.setBinding(action, codes.filter((c) => c !== ''));
+      this.input.setBinding(
+        action,
+        codes.filter((c) => c !== ''),
+      );
     }
     const view = this.session?.roundView;
     view?.setAccessibility(st.accessibility.reduceShake, st.gameplay.nameplates, st.gameplay.streamerMode);

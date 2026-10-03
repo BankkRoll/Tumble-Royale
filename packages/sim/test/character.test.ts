@@ -12,7 +12,8 @@ const feetY = (h: Harness, i = 0): number => {
   const p = { x: 0, y: 0, z: 0 };
   return h.controllers[i]!.getFeet(p).y;
 };
-const feet = (h: Harness, i = 0): { x: number; y: number; z: number } => h.controllers[i]!.getFeet({ x: 0, y: 0, z: 0 });
+const feet = (h: Harness, i = 0): { x: number; y: number; z: number } =>
+  h.controllers[i]!.getFeet({ x: 0, y: 0, z: 0 });
 
 describe('tuning', () => {
   it('resolveTuning merges overrides without mutating defaults', () => {
@@ -232,7 +233,9 @@ describe('dive', () => {
     expect(h.until(() => c.state === CharacterState.DiveSlide, 120)).toBeGreaterThan(0);
     expect(h.until(() => c.state === CharacterState.GetUp, 120)).toBeGreaterThan(0);
     h.inputs[0]!.moveZ = 0;
-    expect(h.until(() => c.state === CharacterState.Idle || c.state === CharacterState.Run, 60)).toBeGreaterThan(0);
+    expect(
+      h.until(() => c.state === CharacterState.Idle || c.state === CharacterState.Run, 60),
+    ).toBeGreaterThan(0);
     for (const e of ['jump', 'dive', 'land', 'getUp']) expect(h.log).toContain(e);
     h.dispose();
   });
@@ -276,7 +279,11 @@ describe('platforms', () => {
   it('rides an elevator up and down', () => {
     const h = new Harness(R);
     h.box(0, -30, 0, 80, 0.5, 80);
-    const pose = (t: number, pos: { x: number; y: number; z: number }, rot: { x: number; y: number; z: number; w: number }): void => {
+    const pose = (
+      t: number,
+      pos: { x: number; y: number; z: number },
+      rot: { x: number; y: number; z: number; w: number },
+    ): void => {
       pos.x = 0;
       pos.y = 0.75 + 3 * Math.sin(t);
       pos.z = 0;

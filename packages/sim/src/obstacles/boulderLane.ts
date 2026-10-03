@@ -95,7 +95,12 @@ export function boulderSlotSpawn(t: number, j: number, pool: number, p: BoulderL
  * @param out - At least {@link boulderPoolSize} samples.
  * @param speedScale - Multiplies roll speed.
  */
-export function boulderLanePose(t: number, p: BoulderLaneParams, out: PoseSample[], speedScale: number): void {
+export function boulderLanePose(
+  t: number,
+  p: BoulderLaneParams,
+  out: PoseSample[],
+  speedScale: number,
+): void {
   const pool = boulderPoolSize(p, speedScale);
   const v = p.speed * speedScale;
   const travel = boulderTravelTime(p, speedScale);
@@ -161,7 +166,8 @@ class BoulderLaneRuntime extends RuntimeBase {
       if (k !== this.slotSpawn[j] || active !== this.slotActive[j]) {
         this.drivers[j]!.teleport(sample);
         this.balls[j]!.setEnabled(active);
-        if (active && ctx && !Number.isNaN(this.lastT)) this.cue(ctx.events, 'boulderSpawn', sample.pos.x, sample.pos.y, sample.pos.z);
+        if (active && ctx && !Number.isNaN(this.lastT))
+          this.cue(ctx.events, 'boulderSpawn', sample.pos.x, sample.pos.y, sample.pos.z);
         this.slotSpawn[j] = k;
         this.slotActive[j] = active;
       } else {

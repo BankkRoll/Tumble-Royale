@@ -29,7 +29,10 @@ class SweeperArmVisual extends VisualBase<SweeperArmParams> {
   private readonly poses;
   private readonly barMat;
 
-  constructor(instance: ObstacleInstance, private readonly ctx: ObstacleVisualContext) {
+  constructor(
+    instance: ObstacleInstance,
+    private readonly ctx: ObstacleVisualContext,
+  ) {
     super(instance, sweeperArmSchema.parse(instance.params));
     const p = this.params;
     this.poses = poseBufferFor(sweeperArm, p, ctx.speedScale);
@@ -41,11 +44,22 @@ class SweeperArmVisual extends VisualBase<SweeperArmParams> {
       ),
     );
     post.position.y = p.postHeight / 2;
-    const dome = this.add(shadedMesh(new SphereGeometry(p.postRadius * 0.9, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), createPatternMaterial({ a: C.pink })));
+    const dome = this.add(
+      shadedMesh(
+        new SphereGeometry(p.postRadius * 0.9, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+        createPatternMaterial({ a: C.pink }),
+      ),
+    );
     dome.position.y = p.postHeight;
     addOutline(dome, 0.03);
 
-    this.barMat = createPatternMaterial({ a: C.danger, b: C.dangerAlt, pattern: 'stripes', scale: 2.4, emissive: C.glowDanger });
+    this.barMat = createPatternMaterial({
+      a: C.danger,
+      b: C.dangerAlt,
+      pattern: 'stripes',
+      scale: 2.4,
+      emissive: C.glowDanger,
+    });
     const tipMat = createPatternMaterial({ a: C.interact });
     const reach = p.armLength - p.postRadius * 0.6;
     const barGeo = new CapsuleGeometry(p.armRadius, Math.max(0.05, reach - 2 * p.armRadius), 6, 16);

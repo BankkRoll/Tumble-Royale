@@ -1,7 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /** Waits for the boot sequence and lets the scene render for a while. */
-async function bootAndSettle(page: Page, backend: string): Promise<{ backend: string; fps: number; frames: number }> {
+async function bootAndSettle(
+  page: Page,
+  backend: string,
+): Promise<{ backend: string; fps: number; frames: number }> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(`/?scene=test&backend=${backend}`);
@@ -32,7 +35,13 @@ test('client and server Rapier agree after 600 steps', async ({ page }) => {
   await page.waitForFunction(() => window.__tumble?.ready === true, undefined, { timeout: 60_000 });
   const report = await page.evaluate(async () => {
     const r = await window.__tumble!.determinism();
-    return { summary: r.summary, identical: r.identical, maxError: r.maxError, client: r.client.hash, server: r.server?.hash };
+    return {
+      summary: r.summary,
+      identical: r.identical,
+      maxError: r.maxError,
+      client: r.client.hash,
+      server: r.server?.hash,
+    };
   });
   console.log('[phase0] determinism', report);
   expect(report.server).toBeDefined();

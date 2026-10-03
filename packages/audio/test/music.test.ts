@@ -5,12 +5,24 @@ import { STINGERS, STINGER_ALIASES, TRACKS, TRACK_ALIASES, TRACK_IDS } from '../
 import { STEM_IDS } from '../src/music/types.ts';
 import { INSTRUMENTS } from '../src/synth/instruments.ts';
 
-const THEMES = ['candy', 'factory', 'frosty', 'jungle', 'sunset', 'space', 'beach', 'neon', 'castle', 'goo'] as const;
+const THEMES = [
+  'candy',
+  'factory',
+  'frosty',
+  'jungle',
+  'sunset',
+  'space',
+  'beach',
+  'neon',
+  'castle',
+  'goo',
+] as const;
 
 describe('track library', () => {
   it('has a track for every theme plus the show tracks', () => {
     for (const t of THEMES) expect(TRACKS[t]).toBeDefined();
-    for (const t of ['lobby', 'victory', 'showIntro', 'final', 'results', 'logic'] as const) expect(TRACKS[t]).toBeDefined();
+    for (const t of ['lobby', 'victory', 'showIntro', 'final', 'results', 'logic'] as const)
+      expect(TRACKS[t]).toBeDefined();
   });
 
   it.each(TRACK_IDS)('%s compiles, uses known instruments and has sane metadata', (id) => {
@@ -63,14 +75,17 @@ describe('track library', () => {
   it('quotes the leitmotif (5-6-5-3 | 2-3-1) in the lobby', () => {
     const lobby = prepareTrack(TRACKS.lobby);
     const lead = lobby.parts.find((p) => p.stem === 'lead')!;
-    const notes = [...lead.bars[0]!, ...lead.bars[1]!].filter(Boolean).map((n) => n!.midi[0]! - lobby.keyMidi - 12);
+    const notes = [...lead.bars[0]!, ...lead.bars[1]!]
+      .filter(Boolean)
+      .map((n) => n!.midi[0]! - lobby.keyMidi - 12);
     expect(notes).toEqual([7, 9, 7, 4, 2, 4, 0]);
   });
 
   it('aliases resolve to real tracks and stingers', () => {
     for (const t of Object.values(TRACK_ALIASES)) expect(TRACKS[t]).toBeDefined();
     for (const s of Object.values(STINGER_ALIASES)) expect(STINGERS[s]).toBeDefined();
-    for (const s of Object.values(STINGERS)) for (const n of s.notes) expect(INSTRUMENTS[n[4]]).toBeTypeOf('function');
+    for (const s of Object.values(STINGERS))
+      for (const n of s.notes) expect(INSTRUMENTS[n[4]]).toBeTypeOf('function');
   });
 });
 

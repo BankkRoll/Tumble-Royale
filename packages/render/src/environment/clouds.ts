@@ -9,7 +9,17 @@ import {
   Vector3,
   type Node,
 } from 'three/webgpu';
-import { float, instancedBufferAttribute, mix, mod, normalWorld, positionLocal, smoothstep, uniform, vec3 } from 'three/tsl';
+import {
+  float,
+  instancedBufferAttribute,
+  mix,
+  mod,
+  normalWorld,
+  positionLocal,
+  smoothstep,
+  uniform,
+  vec3,
+} from 'three/tsl';
 import { DecorRandom } from '../level/toolkit.ts';
 import type { Atmosphere } from './atmosphere.ts';
 
@@ -109,7 +119,11 @@ export function createCloudLayer(atmosphere: Atmosphere, opts: CloudLayerOptions
       const t = n === 1 ? 0.5 : i / (n - 1);
       const along = (t - 0.5) * size * 2.6;
       const r = size * (0.55 + Math.sin(t * Math.PI) * 0.6) * rng.range(0.75, 1.05);
-      p.set(center.x + along, center.y + Math.sin(t * Math.PI) * size * 0.35 + rng.range(-0.3, 0.6) * size * 0.3, center.z + rng.range(-0.4, 0.4) * size);
+      p.set(
+        center.x + along,
+        center.y + Math.sin(t * Math.PI) * size * 0.35 + rng.range(-0.3, 0.6) * size * 0.3,
+        center.z + rng.range(-0.4, 0.4) * size,
+      );
       // Flattened puffs read as cumulus with a flat base.
       s.set(r * rng.range(1.0, 1.25), r * 0.72, r * rng.range(0.85, 1.1));
       q.identity();

@@ -86,7 +86,14 @@ export function perc(param: AudioParam, t: number, peak: number, attack: number,
  * @param dur - Sweep duration.
  * @param curve - `exp` sounds natural for frequencies; `lin` for everything else.
  */
-export function sweep(param: AudioParam, t: number, from: number, to: number, dur: number, curve: 'exp' | 'lin' = 'exp'): void {
+export function sweep(
+  param: AudioParam,
+  t: number,
+  from: number,
+  to: number,
+  dur: number,
+  curve: 'exp' | 'lin' = 'exp',
+): void {
   param.setValueAtTime(from, t);
   if (curve === 'exp' && from > 0 && to > 0) param.exponentialRampToValueAtTime(to, t + dur);
   else param.linearRampToValueAtTime(to, t + dur);
@@ -192,7 +199,12 @@ export function impulseResponse(ctx: BaseAudioContext, seconds: number, decay: n
  * @param q - Resonance / bandwidth.
  * @returns A configured BiquadFilterNode.
  */
-export function filter(ctx: BaseAudioContext, type: BiquadFilterType, freq: number, q = 0.707): BiquadFilterNode {
+export function filter(
+  ctx: BaseAudioContext,
+  type: BiquadFilterType,
+  freq: number,
+  q = 0.707,
+): BiquadFilterNode {
   const f = ctx.createBiquadFilter();
   f.type = type;
   f.frequency.value = freq;
@@ -320,10 +332,13 @@ export function tone(s: SynthContext, o: ToneOptions): number {
   const osc = ctx.createOscillator();
   osc.type = o.type ?? 'sine';
   if (o.detune) osc.detune.value = o.detune;
-  if (o.freqEnd !== undefined) sweep(osc.frequency, o.t, o.freq, o.freqEnd, o.sweepTime ?? o.dur, o.sweepCurve ?? 'exp');
+  if (o.freqEnd !== undefined)
+    sweep(osc.frequency, o.t, o.freq, o.freqEnd, o.sweepTime ?? o.dur, o.sweepCurve ?? 'exp');
   else osc.frequency.setValueAtTime(o.freq, o.t);
   const g = gain(ctx, 0);
-  const end = o.env ? adsr(g.gain, o.t, o.gain, o.env, o.dur) : perc(g.gain, o.t, o.gain, o.attack ?? 0.003, o.dur);
+  const end = o.env
+    ? adsr(g.gain, o.t, o.gain, o.env, o.dur)
+    : perc(g.gain, o.t, o.gain, o.attack ?? 0.003, o.dur);
   let tail: AudioNode = g;
   if (o.tremolo) {
     const trem = gain(ctx, 1 - o.tremolo.depth / 2);
@@ -400,7 +415,9 @@ export function noise(s: SynthContext, o: NoiseOptions): number {
     head = f;
   }
   const g = gain(ctx, 0);
-  const end = o.env ? adsr(g.gain, o.t, o.gain, o.env, o.dur) : perc(g.gain, o.t, o.gain, o.attack ?? 0.002, o.dur);
+  const end = o.env
+    ? adsr(g.gain, o.t, o.gain, o.env, o.dur)
+    : perc(g.gain, o.t, o.gain, o.attack ?? 0.002, o.dur);
   head.connect(g).connect(o.dest ?? s.out);
   src.start(o.t, o.offset ?? s.rng.range(0, 1.8));
   src.stop(end + 0.05);
@@ -546,11 +563,28 @@ export function vocal(s: SynthContext, o: VocalOptions): number {
  * @param level - Peak gain per ping.
  * @param dest - Destination.
  */
-export function sparkle(s: SynthContext, t: number, dur: number, count: number, lo: number, hi: number, level: number, dest?: AudioNode): void {
+export function sparkle(
+  s: SynthContext,
+  t: number,
+  dur: number,
+  count: number,
+  lo: number,
+  hi: number,
+  level: number,
+  dest?: AudioNode,
+): void {
   for (let i = 0; i < count; i++) {
     const at = t + (i / count) * dur + s.rng.range(0, dur / count);
     const f = s.rng.range(lo, hi);
-    tone(s, { type: 'sine', freq: f, freqEnd: f * 1.02, t: at, dur: s.rng.range(0.08, 0.22), gain: level * s.rng.range(0.5, 1), ...(dest ? { dest } : {}) });
+    tone(s, {
+      type: 'sine',
+      freq: f,
+      freqEnd: f * 1.02,
+      t: at,
+      dur: s.rng.range(0.08, 0.22),
+      gain: level * s.rng.range(0.5, 1),
+      ...(dest ? { dest } : {}),
+    });
   }
 }
 
@@ -582,7 +616,14 @@ export interface AmSpec {
   type?: OscillatorType;
 }
 
-function applyAm(s: SynthContext, input: AudioNode, len: number, level: number, am: AmSpec | undefined, dest: AudioNode): void {
+function applyAm(
+  s: SynthContext,
+  input: AudioNode,
+  len: number,
+  level: number,
+  am: AmSpec | undefined,
+  dest: AudioNode,
+): void {
   const g = gain(s.ctx, am ? level * (1 - am.depth / 2) : level);
   input.connect(g).connect(dest);
   if (!am) return;
@@ -605,7 +646,14 @@ function applyAm(s: SynthContext, input: AudioNode, len: number, level: number, 
  * @param filters - Filters in series.
  * @param am - Optional amplitude modulation.
  */
-export function bedNoise(s: SynthContext, len: number, level: number, color: NoiseColor, filters: readonly NoiseFilter[], am?: AmSpec): void {
+export function bedNoise(
+  s: SynthContext,
+  len: number,
+  level: number,
+  color: NoiseColor,
+  filters: readonly NoiseFilter[],
+  am?: AmSpec,
+): void {
   const src = s.ctx.createBufferSource();
   src.buffer = noiseBuffer(s.ctx, color);
   src.loop = true;

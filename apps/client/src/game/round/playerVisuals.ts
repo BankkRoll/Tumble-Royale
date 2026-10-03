@@ -11,12 +11,23 @@ import type { GameAudio } from '@tumble/audio';
 import { getCosmetic } from '@tumble/content/cosmetics';
 import { NameplateLayer, Tumbler, TumblerCrowd, type Nameplate } from '@tumble/render/character';
 import type { QualityPreset } from '@tumble/render/quality';
-import type { CreateTumblerVisual, TumblerAnimInput, TumblerLoadout, TumblerVisual } from '@tumble/render/scenes';
+import type {
+  CreateTumblerVisual,
+  TumblerAnimInput,
+  TumblerLoadout,
+  TumblerVisual,
+} from '@tumble/render/scenes';
 import type { TrailHandle, TrailStyle, VfxSystem } from '@tumble/render/vfx';
 import { TEAM_COLORS } from '@tumble/shared';
 import { CharacterFlag, CharacterState } from '@tumble/sim';
 import type { MatchPlayerInfo } from '@tumble/sim/match';
-import { FOOT_OFFSET, createPlayerSample, isRespawnGhost, type PlayerSample, type RoundSource } from './source.ts';
+import {
+  FOOT_OFFSET,
+  createPlayerSample,
+  isRespawnGhost,
+  type PlayerSample,
+  type RoundSource,
+} from './source.ts';
 
 /** Players within this distance of the camera get footstep sounds. */
 const FOOTSTEP_RANGE = 28;
@@ -52,7 +63,8 @@ export class TumblerPool {
     if (tumblers.length === 0) return null;
     this.crowd ??= new TumblerCrowd();
     const keep = new Set(tumblers);
-    for (const v of this.visuals.values()) if (v instanceof Tumbler && !keep.has(v) && this.crowd.has(v)) this.crowd.remove(v);
+    for (const v of this.visuals.values())
+      if (v instanceof Tumbler && !keep.has(v) && this.crowd.has(v)) this.crowd.remove(v);
     for (const t of tumblers) this.crowd.add(t);
     return this.crowd;
   }
@@ -154,7 +166,9 @@ export class PlayerVisuals {
     this.showPlates = opts.nameplates;
     let trails = opts.preset.vfx.trails;
     const visuals: TumblerVisual[] = [];
-    const order = [...source.players].sort((a, b) => (a.id === source.localId ? -1 : b.id === source.localId ? 1 : 0));
+    const order = [...source.players].sort((a, b) =>
+      a.id === source.localId ? -1 : b.id === source.localId ? 1 : 0,
+    );
     for (const info of order) {
       const loadout = opts.loadouts.get(info.id);
       if (!loadout) continue;
@@ -164,7 +178,12 @@ export class PlayerVisuals {
       opts.parent.add(visual.object);
       visuals.push(visual);
       const isLocal = info.id === source.localId;
-      const plate = isLocal ? null : this.plates.create(info.name, { style: loadout.nameplate, teamColor: info.team >= 0 ? (TEAM_COLORS[info.team % TEAM_COLORS.length] ?? null) : null });
+      const plate = isLocal
+        ? null
+        : this.plates.create(info.name, {
+            style: loadout.nameplate,
+            teamColor: info.team >= 0 ? (TEAM_COLORS[info.team % TEAM_COLORS.length] ?? null) : null,
+          });
       if (plate) plate.target = visual.object;
       let trail: TrailHandle | null = null;
       if (loadout.trail && trails > 0) {
@@ -178,7 +197,17 @@ export class PlayerVisuals {
         info,
         loadout,
         visual,
-        anim: { state: 0, stateTime: 0, speed: 0, verticalSpeed: 0, facing: 0, grounded: true, emote: null, impulse: 0, ghost: false },
+        anim: {
+          state: 0,
+          stateTime: 0,
+          speed: 0,
+          verticalSpeed: 0,
+          facing: 0,
+          grounded: true,
+          emote: null,
+          impulse: 0,
+          ghost: false,
+        },
         plate,
         trail,
         impulse: 0,
@@ -236,7 +265,14 @@ export class PlayerVisuals {
    *
    * @returns False when the player is unknown or hidden.
    */
-  followTarget(id: number, out: { position: { x: number; y: number; z: number }; velocity: { x: number; y: number; z: number }; grounded: boolean }): boolean {
+  followTarget(
+    id: number,
+    out: {
+      position: { x: number; y: number; z: number };
+      velocity: { x: number; y: number; z: number };
+      grounded: boolean;
+    },
+  ): boolean {
     const e = this.byId.get(id);
     if (!e || !e.visible) return false;
     out.position.x = e.feet.x;
@@ -304,8 +340,10 @@ export class PlayerVisuals {
       const dist = this.tmp.copy(e.centre).distanceTo(this.camPos);
       e.dist = dist;
       const far: 0 | 1 | 2 = dist > this.lod2 ? 2 : dist > this.lod1 ? 1 : 0;
-      const near: 0 | 1 | 2 = dist > this.lod2 * LOD_HYSTERESIS ? 2 : dist > this.lod1 * LOD_HYSTERESIS ? 1 : 0;
-      const lod: 0 | 1 | 2 = e.info.id === this.source.localId ? 0 : far > e.lod ? far : near < e.lod ? near : e.lod;
+      const near: 0 | 1 | 2 =
+        dist > this.lod2 * LOD_HYSTERESIS ? 2 : dist > this.lod1 * LOD_HYSTERESIS ? 1 : 0;
+      const lod: 0 | 1 | 2 =
+        e.info.id === this.source.localId ? 0 : far > e.lod ? far : near < e.lod ? near : e.lod;
       if (lod !== e.lod) {
         e.lod = lod;
         e.visual.setLod(lod);
@@ -319,7 +357,8 @@ export class PlayerVisuals {
       a.verticalSpeed = s.vy;
       a.facing = s.facing;
       a.grounded = s.grounded;
-      a.emote = s.state === CharacterState.Emote && s.emote > 0 ? (e.loadout.emotes[s.emote - 1] ?? null) : null;
+      a.emote =
+        s.state === CharacterState.Emote && s.emote > 0 ? (e.loadout.emotes[s.emote - 1] ?? null) : null;
       a.ghost = isRespawnGhost(s);
       a.impulse = e.impulse;
       e.impulse = 0;
@@ -336,7 +375,8 @@ export class PlayerVisuals {
         this.footPos.x = s.x;
         this.footPos.y = fy;
         this.footPos.z = s.z;
-        const surface = s.flags & CharacterFlag.OnIce ? 'ice' : s.flags & CharacterFlag.InSlime ? 'slime' : 'normal';
+        const surface =
+          s.flags & CharacterFlag.OnIce ? 'ice' : s.flags & CharacterFlag.InSlime ? 'slime' : 'normal';
         audio.stepFootstep(e.info.id, e.speed, s.grounded, surface, this.footPos, dt);
         const sliding = s.state === CharacterState.DiveSlide;
         if (sliding !== e.sliding && e.info.id === this.source.localId) {
@@ -352,11 +392,13 @@ export class PlayerVisuals {
 
   private cullPlates(): void {
     let n = 0;
-    for (const e of this.entries) if (e.plate && e.visible && e.dist >= PLATE_MIN_DIST && n < this.dists.length) this.dists[n++] = e.dist;
+    for (const e of this.entries)
+      if (e.plate && e.visible && e.dist >= PLATE_MIN_DIST && n < this.dists.length) this.dists[n++] = e.dist;
     const list = this.dists.subarray(0, n).sort();
     const limit = n > MAX_PLATES ? (list[MAX_PLATES - 1] as number) : Infinity;
     for (const e of this.entries) {
-      if (e.plate) e.plate.visible = this.showPlates && e.visible && e.dist >= PLATE_MIN_DIST && e.dist <= limit;
+      if (e.plate)
+        e.plate.visible = this.showPlates && e.visible && e.dist >= PLATE_MIN_DIST && e.dist <= limit;
     }
   }
 

@@ -25,7 +25,13 @@ type Waypoint = NonNullable<RoundDefinitionInput['botNav']>[number];
 
 const v = (x: number, y: number, z: number) => ({ x, y, z });
 
-const deco = (shape: Piece['shape'], pos: ReturnType<typeof v>, size: ReturnType<typeof v>, color: string, extra: Partial<Piece> = {}): Piece => ({
+const deco = (
+  shape: Piece['shape'],
+  pos: ReturnType<typeof v>,
+  size: ReturnType<typeof v>,
+  color: string,
+  extra: Partial<Piece> = {},
+): Piece => ({
   shape,
   position: pos,
   size,
@@ -45,8 +51,22 @@ const CORE = 13;
 
 const geometry: Piece[] = [
   // Solid core floor; hex tiles on top are decoration.
-  { shape: 'cylinder', position: v(0, -0.3, 0), size: v(CORE + 0.1, 0.6, CORE + 0.1), color: 'neutral', bevel: 0.2, pattern: 'none' },
-  ...hexCore({ radius: CORE - 1.3, tile: 1.6, gap: 0.12, colors: ['primary', 'secondary'], centreRadius: 2.6, centreColor: 'accent' }),
+  {
+    shape: 'cylinder',
+    position: v(0, -0.3, 0),
+    size: v(CORE + 0.1, 0.6, CORE + 0.1),
+    color: 'neutral',
+    bevel: 0.2,
+    pattern: 'none',
+  },
+  ...hexCore({
+    radius: CORE - 1.3,
+    tile: 1.6,
+    gap: 0.12,
+    colors: ['primary', 'secondary'],
+    centreRadius: 2.6,
+    centreColor: 'accent',
+  }),
   // "Slow zone" paint ring, porthole rim and the suds pool below.
   deco('torus', v(0, 0.04, 0), v(9, 0.08, 9), 'safe'),
   ringSeam(CORE),
@@ -78,11 +98,17 @@ for (let k = 0; k < 10; k++) {
   const a = (k / 10) * Math.PI * 2 + rng();
   const r = 42 + rng() * 14;
   geometry.push(
-    deco('box', v(Math.cos(a) * r, 14 + rng() * 16, Math.sin(a) * r), v(3 + rng() * 2, 0.4, 2.2 + rng()), LAUNDRY[k % LAUNDRY.length]!, {
-      rotation: { yaw: rng() * 360, pitch: rng() * 40 - 20, roll: rng() * 40 - 20 },
-      bevel: 0.2,
-      pattern: k % 2 === 0 ? 'stripes' : 'dots',
-    }),
+    deco(
+      'box',
+      v(Math.cos(a) * r, 14 + rng() * 16, Math.sin(a) * r),
+      v(3 + rng() * 2, 0.4, 2.2 + rng()),
+      LAUNDRY[k % LAUNDRY.length]!,
+      {
+        rotation: { yaw: rng() * 360, pitch: rng() * 40 - 20, roll: rng() * 40 - 20 },
+        bevel: 0.2,
+        pattern: k % 2 === 0 ? 'stripes' : 'dots',
+      },
+    ),
   );
 }
 
@@ -98,14 +124,29 @@ const obstacles: Obstacle[] = [
   ...ringOuter,
   ...ringInner,
   // Hub shove stays under the 9 m/s stun threshold: a stunned Tumbler slides off a 22 m drum.
-  { id: 'hub', type: 'bumperPillar', position: v(0, 0, 0), params: { radius: 1.6, height: 3.2, bounceSpeed: 7.5, bounceLift: 3 } },
+  {
+    id: 'hub',
+    type: 'bumperPillar',
+    position: v(0, 0, 0),
+    params: { radius: 1.6, height: 3.2, bounceSpeed: 7.5, bounceLift: 3 },
+  },
   {
     id: 'bar-low',
     type: 'jumpRopeBeam',
     position: v(0, 0, 0),
     // Design schedule 0.8 → 1.6 rad/s over 75 s (steps at 15/35/60/75). Bars reach r 17 (design 22):
     // a stunned Tumbler is dragged by the bar, so the outer ring is the run-out until it drops at 60 s.
-    params: bar({ reach: 17, kind: 'low', mode: 'full', direction: 1, startSpeed: 0.8, endSpeed: 1.6, rampUntil: 75, hubRadius: 1.5, knockImpulse: 8 }),
+    params: bar({
+      reach: 17,
+      kind: 'low',
+      mode: 'full',
+      direction: 1,
+      startSpeed: 0.8,
+      endSpeed: 1.6,
+      rampUntil: 75,
+      hubRadius: 1.5,
+      knockImpulse: 8,
+    }),
   },
   {
     id: 'bar-high',
@@ -114,7 +155,17 @@ const obstacles: Obstacle[] = [
     // Design phase 0.25: a quarter turn ahead of the low bar.
     rotation: { yaw: 90 },
     // Creeps from the start (a still bar is a solid head-height beam), 0.3 → 1.2 rad/s by 75 s.
-    params: bar({ reach: 17, kind: 'high', mode: 'full', direction: 1, startSpeed: 0.3, endSpeed: 1.2, rampUntil: 75, hubRadius: 1.5, knockImpulse: 8 }),
+    params: bar({
+      reach: 17,
+      kind: 'high',
+      mode: 'full',
+      direction: 1,
+      startSpeed: 0.3,
+      endSpeed: 1.2,
+      rampUntil: 75,
+      hubRadius: 1.5,
+      knockImpulse: 8,
+    }),
   },
 ];
 
@@ -129,7 +180,13 @@ const obstacles: Obstacle[] = [
 function loop(base: number, r: number, n: number): Waypoint[] {
   return Array.from({ length: n }, (_, k) => {
     const a = (k / n) * Math.PI * 2;
-    return { id: base + k, position: v(Math.sin(a) * r, 0, Math.cos(a) * r), radius: 3, next: [base + ((k + 1) % n)], action: 'run' as const };
+    return {
+      id: base + k,
+      position: v(Math.sin(a) * r, 0, Math.cos(a) * r),
+      radius: 3,
+      next: [base + ((k + 1) % n)],
+      action: 'run' as const,
+    };
   });
 }
 
@@ -185,7 +242,17 @@ export default defineRound({
           type: 'jumpRopeBeam',
           position: v(0, 0, 0),
           rotation: { yaw: -90 },
-          params: bar({ reach: 17, kind: 'low', mode: 'arm', direction: 1, startSpeed: 0.8, endSpeed: 1.6, rampUntil: 75, hubRadius: 1.5, knockImpulse: 8 }),
+          params: bar({
+            reach: 17,
+            kind: 'low',
+            mode: 'arm',
+            direction: 1,
+            startSpeed: 0.8,
+            endSpeed: 1.6,
+            rampUntil: 75,
+            hubRadius: 1.5,
+            knockImpulse: 8,
+          }),
         },
       ],
     },
@@ -201,7 +268,14 @@ export default defineRound({
       weight: 2,
       weather: 'night',
       description: 'Neon suds; the drum core is slippery.',
-      addObstacles: [{ id: 'soap', type: 'iceFloor', position: v(0, 0.03, 0), params: { shape: 'disc', radius: CORE - 0.4, thickness: 0.3, surface: 'ice' } }],
+      addObstacles: [
+        {
+          id: 'soap',
+          type: 'iceFloor',
+          position: v(0, 0.03, 0),
+          params: { shape: 'disc', radius: CORE - 0.4, thickness: 0.3, surface: 'ice' },
+        },
+      ],
     },
     {
       id: 'rinse-and-repeat',

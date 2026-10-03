@@ -23,7 +23,10 @@ const normal: SurfaceTuning = {
 };
 
 /** Per-surface response; every multiplier is relative to normal ground. */
-export const SURFACE_TUNING: Record<'normal' | 'ice' | 'slime' | 'conveyor' | 'sticky' | 'bouncy' | 'slide', SurfaceTuning> = {
+export const SURFACE_TUNING: Record<
+  'normal' | 'ice' | 'slime' | 'conveyor' | 'sticky' | 'bouncy' | 'slide',
+  SurfaceTuning
+> = {
   /** Candy plastic: the reference surface. */
   normal,
   /**

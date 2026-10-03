@@ -51,7 +51,11 @@ const results = apiUrl && hmacSecret ? new HttpResultsSink({ apiUrl, secret: hma
 const deps =
   process.env.GS_DEV === '1'
     ? createDevRoomDeps(R, { playSeconds: env('PLAY_SECONDS', 120), log })
-    : createRealRoomDeps(R, { ...(process.env.PLAYLIST ? { playlistId: process.env.PLAYLIST } : {}), log, results });
+    : createRealRoomDeps(R, {
+        ...(process.env.PLAYLIST ? { playlistId: process.env.PLAYLIST } : {}),
+        log,
+        results,
+      });
 
 const server = await startGameServer({
   port: env('PORT', 7350),

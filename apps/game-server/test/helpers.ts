@@ -25,8 +25,20 @@ import {
   type RoundStatus,
   type WelcomeMsg,
 } from '@tumble/netcode';
-import { EventSink, type CharacterFullState, type CharacterInput, type Rapier, type World } from '@tumble/sim';
-import { RoundDefinitionSchema, type Quat, type RoundDefinition, type RoundPhaseId, type Vec3 } from '@tumble/shared';
+import {
+  EventSink,
+  type CharacterFullState,
+  type CharacterInput,
+  type Rapier,
+  type World,
+} from '@tumble/sim';
+import {
+  RoundDefinitionSchema,
+  type Quat,
+  type RoundDefinition,
+  type RoundPhaseId,
+  type Vec3,
+} from '@tumble/shared';
 import type { RoomDeps } from '../src/room/types.ts';
 import { SimpleShowController } from '../src/show/SimpleShowController.ts';
 import type { Connection } from '../src/transport/types.ts';
@@ -112,7 +124,8 @@ export class FakeMatchSim implements MatchSim {
       s.pos.x += s.vel.x / 60;
       s.pos.z += s.vel.z / 60;
       s.stateTime += 1 / 60;
-      if (inp.buttons & 1 && !(s.prevButtons & 1)) this.events.push({ type: 'jump', player: id, pos: { ...s.pos } });
+      if (inp.buttons & 1 && !(s.prevButtons & 1))
+        this.events.push({ type: 'jump', player: id, pos: { ...s.pos } });
       s.prevButtons = inp.buttons;
     }
     this.steps++;
@@ -182,7 +195,13 @@ export function testRound(): RoundDefinition {
     spawn: { origin: { x: 0, y: 1, z: 0 } },
     geometry: [],
     obstacles: [{ id: 'door', type: 'x', position: { x: 0, y: 0, z: 0 } }],
-    flyover: { path: [{ x: 0, y: 1, z: 0 }, { x: 1, y: 1, z: 0 }], lookAt: [{ x: 0, y: 0, z: 0 }] },
+    flyover: {
+      path: [
+        { x: 0, y: 1, z: 0 },
+        { x: 1, y: 1, z: 0 },
+      ],
+      lookAt: [{ x: 0, y: 0, z: 0 }],
+    },
     music: 'none',
     fallBehavior: 'eliminate',
   });
@@ -262,7 +281,11 @@ export class TestClient {
   /** Sends one input (with the newest snapshot ack). */
   input(input: CharacterInput): number {
     const seq = this.seq++;
-    writeInputBatch(this.w.reset(), { newestSeq: seq, clientTick: seq, ackSnapshotId: this.decoder.newestId, count: 1 }, [input]);
+    writeInputBatch(
+      this.w.reset(),
+      { newestSeq: seq, clientTick: seq, ackSnapshotId: this.decoder.newestId, count: 1 },
+      [input],
+    );
     this.conn.receive(this.w.finish());
     return seq;
   }

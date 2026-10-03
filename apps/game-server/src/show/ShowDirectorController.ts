@@ -57,10 +57,17 @@ export class ShowDirectorController implements ShowController {
       seed,
       playlist: this.opts.playlist,
       rounds: this.opts.rounds,
-      participants: players.map((p) => ({ id: p.id, name: p.name, isBot: p.isBot, ...(p.botSkill ? { botSkill: p.botSkill } : {}) })),
+      participants: players.map((p) => ({
+        id: p.id,
+        name: p.name,
+        isBot: p.isBot,
+        ...(p.botSkill ? { botSkill: p.botSkill } : {}),
+      })),
       host: { startRound: (info) => this.startRound(info) },
       ...(this.opts.timings ? { timings: this.opts.timings } : {}),
-      ...(this.opts.lateLoadersEliminated !== undefined ? { lateLoadersEliminated: this.opts.lateLoadersEliminated } : {}),
+      ...(this.opts.lateLoadersEliminated !== undefined
+        ? { lateLoadersEliminated: this.opts.lateLoadersEliminated }
+        : {}),
     });
     this.director.on((e) => this.onDirectorEvent(e));
   }
@@ -105,7 +112,9 @@ export class ShowDirectorController implements ShowController {
     this.events.push({ type: 'roundStart', plan: this.plan });
     return {
       setPhase: (phase, time) => {
-        this.events.push(time === undefined ? { type: 'roundPhase', phase } : { type: 'roundPhase', phase, time });
+        this.events.push(
+          time === undefined ? { type: 'roundPhase', phase } : { type: 'roundPhase', phase, time },
+        );
       },
       getStatus: () => this.status ?? { phase: RoundPhase.Loading, finished: false, players: EMPTY_PLAYERS },
       // The room disposes the sim when the next round starts or the room closes, and forfeits departed players itself.
@@ -123,7 +132,12 @@ export class ShowDirectorController implements ShowController {
         const o = e.outcome;
         const results: RoundResultEntry[] = [
           ...o.qualified.map((id, i) => ({ id, status: 1, place: i + 1, score: this.score(id) })),
-          ...o.eliminated.map((id, i) => ({ id, status: 2, place: o.qualified.length + i + 1, score: this.score(id) })),
+          ...o.eliminated.map((id, i) => ({
+            id,
+            status: 2,
+            place: o.qualified.length + i + 1,
+            score: this.score(id),
+          })),
         ];
         this.events.push({ type: 'roundEnd', roundId: o.roundId, results });
         return;

@@ -31,12 +31,17 @@ export function runDeterminismScenario(R: Rapier, steps = 600, seed = 1337): Det
 
   const floor = world.createRigidBody(R.RigidBodyDesc.fixed());
   world.createCollider(
-    R.ColliderDesc.cuboid(40, 0.5, 40).setTranslation(0, -0.5, 0).setCollisionGroups(InteractionGroups.static),
+    R.ColliderDesc.cuboid(40, 0.5, 40)
+      .setTranslation(0, -0.5, 0)
+      .setCollisionGroups(InteractionGroups.static),
     floor,
   );
 
   const bar = world.createRigidBody(R.RigidBodyDesc.kinematicPositionBased().setTranslation(0, 0.6, 0));
-  world.createCollider(R.ColliderDesc.cuboid(6, 0.25, 0.25).setCollisionGroups(InteractionGroups.kinematic), bar);
+  world.createCollider(
+    R.ColliderDesc.cuboid(6, 0.25, 0.25).setCollisionGroups(InteractionGroups.kinematic),
+    bar,
+  );
 
   const bodies: RigidBody[] = [];
   for (let i = 0; i < 32; i++) {
@@ -49,7 +54,10 @@ export function runDeterminismScenario(R: Rapier, steps = 600, seed = 1337): Det
         : kind === 1
           ? R.ColliderDesc.cuboid(0.35, 0.35, 0.35)
           : R.ColliderDesc.capsule(0.45, 0.45);
-    world.createCollider(col.setRestitution(0.3).setFriction(0.7).setCollisionGroups(InteractionGroups.prop), body);
+    world.createCollider(
+      col.setRestitution(0.3).setFriction(0.7).setCollisionGroups(InteractionGroups.prop),
+      body,
+    );
     bodies.push(body);
   }
 

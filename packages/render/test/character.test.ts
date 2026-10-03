@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ACCESSORY_MESH_IDS, ANIM_CLIP_IDS, COSMETICS, PATTERN_IDS, randomLoadout } from '@tumble/content/cosmetics';
+import {
+  ACCESSORY_MESH_IDS,
+  ANIM_CLIP_IDS,
+  COSMETICS,
+  PATTERN_IDS,
+  randomLoadout,
+} from '@tumble/content/cosmetics';
 import { CharacterState } from '@tumble/sim';
 import { Rng } from '@tumble/shared';
 import { BUILT_ACCESSORIES } from '../src/character/accessories.ts';
@@ -22,7 +28,8 @@ describe('character data coverage', () => {
   });
 
   it('every accessory mesh id has a builder', () => {
-    for (const list of Object.values(ACCESSORY_MESH_IDS)) for (const id of list) expect(BUILT_ACCESSORIES).toContain(id);
+    for (const list of Object.values(ACCESSORY_MESH_IDS))
+      for (const id of list) expect(BUILT_ACCESSORIES).toContain(id);
   });
 
   it('every clip id has a clip', () => {
@@ -35,8 +42,20 @@ describe('character data coverage', () => {
       if (item.slot === 'pattern') {
         const r = resolveLoadout({ ...l, pattern: item.id });
         expect(r.patternIndex).toBe(SHADER_PATTERNS.indexOf(item.pattern));
-      } else if (item.slot === 'headwear' || item.slot === 'back' || item.slot === 'upper' || item.slot === 'lower') {
-        const r = resolveLoadout({ ...l, headwear: null, back: null, upper: null, lower: null, [item.slot]: item.id });
+      } else if (
+        item.slot === 'headwear' ||
+        item.slot === 'back' ||
+        item.slot === 'upper' ||
+        item.slot === 'lower'
+      ) {
+        const r = resolveLoadout({
+          ...l,
+          headwear: null,
+          back: null,
+          upper: null,
+          lower: null,
+          [item.slot]: item.id,
+        });
         expect(r.accessories.map((a) => a.mesh)).toContain(item.mesh);
       } else if (item.slot === 'emote') {
         const r = resolveLoadout({ ...l, emotes: [item.id, item.id, item.id, item.id] });
@@ -46,7 +65,12 @@ describe('character data coverage', () => {
   });
 
   it('tolerates unknown ids', () => {
-    const r = resolveLoadout({ ...randomLoadout(new Rng(3)), pattern: 'nope', face: 'nope', headwear: 'nope' });
+    const r = resolveLoadout({
+      ...randomLoadout(new Rng(3)),
+      pattern: 'nope',
+      face: 'nope',
+      headwear: 'nope',
+    });
     expect(r.patternIndex).toBe(0);
     expect(r.face.eyeScale).toBe(1);
   });
@@ -83,7 +107,8 @@ describe('geometry', () => {
       for (let i = 0; i < si.count; i++) maxBone = Math.max(maxBone, si.getX(i), si.getY(i));
       expect(maxBone, spec.mesh).toBeLessThan(TOTAL_BONE_COUNT);
       let accessoryVerts = 0;
-      for (let i = 0; i < kind.count; i++) if (kind.getX(i) !== Kind.Pattern && kind.getX(i) !== Kind.Secondary) accessoryVerts++;
+      for (let i = 0; i < kind.count; i++)
+        if (kind.getX(i) !== Kind.Pattern && kind.getX(i) !== Kind.Secondary) accessoryVerts++;
       expect(accessoryVerts, spec.mesh).toBeGreaterThan(0);
       for (const c of a.chains) expect(c.firstBone).toBeGreaterThanOrEqual(CORE_BONE_COUNT);
       releaseAssembly(a);

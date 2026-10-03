@@ -1,12 +1,35 @@
-import { BufferAttribute, Color, Group, Mesh, Vector3, type BufferGeometry, type Material } from 'three/webgpu';
+import {
+  BufferAttribute,
+  Color,
+  Group,
+  Mesh,
+  Vector3,
+  type BufferGeometry,
+  type Material,
+} from 'three/webgpu';
 import type { TumblerLoadout } from '../character/types.ts';
 import { createBeveledCylinderGeometry } from '../level/geometry.ts';
 import { createLevelMaterial, createLevelUniforms } from '../level/materials.ts';
 import { createVfxSystem } from '../vfx/index.ts';
 import type { VfxSystem } from '../vfx/types.ts';
 import type { PostPipeline } from '../post/pipeline.ts';
-import { createCrownMesh, createFloatingPlatform, createLightBeam, createTextBanner, type FloatingPlatform, type LightBeam, type TextBanner } from './props.ts';
-import { TumblerActor, createSceneStage, measureHeadHeight, tumblerFactory, type MenuScene, type SceneCommonOptions } from './common.ts';
+import {
+  createCrownMesh,
+  createFloatingPlatform,
+  createLightBeam,
+  createTextBanner,
+  type FloatingPlatform,
+  type LightBeam,
+  type TextBanner,
+} from './props.ts';
+import {
+  TumblerActor,
+  createSceneStage,
+  measureHeadHeight,
+  tumblerFactory,
+  type MenuScene,
+  type SceneCommonOptions,
+} from './common.ts';
 
 /**
  * Victory podium: the winner crowned on a tall striped podium (runners-up on
@@ -77,7 +100,11 @@ function tint(geo: BufferGeometry, hex: string): BufferGeometry {
  * @param opts - Winner, runners-up, theme and optional Tumbler factory.
  */
 export function createVictoryPodium(opts: VictoryPodiumOptions): VictoryPodium {
-  const stage = createSceneStage(opts, { min: { x: -8, y: -2, z: -8 }, max: { x: 8, y: 6, z: 8 } }, { crowd: false, fov: 38 });
+  const stage = createSceneStage(
+    opts,
+    { min: { x: -8, y: -2, z: -8 }, max: { x: 8, y: 6, z: 8 } },
+    { crowd: false, fov: 38 },
+  );
   const { scene, camera } = stage;
   const factory = tumblerFactory(opts.createTumbler);
   const pal = opts.theme.palette;
@@ -133,7 +160,12 @@ export function createVictoryPodium(opts: VictoryPodiumOptions): VictoryPodium {
   crown.position.set(0, steps[0]!.h + 0.18 + crownHeight, 0);
   scene.add(crown);
 
-  const banner: TextBanner = createTextBanner(7, 1.6, { fill: pal.neutral, stripe: pal.interact, text: pal.ink, outline: '#ffffff' });
+  const banner: TextBanner = createTextBanner(7, 1.6, {
+    fill: pal.neutral,
+    stripe: pal.interact,
+    text: pal.ink,
+    outline: '#ffffff',
+  });
   banner.draw(opts.winner.name, 'WINS THE CROWN!');
   banner.mesh.position.set(0, steps[0]!.h + 4.1, -0.5);
   scene.add(banner.mesh);
@@ -173,9 +205,14 @@ export function createVictoryPodium(opts: VictoryPodiumOptions): VictoryPodium {
 
   const celebrate = (): void => {
     const top = steps[0]!.h;
-    for (let k = 0; k < 3; k++) vfx.spawn('fireworks', { x: (k - 1) * 5, y: top + 6, z: -4 }, { delay: k * 0.3 });
+    for (let k = 0; k < 3; k++)
+      vfx.spawn('fireworks', { x: (k - 1) * 5, y: top + 6, z: -4 }, { delay: k * 0.3 });
     vfx.spawn('confetti', { x: 0, y: top + 3, z: 0 }, { intensity: 1.3 });
-    vfx.spawn('crownShine', { x: crown.position.x, y: crown.position.y + 0.2, z: crown.position.z }, { duration: 6 });
+    vfx.spawn(
+      'crownShine',
+      { x: crown.position.x, y: crown.position.y + 0.2, z: crown.position.z },
+      { duration: 6 },
+    );
     post?.flash(0.25);
   };
 
@@ -225,7 +262,11 @@ export function createVictoryPodium(opts: VictoryPodiumOptions): VictoryPodium {
       if (!photo && orbit) yaw += dt * orbitSpeed;
       const d = photo ? distance : 11 + Math.sin(t * 0.2) * 1.2;
       const p = photo ? pitch : 0.2 + Math.sin(t * 0.15) * 0.06;
-      camera.position.set(Math.sin(yaw) * Math.cos(p) * d, look.y + Math.sin(p) * d, Math.cos(yaw) * Math.cos(p) * d);
+      camera.position.set(
+        Math.sin(yaw) * Math.cos(p) * d,
+        look.y + Math.sin(p) * d,
+        Math.cos(yaw) * Math.cos(p) * d,
+      );
       camera.lookAt(look);
       stage.focus.set(0, steps[0]!.h, 0);
       stage.update(dt);

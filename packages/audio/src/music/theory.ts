@@ -138,7 +138,11 @@ export function diatonicChord(root: number, scale: readonly number[], chord: Cho
     return notes;
   }
   const third = c.sus === 2 ? d + 1 : c.sus === 4 ? d + 3 : d + 2;
-  const notes = [scaleDegreeToMidi(root, scale, d), scaleDegreeToMidi(root, scale, third), scaleDegreeToMidi(root, scale, d + 4)];
+  const notes = [
+    scaleDegreeToMidi(root, scale, d),
+    scaleDegreeToMidi(root, scale, third),
+    scaleDegreeToMidi(root, scale, d + 4),
+  ];
   if (c.seventh) notes.push(scaleDegreeToMidi(root, scale, d + 6));
   return notes;
 }

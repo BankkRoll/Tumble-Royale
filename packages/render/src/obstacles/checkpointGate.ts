@@ -35,20 +35,32 @@ export const checkpointGateVisual: ObstacleVisualFactory = (instance) => {
   root.name = `checkpointGate:${instance.id}`;
   applyInstanceTransform(root, instance);
 
-  const pillarMat = stripedToon(d, PAL.mint, PAL.white, 1.4, 'y', { emissive: PAL.mint, emissiveIntensity: 0 });
+  const pillarMat = stripedToon(d, PAL.mint, PAL.white, 1.4, 'y', {
+    emissive: PAL.mint,
+    emissiveIntensity: 0,
+  });
   const beamMat = toon(d, { color: PAL.cyan, rimStrength: 0.6, emissive: '#bffcff', emissiveIntensity: 0 });
   const shower = new Sparkles(d, SHOWER, '#e9fff6', 0.12);
 
   if (p.arch) {
     for (const part of archParts(p.width, p.height, p.pillarSize, p.pillarSize)) {
-      const m = solid(roundedBox(d, part.half.x, part.half.y, part.half.z, 0.2), part.role === 'beam' ? beamMat : pillarMat);
+      const m = solid(
+        roundedBox(d, part.half.x, part.half.y, part.half.z, 0.2),
+        part.role === 'beam' ? beamMat : pillarMat,
+      );
       m.position.set(part.pos.x, part.pos.y, part.pos.z);
       root.add(m);
     }
-    const tex = labelTexture(d, p.index > 0 ? `CHECKPOINT ${p.index}` : 'CHECKPOINT', { fill: '#ffffff', stroke: '#1d6e7a' });
+    const tex = labelTexture(d, p.index > 0 ? `CHECKPOINT ${p.index}` : 'CHECKPOINT', {
+      fill: '#ffffff',
+      stroke: '#1d6e7a',
+    });
     if (tex) {
       const signMat = d.track(new MeshBasicNodeMaterial({ map: tex, transparent: true }));
-      const sign = new Mesh(d.track(new PlaneGeometry(Math.min(p.width, 7), Math.min(p.width, 7) / 4)), signMat);
+      const sign = new Mesh(
+        d.track(new PlaneGeometry(Math.min(p.width, 7), Math.min(p.width, 7) / 4)),
+        signMat,
+      );
       sign.position.set(0, p.height + p.pillarSize / 2, -p.pillarSize / 2 - 0.03);
       sign.rotation.y = Math.PI;
       root.add(sign);

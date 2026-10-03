@@ -107,7 +107,10 @@ export class MatchmakerClient {
     try {
       res = await fetch(`${this.baseUrl}${path}`, {
         method,
-        headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
+        headers: {
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+          ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+        },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
     } catch (err) {
@@ -115,7 +118,8 @@ export class MatchmakerClient {
     }
     if (res.status === 204) return undefined as T;
     const data = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
-    if (!res.ok) throw new ApiError(res.status, data?.error ?? 'http_error', data?.message ?? `HTTP ${res.status}`);
+    if (!res.ok)
+      throw new ApiError(res.status, data?.error ?? 'http_error', data?.message ?? `HTTP ${res.status}`);
     return data as T;
   }
 
@@ -123,11 +127,14 @@ export class MatchmakerClient {
   queue = (ticket: string): Promise<{ entryId: string }> => this.call('POST', '/queue', { ticket });
   /** Cancels the search for the whole party. */
   cancel = (): Promise<void> => this.call('DELETE', '/queue');
-  createLobby = (settings: Partial<LobbySettings>): Promise<{ lobby: Lobby }> => this.call('POST', '/lobbies', { settings });
+  createLobby = (settings: Partial<LobbySettings>): Promise<{ lobby: Lobby }> =>
+    this.call('POST', '/lobbies', { settings });
   joinLobby = (code: string): Promise<{ lobby: Lobby }> => this.call('POST', `/lobbies/${code}/join`, {});
-  updateLobby = (code: string, settings: Partial<LobbySettings>): Promise<{ lobby: Lobby }> => this.call('PATCH', `/lobbies/${code}`, settings);
+  updateLobby = (code: string, settings: Partial<LobbySettings>): Promise<{ lobby: Lobby }> =>
+    this.call('PATCH', `/lobbies/${code}`, settings);
   leaveLobby = (code: string): Promise<void> => this.call('POST', `/lobbies/${code}/leave`, {});
-  startLobby = (code: string): Promise<{ matchId: string }> => this.call('POST', `/lobbies/${code}/start`, {});
+  startLobby = (code: string): Promise<{ matchId: string }> =>
+    this.call('POST', `/lobbies/${code}/start`, {});
 }
 
 /**

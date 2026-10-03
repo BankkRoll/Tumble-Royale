@@ -5,10 +5,25 @@
  */
 import { randomInt, randomUUID } from 'node:crypto';
 import type { MatchmakerConfig } from './config.ts';
-import { DEFAULT_ENGINE, formLobbies, queueStatus, type EngineConfig, type FormedLobby, type QueueEntry, type QueueStatus } from './engine.ts';
+import {
+  DEFAULT_ENGINE,
+  formLobbies,
+  queueStatus,
+  type EngineConfig,
+  type FormedLobby,
+  type QueueEntry,
+  type QueueStatus,
+} from './engine.ts';
 import { pickServer, SERVER_TTL_MS, type GameServer } from './servers.ts';
 import type { MMStore } from './store.ts';
-import { JOIN_TICKET_TTL_SEC, signJoinTicket, type CustomSettings, type JoinTicketClaims, type Player, type QueueTicket } from './tickets.ts';
+import {
+  JOIN_TICKET_TTL_SEC,
+  signJoinTicket,
+  type CustomSettings,
+  type JoinTicketClaims,
+  type Player,
+  type QueueTicket,
+} from './tickets.ts';
 
 /** Error with an HTTP status and stable code. */
 export class MMError extends Error {
@@ -34,7 +49,13 @@ export interface MatchRecord {
   humans: number;
   botFill: number;
   /** Each human with party and team. */
-  roster: { userId: string; name: string; partyId: string; team: number | null; role: 'player' | 'spectator' }[];
+  roster: {
+    userId: string;
+    name: string;
+    partyId: string;
+    team: number | null;
+    role: 'player' | 'spectator';
+  }[];
   custom: CustomSettings | null;
   createdAt: number;
 }
@@ -102,7 +123,12 @@ export class Matchmaker {
     private readonly store: MMStore,
     private readonly now: () => number = Date.now,
   ) {
-    this.engine = { ...DEFAULT_ENGINE, maxWaitMs: cfg.maxWaitMs, hotMaxWaitMs: cfg.hotMaxWaitMs, hotThreshold: cfg.hotThreshold };
+    this.engine = {
+      ...DEFAULT_ENGINE,
+      maxWaitMs: cfg.maxWaitMs,
+      hotMaxWaitMs: cfg.hotMaxWaitMs,
+      hotThreshold: cfg.hotThreshold,
+    };
   }
 
   private async emit(userId: string, event: MMEvent): Promise<void> {
@@ -129,7 +155,8 @@ export class Matchmaker {
   private async removeEntry(e: QueueEntry): Promise<void> {
     await this.store.hdel(ENTRIES, e.id);
     for (const m of e.members) {
-      if ((await this.store.get(`user-entry:${m.userId}`)) === e.id) await this.store.del(`user-entry:${m.userId}`);
+      if ((await this.store.get(`user-entry:${m.userId}`)) === e.id)
+        await this.store.del(`user-entry:${m.userId}`);
     }
   }
 
@@ -144,7 +171,8 @@ export class Matchmaker {
       throw new MMError(403, 'not_leader', 'Only the party leader can queue the party');
     }
     for (const m of ticket.members) {
-      if (await this.store.get(`lobby-user:${m.userId}`)) throw new MMError(409, 'in_lobby', 'Leave the custom lobby before queueing');
+      if (await this.store.get(`lobby-user:${m.userId}`))
+        throw new MMError(409, 'in_lobby', 'Leave the custom lobby before queueing');
       const prev = await this.entryFor(m.userId);
       if (prev) await this.removeEntry(prev);
     }
@@ -165,7 +193,12 @@ export class Matchmaker {
     await this.store.hset(ENTRIES, entry.id, JSON.stringify(entry));
     for (const m of entry.members) {
       await this.store.set(`user-entry:${m.userId}`, entry.id);
-      await this.emit(m.userId, { type: 'queued', entryId: entry.id, playlistId: entry.playlistId, queue: entry.queue });
+      await this.emit(m.userId, {
+        type: 'queued',
+        entryId: entry.id,
+        playlistId: entry.playlistId,
+        queue: entry.queue,
+      });
     }
     return entry;
   }
@@ -183,7 +216,11 @@ export class Matchmaker {
   async status(userId: string): Promise<(QueueStatus & { entryId: string; playlistId: string }) | null> {
     const e = await this.entryFor(userId);
     if (!e) return null;
-    return { entryId: e.id, playlistId: e.playlistId, ...queueStatus(e, await this.entries(), this.now(), this.engine) };
+    return {
+      entryId: e.id,
+      playlistId: e.playlistId,
+      ...queueStatus(e, await this.entries(), this.now(), this.engine),
+    };
   }
 
   /** Pushes a status update to every queued player. */
@@ -210,7 +247,8 @@ export class Matchmaker {
       for (const lobby of lobbies) {
         const server = await this.allocateServer(lobby.region, lobby.size);
         if (!server) {
-          for (const e of lobby.entries) for (const m of e.members) await this.emit(m.userId, { type: 'waiting_for_server' });
+          for (const e of lobby.entries)
+            for (const m of e.members) await this.emit(m.userId, { type: 'waiting_for_server' });
           continue;
         }
         for (const e of lobby.entries) await this.removeEntry(e);
@@ -237,7 +275,13 @@ export class Matchmaker {
       humans: lobby.humans,
       botFill: lobby.botFill,
       roster: lobby.entries.flatMap((e) =>
-        e.members.map((m) => ({ userId: m.userId, name: m.name, partyId: e.partyId, team: teamOf.get(m.userId) ?? null, role: 'player' as const })),
+        e.members.map((m) => ({
+          userId: m.userId,
+          name: m.name,
+          partyId: e.partyId,
+          team: teamOf.get(m.userId) ?? null,
+          role: 'player' as const,
+        })),
       ),
       custom: null,
       createdAt: this.now(),
@@ -335,7 +379,14 @@ export class Matchmaker {
       return reserved;
     }
     if (this.cfg.defaultGameServerUrl) {
-      return { id: 'default', url: this.cfg.defaultGameServerUrl, region, capacity: 10_000, load: 0, lastSeen: this.now() };
+      return {
+        id: 'default',
+        url: this.cfg.defaultGameServerUrl,
+        region,
+        capacity: 10_000,
+        load: 0,
+        lastSeen: this.now(),
+      };
     }
     return null;
   }
@@ -352,7 +403,8 @@ export class Matchmaker {
 
   private async saveLobby(l: CustomLobby): Promise<void> {
     await this.store.set(`lobby:${l.code}`, JSON.stringify(l), LOBBY_TTL_MS);
-    for (const p of [...l.players, ...l.spectators]) await this.emit(p.userId, { type: 'lobby_update', lobby: l });
+    for (const p of [...l.players, ...l.spectators])
+      await this.emit(p.userId, { type: 'lobby_update', lobby: l });
   }
 
   /** Creates a lobby hosted by the caller. */
@@ -400,10 +452,12 @@ export class Matchmaker {
     lobby.spectators = lobby.spectators.filter((x) => x.userId !== p.userId);
     const seat = { userId: p.userId, name: p.name, joinedAt: this.now() };
     if (spectator) {
-      if (lobby.spectators.length >= lobby.settings.spectatorSlots) throw new MMError(409, 'spectators_full', 'No spectator slots left');
+      if (lobby.spectators.length >= lobby.settings.spectatorSlots)
+        throw new MMError(409, 'spectators_full', 'No spectator slots left');
       lobby.spectators.push(seat);
     } else {
-      if (lobby.players.length >= lobby.settings.maxPlayers) throw new MMError(409, 'lobby_full', 'Lobby is full');
+      if (lobby.players.length >= lobby.settings.maxPlayers)
+        throw new MMError(409, 'lobby_full', 'Lobby is full');
       lobby.players.push(seat);
     }
     await this.cancel(p.userId, 'joined_custom_lobby');
@@ -445,7 +499,8 @@ export class Matchmaker {
   async updateLobby(hostId: string, code: string, settings: Partial<CustomSettings>): Promise<CustomLobby> {
     const lobby = await this.hostLobby(hostId, code);
     const next = { ...lobby.settings, ...settings };
-    if (next.maxPlayers < lobby.players.length) throw new MMError(409, 'too_many_players', 'More players than the new limit');
+    if (next.maxPlayers < lobby.players.length)
+      throw new MMError(409, 'too_many_players', 'More players than the new limit');
     lobby.settings = next;
     await this.saveLobby(lobby);
     return lobby;
@@ -486,8 +541,20 @@ export class Matchmaker {
       humans: lobby.players.length,
       botFill: lobby.settings.bots ? Math.max(0, size - lobby.players.length) : 0,
       roster: [
-        ...lobby.players.map((p) => ({ userId: p.userId, name: p.name, partyId: `custom:${code}`, team: null, role: 'player' as const })),
-        ...lobby.spectators.map((p) => ({ userId: p.userId, name: p.name, partyId: `custom:${code}`, team: null, role: 'spectator' as const })),
+        ...lobby.players.map((p) => ({
+          userId: p.userId,
+          name: p.name,
+          partyId: `custom:${code}`,
+          team: null,
+          role: 'player' as const,
+        })),
+        ...lobby.spectators.map((p) => ({
+          userId: p.userId,
+          name: p.name,
+          partyId: `custom:${code}`,
+          team: null,
+          role: 'spectator' as const,
+        })),
       ],
       custom: lobby.settings,
       createdAt: this.now(),

@@ -160,7 +160,12 @@ export class HudMapper {
         const p = s.players.get(id);
         const who = this.info(id);
         if (!p || !who) continue;
-        this.leaders.push({ id, name: who.name, color: who.color, progress: Math.max(0, Math.min(1, p.progress)) });
+        this.leaders.push({
+          id,
+          name: who.name,
+          color: who.color,
+          progress: Math.max(0, Math.min(1, p.progress)),
+        });
       }
       patch.leaders = this.leaders.slice();
     }

@@ -3,11 +3,33 @@
  * and springs back on every launch the sim reports, an expanding shock ring,
  * and a chevron pointing along the authored launch direction.
  */
-import { Color, ConeGeometry, CylinderGeometry, Group, Mesh, MeshBasicNodeMaterial, SphereGeometry, TorusGeometry, Vector3 } from 'three/webgpu';
+import {
+  Color,
+  ConeGeometry,
+  CylinderGeometry,
+  Group,
+  Mesh,
+  MeshBasicNodeMaterial,
+  SphereGeometry,
+  TorusGeometry,
+  Vector3,
+} from 'three/webgpu';
 import type { ObstacleInstance, ObstacleRuntime } from '@tumble/sim';
-import { bouncePadSchema, type BouncePadParams, type BouncePadView } from '../../../sim/src/obstacles/bouncePad.ts';
+import {
+  bouncePadSchema,
+  type BouncePadParams,
+  type BouncePadView,
+} from '../../../sim/src/obstacles/bouncePad.ts';
 import type { ObstacleVisualContext, ObstacleVisualFactory } from './types.ts';
-import { ObstacleColors as C, VisualBase, addOutline, createPatternMaterial, runtimeView, setGlow, shadedMesh } from './visual-helpers-a.ts';
+import {
+  ObstacleColors as C,
+  VisualBase,
+  addOutline,
+  createPatternMaterial,
+  runtimeView,
+  setGlow,
+  shadedMesh,
+} from './visual-helpers-a.ts';
 
 class BouncePadVisual extends VisualBase<BouncePadParams> {
   private readonly cushion = new Group();
@@ -19,12 +41,25 @@ class BouncePadVisual extends VisualBase<BouncePadParams> {
     super(instance, bouncePadSchema.parse(instance.params));
     const p = this.params;
     const drum = this.add(
-      shadedMesh(new CylinderGeometry(p.radius, p.radius * 1.08, p.height * 0.7, 40), createPatternMaterial({ a: C.interact, b: C.dangerAlt, pattern: 'stripes', scale: 2.2 })),
+      shadedMesh(
+        new CylinderGeometry(p.radius, p.radius * 1.08, p.height * 0.7, 40),
+        createPatternMaterial({ a: C.interact, b: C.dangerAlt, pattern: 'stripes', scale: 2.2 }),
+      ),
     );
     drum.position.y = p.height * 0.35;
 
-    this.cushionMat = createPatternMaterial({ a: C.safe, b: C.white, pattern: 'pie', scale: 10, emissive: C.safe, rimStrength: 0.7 });
-    const dome = shadedMesh(new SphereGeometry(p.radius * 0.94, 40, 14, 0, Math.PI * 2, 0, Math.PI / 2), this.cushionMat);
+    this.cushionMat = createPatternMaterial({
+      a: C.safe,
+      b: C.white,
+      pattern: 'pie',
+      scale: 10,
+      emissive: C.safe,
+      rimStrength: 0.7,
+    });
+    const dome = shadedMesh(
+      new SphereGeometry(p.radius * 0.94, 40, 14, 0, Math.PI * 2, 0, Math.PI / 2),
+      this.cushionMat,
+    );
     dome.scale.y = (p.height * 0.9) / (p.radius * 0.94);
     addOutline(dome, 0.03);
     this.cushion.add(dome);
@@ -36,11 +71,19 @@ class BouncePadVisual extends VisualBase<BouncePadParams> {
       const arrow = shadedMesh(new ConeGeometry(0.28, 0.6, 16), createPatternMaterial({ a: C.danger }));
       arrow.position.set(0, p.height * 0.75 + 0.55, 0);
       // Cone points +Y; aim it along the launch vector.
-      arrow.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), new Vector3(p.launch.x / len, p.launch.y / len, p.launch.z / len));
+      arrow.quaternion.setFromUnitVectors(
+        new Vector3(0, 1, 0),
+        new Vector3(p.launch.x / len, p.launch.y / len, p.launch.z / len),
+      );
       this.cushion.add(arrow);
     }
 
-    this.ringMat = new MeshBasicNodeMaterial({ color: new Color(C.white), transparent: true, opacity: 0, depthWrite: false });
+    this.ringMat = new MeshBasicNodeMaterial({
+      color: new Color(C.white),
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+    });
     this.ring = this.add(new Mesh(new TorusGeometry(p.radius, 0.09, 8, 48), this.ringMat));
     this.ring.rotation.x = Math.PI / 2;
     this.ring.position.y = p.height + 0.05;

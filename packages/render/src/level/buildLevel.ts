@@ -133,7 +133,9 @@ function grabRails(piece: StaticPiece): BufferGeometry[] {
 /** Translucent pulsing floor marker for team goals, nests and logic zones. */
 function createZoneMarker(trigger: TriggerDef, theme: ThemeDefinition, time: LevelUniforms['time']): Mesh {
   const isTeam = trigger.kind === 'goal' || trigger.kind === 'nest';
-  const hex = isTeam ? (TEAM_COLORS[trigger.index % TEAM_COLORS.length] ?? theme.palette.safe) : theme.palette.safe;
+  const hex = isTeam
+    ? (TEAM_COLORS[trigger.index % TEAM_COLORS.length] ?? theme.palette.safe)
+    : theme.palette.safe;
   const col = uniform(new Color(hex));
   const geo = new PlaneGeometry(trigger.size.x, trigger.size.z);
   geo.rotateX(-Math.PI / 2);
@@ -150,7 +152,9 @@ function createZoneMarker(trigger: TriggerDef, theme: ThemeDefinition, time: Lev
   const dash = smoothstep(0.4, 0.6, fract(st.x.add(st.y).mul(8).sub(time.mul(0.6))));
   const fill = float(0.12).add(smoothstep(0.3, 1.0, edge).mul(0.12));
   const pulse = time.mul(2.4).sin().mul(0.15).add(0.85);
-  const alpha = max(border.mul(mix(0.55, 1.0, dash)), fill).mul(pulse).mul(isTeam ? 0.9 : 0.6);
+  const alpha = max(border.mul(mix(0.55, 1.0, dash)), fill)
+    .mul(pulse)
+    .mul(isTeam ? 0.9 : 0.6);
   mat.colorNode = col.mul(alpha.mul(1.4));
   mat.opacityNode = alpha;
   const mesh = new Mesh(geo, mat);
@@ -179,7 +183,11 @@ function createZoneMarker(trigger: TriggerDef, theme: ThemeDefinition, time: Lev
  * // per frame
  * level.update(matchTime, dt);
  */
-export function buildLevelVisuals(round: RoundDefinition, theme: ThemeDefinition, opts: LevelBuildOptions = {}): LevelVisuals {
+export function buildLevelVisuals(
+  round: RoundDefinition,
+  theme: ThemeDefinition,
+  opts: LevelBuildOptions = {},
+): LevelVisuals {
   const detail = opts.detail ?? 1;
   // PERF: draw calls cost far more CPU than the vertices big cells add (a whole course is < 200k tris), so cells only split very large maps.
   const cellSize = opts.cellSize ?? 256;

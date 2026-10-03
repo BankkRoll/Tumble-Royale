@@ -82,7 +82,12 @@ export function createLightingRig(atmosphere: Atmosphere, opts: LightingRigOptio
       sc.far = SUN_DISTANCE * 2;
       sc.updateProjectionMatrix();
     } else {
-      csm = new CSMShadowNode(sun, { cascades: opts.cascades ?? 3, maxFar: dist, mode: 'practical', lightMargin: 60 });
+      csm = new CSMShadowNode(sun, {
+        cascades: opts.cascades ?? 3,
+        maxFar: dist,
+        mode: 'practical',
+        lightMargin: 60,
+      });
       csm.fade = true;
       sun.shadow.shadowNode = csm;
     }

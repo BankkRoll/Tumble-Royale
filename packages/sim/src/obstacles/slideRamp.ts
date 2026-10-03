@@ -44,7 +44,16 @@ export type SlideRampParams = z.output<typeof SlideRampSchema>;
 export function slideRampParts(p: SlideRampParams): BoxPart[] {
   const tilt = quatFromAxisAngle(1, 0, 0, p.angle * DEG);
   const parts: BoxPart[] = [];
-  const add = (x: number, y: number, z: number, hx: number, hy: number, hz: number, role: string, local?: Quat): void => {
+  const add = (
+    x: number,
+    y: number,
+    z: number,
+    hx: number,
+    hy: number,
+    hz: number,
+    role: string,
+    local?: Quat,
+  ): void => {
     const pos = rotateVec(tilt, vec3(x, y, z));
     const rot = local ? quatMul(tilt, local) : { ...tilt };
     parts.push({ pos, rot, half: vec3(hx, hy, hz), role });
@@ -65,7 +74,8 @@ export function slideRampParts(p: SlideRampParams): BoxPart[] {
     }
   } else if (p.rails) {
     const rt = 0.2;
-    for (const side of [-1, 1]) add(side * (hw + rt), p.railHeight / 2 - ht, 0, rt, p.railHeight / 2 + ht, hl, 'rail');
+    for (const side of [-1, 1])
+      add(side * (hw + rt), p.railHeight / 2 - ht, 0, rt, p.railHeight / 2 + ht, hl, 'rail');
   }
   return parts;
 }

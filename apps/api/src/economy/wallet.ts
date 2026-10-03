@@ -21,7 +21,12 @@ export async function readWallet(db: DbOrTx, userId: string): Promise<Wallet> {
  *
  * @returns True when the item was newly added.
  */
-export async function grantCosmetic(tx: DbOrTx, userId: string, cosmeticId: string, source: string): Promise<boolean> {
+export async function grantCosmetic(
+  tx: DbOrTx,
+  userId: string,
+  cosmeticId: string,
+  source: string,
+): Promise<boolean> {
   const rows = await tx
     .insert(inventoryItems)
     .values({ userId, cosmeticId, source })

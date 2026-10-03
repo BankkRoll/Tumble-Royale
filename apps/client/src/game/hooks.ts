@@ -2,7 +2,9 @@
  * `window.__tumble`: automation and console hooks shared by the game and the
  * Phase 0 test scene. Playwright waits on `ready` and reads the rest.
  */
+import type { ui as uiStore, UIIntentName } from '@tumble/ui';
 import type { DeterminismReport } from '../debug/determinism.ts';
+import type { LobbyDebugState } from './views/menuView.ts';
 
 /** Debug hooks exposed on `window.__tumble`. */
 export interface TumbleHooks {
@@ -37,13 +39,19 @@ export interface TumbleHooks {
   /** Per-round GPU memory log (game only). */
   memoryLog?: { round: string; geometries: number; textures: number }[];
   /** Online account state (game only): null when playing offline. */
-  account?: () => { userId: string; name: string; partyCode: string | null; partySize: number; leader: boolean } | null;
+  account?: () => {
+    userId: string;
+    name: string;
+    partyCode: string | null;
+    partySize: number;
+    leader: boolean;
+  } | null;
   /** The UI store, for tests that inspect or drive menus (game only). */
-  ui?: typeof import('@tumble/ui').ui;
+  ui?: typeof uiStore;
   /** Emits a UI intent as if the player clicked it (tests). */
-  emit?: (name: import('@tumble/ui').UIIntentName, payload?: unknown) => void;
+  emit?: (name: UIIntentName, payload?: unknown) => void;
   /** Main-menu lobby Tumbler (state, feet, idle play, camera pitch); null outside the menu (game only). */
-  lobbyState?: () => import('./views/menuView.ts').LobbyDebugState | null;
+  lobbyState?: () => LobbyDebugState | null;
   /** True while queued with the matchmaker (game only). */
   queued?: () => boolean;
 }

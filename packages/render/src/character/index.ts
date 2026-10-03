@@ -11,7 +11,13 @@ export { createTumblerVisual, Tumbler, type TumblerOptions } from './tumbler.ts'
 export { TumblerCrowd, type TumblerCrowdOptions } from './crowd.ts';
 export { RagdollManager, RagdollWorld, TumblerRagdoll, type RagdollHost } from './ragdoll.ts';
 export { NameplateLayer, Nameplate, type NameplateOptions, type NameplateStyle } from './nameplate.ts';
-export { loadTumblerGLTF, applyTumblerGLTF, TUMBLER_BONE_PARENTS, type GltfBoneMap, type TumblerGLTFBody } from './gltf.ts';
+export {
+  loadTumblerGLTF,
+  applyTumblerGLTF,
+  TUMBLER_BONE_PARENTS,
+  type GltfBoneMap,
+  type TumblerGLTFBody,
+} from './gltf.ts';
 export {
   TumblerShaderState,
   SHADER_PATTERNS,

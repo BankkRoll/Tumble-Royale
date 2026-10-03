@@ -20,13 +20,7 @@ import { formatNumber, formatRemaining, useNow } from '../../components/hooks.ts
 import { Icon } from '../../components/icons/index.tsx';
 import { uiEvents } from '../../store/events.ts';
 import { useUI } from '../../store/uiStore.ts';
-import {
-  SLOT_NAMES,
-  type CosmeticSlot,
-  type PassReward,
-  type PassTier,
-  type SeasonPassData,
-} from '../../store/types.ts';
+import { SLOT_NAMES, type PassReward, type PassTier, type SeasonPassData } from '../../store/types.ts';
 
 /** Re-exported for screens that imported slot names from here. */
 export { SLOT_NAMES };

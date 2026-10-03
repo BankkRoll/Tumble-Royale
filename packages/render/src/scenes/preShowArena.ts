@@ -69,7 +69,11 @@ const MAX_PLAYERS = 60;
  */
 export function createPreShowArena(opts: PreShowArenaOptions): PreShowArena {
   const radius = 18;
-  const stage = createSceneStage(opts, { min: { x: -radius, y: -2, z: -radius }, max: { x: radius, y: 4, z: radius } }, { crowd: false, fov: 45 });
+  const stage = createSceneStage(
+    opts,
+    { min: { x: -radius, y: -2, z: -radius }, max: { x: radius, y: 4, z: radius } },
+    { crowd: false, fov: 45 },
+  );
   const { scene, camera } = stage;
   const factory = tumblerFactory(opts.createTumbler);
   const rng = new DecorRandom(opts.seed ?? 9);
@@ -173,8 +177,11 @@ export function createPreShowArena(opts: PreShowArenaOptions): PreShowArena {
             const d = toTarget.length();
             if (d < 0.4) {
               w.wait = rng.range(1, 4);
-              if (rng.next() < 0.3) w.actor.playEmote(emotes[Math.floor(rng.next() * emotes.length)] ?? 'wave', 2.4);
-              else if (rng.next() < 0.3) w.actor.kick(0.6);
+              // One roll split 30% emote / 21% kick (the old pair of rolls gave the same odds).
+              const roll = rng.next();
+              if (roll < 0.3)
+                w.actor.playEmote(emotes[Math.floor(rng.next() * emotes.length)] ?? 'wave', 2.4);
+              else if (roll < 0.51) w.actor.kick(0.6);
             } else {
               toTarget.multiplyScalar(1 / d);
               w.holder.position.addScaledVector(toTarget, Math.min(d, w.speed * dt));

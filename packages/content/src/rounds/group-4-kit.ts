@@ -49,12 +49,21 @@ export const wrapDeg = (d: number): number => {
 
 /** Rotated copy of a static piece. */
 export function rotPiece(p: Piece, deg: number): Piece {
-  return { ...p, position: rotPoint(p.position, deg), rotation: { ...p.rotation, yaw: wrapDeg((p.rotation?.yaw ?? 0) + deg) } };
+  return {
+    ...p,
+    position: rotPoint(p.position, deg),
+    rotation: { ...p.rotation, yaw: wrapDeg((p.rotation?.yaw ?? 0) + deg) },
+  };
 }
 
 /** Rotated copy of an obstacle instance with a new id. */
 export function rotObstacle(o: Obstacle, deg: number, id: string): Obstacle {
-  return { ...o, id, position: rotPoint(o.position, deg), rotation: { ...o.rotation, yaw: wrapDeg((o.rotation?.yaw ?? 0) + deg) } };
+  return {
+    ...o,
+    id,
+    position: rotPoint(o.position, deg),
+    rotation: { ...o.rotation, yaw: wrapDeg((o.rotation?.yaw ?? 0) + deg) },
+  };
 }
 
 /** Rotated copy of a trigger (respawn points and yaw follow). */
@@ -99,21 +108,60 @@ export function crestBoard(t: number, at: V3, yaw: number, size = 2.4): Piece[] 
   };
   const s = size * 0.62;
   const out: Piece[] = [
-    { shape: 'box', position: face(v(0, 0, 0)), size: v(size, size, 0.3), rotation: { yaw }, color: team(t), bevel: 0.12, decorative: true },
+    {
+      shape: 'box',
+      position: face(v(0, 0, 0)),
+      size: v(size, size, 0.3),
+      rotation: { yaw },
+      color: team(t),
+      bevel: 0.12,
+      decorative: true,
+    },
   ];
   const front = face(v(0, 0, 0.22));
   switch (CREST_SHAPES[t % 4]) {
     case 'triangle':
-      out.push({ shape: 'wedge', position: front, size: v(s * 1.1, s, 0.2), rotation: { yaw }, color: '#ffffff', bevel: 0.04, decorative: true });
+      out.push({
+        shape: 'wedge',
+        position: front,
+        size: v(s * 1.1, s, 0.2),
+        rotation: { yaw },
+        color: '#ffffff',
+        bevel: 0.04,
+        decorative: true,
+      });
       break;
     case 'circle':
-      out.push({ shape: 'cylinder', position: front, size: v(s / 2, 0.2, 0), rotation: { yaw, pitch: 90 }, color: '#ffffff', decorative: true });
+      out.push({
+        shape: 'cylinder',
+        position: front,
+        size: v(s / 2, 0.2, 0),
+        rotation: { yaw, pitch: 90 },
+        color: '#ffffff',
+        decorative: true,
+      });
       break;
     case 'square':
-      out.push({ shape: 'box', position: front, size: v(s * 0.85, s * 0.85, 0.2), rotation: { yaw }, color: '#ffffff', bevel: 0.06, decorative: true });
+      out.push({
+        shape: 'box',
+        position: front,
+        size: v(s * 0.85, s * 0.85, 0.2),
+        rotation: { yaw },
+        color: '#ffffff',
+        bevel: 0.06,
+        decorative: true,
+      });
       break;
     default:
-      out.push({ shape: 'box', position: front, size: v(s * 0.66, s * 0.66, 0.2), rotation: { yaw, roll: 45 }, color: '#ffffff', bevel: 0.06, decorative: true });
+      out.push({
+        shape: 'box',
+        position: front,
+        size: v(s * 0.66, s * 0.66, 0.2),
+        rotation: { yaw, roll: 45 },
+        color: '#ffffff',
+        bevel: 0.06,
+        decorative: true,
+      });
   }
   return out;
 }
@@ -128,8 +176,20 @@ export function crestBoard(t: number, at: V3, yaw: number, size = 2.4): Piece[] 
  */
 export function teamBanner(t: number, base: V3, yaw: number, height = 6): Piece[] {
   return [
-    { shape: 'cylinder', position: v(base.x, base.y + height / 2, base.z), size: v(0.14, height, 0), color: 'neutral', decorative: true },
-    { shape: 'sphere', position: v(base.x, base.y + height + 0.15, base.z), size: v(0.3, 0, 0), color: team(t), decorative: true },
+    {
+      shape: 'cylinder',
+      position: v(base.x, base.y + height / 2, base.z),
+      size: v(0.14, height, 0),
+      color: 'neutral',
+      decorative: true,
+    },
+    {
+      shape: 'sphere',
+      position: v(base.x, base.y + height + 0.15, base.z),
+      size: v(0.3, 0, 0),
+      color: team(t),
+      decorative: true,
+    },
     ...crestBoard(t, v(base.x, base.y + height - 1.4, base.z), yaw, 2.2),
   ];
 }
@@ -144,7 +204,14 @@ export function teamBanner(t: number, base: V3, yaw: number, height = 6): Piece[
  * @param colors - Head colours, cycled.
  * @param seed - Varies the spacing jitter.
  */
-export function crowdStand(at: V3, yaw: number, width: number, rows: number, colors: readonly string[], seed = 1): Piece[] {
+export function crowdStand(
+  at: V3,
+  yaw: number,
+  width: number,
+  rows: number,
+  colors: readonly string[],
+  seed = 1,
+): Piece[] {
   const out: Piece[] = [];
   const put = (local: V3): V3 => {
     const p = rotPoint(local, yaw);

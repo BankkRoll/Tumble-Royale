@@ -78,11 +78,19 @@ describe('reliable message codec', () => {
   it('round-trips SimEvents and low-frequency messages', () => {
     const msgs: ReliableMessage[] = [
       { kind: 'sim', tick: 1234, event: { type: 'jump', player: 3, pos: { x: 1.5, y: 2, z: -3.25 } } },
-      { kind: 'sim', tick: 1, event: { type: 'bounce', player: 3, pos: { x: 0, y: 0, z: 0 }, obstacle: 'pad-1' } },
+      {
+        kind: 'sim',
+        tick: 1,
+        event: { type: 'bounce', player: 3, pos: { x: 0, y: 0, z: 0 }, obstacle: 'pad-1' },
+      },
       { kind: 'sim', tick: 1, event: { type: 'bounce', player: 3, pos: { x: 0, y: 0, z: 0 } } },
       { kind: 'sim', tick: 9, event: { type: 'grabEnd', player: 1, target: -1, reason: 'stamina' } },
       { kind: 'sim', tick: 9, event: { type: 'score', team: 2, player: 7, delta: -1, total: 12 } },
-      { kind: 'sim', tick: 9, event: { type: 'obstacleCue', obstacle: 'cannon-a', cue: 'fire', pos: { x: 1, y: 2, z: 3 } } },
+      {
+        kind: 'sim',
+        tick: 9,
+        event: { type: 'obstacleCue', obstacle: 'cannon-a', cue: 'fire', pos: { x: 1, y: 2, z: 3 } },
+      },
       { kind: 'msg', msg: { t: 'chat', from: 4, text: 'gg ✓' } },
       { kind: 'msg', msg: { t: 'roundPhase', phase: 3, time: -2.5 } },
     ];
@@ -91,7 +99,9 @@ describe('reliable message codec', () => {
 
   it('carries unknown future event types via the msgpack fallback', () => {
     // A SimEvent member added to the union after this table was written.
-    const future = { type: 'futureThing', player: 1, extra: [1, 2] } as unknown as ReliableMessage & { kind: 'sim' };
+    const future = { type: 'futureThing', player: 1, extra: [1, 2] } as unknown as ReliableMessage & {
+      kind: 'sim';
+    };
     const m = { kind: 'sim', tick: 5, event: future } as unknown as ReliableMessage;
     expect(decodeReliableMessage(encodeReliableMessage(m))).toEqual(m);
   });

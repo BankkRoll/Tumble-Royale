@@ -1,6 +1,6 @@
+import type { BufferGeometry } from 'three/webgpu';
 import {
   BufferAttribute,
-  BufferGeometry,
   CapsuleGeometry,
   Color,
   ConeGeometry,
@@ -47,7 +47,8 @@ export interface SkyTraffic {
 function flat(geo: BufferGeometry, hex: string): BufferGeometry {
   const g = geo.index ? geo.toNonIndexed() : geo;
   if (g !== geo) geo.dispose();
-  for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
+  for (const name of Object.keys(g.attributes))
+    if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
   const c = new Color(hex);
   const n = g.getAttribute('position').count;
   const arr = new Float32Array(n * 3);
@@ -121,7 +122,6 @@ export function createSkyTraffic(opts: SkyTrafficOptions): SkyTraffic {
   const one = new Vector3(1, 1, 1);
   const tint = new Color();
 
-  let balloonMesh: InstancedMesh | null = null;
   if (nBalloons > 0) {
     const geo = balloonGeometry();
     const centers = new Float32Array(nBalloons * 3);
@@ -134,10 +134,17 @@ export function createSkyTraffic(opts: SkyTrafficOptions): SkyTraffic {
     const f = mod(time.mul(aM.y).add(aM.x.mul(range)), range).div(range);
     const rise = f.sub(0.5).mul(range);
     const fade = smoothstep(0.0, 0.08, f).mul(smoothstep(1.0, 0.92, f));
-    const sway = vec3(sin(time.mul(0.7).add(aM.x.mul(20.0))).mul(0.6), float(0), sin(time.mul(0.5).add(aM.x.mul(13.0))).mul(0.6));
-    mat.positionNode = aC.add(positionLocal.sub(aC).mul(fade)).add(vec3(float(0), rise, float(0))).add(sway);
+    const sway = vec3(
+      sin(time.mul(0.7).add(aM.x.mul(20.0))).mul(0.6),
+      float(0),
+      sin(time.mul(0.5).add(aM.x.mul(13.0))).mul(0.6),
+    );
+    mat.positionNode = aC
+      .add(positionLocal.sub(aC).mul(fade))
+      .add(vec3(float(0), rise, float(0)))
+      .add(sway);
 
-    balloonMesh = new InstancedMesh(geo, mat, nBalloons);
+    const balloonMesh = new InstancedMesh(geo, mat, nBalloons);
     for (let i = 0; i < nBalloons; i++) {
       const a = rng.range(0, Math.PI * 2);
       const d = rng.range(inner, outer);
@@ -197,7 +204,11 @@ export function createSkyTraffic(opts: SkyTrafficOptions): SkyTraffic {
       for (let i = 0; i < blimps.length; i++) {
         const b = blimps[i]!;
         const a = b.phase + t * b.speed;
-        v.set(center.x + Math.cos(a) * b.radius, b.height + Math.sin(t * 0.3 + b.phase) * 1.5, center.z + Math.sin(a) * b.radius);
+        v.set(
+          center.x + Math.cos(a) * b.radius,
+          b.height + Math.sin(t * 0.3 + b.phase) * 1.5,
+          center.z + Math.sin(a) * b.radius,
+        );
         // Nose (+X) points along the direction of travel.
         yawQ.setFromAxisAngle(up, -a - (b.speed > 0 ? Math.PI / 2 : -Math.PI / 2));
         m4.compose(v, yawQ, one.set(1.6, 1.6, 1.6));

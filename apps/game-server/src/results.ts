@@ -111,7 +111,10 @@ export function computePlacements(
   for (let i = rounds.length - 1; i >= 0; i--) {
     const r = rounds[i]!;
     const q = new Set(r.qualified);
-    const groups = [r.qualified.filter((k) => !placed.has(k) && !winnerSet.has(k)), r.entrants.filter((k) => !q.has(k) && !placed.has(k))];
+    const groups = [
+      r.qualified.filter((k) => !placed.has(k) && !winnerSet.has(k)),
+      r.entrants.filter((k) => !q.has(k) && !placed.has(k)),
+    ];
     for (const group of groups) {
       if (group.length === 0) continue;
       const placement = better + 1;
@@ -162,7 +165,10 @@ export class HttpResultsSink implements ResultsSink {
       try {
         const res = await fetch(url, {
           method: 'POST',
-          headers: { 'content-type': 'application/json', ...signInternal(this.opts.secret, body, Date.now()) },
+          headers: {
+            'content-type': 'application/json',
+            ...signInternal(this.opts.secret, body, Date.now()),
+          },
           body,
           signal: AbortSignal.timeout(8000),
         });
@@ -172,7 +178,9 @@ export class HttpResultsSink implements ResultsSink {
         // 4xx (bad payload/signature) will not get better by retrying.
         if (res.status < 500) return null;
       } catch (err) {
-        this.opts.log?.(`[results] ${payload.matchId}: post failed (${err instanceof Error ? err.message : String(err)})`);
+        this.opts.log?.(
+          `[results] ${payload.matchId}: post failed (${err instanceof Error ? err.message : String(err)})`,
+        );
       }
       await new Promise((r) => setTimeout(r, 500 * 2 ** i));
     }

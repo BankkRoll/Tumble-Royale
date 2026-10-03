@@ -5,7 +5,13 @@
  */
 import { RoundDefinitionSchema, RoundPhase, type RoundDefinition, type Vec3 } from '@tumble/shared';
 import { loadRapier, type Rapier } from '@tumble/sim';
-import { PlayerRoundStatus, createMatchSim, createSimpleController, resolveObstacles, type MatchSimHandle } from '@tumble/sim/match';
+import {
+  PlayerRoundStatus,
+  createMatchSim,
+  createSimpleController,
+  resolveObstacles,
+  type MatchSimHandle,
+} from '@tumble/sim/match';
 import { OBSTACLE_REGISTRY } from '@tumble/sim/obstacles';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ROUNDS_GROUP_4 } from '../src/rounds/group-4.ts';
@@ -35,7 +41,10 @@ function players(n: number, def: RoundDefinition) {
   }));
 }
 
-function build(def: RoundDefinition, opts: { seed?: number; variationId?: string; bots?: number } = {}): MatchSimHandle {
+function build(
+  def: RoundDefinition,
+  opts: { seed?: number; variationId?: string; bots?: number } = {},
+): MatchSimHandle {
   return createMatchSim(
     {
       R,
@@ -91,7 +100,10 @@ describe.each(IDS)('%s', (id) => {
         expect(mod, `${id}/${inst.id}: unknown type ${inst.type}`).toBeDefined();
         const parsed = mod!.schema.parse(inst.params) as Record<string, unknown>;
         for (const key of Object.keys(inst.params)) {
-          expect(parsed, `${id}/${variation?.id ?? 'base'}/${inst.id}: param "${key}" stripped`).toHaveProperty(key);
+          expect(
+            parsed,
+            `${id}/${variation?.id ?? 'base'}/${inst.id}: param "${key}" stripped`,
+          ).toHaveProperty(key);
         }
       }
     }
@@ -108,7 +120,10 @@ describe.each(IDS)('%s', (id) => {
 });
 
 describe('full-length 40-bot runs', () => {
-  const results = new Map<string, { scores: number[]; qualified: number; eliminated: number; finished: boolean; holders: boolean }>();
+  const results = new Map<
+    string,
+    { scores: number[]; qualified: number; eliminated: number; finished: boolean; holders: boolean }
+  >();
 
   beforeAll(() => {
     for (const id of IDS) {
@@ -116,7 +131,8 @@ describe('full-length 40-bot runs', () => {
       runFull(sim);
       const st = sim.getStatus();
       let holders = true;
-      for (const [, p] of st.players) if (p.status === PlayerRoundStatus.Qualified && !p.hasItem) holders = false;
+      for (const [, p] of st.players)
+        if (p.status === PlayerRoundStatus.Qualified && !p.hasItem) holders = false;
       results.set(id, {
         scores: [...st.teamScores],
         qualified: st.qualifiedCount,
@@ -139,7 +155,10 @@ describe('full-length 40-bot runs', () => {
   it('paint and ball rounds produce non-zero team scores from bot play', () => {
     for (const id of ['bounce-ball-blitz', 'paint-the-plaza']) {
       const s = results.get(id)!.scores;
-      expect(s.some((x) => x > 0), `${id}: ${s.join(',')}`).toBe(true);
+      expect(
+        s.some((x) => x > 0),
+        `${id}: ${s.join(',')}`,
+      ).toBe(true);
     }
     // Paint: every team paints.
     expect(results.get('paint-the-plaza')!.scores.every((x) => x > 0)).toBe(true);
@@ -204,7 +223,8 @@ describe('bounce ball blitz scoring', () => {
     sim.step();
     let ball: ReturnType<MatchSimHandle['world']['getRigidBody']> | null = null;
     sim.world.forEachRigidBody((b) => {
-      if (b.isDynamic() && b.numColliders() > 0 && sim.surfaces.get(b.collider(0).handle)?.ownerId === 'ball') ball = b;
+      if (b.isDynamic() && b.numColliders() > 0 && sim.surfaces.get(b.collider(0).handle)?.ownerId === 'ball')
+        ball = b;
     });
     expect(ball).not.toBeNull();
     ball!.setTranslation({ x: 0, y: 2, z: -34.5 }, true);
@@ -225,11 +245,26 @@ describe('team layouts are symmetric', () => {
   const items = (r: RoundDefinition): Item[] => [
     ...r.geometry
       .filter((g) => !g.decorative)
-      .map((g) => ({ kind: 'g', x: g.position.x, z: g.position.z, key: `${g.shape}|${g.position.y}|${g.size.x},${g.size.y},${g.size.z}|${g.surface}` })),
+      .map((g) => ({
+        kind: 'g',
+        x: g.position.x,
+        z: g.position.z,
+        key: `${g.shape}|${g.position.y}|${g.size.x},${g.size.y},${g.size.z}|${g.surface}`,
+      })),
     ...resolveObstacles(r, null)
       .filter((o) => o.type !== 'propSpawner' && o.type !== 'startGate' && o.type !== 'paintGrid')
-      .map((o) => ({ kind: 'o', x: o.position.x, z: o.position.z, key: `${o.type}|${o.position.y}|${JSON.stringify({ ...o.params, team: 0 })}` })),
-    ...r.triggers.map((t) => ({ kind: 't', x: t.position.x, z: t.position.z, key: `${t.kind}|${t.position.y}|${t.size.x * t.size.z}` })),
+      .map((o) => ({
+        kind: 'o',
+        x: o.position.x,
+        z: o.position.z,
+        key: `${o.type}|${o.position.y}|${JSON.stringify({ ...o.params, team: 0 })}`,
+      })),
+    ...r.triggers.map((t) => ({
+      kind: 't',
+      x: t.position.x,
+      z: t.position.z,
+      key: `${t.kind}|${t.position.y}|${t.size.x * t.size.z}`,
+    })),
   ];
 
   const invariant = (r: RoundDefinition, deg: number): string[] => {
@@ -239,7 +274,9 @@ describe('team layouts are symmetric', () => {
     for (const it of list) {
       const x = it.x * Math.cos(a) + it.z * Math.sin(a);
       const z = -it.x * Math.sin(a) + it.z * Math.cos(a);
-      const twin = list.find((o) => o.kind === it.kind && o.key === it.key && Math.abs(o.x - x) < 0.02 && Math.abs(o.z - z) < 0.02);
+      const twin = list.find(
+        (o) => o.kind === it.kind && o.key === it.key && Math.abs(o.x - x) < 0.02 && Math.abs(o.z - z) < 0.02,
+      );
       if (!twin) missing.push(`${it.kind} ${it.key} @(${it.x},${it.z})`);
     }
     return missing;

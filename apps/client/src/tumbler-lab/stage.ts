@@ -54,7 +54,10 @@ export function createStage(): Stage {
   setTumblerLighting(new Vector3().copy(sun.position).normalize());
 
   const platform = new Group();
-  const top = new Mesh(new CylinderGeometry(18, 18, 1, 96), createToonMaterial({ color: '#fff1f8', rimStrength: 0.2 }));
+  const top = new Mesh(
+    new CylinderGeometry(18, 18, 1, 96),
+    createToonMaterial({ color: '#fff1f8', rimStrength: 0.2 }),
+  );
   top.position.y = FLOOR_Y - 0.5;
   top.receiveShadow = true;
   platform.add(top);
@@ -63,14 +66,20 @@ export function createStage(): Stage {
   const ringColors = ['#ffc4e8', '#bdf3ff', '#fff3a0', '#c9ffe6'];
   for (let i = 0; i < 4; i++) {
     const r = 3 + i * 3.6;
-    const ring = new Mesh(new TorusGeometry(r, 0.22, 10, 96), createToonMaterial({ color: ringColors[i]!, rimStrength: 0.2 }));
+    const ring = new Mesh(
+      new TorusGeometry(r, 0.22, 10, 96),
+      createToonMaterial({ color: ringColors[i]!, rimStrength: 0.2 }),
+    );
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = FLOOR_Y - 0.12;
     ring.scale.z = 0.4;
     ring.receiveShadow = true;
     platform.add(ring);
   }
-  const turntable = new Mesh(new CylinderGeometry(1.6, 1.7, 0.18, 64), createToonMaterial({ color: '#ff8fc5', rimStrength: 0.3 }));
+  const turntable = new Mesh(
+    new CylinderGeometry(1.6, 1.7, 0.18, 64),
+    createToonMaterial({ color: '#ff8fc5', rimStrength: 0.3 }),
+  );
   turntable.position.y = FLOOR_Y - 0.08;
   turntable.receiveShadow = true;
   platform.add(turntable);
@@ -78,7 +87,10 @@ export function createStage(): Stage {
   const skirt = new Mesh(new CylinderGeometry(18, 9, 7, 96), createToonMaterial({ color: '#ff9fd0' }));
   skirt.position.y = FLOOR_Y - 4.5;
   platform.add(skirt);
-  const trim = new Mesh(new TorusGeometry(18, 0.45, 12, 128), createToonMaterial({ color: '#ffffff', rimStrength: 0.3 }));
+  const trim = new Mesh(
+    new TorusGeometry(18, 0.45, 12, 128),
+    createToonMaterial({ color: '#ffffff', rimStrength: 0.3 }),
+  );
   trim.rotation.x = Math.PI / 2;
   trim.position.y = FLOOR_Y - 0.5;
   platform.add(trim);
@@ -88,11 +100,17 @@ export function createStage(): Stage {
   for (let i = 0; i < 10; i++) {
     const a = (i / 10) * Math.PI * 2 + 0.2;
     const g = new Group();
-    const stick = new Mesh(new CylinderGeometry(0.08, 0.08, 3.2, 10), createToonMaterial({ color: '#ffffff' }));
+    const stick = new Mesh(
+      new CylinderGeometry(0.08, 0.08, 3.2, 10),
+      createToonMaterial({ color: '#ffffff' }),
+    );
     stick.position.y = 1.6;
     stick.castShadow = true;
     const candyGeo = new SphereGeometry(0.75, 32, 16);
-    const candy = new Mesh(candyGeo, createToonMaterial({ color: lolliColors[i % lolliColors.length]!, rimStrength: 0.5 }));
+    const candy = new Mesh(
+      candyGeo,
+      createToonMaterial({ color: lolliColors[i % lolliColors.length]!, rimStrength: 0.5 }),
+    );
     candy.scale.z = 0.45;
     candy.position.y = 3.5;
     candy.castShadow = true;

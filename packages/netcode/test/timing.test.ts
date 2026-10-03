@@ -4,7 +4,12 @@ import type { CharacterInput } from '@tumble/sim';
 import { BitReader, BitWriter } from '../src/bits.ts';
 import { ClockSync } from '../src/clock.ts';
 import { InputHistory } from '../src/history.ts';
-import { readInputBatch, writeInputBatch, quantizeInputInPlace, type InputBatchHeader } from '../src/input.ts';
+import {
+  readInputBatch,
+  writeInputBatch,
+  quantizeInputInPlace,
+  type InputBatchHeader,
+} from '../src/input.ts';
 import { InputJitterBuffer } from '../src/jitter.ts';
 import { InterpolationClock, SnapshotInterpolator, createRenderEntityState } from '../src/interpolation.ts';
 import { createNetEntityState } from '../src/snapshot.ts';

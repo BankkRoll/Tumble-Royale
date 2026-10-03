@@ -3,10 +3,7 @@ import { InteractionGroups, Rng, SIM_DT, type Vec3 } from '@tumble/shared';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { CharacterState } from '../src/character/types.ts';
 import { EventSink, type SimEvent } from '../src/events.ts';
-import type {
-  GoalZoneRuntime,
-  PaintGridRuntime,
-  PatternBoardRuntime} from '../src/obstacles/set-c.ts';
+import type { GoalZoneRuntime, PaintGridRuntime, PatternBoardRuntime } from '../src/obstacles/set-c.ts';
 import {
   PaintGridSchema,
   PatternBoardSchema,
@@ -57,9 +54,13 @@ class FakeActor implements ObstacleActor {
     pos: Vec3,
     public team = 0,
   ) {
-    this.body = world.createRigidBody(R.RigidBodyDesc.dynamic().setTranslation(pos.x, pos.y, pos.z).lockRotations());
+    this.body = world.createRigidBody(
+      R.RigidBodyDesc.dynamic().setTranslation(pos.x, pos.y, pos.z).lockRotations(),
+    );
     this.collider = world.createCollider(
-      R.ColliderDesc.capsule(0.45, 0.45).setCollisionGroups(InteractionGroups.player).setActiveEvents(R.ActiveEvents.COLLISION_EVENTS),
+      R.ColliderDesc.capsule(0.45, 0.45)
+        .setCollisionGroups(InteractionGroups.player)
+        .setActiveEvents(R.ActiveEvents.COLLISION_EVENTS),
       this.body,
     );
   }
@@ -96,7 +97,14 @@ interface Harness {
 function harness(seed = 7, speedScale = 1): Harness {
   const world = createWorld(R);
   const events = new EventSink();
-  const ctx: ObstacleBuildContext = { R, world, surfaces: new SurfaceRegistry(), events, rng: new Rng(seed), speedScale };
+  const ctx: ObstacleBuildContext = {
+    R,
+    world,
+    surfaces: new SurfaceRegistry(),
+    events,
+    rng: new Rng(seed),
+    speedScale,
+  };
   const queue = new R.EventQueue(true);
   const log: SimEvent[] = [];
   let tick = 0;
@@ -106,7 +114,12 @@ function harness(seed = 7, speedScale = 1): Harness {
     log,
     floor(y = 0, half = 60) {
       const b = world.createRigidBody(R.RigidBodyDesc.fixed());
-      world.createCollider(R.ColliderDesc.cuboid(half, 0.5, half).setTranslation(0, y - 0.5, 0).setCollisionGroups(InteractionGroups.static), b);
+      world.createCollider(
+        R.ColliderDesc.cuboid(half, 0.5, half)
+          .setTranslation(0, y - 0.5, 0)
+          .setCollisionGroups(InteractionGroups.static),
+        b,
+      );
     },
     run(rt, actors, steps, t0 = 0) {
       const mine = new Map<number, Collider>();
@@ -133,7 +146,12 @@ function harness(seed = 7, speedScale = 1): Harness {
   };
 }
 
-function inst<P>(type: ObstacleType, params: Partial<P> = {}, id = `${type}-1`, position: Vec3 = { x: 0, y: 0, z: 0 }): ObstacleInstance<P> {
+function inst<P>(
+  type: ObstacleType,
+  params: Partial<P> = {},
+  id = `${type}-1`,
+  position: Vec3 = { x: 0, y: 0, z: 0 },
+): ObstacleInstance<P> {
   return { id, type, position, params: params as P };
 }
 
@@ -165,7 +183,10 @@ describe('obstacle set C registry', () => {
   it.each(TYPES)('%s: creates and runs 300 steps with actors, then disposes', (type) => {
     const h = harness();
     h.floor();
-    const actors = [new FakeActor(h.world, 1, { x: 1, y: 1, z: 1 }, 0), new FakeActor(h.world, 2, { x: -3, y: 1, z: 2 }, 1)];
+    const actors = [
+      new FakeActor(h.world, 1, { x: 1, y: 1, z: 1 }, 0),
+      new FakeActor(h.world, 2, { x: -3, y: 1, z: 2 }, 1),
+    ];
     const rt = moduleOf(type).create(inst(type), h.ctx);
     expect(() => h.run(rt, actors, 300)).not.toThrow();
     const state = rt.getNetState?.();
@@ -195,7 +216,13 @@ describe('obstacle set C registry', () => {
 // -----------------------------------------------------------------------------
 
 describe('paintGrid', () => {
-  const params = PaintGridSchema.parse({ cols: 10, rows: 10, cellSize: 2, rinseArms: 0, stages: [{ x: 5, z: 5, sizeX: 4, sizeZ: 4, height: 1, mult: 2 }] });
+  const params = PaintGridSchema.parse({
+    cols: 10,
+    rows: 10,
+    cellSize: 2,
+    rinseArms: 0,
+    stages: [{ x: 5, z: 5, sizeX: 4, sizeZ: 4, height: 1, mult: 2 }],
+  });
 
   it('paints the cell under a grounded actor in its team colour, then lets another team take it', () => {
     const h = harness();
@@ -261,7 +288,15 @@ describe('paintGrid', () => {
 
   it('rinse arms wash cells under them back to neutral', () => {
     const h = harness();
-    const p = PaintGridSchema.parse({ cols: 20, rows: 20, rinseArms: 1, rinseHubRadius: 1, rinseLength: 18, rinseSpeed: 0, rinseWidth: 2.5 });
+    const p = PaintGridSchema.parse({
+      cols: 20,
+      rows: 20,
+      rinseArms: 1,
+      rinseHubRadius: 1,
+      rinseLength: 18,
+      rinseSpeed: 0,
+      rinseWidth: 2.5,
+    });
     const rt = moduleOf('paintGrid').create(inst('paintGrid', p), h.ctx) as unknown as PaintGridRuntime;
     // Arm 0 at angle 0 points along +X: paint a cell on +X and one on −X.
     const a = new FakeActor(h.world, 1, { x: 0, y: 0, z: 0 }, 0);
@@ -285,7 +320,14 @@ describe('paintGrid', () => {
 
   it('buckets grant a three-wide swath and come back later', () => {
     const h = harness();
-    const p = PaintGridSchema.parse({ cols: 20, rows: 20, rinseArms: 0, buckets: [{ x: 0, z: 0 }], bucketDuration: 2, bucketRespawn: 3 });
+    const p = PaintGridSchema.parse({
+      cols: 20,
+      rows: 20,
+      rinseArms: 0,
+      buckets: [{ x: 0, z: 0 }],
+      bucketDuration: 2,
+      bucketRespawn: 3,
+    });
     const rt = moduleOf('paintGrid').create(inst('paintGrid', p), h.ctx) as unknown as PaintGridRuntime;
     const a = new FakeActor(h.world, 1, { x: 0, y: 0, z: 0 }, 1);
     a.place(0.5, 0, 0.5);
@@ -301,7 +343,14 @@ describe('paintGrid', () => {
 
   it('net state round-trips cells and bucket timers', () => {
     const h = harness();
-    const p = PaintGridSchema.parse({ rinseArms: 0, buckets: [{ x: 4, z: 4 }, { x: -4, z: -4 }, { x: 8, z: 0 }] });
+    const p = PaintGridSchema.parse({
+      rinseArms: 0,
+      buckets: [
+        { x: 4, z: 4 },
+        { x: -4, z: -4 },
+        { x: 8, z: 0 },
+      ],
+    });
     const a = moduleOf('paintGrid').create(inst('paintGrid', p), h.ctx) as unknown as PaintGridRuntime;
     const actors = [0, 1, 2, 3].map((t) => {
       const f = new FakeActor(h.world, t + 1, { x: 0, y: 0, z: 0 }, t);
@@ -340,8 +389,10 @@ describe('paintGrid', () => {
 describe('patternBoard', () => {
   const params = PatternBoardSchema.parse({});
 
-  const tilesOf = (r: BoardRound, symbol: number): number[] => [...r.symbols.keys()].filter((i) => r.symbols[i] === symbol);
-  const safeTiles = (r: BoardRound): number[] => [...r.symbols.keys()].filter((i) => (r.safeMask & (1 << i)) !== 0);
+  const tilesOf = (r: BoardRound, symbol: number): number[] =>
+    [...r.symbols.keys()].filter((i) => r.symbols[i] === symbol);
+  const safeTiles = (r: BoardRound): number[] =>
+    [...r.symbols.keys()].filter((i) => (r.safeMask & (1 << i)) !== 0);
 
   it('follows the rules table: teach, memory, two-tile targets, double, NOT, sweeper', () => {
     const s = buildPatternSchedule(params, 1, new Rng(5));
@@ -407,7 +458,10 @@ describe('patternBoard', () => {
 
   it('drops every wrong tile at the reveal and restores them afterwards', () => {
     const h = harness();
-    const rt = moduleOf('patternBoard').create(inst('patternBoard', params), h.ctx) as unknown as PatternBoardRuntime;
+    const rt = moduleOf('patternBoard').create(
+      inst('patternBoard', params),
+      h.ctx,
+    ) as unknown as PatternBoardRuntime;
     const r = rt.schedule[0]!;
     const safe = safeTiles(r)[0]!;
     const c = patternTileCenter(safe, params, { x: 0, y: 0, z: 0 });
@@ -419,10 +473,15 @@ describe('patternBoard', () => {
     expect(rt.isVoided(0)).toBe(false);
     expect(h.log.some((e) => e.type === 'obstacleCue' && e.cue === 'reveal')).toBe(true);
     const tiles = rt.colliders.slice(0, 16);
-    for (let i = 0; i < 16; i++) expect(tiles[i]!.isEnabled(), `tile ${i}`).toBe((r.safeMask & (1 << i)) !== 0);
+    for (let i = 0; i < 16; i++)
+      expect(tiles[i]!.isEnabled(), `tile ${i}`).toBe((r.safeMask & (1 << i)) !== 0);
     // Seams between tiles stand only while every tile they join stands.
     const seams = patternSeams(params);
-    seams.forEach((s, k) => expect(rt.colliders[16 + k]!.isEnabled(), `seam ${k}`).toBe(s.tiles.every((i) => (r.safeMask & (1 << i)) !== 0)));
+    seams.forEach((s, k) =>
+      expect(rt.colliders[16 + k]!.isEnabled(), `seam ${k}`).toBe(
+        s.tiles.every((i) => (r.safeMask & (1 << i)) !== 0),
+      ),
+    );
     h.run(rt, [a], Math.ceil((r.end - t + 0.05) / SIM_DT), t);
     for (const tile of tiles) expect(tile.isEnabled()).toBe(true);
     rt.dispose();
@@ -430,7 +489,10 @@ describe('patternBoard', () => {
 
   it('voids a board round that would eliminate everyone', () => {
     const h = harness();
-    const rt = moduleOf('patternBoard').create(inst('patternBoard', params), h.ctx) as unknown as PatternBoardRuntime;
+    const rt = moduleOf('patternBoard').create(
+      inst('patternBoard', params),
+      h.ctx,
+    ) as unknown as PatternBoardRuntime;
     const r = rt.schedule[0]!;
     const wrong = [...Array(16).keys()].find((i) => (r.safeMask & (1 << i)) === 0)!;
     const c = patternTileCenter(wrong, params, { x: 0, y: 0, z: 0 });
@@ -446,7 +508,10 @@ describe('patternBoard', () => {
 
   it('botSafeSpot names a correct tile once the target is shown', () => {
     const h = harness();
-    const rt = moduleOf('patternBoard').create(inst('patternBoard', params), h.ctx) as unknown as PatternBoardRuntime;
+    const rt = moduleOf('patternBoard').create(
+      inst('patternBoard', params),
+      h.ctx,
+    ) as unknown as PatternBoardRuntime;
     const out = { x: 0, y: 0, z: 0 };
     for (const r of rt.schedule.slice(0, 8)) {
       for (let k = 0; k < 6; k++) {
@@ -474,8 +539,14 @@ describe('patternBoard', () => {
 
   it('net state round-trips the voided/judged bits', () => {
     const h = harness();
-    const a = moduleOf('patternBoard').create(inst('patternBoard', params), h.ctx) as unknown as PatternBoardRuntime;
-    const b = moduleOf('patternBoard').create(inst('patternBoard', params), harness().ctx) as unknown as PatternBoardRuntime;
+    const a = moduleOf('patternBoard').create(
+      inst('patternBoard', params),
+      h.ctx,
+    ) as unknown as PatternBoardRuntime;
+    const b = moduleOf('patternBoard').create(
+      inst('patternBoard', params),
+      harness().ctx,
+    ) as unknown as PatternBoardRuntime;
     const r = a.schedule[0]!;
     const wrong = [...Array(16).keys()].find((i) => (r.safeMask & (1 << i)) === 0)!;
     const c = patternTileCenter(wrong, params, { x: 0, y: 0, z: 0 });
@@ -500,9 +571,16 @@ describe('goalZone', () => {
   it('goal mode celebrates and sends a ball that stays inside back to its spawner', () => {
     const h = harness();
     h.floor();
-    const balls = props.create(inst('propSpawner', { kind: 'ball', respawnDelay: 1 }, 'ball', { x: 0, y: 4, z: 0 }), h.ctx);
+    const balls = props.create(
+      inst('propSpawner', { kind: 'ball', respawnDelay: 1 }, 'ball', { x: 0, y: 4, z: 0 }),
+      h.ctx,
+    );
     const goal = moduleOf('goalZone').create(
-      inst('goalZone', { mode: 'goal', team: 1, sizeX: 6, sizeY: 4, sizeZ: 3, spawners: ['ball'] }, 'goal', { x: 0, y: 0, z: 10 }),
+      inst('goalZone', { mode: 'goal', team: 1, sizeX: 6, sizeY: 4, sizeZ: 3, spawners: ['ball'] }, 'goal', {
+        x: 0,
+        y: 0,
+        z: 10,
+      }),
       h.ctx,
     ) as unknown as GoalZoneRuntime;
     const body = balls.colliders[0]!.parent()!;
@@ -523,9 +601,17 @@ describe('goalZone', () => {
     const h = harness();
     h.floor();
     const gold = props.create(inst('propSpawner', { kind: 'egg' }, 'eggs-gold', { x: 0, y: 0, z: 0 }), h.ctx);
-    const plain = props.create(inst('propSpawner', { kind: 'egg', idBase: 1100 }, 'eggs', { x: 3, y: 0, z: 0 }), h.ctx);
+    const plain = props.create(
+      inst('propSpawner', { kind: 'egg', idBase: 1100 }, 'eggs', { x: 3, y: 0, z: 0 }),
+      h.ctx,
+    );
     const nest = moduleOf('goalZone').create(
-      inst('goalZone', { mode: 'nest', team: 2, sizeX: 8, sizeY: 3, sizeZ: 8, bonus: { 'eggs-gold': 4 } }, 'nest', { x: 0, y: 0, z: 0 }),
+      inst(
+        'goalZone',
+        { mode: 'nest', team: 2, sizeX: 8, sizeY: 3, sizeZ: 8, bonus: { 'eggs-gold': 4 } },
+        'nest',
+        { x: 0, y: 0, z: 0 },
+      ),
       h.ctx,
     ) as unknown as GoalZoneRuntime;
     h.run(nest, [], 2);

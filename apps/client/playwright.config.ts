@@ -10,7 +10,12 @@ export default defineConfig({
     // NOTE: uses the locally installed Edge/Chrome so CI and dev machines need no browser download.
     channel: process.env.PW_CHANNEL ?? 'msedge',
     launchOptions: {
-      args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=d3d11', '--ignore-gpu-blocklist'],
+      args: [
+        '--enable-unsafe-webgpu',
+        '--enable-features=Vulkan',
+        '--use-angle=d3d11',
+        '--ignore-gpu-blocklist',
+      ],
     },
   },
   webServer: [

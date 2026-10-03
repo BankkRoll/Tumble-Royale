@@ -6,4 +6,10 @@ import risingGooTower from './rising-goo-tower/index.ts';
 import tilePanic from './tile-panic/index.ts';
 
 /** Rounds authored by level-builder group 3. */
-export const ROUNDS_GROUP_3: RoundDefinitionInput[] = [tilePanic, risingGooTower, jumpRopeRoyale, lastTumblerStanding, gooPeakFinal];
+export const ROUNDS_GROUP_3: RoundDefinitionInput[] = [
+  tilePanic,
+  risingGooTower,
+  jumpRopeRoyale,
+  lastTumblerStanding,
+  gooPeakFinal,
+];

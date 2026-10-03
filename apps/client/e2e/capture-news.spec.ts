@@ -69,10 +69,17 @@ async function openLevel(page: Page, round: string, query = ''): Promise<void> {
 async function setShot(page: Page, shot: string): Promise<void> {
   const [cam, zoom] = shot.split('~');
   const [mode, t] = cam!.split('@');
-  await page.evaluate(([m, tt]) => window.__level!.setCamera(m as 'orbit' | 'flyover' | 'follow', Number(tt ?? 0)), [mode, t] as const);
+  await page.evaluate(
+    ([m, tt]) => window.__level!.setCamera(m as 'orbit' | 'flyover' | 'follow', Number(tt ?? 0)),
+    [mode, t] as const,
+  );
   if (zoom) {
     await page.mouse.move(SIZE.width / 2, SIZE.height / 2);
-    for (let left = Number(zoom); Math.abs(left) > 0; left -= Math.sign(left) * Math.min(Math.abs(left), 100)) {
+    for (
+      let left = Number(zoom);
+      Math.abs(left) > 0;
+      left -= Math.sign(left) * Math.min(Math.abs(left), 100)
+    ) {
       await page.mouse.wheel(0, Math.sign(left) * Math.min(Math.abs(left), 100));
     }
   }
@@ -110,7 +117,10 @@ test('news still season (main menu)', async ({ page }) => {
   test.setTimeout(240_000);
   await page.setViewportSize(SIZE);
   await page.goto(`${BASE}/?autoplay=1&api=0&fresh=1&tier=high&seed=11`);
-  await page.waitForFunction(() => window.__tumble?.screen?.() === 'menu', undefined, { timeout: 180_000, polling: 100 });
+  await page.waitForFunction(() => window.__tumble?.screen?.() === 'menu', undefined, {
+    timeout: 180_000,
+    polling: 100,
+  });
   // Let the menu entrance animation settle; autoplay leaves the menu a few seconds later.
   await page.waitForTimeout(1500);
   await saveJpeg(page, `${OUT}/season.jpg`);

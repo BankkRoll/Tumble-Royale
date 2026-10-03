@@ -1,6 +1,6 @@
 import type { DecorSet, ThemeDefinition } from '@tumble/content/themes';
 import { DecorRandom } from '../level/toolkit.ts';
-import { PropBuilder } from './propKit.ts';
+import type { PropBuilder } from './propKit.ts';
 
 /**
  * Floating background islands with per-theme set dressing (lollipops, ice
@@ -50,7 +50,15 @@ const STYLES: Record<DecorSet, IslandStyle> = {
   goo: { ground: '#c7a8ff', frosting: '#9ff58f', rock: '#7d63c4' },
 };
 
-type PropFn = (b: PropBuilder, x: number, y: number, z: number, s: number, rng: DecorRandom, pal: Palette) => void;
+type PropFn = (
+  b: PropBuilder,
+  x: number,
+  y: number,
+  z: number,
+  s: number,
+  rng: DecorRandom,
+  pal: Palette,
+) => void;
 
 const lollipop: PropFn = (b, x, y, z, s, rng, pal) => {
   const h = 3.2 * s;
@@ -81,11 +89,18 @@ const crystal: PropFn = (b, x, y, z, s, rng, pal) => {
   const col = rng.pick(pal);
   for (let i = 0; i < 3; i++) {
     const h = rng.range(1.6, 3.4) * s;
-    b.add('hex', x + rng.range(-0.5, 0.5) * s, y + h * 0.4, z + rng.range(-0.5, 0.5) * s, 0.35 * s, h, 0.35 * s, col, [
-      rng.range(-0.4, 0.4),
-      rng.range(0, 3),
-      rng.range(-0.4, 0.4),
-    ], 0.25);
+    b.add(
+      'hex',
+      x + rng.range(-0.5, 0.5) * s,
+      y + h * 0.4,
+      z + rng.range(-0.5, 0.5) * s,
+      0.35 * s,
+      h,
+      0.35 * s,
+      col,
+      [rng.range(-0.4, 0.4), rng.range(0, 3), rng.range(-0.4, 0.4)],
+      0.25,
+    );
   }
 };
 
@@ -102,7 +117,17 @@ const palm: PropFn = (b, x, y, z, s, rng) => {
   const tx = x - Math.sin(lean) * h;
   for (let i = 0; i < 5; i++) {
     const a = (i / 5) * Math.PI * 2;
-    b.add('sphere', tx + Math.cos(a) * 0.9 * s, y + h + 0.1 * s, z + Math.sin(a) * 0.9 * s, 1.1 * s, 0.25 * s, 0.5 * s, '#4fc06a', [0, -a, -0.3]);
+    b.add(
+      'sphere',
+      tx + Math.cos(a) * 0.9 * s,
+      y + h + 0.1 * s,
+      z + Math.sin(a) * 0.9 * s,
+      1.1 * s,
+      0.25 * s,
+      0.5 * s,
+      '#4fc06a',
+      [0, -a, -0.3],
+    );
   }
   b.add('sphere', tx, y + h, z, 0.3 * s, 0.3 * s, 0.3 * s, '#8a5a3a');
 };
@@ -114,7 +139,16 @@ const mushroom: PropFn = (b, x, y, z, s, rng, pal) => {
   b.add('sphere', x, y + h, z, 1.1 * s, 0.6 * s, 1.1 * s, cap);
   for (let i = 0; i < 3; i++) {
     const a = rng.range(0, Math.PI * 2);
-    b.add('sphere', x + Math.cos(a) * 0.6 * s, y + h + 0.42 * s, z + Math.sin(a) * 0.6 * s, 0.16 * s, 0.1 * s, 0.16 * s, '#ffffff');
+    b.add(
+      'sphere',
+      x + Math.cos(a) * 0.6 * s,
+      y + h + 0.42 * s,
+      z + Math.sin(a) * 0.6 * s,
+      0.16 * s,
+      0.1 * s,
+      0.16 * s,
+      '#ffffff',
+    );
   }
 };
 
@@ -132,7 +166,17 @@ const gear: PropFn = (b, x, y, z, s, rng, pal) => {
     const a = (i / 8) * Math.PI * 2;
     const dx = Math.cos(a) * 1.55 * s;
     const dy = Math.sin(a) * 1.55 * s;
-    b.add('box', x + dx * Math.cos(yaw), y + 1.6 * s + dy, z - dx * Math.sin(yaw), 0.4 * s, 0.4 * s, 0.4 * s, col, [0, yaw, a]);
+    b.add(
+      'box',
+      x + dx * Math.cos(yaw),
+      y + 1.6 * s + dy,
+      z - dx * Math.sin(yaw),
+      0.4 * s,
+      0.4 * s,
+      0.4 * s,
+      col,
+      [0, yaw, a],
+    );
   }
 };
 
@@ -140,7 +184,17 @@ const blocks: PropFn = (b, x, y, z, s, rng, pal) => {
   let h = 0;
   for (let i = 0; i < rng.int(2, 4); i++) {
     const sz = rng.range(0.7, 1.1) * s;
-    b.add('box', x + rng.range(-0.2, 0.2) * s, y + h + sz / 2, z + rng.range(-0.2, 0.2) * s, sz, sz, sz, rng.pick(pal), [0, rng.range(0, 1), 0]);
+    b.add(
+      'box',
+      x + rng.range(-0.2, 0.2) * s,
+      y + h + sz / 2,
+      z + rng.range(-0.2, 0.2) * s,
+      sz,
+      sz,
+      sz,
+      rng.pick(pal),
+      [0, rng.range(0, 1), 0],
+    );
     h += sz;
   }
 };
@@ -156,13 +210,28 @@ const planet: PropFn = (b, x, y, z, s, rng, pal) => {
   const r = rng.range(1, 1.8) * s;
   const py = y + 3.2 * s + r;
   b.add('sphere', x, py, z, r, r, r, rng.pick(pal), undefined, 0.15);
-  b.add('torus', x, py, z, r * 1.5, r * 1.5, r * 0.3, '#ffffff', [Math.PI / 2 + rng.range(-0.4, 0.4), 0, rng.range(-0.4, 0.4)], 0.2);
+  b.add(
+    'torus',
+    x,
+    py,
+    z,
+    r * 1.5,
+    r * 1.5,
+    r * 0.3,
+    '#ffffff',
+    [Math.PI / 2 + rng.range(-0.4, 0.4), 0, rng.range(-0.4, 0.4)],
+    0.2,
+  );
 };
 
 const umbrella: PropFn = (b, x, y, z, s, rng, pal) => {
   const tilt = rng.range(-0.2, 0.2);
   b.add('cyl', x, y + 1.3 * s, z, 0.07 * s, 2.6 * s, 0.07 * s, '#ffffff', [tilt, 0, 0]);
-  b.add('cone', x, y + 2.7 * s, z + Math.sin(tilt) * 1.3 * s, 1.5 * s, 0.6 * s, 1.5 * s, rng.pick(pal), [tilt, 0, 0]);
+  b.add('cone', x, y + 2.7 * s, z + Math.sin(tilt) * 1.3 * s, 1.5 * s, 0.6 * s, 1.5 * s, rng.pick(pal), [
+    tilt,
+    0,
+    0,
+  ]);
 };
 
 const beachBall: PropFn = (b, x, y, z, s, rng, pal) => {
@@ -229,9 +298,23 @@ export function addIsland(
   const th = Math.max(1.2, radius * 0.22);
   b.add('cyl', x, y, z, radius, th, radius, st.ground);
   b.add('cyl', x, y - th * 0.45, z, radius * 1.03, th * 0.35, radius * 1.03, st.frosting);
-  b.add('cone', x, y - th / 2 - radius * 0.75, z, radius * 0.97, radius * 1.5, radius * 0.97, st.rock, [Math.PI, 0, 0]);
+  b.add('cone', x, y - th / 2 - radius * 0.75, z, radius * 0.97, radius * 1.5, radius * 0.97, st.rock, [
+    Math.PI,
+    0,
+    0,
+  ]);
   // A smaller rock chunk under the main cone breaks the perfect symmetry.
-  b.add('cone', x + radius * 0.3, y - th / 2 - radius * 1.6, z - radius * 0.2, radius * 0.4, radius * 0.9, radius * 0.4, st.rock, [Math.PI, 0, 0.1]);
+  b.add(
+    'cone',
+    x + radius * 0.3,
+    y - th / 2 - radius * 1.6,
+    z - radius * 0.2,
+    radius * 0.4,
+    radius * 0.9,
+    radius * 0.4,
+    st.rock,
+    [Math.PI, 0, 0.1],
+  );
 
   const top = y + th / 2;
   const props = SET_PROPS[set];
@@ -268,7 +351,8 @@ export function layoutIslands(b: PropBuilder, theme: ThemeDefinition, opts: Isla
     const d = rng.range(inner, outer);
     const x = c.x + Math.cos(a) * d;
     const z = c.z + Math.sin(a) * d;
-    if (ex && x > ex.minX - margin && x < ex.maxX + margin && z > ex.minZ - margin && z < ex.maxZ + margin) continue;
+    if (ex && x > ex.minX - margin && x < ex.maxX + margin && z > ex.minZ - margin && z < ex.maxZ + margin)
+      continue;
     const radius = rng.range(6, 18) * (0.7 + (d / outer) * 0.6);
     const y = c.y + rng.range(-30, 22);
     b.group(rng.range(0, Math.PI * 2), rng.range(0.6, 1.6));

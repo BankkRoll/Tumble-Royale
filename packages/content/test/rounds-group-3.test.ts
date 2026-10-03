@@ -6,7 +6,13 @@
  */
 import { RoundDefinitionSchema, RoundPhase, type RoundDefinition } from '@tumble/shared';
 import { loadRapier, type Rapier } from '@tumble/sim';
-import { PlayerRoundStatus, createMatchSim, createSimpleController, spawnSlots, type MatchPlayerInfo } from '@tumble/sim/match';
+import {
+  PlayerRoundStatus,
+  createMatchSim,
+  createSimpleController,
+  spawnSlots,
+  type MatchPlayerInfo,
+} from '@tumble/sim/match';
 import { OBSTACLE_REGISTRY, fallingTileCenter, fallingTilesSchema } from '@tumble/sim/obstacles';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ROUNDS_GROUP_3 } from '../src/rounds/group-3.ts';
@@ -15,7 +21,13 @@ import { gooPeakParts } from '../src/rounds/goo-peak-final/index.ts';
 import { risingGooParts } from '../src/rounds/rising-goo-tower/index.ts';
 import { tilePanicParts } from '../src/rounds/tile-panic/index.ts';
 
-const IDS = ['tile-panic', 'rising-goo-tower', 'jump-rope-royale', 'last-tumbler-standing', 'goo-peak-final'] as const;
+const IDS = [
+  'tile-panic',
+  'rising-goo-tower',
+  'jump-rope-royale',
+  'last-tumbler-standing',
+  'goo-peak-final',
+] as const;
 const deps = { createController: createSimpleController, obstacles: OBSTACLE_REGISTRY };
 
 let R: Rapier;
@@ -27,7 +39,13 @@ const rounds = (): RoundDefinition[] => ROUNDS_GROUP_3.map((r) => RoundDefinitio
 
 function bots(n: number): MatchPlayerInfo[] {
   const skills = ['clumsy', 'average', 'sharp'] as const;
-  return Array.from({ length: n }, (_, i) => ({ id: i, name: `Bot${i}`, isBot: true, team: -1, botSkill: skills[i % 3] }));
+  return Array.from({ length: n }, (_, i) => ({
+    id: i,
+    name: `Bot${i}`,
+    isBot: true,
+    team: -1,
+    botSkill: skills[i % 3],
+  }));
 }
 
 /** Top-level keys an obstacle module's schema would silently drop. */
@@ -41,7 +59,12 @@ function strippedKeys(type: string, params: Record<string, unknown>): string[] {
 function insideBounds(round: RoundDefinition, p: { x: number; y: number; z: number }, margin = 0): boolean {
   const { min, max } = round.bounds;
   return (
-    p.x >= min.x - margin && p.x <= max.x + margin && p.y >= min.y - margin && p.y <= max.y + margin && p.z >= min.z - margin && p.z <= max.z + margin
+    p.x >= min.x - margin &&
+    p.x <= max.x + margin &&
+    p.y >= min.y - margin &&
+    p.y <= max.y + margin &&
+    p.z >= min.z - margin &&
+    p.z <= max.z + margin
   );
 }
 
@@ -86,7 +109,8 @@ describe('group-3 rounds: data', () => {
             expect(target, `${v.id} overrides unknown obstacle ${oid}`).toBeDefined();
             check(target!.type, { ...target!.params, ...over }, `${v.id}/${oid}`);
           }
-          for (const rid of v.removeObstacles) expect(base.has(rid), `${v.id} removes unknown ${rid}`).toBe(true);
+          for (const rid of v.removeObstacles)
+            expect(base.has(rid), `${v.id} removes unknown ${rid}`).toBe(true);
         }
       });
 
@@ -105,7 +129,10 @@ describe('group-3 rounds: data', () => {
         const r = round();
         const n = Math.min(40, r.players.max);
         for (const v of r.variations) {
-          const sim = createMatchSim({ R, round: r, seed: 3, stage: 0, players: bots(n), mode: 'offline', variationId: v.id }, deps);
+          const sim = createMatchSim(
+            { R, round: r, seed: 3, stage: 0, players: bots(n), mode: 'offline', variationId: v.id },
+            deps,
+          );
           expect(sim.warnings, `${v.id}: ${sim.warnings.join('; ')}`).toEqual([]);
           sim.dispose();
         }
@@ -113,11 +140,24 @@ describe('group-3 rounds: data', () => {
         const empty = createMatchSim({ R, round: r, seed: 3, stage: 0, players: [], mode: 'offline' }, deps);
         // Scene queries need one step to see the colliders (the sim is still frozen in LOADING).
         empty.step();
-        for (const s of spawnSlots(r, 3, bots(n).map(() => -1))) {
+        for (const s of spawnSlots(
+          r,
+          3,
+          bots(n).map(() => -1),
+        )) {
           // Centre plus eight probes inside the capsule footprint (a ray can slip down a tile gap).
-          const offsets = [[0, 0], ...Array.from({ length: 8 }, (_, k) => [0.3 * Math.cos((k * Math.PI) / 4), 0.3 * Math.sin((k * Math.PI) / 4)])] as const;
+          const offsets = [
+            [0, 0],
+            ...Array.from({ length: 8 }, (_, k) => [
+              0.3 * Math.cos((k * Math.PI) / 4),
+              0.3 * Math.sin((k * Math.PI) / 4),
+            ]),
+          ] as const;
           const hits = offsets.filter(([dx = 0, dz = 0]) => {
-            const ray = new R.Ray({ x: s.pos.x + dx, y: s.pos.y + 0.5, z: s.pos.z + dz }, { x: 0, y: -1, z: 0 });
+            const ray = new R.Ray(
+              { x: s.pos.x + dx, y: s.pos.y + 0.5, z: s.pos.z + dz },
+              { x: 0, y: -1, z: 0 },
+            );
             return empty.world.castRay(ray, 1.2, true) !== null;
           });
           expect(hits.length, `no ground under spawn ${JSON.stringify(s.pos)}`).toBeGreaterThanOrEqual(5);
@@ -129,7 +169,8 @@ describe('group-3 rounds: data', () => {
 });
 
 /** Lattice key at 5 cm resolution (positions are authored to the millimetre). */
-const key = (x: number, y: number, z: number): string => [x, y, z].map((v) => Math.round(v * 20) + 0).join(',');
+const key = (x: number, y: number, z: number): string =>
+  [x, y, z].map((v) => Math.round(v * 20) + 0).join(',');
 
 describe('group-3 rounds: generated layouts', () => {
   it('tile blocks sit exactly on their shared lattice (no overlaps, no holes)', () => {
@@ -179,39 +220,41 @@ describe('group-3 rounds: generated layouts', () => {
 
 describe('group-3 rounds: bot runs', () => {
   for (const id of IDS) {
-    it(
-      `${id}: bots play the full round, eliminations happen over time`,
-      () => {
-        const r = rounds().find((x) => x.id === id)!;
-        const n = Math.min(40, r.players.max);
-        const sim = createMatchSim({ R, round: r, seed: 11, stage: 0, players: bots(n), mode: 'offline' }, deps);
-        sim.setPhase(RoundPhase.Countdown);
-        for (let i = 0; i < 180; i++) sim.step();
-        sim.setPhase(RoundPhase.Playing, 0);
-        const alive = (): number => [...sim.getStatus().players.values()].filter((p) => p.status === PlayerRoundStatus.Playing).length;
-        const timeline: string[] = [];
-        let aliveAt15 = n;
-        const total = Math.round(r.duration.seconds * 60);
-        for (let i = 1; i <= total && !sim.getStatus().finished; i++) {
-          sim.step();
-          if (i % 600 === 0) timeline.push(`${i / 60}s:${alive()}`);
-          if (i === 15 * 60) aliveAt15 = alive();
+    it(`${id}: bots play the full round, eliminations happen over time`, () => {
+      const r = rounds().find((x) => x.id === id)!;
+      const n = Math.min(40, r.players.max);
+      const sim = createMatchSim(
+        { R, round: r, seed: 11, stage: 0, players: bots(n), mode: 'offline' },
+        deps,
+      );
+      sim.setPhase(RoundPhase.Countdown);
+      for (let i = 0; i < 180; i++) sim.step();
+      sim.setPhase(RoundPhase.Playing, 0);
+      const alive = (): number =>
+        [...sim.getStatus().players.values()].filter((p) => p.status === PlayerRoundStatus.Playing).length;
+      const timeline: string[] = [];
+      let aliveAt15 = n;
+      const total = Math.round(r.duration.seconds * 60);
+      for (let i = 1; i <= total && !sim.getStatus().finished; i++) {
+        sim.step();
+        if (i % 600 === 0) timeline.push(`${i / 60}s:${alive()}`);
+        if (i === 15 * 60) aliveAt15 = alive();
+      }
+      const st = sim.getStatus();
+      console.log(
+        `[group-3] ${id} (${n} bots, variation ${sim.variationId}) ${timeline.join(' ')} → finished ${st.finished} at ${st.time.toFixed(1)} s, qualified ${st.qualifiedCount}, eliminated ${st.eliminatedCount}`,
+      );
+      expect(st.eliminatedCount).toBeGreaterThan(0);
+      expect(aliveAt15).toBeGreaterThan(0);
+      if (r.type === 'final') {
+        // The final's hard cap always crowns at most one player.
+        if (!st.finished) {
+          for (let i = 0; i < 120 && !sim.getStatus().finished; i++) sim.step();
         }
-        const st = sim.getStatus();
-        console.log(`[group-3] ${id} (${n} bots, variation ${sim.variationId}) ${timeline.join(' ')} → finished ${st.finished} at ${st.time.toFixed(1)} s, qualified ${st.qualifiedCount}, eliminated ${st.eliminatedCount}`);
-        expect(st.eliminatedCount).toBeGreaterThan(0);
-        expect(aliveAt15).toBeGreaterThan(0);
-        if (r.type === 'final') {
-          // The final's hard cap always crowns at most one player.
-          if (!st.finished) {
-            for (let i = 0; i < 120 && !sim.getStatus().finished; i++) sim.step();
-          }
-          expect(sim.getStatus().finished).toBe(true);
-          expect(sim.getStatus().qualifiedCount).toBeLessThanOrEqual(1);
-        }
-        sim.dispose();
-      },
-      600_000,
-    );
+        expect(sim.getStatus().finished).toBe(true);
+        expect(sim.getStatus().qualifiedCount).toBeLessThanOrEqual(1);
+      }
+      sim.dispose();
+    }, 600_000);
   }
 });

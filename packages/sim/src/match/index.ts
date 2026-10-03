@@ -3,7 +3,14 @@
  * authoritative server, client prediction and offline play.
  */
 export * from './types.ts';
-export { createMatchSim, COUNTDOWN_SECONDS, RESPAWN_DELAY_SECONDS, RESPAWN_GHOST_SECONDS, SPAWN_LIFT, type MatchSimHandle } from './match-sim.ts';
+export {
+  createMatchSim,
+  COUNTDOWN_SECONDS,
+  RESPAWN_DELAY_SECONDS,
+  RESPAWN_GHOST_SECONDS,
+  SPAWN_LIFT,
+  type MatchSimHandle,
+} from './match-sim.ts';
 export { obstacleRegistry, type AnyObstacleModule, type MatchDeps } from './deps.ts';
 export { buildStaticGeometry, pieceParts, type StaticGeometry } from './geometry.ts';
 export { chooseVariation, resolveObstacles, spawnSlots, type SpawnSlot } from './layout.ts';

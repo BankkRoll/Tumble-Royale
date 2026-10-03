@@ -13,7 +13,12 @@ export class PhysicsDebugDraw {
   private capacity = 0;
 
   constructor() {
-    const mat = new LineBasicNodeMaterial({ vertexColors: true, depthTest: true, transparent: true, opacity: 0.85 });
+    const mat = new LineBasicNodeMaterial({
+      vertexColors: true,
+      depthTest: true,
+      transparent: true,
+      opacity: 0.85,
+    });
     this.object = new LineSegments(this.geometry, mat);
     this.object.frustumCulled = false;
     this.object.renderOrder = 999;

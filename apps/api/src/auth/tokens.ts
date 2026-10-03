@@ -36,7 +36,13 @@ export interface AccessClaims {
  * @param nowSec - Issued-at in seconds (injectable clock).
  */
 export async function signAccessToken(secret: string, claims: AccessClaims, nowSec: number): Promise<string> {
-  return new SignJWT({ sid: claims.sid, name: claims.name, region: claims.region, guest: claims.guest, typ: 'access' })
+  return new SignJWT({
+    sid: claims.sid,
+    name: claims.name,
+    region: claims.region,
+    guest: claims.guest,
+    typ: 'access',
+  })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(claims.sub)
     .setIssuer(JWT_ISSUER)
@@ -53,14 +59,19 @@ export async function signAccessToken(secret: string, claims: AccessClaims, nowS
  * @param nowSec - Current time in seconds.
  * @returns Claims, or null when invalid or expired.
  */
-export async function verifyAccessToken(secret: string, token: string, nowSec: number): Promise<AccessClaims | null> {
+export async function verifyAccessToken(
+  secret: string,
+  token: string,
+  nowSec: number,
+): Promise<AccessClaims | null> {
   try {
     const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), {
       issuer: JWT_ISSUER,
       algorithms: ['HS256'],
       currentDate: new Date(nowSec * 1000),
     });
-    if (payload.typ !== 'access' || typeof payload.sub !== 'string' || typeof payload.sid !== 'string') return null;
+    if (payload.typ !== 'access' || typeof payload.sub !== 'string' || typeof payload.sid !== 'string')
+      return null;
     return {
       sub: payload.sub,
       sid: payload.sid,

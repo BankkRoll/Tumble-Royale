@@ -81,7 +81,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     jwtSecret: e.JWT_SECRET,
     gameTicketSecret: e.GAME_TICKET_SECRET,
     gameServerSecret: e.GAME_SERVER_SECRET,
-    defaultGameServerUrl: e.DEFAULT_GAME_SERVER_URL ?? (e.NODE_ENV === 'development' ? 'ws://localhost:7350' : undefined),
+    defaultGameServerUrl:
+      e.DEFAULT_GAME_SERVER_URL ?? (e.NODE_ENV === 'development' ? 'ws://localhost:7350' : undefined),
     targetSize: e.TARGET_SIZE,
     maxWaitMs: e.MAX_WAIT_MS,
     hotMaxWaitMs: e.HOT_MAX_WAIT_MS,

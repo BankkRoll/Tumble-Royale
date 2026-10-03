@@ -9,7 +9,13 @@ import { createWorld } from '../src/physics/world.ts';
 import type { Rapier } from '../src/physics/rapier.ts';
 import { SurfaceRegistry, type SurfaceInfo } from '../src/physics/surfaces.ts';
 import { EventSink } from '../src/events.ts';
-import { TumblerController, emptyInput, type CharacterInput, type CharacterStepContext, type CharacterTuning } from '../src/character/index.ts';
+import {
+  TumblerController,
+  emptyInput,
+  type CharacterInput,
+  type CharacterStepContext,
+  type CharacterTuning,
+} from '../src/character/index.ts';
 
 /** Kinematic body driven by a pure pose function. */
 export interface Mover {
@@ -87,7 +93,16 @@ export class Harness {
   }
 
   /** Fixed box; `top` is the y of its upper face. */
-  box(x: number, top: number, z: number, hx: number, hy: number, hz: number, info?: SurfaceInfo, rot?: Quat): number {
+  box(
+    x: number,
+    top: number,
+    z: number,
+    hx: number,
+    hy: number,
+    hz: number,
+    info?: SurfaceInfo,
+    rot?: Quat,
+  ): number {
     const body = this.world.createRigidBody(this.R.RigidBodyDesc.fixed());
     const desc = this.R.ColliderDesc.cuboid(hx, hy, hz)
       .setTranslation(x, top - hy, z)
@@ -124,7 +139,9 @@ export class Harness {
   mover(hx: number, hy: number, hz: number, pose: Mover['pose'], info?: SurfaceInfo): Mover {
     pose(0, this.p, this.q);
     const body = this.world.createRigidBody(
-      this.R.RigidBodyDesc.kinematicPositionBased().setTranslation(this.p.x, this.p.y, this.p.z).setRotation(this.q),
+      this.R.RigidBodyDesc.kinematicPositionBased()
+        .setTranslation(this.p.x, this.p.y, this.p.z)
+        .setRotation(this.q),
     );
     const c = this.world.createCollider(
       this.R.ColliderDesc.cuboid(hx, hy, hz).setCollisionGroups(InteractionGroups.kinematic),
@@ -139,7 +156,9 @@ export class Harness {
   cylinderMover(radius: number, halfHeight: number, pose: Mover['pose']): Mover {
     pose(0, this.p, this.q);
     const body = this.world.createRigidBody(
-      this.R.RigidBodyDesc.kinematicPositionBased().setTranslation(this.p.x, this.p.y, this.p.z).setRotation(this.q),
+      this.R.RigidBodyDesc.kinematicPositionBased()
+        .setTranslation(this.p.x, this.p.y, this.p.z)
+        .setRotation(this.q),
     );
     this.world.createCollider(
       this.R.ColliderDesc.cylinder(halfHeight, radius).setCollisionGroups(InteractionGroups.kinematic),
@@ -151,7 +170,14 @@ export class Harness {
   }
 
   tumbler(feet: Vec3, yaw = 0, tuning?: Partial<CharacterTuning>): TumblerController {
-    const c = new TumblerController({ R: this.R, world: this.world, id: this.controllers.length, position: feet, yaw, tuning });
+    const c = new TumblerController({
+      R: this.R,
+      world: this.world,
+      id: this.controllers.length,
+      position: feet,
+      yaw,
+      tuning,
+    });
     this.controllers.push(c);
     this.inputs.push(emptyInput());
     this.byCollider.set(c.collider.handle, c);

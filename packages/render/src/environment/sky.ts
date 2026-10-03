@@ -1,4 +1,12 @@
-import { BackSide, Color, Mesh, MeshBasicNodeMaterial, SphereGeometry, Vector3, type Camera } from 'three/webgpu';
+import {
+  BackSide,
+  Color,
+  Mesh,
+  MeshBasicNodeMaterial,
+  SphereGeometry,
+  Vector3,
+  type Camera,
+} from 'three/webgpu';
 import {
   abs,
   acos,
@@ -65,7 +73,9 @@ export function createThemedSky(atmosphere: Atmosphere, radius = 600): ThemedSky
   const d = max(dir.dot(sunDir), float(0));
   const discEdge = float(0.9994).sub(sunSize.mul(0.0004));
   const disc = smoothstep(discEdge, discEdge.add(0.0003), d);
-  const glow = pow(d, float(10)).mul(0.35).add(pow(d, float(90)).mul(0.6));
+  const glow = pow(d, float(10))
+    .mul(0.35)
+    .add(pow(d, float(90)).mul(0.6));
   const sun = sunColor.mul(disc.mul(2.4).add(glow));
 
   // Equirectangular-ish cells; stars cluster slightly near the poles but nobody notices.
@@ -76,16 +86,23 @@ export function createThemedSky(atmosphere: Atmosphere, radius = 600): ThemedSky
   const local = fract(cellUV).sub(0.5);
   const h = hash(cell.x.add(cell.y.mul(311.0)));
   const starMask = step(0.985, h).mul(smoothstep(0.32, 0.0, local.length()));
-  const twinkle = sin(time.mul(1.7).add(h.mul(80.0))).mul(0.4).add(0.6);
+  const twinkle = sin(time.mul(1.7).add(h.mul(80.0)))
+    .mul(0.4)
+    .add(0.6);
   const aboveHorizon = smoothstep(-0.05, 0.15, y);
   const starCol = mix(vec3(0.8, 0.85, 1.0), vec3(1.0, 0.85, 0.95), fract(h.mul(13.0)));
   const starLight = starCol.mul(starMask.mul(twinkle).mul(stars).mul(aboveHorizon).mul(1.8));
 
   const neb = mx_fractal_noise_float(dir.mul(2.2), 3, 2.0, 0.5);
-  const nebula = mix(vec3(0.35, 0.15, 0.6), vec3(0.1, 0.35, 0.6), smoothstep(-0.3, 0.3, neb.mul(1.3)))
-    .mul(smoothstep(0.0, 0.6, abs(neb)).mul(stars).mul(0.22).mul(aboveHorizon));
+  const nebula = mix(vec3(0.35, 0.15, 0.6), vec3(0.1, 0.35, 0.6), smoothstep(-0.3, 0.3, neb.mul(1.3))).mul(
+    smoothstep(0.0, 0.6, abs(neb)).mul(stars).mul(0.22).mul(aboveHorizon),
+  );
 
-  mat.colorNode = grad.add(sun).add(starLight).add(nebula).add(vec3(0.6, 0.62, 0.8).mul(flash));
+  mat.colorNode = grad
+    .add(sun)
+    .add(starLight)
+    .add(nebula)
+    .add(vec3(0.6, 0.62, 0.8).mul(flash));
 
   const mesh = new Mesh(new SphereGeometry(radius, 48, 24), mat);
   mesh.name = 'sky';

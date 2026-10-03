@@ -113,7 +113,12 @@ export function createEnvironment(theme: ThemeDefinition, opts: EnvironmentOptio
   cloudRoot.position.copy(center);
   const clouds: CloudLayer | null =
     detail.clouds > 0
-      ? createCloudLayer(atmosphere, { seed: seed * 3 + 1, count: detail.clouds, innerRadius: extent + 30, wrapRadius: Math.max(theme.fog.far + 40, extent + 200) })
+      ? createCloudLayer(atmosphere, {
+          seed: seed * 3 + 1,
+          count: detail.clouds,
+          innerRadius: extent + 30,
+          wrapRadius: Math.max(theme.fog.far + 40, extent + 200),
+        })
       : null;
   if (clouds) {
     cloudRoot.add(clouds.object);
@@ -153,7 +158,12 @@ export function createEnvironment(theme: ThemeDefinition, opts: EnvironmentOptio
   if (theme.decor.crowd && detail.crowd) {
     const stands: readonly CrowdStandPlacement[] = opts.crowdStands ?? [
       { position: { x: b.max.x + 9, y: b.min.y + 1, z: b.min.z + 10 }, yaw: Math.PI / 2, width: 18, rows: 4 },
-      { position: { x: b.min.x - 9, y: b.min.y + 1, z: b.max.z - 10 }, yaw: -Math.PI / 2, width: 18, rows: 4 },
+      {
+        position: { x: b.min.x - 9, y: b.min.y + 1, z: b.max.z - 10 },
+        yaw: -Math.PI / 2,
+        width: 18,
+        rows: 4,
+      },
     ];
     if (stands.length > 0) {
       crowd = createCrowd({

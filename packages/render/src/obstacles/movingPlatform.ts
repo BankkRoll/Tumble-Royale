@@ -3,7 +3,15 @@
  * lip and propeller-free "hover" jets, plus a dotted track (one
  * InstancedMesh) tracing the authored path so players can read where it goes.
  */
-import { ConeGeometry, Group, InstancedMesh, Matrix4, MeshBasicNodeMaterial, Color, SphereGeometry } from 'three/webgpu';
+import {
+  ConeGeometry,
+  Group,
+  InstancedMesh,
+  Matrix4,
+  MeshBasicNodeMaterial,
+  Color,
+  SphereGeometry,
+} from 'three/webgpu';
 import type { ObstacleInstance } from '@tumble/sim';
 import {
   movingPlatform,
@@ -29,7 +37,10 @@ class MovingPlatformVisual extends VisualBase<MovingPlatformParams> {
   private readonly jets: Group[] = [];
   private readonly poses;
 
-  constructor(instance: ObstacleInstance, private readonly ctx: ObstacleVisualContext) {
+  constructor(
+    instance: ObstacleInstance,
+    private readonly ctx: ObstacleVisualContext,
+  ) {
     super(instance, movingPlatformSchema.parse(instance.params));
     const p = this.params;
     this.poses = poseBufferFor(movingPlatform, p, ctx.speedScale);
@@ -47,7 +58,12 @@ class MovingPlatformVisual extends VisualBase<MovingPlatformParams> {
     lip.position.y = -p.size.y * 0.75;
     this.deck.add(lip);
 
-    const jetMat = new MeshBasicNodeMaterial({ color: new Color(C.sky), transparent: true, opacity: 0.55, depthWrite: false });
+    const jetMat = new MeshBasicNodeMaterial({
+      color: new Color(C.sky),
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+    });
     const jetGeo = new ConeGeometry(0.32, 0.9, 16, 1, true);
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
@@ -76,7 +92,9 @@ class MovingPlatformVisual extends VisualBase<MovingPlatformParams> {
       const b = pts[(s + 1) % pts.length]!;
       total += Math.max(1, Math.floor(Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z) / DOT_SPACING));
     }
-    const dots = this.add(new InstancedMesh(new SphereGeometry(0.12, 8, 6), createPatternMaterial({ a: C.cream }), total));
+    const dots = this.add(
+      new InstancedMesh(new SphereGeometry(0.12, 8, 6), createPatternMaterial({ a: C.cream }), total),
+    );
     const m = new Matrix4();
     let k = 0;
     for (let s = 0; s < segs; s++) {
@@ -85,7 +103,11 @@ class MovingPlatformVisual extends VisualBase<MovingPlatformParams> {
       const n = Math.max(1, Math.floor(Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z) / DOT_SPACING));
       for (let i = 0; i < n; i++) {
         const f = (i + 0.5) / n;
-        m.makeTranslation(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f - this.params.size.y - 0.9, a.z + (b.z - a.z) * f);
+        m.makeTranslation(
+          a.x + (b.x - a.x) * f,
+          a.y + (b.y - a.y) * f - this.params.size.y - 0.9,
+          a.z + (b.z - a.z) * f,
+        );
         dots.setMatrixAt(k++, m);
       }
     }
@@ -102,4 +124,5 @@ class MovingPlatformVisual extends VisualBase<MovingPlatformParams> {
 }
 
 /** Moving platform visual factory. */
-export const movingPlatformVisual: ObstacleVisualFactory = (instance, ctx) => new MovingPlatformVisual(instance, ctx);
+export const movingPlatformVisual: ObstacleVisualFactory = (instance, ctx) =>
+  new MovingPlatformVisual(instance, ctx);

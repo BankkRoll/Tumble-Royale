@@ -3,7 +3,15 @@
  * headlights, a seat, a wheel and a bobbing antenna flag, driven by the sim's
  * pure track pose. Dashed lane markings trace the closed track.
  */
-import { CircleGeometry, ConeGeometry, CylinderGeometry, Group, InstancedMesh, SphereGeometry, TorusGeometry } from 'three/webgpu';
+import {
+  CircleGeometry,
+  ConeGeometry,
+  CylinderGeometry,
+  Group,
+  InstancedMesh,
+  SphereGeometry,
+  TorusGeometry,
+} from 'three/webgpu';
 import type { PoseSample } from '@tumble/sim';
 import { BumperCarSchema, bumperCarPose, bumperTrackLut, sampleTrack } from '@tumble/sim/obstacles';
 import type { ObstacleVisualFactory } from './types.ts';

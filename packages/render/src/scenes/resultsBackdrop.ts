@@ -4,7 +4,13 @@ import { PropBuilder, type PropBatch } from '../environment/propKit.ts';
 import { addIsland } from '../environment/islands.ts';
 import { DecorRandom } from '../level/toolkit.ts';
 import { createFloatingPlatform, createSunburst, type FloatingPlatform, type Sunburst } from './props.ts';
-import { TumblerActor, createSceneStage, tumblerFactory, type MenuScene, type SceneCommonOptions } from './common.ts';
+import {
+  TumblerActor,
+  createSceneStage,
+  tumblerFactory,
+  type MenuScene,
+  type SceneCommonOptions,
+} from './common.ts';
 import { defaultLoadout } from './placeholderTumbler.ts';
 
 /**
@@ -36,7 +42,11 @@ const BOUNCER_COLORS = ['#ff6fb5', '#5ce1e6', '#ffd23f', '#7c5cff', '#6ee7a8'];
  * @param opts - Theme, mood and optional Tumbler factory.
  */
 export function createResultsBackdrop(opts: ResultsBackdropOptions): ResultsBackdrop {
-  const stage = createSceneStage(opts, { min: { x: -14, y: -6, z: -30 }, max: { x: 14, y: 6, z: 4 } }, { crowd: false, fov: 42 });
+  const stage = createSceneStage(
+    opts,
+    { min: { x: -14, y: -6, z: -30 }, max: { x: 14, y: 6, z: 4 } },
+    { crowd: false, fov: 42 },
+  );
   const { scene, camera } = stage;
   const factory = tumblerFactory(opts.createTumbler);
   const pal = opts.theme.palette;

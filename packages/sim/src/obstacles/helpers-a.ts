@@ -21,7 +21,15 @@ import type {
   RigidBody,
   RigidBodyDesc,
 } from '@dimforge/rapier3d-compat';
-import { InteractionGroups, quatFromEulerYXZ, quatIdentity, rotateVec, vec3, type Quat, type Vec3 } from '@tumble/shared';
+import {
+  InteractionGroups,
+  quatFromEulerYXZ,
+  quatIdentity,
+  rotateVec,
+  vec3,
+  type Quat,
+  type Vec3,
+} from '@tumble/shared';
 import type { EventSink } from '../events.ts';
 import type { SurfaceInfo } from '../physics/surfaces.ts';
 import type {
@@ -366,7 +374,8 @@ export abstract class RuntimeBase implements ObstacleRuntime {
     this.disposed = true;
     const { world, surfaces } = this.build;
     for (const c of this.colliders) surfaces.delete(c.handle);
-    for (const j of this.joints) if (world.impulseJoints.contains(j.handle)) world.removeImpulseJoint(j, false);
+    for (const j of this.joints)
+      if (world.impulseJoints.contains(j.handle)) world.removeImpulseJoint(j, false);
     for (const b of this.bodies) if (world.bodies.contains(b.handle)) world.removeRigidBody(b);
     this.colliders.length = 0;
     this.bodies.length = 0;

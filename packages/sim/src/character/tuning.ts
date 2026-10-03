@@ -242,7 +242,14 @@ export interface CharacterTuning {
 }
 
 /** Default (normal-ground) surface response. */
-const NORMAL_SURFACE: SurfaceTuning = { speedMul: 1, accelMul: 1, decelMul: 1, turnMul: 1, jumpMul: 1, slopeSlide: 0 };
+const NORMAL_SURFACE: SurfaceTuning = {
+  speedMul: 1,
+  accelMul: 1,
+  decelMul: 1,
+  turnMul: 1,
+  jumpMul: 1,
+  slopeSlide: 0,
+};
 
 /**
  * Default tuning. Mirrors `@tumble/content/tuning` CHARACTER_TUNING, which is
@@ -361,7 +368,9 @@ export const DEFAULT_TUNING: Readonly<CharacterTuning> = Object.freeze({
  * @example
  * const t = resolveTuning({ maxSpeed: 9 });
  */
-export function resolveTuning(overrides?: Partial<CharacterTuning> | Record<string, unknown>): CharacterTuning {
+export function resolveTuning(
+  overrides?: Partial<CharacterTuning> | Record<string, unknown>,
+): CharacterTuning {
   const out = { ...DEFAULT_TUNING, surfaces: {} as Record<SurfaceKind, SurfaceTuning> } as CharacterTuning;
   for (const kind of Object.keys(DEFAULT_TUNING.surfaces) as SurfaceKind[]) {
     out.surfaces[kind] = { ...DEFAULT_TUNING.surfaces[kind] };

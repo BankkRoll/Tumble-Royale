@@ -6,7 +6,15 @@
  * `TumblerVisual` (`@tumble/render/character`), so the real Tumbler can replace
  * it without touching the playground loop.
  */
-import { CapsuleGeometry, Group, Mesh, Quaternion, SphereGeometry, Vector3, type Object3D } from 'three/webgpu';
+import {
+  CapsuleGeometry,
+  Group,
+  Mesh,
+  Quaternion,
+  SphereGeometry,
+  Vector3,
+  type Object3D,
+} from 'three/webgpu';
 import { createOutlineMaterial, createToonMaterial } from '@tumble/render';
 import { CharacterState } from '@tumble/sim/character';
 
@@ -137,7 +145,8 @@ export class PlaceholderTumbler implements CharacterVisual {
     }
     // Run bob, emote hop
     let bob = 0;
-    if (anim.state === S.Run && anim.grounded) bob = Math.abs(Math.sin(this.time * Math.max(6, anim.speed * 2.2))) * 0.08;
+    if (anim.state === S.Run && anim.grounded)
+      bob = Math.abs(Math.sin(this.time * Math.max(6, anim.speed * 2.2))) * 0.08;
     if (anim.state === S.Emote) bob = Math.abs(Math.sin(anim.stateTime * 9)) * 0.35;
     this.pivot.position.y = CENTRE + bob;
     if (anim.state === S.Emote) this.body.rotation.y = anim.stateTime * 6;
@@ -145,7 +154,10 @@ export class PlaceholderTumbler implements CharacterVisual {
 
     // Hands: reach forward while grabbing/hanging, swing while running
     const reach =
-      anim.state === S.Grab || anim.state === S.Carry || anim.state === S.LedgeHang || anim.state === S.LedgeClimb;
+      anim.state === S.Grab ||
+      anim.state === S.Carry ||
+      anim.state === S.LedgeHang ||
+      anim.state === S.LedgeClimb;
     const swing = anim.state === S.Run ? Math.sin(this.time * Math.max(6, anim.speed * 2.2)) * 0.25 : 0;
     for (let i = 0; i < 2; i++) {
       const h = this.hands[i]!;

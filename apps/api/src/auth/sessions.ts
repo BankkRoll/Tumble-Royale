@@ -12,7 +12,13 @@ import { getAccountRef } from '../accounts/accounts.ts';
 import type { Db, DbOrTx } from '../db/client.ts';
 import { sessions, users } from '../db/schema.ts';
 import { ApiError } from '../http/errors.ts';
-import { ACCESS_TOKEN_TTL_SEC, randomToken, REFRESH_TOKEN_TTL_MS, sha256, signAccessToken } from './tokens.ts';
+import {
+  ACCESS_TOKEN_TTL_SEC,
+  randomToken,
+  REFRESH_TOKEN_TTL_MS,
+  sha256,
+  signAccessToken,
+} from './tokens.ts';
 
 /** Token pair returned by every sign-in path. */
 export interface TokenPair {
@@ -46,7 +52,13 @@ async function mint(
   });
   const accessToken = await signAccessToken(
     secret,
-    { sub: account.userId, sid: sessionId, name: `${account.displayName}#${account.tag}`, region: account.region, guest: account.isGuest },
+    {
+      sub: account.userId,
+      sid: sessionId,
+      name: `${account.displayName}#${account.tag}`,
+      region: account.region,
+      guest: account.isGuest,
+    },
     Math.floor(now.getTime() / 1000),
   );
   return {
@@ -56,7 +68,13 @@ async function mint(
       expiresIn: ACCESS_TOKEN_TTL_SEC,
       refreshToken,
       refreshExpiresAt: expiresAt.toISOString(),
-      user: { id: account.userId, displayName: account.displayName, tag: account.tag, region: account.region, isGuest: account.isGuest },
+      user: {
+        id: account.userId,
+        displayName: account.displayName,
+        tag: account.tag,
+        region: account.region,
+        isGuest: account.isGuest,
+      },
     },
   };
 }
@@ -96,7 +114,11 @@ export async function rotateSession(
   userAgent?: string,
 ): Promise<TokenPair> {
   const reused = await db.transaction(async (tx) => {
-    const [row] = await tx.select().from(sessions).where(eq(sessions.tokenHash, sha256(refreshToken))).for('update');
+    const [row] = await tx
+      .select()
+      .from(sessions)
+      .where(eq(sessions.tokenHash, sha256(refreshToken)))
+      .for('update');
     if (!row) throw new ApiError(401, 'invalid_refresh', 'Unknown refresh token');
     if (row.revokedAt) {
       await tx
@@ -108,12 +130,20 @@ export async function rotateSession(
     if (row.expiresAt <= now) throw new ApiError(401, 'invalid_refresh', 'Refresh token expired');
     const account = await getAccountRef(tx, row.userId);
     const next = await mint(tx, secret, account, row.familyId, now, userAgent);
-    await tx.update(sessions).set({ revokedAt: now, replacedBy: next.sessionId }).where(eq(sessions.id, row.id));
+    await tx
+      .update(sessions)
+      .set({ revokedAt: now, replacedBy: next.sessionId })
+      .where(eq(sessions.id, row.id));
     await tx.update(users).set({ lastSeenAt: now }).where(eq(users.id, row.userId));
     return next.pair;
   });
   // Thrown outside the transaction so the family revocation commits.
-  if (reused === true) throw new ApiError(401, 'refresh_reused', 'Refresh token reuse detected; all sessions in this family were revoked');
+  if (reused === true)
+    throw new ApiError(
+      401,
+      'refresh_reused',
+      'Refresh token reuse detected; all sessions in this family were revoked',
+    );
   return reused;
 }
 
@@ -121,14 +151,26 @@ export async function rotateSession(
  * Revokes the session family a refresh token belongs to (logout). Unknown tokens are ignored.
  */
 export async function revokeByRefreshToken(db: DbOrTx, refreshToken: string, now: Date): Promise<void> {
-  const [row] = await db.select({ familyId: sessions.familyId }).from(sessions).where(eq(sessions.tokenHash, sha256(refreshToken)));
+  const [row] = await db
+    .select({ familyId: sessions.familyId })
+    .from(sessions)
+    .where(eq(sessions.tokenHash, sha256(refreshToken)));
   if (!row) return;
-  await db.update(sessions).set({ revokedAt: now }).where(and(eq(sessions.familyId, row.familyId), isNull(sessions.revokedAt)));
+  await db
+    .update(sessions)
+    .set({ revokedAt: now })
+    .where(and(eq(sessions.familyId, row.familyId), isNull(sessions.revokedAt)));
 }
 
 /** Revokes the family of a session id (logout with only an access token). */
 export async function revokeBySessionId(db: DbOrTx, sessionId: string, now: Date): Promise<void> {
-  const [row] = await db.select({ familyId: sessions.familyId }).from(sessions).where(eq(sessions.id, sessionId));
+  const [row] = await db
+    .select({ familyId: sessions.familyId })
+    .from(sessions)
+    .where(eq(sessions.id, sessionId));
   if (!row) return;
-  await db.update(sessions).set({ revokedAt: now }).where(and(eq(sessions.familyId, row.familyId), isNull(sessions.revokedAt)));
+  await db
+    .update(sessions)
+    .set({ revokedAt: now })
+    .where(and(eq(sessions.familyId, row.familyId), isNull(sessions.revokedAt)));
 }

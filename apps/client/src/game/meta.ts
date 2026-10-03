@@ -8,7 +8,15 @@ import { roundCatalog, DEV_ROUND_IDS } from '@tumble/content/rounds';
 import { PLAYLISTS, getPlaylist } from '@tumble/content/shows';
 import type { ShowPlaylist } from '@tumble/sim/show';
 import { ShowPlaylistSchema } from '@tumble/sim/show/schema';
-import { ui, type CustomLobbyOptions, type LeaderboardId, type LeaderboardRow, type NewsItem, type Playlist, type ProfileData } from '@tumble/ui';
+import {
+  ui,
+  type CustomLobbyOptions,
+  type LeaderboardId,
+  type LeaderboardRow,
+  type NewsItem,
+  type Playlist,
+  type ProfileData,
+} from '@tumble/ui';
 import type { ProfileStore } from './profile.ts';
 import { loadJson, saveJson } from './storage.ts';
 
@@ -126,7 +134,11 @@ export function pushMeta(profile: ProfileStore): void {
   pushStaticMeta();
   const p = s.profile;
   if (p) {
-    s.setParty({ code: '', maxSize: 4, members: [{ id: p.id, name: p.name, colors: p.colors, ready: true, isLeader: true, isSelf: true }] });
+    s.setParty({
+      code: '',
+      maxSize: 4,
+      members: [{ id: p.id, name: p.name, colors: p.colors, ready: true, isLeader: true, isSelf: true }],
+    });
   }
 }
 
@@ -136,7 +148,11 @@ export function pushStaticMeta(): void {
   s.setNews(uiNews());
   if (s.playlists.length === 0) s.setPlaylists(uiPlaylists(), 'main-show');
   if (s.roundCatalog.length === 0) {
-    s.setRoundCatalog([...roundCatalog().values()].filter((r) => !DEV_ROUND_IDS.has(r.id)).map((r) => ({ id: r.id, name: r.name, type: r.type })));
+    s.setRoundCatalog(
+      [...roundCatalog().values()]
+        .filter((r) => !DEV_ROUND_IDS.has(r.id))
+        .map((r) => ({ id: r.id, name: r.name, type: r.type })),
+    );
   }
 }
 
@@ -157,14 +173,33 @@ export function pushLeaderboard(profile: ProfileStore, board: LeaderboardId): vo
   const me = profile.uiProfile();
   const history = profile.uiHistory();
   const weekAgo = Date.now() - 7 * 86400_000;
-  const myValue = board === 'win_streak' ? me.stats.bestStreak : board === 'weekly' ? history.filter((h) => h.time >= weekAgo && h.result === 'crown').length : me.crowns;
+  const myValue =
+    board === 'win_streak'
+      ? me.stats.bestStreak
+      : board === 'weekly'
+        ? history.filter((h) => h.time >= weekAgo && h.result === 'crown').length
+        : me.crowns;
   const rows: Omit<LeaderboardRow, 'rank'>[] = [
-    { playerId: me.id, name: me.name, value: myValue, colors: me.colors, isSelf: true, detail: `${me.stats.shows} shows · ${me.stats.finals} finals` },
+    {
+      playerId: me.id,
+      name: me.name,
+      value: myValue,
+      colors: me.colors,
+      isSelf: true,
+      detail: `${me.stats.shows} shows · ${me.stats.finals} finals`,
+    },
   ];
   if (board !== 'win_streak') {
     for (const [name, o] of Object.entries(profile.opponents())) {
       if (board === 'weekly' && o.lastSeen < weekAgo) continue;
-      rows.push({ playerId: `faced:${name}`, name, value: o.crowns, colors: o.colors, ...(o.isBot ? { isBot: true } : {}), detail: `Faced ${o.faced}× · best finish #${o.best}` });
+      rows.push({
+        playerId: `faced:${name}`,
+        name,
+        value: o.crowns,
+        colors: o.colors,
+        ...(o.isBot ? { isBot: true } : {}),
+        detail: `Faced ${o.faced}× · best finish #${o.best}`,
+      });
     }
   }
   rows.sort((a, b) => b.value - a.value || (a.isSelf ? -1 : b.isSelf ? 1 : a.name.localeCompare(b.name)));

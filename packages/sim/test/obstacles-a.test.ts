@@ -6,7 +6,8 @@ import type {
   DoorGauntletRuntime,
   FallingTilesRuntime,
   SeesawRuntime,
-  TiltPlatformRuntime} from '../src/obstacles/set-a.ts';
+  TiltPlatformRuntime,
+} from '../src/obstacles/set-a.ts';
 import {
   BOULDER_PARKED_Y,
   TileState,
@@ -56,7 +57,9 @@ interface TestActor extends ObstacleActor {
 
 /** A dynamic box standing in for a Tumbler; knock/push act on the body directly. */
 function makeActor(R: Rapier, world: World, id: number, pos: Vec3, half = 0.4, density = 1): TestActor {
-  const body = world.createRigidBody(R.RigidBodyDesc.dynamic().setTranslation(pos.x, pos.y, pos.z).setCanSleep(false));
+  const body = world.createRigidBody(
+    R.RigidBodyDesc.dynamic().setTranslation(pos.x, pos.y, pos.z).setCanSleep(false),
+  );
   world.createCollider(
     R.ColliderDesc.cuboid(half, half, half).setDensity(density).setCollisionGroups(InteractionGroups.player),
     body,
@@ -97,7 +100,9 @@ async function harness(seed = 1, floor = true): Promise<Harness> {
   if (floor) {
     const fb = world.createRigidBody(R.RigidBodyDesc.fixed());
     world.createCollider(
-      R.ColliderDesc.cuboid(80, 0.5, 80).setTranslation(0, -20.5, 0).setCollisionGroups(InteractionGroups.static),
+      R.ColliderDesc.cuboid(80, 0.5, 80)
+        .setTranslation(0, -20.5, 0)
+        .setCollisionGroups(InteractionGroups.static),
       fb,
     );
   }
@@ -112,7 +117,11 @@ async function harness(seed = 1, floor = true): Promise<Harness> {
   return { R, world, ctx, actors: [], tick: 0 };
 }
 
-function inst<P>(module: ObstacleModule<P>, params: Partial<P> = {}, position: Vec3 = { x: 0, y: 0, z: 0 }): ObstacleInstance<P> {
+function inst<P>(
+  module: ObstacleModule<P>,
+  params: Partial<P> = {},
+  position: Vec3 = { x: 0, y: 0, z: 0 },
+): ObstacleInstance<P> {
   return { id: `${module.type}-1`, type: module.type, position, params: params as P };
 }
 
@@ -124,7 +133,13 @@ function run(h: Harness, rt: ObstacleRuntime, steps: number): void {
   const inside = new Set<string>();
   for (let s = 0; s < steps; s++) {
     h.tick++;
-    const step: ObstacleStepContext = { t: h.tick * SIM_DT, dt: SIM_DT, tick: h.tick, events: h.ctx.events, actors: h.actors };
+    const step: ObstacleStepContext = {
+      t: h.tick * SIM_DT,
+      dt: SIM_DT,
+      tick: h.tick,
+      events: h.ctx.events,
+      actors: h.actors,
+    };
     rt.update(step);
     h.world.step();
     const seen = new Set<string>();
@@ -226,10 +241,15 @@ describe('obstacle set A — every module', () => {
             for (let k = 0; k < n; k++) {
               const pa = a[k]!;
               const pb = b[k]!;
-              maxJump = Math.max(maxJump, Math.hypot(pb.pos.x - pa.pos.x, pb.pos.y - pa.pos.y, pb.pos.z - pa.pos.z));
+              maxJump = Math.max(
+                maxJump,
+                Math.hypot(pb.pos.x - pa.pos.x, pb.pos.y - pa.pos.y, pb.pos.z - pa.pos.z),
+              );
               minDot = Math.min(
                 minDot,
-                Math.abs(pa.rot.x * pb.rot.x + pa.rot.y * pb.rot.y + pa.rot.z * pb.rot.z + pa.rot.w * pb.rot.w),
+                Math.abs(
+                  pa.rot.x * pb.rot.x + pa.rot.y * pb.rot.y + pa.rot.z * pb.rot.z + pa.rot.w * pb.rot.w,
+                ),
               );
             }
             for (let k = 0; k < n; k++) {
@@ -248,7 +268,8 @@ describe('obstacle set A — every module', () => {
         const baseBodies = h.world.bodies.len();
         const rt = module.create(inst(module), h.ctx);
         expect(rt.colliders.length).toBeGreaterThan(0);
-        for (let i = 0; i < 4; i++) h.actors.push(makeActor(h.R, h.world, i, { x: i * 1.5 - 2, y: 3 + i, z: 1 }));
+        for (let i = 0; i < 4; i++)
+          h.actors.push(makeActor(h.R, h.world, i, { x: i * 1.5 - 2, y: 3 + i, z: 1 }));
         expect(() => run(h, rt, 300)).not.toThrow();
         for (const a of h.actors) expect(finite(a.body.translation())).toBe(true);
         const tg = rt.telegraph?.(5);
@@ -388,7 +409,10 @@ describe('fallingTiles', () => {
 describe('tiltPlatform & seesaw', () => {
   it('tilt platform tips under an off-centre weight and self-centres when unloaded', async () => {
     const h = await harness(1);
-    const rt = tiltPlatform.create(inst(tiltPlatform, {}, { x: 0, y: 5, z: 0 }), h.ctx) as TiltPlatformRuntime;
+    const rt = tiltPlatform.create(
+      inst(tiltPlatform, {}, { x: 0, y: 5, z: 0 }),
+      h.ctx,
+    ) as TiltPlatformRuntime;
     const weight = makeActor(h.R, h.world, 1, { x: 3, y: 6, z: 0 }, 0.5, 40);
     h.actors.push(weight);
     run(h, rt, 120);
@@ -397,7 +421,10 @@ describe('tiltPlatform & seesaw', () => {
     expect(Math.abs(rt.tiltX)).toBeLessThan(0.05);
 
     const h2 = await harness(1);
-    const mirror = tiltPlatform.create(inst(tiltPlatform, {}, { x: 0, y: 5, z: 0 }), h2.ctx) as TiltPlatformRuntime;
+    const mirror = tiltPlatform.create(
+      inst(tiltPlatform, {}, { x: 0, y: 5, z: 0 }),
+      h2.ctx,
+    ) as TiltPlatformRuntime;
     mirror.setNetState(rt.getNetState());
     expect(mirror.tiltZ).toBeCloseTo(rt.tiltZ, 2);
 
@@ -478,7 +505,13 @@ describe('pendulumHammer', () => {
 
 describe('risingSlime', () => {
   it('follows its keyframes and registers a lethal surface', async () => {
-    const p = risingSlimeSchema.parse({ keyframes: [{ t: 10, h: 0 }, { t: 0, h: -2 }], easing: 'linear' });
+    const p = risingSlimeSchema.parse({
+      keyframes: [
+        { t: 10, h: 0 },
+        { t: 0, h: -2 },
+      ],
+      easing: 'linear',
+    });
     expect(slimeHeight(-5, p)).toBe(-2);
     expect(slimeHeight(5, p)).toBeCloseTo(-1, 6);
     expect(slimeHeight(50, p)).toBe(0);

@@ -65,7 +65,8 @@ export const easeInOutSine = (t: number): number => -(Math.cos(Math.PI * clamp(t
  * @param dt - Elapsed seconds.
  * @returns The blend factor to pass to `lerp(current, target, factor)`.
  */
-export const damp = (halfLife: number, dt: number): number => 1 - Math.pow(0.5, dt / Math.max(halfLife, 1e-5));
+export const damp = (halfLife: number, dt: number): number =>
+  1 - Math.pow(0.5, dt / Math.max(halfLife, 1e-5));
 
 /** Moves `current` toward `target` by at most `maxDelta`. */
 export const moveToward = (current: number, target: number, maxDelta: number): number => {
@@ -110,7 +111,12 @@ export const quatFromAxisAngle = (
 };
 
 /** Quaternion from intrinsic Y-X-Z Euler angles (yaw, pitch, roll) — the order level designers think in. */
-export const quatFromEulerYXZ = (yaw: number, pitch: number, roll: number, out: Quat = quatIdentity()): Quat => {
+export const quatFromEulerYXZ = (
+  yaw: number,
+  pitch: number,
+  roll: number,
+  out: Quat = quatIdentity(),
+): Quat => {
   const c1 = Math.cos(pitch / 2);
   const c2 = Math.cos(yaw / 2);
   const c3 = Math.cos(roll / 2);

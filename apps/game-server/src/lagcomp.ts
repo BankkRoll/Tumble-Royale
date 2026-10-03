@@ -182,7 +182,14 @@ export class LagCompensator {
       pos.z = d[src0 + 2]! + (d[src1 + 2]! - d[src0 + 2]!) * u;
     }
     if (rot) {
-      const sign = d[src0 + 3]! * d[src1 + 3]! + d[src0 + 4]! * d[src1 + 4]! + d[src0 + 5]! * d[src1 + 5]! + d[src0 + 6]! * d[src1 + 6]! < 0 ? -1 : 1;
+      const sign =
+        d[src0 + 3]! * d[src1 + 3]! +
+          d[src0 + 4]! * d[src1 + 4]! +
+          d[src0 + 5]! * d[src1 + 5]! +
+          d[src0 + 6]! * d[src1 + 6]! <
+        0
+          ? -1
+          : 1;
       rot.x = d[src0 + 3]! + (sign * d[src1 + 3]! - d[src0 + 3]!) * u;
       rot.y = d[src0 + 4]! + (sign * d[src1 + 4]! - d[src0 + 4]!) * u;
       rot.z = d[src0 + 5]! + (sign * d[src1 + 5]! - d[src0 + 5]!) * u;

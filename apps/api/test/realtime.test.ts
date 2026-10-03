@@ -14,7 +14,11 @@ afterAll(async () => {
   await api.close();
 });
 
-function connect(token: string): Promise<{ ws: WebSocket; messages: Record<string, unknown>[]; next(type: string): Promise<Record<string, unknown>> }> {
+function connect(token: string): Promise<{
+  ws: WebSocket;
+  messages: Record<string, unknown>[];
+  next(type: string): Promise<Record<string, unknown>>;
+}> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`${base}/ws?token=${token}`);
     const messages: Record<string, unknown>[] = [];
@@ -47,7 +51,10 @@ describe('realtime gateway', () => {
     const conn = await connect(b.accessToken);
     expect((await conn.next('hello')).userId).toBe(b.id);
 
-    await api.req('POST', '/friends/request', { token: a.accessToken, body: { nameTag: `${b.displayName}#${b.tag}` } });
+    await api.req('POST', '/friends/request', {
+      token: a.accessToken,
+      body: { nameTag: `${b.displayName}#${b.tag}` },
+    });
     expect(await conn.next('friend_request')).toMatchObject({ from: { userId: a.id } });
 
     await api.req('POST', '/friends/accept', { token: b.accessToken, body: { userId: a.id } });

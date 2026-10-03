@@ -101,7 +101,11 @@ export function effectiveMaxWait(cfg: EngineConfig, searchingInRegion: number): 
  *
  * @returns The chosen entries and team assignment.
  */
-function pack(candidates: readonly QueueEntry[], size: number, teamSize: number): { chosen: QueueEntry[]; teams: string[][] } {
+function pack(
+  candidates: readonly QueueEntry[],
+  size: number,
+  teamSize: number,
+): { chosen: QueueEntry[]; teams: string[][] } {
   const chosen: QueueEntry[] = [];
   if (teamSize <= 1) {
     let seats = size;
@@ -142,9 +146,14 @@ function pack(candidates: readonly QueueEntry[], size: number, teamSize: number)
  * @param cfg - Engine tuning.
  * @returns Lobbies to release; entries not included stay queued.
  */
-export function formLobbies(entries: readonly QueueEntry[], now: number, cfg: EngineConfig = DEFAULT_ENGINE): FormedLobby[] {
+export function formLobbies(
+  entries: readonly QueueEntry[],
+  now: number,
+  cfg: EngineConfig = DEFAULT_ENGINE,
+): FormedLobby[] {
   const searchingByRegion = new Map<string, number>();
-  for (const e of entries) searchingByRegion.set(e.region, (searchingByRegion.get(e.region) ?? 0) + e.members.length);
+  for (const e of entries)
+    searchingByRegion.set(e.region, (searchingByRegion.get(e.region) ?? 0) + e.members.length);
 
   const buckets = new Map<string, QueueEntry[]>();
   for (const e of entries) {
@@ -172,7 +181,11 @@ export function formLobbies(entries: readonly QueueEntry[], now: number, cfg: En
       const { chosen, teams } = pack(pool, size, anchor.teamSize);
       if (!chosen.includes(anchor)) continue;
       const humans = chosen.reduce((s, e) => s + e.members.length, 0);
-      const full = anchor.teamSize > 1 ? teams.length === Math.floor(size / anchor.teamSize) && teams.every((t) => t.length === anchor.teamSize) : humans >= size;
+      const full =
+        anchor.teamSize > 1
+          ? teams.length === Math.floor(size / anchor.teamSize) &&
+            teams.every((t) => t.length === anchor.teamSize)
+          : humans >= size;
       const timedOut = waited >= maxWait && (anchor.botsAllowed || humans >= anchor.minPlayers);
       if (!full && !timedOut) continue;
       for (const e of chosen) used.add(e.id);
@@ -211,11 +224,18 @@ export interface QueueStatus {
  * ETA is the time until the timeout release for the oldest entry in the
  * bucket (we always release by then), shortened when the bucket is already full.
  */
-export function queueStatus(entry: QueueEntry, all: readonly QueueEntry[], now: number, cfg: EngineConfig = DEFAULT_ENGINE): QueueStatus {
+export function queueStatus(
+  entry: QueueEntry,
+  all: readonly QueueEntry[],
+  now: number,
+  cfg: EngineConfig = DEFAULT_ENGINE,
+): QueueStatus {
   const k = bucketKey(entry);
   const same = all.filter((e) => bucketKey(e) === k);
   const searching = same.reduce((s, e) => s + e.members.length, 0);
-  const regionSearching = all.filter((e) => e.region === entry.region).reduce((s, e) => s + e.members.length, 0);
+  const regionSearching = all
+    .filter((e) => e.region === entry.region)
+    .reduce((s, e) => s + e.members.length, 0);
   const oldest = Math.min(...same.map((e) => e.enqueuedAt), entry.enqueuedAt);
   const maxWait = effectiveMaxWait(cfg, regionSearching);
   const etaMs = searching >= entry.lobbySize ? 0 : Math.max(0, oldest + maxWait - now);

@@ -31,17 +31,28 @@ class PunchWallVisual extends VisualBase<PunchWallParams> {
   private readonly gloveMats: MeshToonNodeMaterial[] = [];
   private readonly poses;
 
-  constructor(instance: ObstacleInstance, private readonly ctx: ObstacleVisualContext) {
+  constructor(
+    instance: ObstacleInstance,
+    private readonly ctx: ObstacleVisualContext,
+  ) {
     super(instance, punchWallSchema.parse(instance.params));
     const p = this.params;
     this.poses = poseBufferFor(punchWall, p, ctx.speedScale);
 
     const width = p.pistonCount * p.pistonSpacing + 0.6;
     const wall = this.add(
-      shadedMesh(roundedBox(width, p.wallHeight, p.wallThickness, 0.25), createPatternMaterial({ a: C.lilac, b: C.grape, pattern: 'checker', scale: 1.2 })),
+      shadedMesh(
+        roundedBox(width, p.wallHeight, p.wallThickness, 0.25),
+        createPatternMaterial({ a: C.lilac, b: C.grape, pattern: 'checker', scale: 1.2 }),
+      ),
     );
     wall.position.set(0, p.wallHeight / 2, -0.05);
-    const trim = this.add(shadedMesh(roundedBox(width + 0.3, 0.35, p.wallThickness + 0.3, 0.15), createPatternMaterial({ a: C.interact })));
+    const trim = this.add(
+      shadedMesh(
+        roundedBox(width + 0.3, 0.35, p.wallThickness + 0.3, 0.15),
+        createPatternMaterial({ a: C.interact }),
+      ),
+    );
     trim.position.set(0, p.wallHeight, -0.05);
 
     const socketGeo = roundedBox(p.pistonSize + 0.35, p.pistonSize + 0.35, 0.2, 0.1);
@@ -54,7 +65,13 @@ class PunchWallVisual extends VisualBase<PunchWallParams> {
       const socket = this.add(shadedMesh(socketGeo, socketMat, false));
       socket.position.set(punchPistonX(i, p), p.pistonHeight, p.wallThickness / 2 - 0.05);
 
-      const mat = createPatternMaterial({ a: C.danger, b: C.dangerAlt, pattern: 'stripes', scale: 1.6, emissive: C.glowWarn });
+      const mat = createPatternMaterial({
+        a: C.danger,
+        b: C.dangerAlt,
+        pattern: 'stripes',
+        scale: 1.6,
+        emissive: C.glowWarn,
+      });
       this.gloveMats.push(mat);
       const g = new Group();
       const glove = shadedMesh(gloveGeo, mat);

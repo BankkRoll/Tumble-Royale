@@ -18,7 +18,8 @@ import {
 describe('level curve', () => {
   it('has 100 increasing levels and round-trips XP', () => {
     expect(LEVEL_TABLE).toHaveLength(MAX_LEVEL);
-    for (let i = 1; i < MAX_LEVEL - 1; i++) expect(LEVEL_TABLE[i]!.xpToNext).toBeGreaterThanOrEqual(LEVEL_TABLE[i - 1]!.xpToNext);
+    for (let i = 1; i < MAX_LEVEL - 1; i++)
+      expect(LEVEL_TABLE[i]!.xpToNext).toBeGreaterThanOrEqual(LEVEL_TABLE[i - 1]!.xpToNext);
     expect(levelForXp(0)).toEqual({ level: 1, intoLevel: 0, toNext: LEVEL_TABLE[0]!.xpToNext });
     for (const lvl of [2, 10, 50, 100]) {
       expect(levelForXp(xpForLevel(lvl)).level).toBe(lvl);
@@ -29,10 +30,25 @@ describe('level curve', () => {
 });
 
 describe('show rewards', () => {
-  const base = { roundsPlayed: 4, roundsQualified: 3, reachedFinal: true, wonCrown: false, place: 3, participants: 40, quit: false, firstShowOfDay: false };
+  const base = {
+    roundsPlayed: 4,
+    roundsQualified: 3,
+    reachedFinal: true,
+    wonCrown: false,
+    place: 3,
+    participants: 40,
+    quit: false,
+    firstShowOfDay: false,
+  };
 
   it('pays more for better outcomes', () => {
-    const out = computeShowRewards({ ...base, roundsPlayed: 1, roundsQualified: 0, reachedFinal: false, place: 35 });
+    const out = computeShowRewards({
+      ...base,
+      roundsPlayed: 1,
+      roundsQualified: 0,
+      reachedFinal: false,
+      place: 35,
+    });
     const final = computeShowRewards(base);
     const crown = computeShowRewards({ ...base, wonCrown: true, place: 1 });
     expect(final.xp).toBeGreaterThan(out.xp);
@@ -60,7 +76,13 @@ describe('challenges', () => {
     const weekly = pickChallenges('weekly', '2026-W40');
     expect(weekly).toHaveLength(CHALLENGE_SLOTS.weekly);
     expect(weekly.every((c) => c.cadence === 'weekly')).toBe(true);
-    const days = new Set(['01', '02', '03', '04', '05'].map((d) => pickChallenges('daily', `2026-10-${d}`).map((c) => c.id).join()));
+    const days = new Set(
+      ['01', '02', '03', '04', '05'].map((d) =>
+        pickChallenges('daily', `2026-10-${d}`)
+          .map((c) => c.id)
+          .join(),
+      ),
+    );
     expect(days.size).toBeGreaterThan(1);
     expect(new Set(CHALLENGE_POOL.map((c) => c.id)).size).toBe(CHALLENGE_POOL.length);
   });
@@ -71,7 +93,9 @@ describe('season pass', () => {
     expect(SEASON_PASS.tiers).toHaveLength(PASS_TIERS);
     for (const t of SEASON_PASS.tiers) expect(t.premium.length).toBeGreaterThan(0);
     expect(SEASON_PASS.tiers.at(-1)!.premium[0]).toMatchObject({ kind: 'cosmetic', rarity: 'mythic' });
-    const ids = SEASON_PASS.tiers.flatMap((t) => [...t.free, ...t.premium]).flatMap((r) => (r.kind === 'cosmetic' ? [r.itemId] : []));
+    const ids = SEASON_PASS.tiers
+      .flatMap((t) => [...t.free, ...t.premium])
+      .flatMap((r) => (r.kind === 'cosmetic' ? [r.itemId] : []));
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.filter((id) => !getCosmetic(id))).toEqual([]);
     expect(ids.some((id) => id.startsWith('pass.'))).toBe(false);
@@ -113,7 +137,15 @@ describe('season pass', () => {
       if (free?.kind === 'cosmetic') expect(rank(free.rarity)).toBeGreaterThanOrEqual(rank('rare'));
       if (premium?.kind === 'cosmetic') expect(rank(premium.rarity)).toBeGreaterThanOrEqual(rank('epic'));
     }
-    for (const tier of [25, 50, 75]) expect(SEASON_PASS.tiers[tier - 1]!.premium[0]).toMatchObject({ kind: 'cosmetic', rarity: 'legendary' });
-    expect(SEASON_PASS.tiers[PASS_TIERS - 1]!.premium[0]).toMatchObject({ kind: 'cosmetic', rarity: 'mythic', slot: 'victory' });
+    for (const tier of [25, 50, 75])
+      expect(SEASON_PASS.tiers[tier - 1]!.premium[0]).toMatchObject({
+        kind: 'cosmetic',
+        rarity: 'legendary',
+      });
+    expect(SEASON_PASS.tiers[PASS_TIERS - 1]!.premium[0]).toMatchObject({
+      kind: 'cosmetic',
+      rarity: 'mythic',
+      slot: 'victory',
+    });
   });
 });

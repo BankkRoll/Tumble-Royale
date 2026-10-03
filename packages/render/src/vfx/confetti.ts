@@ -204,10 +204,18 @@ function buildMaterial(ring: InstanceRing, time: UniformNode<'float', number>): 
   const centre = a0.xyz.add(analyticOffset(a1.xyz, a1.w, a4.x, t)).add(flutter);
 
   const spin = a4.y.mul(t);
-  const euler = vec3(spin.mul(1.3).add(seed.mul(9.1)), spin.mul(0.71).add(seed.mul(4.3)), spin.mul(0.37).add(seed.mul(2.7)));
+  const euler = vec3(
+    spin.mul(1.3).add(seed.mul(9.1)),
+    spin.mul(0.71).add(seed.mul(4.3)),
+    spin.mul(0.37).add(seed.mul(2.7)),
+  );
   const streamer = a3.w.greaterThan(1.5);
   // Streamers ripple along their length so they read as ribbon rather than card.
-  const ripple = select(streamer, sin(positionGeometry.y.mul(9).add(t.mul(14)).add(seed.mul(20))).mul(0.18), float(0));
+  const ripple = select(
+    streamer,
+    sin(positionGeometry.y.mul(9).add(t.mul(14)).add(seed.mul(20))).mul(0.18),
+    float(0),
+  );
   const size = a2.z.mul(shrink).mul(alive);
   const local = vec3(positionGeometry.x.mul(a2.w).add(ripple.mul(a2.w)), positionGeometry.y, 0).mul(size);
   const rotated = rotate(local, euler);

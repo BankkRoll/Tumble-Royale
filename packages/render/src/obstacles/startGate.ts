@@ -8,7 +8,18 @@ import type { PoseSample } from '@tumble/sim';
 import { StartGateSchema, startGateLights, startGatePose } from '@tumble/sim/obstacles';
 import type { MeshToonNodeMaterial } from 'three/webgpu';
 import type { ObstacleVisualFactory } from './types.ts';
-import { Disposer, PAL, addOutline, applyInstanceTransform, applyPose, parseParams, roundedBox, solid, stripedToon, toon } from './visual-helpers-b.ts';
+import {
+  Disposer,
+  PAL,
+  addOutline,
+  applyInstanceTransform,
+  applyPose,
+  parseParams,
+  roundedBox,
+  solid,
+  stripedToon,
+  toon,
+} from './visual-helpers-b.ts';
 
 const RED = '#ff3355';
 const AMBER = '#ffb020';

@@ -30,7 +30,8 @@ const MAX_RMS = 0.2;
 type IdleFn = (cb: () => void) => void;
 
 const scheduleIdle: IdleFn = (cb) => {
-  const ric = (globalThis as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
+  const ric = (globalThis as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number })
+    .requestIdleCallback;
   if (ric) ric(cb, { timeout: 250 });
   else setTimeout(cb, 16);
 };

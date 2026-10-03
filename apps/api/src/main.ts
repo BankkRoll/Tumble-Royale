@@ -13,7 +13,9 @@ if (!config.google) app.log.info('Google sign-in disabled (GOOGLE_CLIENT_ID/SECR
 if (!config.stripe) app.log.info('Stripe disabled: Gem checkouts complete instantly via the fake provider');
 
 await app.listen({ host: config.host, port: config.port });
-app.log.info(`[api] ${built.database.driver} | ${config.redisUrl ? 'redis' : 'memory kv'} | listening on :${config.port}`);
+app.log.info(
+  `[api] ${built.database.driver} | ${config.redisUrl ? 'redis' : 'memory kv'} | listening on :${config.port}`,
+);
 
 let closing = false;
 const shutdown = async (signal: string) => {

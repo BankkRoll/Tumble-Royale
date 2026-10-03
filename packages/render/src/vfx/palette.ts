@@ -30,7 +30,16 @@ export function hexColor(hex: string): Color {
 const list = (hexes: readonly string[]): readonly Color[] => hexes.map(hexColor);
 
 /** Candy confetti: pastel base with saturated accents. */
-export const CONFETTI_COLORS = list(['#ff5fa2', '#ffd23f', '#4fd6ff', '#7cf29a', '#b67dff', '#ff8a3d', '#ffffff', '#ff9ed2']);
+export const CONFETTI_COLORS = list([
+  '#ff5fa2',
+  '#ffd23f',
+  '#4fd6ff',
+  '#7cf29a',
+  '#b67dff',
+  '#ff8a3d',
+  '#ffffff',
+  '#ff9ed2',
+]);
 /** Firework burst colours. */
 export const FIREWORK_COLORS = list(['#ff4f8b', '#ffd23f', '#4fc3ff', '#7cf29a', '#c58bff', '#ff9a3d']);
 /** Elimination balloons. */
@@ -40,7 +49,15 @@ export const GOLD_COLORS = list(['#ffd23f', '#ffe98a', '#fff6cf', '#ffb627']);
 /** Safe / success mint and cyan. */
 export const MINT_COLORS = list(['#7cf2c0', '#9ff7ff', '#5fe3b0']);
 /** Rainbow stops for trails. */
-export const RAINBOW_COLORS = list(['#ff5f6d', '#ffb347', '#ffe66d', '#7cf29a', '#5fc8ff', '#a98bff', '#ff8bd8']);
+export const RAINBOW_COLORS = list([
+  '#ff5f6d',
+  '#ffb347',
+  '#ffe66d',
+  '#7cf29a',
+  '#5fc8ff',
+  '#a98bff',
+  '#ff8bd8',
+]);
 /** Team colours (shared with UI). */
 export const TEAM_PALETTE = list(TEAM_COLORS);
 

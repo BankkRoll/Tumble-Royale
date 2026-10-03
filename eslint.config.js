@@ -4,7 +4,14 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', '**/.turbo/**', '**/test-results/**', '**/playwright-report/**'],
+    ignores: [
+      '**/dist/**',
+      '.media-build/**',
+      '**/node_modules/**',
+      '**/.turbo/**',
+      '**/test-results/**',
+      '**/playwright-report/**',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -20,7 +27,12 @@ export default tseslint.config(
   },
   {
     // The simulation must stay headless and deterministic: no DOM, no wall clock.
-    files: ['packages/sim/**/*.ts', 'packages/shared/**/*.ts', 'packages/netcode/**/*.ts', 'packages/content/**/*.ts'],
+    files: [
+      'packages/sim/**/*.ts',
+      'packages/shared/**/*.ts',
+      'packages/netcode/**/*.ts',
+      'packages/content/**/*.ts',
+    ],
     languageOptions: { globals: { ...globals.es2023 } },
     rules: {
       'no-restricted-globals': ['error', 'window', 'document', 'performance', 'requestAnimationFrame'],

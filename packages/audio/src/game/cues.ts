@@ -290,8 +290,12 @@ export function resolveCue(name: string): ResolvedCue | null {
     const p = exact(parent);
     if (p && p.kind === 'sfx') return { action: p, via: 'parent' };
   }
-  for (const [re, sound] of ARCHETYPES) if (re.test(name)) return { action: { kind: 'sfx', sound }, via: 'archetype' };
-  return { action: { kind: 'sfx', sound: name.startsWith('ui') ? 'ui.click' : 'popup.pop' }, via: 'archetype' };
+  for (const [re, sound] of ARCHETYPES)
+    if (re.test(name)) return { action: { kind: 'sfx', sound }, via: 'archetype' };
+  return {
+    action: { kind: 'sfx', sound: name.startsWith('ui') ? 'ui.click' : 'popup.pop' },
+    via: 'archetype',
+  };
 }
 
 /**

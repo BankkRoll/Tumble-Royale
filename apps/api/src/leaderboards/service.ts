@@ -59,7 +59,14 @@ export function boardKey(ctx: AppContext, type: BoardType, area: string, now: Da
 /** Updates live boards after a show for one player. */
 export async function recordLeaderboards(
   ctx: AppContext,
-  u: { userId: string; region: string; crowned: boolean; shardCrowns: number; bestStreak: number; rp: number | null },
+  u: {
+    userId: string;
+    region: string;
+    crowned: boolean;
+    shardCrowns: number;
+    bestStreak: number;
+    rp: number | null;
+  },
   now: Date,
 ): Promise<void> {
   const kv = ctx.kv;
@@ -67,7 +74,8 @@ export async function recordLeaderboards(
     if (u.crowned) {
       for (const t of ['crowns', 'crowns_weekly', 'crowns_all_time'] as const) {
         // A cold rebuild reads Postgres, which already includes this show.
-        if (!(await ensureBuilt(ctx, t, area, now))) await kv.zincrby(boardKey(ctx, t, area, now), 1, u.userId);
+        if (!(await ensureBuilt(ctx, t, area, now)))
+          await kv.zincrby(boardKey(ctx, t, area, now), 1, u.userId);
       }
     }
     if (u.shardCrowns > 0 && !(await ensureBuilt(ctx, 'crowns_all_time', area, now))) {
@@ -117,12 +125,17 @@ async function scoresFromDb(
       .select({ userId: ratings.userId, score: ratings.rp })
       .from(ratings)
       .innerJoin(users, eq(users.id, ratings.userId))
-      .where(and(eq(ratings.seasonId, ctx.catalog.season.id), eq(ratings.queue, RANKED_QUEUE), eq(ratings.placementsLeft, 0), ...conds));
+      .where(
+        and(
+          eq(ratings.seasonId, ctx.catalog.season.id),
+          eq(ratings.queue, RANKED_QUEUE),
+          eq(ratings.placementsLeft, 0),
+          ...conds,
+        ),
+      );
   }
   const seasonOrWeek =
-    type === 'crowns'
-      ? eq(matches.seasonId, ctx.catalog.season.id)
-      : gte(matches.endedAt, weekStart(now));
+    type === 'crowns' ? eq(matches.seasonId, ctx.catalog.season.id) : gte(matches.endedAt, weekStart(now));
   const rows = await db
     .select({ userId: users.id, score: sql<string>`count(*)` })
     .from(matchParticipants)
@@ -153,7 +166,10 @@ async function ensureBuilt(ctx: AppContext, type: BoardType, area: string, now: 
   return true;
 }
 
-async function hydrate(db: DbOrTx, ids: string[]): Promise<Map<string, { displayName: string; tag: string }>> {
+async function hydrate(
+  db: DbOrTx,
+  ids: string[],
+): Promise<Map<string, { displayName: string; tag: string }>> {
   if (!ids.length) return new Map();
   const rows = await db
     .select({ userId: profiles.userId, displayName: profiles.displayName, tag: profiles.tag })
@@ -169,14 +185,32 @@ async function hydrate(db: DbOrTx, ids: string[]): Promise<Map<string, { display
  */
 export async function readLeaderboard(
   ctx: AppContext,
-  opts: { type: BoardType; scope: BoardScope; region: string; userId: string; friendIds: string[]; limit: number; offset: number },
-): Promise<{ type: BoardType; scope: BoardScope; region: string | null; entries: BoardEntry[]; me: BoardEntry | null }> {
+  opts: {
+    type: BoardType;
+    scope: BoardScope;
+    region: string;
+    userId: string;
+    friendIds: string[];
+    limit: number;
+    offset: number;
+  },
+): Promise<{
+  type: BoardType;
+  scope: BoardScope;
+  region: string | null;
+  entries: BoardEntry[];
+  me: BoardEntry | null;
+}> {
   const now = ctx.now();
   let page: { userId: string; score: number; rank: number }[];
-  let me: { score: number; rank: number } | null = null;
+  let me: { score: number; rank: number } | null;
   if (opts.scope === 'friends') {
-    const scores = await scoresFromDb(ctx, ctx.db, opts.type, now, { userIds: [opts.userId, ...opts.friendIds] });
-    const sorted = scores.sort((a, b) => b.score - a.score || (a.userId < b.userId ? -1 : 1)).map((s, i) => ({ ...s, rank: i + 1 }));
+    const scores = await scoresFromDb(ctx, ctx.db, opts.type, now, {
+      userIds: [opts.userId, ...opts.friendIds],
+    });
+    const sorted = scores
+      .sort((a, b) => b.score - a.score || (a.userId < b.userId ? -1 : 1))
+      .map((s, i) => ({ ...s, rank: i + 1 }));
     page = sorted.slice(opts.offset, opts.offset + opts.limit);
     const mine = sorted.find((s) => s.userId === opts.userId);
     me = mine ? { score: mine.score, rank: mine.rank } : null;
@@ -216,4 +250,3 @@ export async function displayTier(
   const rank = await kv.zrevrank(boardKey(ctx, 'ranked', u.region, now), u.userId);
   return tierForRp(u.rp, u.placementsLeft, rank);
 }
-

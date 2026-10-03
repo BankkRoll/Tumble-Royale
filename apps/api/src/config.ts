@@ -99,7 +99,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     }
   }
   const corsOrigins: string[] | true = e.CORS_ORIGINS
-    ? e.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
+    ? e.CORS_ORIGINS.split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
     : e.NODE_ENV === 'production'
       ? [e.PUBLIC_WEB_URL]
       : true;

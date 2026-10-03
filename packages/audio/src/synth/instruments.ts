@@ -8,7 +8,20 @@
  */
 
 import { midiToFreq } from '../music/theory.ts';
-import { SILENCE, adsr, filter, fm, gain, noise, noiseBuffer, perc, softClip, sweep, tone, vocal } from './toolkit.ts';
+import {
+  SILENCE,
+  adsr,
+  filter,
+  fm,
+  gain,
+  noise,
+  noiseBuffer,
+  perc,
+  softClip,
+  sweep,
+  tone,
+  vocal,
+} from './toolkit.ts';
 import type { SynthContext } from './toolkit.ts';
 
 /**
@@ -108,18 +121,52 @@ function filteredOsc(
 
 const pluckBass: InstrumentFn = (s, t, midi, dur, vel) => {
   const f = midiToFreq(midi);
-  filteredOsc(s, t, f, ['sawtooth', 'square'], [0, -1200], 300, 400 + 2600 * vel, 160, 7, 0.32 * vel, { a: 0.004, d: 0.16, s: 0.45, r: 0.06 }, Math.min(dur, 0.5));
+  filteredOsc(
+    s,
+    t,
+    f,
+    ['sawtooth', 'square'],
+    [0, -1200],
+    300,
+    400 + 2600 * vel,
+    160,
+    7,
+    0.32 * vel,
+    { a: 0.004, d: 0.16, s: 0.45, r: 0.06 },
+    Math.min(dur, 0.5),
+  );
 };
 
 const subBass: InstrumentFn = (s, t, midi, dur, vel) => {
   const f = midiToFreq(midi);
-  tone(s, { type: 'sine', freq: f, t, dur: Math.min(dur, 0.6), gain: 0.5 * vel, env: { a: 0.006, d: 0.1, s: 0.8, r: 0.08 } });
+  tone(s, {
+    type: 'sine',
+    freq: f,
+    t,
+    dur: Math.min(dur, 0.6),
+    gain: 0.5 * vel,
+    env: { a: 0.006, d: 0.1, s: 0.8, r: 0.08 },
+  });
   tone(s, { type: 'triangle', freq: f * 2, t, dur: 0.12, gain: 0.08 * vel });
 };
 
 const tuba: InstrumentFn = (s, t, midi, dur, vel) => {
   const f = midiToFreq(midi);
-  filteredOsc(s, t, f, ['sawtooth', 'sawtooth'], [-6, 6], 200, 500 + 500 * vel, 380, 1.2, 0.3 * vel, { a: 0.03, d: 0.1, s: 0.75, r: 0.09 }, Math.min(dur, 0.7), -60);
+  filteredOsc(
+    s,
+    t,
+    f,
+    ['sawtooth', 'sawtooth'],
+    [-6, 6],
+    200,
+    500 + 500 * vel,
+    380,
+    1.2,
+    0.3 * vel,
+    { a: 0.03, d: 0.1, s: 0.75, r: 0.09 },
+    Math.min(dur, 0.7),
+    -60,
+  );
 };
 
 const marimba: InstrumentFn = (s, t, midi, _dur, vel) => {
@@ -144,7 +191,21 @@ const glock: InstrumentFn = (s, t, midi, _dur, vel) => {
 
 const brass: InstrumentFn = (s, t, midi, dur, vel) => {
   const f = midiToFreq(midi);
-  filteredOsc(s, t, f, ['sawtooth', 'sawtooth', 'square'], [-7, 7, 0], 500, 900 + 3600 * vel, 1500, 1.4, 0.16 * vel, { a: 0.025, d: 0.12, s: 0.7, r: 0.1 }, dur, -40);
+  filteredOsc(
+    s,
+    t,
+    f,
+    ['sawtooth', 'sawtooth', 'square'],
+    [-7, 7, 0],
+    500,
+    900 + 3600 * vel,
+    1500,
+    1.4,
+    0.16 * vel,
+    { a: 0.025, d: 0.12, s: 0.7, r: 0.1 },
+    dur,
+    -40,
+  );
 };
 
 const kazoo: InstrumentFn = (s, t, midi, dur, vel) => {
@@ -179,13 +240,40 @@ const kazoo: InstrumentFn = (s, t, midi, dur, vel) => {
 
 const whistle: InstrumentFn = (s, t, midi, dur, vel) => {
   const f = midiToFreq(midi);
-  tone(s, { type: 'sine', freq: f, t, dur, gain: 0.2 * vel, env: { a: 0.04, d: 0.1, s: 0.85, r: 0.08 }, vibrato: { rate: 6, depth: f * 0.01, delay: 0.1 } });
-  noise(s, { t, dur, gain: 0.03 * vel, env: { a: 0.03, d: 0.1, s: 0.6, r: 0.08 }, filter: { type: 'bandpass', freq: f, q: 15 } });
+  tone(s, {
+    type: 'sine',
+    freq: f,
+    t,
+    dur,
+    gain: 0.2 * vel,
+    env: { a: 0.04, d: 0.1, s: 0.85, r: 0.08 },
+    vibrato: { rate: 6, depth: f * 0.01, delay: 0.1 },
+  });
+  noise(s, {
+    t,
+    dur,
+    gain: 0.03 * vel,
+    env: { a: 0.03, d: 0.1, s: 0.6, r: 0.08 },
+    filter: { type: 'bandpass', freq: f, q: 15 },
+  });
 };
 
 const pad: InstrumentFn = (s, t, midi, dur, vel) => {
   const f = midiToFreq(midi);
-  filteredOsc(s, t, f, ['sawtooth', 'triangle', 'sawtooth'], [-9, 0, 9], 600, 1500, 1100, 0.8, 0.07 * vel, { a: 0.3, d: 0.4, s: 0.8, r: 0.5 }, dur);
+  filteredOsc(
+    s,
+    t,
+    f,
+    ['sawtooth', 'triangle', 'sawtooth'],
+    [-9, 0, 9],
+    600,
+    1500,
+    1100,
+    0.8,
+    0.07 * vel,
+    { a: 0.3, d: 0.4, s: 0.8, r: 0.5 },
+    dur,
+  );
 };
 
 const organ: InstrumentFn = (s, t, midi, dur, vel) => {
@@ -205,24 +293,72 @@ const steelDrum: InstrumentFn = (s, t, midi, _dur, vel) => {
 
 const squareLead: InstrumentFn = (s, t, midi, dur, vel) => {
   const f = midiToFreq(midi);
-  filteredOsc(s, t, f, ['square', 'square'], [-8, 8], 1200, 3800, 2400, 1, 0.08 * vel, { a: 0.008, d: 0.12, s: 0.7, r: 0.08 }, dur);
+  filteredOsc(
+    s,
+    t,
+    f,
+    ['square', 'square'],
+    [-8, 8],
+    1200,
+    3800,
+    2400,
+    1,
+    0.08 * vel,
+    { a: 0.008, d: 0.12, s: 0.7, r: 0.08 },
+    dur,
+  );
 };
 
 const pizz: InstrumentFn = (s, t, midi, _dur, vel) => {
   const f = midiToFreq(midi);
-  filteredOsc(s, t, f, ['triangle', 'sawtooth'], [0, 4], 2400, 2600, 500, 2, 0.24 * vel, { a: 0.003, d: 0.2, s: 0.05, r: 0.06 }, 0.05);
+  filteredOsc(
+    s,
+    t,
+    f,
+    ['triangle', 'sawtooth'],
+    [0, 4],
+    2400,
+    2600,
+    500,
+    2,
+    0.24 * vel,
+    { a: 0.003, d: 0.2, s: 0.05, r: 0.06 },
+    0.05,
+  );
 };
 
 const uke: InstrumentFn = (s, t, midi, _dur, vel) => {
   const f = midiToFreq(midi);
-  filteredOsc(s, t, f, ['sawtooth', 'triangle'], [3, 0], 3200, 3400, 700, 1.5, 0.15 * vel, { a: 0.002, d: 0.35, s: 0.08, r: 0.1 }, 0.1);
+  filteredOsc(
+    s,
+    t,
+    f,
+    ['sawtooth', 'triangle'],
+    [3, 0],
+    3200,
+    3400,
+    700,
+    1.5,
+    0.15 * vel,
+    { a: 0.002, d: 0.35, s: 0.08, r: 0.1 },
+    0.1,
+  );
 };
 
 const choir: InstrumentFn = (s, t, midi, dur, vel) => {
   const f = midiToFreq(midi);
   const level = 0.06 * vel;
   vocal(s, { t, dur: dur + 0.3, f0: f, vowel: 'a', gain: level, attack: 0.25, release: 0.3, vibrato: 0.008 });
-  vocal(s, { t, dur: dur + 0.3, f0: f * 1.004, vowel: 'o', gain: level * 0.8, attack: 0.3, release: 0.3, vibrato: 0.01 });
+  vocal(s, {
+    t,
+    dur: dur + 0.3,
+    f0: f * 1.004,
+    vowel: 'o',
+    gain: level * 0.8,
+    attack: 0.3,
+    release: 0.3,
+    vibrato: 0.01,
+  });
 };
 
 // -----------------------------------------------------------------------------
@@ -235,12 +371,24 @@ const kick: InstrumentFn = (s, t, _m, _d, vel) => {
 };
 
 const snare: InstrumentFn = (s, t, _m, _d, vel) => {
-  noise(s, { t, dur: 0.15, gain: 0.45 * vel, filter: { type: 'highpass', freq: 1400 }, filter2: { type: 'lowpass', freq: 8000 } });
+  noise(s, {
+    t,
+    dur: 0.15,
+    gain: 0.45 * vel,
+    filter: { type: 'highpass', freq: 1400 },
+    filter2: { type: 'lowpass', freq: 8000 },
+  });
   tone(s, { type: 'triangle', freq: 230, freqEnd: 170, t, dur: 0.08, gain: 0.35 * vel });
 };
 
 const clap: InstrumentFn = (s, t, _m, _d, vel) => {
-  for (let i = 0; i < 3; i++) noise(s, { t: t + i * 0.011, dur: 0.018, gain: 0.5 * vel, filter: { type: 'bandpass', freq: 1250, q: 1.3 } });
+  for (let i = 0; i < 3; i++)
+    noise(s, {
+      t: t + i * 0.011,
+      dur: 0.018,
+      gain: 0.5 * vel,
+      filter: { type: 'bandpass', freq: 1250, q: 1.3 },
+    });
   noise(s, { t: t + 0.033, dur: 0.13, gain: 0.4 * vel, filter: { type: 'bandpass', freq: 1150, q: 1.1 } });
 };
 
@@ -253,7 +401,13 @@ const openHat: InstrumentFn = (s, t, _m, _d, vel) => {
 };
 
 const shaker: InstrumentFn = (s, t, _m, _d, vel) => {
-  noise(s, { t, dur: 0.05, gain: 0.2 * vel, attack: 0.018, filter: { type: 'bandpass', freq: 5500, q: 1.2 } });
+  noise(s, {
+    t,
+    dur: 0.05,
+    gain: 0.2 * vel,
+    attack: 0.018,
+    filter: { type: 'bandpass', freq: 5500, q: 1.2 },
+  });
 };
 
 const tomLo: InstrumentFn = (s, t, _m, _d, vel) => {
@@ -380,7 +534,12 @@ export const DRUM_IDS: readonly DrumId[] = [
  * @param t0 - Start time.
  * @param notes - `[offsetSeconds, midi, durSeconds, vel]` tuples.
  */
-export function phrase(s: SynthContext, inst: InstrumentId, t0: number, notes: ReadonlyArray<readonly [number, number, number, number]>): void {
+export function phrase(
+  s: SynthContext,
+  inst: InstrumentId,
+  t0: number,
+  notes: ReadonlyArray<readonly [number, number, number, number]>,
+): void {
   const fn = INSTRUMENTS[inst];
   for (const [dt, midi, dur, vel] of notes) fn(s, t0 + dt, midi, dur, vel);
 }
@@ -398,7 +557,13 @@ export function snareRoll(s: SynthContext, t: number, dur: number, from: number,
   const hits = Math.max(2, Math.floor(dur / 0.045));
   for (let i = 0; i < hits; i++) {
     const k = i / (hits - 1);
-    noise(s, { t: t + k * dur, dur: 0.06, gain: (from + (to - from) * k) * 0.3, filter: { type: 'highpass', freq: 1800 }, filter2: { type: 'lowpass', freq: 7000 } });
+    noise(s, {
+      t: t + k * dur,
+      dur: 0.06,
+      gain: (from + (to - from) * k) * 0.3,
+      filter: { type: 'highpass', freq: 1800 },
+      filter2: { type: 'lowpass', freq: 7000 },
+    });
   }
 }
 

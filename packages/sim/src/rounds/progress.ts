@@ -28,15 +28,18 @@ export class CourseMetric {
 
   constructor(round: RoundDefinition, start: Vec3) {
     const goalTrigger =
-      round.triggers.find((t) => t.kind === 'finish') ?? round.triggers.find((t) => t.kind === 'crown') ?? null;
+      round.triggers.find((t) => t.kind === 'finish') ??
+      round.triggers.find((t) => t.kind === 'crown') ??
+      null;
     const nav = round.botNav;
     const remain = waypointDistancesToGoal(nav);
     const edges: [Waypoint, Waypoint][] = [];
     const byId = new Map(nav.map((w) => [w.id, w]));
-    for (const w of nav) for (const n of w.next) {
-      const b = byId.get(n);
-      if (b) edges.push([w, b]);
-    }
+    for (const w of nav)
+      for (const n of w.next) {
+        const b = byId.get(n);
+        if (b) edges.push([w, b]);
+      }
     this.edgeCount = edges.length;
     this.ax = new Float64Array(edges.length);
     this.ay = new Float64Array(edges.length);
@@ -55,7 +58,11 @@ export class CourseMetric {
       const r = remain.get(b.id) ?? Infinity;
       this.bRemain[i] = Number.isFinite(r) ? r : 0;
     });
-    this.goal = goalTrigger ? { ...goalTrigger.position } : nav.length > 0 ? { ...nav[nav.length - 1]!.position } : null;
+    this.goal = goalTrigger
+      ? { ...goalTrigger.position }
+      : nav.length > 0
+        ? { ...nav[nav.length - 1]!.position }
+        : null;
     let total = 0;
     if (this.edgeCount > 0) {
       total = this.remainingVia(start.x, start.y, start.z);
@@ -141,7 +148,13 @@ export function waypointDistancesToGoal(nav: readonly Waypoint[]): Map<number, n
     const w = byId.get(id)!;
     const d = dist.get(id)!;
     for (const prev of incoming.get(id) ?? []) {
-      const nd = d + Math.hypot(prev.position.x - w.position.x, prev.position.y - w.position.y, prev.position.z - w.position.z);
+      const nd =
+        d +
+        Math.hypot(
+          prev.position.x - w.position.x,
+          prev.position.y - w.position.y,
+          prev.position.z - w.position.z,
+        );
       if (nd < (dist.get(prev.id) ?? Infinity)) {
         dist.set(prev.id, nd);
         open.push(prev.id);

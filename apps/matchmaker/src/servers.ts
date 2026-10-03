@@ -29,7 +29,12 @@ export const SERVER_TTL_MS = 15_000;
  * @param now - Current time (epoch ms).
  * @returns The chosen server, or null when none fits.
  */
-export function pickServer(servers: readonly GameServer[], region: string, seats: number, now: number): GameServer | null {
+export function pickServer(
+  servers: readonly GameServer[],
+  region: string,
+  seats: number,
+  now: number,
+): GameServer | null {
   let best: GameServer | null = null;
   let bestRatio = Number.POSITIVE_INFINITY;
   for (const s of servers) {

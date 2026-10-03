@@ -1,4 +1,12 @@
-import { Color, Group, Mesh, MeshBasicNodeMaterial, RingGeometry, Vector3, type Object3D } from 'three/webgpu';
+import {
+  Color,
+  Group,
+  Mesh,
+  MeshBasicNodeMaterial,
+  RingGeometry,
+  Vector3,
+  type Object3D,
+} from 'three/webgpu';
 import { float, sin, smoothstep, uniform, uv } from 'three/tsl';
 import type { TumblerAnimInput, TumblerLoadout } from '../character/types.ts';
 import { createFloatingPlatform, type FloatingPlatform } from './props.ts';

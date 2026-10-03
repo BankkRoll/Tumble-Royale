@@ -53,7 +53,10 @@ export function createDebugPanel(t: DebugTargets): GUI {
     .onChange((v: number) => {
       t.timeScale.value = v;
     });
-  gui.add(state, 'stats').name('Stats overlay').onChange((v: boolean) => t.stats.setVisible(v));
+  gui
+    .add(state, 'stats')
+    .name('Stats overlay')
+    .onChange((v: boolean) => t.stats.setVisible(v));
   const show = gui.addFolder('Show');
   show.add(state, 'skipRound').name('Skip round (forfeit all)');
   show.add(state, 'qualifyMe').name('Force qualify me');

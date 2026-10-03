@@ -37,7 +37,6 @@ import {
 } from '../gumdrop-gauntlet/kit.ts';
 import { COACH_PODIUM, FALL_BOARD, ISLAND as I, PRACTICE_SPAWN } from './layout.ts';
 
-
 // -----------------------------------------------------------------------------
 // Constants
 // -----------------------------------------------------------------------------
@@ -140,8 +139,20 @@ const diveGap: Piece[] = [
   lip(I.jumpC.top, I.jumpC.z1 - 0.3, 9),
   paint(0, I.jumpC.top, I.jumpC.z1 - 1.6, 3, 1.6, { color: 'accent', pattern: 'chevron' }),
   // The "dive through the hoop" ring floats over the gap: pure decoration.
-  ...deco(torus(0, I.jumpC.top + 2.3, I.jumpC.z1 + I.diveGap / 2, 2.3, 0.22, { color: 'accent', rotation: { pitch: 90 } })),
-  ...deco(...mirrorX(cyl(2.5, I.jumpC.top - 3, I.jumpC.z1 + I.diveGap / 2, 0.18, 8.2, { color: 'neutral', pattern: 'stripes' }))),
+  ...deco(
+    torus(0, I.jumpC.top + 2.3, I.jumpC.z1 + I.diveGap / 2, 2.3, 0.22, {
+      color: 'accent',
+      rotation: { pitch: 90 },
+    }),
+  ),
+  ...deco(
+    ...mirrorX(
+      cyl(2.5, I.jumpC.top - 3, I.jumpC.z1 + I.diveGap / 2, 0.18, 8.2, {
+        color: 'neutral',
+        pattern: 'stripes',
+      }),
+    ),
+  ),
 ];
 
 const grabPlaza: Piece[] = [
@@ -160,7 +171,15 @@ const ledgeWall: Piece[] = [
   floor(0, I.ledgeTop, I.grabZ1, I.ledgeZ1, 12, { color: 'secondary', grabbable: true }, I.ledgeTop + 0.8),
   // Yellow lip trim marks the grabbable edge (LEVELS.md §1.5 grab lip).
   ...deco(box(0, I.ledgeTop - 0.12, I.grabZ1 - 0.05, 12.04, 0.24, 0.12, { color: 'accent', bevel: 0.05 })),
-  ...deco(...mirrorX(box(3.5, I.ledgeTop / 2, I.grabZ1 - 0.04, 0.3, I.ledgeTop - 0.4, 0.08, { color: 'accent', pattern: 'stripes', bevel: 0 }))),
+  ...deco(
+    ...mirrorX(
+      box(3.5, I.ledgeTop / 2, I.grabZ1 - 0.04, 0.3, I.ledgeTop - 0.4, 0.08, {
+        color: 'accent',
+        pattern: 'stripes',
+        bevel: 0,
+      }),
+    ),
+  ),
   ...deco(torus(0, I.ledgeTop + 0.03, I.padZ, 2, 0.18, { color: 'accent' })),
 ];
 
@@ -172,8 +191,20 @@ const bounceShelf: Piece[] = [
 const checkpointTerrace: Piece[] = [
   floor(0, I.shelfTop, I.checkpointZ0, I.racePlazaZ0, 12, { color: 'secondary' }, SLAB),
   // Diving board for the fall demo: a striped plank over the void.
-  floor(FALL_BOARD.x - 1.45, I.shelfTop, FALL_BOARD.z - 1.25, FALL_BOARD.z + 1.25, 3.5, { color: 'accent', pattern: 'stripes' }, 0.5),
-  paint(FALL_BOARD.x + 0.05, I.shelfTop, FALL_BOARD.z, 0.4, 2.5, { color: 'danger', pattern: 'hazard', rotation: { yaw: 0 } }),
+  floor(
+    FALL_BOARD.x - 1.45,
+    I.shelfTop,
+    FALL_BOARD.z - 1.25,
+    FALL_BOARD.z + 1.25,
+    3.5,
+    { color: 'accent', pattern: 'stripes' },
+    0.5,
+  ),
+  paint(FALL_BOARD.x + 0.05, I.shelfTop, FALL_BOARD.z, 0.4, 2.5, {
+    color: 'danger',
+    pattern: 'hazard',
+    rotation: { yaw: 0 },
+  }),
   ...deco(cyl(FALL_BOARD.x - 1.5, I.shelfTop - 1.5, FALL_BOARD.z, 0.25, 3, { color: 'neutral' })),
   // Rail on the far side only: the diving board leaves the terrace on +X.
   box(-6.25, I.shelfTop + 0.4, 99, 0.5, 0.8, 9, { color: 'neutral' }),
@@ -188,12 +219,22 @@ const racePlaza: Piece[] = [
 
 const raceTrack: Piece[] = [
   floor(0, I.shelfTop, I.raceTrackZ0, I.rampZ0, 12, { color: 'primary' }, SLAB),
-  ...HURDLES.map((z) => box(0, I.shelfTop + 0.275, z, 12, 0.55, 0.5, { color: 'danger', pattern: 'stripes', bevel: 0.12 })),
-  ramp(0, (I.shelfTop + I.raceLowTop) / 2, (I.rampZ0 + I.rampZ1) / 2, 12, I.shelfTop - I.raceLowTop, I.rampZ1 - I.rampZ0, {
-    rotation: { yaw: 180 },
-    color: 'secondary',
-    pattern: 'chevron',
-  }),
+  ...HURDLES.map((z) =>
+    box(0, I.shelfTop + 0.275, z, 12, 0.55, 0.5, { color: 'danger', pattern: 'stripes', bevel: 0.12 }),
+  ),
+  ramp(
+    0,
+    (I.shelfTop + I.raceLowTop) / 2,
+    (I.rampZ0 + I.rampZ1) / 2,
+    12,
+    I.shelfTop - I.raceLowTop,
+    I.rampZ1 - I.rampZ0,
+    {
+      rotation: { yaw: 180 },
+      color: 'secondary',
+      pattern: 'chevron',
+    },
+  ),
   floor(0, I.raceLowTop, I.rampZ1, I.gapZ0, 14, { color: 'primary' }, SLAB),
   lip(I.raceLowTop, I.gapZ0 - 0.3, 14),
   floor(0, I.raceLowTop, I.gapZ1, I.endZ, 12, { color: 'safe' }, SLAB),
@@ -227,7 +268,14 @@ const skyDecor: Piece[] = [
 // Checkpoints (respawn points sit on solid ground past each trigger)
 // -----------------------------------------------------------------------------
 
-const cp = (index: number, top: number, z: number, width: number, respawnZ: number, xs: number[]): Trigger => ({
+const cp = (
+  index: number,
+  top: number,
+  z: number,
+  width: number,
+  respawnZ: number,
+  xs: number[],
+): Trigger => ({
   id: `cp-${index}`,
   kind: 'checkpoint',
   index,
@@ -252,7 +300,10 @@ const triggers: Trigger[] = [
   cp(3, I.grabTop, diveLandZ + 1.6, 14, diveLandZ + 3.2, [-3, -1, 1, 3]),
   cp(4, I.ledgeTop, 68.6, 12, 69.6, [-2.5, -1, 1, 2.5]),
   cp(5, I.shelfTop, 77, 10, 78.6, SPREAD),
-  { ...cp(6, I.shelfTop, I.checkpointGateZ, 12, I.checkpointGateZ + 2.5, [-2, -0.7, 0.7, 2]), size: v(12, 4, 2) },
+  {
+    ...cp(6, I.shelfTop, I.checkpointGateZ, 12, I.checkpointGateZ + 2.5, [-2, -0.7, 0.7, 2]),
+    size: v(12, 4, 2),
+  },
   cp(7, I.raceLowTop, I.rampZ1 + 2, 14, I.rampZ1 + 3.5, [-3, -1, 1, 3]),
   { id: 'finish', kind: 'finish', position: v(0, I.raceLowTop + 2, I.finishZ), size: v(12, 4, 2) },
 ];
@@ -283,7 +334,16 @@ const obstacles: Obstacle[] = [
     id: 's7-tiles',
     type: 'fallingTiles',
     position: v(0, I.shelfTop, I.tilesZ),
-    params: { shape: 'square', cols: 3, rows: 4, tileSize: 2.6, gap: 0.12, thickness: 0.5, warnTime: 0.6, respawnTime: 3.5 },
+    params: {
+      shape: 'square',
+      cols: 3,
+      rows: 4,
+      tileSize: 2.6,
+      gap: 0.12,
+      thickness: 0.5,
+      warnTime: 0.6,
+      respawnTime: 3.5,
+    },
   },
   {
     id: 's8-gate',
@@ -302,9 +362,19 @@ const obstacles: Obstacle[] = [
     id: `r2-bump-${i + 1}`,
     type: 'bumperPillar',
     position: v(x, I.raceLowTop, z),
-    params: { radius: 0.9, height: 2.4, bounceSpeed: 7, ...(i === 2 ? { orbitRadius: 1.2, orbitSpeed: 1.6 } : {}) },
+    params: {
+      radius: 0.9,
+      height: 2.4,
+      bounceSpeed: 7,
+      ...(i === 2 ? { orbitRadius: 1.2, orbitSpeed: 1.6 } : {}),
+    },
   })),
-  { id: 'r3-finish', type: 'finishLine', position: v(0, I.raceLowTop, I.finishZ), params: { width: 12, height: 6 } },
+  {
+    id: 'r3-finish',
+    type: 'finishLine',
+    position: v(0, I.raceLowTop, I.finishZ),
+    params: { width: 12, height: 6 },
+  },
 ];
 
 // -----------------------------------------------------------------------------
@@ -319,7 +389,9 @@ const CLIMB = { r: 1, action: 'jump' } as const;
 
 const nav = new NavBuilder();
 nav.add(0, [0, 0, 2], 100, { r: 3 });
-MOVE_PATH.slice(1).forEach(([x, z], i) => nav.add(100 + i, [x, 0, z], i < MOVE_PATH.length - 2 ? 101 + i : 200, { r: 1.4 }));
+MOVE_PATH.slice(1).forEach(([x, z], i) =>
+  nav.add(100 + i, [x, 0, z], i < MOVE_PATH.length - 2 ? 101 + i : 200, { r: 1.4 }),
+);
 nav
   .add(200, [0, 0, 26.6], 201, LINEUP)
   .add(201, [0, 0, I.moveZ1 + 0.2], 202, JUMP)
@@ -336,7 +408,13 @@ nav
   .add(400, [0, I.grabTop, 61], 410, { r: 2 })
   .add(410, [0, I.grabTop, 64], 411, LINEUP)
   .add(411, [0, I.grabTop, I.grabZ1 - 0.3], 420, { r: 1.5, action: 'jump' });
-for (let k = 0; k < 7; k++) nav.add(420 + k, [0, I.ledgeTop + 1.2, I.grabZ1 + 0.3], k < 6 ? 421 + k : 500, k % 3 === 0 ? CLIMB : { r: 1 });
+for (let k = 0; k < 7; k++)
+  nav.add(
+    420 + k,
+    [0, I.ledgeTop + 1.2, I.grabZ1 + 0.3],
+    k < 6 ? 421 + k : 500,
+    k % 3 === 0 ? CLIMB : { r: 1 },
+  );
 nav
   .add(500, [0, I.ledgeTop, 69.8], 501, LINEUP)
   .add(501, [0, I.ledgeTop, I.padZ], 502, { r: 0.8 })
@@ -345,12 +423,8 @@ nav
   .add(600, [0, I.shelfTop, 81.5], 601, LINEUP)
   .add(601, [0, I.shelfTop, I.tilesZ], 602, { r: 2 })
   .add(602, [0, I.shelfTop, 96], 700, { r: 2 });
-nav
-  .add(700, [0, I.shelfTop, 100], 701, { r: 2 })
-  .add(701, [0, I.shelfTop, 105], 800, { r: 2 });
-nav
-  .add(800, [0, I.shelfTop, 112], 801, { r: 3 })
-  .add(801, [0, I.shelfTop, 119.5], 802, LINEUP);
+nav.add(700, [0, I.shelfTop, 100], 701, { r: 2 }).add(701, [0, I.shelfTop, 105], 800, { r: 2 });
+nav.add(800, [0, I.shelfTop, 112], 801, { r: 3 }).add(801, [0, I.shelfTop, 119.5], 802, LINEUP);
 HURDLES.forEach((z, i) => {
   nav.add(802 + 2 * i, [0, I.shelfTop, z - 1.3], 803 + 2 * i, { r: 1.3, action: 'jump' });
   nav.add(803 + 2 * i, [0, I.shelfTop, z + 3], i < HURDLES.length - 1 ? 804 + 2 * i : 810, LINEUP);

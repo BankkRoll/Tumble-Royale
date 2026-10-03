@@ -129,7 +129,10 @@ const QUALIFY_METRIC: Record<string, ChallengeMetric | undefined> = {
 };
 
 async function replayStored(ctx: AppContext, matchId: string): Promise<IngestResult | null> {
-  const [row] = await ctx.db.select({ rewards: matches.rewards }).from(matches).where(eq(matches.id, matchId));
+  const [row] = await ctx.db
+    .select({ rewards: matches.rewards })
+    .from(matches)
+    .where(eq(matches.id, matchId));
   return row ? { matchId, alreadyProcessed: true, rewards: row.rewards as PlayerRewardSummary[] } : null;
 }
 
@@ -168,13 +171,18 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
       // Unknown user ids (deleted accounts, forged slots) are kept as anonymous history only.
       const claimed = m.participants.flatMap((p) => (p.userId ? [p.userId] : []));
       const known = claimed.length
-        ? await tx.select({ id: users.id, region: users.region }).from(users).where(inArray(users.id, claimed))
+        ? await tx
+            .select({ id: users.id, region: users.region })
+            .from(users)
+            .where(inArray(users.id, claimed))
         : [];
       const regionOf = new Map(known.map((k) => [k.id, k.region]));
 
       const placementOf = new Map(m.placements.map((p) => [p.key, p]));
       const qualifiedRounds = new Map<string, number>();
-      for (const r of m.rounds) for (const res of r.results) if (res.qualified) qualifiedRounds.set(res.key, (qualifiedRounds.get(res.key) ?? 0) + 1);
+      for (const r of m.rounds)
+        for (const res of r.results)
+          if (res.qualified) qualifiedRounds.set(res.key, (qualifiedRounds.get(res.key) ?? 0) + 1);
 
       await tx.insert(matchParticipants).values(
         m.participants.map((p) => ({
@@ -190,7 +198,13 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
         })),
       );
       await tx.insert(matchRounds).values(
-        m.rounds.map((r, i) => ({ matchId: m.matchId, roundIndex: i, roundId: r.roundId, roundType: r.roundType, durationMs: r.durationMs })),
+        m.rounds.map((r, i) => ({
+          matchId: m.matchId,
+          roundIndex: i,
+          roundId: r.roundId,
+          roundType: r.roundType,
+          durationMs: r.durationMs,
+        })),
       );
       const resultRows = m.rounds.flatMap((r, i) =>
         r.results.map((res) => ({
@@ -206,7 +220,10 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
       if (resultRows.length) await tx.insert(roundResults).values(resultRows);
 
       const humans = m.participants.filter((p) => !p.isBot && p.userId && regionOf.has(p.userId));
-      const ranked = grants && m.queue === 'ranked' ? await rateLobby(tx, m, seasonId, regionOf, now) : new Map<string, RankedRow>();
+      const ranked =
+        grants && m.queue === 'ranked'
+          ? await rateLobby(tx, m, seasonId, regionOf, now)
+          : new Map<string, RankedRow>();
       const rewards: PlayerRewardSummary[] = [];
       leaderboardUpdates = [];
 
@@ -215,10 +232,18 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
         const pl = placementOf.get(p.key)!;
         const played = m.rounds.filter((r) => r.results.some((x) => x.key === p.key));
         const qualified = qualifiedRounds.get(p.key) ?? 0;
-        const reachedFinal = m.rounds.some((r) => r.roundType === 'final' && r.results.some((x) => x.key === p.key));
-        const [stats] = await tx.select().from(playerStats).where(eq(playerStats.userId, userId)).for('update');
+        const reachedFinal = m.rounds.some(
+          (r) => r.roundType === 'final' && r.results.some((x) => x.key === p.key),
+        );
+        const [stats] = await tx
+          .select()
+          .from(playerStats)
+          .where(eq(playerStats.userId, userId))
+          .for('update');
         const firstOfDay = stats?.lastShowDay !== dayKey(now);
-        const nonFinalQualified = played.filter((r) => r.roundType !== 'final' && r.results.find((x) => x.key === p.key)?.qualified).length;
+        const nonFinalQualified = played.filter(
+          (r) => r.roundType !== 'final' && r.results.find((x) => x.key === p.key)?.qualified,
+        ).length;
         const payout = grants
           ? ctx.catalog.showRewards({
               roundsPlayed: played.length,
@@ -231,19 +256,41 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
               firstShowOfDay: firstOfDay,
             })
           : { lines: [], xp: 0, gumballs: 0, crownShards: 0 };
-        const xpLines: RewardLine[] = payout.lines.filter((l) => l.xp > 0).map((l) => ({ label: l.label, amount: l.xp }));
-        const gbLines: RewardLine[] = payout.lines.filter((l) => l.gumballs > 0).map((l) => ({ label: l.label, amount: l.gumballs }));
+        const xpLines: RewardLine[] = payout.lines
+          .filter((l) => l.xp > 0)
+          .map((l) => ({ label: l.label, amount: l.xp }));
+        const gbLines: RewardLine[] = payout.lines
+          .filter((l) => l.gumballs > 0)
+          .map((l) => ({ label: l.label, amount: l.gumballs }));
         const xpTotal = payout.xp;
         let gbTotal = payout.gumballs;
         const shards = payout.crownShards;
         const ref = `match:${m.matchId}`;
         await applyLedger(tx, { userId, currency: 'gumballs', delta: gbTotal, reason: 'match_reward', ref });
-        const shardBalance = (await applyLedger(tx, { userId, currency: 'crown_shards', delta: shards, reason: 'match_reward', ref })).balance;
+        const shardBalance = (
+          await applyLedger(tx, {
+            userId,
+            currency: 'crown_shards',
+            delta: shards,
+            reason: 'match_reward',
+            ref,
+          })
+        ).balance;
         // Every full set of shards becomes a Crown (counted in the Crown total, not as a win).
         let crownsFromShards = 0;
-        for (let left = shardBalance; left >= ctx.catalog.shardsPerCrown; left -= ctx.catalog.shardsPerCrown) {
+        for (
+          let left = shardBalance;
+          left >= ctx.catalog.shardsPerCrown;
+          left -= ctx.catalog.shardsPerCrown
+        ) {
           crownsFromShards++;
-          await applyLedger(tx, { userId, currency: 'crown_shards', delta: -ctx.catalog.shardsPerCrown, reason: 'shard_conversion', ref: `${ref}:${crownsFromShards}` });
+          await applyLedger(tx, {
+            userId,
+            currency: 'crown_shards',
+            delta: -ctx.catalog.shardsPerCrown,
+            reason: 'shard_conversion',
+            ref: `${ref}:${crownsFromShards}`,
+          });
         }
         const xp = await addXp(tx, ctx.catalog, userId, xpTotal);
         if (xp.levelGumballs) {
@@ -252,7 +299,10 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
         }
         const crownsGained = (grants && pl.crowned ? 1 : 0) + crownsFromShards;
         if (crownsGained) {
-          await tx.update(profiles).set({ crowns: sql`${profiles.crowns} + ${crownsGained}` }).where(eq(profiles.userId, userId));
+          await tx
+            .update(profiles)
+            .set({ crowns: sql`${profiles.crowns} + ${crownsGained}` })
+            .where(eq(profiles.userId, userId));
         }
 
         const won = grants && pl.crowned;
@@ -277,15 +327,22 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
           const res = r.results.find((x) => x.key === p.key)!;
           await tx
             .insert(playerRoundStats)
-            .values({ userId, roundId: r.roundId, played: 1, qualified: res.qualified ? 1 : 0, bestTimeMs: res.qualified ? (res.timeMs ?? null) : null })
+            .values({
+              userId,
+              roundId: r.roundId,
+              played: 1,
+              qualified: res.qualified ? 1 : 0,
+              bestTimeMs: res.qualified ? (res.timeMs ?? null) : null,
+            })
             .onConflictDoUpdate({
               target: [playerRoundStats.userId, playerRoundStats.roundId],
               set: {
                 played: sql`${playerRoundStats.played} + 1`,
                 qualified: sql`${playerRoundStats.qualified} + ${res.qualified ? 1 : 0}`,
-                bestTimeMs: res.qualified && res.timeMs != null
-                  ? sql`least(coalesce(${playerRoundStats.bestTimeMs}, ${res.timeMs}), ${res.timeMs})`
-                  : sql`${playerRoundStats.bestTimeMs}`,
+                bestTimeMs:
+                  res.qualified && res.timeMs != null
+                    ? sql`least(coalesce(${playerRoundStats.bestTimeMs}, ${res.timeMs}), ${res.timeMs})`
+                    : sql`${playerRoundStats.bestTimeMs}`,
               },
             });
         }
@@ -303,7 +360,8 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
           };
           for (const r of played) {
             const metric = QUALIFY_METRIC[r.roundType];
-            if (metric && r.results.find((x) => x.key === p.key)?.qualified) metrics[metric] = (metrics[metric] ?? 0) + 1;
+            if (metric && r.results.find((x) => x.key === p.key)?.qualified)
+              metrics[metric] = (metrics[metric] ?? 0) + 1;
           }
           challenges = await applyChallengeProgress(tx, ctx.catalog, userId, metrics, now);
         }
@@ -365,7 +423,12 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
   for (const r of result.rewards) {
     await ctx.notifier.notifyUser(r.userId, { type: 'wallet', ...r.wallet });
     for (const c of r.challenges.filter((x) => x.completed)) {
-      await ctx.notifier.notifyUser(r.userId, { type: 'notification', kind: 'reward', title: 'Challenge complete!', body: c.title });
+      await ctx.notifier.notifyUser(r.userId, {
+        type: 'notification',
+        kind: 'reward',
+        title: 'Challenge complete!',
+        body: c.title,
+      });
     }
   }
   return result;
@@ -397,7 +460,13 @@ async function rateLobby(
     ? await tx
         .select()
         .from(ratings)
-        .where(and(eq(ratings.seasonId, seasonId), eq(ratings.queue, RANKED_QUEUE), inArray(ratings.userId, humanIds)))
+        .where(
+          and(
+            eq(ratings.seasonId, seasonId),
+            eq(ratings.queue, RANKED_QUEUE),
+            inArray(ratings.userId, humanIds),
+          ),
+        )
         .for('update')
     : [];
   const priorOf = new Map<string, RankedPrior>(
@@ -460,4 +529,3 @@ async function rateLobby(
   }
   return out;
 }
-

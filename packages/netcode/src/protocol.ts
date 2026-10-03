@@ -99,7 +99,13 @@ export function writeHello(w: BitWriter, m: HelloMsg): void {
 
 /** Reads a Hello after its type byte. */
 export function readHello(r: BitReader): HelloMsg {
-  return { version: r.readBits(16), name: r.readString(), resumeToken: r.readString(), loadout: r.readString(), ticket: r.readString() };
+  return {
+    version: r.readBits(16),
+    name: r.readString(),
+    resumeToken: r.readString(),
+    loadout: r.readString(),
+    ticket: r.readString(),
+  };
 }
 
 /** Writes a Welcome. */
@@ -238,7 +244,13 @@ export interface PlayerRewardMsg {
   crownsFromShards: number;
   pass: { xp: number; tierBefore: number; tierAfter: number };
   challenges: { title: string; before: number; progress: number; target: number; completed: boolean }[];
-  ranked: { rpBefore: number; rpAfter: number; rpDelta: number; label: string; placementsLeft: number } | null;
+  ranked: {
+    rpBefore: number;
+    rpAfter: number;
+    rpDelta: number;
+    label: string;
+    placementsLeft: number;
+  } | null;
   wallet: { gumballs: number; gems: number };
 }
 
@@ -300,7 +312,8 @@ export function packLowFreq(msg: LowFreqMessage): Uint8Array {
 export function unpackLowFreq(bytes: Uint8Array): LowFreqMessage | null {
   try {
     const v: unknown = packr.unpack(bytes);
-    if (typeof v === 'object' && v !== null && typeof (v as { t?: unknown }).t === 'string') return v as LowFreqMessage;
+    if (typeof v === 'object' && v !== null && typeof (v as { t?: unknown }).t === 'string')
+      return v as LowFreqMessage;
   } catch {
     // Malformed payloads are reported as null below.
   }

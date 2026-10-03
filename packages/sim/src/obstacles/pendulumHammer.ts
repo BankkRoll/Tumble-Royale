@@ -67,7 +67,12 @@ export function pendulumAngle(t: number, p: PendulumHammerParams, speedScale: nu
  * @param out - At least one sample.
  * @param speedScale - Shortens the period.
  */
-export function pendulumHammerPose(t: number, p: PendulumHammerParams, out: PoseSample[], speedScale: number): void {
+export function pendulumHammerPose(
+  t: number,
+  p: PendulumHammerParams,
+  out: PoseSample[],
+  speedScale: number,
+): void {
   const s = out[0];
   if (!s) return;
   setPose(s, 0, p.pivotHeight, 0, 0, 0, 1, pendulumAngle(t, p, speedScale));
@@ -84,7 +89,9 @@ export function pendulumHammerTelegraph(t: number, p: PendulumHammerParams, spee
 
 /** Half-span between the gantry posts, outside the head's reach (m). */
 export function pendulumSupportSpan(p: PendulumHammerParams): number {
-  return p.armLength * Math.sin(Math.min(p.amplitudeDeg, 90) * DEG2RAD) + p.headLength / 2 + p.headRadius + 0.8;
+  return (
+    p.armLength * Math.sin(Math.min(p.amplitudeDeg, 90) * DEG2RAD) + p.headLength / 2 + p.headRadius + 0.8
+  );
 }
 
 class PendulumHammerRuntime extends RuntimeBase {
@@ -150,14 +157,19 @@ class PendulumHammerRuntime extends RuntimeBase {
     // Peak speed is at the bottom of the arc: sin() crosses zero every half cycle.
     const u0 = (this.lastT * scale) / this.p.period + this.p.phase;
     const u1 = (ctx.t * scale) / this.p.period + this.p.phase;
-    if (crossedPeriodic(u0, u1, 0.5, 0)) this.cue(ctx.events, 'whoosh', 0, this.p.pivotHeight - this.p.armLength, 0);
+    if (crossedPeriodic(u0, u1, 0.5, 0))
+      this.cue(ctx.events, 'whoosh', 0, this.p.pivotHeight - this.p.armLength, 0);
     this.endStep(ctx);
   }
 
   onContact(actor: ObstacleActor, collider: Collider, ctx: ObstacleStepContext): void {
     if (!this.hammerHandles.has(collider.handle) || actor.isGhost) return;
     if (!this.cooldown.ready(actor.id, ctx.t, 0.5)) return;
-    knockByMotion(actor, this.driver.body, { speed: this.p.knockSpeed, lift: this.p.knockLift, stun: this.p.stun });
+    knockByMotion(actor, this.driver.body, {
+      speed: this.p.knockSpeed,
+      lift: this.p.knockLift,
+      stun: this.p.stun,
+    });
     this.cue(ctx.events, 'bonk', 0, this.p.pivotHeight - this.p.armLength, 0);
   }
 
@@ -173,6 +185,7 @@ export const pendulumHammer: ObstacleModule<PendulumHammerParams> = {
   schema: pendulumHammerSchema,
   pose: pendulumHammerPose,
   poseCount: () => 1,
-  create: (instance, ctx) => new PendulumHammerRuntime(instance, ctx, pendulumHammerSchema.parse(instance.params)),
+  create: (instance, ctx) =>
+    new PendulumHammerRuntime(instance, ctx, pendulumHammerSchema.parse(instance.params)),
   audioCues: ['whoosh', 'bonk'],
 };

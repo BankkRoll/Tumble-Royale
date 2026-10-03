@@ -8,7 +8,16 @@
  */
 
 /** Ranked tiers in ascending order. */
-export const TIERS = ['unranked', 'bronze', 'silver', 'gold', 'platinum', 'diamond', 'champion', 'crown_league'] as const;
+export const TIERS = [
+  'unranked',
+  'bronze',
+  'silver',
+  'gold',
+  'platinum',
+  'diamond',
+  'champion',
+  'crown_league',
+] as const;
 /** A ranked tier id. */
 export type Tier = (typeof TIERS)[number];
 
@@ -40,7 +49,8 @@ export function tierForRp(rp: number, placementsLeft: number, regionRank: number
   if (placementsLeft > 0) return { tier: 'unranked', division: 0 };
   const idx = Math.min(LADDER.length - 1, Math.floor(Math.max(0, rp) / TIER_WIDTH));
   const tier = LADDER[idx]!;
-  if (tier === 'champion' && regionRank !== null && regionRank < CROWN_LEAGUE_SIZE) return { tier: 'crown_league', division: 0 };
+  if (tier === 'champion' && regionRank !== null && regionRank < CROWN_LEAGUE_SIZE)
+    return { tier: 'crown_league', division: 0 };
   const within = Math.max(0, rp) - idx * TIER_WIDTH;
   const division = 3 - Math.min(2, Math.floor(within / DIVISION_WIDTH));
   return { tier, division };

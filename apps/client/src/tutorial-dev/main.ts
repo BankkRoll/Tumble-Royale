@@ -51,7 +51,11 @@ async function boot(): Promise<void> {
     const d = s.settings;
     s.setSettings({
       graphics: { ...d.graphics, ...saved.graphics },
-      controls: { ...d.controls, ...saved.controls, keybinds: { ...d.controls.keybinds, ...saved.controls?.keybinds } },
+      controls: {
+        ...d.controls,
+        ...saved.controls,
+        keybinds: { ...d.controls.keybinds, ...saved.controls?.keybinds },
+      },
       audio: { ...d.audio, ...saved.audio },
       accessibility: { ...d.accessibility, ...saved.accessibility },
       gameplay: { ...d.gameplay, ...saved.gameplay },
@@ -73,7 +77,8 @@ async function boot(): Promise<void> {
   const input = new InputSystem({ element: canvas, settings: { pointerLock: false } });
   input.settings.sensitivity = ui.getState().settings.controls.mouseSensitivity;
   const profile = new ProfileStore(cfg.fresh);
-  if (!profile.exists) profile.create('Rookie', { primary: '#ff6fb5', secondary: '#ffd23f', pattern: 'dots' });
+  if (!profile.exists)
+    profile.create('Rookie', { primary: '#ff6fb5', secondary: '#ffd23f', pattern: 'dots' });
   pushMeta(profile);
 
   const post = createPostPipeline(renderer, new Scene(), new PerspectiveCamera(), quality.preset.post);
@@ -112,7 +117,10 @@ async function boot(): Promise<void> {
       window.__tutorialEnd = reason;
       session?.dispose();
       session = null;
-      endedLabel.textContent = reason === 'playAgain' ? 'Tutorial done: the game would start your first show now.' : 'Tutorial over: back to the menu in the real game.';
+      endedLabel.textContent =
+        reason === 'playAgain'
+          ? 'Tutorial done: the game would start your first show now.'
+          : 'Tutorial over: back to the menu in the real game.';
       ended.style.display = 'grid';
     },
   };

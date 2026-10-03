@@ -159,7 +159,8 @@ export class ParticlePool {
     time: UniformNode<'float', number>,
   ) {
     this.ring = new InstanceRing(capacity, STRIDE);
-    this.material = mode === 'glow' ? buildMaterial(this.ring, time, true) : buildMaterial(this.ring, time, false);
+    this.material =
+      mode === 'glow' ? buildMaterial(this.ring, time, true) : buildMaterial(this.ring, time, false);
     this.object = new Sprite(this.material);
     this.object.name = mode === 'glow' ? 'vfx-glow' : 'vfx-puffs';
     this.object.frustumCulled = false;
@@ -254,7 +255,11 @@ export class ParticlePool {
  * billboard rotation (spin, or aligned to view-space velocity when stretched).
  * Fragment: procedural shape mask from `uv()`.
  */
-function buildMaterial(ring: InstanceRing, time: UniformNode<'float', number>, glow: boolean): SpriteNodeMaterial {
+function buildMaterial(
+  ring: InstanceRing,
+  time: UniformNode<'float', number>,
+  glow: boolean,
+): SpriteNodeMaterial {
   const buf = ring.buffer;
   const a0 = instancedBufferAttribute(buf, 'vec4', STRIDE, 0) as Node<'vec4'>;
   const a1 = instancedBufferAttribute(buf, 'vec4', STRIDE, 4) as Node<'vec4'>;
@@ -278,7 +283,13 @@ function buildMaterial(ring: InstanceRing, time: UniformNode<'float', number>, g
 
   const noDrag = drag.lessThan(MIN_DRAG);
   const decay = select(noDrag, float(1), exp(drag.negate().mul(t)));
-  const fall = select(noDrag, t, float(1).sub(decay).div(max(drag, float(MIN_DRAG))));
+  const fall = select(
+    noDrag,
+    t,
+    float(1)
+      .sub(decay)
+      .div(max(drag, float(MIN_DRAG))),
+  );
   const velocity = a1.xyz.mul(decay).sub(vec3(0, gravity.mul(fall), 0));
   const viewVel = modelViewMatrix.mul(vec4(velocity, 0)).xy;
   const speed = viewVel.length();
@@ -323,19 +334,36 @@ function buildMaterial(ring: InstanceRing, time: UniformNode<'float', number>, g
     const core = exp(r.mul(r).mul(-26));
     const dot = soft.mul(soft).add(core.mul(0.6));
     const astroid = sqrt(c.x.abs()).add(sqrt(c.y.abs()));
-    const star = float(1).sub(smoothstep(0.5, 1, astroid)).mul(float(1).sub(smoothstep(0.85, 1, r))).add(core.mul(0.7));
-    const ring = float(1).sub(smoothstep(0, 0.13, r.sub(0.8).abs())).add(soft.mul(0.12));
+    const star = float(1)
+      .sub(smoothstep(0.5, 1, astroid))
+      .mul(float(1).sub(smoothstep(0.85, 1, r)))
+      .add(core.mul(0.7));
+    const ring = float(1)
+      .sub(smoothstep(0, 0.13, r.sub(0.8).abs()))
+      .add(soft.mul(0.12));
     const across = float(1).sub(smoothstep(0, 1, c.y.abs()));
     const along = smoothstep(-1, 0.55, c.x).mul(float(1).sub(smoothstep(0.75, 1, c.x)));
     const streak = across.mul(across).mul(along);
-    const flash = float(1).sub(smoothstep(0.15, 1, r)).add(core);
+    const flash = float(1)
+      .sub(smoothstep(0.15, 1, r))
+      .add(core);
 
     const mask = select(
       shape.lessThan(0.5),
       dot,
-      select(shape.lessThan(1.5), star, select(shape.lessThan(2.5), ring, select(shape.lessThan(3.5), streak, flash))),
+      select(
+        shape.lessThan(1.5),
+        star,
+        select(shape.lessThan(2.5), ring, select(shape.lessThan(3.5), streak, flash)),
+      ),
     );
-    const flicker = float(1).sub(a4.w.mul(sin(vAge.mul(23).add(seed.mul(57))).mul(0.5).add(0.5)));
+    const flicker = float(1).sub(
+      a4.w.mul(
+        sin(vAge.mul(23).add(seed.mul(57)))
+          .mul(0.5)
+          .add(0.5),
+      ),
+    );
     const fade = float(1).sub(smoothstep(0.55, 1, vTn));
     const hot = mix(tint, vec3(1, 1, 1), core.mul(0.4));
     const alpha = mask.mul(fade).mul(flicker).mul(a5.z).clamp(0, 1);
@@ -348,8 +376,16 @@ function buildMaterial(ring: InstanceRing, time: UniformNode<'float', number>, g
     const ang = atan(c.y, c.x);
     const lumps = select(
       shape.lessThan(0.5),
-      sin(ang.mul(5).add(seed.mul(31))).mul(0.07).add(sin(ang.mul(9).add(seed.mul(13))).mul(0.03)),
-      select(shape.lessThan(1.5), float(0), sin(ang.mul(4).add(seed.mul(17))).mul(0.1).add(sin(ang.mul(7)).mul(0.05))),
+      sin(ang.mul(5).add(seed.mul(31)))
+        .mul(0.07)
+        .add(sin(ang.mul(9).add(seed.mul(13))).mul(0.03)),
+      select(
+        shape.lessThan(1.5),
+        float(0),
+        sin(ang.mul(4).add(seed.mul(17)))
+          .mul(0.1)
+          .add(sin(ang.mul(7)).mul(0.05)),
+      ),
     );
     const edge = float(0.88).add(lumps);
     const mask = float(1).sub(smoothstep(edge.sub(0.05), edge, r));
@@ -361,7 +397,11 @@ function buildMaterial(ring: InstanceRing, time: UniformNode<'float', number>, g
     const lit = smoothstep(0.12, 0.26, lambert);
     const shadowTint = vec3(0.74, 0.74, 0.9);
     const shaded = tint.mul(mix(shadowTint, vec3(1, 1, 1), lit));
-    const glossAmount = select(shape.lessThan(0.5), float(0.18), select(shape.lessThan(1.5), float(0.75), float(0.05)));
+    const glossAmount = select(
+      shape.lessThan(0.5),
+      float(0.18),
+      select(shape.lessThan(1.5), float(0.75), float(0.05)),
+    );
     const gloss = smoothstep(0.86, 0.92, lambert).mul(glossAmount);
     const rim = smoothstep(0.55, 0.8, r).mul(float(1).sub(lit)).mul(0.12);
     material.colorNode = vec4(shaded.add(gloss).add(rim), mask);

@@ -44,7 +44,16 @@ export type ClimbWallParams = z.output<typeof ClimbWallSchema>;
 export function climbWallParts(p: ClimbWallParams): BoxPart[] {
   const tilt = quatFromAxisAngle(1, 0, 0, -p.lean * DEG);
   const parts: BoxPart[] = [];
-  const add = (x: number, y: number, z: number, hx: number, hy: number, hz: number, role: string, spin = 0): void => {
+  const add = (
+    x: number,
+    y: number,
+    z: number,
+    hx: number,
+    hy: number,
+    hz: number,
+    role: string,
+    spin = 0,
+  ): void => {
     const rot = spin === 0 ? { ...tilt } : quatMul(tilt, quatFromAxisAngle(0, 0, 1, spin));
     parts.push({ pos: rotateVec(tilt, vec3(x, y, z)), rot, half: vec3(hx, hy, hz), role });
   };
@@ -64,7 +73,16 @@ export function climbWallParts(p: ClimbWallParams): BoxPart[] {
       x = Math.max(-p.width / 2 + p.holdSize, Math.min(p.width / 2 - p.holdSize, x));
       const y = p.holdMargin + r * cellH + jy * cellH;
       const s = p.holdSize * (0.8 + 0.4 * hash3(p.seed, i, 3));
-      add(x, y, -ht - p.holdDepth / 2, s / 2, s / 2 * 0.8, p.holdDepth / 2, 'hold', (hash3(p.seed, i, 4) - 0.5) * 1.2);
+      add(
+        x,
+        y,
+        -ht - p.holdDepth / 2,
+        s / 2,
+        (s / 2) * 0.8,
+        p.holdDepth / 2,
+        'hold',
+        (hash3(p.seed, i, 4) - 0.5) * 1.2,
+      );
     }
   }
   if (p.topLip) add(0, p.height + 0.12, -ht - 0.12, p.width / 2, 0.12, 0.24, 'lip');

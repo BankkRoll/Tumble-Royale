@@ -17,7 +17,10 @@ export const LevelTableSchema = z
   .array(LevelRowSchema)
   .length(MAX_LEVEL)
   .refine((rows) => rows.every((r, i) => r.level === i + 1), 'levels must be 1..MAX_LEVEL in order')
-  .refine((rows) => rows.every((r, i) => i === 0 || r.totalXp === rows[i - 1]!.totalXp + rows[i - 1]!.xpToNext), 'totals must accumulate');
+  .refine(
+    (rows) => rows.every((r, i) => i === 0 || r.totalXp === rows[i - 1]!.totalXp + rows[i - 1]!.xpToNext),
+    'totals must accumulate',
+  );
 
 /** A row of the level table. */
 export type LevelRow = z.output<typeof LevelRowSchema>;

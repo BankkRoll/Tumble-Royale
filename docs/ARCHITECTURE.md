@@ -5,18 +5,18 @@ shared contracts that let several people (and agents) build in parallel.
 
 ## Packages
 
-| Package | Runs on | Purpose |
-|---|---|---|
-| `@tumble/shared` | everywhere | constants, math, seeded `Rng`, collision groups, `RoundPhase`/`ShowPhase`, themes |
-| `@tumble/sim` | server + client | Rapier world, character controller, obstacle runtimes, round rules, match sim, bots. **Headless** — no DOM, no three, no `Date.now`, no `Math.random` (lint-enforced) |
-| `@tumble/content` | everywhere | data: round definitions, show playlists, cosmetics, themes, tuning — all zod-validated |
-| `@tumble/netcode` | server + client | bit packer, input/snapshot codecs, delta compression, clock sync, jitter buffers |
-| `@tumble/render` | client | three.js WebGPU renderer, TSL toon materials, obstacle visuals, level builder, Tumbler character mesh + procedural animation, VFX, camera helpers |
-| `@tumble/audio` | client | Web Audio engine, procedural SFX, adaptive music, announcer |
-| `@tumble/ui` | client | React 19 + Zustand + Tailwind overlay: every screen, HUD, transitions |
-| `apps/client` | browser | composition root: boots renderer + sim + net + UI, game loop |
-| `apps/game-server` | Node 22 | authoritative rooms, show flow, bots |
-| `apps/api` | Node 22 | accounts, inventory, store, ranking (Fastify + Drizzle) |
+| Package            | Runs on         | Purpose                                                                                                                                                               |
+| ------------------ | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@tumble/shared`   | everywhere      | constants, math, seeded `Rng`, collision groups, `RoundPhase`/`ShowPhase`, themes                                                                                     |
+| `@tumble/sim`      | server + client | Rapier world, character controller, obstacle runtimes, round rules, match sim, bots. **Headless** — no DOM, no three, no `Date.now`, no `Math.random` (lint-enforced) |
+| `@tumble/content`  | everywhere      | data: round definitions, show playlists, cosmetics, themes, tuning — all zod-validated                                                                                |
+| `@tumble/netcode`  | server + client | bit packer, input/snapshot codecs, delta compression, clock sync, jitter buffers                                                                                      |
+| `@tumble/render`   | client          | three.js WebGPU renderer, TSL toon materials, obstacle visuals, level builder, Tumbler character mesh + procedural animation, VFX, camera helpers                     |
+| `@tumble/audio`    | client          | Web Audio engine, procedural SFX, adaptive music, announcer                                                                                                           |
+| `@tumble/ui`       | client          | React 19 + Zustand + Tailwind overlay: every screen, HUD, transitions                                                                                                 |
+| `apps/client`      | browser         | composition root: boots renderer + sim + net + UI, game loop                                                                                                          |
+| `apps/game-server` | Node 22         | authoritative rooms, show flow, bots                                                                                                                                  |
+| `apps/api`         | Node 22         | accounts, inventory, store, ranking (Fastify + Drizzle)                                                                                                               |
 
 Dependency direction (no cycles): `shared ← sim ← content ← render/audio/netcode ← ui ← client`. Full spec: `docs/SPEC.md`. Game design: `docs/design/`.
 `netcode` may import `sim` types; `ui` must NOT import three or sim runtime (types only).
@@ -69,14 +69,14 @@ remove existing fields.
 
 `apps/client/*.html` are all Vite entries. Each team owns its sandbox page:
 
-| Page | Owner | Purpose |
-|---|---|---|
-| `index.html` | integration | the real game |
-| `playground.html` | character | Tumbler controller + camera + obstacle test course |
-| `obstacles.html` | obstacles | gallery of every obstacle animating |
-| `ui.html` | ui | every screen previewable via `?screen=` with mock data |
-| `tumbler.html` | art | character model, animation states, customization, VFX, audio board |
-| `level.html` | levels | load any round by `?round=<id>` and fly/play it |
+| Page              | Owner       | Purpose                                                            |
+| ----------------- | ----------- | ------------------------------------------------------------------ |
+| `index.html`      | integration | the real game                                                      |
+| `playground.html` | character   | Tumbler controller + camera + obstacle test course                 |
+| `obstacles.html`  | obstacles   | gallery of every obstacle animating                                |
+| `ui.html`         | ui          | every screen previewable via `?screen=` with mock data             |
+| `tumbler.html`    | art         | character model, animation states, customization, VFX, audio board |
+| `level.html`      | levels      | load any round by `?round=<id>` and fly/play it                    |
 
 ## IP rule
 
@@ -87,7 +87,7 @@ character names, sounds or art. Our characters are
 ## Code style
 
 - TypeScript strict; no `any` without a `// why` comment.
-- JSDoc on every export. Comments explain *why*, never narrate *what*.
+- JSDoc on every export. Comments explain _why_, never narrate _what_.
 - Tests: vitest next to each package in `test/`. Every obstacle and round gets a
   determinism / collider sanity test.
 - Run `pnpm --filter <your-package> typecheck` and `test` before reporting.

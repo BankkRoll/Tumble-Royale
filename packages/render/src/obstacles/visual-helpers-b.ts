@@ -149,7 +149,14 @@ const _s = new Vector3();
 const _r = new Quaternion();
 
 /** Writes a pose sample (optionally scaled) into instance `i` of an InstancedMesh. */
-export function setInstancePose(mesh: InstancedMesh, i: number, s: PoseSample, sx = 1, sy = sx, sz = sx): void {
+export function setInstancePose(
+  mesh: InstancedMesh,
+  i: number,
+  s: PoseSample,
+  sx = 1,
+  sy = sx,
+  sz = sx,
+): void {
   _p.set(s.pos.x, s.pos.y, s.pos.z);
   _r.set(s.rot.x, s.rot.y, s.rot.z, s.rot.w);
   _s.set(sx, sy, sz);
@@ -188,7 +195,14 @@ export function parseParams<P>(schema: { parse(v: unknown): P }, instance: Obsta
 // -----------------------------------------------------------------------------
 
 /** Chunky rounded box from half extents. */
-export function roundedBox(d: Disposer, hx: number, hy: number, hz: number, radius = 0.12, segments = 3): BufferGeometry {
+export function roundedBox(
+  d: Disposer,
+  hx: number,
+  hy: number,
+  hz: number,
+  radius = 0.12,
+  segments = 3,
+): BufferGeometry {
   const r = Math.min(radius, hx * 0.95, hy * 0.95, hz * 0.95);
   return d.track(new RoundedBoxGeometry(hx * 2, hy * 2, hz * 2, segments, Math.max(0.001, r)));
 }
@@ -229,7 +243,8 @@ export function toon(d: Disposer, opts: ToonMaterialOptions): MeshToonNodeMateri
 
 /** Sets the telegraph glow (emissiveIntensity uniform) on a toon material. */
 export function setGlow(mat: MeshToonNodeMaterial, intensity: number): void {
-  const u = (mat.userData.uniforms as { emissiveIntensity?: { value: number } } | undefined)?.emissiveIntensity;
+  const u = (mat.userData.uniforms as { emissiveIntensity?: { value: number } } | undefined)
+    ?.emissiveIntensity;
   if (u) u.value = intensity;
 }
 
@@ -259,9 +274,14 @@ function stripeCoord(axis: StripeAxis, freq: number, space: PatternSpace): Node<
       return p.x.add(p.y).mul(freq);
     case 'spiralX':
       // Candy-cane spiral around the X axis: angle around X plus distance along it.
-      return atan(p.z, p.y).div(Math.PI * 2).mul(freq).add(p.x.mul(freq * 0.18));
+      return atan(p.z, p.y)
+        .div(Math.PI * 2)
+        .mul(freq)
+        .add(p.x.mul(freq * 0.18));
     default:
-      return atan(p.z, p.x).div(Math.PI * 2).mul(freq);
+      return atan(p.z, p.x)
+        .div(Math.PI * 2)
+        .mul(freq);
   }
 }
 
@@ -309,7 +329,9 @@ export function iceMaterial(d: Disposer, tint: ColorRepresentation = PAL.ice): M
   const mat = toon(d, { color: tint, rimColor: '#ffffff', rimStrength: 0.9 });
   const cell = floor(positionWorld.mul(7));
   const h = hash(cell.x.add(cell.y.mul(57)).add(cell.z.mul(113)));
-  const twinkle = sin(time.mul(3.1).add(h.mul(40))).mul(0.5).add(0.5);
+  const twinkle = sin(time.mul(3.1).add(h.mul(40)))
+    .mul(0.5)
+    .add(0.5);
   const sparkle = step(float(0.965), h).mul(twinkle.pow(6)).mul(2.2);
   const veins = smoothstep(float(0.45), float(0.5), abs(mx_noise_float(positionWorld.mul(0.6)))).mul(0.18);
   addEmissive(mat, vec3(sparkle.add(veins)).mul(color(new Color('#e8fbff'))));
@@ -320,7 +342,11 @@ export function iceMaterial(d: Disposer, tint: ColorRepresentation = PAL.ice): M
  * Bubbling purple-green goo: scrolling noise colour, popping bubble
  * highlights, and a gentle vertex swell.
  */
-export function gooMaterial(d: Disposer, a: ColorRepresentation = PAL.gooPurple, b: ColorRepresentation = PAL.gooGreen): MeshToonNodeMaterial {
+export function gooMaterial(
+  d: Disposer,
+  a: ColorRepresentation = PAL.gooPurple,
+  b: ColorRepresentation = PAL.gooGreen,
+): MeshToonNodeMaterial {
   const mat = toon(d, { color: '#ffffff', rimColor: '#e9ffd8', rimStrength: 0.7 });
   const flow = vec3(positionLocal.x.mul(0.7), time.mul(0.35), positionLocal.z.mul(0.7));
   const n = mx_noise_float(flow).mul(0.5).add(0.5);
@@ -328,7 +354,9 @@ export function gooMaterial(d: Disposer, a: ColorRepresentation = PAL.gooPurple,
   const bubbles = mx_noise_float(vec3(positionLocal.x.mul(2.4), positionLocal.z.mul(2.4), time.mul(0.9)));
   const pop = smoothstep(float(0.55), float(0.7), bubbles);
   addEmissive(mat, color(new Color(b)).mul(pop.mul(0.55)));
-  const swell = mx_noise_float(vec3(positionLocal.x.mul(1.3), positionLocal.z.mul(1.3), time.mul(0.6))).mul(0.06);
+  const swell = mx_noise_float(vec3(positionLocal.x.mul(1.3), positionLocal.z.mul(1.3), time.mul(0.6))).mul(
+    0.06,
+  );
   // Only the top surface swells; side walls stay put so the puddle edge doesn't tear.
   mat.positionNode = positionLocal.add(normalLocal.mul(swell.mul(normalLocal.y.max(0))));
   return mat;
@@ -373,7 +401,9 @@ export function beamMaterial(
   core: number,
 ): { mat: MeshBasicNodeMaterial; intensity: FloatUniform } {
   const { mat, intensity } = glowMaterial(d, tint, { additive: true });
-  const shimmer = sin(time.mul(38).add(positionLocal.y.mul(9))).mul(0.12).add(0.88);
+  const shimmer = sin(time.mul(38).add(positionLocal.y.mul(9)))
+    .mul(0.12)
+    .add(0.88);
   mat.opacityNode = intensity.mul(core).mul(shimmer);
   return { mat, intensity };
 }
@@ -391,8 +421,16 @@ export function portalMaterial(
   const c = uv().sub(vec2(0.5, 0.5));
   const r = length(c).mul(2);
   const ang = atan(c.y, c.x);
-  const swirl = sin(ang.mul(3).add(r.mul(14)).sub(time.mul(5))).mul(0.5).add(0.5);
-  const rings = smoothstep(float(0.55), float(1), sin(r.mul(26).add(time.mul(9))).mul(0.5).add(0.5));
+  const swirl = sin(ang.mul(3).add(r.mul(14)).sub(time.mul(5)))
+    .mul(0.5)
+    .add(0.5);
+  const rings = smoothstep(
+    float(0.55),
+    float(1),
+    sin(r.mul(26).add(time.mul(9)))
+      .mul(0.5)
+      .add(0.5),
+  );
   const k = swirl.mul(0.7).add(rings.mul(0.5));
   mat.colorNode = mix(color(new Color(a)), color(new Color(b)), swirl).mul(k.add(0.35));
   const rim = float(1).sub(smoothstep(float(0.82), float(1), r));
@@ -424,8 +462,12 @@ export function instanceGlow(
 export function fogSheetMaterial(d: Disposer, tint: ColorRepresentation): MeshBasicNodeMaterial {
   const mat = d.track(new MeshBasicNodeMaterial());
   const p = positionWorld;
-  const n = mx_noise_float(vec3(p.x.mul(0.035), p.z.mul(0.035), time.mul(0.05))).mul(0.5).add(0.5);
-  const n2 = mx_noise_float(vec3(p.x.mul(0.11).add(time.mul(0.04)), p.z.mul(0.11), time.mul(0.08))).mul(0.5).add(0.5);
+  const n = mx_noise_float(vec3(p.x.mul(0.035), p.z.mul(0.035), time.mul(0.05)))
+    .mul(0.5)
+    .add(0.5);
+  const n2 = mx_noise_float(vec3(p.x.mul(0.11).add(time.mul(0.04)), p.z.mul(0.11), time.mul(0.08)))
+    .mul(0.5)
+    .add(0.5);
   mat.colorNode = color(new Color(tint));
   mat.opacityNode = smoothstep(float(0.35), float(0.9), n.mul(0.7).add(n2.mul(0.3))).mul(0.55);
   mat.transparent = true;
@@ -440,7 +482,9 @@ export function wavingToon(d: Disposer, opts: ToonMaterialOptions, amplitude = 0
   const mat = toon(d, opts);
   mat.side = DoubleSide;
   const x = positionLocal.x.max(0);
-  const wave = sin(positionLocal.x.mul(3.2).sub(time.mul(6.5))).mul(x).mul(amplitude);
+  const wave = sin(positionLocal.x.mul(3.2).sub(time.mul(6.5)))
+    .mul(x)
+    .mul(amplitude);
   mat.positionNode = positionLocal.add(vec3(0, wave.mul(0.35), wave));
   return mat;
 }
@@ -523,7 +567,11 @@ export interface LabelOptions {
  *
  * @returns The texture, or null when no canvas implementation exists (headless).
  */
-export function labelTexture(d: Disposer, text: string, opts: LabelOptions = {}): CanvasTexture<HTMLCanvasElement | OffscreenCanvas> | null {
+export function labelTexture(
+  d: Disposer,
+  text: string,
+  opts: LabelOptions = {},
+): CanvasTexture<HTMLCanvasElement | OffscreenCanvas> | null {
   const w = opts.width ?? 1024;
   const h = opts.height ?? 256;
   let canvas: HTMLCanvasElement | OffscreenCanvas;
@@ -542,7 +590,9 @@ export function labelTexture(d: Disposer, text: string, opts: LabelOptions = {})
     g.roundRect(8, 8, w - 16, h - 16, r);
     g.fill();
   }
-  g.font = opts.font ?? `900 ${Math.round(h * 0.62)}px "Baloo 2", "Fredoka", "Arial Rounded MT Bold", system-ui, sans-serif`;
+  g.font =
+    opts.font ??
+    `900 ${Math.round(h * 0.62)}px "Baloo 2", "Fredoka", "Arial Rounded MT Bold", system-ui, sans-serif`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.lineJoin = 'round';

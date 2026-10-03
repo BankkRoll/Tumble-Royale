@@ -156,14 +156,20 @@ export class InputSequenceGuard {
 /** Clamps an untrusted chat string: length, control characters. */
 export function sanitizeChat(text: unknown, maxLen = 120): string | null {
   if (typeof text !== 'string') return null;
-  // eslint-disable-next-line no-control-regex -- stripping control characters is the point.
-  const clean = text.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, maxLen);
+  const clean = text
+    // eslint-disable-next-line no-control-regex -- stripping control characters is the point.
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .trim()
+    .slice(0, maxLen);
   return clean.length > 0 ? clean : null;
 }
 
 /** Clamps an untrusted display name. */
 export function sanitizeName(name: string): string {
-  // eslint-disable-next-line no-control-regex -- stripping control characters is the point.
-  const clean = name.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 20);
+  const clean = name
+    // eslint-disable-next-line no-control-regex -- stripping control characters is the point.
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .trim()
+    .slice(0, 20);
   return clean.length > 0 ? clean : 'Tumbler';
 }

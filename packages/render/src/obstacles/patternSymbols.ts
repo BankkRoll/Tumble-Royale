@@ -71,7 +71,9 @@ function trace(g: Ctx2D, id: number, cx: number, cy: number, r: number): void {
         [0.04, -0.22],
         [0.34, -1],
       ];
-      p.forEach(([x, y], k) => (k === 0 ? g.moveTo(cx + x! * r, cy + y! * r) : g.lineTo(cx + x! * r, cy + y! * r)));
+      p.forEach(([x, y], k) =>
+        k === 0 ? g.moveTo(cx + x! * r, cy + y! * r) : g.lineTo(cx + x! * r, cy + y! * r),
+      );
       g.closePath();
       break;
     }
@@ -103,7 +105,9 @@ function trace(g: Ctx2D, id: number, cx: number, cy: number, r: number): void {
         [0.95, -0.55],
         [0.9, 0.7],
       ];
-      p.forEach(([x, y], k) => (k === 0 ? g.moveTo(cx + x! * r, cy + y! * r) : g.lineTo(cx + x! * r, cy + y! * r)));
+      p.forEach(([x, y], k) =>
+        k === 0 ? g.moveTo(cx + x! * r, cy + y! * r) : g.lineTo(cx + x! * r, cy + y! * r),
+      );
       g.closePath();
       break;
     }

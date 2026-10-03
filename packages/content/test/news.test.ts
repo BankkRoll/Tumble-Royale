@@ -51,7 +51,8 @@ describe('news feed', () => {
 
   it('every roundId is a registered round', () => {
     const catalog = roundCatalog();
-    for (const p of NEWS_POSTS) if (p.roundId) expect(catalog.has(p.roundId), `${p.id} → ${p.roundId}`).toBe(true);
+    for (const p of NEWS_POSTS)
+      if (p.roundId) expect(catalog.has(p.roundId), `${p.id} → ${p.roundId}`).toBe(true);
   });
 
   it('every referenced image exists under apps/client/public', () => {

@@ -75,7 +75,13 @@ export class SwarmClient {
   private readonly decoded = createDecodedSnapshot();
   private readonly clock = new ClockSync(now);
   private readonly history = new InputHistory();
-  private readonly batch: CharacterInput[] = Array.from({ length: INPUT_REDUNDANCY }, () => ({ moveX: 0, moveZ: 0, yaw: 0, buttons: 0, emote: 0 }));
+  private readonly batch: CharacterInput[] = Array.from({ length: INPUT_REDUNDANCY }, () => ({
+    moveX: 0,
+    moveZ: 0,
+    yaw: 0,
+    buttons: 0,
+    emote: 0,
+  }));
   private readonly input: CharacterInput = { moveX: 0, moveZ: 0, yaw: 0, buttons: 0, emote: 0 };
   private readonly rng: Rng;
   private quantizer: PositionQuantizer | null = null;
@@ -103,8 +109,16 @@ export class SwarmClient {
     this.rng = new Rng(0xb07 + index * 7919);
     this.heading = this.rng.range(-Math.PI, Math.PI);
     if (conditioner) {
-      this.upLink = new NetworkConditioner({ ...conditioner, seed: index * 2 + 1 }, (d) => this.rawSend(d), now);
-      this.downLink = new NetworkConditioner({ ...conditioner, seed: index * 2 + 2 }, (d) => this.onMessage(d), now);
+      this.upLink = new NetworkConditioner(
+        { ...conditioner, seed: index * 2 + 1 },
+        (d) => this.rawSend(d),
+        now,
+      );
+      this.downLink = new NetworkConditioner(
+        { ...conditioner, seed: index * 2 + 2 },
+        (d) => this.onMessage(d),
+        now,
+      );
     }
   }
 
@@ -153,12 +167,20 @@ export class SwarmClient {
       const seq = this.history.push(this.input);
       const n = this.history.collectRecent(seq, INPUT_REDUNDANCY, this.batch);
       const w = this.w.reset();
-      writeInputBatch(w, { newestSeq: seq, clientTick: this.clientTick, ackSnapshotId: this.decoder.newestId, count: n }, this.batch);
+      writeInputBatch(
+        w,
+        { newestSeq: seq, clientTick: this.clientTick, ackSnapshotId: this.decoder.newestId, count: n },
+        this.batch,
+      );
       this.send(w.finish());
     } else if (t - this.lastAckOnly > 100) {
       this.lastAckOnly = t;
       const w = this.w.reset();
-      writeInputBatch(w, { newestSeq: 0, clientTick: this.clientTick, ackSnapshotId: NO_SNAPSHOT, count: 0 }, this.batch);
+      writeInputBatch(
+        w,
+        { newestSeq: 0, clientTick: this.clientTick, ackSnapshotId: NO_SNAPSHOT, count: 0 },
+        this.batch,
+      );
       this.send(w.finish());
     }
     if (t - this.lastPing > 2000) {

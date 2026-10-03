@@ -162,12 +162,15 @@ export async function completeOAuth(
       code_verifier: saved.verifier,
     }),
   });
-  if (!tokenRes.ok) throw new ApiError(400, 'oauth_failed', `${spec.label} rejected the sign-in (${tokenRes.status})`);
+  if (!tokenRes.ok)
+    throw new ApiError(400, 'oauth_failed', `${spec.label} rejected the sign-in (${tokenRes.status})`);
   const token = (await tokenRes.json()) as { access_token?: unknown };
-  if (typeof token.access_token !== 'string') throw new ApiError(400, 'oauth_failed', `${spec.label} returned no access token`);
+  if (typeof token.access_token !== 'string')
+    throw new ApiError(400, 'oauth_failed', `${spec.label} returned no access token`);
 
   const userRes = await http(spec.userUrl, { headers: { authorization: `Bearer ${token.access_token}` } });
-  if (!userRes.ok) throw new ApiError(400, 'oauth_failed', `Could not read ${spec.label} profile (${userRes.status})`);
+  if (!userRes.ok)
+    throw new ApiError(400, 'oauth_failed', `Could not read ${spec.label} profile (${userRes.status})`);
   const profile = spec.profile((await userRes.json()) as Record<string, unknown>);
   if (!profile.subject) throw new ApiError(400, 'oauth_failed', `${spec.label} profile had no id`);
   return { provider, ...profile, linkUserId: saved.linkUserId };

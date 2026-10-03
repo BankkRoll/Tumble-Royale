@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { ANNOUNCER_LINES, countSyllables, estimateSpeechMs, fillLine } from '../src/announcer/lines.ts';
-import { CUE_ALIASES, MUSIC_CUE_NAMES, OBSTACLE_CUES, OBSTACLE_LOOPS, UI_CUE_NAMES, listCueNames, resolveCue, soundForObstacleCue } from '../src/game/cues.ts';
+import {
+  CUE_ALIASES,
+  MUSIC_CUE_NAMES,
+  OBSTACLE_CUES,
+  OBSTACLE_LOOPS,
+  UI_CUE_NAMES,
+  listCueNames,
+  resolveCue,
+  soundForObstacleCue,
+} from '../src/game/cues.ts';
 import { FOOTSTEP_SOUNDS } from '../src/game/footsteps.ts';
 import { RARITIES, SFX_DEFS, SFX_NAMES } from '../src/sfx/library/index.ts';
 
@@ -40,13 +49,51 @@ describe('sound bank', () => {
 
   it('covers the brief: surfaces, movement, obstacles, show, crowd', () => {
     const required = [
-      'step.normal', 'step.ice', 'step.slime', 'step.metal', 'step.sticky', 'step.bouncy',
-      'jump', 'land.soft', 'land.hard', 'dive', 'slide.loop', 'grab', 'stun', 'stun.birds',
-      'bounce.pad', 'spinwheel.loop', 'hammer.whoosh', 'punch.thwack', 'conveyor.loop', 'tile.crack', 'tile.fall',
-      'slime.loop', 'splash', 'fan.loop', 'cannon.thump', 'ball.bonk', 'laser.loop', 'popup.pop', 'teleport.zap',
-      'checkpoint', 'finish.fanfare', 'qualified.jingle', 'eliminated.trombone', 'confetti.pop',
-      'crowd.cheer', 'crowd.aww', 'crowd.gasp', 'crowd.laugh', 'crown.shine', 'egg.pickup', 'ball.kick',
-      'team.horn', 'countdown.tick', 'countdown.go', 'round.whistle',
+      'step.normal',
+      'step.ice',
+      'step.slime',
+      'step.metal',
+      'step.sticky',
+      'step.bouncy',
+      'jump',
+      'land.soft',
+      'land.hard',
+      'dive',
+      'slide.loop',
+      'grab',
+      'stun',
+      'stun.birds',
+      'bounce.pad',
+      'spinwheel.loop',
+      'hammer.whoosh',
+      'punch.thwack',
+      'conveyor.loop',
+      'tile.crack',
+      'tile.fall',
+      'slime.loop',
+      'splash',
+      'fan.loop',
+      'cannon.thump',
+      'ball.bonk',
+      'laser.loop',
+      'popup.pop',
+      'teleport.zap',
+      'checkpoint',
+      'finish.fanfare',
+      'qualified.jingle',
+      'eliminated.trombone',
+      'confetti.pop',
+      'crowd.cheer',
+      'crowd.aww',
+      'crowd.gasp',
+      'crowd.laugh',
+      'crown.shine',
+      'egg.pickup',
+      'ball.kick',
+      'team.horn',
+      'countdown.tick',
+      'countdown.go',
+      'round.whistle',
     ];
     for (const r of required) expect(SFX_DEFS[r], r).toBeDefined();
     for (const s of Object.values(FOOTSTEP_SOUNDS)) expect(SFX_DEFS[s]).toBeDefined();
@@ -92,8 +139,14 @@ describe('cue registry', () => {
   });
 
   it('falls back to the parent cue, then to an archetype', () => {
-    expect(resolveCue('ui.stamp.somethingNew')).toEqual({ action: { kind: 'sfx', sound: 'ui.stamp' }, via: 'parent' });
-    expect(resolveCue('sfx_cannon_telegraph_new')).toEqual({ action: { kind: 'sfx', sound: 'alarm.blip' }, via: 'parent' });
+    expect(resolveCue('ui.stamp.somethingNew')).toEqual({
+      action: { kind: 'sfx', sound: 'ui.stamp' },
+      via: 'parent',
+    });
+    expect(resolveCue('sfx_cannon_telegraph_new')).toEqual({
+      action: { kind: 'sfx', sound: 'alarm.blip' },
+      via: 'parent',
+    });
     const warn = resolveCue('sfx_wobbly_warning_thing')!;
     expect(warn.via).toBe('archetype');
     expect(warn.action).toEqual({ kind: 'sfx', sound: 'alarm.blip' });
@@ -125,7 +178,10 @@ describe('announcer lines', () => {
   it('every caption fits the 60-character caption rule', () => {
     for (const variants of Object.values(ANNOUNCER_LINES)) {
       expect(variants.length).toBeGreaterThan(0);
-      for (const v of variants) expect(fillLine(v, { n: 3, name: 'Gumdrop Gauntlet', team: 'Pink', count: 26 }).length).toBeLessThanOrEqual(60);
+      for (const v of variants)
+        expect(
+          fillLine(v, { n: 3, name: 'Gumdrop Gauntlet', team: 'Pink', count: 26 }).length,
+        ).toBeLessThanOrEqual(60);
     }
   });
 

@@ -1,7 +1,20 @@
-import { Rng, RoundPhase, ShowPhase, type RoundDefinition, type RoundPhaseId, type RoundType } from '@tumble/shared';
+import {
+  Rng,
+  RoundPhase,
+  ShowPhase,
+  type RoundDefinition,
+  type RoundPhaseId,
+  type RoundType,
+} from '@tumble/shared';
 import { describe, expect, it } from 'vitest';
 import { loadRapier } from '../src/index.ts';
-import { PlayerRoundStatus, createSimpleController, createTestArenaRound, testObstacleModules, type RoundStatus } from '../src/match/index.ts';
+import {
+  PlayerRoundStatus,
+  createSimpleController,
+  createTestArenaRound,
+  testObstacleModules,
+  type RoundStatus,
+} from '../src/match/index.ts';
 import { computeQualifyTarget } from '../src/rounds/index.ts';
 import {
   ShowDirector,
@@ -46,7 +59,12 @@ const CATALOG: RoundDefinition[] = PLANNED.map(([id, type, mode, min, max, ideal
     name: id,
     type,
     players: { min, max, ideal },
-    qualification: { mode, ratio: type === 'race' ? 0.65 : 0.55, teams: mode === 'teamScore' ? 3 : 0, teamsEliminated: 1 },
+    qualification: {
+      mode,
+      ratio: type === 'race' ? 0.65 : 0.55,
+      teams: mode === 'teamScore' ? 3 : 0,
+      teamsEliminated: 1,
+    },
   }),
 );
 
@@ -60,7 +78,10 @@ const MAIN: ShowPlaylistInput = {
 class FakeDriver implements RoundDriver {
   phase: RoundPhaseId = RoundPhase.Loading;
   private elapsed = 0;
-  private readonly players = new Map<number, { status: 0 | 1 | 2 | 3; score: number; progress: number; place: number }>();
+  private readonly players = new Map<
+    number,
+    { status: 0 | 1 | 2 | 3; score: number; progress: number; place: number }
+  >();
   private finished = false;
 
   constructor(
@@ -109,10 +130,18 @@ class FakeDriver implements RoundDriver {
 }
 
 function participants(n: number, partySize = 1): ShowParticipant[] {
-  return Array.from({ length: n }, (_, i) => ({ id: i, name: `P${i}`, isBot: i > 0, partyId: Math.floor(i / partySize) }));
+  return Array.from({ length: n }, (_, i) => ({
+    id: i,
+    name: `P${i}`,
+    isBot: i > 0,
+    partyId: Math.floor(i / partySize),
+  }));
 }
 
-function runShow(seed: number, opts: { playlist?: ShowPlaylistInput; rounds?: RoundDefinition[]; n?: number; partySize?: number } = {}) {
+function runShow(
+  seed: number,
+  opts: { playlist?: ShowPlaylistInput; rounds?: RoundDefinition[]; n?: number; partySize?: number } = {},
+) {
   const drivers: FakeDriver[] = [];
   const infos: RoundStartInfo[] = [];
   const events: ShowEvent[] = [];
@@ -147,7 +176,9 @@ describe('ShowDirector', () => {
   it('runs a full 40-player show from PreShow to Ended', () => {
     const { director, infos, events, summary, drivers } = runShow(1234);
     expect(director.current().showPhase).toBe(ShowPhase.Ended);
-    const showPhases = events.filter((e) => e.type === 'showPhase').map((e) => (e as { phase: number }).phase);
+    const showPhases = events
+      .filter((e) => e.type === 'showPhase')
+      .map((e) => (e as { phase: number }).phase);
     expect(showPhases).toContain(ShowPhase.InRound);
     expect(showPhases).toContain(ShowPhase.BetweenRounds);
     expect(showPhases.at(-2)).toBe(ShowPhase.Victory);
@@ -204,7 +235,10 @@ describe('ShowDirector', () => {
     const a = runShow(42).summary;
     const b = runShow(42).summary;
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
-    const roundsFor = (seed: number) => runShow(seed).infos.map((i) => i.round.id).join(',');
+    const roundsFor = (seed: number) =>
+      runShow(seed)
+        .infos.map((i) => i.round.id)
+        .join(',');
     const seen = new Set([1, 2, 3, 4, 5, 6].map(roundsFor));
     expect(seen.size).toBeGreaterThan(1);
   });
@@ -284,13 +318,40 @@ describe('ShowDirector', () => {
 
   it('selector relaxes constraints instead of stalling', () => {
     const races = [createTestArenaRound({ id: 'a' }), createTestArenaRound({ id: 'b' })];
-    const playlist = { ...MAIN, pool: [{ roundId: 'a', weight: 1 }, { roundId: 'b', weight: 1 }, { roundId: 'missing', weight: 5 }] };
-    const parsed = new ShowDirector({ seed: 1, playlist, rounds: races, participants: participants(4), host: { startRound: () => { throw new Error('unused'); } } }).playlist;
+    const playlist = {
+      ...MAIN,
+      pool: [
+        { roundId: 'a', weight: 1 },
+        { roundId: 'b', weight: 1 },
+        { roundId: 'missing', weight: 5 },
+      ],
+    };
+    const parsed = new ShowDirector({
+      seed: 1,
+      playlist,
+      rounds: races,
+      participants: participants(4),
+      host: {
+        startRound: () => {
+          throw new Error('unused');
+        },
+      },
+    }).playlist;
     const catalog = new Map(races.map((r) => [r.id, r]));
     const rng = new Rng(1);
-    const pick = selectRound(parsed, catalog, { roundIndex: 1, players: 10, isFinal: false, previousType: 'race', used: new Set(['a']) }, rng);
+    const pick = selectRound(
+      parsed,
+      catalog,
+      { roundIndex: 1, players: 10, isFinal: false, previousType: 'race', used: new Set(['a']) },
+      rng,
+    );
     expect(pick?.id).toBe('b');
-    const final = selectRound(parsed, catalog, { roundIndex: 2, players: 4, isFinal: true, previousType: 'race', used: new Set(['a', 'b']) }, rng);
+    const final = selectRound(
+      parsed,
+      catalog,
+      { roundIndex: 2, players: 4, isFinal: true, previousType: 'race', used: new Set(['a', 'b']) },
+      rng,
+    );
     expect(final).not.toBeNull();
   });
 });
@@ -305,19 +366,34 @@ describe('offline show', () => {
     const show = createOfflineShow({
       R,
       deps: { createController: createSimpleController, obstacles: testObstacleModules() },
-      playlist: { id: 'test', name: 'Test', minRounds: 2, maxRounds: 3, finalAtOrBelow: 6, pool: rounds.map((r) => ({ roundId: r.id })) },
+      playlist: {
+        id: 'test',
+        name: 'Test',
+        minRounds: 2,
+        maxRounds: 3,
+        finalAtOrBelow: 6,
+        pool: rounds.map((r) => ({ roundId: r.id })),
+      },
       rounds,
       seed: 8,
       humanName: null,
       players: 12,
-      timings: { preShow: 0.5, introFlyover: 0.5, rulesCard: 0.5, results: 0.5, transition: 0.5, victory: 0.5 },
+      timings: {
+        preShow: 0.5,
+        introFlyover: 0.5,
+        rulesCard: 0.5,
+        results: 0.5,
+        transition: 0.5,
+        victory: 0.5,
+      },
     });
     expect(new Set(show.participants.map((p) => p.name)).size).toBe(12);
     const phases: number[] = [];
     show.director.on((e) => {
       if (e.type === 'showPhase') phases.push(e.phase);
     });
-    for (let i = 0; i < 60 * 60 * 5 && show.director.current().showPhase !== ShowPhase.Ended; i++) show.advance(1 / 60);
+    for (let i = 0; i < 60 * 60 * 5 && show.director.current().showPhase !== ShowPhase.Ended; i++)
+      show.advance(1 / 60);
     const summary = show.director.summary();
     expect(show.director.current().showPhase).toBe(ShowPhase.Ended);
     expect(summary?.winner).not.toBeNull();

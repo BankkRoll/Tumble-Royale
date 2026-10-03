@@ -5,7 +5,18 @@
 import { CylinderGeometry, Group, TorusGeometry, type BufferGeometry } from 'three/webgpu';
 import { IceFloorSchema } from '@tumble/sim/obstacles';
 import type { ObstacleVisualFactory } from './types.ts';
-import { Disposer, PAL, Sparkles, applyInstanceTransform, iceMaterial, parseParams, rand01, roundedBox, solid, toon } from './visual-helpers-b.ts';
+import {
+  Disposer,
+  PAL,
+  Sparkles,
+  applyInstanceTransform,
+  iceMaterial,
+  parseParams,
+  rand01,
+  roundedBox,
+  solid,
+  toon,
+} from './visual-helpers-b.ts';
 
 const FLAKES = 28;
 
@@ -22,7 +33,17 @@ export const iceFloorVisual: ObstacleVisualFactory = (instance) => {
   if (p.shape === 'box') slab = roundedBox(d, p.sizeX / 2, ht, p.sizeZ / 2, 0.2);
   else {
     // thetaStart π/2 puts a hex vertex on +X, matching the sim's convex hull.
-    slab = d.track(new CylinderGeometry(p.radius, p.radius, p.thickness, p.shape === 'hex' ? 6 : 56, 1, false, Math.PI / 2));
+    slab = d.track(
+      new CylinderGeometry(
+        p.radius,
+        p.radius,
+        p.thickness,
+        p.shape === 'hex' ? 6 : 56,
+        1,
+        false,
+        Math.PI / 2,
+      ),
+    );
   }
   const ice = solid(slab, iceMaterial(d, p.surface === 'slide' ? '#bfe9ff' : PAL.ice));
   ice.position.y = -ht;

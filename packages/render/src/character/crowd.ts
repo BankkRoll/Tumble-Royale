@@ -35,7 +35,12 @@ import {
 } from 'three/webgpu';
 import { acquireAssembly, releaseAssembly, type Assembly } from './assembly.ts';
 import type { Lod } from './geometry.ts';
-import { CROWD_PARAM_TEXELS, createTumblerCrowdMaterials, writeCrowdParams, type TumblerMaterials } from './material.ts';
+import {
+  CROWD_PARAM_TEXELS,
+  createTumblerCrowdMaterials,
+  writeCrowdParams,
+  type TumblerMaterials,
+} from './material.ts';
 import { TOTAL_BONE_COUNT } from './rig.ts';
 import type { Tumbler } from './tumbler.ts';
 
@@ -290,7 +295,11 @@ export class TumblerCrowd {
   private refreshAssemblies(slot: Slot): void {
     const t = slot.tumbler;
     const accessories = t.crowdAccessories();
-    const next: [Assembly, Assembly, Assembly] = [acquireAssembly(0, accessories), acquireAssembly(1, accessories), acquireAssembly(2, [])];
+    const next: [Assembly, Assembly, Assembly] = [
+      acquireAssembly(0, accessories),
+      acquireAssembly(1, accessories),
+      acquireAssembly(2, []),
+    ];
     for (const a of slot.assemblies) releaseAssembly(a);
     slot.assemblies = next;
     slot.accessoryKey = t.crowdAccessoryKey();
@@ -305,9 +314,12 @@ export class TumblerCrowd {
   private rebuildVertices(): void {
     this.vertexDirty = false;
     let total = 0;
-    for (const slot of this.members.values()) for (const a of slot.assemblies) total += a.geometry.getAttribute('position').count;
+    for (const slot of this.members.values())
+      for (const a of slot.assemblies) total += a.geometry.getAttribute('position').count;
 
-    const arrays = LAYOUT.map(([name, size]) => (name === 'skinIndex' ? new Uint16Array(total * size) : new Float32Array(total * size)));
+    const arrays = LAYOUT.map(([name, size]) =>
+      name === 'skinIndex' ? new Uint16Array(total * size) : new Float32Array(total * size),
+    );
     const slotIds = new Float32Array(total);
     let base = 0;
     for (const slot of this.members.values()) {
@@ -338,7 +350,10 @@ export class TumblerCrowd {
     this.geometries = LODS.map(() => new BufferGeometry());
     const attrs = LAYOUT.map(([name, size], k) => {
       const arr = arrays[k]!;
-      return [name, name === 'skinIndex' ? new Uint16BufferAttribute(arr, size) : new BufferAttribute(arr, size)] as const;
+      return [
+        name,
+        name === 'skinIndex' ? new Uint16BufferAttribute(arr, size) : new BufferAttribute(arr, size),
+      ] as const;
     });
     const slotAttr = new BufferAttribute(slotIds, 1);
     for (const geo of this.geometries) {

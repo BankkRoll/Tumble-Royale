@@ -4,7 +4,14 @@
  * Everything gameplay-specific is injected so the room (netcode, pacing,
  * sessions) is testable with fakes and runs standalone with the dev sim.
  */
-import type { MatchPlayerInfo, MatchSim, MatchSimOptions, PlayerRoundStatusId, RoundResultEntry, RoundStatus } from '@tumble/netcode';
+import type {
+  MatchPlayerInfo,
+  MatchSim,
+  MatchSimOptions,
+  PlayerRoundStatusId,
+  RoundResultEntry,
+  RoundStatus,
+} from '@tumble/netcode';
 import type { CharacterInput, Rapier } from '@tumble/sim';
 import type { RoundDefinition, RoundPhaseId, ShowPhaseId } from '@tumble/shared';
 import type { ResultsSink } from '../results.ts';
@@ -130,7 +137,10 @@ export interface RoomDeps {
   /** Posts matchmade show results to the account API; null/absent disables reporting. */
   results?: ResultsSink | null;
   /** Playlist display name and round estimate for the `showInfo` message. */
-  describePlaylist?: (playlistId: string | null, players: number) => { id: string; name: string; roundCount: number };
+  describePlaylist?: (
+    playlistId: string | null,
+    players: number,
+  ) => { id: string; name: string; roundCount: number };
 }
 
 /** Room tuning. */

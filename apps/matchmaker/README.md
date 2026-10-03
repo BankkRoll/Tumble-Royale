@@ -14,17 +14,17 @@ Redis is optional (`REDIS_URL`); without it state is in-process.
 
 ## Environment
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `PORT` | `7370` | Listen port |
-| `REDIS_URL` | – | Shared state + tick lock for several instances |
-| `JWT_SECRET` | dev value | Verifies API access tokens and party queue tickets (**same value as the API**) |
-| `GAME_TICKET_SECRET` | dev value | Signs join tickets (**shared with game servers**) |
-| `GAME_SERVER_SECRET` | dev value | Bearer game servers use for `/servers/*` and `/matches/:id` |
-| `DEFAULT_GAME_SERVER_URL` | `ws://localhost:7350` in dev | Used when no server has registered |
-| `TARGET_SIZE` | `40` | Lobby size when a ticket omits `maxPlayers` |
-| `MAX_WAIT_MS` / `HOT_MAX_WAIT_MS` / `HOT_THRESHOLD` | `25000` / `12000` / `80` | Release with bots after the wait; the shorter wait applies once a region has `HOT_THRESHOLD` players searching |
-| `TICK_MS` | `500` | Release tick |
+| Variable                                            | Default                      | Purpose                                                                                                        |
+| --------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `PORT`                                              | `7370`                       | Listen port                                                                                                    |
+| `REDIS_URL`                                         | –                            | Shared state + tick lock for several instances                                                                 |
+| `JWT_SECRET`                                        | dev value                    | Verifies API access tokens and party queue tickets (**same value as the API**)                                 |
+| `GAME_TICKET_SECRET`                                | dev value                    | Signs join tickets (**shared with game servers**)                                                              |
+| `GAME_SERVER_SECRET`                                | dev value                    | Bearer game servers use for `/servers/*` and `/matches/:id`                                                    |
+| `DEFAULT_GAME_SERVER_URL`                           | `ws://localhost:7350` in dev | Used when no server has registered                                                                             |
+| `TARGET_SIZE`                                       | `40`                         | Lobby size when a ticket omits `maxPlayers`                                                                    |
+| `MAX_WAIT_MS` / `HOT_MAX_WAIT_MS` / `HOT_THRESHOLD` | `25000` / `12000` / `80`     | Release with bots after the wait; the shorter wait applies once a region has `HOT_THRESHOLD` players searching |
+| `TICK_MS`                                           | `500`                        | Release tick                                                                                                   |
 
 ## Client flow
 

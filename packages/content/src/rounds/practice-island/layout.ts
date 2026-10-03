@@ -10,7 +10,8 @@
 import type { Vec3 } from '@tumble/shared';
 
 /** Station ids in play order. `race` is the closing mini race. */
-export type PracticeStationId = 'move' | 'jump' | 'dive' | 'grab' | 'climb' | 'bounce' | 'tiles' | 'checkpoint' | 'race';
+export type PracticeStationId =
+  'move' | 'jump' | 'dive' | 'grab' | 'climb' | 'bounce' | 'tiles' | 'checkpoint' | 'race';
 
 /** Axis-aligned box (world space). */
 export interface ZoneBox {
@@ -152,7 +153,12 @@ export const PRACTICE_STATIONS: readonly PracticeStation[] = [
 export const PRACTICE_SPAWN = { origin: v(0, 0.1, 0), yaw: 0, cols: 2, spacing: 2.4 } as const;
 
 /** Mini race spawn grid on the race plaza behind the start gate. */
-export const RACE_SPAWN = { origin: v(0, ISLAND.shelfTop + 0.1, 112), yaw: 0, cols: 4, spacing: 1.8 } as const;
+export const RACE_SPAWN = {
+  origin: v(0, ISLAND.shelfTop + 0.1, 112),
+  yaw: 0,
+  cols: 4,
+  spacing: 1.8,
+} as const;
 
 /** Mini race time limit (s). */
 export const RACE_SECONDS = 90;

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { BitReader, BitWriter } from './bits.ts';
-import { MsgType, PROTOCOL_VERSION, packLowFreq, readHello, unpackLowFreq, writeHello, type LowFreqMessage } from './protocol.ts';
+import {
+  MsgType,
+  PROTOCOL_VERSION,
+  packLowFreq,
+  readHello,
+  unpackLowFreq,
+  writeHello,
+  type LowFreqMessage,
+} from './protocol.ts';
 
 describe('protocol v2', () => {
   it('round-trips a Hello with a join ticket', () => {
@@ -11,7 +19,13 @@ describe('protocol v2', () => {
     expect(r.readBits(8)).toBe(MsgType.Hello);
     const h = readHello(r);
     expect(r.overflow).toBe(false);
-    expect(h).toEqual({ version: PROTOCOL_VERSION, name: 'Sprinkles', resumeToken: '', loadout: 'L1', ticket });
+    expect(h).toEqual({
+      version: PROTOCOL_VERSION,
+      name: 'Sprinkles',
+      resumeToken: '',
+      loadout: 'L1',
+      ticket,
+    });
   });
 
   it('carries round facts and rewards on the reliable channel', () => {

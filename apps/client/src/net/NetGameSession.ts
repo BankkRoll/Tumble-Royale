@@ -7,7 +7,13 @@
  * The composition root (`main.ts`) creates one of these and calls
  * {@link frame} every animation frame.
  */
-import { createRenderEntityState, type DecodedSnapshot, type JoinRoundMsg, type MatchSim, type RenderEntityState } from '@tumble/netcode';
+import {
+  createRenderEntityState,
+  type DecodedSnapshot,
+  type JoinRoundMsg,
+  type MatchSim,
+  type RenderEntityState,
+} from '@tumble/netcode';
 import type { CharacterInput, SimEvent } from '@tumble/sim';
 import type { NetClient } from './NetClient.ts';
 import { PredictionController, type PredictionOptions } from './PredictionController.ts';
@@ -17,7 +23,14 @@ import { RemoteEntities } from './RemoteEntities.ts';
 export type CreatePredictSim = (join: JoinRoundMsg, localPlayerId: number) => MatchSim | Promise<MatchSim>;
 
 /** Event types the local sim predicts for the local player; the server's copies are dropped. */
-const PREDICTED_EVENTS: ReadonlySet<SimEvent['type']> = new Set(['jump', 'land', 'dive', 'getUp', 'emote', 'bounce']);
+const PREDICTED_EVENTS: ReadonlySet<SimEvent['type']> = new Set([
+  'jump',
+  'land',
+  'dive',
+  'getUp',
+  'emote',
+  'bounce',
+]);
 
 /**
  * True when a server SimEvent duplicates something the local prediction

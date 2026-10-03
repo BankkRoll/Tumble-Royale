@@ -27,7 +27,15 @@ import {
 } from 'three/webgpu';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { createToonMaterial } from '@tumble/render';
-import { InteractionGroups, quatFromAxisAngle, quatFromYaw, quatMul, rotateVec, type Quat, type Vec3 } from '@tumble/shared';
+import {
+  InteractionGroups,
+  quatFromAxisAngle,
+  quatFromYaw,
+  quatMul,
+  rotateVec,
+  type Quat,
+  type Vec3,
+} from '@tumble/shared';
 import type { Rapier, RigidBody, SurfaceInfo, SurfaceRegistry, World } from '@tumble/sim';
 import { createLabel } from './labels.ts';
 
@@ -137,7 +145,7 @@ export class PlaygroundCourse {
     // Conveyor chevrons drift with the belt (visual only).
     for (let i = 0; i < this.chevrons.length; i++) {
       const c = this.chevrons[i]!;
-      const u = (((elapsed * 3.5) / 10 + i / this.chevrons.length) % 1 + 1) % 1;
+      const u = ((((elapsed * 3.5) / 10 + i / this.chevrons.length) % 1) + 1) % 1;
       c.position.x = 28 - u * 10;
     }
   }
@@ -190,7 +198,9 @@ export class PlaygroundCourse {
     const cy = top - sy / 2;
     const body = this.world.createRigidBody(this.R.RigidBodyDesc.fixed());
     const col = this.world.createCollider(
-      this.R.ColliderDesc.cuboid(sx / 2, sy / 2, sz / 2).setTranslation(x, cy, z).setCollisionGroups(InteractionGroups.static),
+      this.R.ColliderDesc.cuboid(sx / 2, sy / 2, sz / 2)
+        .setTranslation(x, cy, z)
+        .setCollisionGroups(InteractionGroups.static),
       body,
     );
     if (info) this.surfaces.set(col.handle, info);
@@ -208,7 +218,15 @@ export class PlaygroundCourse {
    * Inclined slab. `from` is the middle of its low (or high) top edge, `yaw`
    * the direction it runs in, `slopeDeg` positive when it rises along `yaw`.
    */
-  private slab(from: Vec3, yaw: number, length: number, width: number, slopeDeg: number, color: string, info?: SurfaceInfo): void {
+  private slab(
+    from: Vec3,
+    yaw: number,
+    length: number,
+    width: number,
+    slopeDeg: number,
+    color: string,
+    info?: SurfaceInfo,
+  ): void {
     const hy = 0.25;
     const qYaw = quatFromYaw(yaw);
     const qPitch = quatFromAxisAngle(1, 0, 0, (-slopeDeg * Math.PI) / 180);
@@ -220,7 +238,10 @@ export class PlaygroundCourse {
     const cz = from.z - v.z;
     const body = this.world.createRigidBody(this.R.RigidBodyDesc.fixed());
     const col = this.world.createCollider(
-      this.R.ColliderDesc.cuboid(width / 2, hy, length / 2).setTranslation(cx, cy, cz).setRotation(q).setCollisionGroups(InteractionGroups.static),
+      this.R.ColliderDesc.cuboid(width / 2, hy, length / 2)
+        .setTranslation(cx, cy, cz)
+        .setRotation(q)
+        .setCollisionGroups(InteractionGroups.static),
       body,
     );
     if (info) this.surfaces.set(col.handle, info);
@@ -246,7 +267,9 @@ export class PlaygroundCourse {
   ): CourseMover {
     pose(0, this.p, this.q);
     const body = this.world.createRigidBody(
-      this.R.RigidBodyDesc.kinematicPositionBased().setTranslation(this.p.x, this.p.y, this.p.z).setRotation(this.q),
+      this.R.RigidBodyDesc.kinematicPositionBased()
+        .setTranslation(this.p.x, this.p.y, this.p.z)
+        .setRotation(this.q),
     );
     const col = this.world.createCollider(shape().setCollisionGroups(InteractionGroups.kinematic), body);
     if (info) this.surfaces.set(col.handle, info);
@@ -279,7 +302,14 @@ export class PlaygroundCourse {
     pad.receiveShadow = true;
     this.group.add(pad);
     this.label('TUMBLER PLAYGROUND', 0, 7.5, 6, COLORS.interact, 1.4);
-    this.label('WASD move · Space jump · Ctrl/LMB/C dive · Shift/RMB grab · 1-4 emote · R respawn', 0, 6.3, 6, COLORS.white, 0.5);
+    this.label(
+      'WASD move · Space jump · Ctrl/LMB/C dive · Shift/RMB grab · 1-4 emote · R respawn',
+      0,
+      6.3,
+      6,
+      COLORS.white,
+      0.5,
+    );
   }
 
   private buildSlopes(): void {
@@ -301,7 +331,9 @@ export class PlaygroundCourse {
     this.box(-19.5, H, 0, 15, 0.6, 4, COLORS.purple);
     this.label('Slide ramp ↓', -23, H + 1.8, 1.2, COLORS.slide, 0.6);
     // Slide ramp off the deck's north side, down to the island.
-    this.slab({ x: -23, y: H, z: 2 }, 0, H / Math.sin((15 * Math.PI) / 180), 5, -15, COLORS.slide, { kind: 'slide' });
+    this.slab({ x: -23, y: H, z: 2 }, 0, H / Math.sin((15 * Math.PI) / 180), 5, -15, COLORS.slide, {
+      kind: 'slide',
+    });
   }
 
   private buildSteps(): void {
@@ -309,7 +341,17 @@ export class PlaygroundCourse {
     const x = -7;
     const z0 = -12;
     for (let i = 0; i < 8; i++) {
-      this.box(x, 0.25 * (i + 1), z0 + i * 0.45 + 0.225, 3, 0.25 * (i + 1), 0.45, i % 2 ? COLORS.white : COLORS.safe, undefined, false);
+      this.box(
+        x,
+        0.25 * (i + 1),
+        z0 + i * 0.45 + 0.225,
+        3,
+        0.25 * (i + 1),
+        0.45,
+        i % 2 ? COLORS.white : COLORS.safe,
+        undefined,
+        false,
+      );
     }
     this.box(x, 2, z0 + 3.6 + 1.5, 3, 2, 3, COLORS.safe);
     this.label('Stairs', x, 3.6, z0 + 1, COLORS.white, 0.55);
@@ -333,7 +375,17 @@ export class PlaygroundCourse {
   private buildSurfaces(): void {
     this.box(23, 0.02, -10, 10, 0.04, 8, COLORS.ice, { kind: 'ice' }, false);
     this.label('ICE', 23, 1.4, -10, COLORS.ice, 0.7);
-    this.box(23, 0.02, -2, 10, 0.04, 4, '#8a8fa8', { kind: 'conveyor', conveyorVelocity: { x: -3.5, y: 0, z: 0 } }, false);
+    this.box(
+      23,
+      0.02,
+      -2,
+      10,
+      0.04,
+      4,
+      '#8a8fa8',
+      { kind: 'conveyor', conveyorVelocity: { x: -3.5, y: 0, z: 0 } },
+      false,
+    );
     this.label('Conveyor ←', 23, 1.4, -2, COLORS.white, 0.6);
     const chevGeo = this.geo(new BoxGeometry(0.35, 0.03, 3.4));
     const chevMat = this.mat(COLORS.interact);
@@ -350,11 +402,16 @@ export class PlaygroundCourse {
   private buildBounce(): void {
     const body = this.world.createRigidBody(this.R.RigidBodyDesc.fixed());
     const col = this.world.createCollider(
-      this.R.ColliderDesc.cylinder(0.1, 1.3).setTranslation(8, 0.1, 6).setCollisionGroups(InteractionGroups.static),
+      this.R.ColliderDesc.cylinder(0.1, 1.3)
+        .setTranslation(8, 0.1, 6)
+        .setCollisionGroups(InteractionGroups.static),
       body,
     );
     this.surfaces.set(col.handle, { kind: 'bouncy', bounceImpulse: 17, ownerId: 'bounce-pad' });
-    const pad = new Mesh(this.geo(new CylinderGeometry(1.3, 1.4, 0.2, 32)), this.mat(COLORS.interact, COLORS.interact));
+    const pad = new Mesh(
+      this.geo(new CylinderGeometry(1.3, 1.4, 0.2, 32)),
+      this.mat(COLORS.interact, COLORS.interact),
+    );
     pad.position.set(8, 0.1, 6);
     pad.receiveShadow = true;
     this.group.add(pad);
@@ -367,7 +424,10 @@ export class PlaygroundCourse {
   private buildHazards(): void {
     // Rotating bar: jump it; the outer half moves fast enough to stun.
     const barGroup = new Group();
-    const bar = new Mesh(this.geo(new RoundedBoxGeometry(14, 0.5, 0.5, 2, 0.2)), this.mat(COLORS.danger, COLORS.danger));
+    const bar = new Mesh(
+      this.geo(new RoundedBoxGeometry(14, 0.5, 0.5, 2, 0.2)),
+      this.mat(COLORS.danger, COLORS.danger),
+    );
     barGroup.add(bar);
     this.kinematic(
       () => this.R.ColliderDesc.cuboid(7, 0.25, 0.25),
@@ -406,7 +466,8 @@ export class PlaygroundCourse {
         quatFromAxisAngle(0, 0, 1, angle, q);
       },
     );
-    for (const side of [-1, 1]) this.box(pivot.x, pivot.y + 0.3, pivot.z + side * 1.6, 0.4, pivot.y + 0.3, 0.4, COLORS.purple);
+    for (const side of [-1, 1])
+      this.box(pivot.x, pivot.y + 0.3, pivot.z + side * 1.6, 0.4, pivot.y + 0.3, 0.4, COLORS.purple);
     this.box(pivot.x, pivot.y + 0.6, pivot.z, 0.4, 0.3, 3.6, COLORS.purple);
     this.label('Pendulum (stun test)', pivot.x, pivot.y + 1.6, pivot.z, COLORS.danger, 0.55);
   }
@@ -501,7 +562,10 @@ export class PlaygroundCourse {
     for (const [x, y, z] of spots) {
       const body = this.world.createRigidBody(this.R.RigidBodyDesc.dynamic().setTranslation(x, y, z));
       this.world.createCollider(
-        this.R.ColliderDesc.cuboid(0.5, 0.5, 0.5).setDensity(0.6).setFriction(0.6).setCollisionGroups(InteractionGroups.prop),
+        this.R.ColliderDesc.cuboid(0.5, 0.5, 0.5)
+          .setDensity(0.6)
+          .setFriction(0.6)
+          .setCollisionGroups(InteractionGroups.prop),
         body,
       );
       const mesh = new Mesh(boxGeo, boxMat);
@@ -518,9 +582,15 @@ export class PlaygroundCourse {
       [-3, -10],
       [-4.2, -11],
     ].forEach(([x, z], i) => {
-      const body = this.world.createRigidBody(this.R.RigidBodyDesc.dynamic().setTranslation(x!, 0.35, z!).setLinearDamping(0.4));
+      const body = this.world.createRigidBody(
+        this.R.RigidBodyDesc.dynamic().setTranslation(x!, 0.35, z!).setLinearDamping(0.4),
+      );
       const col = this.world.createCollider(
-        this.R.ColliderDesc.ball(0.35).setDensity(0.3).setRestitution(0.3).setFriction(0.8).setCollisionGroups(InteractionGroups.prop),
+        this.R.ColliderDesc.ball(0.35)
+          .setDensity(0.3)
+          .setRestitution(0.3)
+          .setFriction(0.8)
+          .setCollisionGroups(InteractionGroups.prop),
         body,
       );
       this.propIds.set(col.handle, 100 + i);

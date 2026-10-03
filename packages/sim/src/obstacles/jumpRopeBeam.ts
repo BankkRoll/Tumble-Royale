@@ -5,7 +5,16 @@
  * the pose is exact at any match time (no accumulated drift between peers).
  */
 import type { Collider, RigidBody } from '@dimforge/rapier3d-compat';
-import { InteractionGroups, quatFromAxisAngle, quatFromYaw, quatMul, rotateVec, vec3, type Quat, type Vec3 } from '@tumble/shared';
+import {
+  InteractionGroups,
+  quatFromAxisAngle,
+  quatFromYaw,
+  quatMul,
+  rotateVec,
+  vec3,
+  type Quat,
+  type Vec3,
+} from '@tumble/shared';
 import { z } from 'zod';
 import {
   ActorCooldowns,
@@ -17,7 +26,13 @@ import {
   instanceFrame,
   writeSample,
 } from './helpers-b.ts';
-import type { ObstacleActor, ObstacleModule, ObstacleRuntime, ObstacleStepContext, PoseSample } from './types.ts';
+import type {
+  ObstacleActor,
+  ObstacleModule,
+  ObstacleRuntime,
+  ObstacleStepContext,
+  PoseSample,
+} from './types.ts';
 
 // Trip response as fractions of `knockImpulse`: a hop plus a shove back against the sweep. The
 // backward part is what makes the rim risky (it slides you tangentially, i.e. slightly outward);
@@ -101,7 +116,12 @@ export function jumpRopeLayers(p: JumpRopeBeamParams): { height: number; sign: n
 const qTmp = { x: 0, y: 0, z: 0, w: 1 };
 
 /** Pure pose: one rotor sample per active layer (low first). */
-export function jumpRopeBeamPose(t: number, p: JumpRopeBeamParams, out: PoseSample[], speedScale: number): void {
+export function jumpRopeBeamPose(
+  t: number,
+  p: JumpRopeBeamParams,
+  out: PoseSample[],
+  speedScale: number,
+): void {
   const swept = jumpRopeSweptDegrees(t * speedScale - p.startDelay, p);
   const lowSign = p.layers === 'high' ? 0 : 1;
   const count = p.layers === 'both' ? 2 : 1;
@@ -131,7 +151,13 @@ const ropeConj: Quat = { x: 0, y: 0, z: 0, w: 1 };
  * @param out - On entry the bot's hint point; receives the spot.
  * @returns False when the hint is on another level than the hub.
  */
-function ropeSafeSpot(t: number, p: JumpRopeBeamParams, scale: number, frame: { pos: Vec3; rot: Quat }, out: Vec3): boolean {
+function ropeSafeSpot(
+  t: number,
+  p: JumpRopeBeamParams,
+  scale: number,
+  frame: { pos: Vec3; rot: Quat },
+  out: Vec3,
+): boolean {
   ropeConj.x = -frame.rot.x;
   ropeConj.y = -frame.rot.y;
   ropeConj.z = -frame.rot.z;
@@ -191,7 +217,9 @@ export const jumpRopeBeam: ObstacleModule<JumpRopeBeamParams> = {
     const hub = bag.fixed(frame);
     const hubH = Math.max(p.lowHeight, p.layers === 'low' ? p.lowHeight : p.highHeight) + 0.6;
     bag.collider(
-      R.ColliderDesc.cylinder(hubH / 2, p.hubRadius).setTranslation(0, hubH / 2, 0).setCollisionGroups(InteractionGroups.static),
+      R.ColliderDesc.cylinder(hubH / 2, p.hubRadius)
+        .setTranslation(0, hubH / 2, 0)
+        .setCollisionGroups(InteractionGroups.static),
       hub,
       { kind: 'normal', ownerId: instance.id },
     );

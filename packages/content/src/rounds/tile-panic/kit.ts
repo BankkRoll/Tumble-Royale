@@ -285,7 +285,10 @@ export function roamGrid(o: RoamGridOptions): WaypointInput[] {
  * Same param override for every instance id — variations address the
  * generated tile instances one by one.
  */
-export function overrideAll(instances: readonly ObstacleInput[], params: Record<string, unknown>): Record<string, Record<string, unknown>> {
+export function overrideAll(
+  instances: readonly ObstacleInput[],
+  params: Record<string, unknown>,
+): Record<string, Record<string, unknown>> {
   const out: Record<string, Record<string, unknown>> = {};
   for (const i of instances) out[i.id] = { ...params };
   return out;

@@ -10,7 +10,10 @@ import { parse } from '../http/errors.ts';
 import { challengesView, claimChallenge, rerollChallenge } from './challenges.ts';
 import { claimTier, passState, unlockPremium } from './pass.ts';
 
-const ClaimTierBody = z.object({ tier: z.number().int().min(1).max(1000), track: z.enum(['free', 'premium']) });
+const ClaimTierBody = z.object({
+  tier: z.number().int().min(1).max(1000),
+  track: z.enum(['free', 'premium']),
+});
 const ChallengeIdBody = z.object({ id: z.string().uuid() });
 
 /**

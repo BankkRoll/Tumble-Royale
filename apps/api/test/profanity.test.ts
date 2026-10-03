@@ -3,19 +3,43 @@ import { checkDisplayName, parseNameTag } from '../src/names/display-name.ts';
 import { containsProfanity, maskProfanity, normalizeForFilter } from '../src/names/profanity.ts';
 
 describe('profanity filter', () => {
-  it.each(['fuck', 'FuCk', 'f.u.c.k', 'fuuuuuck', 'xXfuckXx', 'sh1t', '$h!t', 'b1tch', 'a$$', 'ass', 'asssss', 'b00b', 'n1gg3r', 'KYS'])(
-    'blocks %s',
-    (word) => {
-      expect(containsProfanity(word)).toBe(true);
-    },
-  );
+  it.each([
+    'fuck',
+    'FuCk',
+    'f.u.c.k',
+    'fuuuuuck',
+    'xXfuckXx',
+    'sh1t',
+    '$h!t',
+    'b1tch',
+    'a$$',
+    'ass',
+    'asssss',
+    'b00b',
+    'n1gg3r',
+    'KYS',
+  ])('blocks %s', (word) => {
+    expect(containsProfanity(word)).toBe(true);
+  });
 
-  it.each(['Classy', 'Scunthorpe', 'Bouncy Bob', 'assassin', 'cocktail', 'grapefruit', 'therapist', 'Niger', 'as', 'Passion', 'Pebble', 'skyscraper', 'accumulate', 'torpedo'])(
-    'allows %s',
-    (word) => {
-      expect(containsProfanity(word)).toBe(false);
-    },
-  );
+  it.each([
+    'Classy',
+    'Scunthorpe',
+    'Bouncy Bob',
+    'assassin',
+    'cocktail',
+    'grapefruit',
+    'therapist',
+    'Niger',
+    'as',
+    'Passion',
+    'Pebble',
+    'skyscraper',
+    'accumulate',
+    'torpedo',
+  ])('allows %s', (word) => {
+    expect(containsProfanity(word)).toBe(false);
+  });
 
   it('normalises leetspeak and separators', () => {
     expect(normalizeForFilter('H3ll0_W0rld!!')).toBe('hello worldii');

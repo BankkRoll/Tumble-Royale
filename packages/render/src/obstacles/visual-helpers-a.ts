@@ -10,9 +10,7 @@
  * - Posing three objects from the sim's pure `pose()` samples.
  * - A base class that owns the root group and disposes everything under it.
  */
-import type {
-  BufferGeometry,
-  Material} from 'three/webgpu';
+import type { BufferGeometry, Material } from 'three/webgpu';
 import {
   Color,
   Group,
@@ -22,17 +20,7 @@ import {
   type ColorRepresentation,
 } from 'three/webgpu';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import {
-  abs,
-  atan,
-  float,
-  fract,
-  mix,
-  positionGeometry,
-  smoothstep,
-  step,
-  uniform,
-} from 'three/tsl';
+import { abs, atan, float, fract, mix, positionGeometry, smoothstep, step, uniform } from 'three/tsl';
 import type { ObstacleInstance, ObstacleModule, ObstacleRuntime, PoseSample } from '@tumble/sim';
 import { quatFromEulerYXZ } from '@tumble/shared';
 import { createToonMaterial } from '../materials/toon.ts';
@@ -115,7 +103,9 @@ export function createPatternMaterial(opts: PatternMaterialOptions): MeshToonNod
       mask = step(0.5, fract(p.y.mul(scale)));
       break;
     case 'pie': {
-      const ang = atan(p.z, p.x).div(Math.PI * 2).add(0.5);
+      const ang = atan(p.z, p.x)
+        .div(Math.PI * 2)
+        .add(0.5);
       mask = step(0.5, fract(ang.mul(scale).mul(0.5)));
       break;
     }
@@ -127,12 +117,16 @@ export function createPatternMaterial(opts: PatternMaterialOptions): MeshToonNod
 
 /** Sets a toon material's telegraph glow (0..1 → emissive intensity). */
 export function setGlow(mat: Material, intensity: number, max = 1.1): void {
-  const u = (mat.userData.uniforms as { emissiveIntensity?: { value: number } } | undefined)?.emissiveIntensity;
+  const u = (mat.userData.uniforms as { emissiveIntensity?: { value: number } } | undefined)
+    ?.emissiveIntensity;
   if (u) u.value = Math.max(0, intensity) * max;
 }
 
 /** Soft "candy sheen" band: lighter top fading to base — used on big flat tops. */
-export function createTopSheenMaterial(top: ColorRepresentation, side: ColorRepresentation): MeshToonNodeMaterial {
+export function createTopSheenMaterial(
+  top: ColorRepresentation,
+  side: ColorRepresentation,
+): MeshToonNodeMaterial {
   const mat = createToonMaterial({ color: side, rimStrength: 0.4, emissive: top, emissiveIntensity: 0 });
   const k = smoothstep(float(-0.05), float(0.05), positionGeometry.y);
   mat.colorNode = mix(uniform(new Color(side)), uniform(new Color(top)), k);
@@ -248,7 +242,10 @@ export abstract class VisualBase<P> implements ObstacleVisual {
  * Narrows an optional runtime to a module's richer view when it exposes the
  * given key (duck-typed: visuals never import runtime classes).
  */
-export function runtimeView<V extends ObstacleRuntime>(runtime: ObstacleRuntime | undefined, key: keyof V): V | undefined {
+export function runtimeView<V extends ObstacleRuntime>(
+  runtime: ObstacleRuntime | undefined,
+  key: keyof V,
+): V | undefined {
   return runtime && key in runtime ? (runtime as V) : undefined;
 }
 

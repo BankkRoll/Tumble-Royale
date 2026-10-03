@@ -61,7 +61,12 @@ export type SpinningDiscParams = z.output<typeof spinningDiscSchema>;
  * Pure pose: one sample — yaw spin, optionally pre-multiplied by a wobble
  * tilt about a slowly precessing horizontal axis.
  */
-export function spinningDiscPose(t: number, p: SpinningDiscParams, out: PoseSample[], speedScale: number): void {
+export function spinningDiscPose(
+  t: number,
+  p: SpinningDiscParams,
+  out: PoseSample[],
+  speedScale: number,
+): void {
   const s = out[0];
   if (!s) return;
   const yaw = p.phase + p.speed * speedScale * squareWaveIntegral(t, p.reversePeriod, p.reverseRamp);
@@ -126,7 +131,9 @@ class SpinningDiscRuntime extends RuntimeBase {
     for (let i = 0; i < p.bumps; i++) {
       const b = spinningDiscBump(i, p);
       const c = this.addCollider(
-        R.ColliderDesc.ball(p.bumpRadius).setTranslation(b.x, 0, b.z).setCollisionGroups(ObstacleGroups.kinematic),
+        R.ColliderDesc.ball(p.bumpRadius)
+          .setTranslation(b.x, 0, b.z)
+          .setCollisionGroups(ObstacleGroups.kinematic),
         body,
         { kind: 'bouncy', bounceImpulse: p.bumpKnock },
       );
@@ -149,7 +156,12 @@ class SpinningDiscRuntime extends RuntimeBase {
   onContact(actor: ObstacleActor, collider: Collider, ctx: ObstacleStepContext): void {
     if (!this.bumpHandles.has(collider.handle) || actor.isGhost) return;
     if (!this.cooldown.ready(actor.id, ctx.t, 0.4)) return;
-    knockByMotion(actor, this.driver.body, { speed: this.p.bumpKnock, lift: 2.5, stun: false, minMotion: Number.POSITIVE_INFINITY });
+    knockByMotion(actor, this.driver.body, {
+      speed: this.p.bumpKnock,
+      lift: 2.5,
+      stun: false,
+      minMotion: Number.POSITIVE_INFINITY,
+    });
     this.cue(ctx.events, 'boing');
   }
 
@@ -165,6 +177,7 @@ export const spinningDisc: ObstacleModule<SpinningDiscParams> = {
   schema: spinningDiscSchema,
   pose: spinningDiscPose,
   poseCount: () => 1,
-  create: (instance, ctx) => new SpinningDiscRuntime(instance, ctx, spinningDiscSchema.parse(instance.params)),
+  create: (instance, ctx) =>
+    new SpinningDiscRuntime(instance, ctx, spinningDiscSchema.parse(instance.params)),
   audioCues: ['reverse', 'boing'],
 };

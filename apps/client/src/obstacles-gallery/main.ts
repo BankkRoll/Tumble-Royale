@@ -171,7 +171,11 @@ class ObstacleGallery {
     });
 
     const totalBalls = this.cells.reduce((n, cell) => n + (cell.preset.balls ?? DEFAULT_PRESET.balls), 0);
-    this.ballMesh = new InstancedMesh(new SphereGeometry(BALL_RADIUS, 20, 12), createToonMaterial({ color: '#ffffff', rimStrength: 0.5 }), Math.max(1, totalBalls));
+    this.ballMesh = new InstancedMesh(
+      new SphereGeometry(BALL_RADIUS, 20, 12),
+      createToonMaterial({ color: '#ffffff', rimStrength: 0.5 }),
+      Math.max(1, totalBalls),
+    );
     this.ballMesh.castShadow = true;
     this.ballMesh.frustumCulled = false;
     this.scene.add(this.ballMesh);
@@ -217,24 +221,37 @@ class ObstacleGallery {
     const slab = new Mesh(new CylinderGeometry(radius, radius, 1.2, 96), top);
     slab.position.y = -0.6;
     slab.receiveShadow = true;
-    const under = new Mesh(new CylinderGeometry(radius, radius * 0.35, 18, 64), createToonMaterial({ color: '#ffb3d9' }));
+    const under = new Mesh(
+      new CylinderGeometry(radius, radius * 0.35, 18, 64),
+      createToonMaterial({ color: '#ffb3d9' }),
+    );
     under.position.y = -10.2;
     ground.add(slab, under);
     this.scene.add(ground);
     const body = this.world.createRigidBody(this.R.RigidBodyDesc.fixed());
     this.world.createCollider(
-      this.R.ColliderDesc.cylinder(0.6, radius).setTranslation(0, -0.6, 0).setCollisionGroups(InteractionGroups.static),
+      this.R.ColliderDesc.cylinder(0.6, radius)
+        .setTranslation(0, -0.6, 0)
+        .setCollisionGroups(InteractionGroups.static),
       body,
     );
 
     // Cell rings so each exhibit reads as its own stage.
-    const rings = new InstancedMesh(new TorusGeometry(CELL * 0.46, 0.18, 8, 96), createToonMaterial({ color: '#ffffff', rimStrength: 0 }), 64);
+    const rings = new InstancedMesh(
+      new TorusGeometry(CELL * 0.46, 0.18, 8, 96),
+      createToonMaterial({ color: '#ffffff', rimStrength: 0 }),
+      64,
+    );
     rings.count = 0;
     this.scene.add(rings);
     this.cellRings = rings;
 
     // Drifting background puffs (one draw call).
-    const puffs = new InstancedMesh(new IcosahedronGeometry(1, 2), createToonMaterial({ color: '#ffffff', rimStrength: 0.2 }), 40);
+    const puffs = new InstancedMesh(
+      new IcosahedronGeometry(1, 2),
+      createToonMaterial({ color: '#ffffff', rimStrength: 0.2 }),
+      40,
+    );
     const m = new Matrix4();
     const p = new Vector3();
     const s = new Vector3();
@@ -281,7 +298,21 @@ class ObstacleGallery {
       this.cellRings.setMatrixAt(i, this.m.makeRotationX(Math.PI / 2).setPosition(center.x, 0.02, center.z));
     }
     const step: ObstacleStepContext = { t: 0, dt: SIM_DT, tick: 0, events: this.events, actors: [] };
-    return { def, id, center, preset, params, runtime: null, visual: null, label, labelEl, balls: [], step, error, far: false };
+    return {
+      def,
+      id,
+      center,
+      preset,
+      params,
+      runtime: null,
+      visual: null,
+      label,
+      labelEl,
+      balls: [],
+      step,
+      error,
+      far: false,
+    };
   }
 
   private instanceOf(cell: Cell): ObstacleInstance {
@@ -316,7 +347,11 @@ class ObstacleGallery {
       });
       for (const c of cell.runtime.colliders) this.runtimeByCollider.set(c.handle, cell.runtime);
       if (cell.def.visual) {
-        cell.visual = cell.def.visual(instance, { theme: 'candy', speedScale: this.settings.speedScale, seed: SEED });
+        cell.visual = cell.def.visual(instance, {
+          theme: 'candy',
+          speedScale: this.settings.speedScale,
+          seed: SEED,
+        });
         this.scene.add(cell.visual.object);
       }
     } catch (e) {
@@ -362,7 +397,11 @@ class ObstacleGallery {
     const r = Math.sqrt(this.rng.next()) * s.radius;
     const vel = cell.preset.ballVelocity ?? { x: 0, y: 0, z: 0 };
     ball.spawn(
-      { x: cell.center.x + s.x + Math.cos(a) * r, y: s.height + extraHeight + this.rng.range(0, 2), z: cell.center.z + s.z + Math.sin(a) * r },
+      {
+        x: cell.center.x + s.x + Math.cos(a) * r,
+        y: s.height + extraHeight + this.rng.range(0, 2),
+        z: cell.center.z + s.z + Math.sin(a) * r,
+      },
       { x: vel.x + this.rng.range(-0.5, 0.5), y: vel.y, z: vel.z + this.rng.range(-0.5, 0.5) },
       { x: this.rng.range(-2, 2), y: this.rng.range(-2, 2), z: this.rng.range(-2, 2) },
     );
@@ -396,7 +435,8 @@ class ObstacleGallery {
     for (const cell of this.cells) {
       for (const ball of cell.balls) {
         ball.age += SIM_DT;
-        if (ball.doomed || ball.age > BALL_LIFETIME || ball.body.translation().y < KILL_Y) this.respawnBall(cell, ball);
+        if (ball.doomed || ball.age > BALL_LIFETIME || ball.body.translation().y < KILL_Y)
+          this.respawnBall(cell, ball);
       }
     }
     const drained = this.events.drain();
@@ -467,14 +507,19 @@ class ObstacleGallery {
   private buildGui(): void {
     const s = this.settings;
     const ids = [OVERVIEW, ...this.cells.map((c) => c.id)];
-    this.gui.add(s, 'focus', ids).name('focus').onChange((id: string) => this.focus(id));
+    this.gui
+      .add(s, 'focus', ids)
+      .name('focus')
+      .onChange((id: string) => this.focus(id));
     this.gui.add(s, 'timeScale', 0, 3, 0.05).name('time scale');
     this.gui.add(s, 'paused');
     this.gui
       .add(s, 'speedScale', 0.5, 2, 0.05)
       .name('difficulty speed')
       .onFinishChange(() => this.rebuildAll());
-    this.gui.add(s, 'labels').onChange((v: boolean) => (this.labels.domElement.style.display = v ? '' : 'none'));
+    this.gui
+      .add(s, 'labels')
+      .onChange((v: boolean) => (this.labels.domElement.style.display = v ? '' : 'none'));
     this.gui.add(s, 'balls').name('demo balls');
     this.gui.add({ drop: () => this.dropAllBalls() }, 'drop').name('drop balls now');
     this.gui.add({ reset: () => this.resetTime() }, 'reset').name('restart clock');

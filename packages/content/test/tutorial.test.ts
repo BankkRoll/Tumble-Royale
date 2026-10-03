@@ -7,10 +7,23 @@
  * dive, the pad reaches the shelf, a sharp bot clears every station, and
  * clumsy/average bots finish the mini race.
  */
-import { RoundDefinitionSchema, RoundPhase, quatFromEulerYXZ, rotateVec, type RoundDefinition, type Vec3 } from '@tumble/shared';
+import {
+  RoundDefinitionSchema,
+  RoundPhase,
+  quatFromEulerYXZ,
+  rotateVec,
+  type RoundDefinition,
+  type Vec3,
+} from '@tumble/shared';
 import { Button, CharacterState, loadRapier, type Rapier, type World } from '@tumble/sim';
 import { createCharacterFullState, createTumblerController } from '@tumble/sim/character';
-import { PlayerRoundStatus, createMatchSim, spawnSlots, type MatchPlayerInfo, type MatchSimHandle } from '@tumble/sim/match';
+import {
+  PlayerRoundStatus,
+  createMatchSim,
+  spawnSlots,
+  type MatchPlayerInfo,
+  type MatchSimHandle,
+} from '@tumble/sim/match';
 import { OBSTACLE_REGISTRY, getObstacleModule } from '@tumble/sim/obstacles';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { DEV_ROUND_IDS, getRound, showRoundCatalog } from '../src/rounds/index.ts';
@@ -39,7 +52,14 @@ const deps = { createController: createTumblerController, obstacles: OBSTACLE_RE
 
 function inBounds(p: Vec3, pad = 0): boolean {
   const { min, max } = round.bounds;
-  return p.x - pad >= min.x && p.x + pad <= max.x && p.y - pad >= min.y && p.y + pad <= max.y && p.z - pad >= min.z && p.z + pad <= max.z;
+  return (
+    p.x - pad >= min.x &&
+    p.x + pad <= max.x &&
+    p.y - pad >= min.y &&
+    p.y + pad <= max.y &&
+    p.z - pad >= min.z &&
+    p.z + pad <= max.z
+  );
 }
 
 function pieceHalfExtents(shape: string, s: Vec3): Vec3 {
@@ -59,7 +79,11 @@ function pieceHalfExtents(shape: string, s: Vec3): Vec3 {
 function pieceInBounds(p: RoundDefinition['geometry'][number]): boolean {
   const h = pieceHalfExtents(p.shape, p.size);
   const D = Math.PI / 180;
-  const q = quatFromEulerYXZ((p.rotation?.yaw ?? 0) * D, (p.rotation?.pitch ?? 0) * D, (p.rotation?.roll ?? 0) * D);
+  const q = quatFromEulerYXZ(
+    (p.rotation?.yaw ?? 0) * D,
+    (p.rotation?.pitch ?? 0) * D,
+    (p.rotation?.roll ?? 0) * D,
+  );
   for (const sx of [-1, 1])
     for (const sy of [-1, 1])
       for (const sz of [-1, 1]) {
@@ -76,7 +100,10 @@ function groundBelow(world: World, p: Vec3, depth: number): boolean {
 
 /** One human on the practice course, driven by explicit inputs. */
 function soloSim(): MatchSimHandle {
-  const sim = createMatchSim({ R, round, seed: 3, stage: 0, players: [{ id: 0, name: 'p', isBot: false, team: -1 }], mode: 'offline' }, deps);
+  const sim = createMatchSim(
+    { R, round, seed: 3, stage: 0, players: [{ id: 0, name: 'p', isBot: false, team: -1 }], mode: 'offline' },
+    deps,
+  );
   sim.setPhase(RoundPhase.Playing, 0);
   return sim;
 }
@@ -87,7 +114,12 @@ function soloSim(): MatchSimHandle {
  *
  * @returns Final feet position and whether the player fell out.
  */
-function runAndJump(from: Vec3, takeoffZ: number, diveAfter: number | null, ticks = 240): { pos: Vec3; fell: boolean; bounced: boolean } {
+function runAndJump(
+  from: Vec3,
+  takeoffZ: number,
+  diveAfter: number | null,
+  ticks = 240,
+): { pos: Vec3; fell: boolean; bounced: boolean } {
   const sim = soloSim();
   sim.controller(0)!.teleport(from, 0);
   const st = createCharacterFullState();
@@ -99,7 +131,8 @@ function runAndJump(from: Vec3, takeoffZ: number, diveAfter: number | null, tick
     if (jumpTick < 0 && st.pos.z >= takeoffZ) jumpTick = i;
     let buttons = 0;
     if (jumpTick >= 0 && i - jumpTick < 14) buttons |= Button.Jump;
-    if (diveAfter !== null && jumpTick >= 0 && i - jumpTick >= diveAfter && i - jumpTick < diveAfter + 3) buttons |= Button.Dive;
+    if (diveAfter !== null && jumpTick >= 0 && i - jumpTick >= diveAfter && i - jumpTick < diveAfter + 3)
+      buttons |= Button.Dive;
     sim.setInput(0, { moveX: 0, moveZ: 1, yaw: 0, buttons, emote: 0 });
     sim.step();
     for (const e of sim.events.drain()) {
@@ -123,7 +156,17 @@ describe('tutorial registry', () => {
   });
 
   it('lists every station in order with sane coach points', () => {
-    expect(PRACTICE_STATIONS.map((s) => s.id)).toEqual(['move', 'jump', 'dive', 'grab', 'climb', 'bounce', 'tiles', 'checkpoint', 'race']);
+    expect(PRACTICE_STATIONS.map((s) => s.id)).toEqual([
+      'move',
+      'jump',
+      'dive',
+      'grab',
+      'climb',
+      'bounce',
+      'tiles',
+      'checkpoint',
+      'race',
+    ]);
     const navIds = new Set(round.botNav.map((w) => w.id));
     const cpIdx = new Set(round.triggers.filter((t) => t.kind === 'checkpoint').map((t) => t.index));
     for (const [i, s] of PRACTICE_STATIONS.entries()) {
@@ -183,7 +226,18 @@ describe('round practice-island', { timeout: 30_000 }, () => {
       team: -1,
       ...(i > 0 ? { botSkill: i % 2 ? ('clumsy' as const) : ('average' as const) } : {}),
     }));
-    const race = createMatchSim({ R, round: raceRound, seed: 2, stage: 0, players: [...racers, { id: 8, name: 'Coach', isBot: false, team: -1 }], mode: 'offline', qualifyTarget: 8 }, deps);
+    const race = createMatchSim(
+      {
+        R,
+        round: raceRound,
+        seed: 2,
+        stage: 0,
+        players: [...racers, { id: 8, name: 'Coach', isBot: false, team: -1 }],
+        mode: 'offline',
+        qualifyTarget: 8,
+      },
+      deps,
+    );
     expect(race.warnings).toEqual([]);
     race.dispose();
   });
@@ -192,14 +246,22 @@ describe('round practice-island', { timeout: 30_000 }, () => {
     const sim = soloSim();
     sim.step();
     for (const r of [round, raceRound]) {
-      for (const s of spawnSlots(r, 5, Array.from({ length: 8 }, () => -1)))
-        expect(groundBelow(sim.world, s.pos, 2), `${r === round ? 'practice' : 'race'} spawn ${JSON.stringify(s.pos)}`).toBe(true);
+      for (const s of spawnSlots(
+        r,
+        5,
+        Array.from({ length: 8 }, () => -1),
+      ))
+        expect(
+          groundBelow(sim.world, s.pos, 2),
+          `${r === round ? 'practice' : 'race'} spawn ${JSON.stringify(s.pos)}`,
+        ).toBe(true);
     }
     const checkpoints = round.triggers.filter((t) => t.kind === 'checkpoint');
     expect(checkpoints.length).toBe(8);
     for (const c of checkpoints) {
       expect(c.respawn.length, c.id).toBeGreaterThan(0);
-      for (const p of c.respawn) expect(groundBelow(sim.world, p, 2), `${c.id} respawn ${JSON.stringify(p)}`).toBe(true);
+      for (const p of c.respawn)
+        expect(groundBelow(sim.world, p, 2), `${c.id} respawn ${JSON.stringify(p)}`).toBe(true);
     }
     for (const s of PRACTICE_STATIONS) {
       expect(groundBelow(sim.world, s.start, 2), `${s.id} start`).toBe(true);
@@ -214,7 +276,8 @@ describe('round practice-island', { timeout: 30_000 }, () => {
     const nodes = round.botNav;
     const byId = new Map(nodes.map((n) => [n.id, n]));
     expect(byId.size).toBe(nodes.length);
-    for (const n of nodes) for (const nx of n.next) expect(byId.has(nx), `waypoint ${n.id} → missing ${nx}`).toBe(true);
+    for (const n of nodes)
+      for (const nx of n.next) expect(byId.has(nx), `waypoint ${n.id} → missing ${nx}`).toBe(true);
     const sinks = nodes.filter((n) => n.next.length === 0);
     expect(sinks).toHaveLength(1);
     const seen = new Set<number>([0]);
@@ -228,11 +291,14 @@ describe('round practice-island', { timeout: 30_000 }, () => {
     }
     expect(nodes.filter((n) => !seen.has(n.id)).map((n) => n.id)).toEqual([]);
     const finish = round.triggers.find((t) => t.kind === 'finish')!;
-    expect(Math.hypot(sinks[0]!.position.x - finish.position.x, sinks[0]!.position.z - finish.position.z)).toBeLessThan(4);
+    expect(
+      Math.hypot(sinks[0]!.position.x - finish.position.x, sinks[0]!.position.z - finish.position.z),
+    ).toBeLessThan(4);
   });
 
   it('keeps all geometry, obstacles, triggers, waypoints and spawns inside bounds', () => {
-    for (const [i, p] of round.geometry.entries()) expect(pieceInBounds(p), `piece ${i} (${p.shape}) at ${JSON.stringify(p.position)}`).toBe(true);
+    for (const [i, p] of round.geometry.entries())
+      expect(pieceInBounds(p), `piece ${i} (${p.shape}) at ${JSON.stringify(p.position)}`).toBe(true);
     for (const o of round.obstacles) expect(inBounds(o.position), o.id).toBe(true);
     for (const t of round.triggers) expect(inBounds(t.position), t.id).toBe(true);
     for (const w of round.botNav) expect(inBounds(w.position), `waypoint ${w.id}`).toBe(true);
@@ -267,8 +333,17 @@ describe('practice-island physics (real controller)', { timeout: 60_000 }, () =>
   });
 
   it('a sharp bot clears every station and finishes', () => {
-    const players: MatchPlayerInfo[] = Array.from({ length: 3 }, (_, i) => ({ id: i, name: `S${i}`, isBot: true, team: -1, botSkill: 'sharp' as const }));
-    const sim = createMatchSim({ R, round, seed: 7, stage: 0, players, mode: 'offline', qualifyTarget: 3 }, deps);
+    const players: MatchPlayerInfo[] = Array.from({ length: 3 }, (_, i) => ({
+      id: i,
+      name: `S${i}`,
+      isBot: true,
+      team: -1,
+      botSkill: 'sharp' as const,
+    }));
+    const sim = createMatchSim(
+      { R, round, seed: 7, stage: 0, players, mode: 'offline', qualifyTarget: 3 },
+      deps,
+    );
     sim.setPhase(RoundPhase.Playing, 0);
     const st = createCharacterFullState();
     const climbed = new Set<number>();
@@ -276,7 +351,8 @@ describe('practice-island physics (real controller)', { timeout: 60_000 }, () =>
     for (let i = 0; i < 60 * 200; i++) {
       sim.step();
       for (const e of sim.events.drain()) if (e.type === 'bounce') bounced.add(e.player);
-      for (const p of players) if (sim.getPlayerState(p.id, st) && st.state === CharacterState.LedgeClimb) climbed.add(p.id);
+      for (const p of players)
+        if (sim.getPlayerState(p.id, st) && st.state === CharacterState.LedgeClimb) climbed.add(p.id);
       if (sim.getStatus().qualifiedCount === players.length) break;
     }
     const status = sim.getStatus();
@@ -288,8 +364,17 @@ describe('practice-island physics (real controller)', { timeout: 60_000 }, () =>
   });
 
   it('clumsy and average bots finish the mini race', () => {
-    const players: MatchPlayerInfo[] = Array.from({ length: 7 }, (_, i) => ({ id: i, name: `R${i}`, isBot: true, team: -1, botSkill: i % 2 ? ('clumsy' as const) : ('average' as const) }));
-    const sim = createMatchSim({ R, round: raceRound, seed: 9, stage: 0, players, mode: 'offline', qualifyTarget: 7 }, deps);
+    const players: MatchPlayerInfo[] = Array.from({ length: 7 }, (_, i) => ({
+      id: i,
+      name: `R${i}`,
+      isBot: true,
+      team: -1,
+      botSkill: i % 2 ? ('clumsy' as const) : ('average' as const),
+    }));
+    const sim = createMatchSim(
+      { R, round: raceRound, seed: 9, stage: 0, players, mode: 'offline', qualifyTarget: 7 },
+      deps,
+    );
     sim.setPhase(RoundPhase.Countdown);
     for (let i = 0; i < 180; i++) sim.step();
     sim.setPhase(RoundPhase.Playing, 0);

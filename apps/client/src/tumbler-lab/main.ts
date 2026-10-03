@@ -61,7 +61,20 @@ declare global {
 }
 
 const STATE_NAMES = Object.keys(CharacterState) as (keyof typeof CharacterState)[];
-const NAME_BITS_A = ['Sprinkle', 'Gummy', 'Bouncy', 'Wobble', 'Jelly', 'Fizzy', 'Toffee', 'Puddle', 'Noodle', 'Biscuit', 'Marsh', 'Zippy'];
+const NAME_BITS_A = [
+  'Sprinkle',
+  'Gummy',
+  'Bouncy',
+  'Wobble',
+  'Jelly',
+  'Fizzy',
+  'Toffee',
+  'Puddle',
+  'Noodle',
+  'Biscuit',
+  'Marsh',
+  'Zippy',
+];
 const NAME_BITS_B = ['Bop', 'Paws', 'Dash', 'Tumble', 'Socks', 'Pop', 'Muffin', 'Wiggle', 'Boots', 'Sprout'];
 
 const errors: string[] = [];
@@ -113,10 +126,17 @@ async function boot(): Promise<void> {
   }
   const actors: Actor[] = [];
   const nameRng = new Rng(7);
-  const funName = (): string => `${nameRng.pick(NAME_BITS_A)}${nameRng.pick(NAME_BITS_B)}#${nameRng.int(10, 99)}`;
+  const funName = (): string =>
+    `${nameRng.pick(NAME_BITS_A)}${nameRng.pick(NAME_BITS_B)}#${nameRng.int(10, 99)}`;
   const emoteClips = ANIM_CLIP_IDS.filter((c) => !c.startsWith('victory'));
 
-  function addActor(l: TumblerLoadout, name: string, x: number, z: number, teamColor: string | null = null): Actor {
+  function addActor(
+    l: TumblerLoadout,
+    name: string,
+    x: number,
+    z: number,
+    teamColor: string | null = null,
+  ): Actor {
     const p = new Puppet(new Tumbler(l));
     p.x = x;
     p.z = z;
@@ -138,14 +158,20 @@ async function boot(): Promise<void> {
       const roll = (performance.now() / 1000 + i * 1.7) % 1;
       if (roll < 0.15) a.p.jump();
       else if (roll < 0.22) a.p.stun(1.4);
-      else a.p.emote(emoteClips[(i + Math.floor(performance.now() / 3000)) % emoteClips.length] as AnimClipId);
+      else
+        a.p.emote(emoteClips[(i + Math.floor(performance.now() / 3000)) % emoteClips.length] as AnimClipId);
     };
   }
 
   function buildLineup(): void {
     for (let i = 0; i < 12; i++) {
       const ang = Math.PI * (0.18 + (0.64 * i) / 11);
-      const a = addActor(randomLoadout(new Rng(100 + i)), funName(), Math.cos(ang) * 8, -Math.sin(ang) * 8 + 1.5);
+      const a = addActor(
+        randomLoadout(new Rng(100 + i)),
+        funName(),
+        Math.cos(ang) * 8,
+        -Math.sin(ang) * 8 + 1.5,
+      );
       a.p.anim.facing = Math.atan2(-a.p.x, 6 - a.p.z);
       fidget(a, i);
     }
@@ -279,7 +305,10 @@ async function boot(): Promise<void> {
   fHero.add(ui, 'speed', 0, 10, 0.1).name('Run speed (m/s)');
   fHero.add(ui, 'turntable').name('Turntable');
   fHero.add(ui, 'lookAtCamera').name('Eyes follow camera');
-  fHero.add(ui, 'lod', { 'LOD 0 (full)': 0, 'LOD 1': 1, 'LOD 2 (baked)': 2 }).name('LOD').onChange((v: number) => hero.visual.setLod(v as 0 | 1 | 2));
+  fHero
+    .add(ui, 'lod', { 'LOD 0 (full)': 0, 'LOD 1': 1, 'LOD 2 (baked)': 2 })
+    .name('LOD')
+    .onChange((v: number) => hero.visual.setLod(v as 0 | 1 | 2));
   fHero.add(ui, 'ghost').name('Ghost (respawn grace)');
   fHero.add(ui, 'impulse').name('Squash impulse!');
 
@@ -288,7 +317,10 @@ async function boot(): Promise<void> {
     .add(ui, 'physicsRagdolls')
     .name('Physics ragdolls')
     .onChange((v: boolean) => (v ? ragdolls.install() : ragdolls.uninstall()));
-  fRag.add(ui, 'forceRagdoll').name('Ragdoll hero now').onChange((v: boolean) => hero.visual.setRagdoll(v));
+  fRag
+    .add(ui, 'forceRagdoll')
+    .name('Ragdoll hero now')
+    .onChange((v: boolean) => hero.visual.setRagdoll(v));
 
   const fLook = gui.addFolder('Loadout');
   const opts = (slot: CosmeticSlot, none = false): Record<string, string> => {
@@ -301,33 +333,66 @@ async function boot(): Promise<void> {
     fLook.addColor(ui, 'secondary').name('Secondary'),
     fLook.addColor(ui, 'tertiary').name('Tertiary'),
   ];
-  fLook.add(ui, 'colorPreset', opts('color')).name('Colour preset').onChange((id: string) => {
-    const c = getCosmeticInSlot(id, 'color');
-    if (!c) return;
-    [ui.primary, ui.secondary, ui.tertiary] = c.colors;
-    colorCtrls.forEach((cc) => cc.updateDisplay());
-    syncLoadout();
-  });
+  fLook
+    .add(ui, 'colorPreset', opts('color'))
+    .name('Colour preset')
+    .onChange((id: string) => {
+      const c = getCosmeticInSlot(id, 'color');
+      if (!c) return;
+      [ui.primary, ui.secondary, ui.tertiary] = c.colors;
+      colorCtrls.forEach((cc) => cc.updateDisplay());
+      syncLoadout();
+    });
   for (const c of colorCtrls) c.onChange(() => syncLoadout());
-  fLook.add(ui, 'pattern', opts('pattern')).name('Pattern').onChange(() => syncLoadout());
-  fLook.add(ui, 'face', opts('face')).name('Face').onChange(() => syncLoadout());
-  fLook.add(ui, 'headwear', opts('headwear', true)).name('Headwear').onChange(() => syncLoadout());
-  fLook.add(ui, 'back', opts('back', true)).name('Back').onChange(() => syncLoadout());
-  fLook.add(ui, 'upper', opts('upper', true)).name('Upper').onChange(() => syncLoadout());
-  fLook.add(ui, 'lower', opts('lower', true)).name('Lower').onChange(() => syncLoadout());
-  fLook.add(ui, 'celebration', opts('celebration')).name('Celebration').onChange(() => syncLoadout());
-  fLook.add(ui, 'victoryPose', opts('victory')).name('Victory pose').onChange(() => syncLoadout());
-  fLook.add(ui, 'nameplate', opts('nameplate')).name('Nameplate').onChange(() => {
-    syncLoadout();
-    heroPlate?.setStyle(ui.nameplate);
-  });
+  fLook
+    .add(ui, 'pattern', opts('pattern'))
+    .name('Pattern')
+    .onChange(() => syncLoadout());
+  fLook
+    .add(ui, 'face', opts('face'))
+    .name('Face')
+    .onChange(() => syncLoadout());
+  fLook
+    .add(ui, 'headwear', opts('headwear', true))
+    .name('Headwear')
+    .onChange(() => syncLoadout());
+  fLook
+    .add(ui, 'back', opts('back', true))
+    .name('Back')
+    .onChange(() => syncLoadout());
+  fLook
+    .add(ui, 'upper', opts('upper', true))
+    .name('Upper')
+    .onChange(() => syncLoadout());
+  fLook
+    .add(ui, 'lower', opts('lower', true))
+    .name('Lower')
+    .onChange(() => syncLoadout());
+  fLook
+    .add(ui, 'celebration', opts('celebration'))
+    .name('Celebration')
+    .onChange(() => syncLoadout());
+  fLook
+    .add(ui, 'victoryPose', opts('victory'))
+    .name('Victory pose')
+    .onChange(() => syncLoadout());
+  fLook
+    .add(ui, 'nameplate', opts('nameplate'))
+    .name('Nameplate')
+    .onChange(() => {
+      syncLoadout();
+      heroPlate?.setStyle(ui.nameplate);
+    });
   fLook.add(ui, 'randomize').name('🎲 Randomize');
   fLook.add(ui, 'copyJson').name('Copy loadout JSON');
 
   const fCrowd = gui.addFolder('Crowd / perf');
   fCrowd.add(ui, 'autoLod').name('Auto LOD by distance');
   fCrowd.add(ui, 'nameplates').name('Nameplates');
-  fCrowd.add(ui, 'streamer').name('Streamer mode').onChange((v: boolean) => plates.setStreamerMode(v));
+  fCrowd
+    .add(ui, 'streamer')
+    .name('Streamer mode')
+    .onChange((v: boolean) => plates.setStreamerMode(v));
   fCrowd
     .add(ui, 'backend', ['auto', 'webgpu', 'webgl'])
     .name(`GPU backend (${backend})`)
@@ -438,7 +503,8 @@ async function boot(): Promise<void> {
     hideUi: () => {
       gui.hide();
       stats.setVisible(false);
-      for (const id of ['actions', 'modes', 'title']) document.getElementById(id)?.style.setProperty('display', 'none');
+      for (const id of ['actions', 'modes', 'title'])
+        document.getElementById(id)?.style.setProperty('display', 'none');
     },
     dress: (l) => applyLoadout({ ...loadout, ...l }),
     ui,

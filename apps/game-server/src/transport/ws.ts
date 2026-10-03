@@ -71,7 +71,8 @@ class WsConnection implements Connection {
   }
 
   close(code = 1000, reason = ''): void {
-    if (this.ws.readyState === this.ws.OPEN || this.ws.readyState === this.ws.CONNECTING) this.ws.close(code, reason);
+    if (this.ws.readyState === this.ws.OPEN || this.ws.readyState === this.ws.CONNECTING)
+      this.ws.close(code, reason);
   }
 }
 
@@ -151,7 +152,10 @@ export class WsTransport implements Transport {
     this.wss.handleUpgrade(req, socket, head, (ws) => {
       const raw = (req.socket as { setNoDelay?: (v: boolean) => void }).setNoDelay;
       raw?.call(req.socket, true);
-      const addr = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ?? req.socket.remoteAddress ?? '?';
+      const addr =
+        (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ??
+        req.socket.remoteAddress ??
+        '?';
       const conn = new WsConnection(ws, addr, this, this.softLimit, this.hardLimit);
       this.onConnection?.(conn);
     });

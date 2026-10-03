@@ -15,7 +15,17 @@ import {
 } from '@tumble/sim/obstacles';
 import type { PoseSample } from '@tumble/sim';
 import type { ObstacleVisualFactory } from './types.ts';
-import { Disposer, PAL, applyInstanceTransform, instanceGlow, parseParams, roundedBox, setInstancePose, solid, toon } from './visual-helpers-b.ts';
+import {
+  Disposer,
+  PAL,
+  applyInstanceTransform,
+  instanceGlow,
+  parseParams,
+  roundedBox,
+  setInstancePose,
+  solid,
+  toon,
+} from './visual-helpers-b.ts';
 
 const FOAM = ['#fff1b8', '#ffd0e8', '#c9f3ff', '#d8ffe6'];
 

@@ -7,7 +7,15 @@
  * joints that can be mapped onto the 17 core bones. The face plate is still
  * projected procedurally around {@link RIG.faceY}.
  */
-import { Float32BufferAttribute, Matrix4, Uint16BufferAttribute, Vector3, type BufferGeometry, type Object3D, type SkinnedMesh } from 'three/webgpu';
+import {
+  Float32BufferAttribute,
+  Matrix4,
+  Uint16BufferAttribute,
+  Vector3,
+  type BufferGeometry,
+  type Object3D,
+  type SkinnedMesh,
+} from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { setBodyGeometryOverride } from './assembly.ts';
 import { Kind } from './geometry.ts';
@@ -26,7 +34,11 @@ export interface TumblerGLTFBody {
 }
 
 /** Normalises joint names so "mixamorig:LeftArm", "upperArm_L" etc. compare loosely. */
-const norm = (s: string): string => s.toLowerCase().replace(/^.*[:|]/, '').replace(/[^a-z0-9]/g, '');
+const norm = (s: string): string =>
+  s
+    .toLowerCase()
+    .replace(/^.*[:|]/, '')
+    .replace(/[^a-z0-9]/g, '');
 
 /**
  * Loads a skinned glTF and converts it into a Tumbler body override.
@@ -38,7 +50,11 @@ const norm = (s: string): string => s.toLowerCase().replace(/^.*[:|]/, '').repla
  * @example
  * await loadTumblerGLTF('/models/tumbler.glb', { 'upperArm.L': 'shoulder_L' });
  */
-export async function loadTumblerGLTF(url: string, boneMap: GltfBoneMap = {}, apply = true): Promise<TumblerGLTFBody> {
+export async function loadTumblerGLTF(
+  url: string,
+  boneMap: GltfBoneMap = {},
+  apply = true,
+): Promise<TumblerGLTFBody> {
   const gltf = await new GLTFLoader().loadAsync(url);
   let skinned: SkinnedMesh | null = null;
   gltf.scene.updateMatrixWorld(true);

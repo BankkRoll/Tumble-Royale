@@ -8,11 +8,7 @@
  * - Own backend-only economy data content does not define (Gem packs, season
  *   dates, level-up Gumballs).
  */
-import {
-  COSMETICS,
-  DEFAULT_LOADOUT,
-  type CosmeticItem,
-} from '@tumble/content/cosmetics';
+import { COSMETICS, DEFAULT_LOADOUT, type CosmeticItem } from '@tumble/content/cosmetics';
 import {
   CHALLENGE_POOL,
   computeShowRewards,
@@ -242,7 +238,12 @@ export const CONTENT_CATALOG: Catalog = {
     name: SEASON_PASS.name,
     ...SEASON_DATES,
     premiumPriceGems: SEASON_PASS.premiumPriceGems,
-    tiers: SEASON_PASS.tiers.map((t) => ({ tier: t.tier, xp: t.xp, free: t.free.map(toReward), premium: t.premium.map(toReward) })),
+    tiers: SEASON_PASS.tiers.map((t) => ({
+      tier: t.tier,
+      xp: t.xp,
+      free: t.free.map(toReward),
+      premium: t.premium.map(toReward),
+    })),
   },
   challenges: [...challengeById.values()],
   gemPacks: GEM_PACKS,
@@ -282,7 +283,21 @@ export function cosmeticIndex(catalog: Catalog): ReadonlyMap<string, CatalogCosm
  */
 export function starterItems(catalog: Catalog): string[] {
   const d = catalog.defaultLoadout();
-  const worn = [d.pattern, d.face, d.upper, d.lower, d.headwear, d.back, ...d.emotes, d.celebration, d.victoryPose, d.nameplate, d.trail, d.banner, d.footsteps];
+  const worn = [
+    d.pattern,
+    d.face,
+    d.upper,
+    d.lower,
+    d.headwear,
+    d.back,
+    ...d.emotes,
+    d.celebration,
+    d.victoryPose,
+    d.nameplate,
+    d.trail,
+    d.banner,
+    d.footsteps,
+  ];
   const ids = new Set(catalog.cosmetics.filter((c) => c.source === 'default').map((c) => c.id));
   for (const id of worn) if (id) ids.add(id);
   return [...ids];
@@ -293,7 +308,10 @@ export function starterItems(catalog: Catalog): string[] {
  *
  * @returns Tiers cleared (0–max), XP into the next tier and that tier's cost.
  */
-export function passProgress(catalog: Catalog, seasonXp: number): { tier: number; intoTier: number; tierXp: number } {
+export function passProgress(
+  catalog: Catalog,
+  seasonXp: number,
+): { tier: number; intoTier: number; tierXp: number } {
   let xp = Math.max(0, Math.floor(seasonXp));
   for (const t of catalog.season.tiers) {
     if (xp < t.xp) return { tier: t.tier - 1, intoTier: xp, tierXp: t.xp };

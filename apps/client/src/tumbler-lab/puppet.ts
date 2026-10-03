@@ -92,7 +92,13 @@ export class Puppet {
   /** Plays an emote/celebration/victory clip by id. */
   emote(clip: AnimClipId, seconds?: number): void {
     const def = CLIPS[clip];
-    this.run([{ state: S.Emote, duration: seconds ?? (def.loop ? def.duration * 2 : def.duration + 0.2), emote: clip }]);
+    this.run([
+      {
+        state: S.Emote,
+        duration: seconds ?? (def.loop ? def.duration * 2 : def.duration + 0.2),
+        emote: clip,
+      },
+    ]);
   }
 
   /** Cancels any script. */
@@ -115,7 +121,10 @@ export class Puppet {
       a.emote = step.emote ?? null;
       this.stepT += dt;
       const airborneStep = step.duration >= 99;
-      if ((airborneStep && this.y <= 0 && this.vy <= 0 && this.stepT > 0.05) || (!airborneStep && this.stepT >= step.duration)) {
+      if (
+        (airborneStep && this.y <= 0 && this.vy <= 0 && this.stepT > 0.05) ||
+        (!airborneStep && this.stepT >= step.duration)
+      ) {
         this.script.shift();
         this.stepT = 0;
         this.script[0]?.onStart?.();

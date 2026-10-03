@@ -40,8 +40,20 @@ function tower(sx: number, sz: number): Piece[] {
     { shape: 'box', position: m(17.5, 1.65, 18.5), size: v(3, 3.3, 3), color: 'accent', grabbable: true },
     { shape: 'box', position: m(21, 2.75, 17.5), size: v(3, 5.5, 3), color: 'accent', grabbable: true },
     // Banana-leaf canopy posts and leaves over the tower (decor, clear of the pad's arc).
-    { shape: 'cylinder', position: m(24.6, 10, 24.6), size: v(0.25, 4, 0), color: '#b8956a', decorative: true },
-    { shape: 'sphere', position: m(24.6, 12.4, 24.6), size: v(2.2, 0, 0), color: 'primary', decorative: true },
+    {
+      shape: 'cylinder',
+      position: m(24.6, 10, 24.6),
+      size: v(0.25, 4, 0),
+      color: '#b8956a',
+      decorative: true,
+    },
+    {
+      shape: 'sphere',
+      position: m(24.6, 12.4, 24.6),
+      size: v(2.2, 0, 0),
+      color: 'primary',
+      decorative: true,
+    },
     { shape: 'sphere', position: m(25.6, 11.6, 23), size: v(1.4, 0, 0), color: 'primary', decorative: true },
     // Monkey statue on the tower corner.
     { shape: 'sphere', position: m(19.6, 8.7, 24.4), size: v(0.7, 0, 0), color: '#b8956a', decorative: true },
@@ -55,18 +67,55 @@ function decor(): Piece[] {
   for (let k = 0; k < 8; k++) {
     const p = rotPoint(v(0, 0, 44), k * 45 + 22.5);
     out.push(
-      { shape: 'cylinder', position: v(p.x, -2, p.z), size: v(4.5, 4, 0), color: '#b8956a', decorative: true },
-      { shape: 'cylinder', position: v(p.x, 4, p.z), size: v(0.5, 8, 0), color: '#b8956a', decorative: true, pattern: 'stripes' },
+      {
+        shape: 'cylinder',
+        position: v(p.x, -2, p.z),
+        size: v(4.5, 4, 0),
+        color: '#b8956a',
+        decorative: true,
+      },
+      {
+        shape: 'cylinder',
+        position: v(p.x, 4, p.z),
+        size: v(0.5, 8, 0),
+        color: '#b8956a',
+        decorative: true,
+        pattern: 'stripes',
+      },
       { shape: 'sphere', position: v(p.x, 9, p.z), size: v(3, 0, 0), color: 'primary', decorative: true },
     );
-    if (k % 2 === 0) out.push(...crowdStand(rotPoint(v(0, 0, 38), k * 45), k * 45 + 180, 8, 2, ['#ff5a1a', '#ffd23f', '#3ce6e0', '#9d6cff'], k));
+    if (k % 2 === 0)
+      out.push(
+        ...crowdStand(
+          rotPoint(v(0, 0, 38), k * 45),
+          k * 45 + 180,
+          8,
+          2,
+          ['#ff5a1a', '#ffd23f', '#3ce6e0', '#9d6cff'],
+          k,
+        ),
+      );
   }
   // Worn stone paths from the respawn pads to the ziggurat, and moss bands on the towers.
   for (let k = 0; k < 4; k++) {
-    out.push({ shape: 'box', position: rotPoint(v(0, 0.01, 15.5), k * 90), size: k % 2 ? v(5, 0.02, 2.6) : v(2.6, 0.02, 5), color: 'secondary', pattern: 'checker', decorative: true });
+    out.push({
+      shape: 'box',
+      position: rotPoint(v(0, 0.01, 15.5), k * 90),
+      size: k % 2 ? v(5, 0.02, 2.6) : v(2.6, 0.02, 5),
+      color: 'secondary',
+      pattern: 'checker',
+      decorative: true,
+    });
   }
   for (const [sx, sz] of SIGNS) {
-    out.push({ shape: 'box', position: v(sx * 22, 6.6, sz * 22), size: v(6.3, 0.7, 6.3), color: 'primary', decorative: true, bevel: 0.25 });
+    out.push({
+      shape: 'box',
+      position: v(sx * 22, 6.6, sz * 22),
+      size: v(6.3, 0.7, 6.3),
+      color: 'primary',
+      decorative: true,
+      bevel: 0.25,
+    });
   }
   // Carved steps decor on the ziggurat faces.
   for (let k = 0; k < 4; k++) {
@@ -81,13 +130,48 @@ const geometry: Piece[] = [
   { shape: 'box', position: v(0, -0.5, 0), size: v(56, 1, 56), color: 'primary', bevel: 0.3 },
   // r.2 – r.4 ziggurat tiers (tops 1.5 / 3.0 / 4.5).
   { shape: 'box', position: v(0, 0.75, 0), size: v(18, 1.5, 18), color: 'secondary', bevel: 0.25 },
-  { shape: 'box', position: v(0, 1.5, 0), size: v(12, 3, 12), color: 'secondary', bevel: 0.25, pattern: 'stripes' },
+  {
+    shape: 'box',
+    position: v(0, 1.5, 0),
+    size: v(12, 3, 12),
+    color: 'secondary',
+    bevel: 0.25,
+    pattern: 'stripes',
+  },
   { shape: 'box', position: v(0, 2.25, 0), size: v(6, 4.5, 6), color: 'accent', bevel: 0.2 },
   // r.5 tier-1 ramps rising toward the ziggurat from each side.
-  { shape: 'ramp', position: v(0, 0.75, 11), size: v(4, 1.5, 4), rotation: { yaw: 180 }, color: 'secondary', pattern: 'chevron' },
-  { shape: 'ramp', position: v(0, 0.75, -11), size: v(4, 1.5, 4), rotation: { yaw: 0 }, color: 'secondary', pattern: 'chevron' },
-  { shape: 'ramp', position: v(11, 0.75, 0), size: v(4, 1.5, 4), rotation: { yaw: -90 }, color: 'secondary', pattern: 'chevron' },
-  { shape: 'ramp', position: v(-11, 0.75, 0), size: v(4, 1.5, 4), rotation: { yaw: 90 }, color: 'secondary', pattern: 'chevron' },
+  {
+    shape: 'ramp',
+    position: v(0, 0.75, 11),
+    size: v(4, 1.5, 4),
+    rotation: { yaw: 180 },
+    color: 'secondary',
+    pattern: 'chevron',
+  },
+  {
+    shape: 'ramp',
+    position: v(0, 0.75, -11),
+    size: v(4, 1.5, 4),
+    rotation: { yaw: 0 },
+    color: 'secondary',
+    pattern: 'chevron',
+  },
+  {
+    shape: 'ramp',
+    position: v(11, 0.75, 0),
+    size: v(4, 1.5, 4),
+    rotation: { yaw: -90 },
+    color: 'secondary',
+    pattern: 'chevron',
+  },
+  {
+    shape: 'ramp',
+    position: v(-11, 0.75, 0),
+    size: v(4, 1.5, 4),
+    rotation: { yaw: 90 },
+    color: 'secondary',
+    pattern: 'chevron',
+  },
   // r.6 / r.7 corner towers and stairs.
   ...SIGNS.flatMap(([sx, sz]) => tower(sx, sz)),
   // r.8 outer rails beyond the conveyor loop.
@@ -96,13 +180,23 @@ const geometry: Piece[] = [
   { shape: 'box', position: v(30.25, 0.5, 0), size: v(0.5, 1, 61), color: 'neutral' },
   { shape: 'box', position: v(-30.25, 0.5, 0), size: v(0.5, 1, 61), color: 'neutral' },
   // r.9 respawn pad paint on the mid-edge pads.
-  ...[v(22, 0.01, 0), v(-22, 0.01, 0), v(0, 0.01, 22), v(0, 0.01, -22)].map(
-    (p): Piece => ({ shape: 'cylinder', position: p, size: v(4, 0.02, 0), color: 'safe', pattern: 'checker', decorative: true }),
-  ),
+  ...[v(22, 0.01, 0), v(-22, 0.01, 0), v(0, 0.01, 22), v(0, 0.01, -22)].map((p): Piece => ({
+    shape: 'cylinder',
+    position: p,
+    size: v(4, 0.02, 0),
+    color: 'safe',
+    pattern: 'checker',
+    decorative: true,
+  })),
   ...decor(),
 ];
 
-const loop = (id: string, pos: { x: number; y: number; z: number }, yaw: number, length: number): Obstacle => ({
+const loop = (
+  id: string,
+  pos: { x: number; y: number; z: number },
+  yaw: number,
+  length: number,
+): Obstacle => ({
   id,
   type: 'conveyorBelt',
   position: pos,
@@ -127,7 +221,12 @@ const obstacles: Obstacle[] = [
     params: { radius: 1.2, launch: TOWER_PAD, cooldown: 0.4 },
   })),
   // Summit merry-go-round, flush with the summit top.
-  { id: 'disc', type: 'spinningDisc', position: v(0, 4.5, 0), params: { radius: 3, thickness: 0.5, speed: 1.2 } },
+  {
+    id: 'disc',
+    type: 'spinningDisc',
+    position: v(0, 4.5, 0),
+    params: { radius: 3, thickness: 0.5, speed: 1.2 },
+  },
   // Trip logs across the tower–ziggurat diagonals.
   ...SIGNS.map(([sx, sz], i): Obstacle => ({
     id: `log-${i + 1}`,
@@ -159,7 +258,11 @@ export default defineRound({
   type: 'hunt',
   theme: 'jungle',
   objective: 'Hold a tail when time runs out!',
-  tips: ['Grab a tail from behind to steal it.', "Just stole one? You're safe for a moment. Run!", 'Bounce pads on the towers are great escape routes.'],
+  tips: [
+    'Grab a tail from behind to steal it.',
+    "Just stole one? You're safe for a moment. Run!",
+    'Bounce pads on the towers are great escape routes.',
+  ],
   players: { min: 8, max: 50, ideal: 30 },
   qualification: { mode: 'holdItem', ratio: 0.5 },
   duration: { seconds: 90, overtimeSeconds: 0 },
@@ -168,7 +271,12 @@ export default defineRound({
   spawn: { origin: v(0, 0.1, -16), yaw: 0, cols: 8, spacing: 1.5 },
   geometry,
   obstacles,
-  triggers: [pad('cp-c0', 22, 0, -90), pad('cp-c1', -22, 0, 90), pad('cp-c2', 0, 22, 180), pad('cp-c3', 0, -22, 0)],
+  triggers: [
+    pad('cp-c0', 22, 0, -90),
+    pad('cp-c1', -22, 0, 90),
+    pad('cp-c2', 0, 22, 180),
+    pad('cp-c3', 0, -22, 0),
+  ],
   flyover: {
     path: [v(-40, 20, -40), v(40, 26, -40), v(40, 18, 40), v(0, 14, 20)],
     lookAt: [v(0, 3, 0)],
@@ -183,8 +291,18 @@ export default defineRound({
     { id: 0, position: v(0, 4.5, 0), radius: 2.5, next: [] },
     { id: 1, position: v(0, 3, 7.5), radius: 2, next: [] },
     { id: 2, position: v(0, 3, -7.5), radius: 2, next: [] },
-    ...SIGNS.map(([sx, sz], i) => ({ id: 10 + i, position: v(sx * 22, 8, sz * 22), radius: 2, next: [] as number[] })),
-    ...SIGNS.map(([sx, sz], i) => ({ id: 20 + i, position: v(sx * 13, 0, sz * 13), radius: 2.5, next: [] as number[] })),
+    ...SIGNS.map(([sx, sz], i) => ({
+      id: 10 + i,
+      position: v(sx * 22, 8, sz * 22),
+      radius: 2,
+      next: [] as number[],
+    })),
+    ...SIGNS.map(([sx, sz], i) => ({
+      id: 20 + i,
+      position: v(sx * 13, 0, sz * 13),
+      radius: 2.5,
+      next: [] as number[],
+    })),
   ],
   variations: [
     { id: 'ruins-classic', weight: 4, weather: 'clear', description: 'As authored.' },
@@ -193,15 +311,31 @@ export default defineRound({
       weight: 1,
       weather: 'sunset',
       description: 'Conveyor loop at 8 m/s and a faster summit spinner.',
-      obstacleParams: { 'loop-N': { speed: 8 }, 'loop-E': { speed: 8 }, 'loop-S': { speed: 8 }, 'loop-W': { speed: 8 }, disc: { speed: 2 } },
+      obstacleParams: {
+        'loop-N': { speed: 8 },
+        'loop-E': { speed: 8 },
+        'loop-S': { speed: 8 },
+        'loop-W': { speed: 8 },
+        disc: { speed: 2 },
+      },
     },
-    { id: 'jungle-night', weight: 1, weather: 'night', description: 'Glowing tails and fireflies under the canopy.' },
+    {
+      id: 'jungle-night',
+      weight: 1,
+      weather: 'night',
+      description: 'Glowing tails and fireflies under the canopy.',
+    },
     {
       id: 'log-jam',
       weight: 1,
       weather: 'clear',
       description: 'Faster rolling logs on every diagonal.',
-      obstacleParams: { 'log-1': { spinSpeed: 230 }, 'log-2': { spinSpeed: 230 }, 'log-3': { spinSpeed: 230 }, 'log-4': { spinSpeed: 230 } },
+      obstacleParams: {
+        'log-1': { spinSpeed: 230 },
+        'log-2': { spinSpeed: 230 },
+        'log-3': { spinSpeed: 230 },
+        'log-4': { spinSpeed: 230 },
+      },
     },
   ],
   decorSeed: 4101,

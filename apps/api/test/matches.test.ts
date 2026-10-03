@@ -14,7 +14,12 @@ describe('match results ingest', () => {
   it('grants rewards once even when posted twice', async () => {
     const winner = await api.guest();
     const loser = await api.guest();
-    const show = buildShow({ humans: [{ userId: winner.id, placement: 1 }, { userId: loser.id, placement: 30 }] });
+    const show = buildShow({
+      humans: [
+        { userId: winner.id, placement: 1 },
+        { userId: loser.id, placement: 30 },
+      ],
+    });
 
     const first = await api.postMatch(show);
     expect(first.statusCode).toBe(200);
@@ -41,8 +46,18 @@ describe('match results ingest', () => {
     const history = (await api.req('GET', '/me/matches', { token: loser.accessToken })).json();
     expect(history.matches).toHaveLength(1);
     expect(history.matches[0]).toMatchObject({ id: show.matchId, placement: 30, crowned: false });
-    expect(history.matches[0].rounds.map((r: { qualified: boolean }) => r.qualified)).toEqual([false, false, false, false]);
-    expect(history.matches[0].rounds.map((r: { played: boolean }) => r.played)).toEqual([true, false, false, false]);
+    expect(history.matches[0].rounds.map((r: { qualified: boolean }) => r.qualified)).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
+    expect(history.matches[0].rounds.map((r: { played: boolean }) => r.played)).toEqual([
+      true,
+      false,
+      false,
+      false,
+    ]);
 
     const detail = (await api.req('GET', `/matches/${show.matchId}`, { token: loser.accessToken })).json();
     expect(detail.participants).toHaveLength(40);
@@ -66,7 +81,12 @@ describe('match results ingest', () => {
     expect(forged.json().error).toBe('bad_signature');
     const stale = await api.postMatch(show, { timestamp: api.clock.now().getTime() - 10 * 60_000 });
     expect(stale.json().error).toBe('stale_request');
-    const unsigned = await api.app.inject({ method: 'POST', url: '/internal/match-results', headers: { 'content-type': 'application/json' }, payload: JSON.stringify(show) });
+    const unsigned = await api.app.inject({
+      method: 'POST',
+      url: '/internal/match-results',
+      headers: { 'content-type': 'application/json' },
+      payload: JSON.stringify(show),
+    });
     expect(unsigned.statusCode).toBe(401);
     const nonce = 'fixed-nonce-0123456789abcdef';
     expect((await api.postMatch(show, { nonce })).statusCode).toBe(200);
@@ -88,7 +108,10 @@ describe('match results ingest', () => {
     const u = await api.guest();
     const res = await api.postMatch(buildShow({ queue: 'custom', humans: [{ userId: u.id, placement: 1 }] }));
     expect(res.json().rewards[0]).toMatchObject({ xp: { total: 0 }, gumballs: { total: 0 }, crownShards: 0 });
-    expect((await api.req('GET', '/me', { token: u.accessToken })).json()).toMatchObject({ crowns: 0, stats: { showsPlayed: 1 } });
+    expect((await api.req('GET', '/me', { token: u.accessToken })).json()).toMatchObject({
+      crowns: 0,
+      stats: { showsPlayed: 1 },
+    });
   });
 
   it('advances challenges from match results and lets the player claim them', async () => {
@@ -98,28 +121,49 @@ describe('match results ingest', () => {
     expect(before.weekly).toHaveLength(6);
 
     const res = await api.postMatch(buildShow({ humans: [{ userId: u.id, placement: 1 }] }));
-    const updates = res.json().rewards[0].challenges as { challengeId: string; progress: number; before: number }[];
+    const updates = res.json().rewards[0].challenges as {
+      challengeId: string;
+      progress: number;
+      before: number;
+    }[];
     const all = [...before.daily, ...before.weekly];
     // A crowned run qualifies every round, so any assigned challenge whose metric this show touches must move.
-    const touched = all.filter((c: { metric: string }) => !['huntRoundsQualified', 'logicRoundsQualified'].includes(c.metric));
+    const touched = all.filter(
+      (c: { metric: string }) => !['huntRoundsQualified', 'logicRoundsQualified'].includes(c.metric),
+    );
     expect(updates.length).toBe(touched.length);
     for (const up of updates) expect(up.progress).toBeGreaterThan(up.before);
 
     const after = (await api.req('GET', '/challenges', { token: u.accessToken })).json();
     const done = [...after.daily, ...after.weekly].find((c: { completed: boolean }) => c.completed);
     if (done) {
-      const claim = await api.req('POST', '/challenges/claim', { token: u.accessToken, body: { id: done.id } });
+      const claim = await api.req('POST', '/challenges/claim', {
+        token: u.accessToken,
+        body: { id: done.id },
+      });
       expect(claim.statusCode).toBe(200);
-      expect((await api.req('POST', '/challenges/claim', { token: u.accessToken, body: { id: done.id } })).statusCode).toBe(409);
+      expect(
+        (await api.req('POST', '/challenges/claim', { token: u.accessToken, body: { id: done.id } }))
+          .statusCode,
+      ).toBe(409);
     }
     const open = after.daily.find((c: { completed: boolean }) => !c.completed);
     if (open) {
-      const reroll = await api.req('POST', '/challenges/reroll', { token: u.accessToken, body: { id: open.id } });
+      const reroll = await api.req('POST', '/challenges/reroll', {
+        token: u.accessToken,
+        body: { id: open.id },
+      });
       expect(reroll.statusCode).toBe(200);
       expect(reroll.json().rerollsLeft).toBe(0);
-      const second = after.daily.find((c: { completed: boolean; id: string }) => !c.completed && c.id !== open.id);
+      const second = after.daily.find(
+        (c: { completed: boolean; id: string }) => !c.completed && c.id !== open.id,
+      );
       if (second) {
-        expect((await api.req('POST', '/challenges/reroll', { token: u.accessToken, body: { id: second.id } })).json().error).toBe('reroll_used');
+        expect(
+          (
+            await api.req('POST', '/challenges/reroll', { token: u.accessToken, body: { id: second.id } })
+          ).json().error,
+        ).toBe('reroll_used');
       }
     }
   });
@@ -130,9 +174,13 @@ describe('match results ingest', () => {
     await api.postMatch(buildShow({ humans: [{ userId: u.id, placement: 1 }] }));
     const board = (await api.req('GET', '/leaderboards/crowns_all_time', { token: u.accessToken })).json();
     expect(board.me).toMatchObject({ userId: u.id, score: 2 });
-    const streak = (await api.req('GET', '/leaderboards/win_streak?scope=regional', { token: u.accessToken })).json();
+    const streak = (
+      await api.req('GET', '/leaderboards/win_streak?scope=regional', { token: u.accessToken })
+    ).json();
     expect(streak.me.score).toBe(2);
-    const friends = (await api.req('GET', '/leaderboards/crowns?scope=friends', { token: u.accessToken })).json();
+    const friends = (
+      await api.req('GET', '/leaderboards/crowns?scope=friends', { token: u.accessToken })
+    ).json();
     expect(friends.entries).toEqual([expect.objectContaining({ userId: u.id, rank: 1, score: 2 })]);
   });
 });

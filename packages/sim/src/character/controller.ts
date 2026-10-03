@@ -590,7 +590,9 @@ export class TumblerController implements TumblerControllerLike {
       input.emote <= 4 &&
       g.grounded &&
       ext.grabKind === GrabKind.None &&
-      (this._state === CharacterState.Idle || this._state === CharacterState.Run || this._state === CharacterState.Slime)
+      (this._state === CharacterState.Idle ||
+        this._state === CharacterState.Run ||
+        this._state === CharacterState.Slime)
     ) {
       this.setStateId(CharacterState.Emote);
       this._emote = input.emote | 0;
@@ -810,7 +812,15 @@ export class TumblerController implements TumblerControllerLike {
    * Writes a grounded velocity: planar intent projected onto the ground plane
    * (speed preserved along the slope), plus support velocity, plus snap or step-up.
    */
-  private writeGrounded(relX: number, relZ: number, refX: number, refZ: number, dirX: number, dirZ: number, dt: number): void {
+  private writeGrounded(
+    relX: number,
+    relZ: number,
+    refX: number,
+    refZ: number,
+    dirX: number,
+    dirZ: number,
+    dt: number,
+  ): void {
     const g = this.pre;
     const planar = Math.hypot(relX, relZ);
     let ry = -(g.nx * relX + g.nz * relZ) / g.ny;
@@ -1141,7 +1151,11 @@ export class TumblerController implements TumblerControllerLike {
     const t = this.tuning;
     const ctx = this.stepCtx;
     this.releaseAllGrabs(ctx, 'broken');
-    const k = clamp((strength - t.stunImpactThreshold) / Math.max(1e-3, t.stunMaxStrength - t.stunImpactThreshold), 0, 1);
+    const k = clamp(
+      (strength - t.stunImpactThreshold) / Math.max(1e-3, t.stunMaxStrength - t.stunImpactThreshold),
+      0,
+      1,
+    );
     this.stunTimer = t.stunMinTime + (t.stunMaxTime - t.stunMinTime) * k;
     this.jumpHeld = false;
     this.setStateId(CharacterState.Stunned);
@@ -1210,13 +1224,18 @@ export class TumblerController implements TumblerControllerLike {
     let isPlayer = false;
     const other = ctx.controllerByCollider(c.handle);
     if (other) {
-      if (!(other instanceof TumblerController) || other === this || !other.canBeGrabbed(this.id)) return true;
+      if (!(other instanceof TumblerController) || other === this || !other.canBeGrabbed(this.id))
+        return true;
       isPlayer = true;
     } else if (ctx.propIdByCollider?.(c.handle) === undefined) {
       return true;
     }
     c.translation(this.tA);
-    const d = Math.hypot(this.tA.x - this.grabCenter.x, this.tA.y - this.grabCenter.y, this.tA.z - this.grabCenter.z);
+    const d = Math.hypot(
+      this.tA.x - this.grabCenter.x,
+      this.tA.y - this.grabCenter.y,
+      this.tA.z - this.grabCenter.z,
+    );
     const best = this.grabBest;
     if (d < this.grabBestDist || (d === this.grabBestDist && best !== null && c.handle < best.handle)) {
       this.grabBest = c;
@@ -1313,14 +1332,19 @@ export class TumblerController implements TumblerControllerLike {
     const ext = this.ext;
     const target = this.grabTarget;
     const other = ctx?.controllerByCollider(ext.partnerCollider);
-    if (other instanceof TumblerController && other._state === CharacterState.Grabbed && other.grabTarget === this.id) {
+    if (
+      other instanceof TumblerController &&
+      other._state === CharacterState.Grabbed &&
+      other.grabTarget === this.id
+    ) {
       other.releaseFromGrab();
     }
     ext.grabKind = GrabKind.None;
     ext.partnerCollider = -1;
     this.grabTarget = -1;
     ext.grabCooldown = this.tuning.grabCooldown;
-    if (this._state === CharacterState.Grab) this.setStateId(this.pre.grounded ? CharacterState.Idle : CharacterState.Fall);
+    if (this._state === CharacterState.Grab)
+      this.setStateId(this.pre.grounded ? CharacterState.Idle : CharacterState.Fall);
     ctx?.events.push({ type: 'grabEnd', player: this.id, target, reason });
   }
 
@@ -1334,7 +1358,13 @@ export class TumblerController implements TumblerControllerLike {
     this.setStateId(this._grounded ? CharacterState.Idle : CharacterState.Fall);
   }
 
-  private stepGrabbed(dirX: number, dirZ: number, mag: number, pressed: number, ctx: CharacterStepContext): void {
+  private stepGrabbed(
+    dirX: number,
+    dirZ: number,
+    mag: number,
+    pressed: number,
+    ctx: CharacterStepContext,
+  ): void {
     const t = this.tuning;
     const ext = this.ext;
     const grabber = ctx.controllerByCollider(ext.partnerCollider);
@@ -1412,7 +1442,8 @@ export class TumblerController implements TumblerControllerLike {
     this.grabTarget = -1;
     this.flags &= ~CharacterFlag.Carrying;
     ext.grabCooldown = this.tuning.grabCooldown * 0.5;
-    if (this._state === CharacterState.Carry) this.setStateId(this.pre.grounded ? CharacterState.Idle : CharacterState.Fall);
+    if (this._state === CharacterState.Carry)
+      this.setStateId(this.pre.grounded ? CharacterState.Idle : CharacterState.Fall);
     ctx?.events.push({ type: 'propDrop', player: this.id, prop });
     ctx?.events.push({ type: 'grabEnd', player: this.id, target: prop, reason });
   }
@@ -1452,7 +1483,14 @@ export class TumblerController implements TumblerControllerLike {
     ray.dir.x = dx;
     ray.dir.y = 0;
     ray.dir.z = dz;
-    const wall = this.world.castRayAndGetNormal(ray, t.radius + t.ledgeProbe, true, EXCLUDE_SENSORS, WORLD_QUERY_GROUPS, this.collider);
+    const wall = this.world.castRayAndGetNormal(
+      ray,
+      t.radius + t.ledgeProbe,
+      true,
+      EXCLUDE_SENSORS,
+      WORLD_QUERY_GROUPS,
+      this.collider,
+    );
     if (!wall || Math.abs(wall.normal.y) > WALL_NORMAL_Y) return false;
     if (!ctx.surfaces.get(wall.collider.handle)?.grabbable) return false;
     let nx = wall.normal.x;
@@ -1503,7 +1541,12 @@ export class TumblerController implements TumblerControllerLike {
     this.pos.y = this.tA.y;
     this.pos.z = this.tA.z;
     this.setStateId(CharacterState.LedgeHang);
-    ctx.events.push({ type: 'grabStart', player: this.id, target: wall.collider.handle, targetKind: 'ledge' });
+    ctx.events.push({
+      type: 'grabStart',
+      player: this.id,
+      target: wall.collider.handle,
+      targetKind: 'ledge',
+    });
     return true;
   }
 
@@ -1614,10 +1657,12 @@ export class TumblerController implements TumblerControllerLike {
     const g = this.post;
     const wasGrounded = this._grounded;
     let grounded = this.evalGrounded(g, wasGrounded);
-    if (this._state === CharacterState.LedgeHang || this._state === CharacterState.LedgeClimb) grounded = false;
+    if (this._state === CharacterState.LedgeHang || this._state === CharacterState.LedgeClimb)
+      grounded = false;
 
     // Bounce pads under our feet
-    const bouncy = grounded && g.info !== undefined && (g.info.kind === 'bouncy' || (g.info.bounceImpulse ?? 0) > 0);
+    const bouncy =
+      grounded && g.info !== undefined && (g.info.kind === 'bouncy' || (g.info.bounceImpulse ?? 0) > 0);
     if (bouncy && ext.bounceCooldown <= 0 && g.walkable) {
       const pad = g.info?.bounceVelocity;
       if (pad) {
@@ -1654,7 +1699,10 @@ export class TumblerController implements TumblerControllerLike {
     }
     this._grounded = grounded;
     // Computed before transitions read it; a value carried over from the last step would not survive a rewind.
-    this.debug.planarSpeed = Math.hypot(this.vel.x - (grounded ? g.vx : 0), this.vel.z - (grounded ? g.vz : 0));
+    this.debug.planarSpeed = Math.hypot(
+      this.vel.x - (grounded ? g.vx : 0),
+      this.vel.z - (grounded ? g.vz : 0),
+    );
     this.updateStateAfterStep(grounded, justLanded);
 
     // Flags and debug readout
@@ -1697,7 +1745,8 @@ export class TumblerController implements TumblerControllerLike {
         return;
       }
       case CharacterState.GetUp:
-        if (this._stateTime >= t.getUpTime) this.setStateId(grounded ? CharacterState.Idle : CharacterState.Fall);
+        if (this._stateTime >= t.getUpTime)
+          this.setStateId(grounded ? CharacterState.Idle : CharacterState.Fall);
         return;
       case CharacterState.LedgeClimb:
         if (this._stateTime + this.stepDt() >= t.ledgeClimbTime) {
@@ -1802,7 +1851,12 @@ export class TumblerController implements TumblerControllerLike {
 
     // Set from the contact-pair callback above, which TS control flow cannot see.
     const pad = this.contactPad as SurfaceInfo | undefined;
-    if (pad?.bounceVelocity && this.ext.bounceCooldown <= 0 && s !== CharacterState.Finished && s !== CharacterState.Respawning) {
+    if (
+      pad?.bounceVelocity &&
+      this.ext.bounceCooldown <= 0 &&
+      s !== CharacterState.Finished &&
+      s !== CharacterState.Respawning
+    ) {
       // Tilted pad top: too steep for the ground probe, but still a landing on the pad face.
       this.setPadLaunch(pad.bounceVelocity);
       this.enterBounce(pad.ownerId, ctx);
@@ -1816,7 +1870,12 @@ export class TumblerController implements TumblerControllerLike {
       this.body.setLinvel(this.vel, true);
       this.ext.bounceCooldown = t.bounceCooldown;
       this.ext.knockTimer = t.knockControlTime;
-      ctx.events.push({ type: 'bounce', player: this.id, pos: this.feetCopy(), obstacle: this.contactBumperOwner });
+      ctx.events.push({
+        type: 'bounce',
+        player: this.id,
+        pos: this.feetCopy(),
+        obstacle: this.contactBumperOwner,
+      });
     }
   }
 
@@ -1896,7 +1955,8 @@ export class TumblerController implements TumblerControllerLike {
       // Pushed hard by a moving obstacle: both the outgoing speed and the change must be large,
       // so standing still against a slow pusher never stuns.
       const out = this.vel.x * nx + this.vel.y * ny + this.vel.z * nz;
-      const dv = (this.vel.x - this.vSet.x) * nx + (this.vel.y - this.vSet.y) * ny + (this.vel.z - this.vSet.z) * nz;
+      const dv =
+        (this.vel.x - this.vSet.x) * nx + (this.vel.y - this.vSet.y) * ny + (this.vel.z - this.vSet.z) * nz;
       const impact = Math.min(out, dv);
       if (impact > this.contactImpact) {
         this.contactImpact = impact;
@@ -1938,7 +1998,10 @@ export class TumblerController implements TumblerControllerLike {
     this.tA.x = this.pos.x;
     this.tA.y = this.pos.y - t.halfHeight + PROBE_LIFT;
     this.tA.z = this.pos.z;
-    const excludeBody = this.ext.grabKind === GrabKind.Prop ? (this.world.getCollider(this.ext.partnerCollider)?.parent() ?? undefined) : undefined;
+    const excludeBody =
+      this.ext.grabKind === GrabKind.Prop
+        ? (this.world.getCollider(this.ext.partnerCollider)?.parent() ?? undefined)
+        : undefined;
     const hit = this.world.castShape(
       this.tA,
       IDENTITY,
@@ -2088,7 +2151,11 @@ export class TumblerController implements TumblerControllerLike {
       s === CharacterState.LedgeHang ||
       s === CharacterState.LedgeClimb ||
       s === CharacterState.Respawning ||
-      (this.pre.grounded && s !== CharacterState.Stunned && s !== CharacterState.Jump && s !== CharacterState.Dive && s !== CharacterState.Bounce)
+      (this.pre.grounded &&
+        s !== CharacterState.Stunned &&
+        s !== CharacterState.Jump &&
+        s !== CharacterState.Dive &&
+        s !== CharacterState.Bounce)
     ) {
       scale = 0;
     } else if (s === CharacterState.Dive) {
@@ -2130,7 +2197,9 @@ export class TumblerController implements TumblerControllerLike {
     const friction = tumbling ? t.stunFriction : 0;
     if (friction !== this.appliedFriction) {
       this.collider.setFriction(friction);
-      this.collider.setFrictionCombineRule(tumbling ? this.R.CoefficientCombineRule.Average : this.R.CoefficientCombineRule.Min);
+      this.collider.setFrictionCombineRule(
+        tumbling ? this.R.CoefficientCombineRule.Average : this.R.CoefficientCombineRule.Min,
+      );
       this.appliedFriction = friction;
     }
     const ghost = (this.flags & CharacterFlag.Ghost) !== 0;
@@ -2201,7 +2270,8 @@ export class TumblerController implements TumblerControllerLike {
     this.jumpHeld = false;
     this.coyoteTimer = 0;
     if (this._state !== CharacterState.Stunned) {
-      if (ext.grabKind === GrabKind.Player && this._state !== CharacterState.Grabbed) this.endHoldPlayer('broken', ctx);
+      if (ext.grabKind === GrabKind.Player && this._state !== CharacterState.Grabbed)
+        this.endHoldPlayer('broken', ctx);
       if (this._state !== CharacterState.Grabbed) this.setStateId(CharacterState.Bounce);
     }
     ctx.events.push({ type: 'bounce', player: this.id, pos: this.feetCopy(), obstacle: owner });

@@ -63,7 +63,12 @@ export interface BumperPillarView extends ObstacleRuntime {
  * @param out - At least one sample.
  * @param speedScale - Multiplies orbit speed.
  */
-export function bumperPillarPose(t: number, p: BumperPillarParams, out: PoseSample[], speedScale: number): void {
+export function bumperPillarPose(
+  t: number,
+  p: BumperPillarParams,
+  out: PoseSample[],
+  speedScale: number,
+): void {
   const s = out[0];
   if (!s) return;
   const a = p.phase + p.orbitSpeed * speedScale * t;
@@ -115,7 +120,12 @@ class BumperPillarRuntime extends RuntimeBase implements BumperPillarView {
     });
     this.lastHitTime = ctx.t;
     const pos = actor.body.translation();
-    ctx.events.push({ type: 'bounce', player: actor.id, pos: { x: pos.x, y: pos.y, z: pos.z }, obstacle: this.instance.id });
+    ctx.events.push({
+      type: 'bounce',
+      player: actor.id,
+      pos: { x: pos.x, y: pos.y, z: pos.z },
+      obstacle: this.instance.id,
+    });
     this.cue(ctx.events, 'boing', 0, this.p.height * 0.5, 0);
   }
 }
@@ -127,6 +137,7 @@ export const bumperPillar: ObstacleModule<BumperPillarParams> = {
   schema: bumperPillarSchema,
   pose: bumperPillarPose,
   poseCount: () => 1,
-  create: (instance, ctx) => new BumperPillarRuntime(instance, ctx, bumperPillarSchema.parse(instance.params)),
+  create: (instance, ctx) =>
+    new BumperPillarRuntime(instance, ctx, bumperPillarSchema.parse(instance.params)),
   audioCues: ['boing'],
 };

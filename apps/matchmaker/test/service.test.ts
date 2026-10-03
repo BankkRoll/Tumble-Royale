@@ -18,7 +18,13 @@ let mmApp: MatchmakerApp;
 
 beforeEach(async () => {
   clock = Date.parse('2026-10-02T12:00:00Z');
-  const cfg = loadConfig({ NODE_ENV: 'test', JWT_SECRET, GAME_TICKET_SECRET: TICKET_SECRET, GAME_SERVER_SECRET: SERVER_SECRET, LOG_LEVEL: 'silent' });
+  const cfg = loadConfig({
+    NODE_ENV: 'test',
+    JWT_SECRET,
+    GAME_TICKET_SECRET: TICKET_SECRET,
+    GAME_SERVER_SECRET: SERVER_SECRET,
+    LOG_LEVEL: 'silent',
+  });
   mmApp = await buildMatchmaker(cfg, { now: () => clock, logger: false });
 });
 afterEach(async () => {
@@ -38,7 +44,11 @@ function access(userId: string, region = 'na'): Promise<string> {
 }
 
 /** Mints an API-style party queue ticket. */
-function queueTicket(leader: string, members: string[], extra: Record<string, unknown> = {}): Promise<string> {
+function queueTicket(
+  leader: string,
+  members: string[],
+  extra: Record<string, unknown> = {},
+): Promise<string> {
   const iat = Math.floor(clock / 1000);
   return new SignJWT({
     typ: 'queue',
@@ -62,11 +72,19 @@ function queueTicket(leader: string, members: string[], extra: Record<string, un
     .sign(enc(JWT_SECRET));
 }
 
-async function call(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, token?: string, body?: unknown) {
+async function call(
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  url: string,
+  token?: string,
+  body?: unknown,
+) {
   return mmApp.app.inject({
     method,
     url,
-    headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
+    headers: {
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+    },
     ...(body !== undefined ? { payload: JSON.stringify(body) } : {}),
   });
 }
@@ -87,7 +105,12 @@ async function advance(ms: number): Promise<void> {
 }
 
 async function registerServer(id = 'gs-1', capacity = 400) {
-  const res = await call('POST', '/servers/register', SERVER_SECRET, { serverId: id, url: `wss://${id}.test`, region: 'na', capacity });
+  const res = await call('POST', '/servers/register', SERVER_SECRET, {
+    serverId: id,
+    url: `wss://${id}.test`,
+    region: 'na',
+    capacity,
+  });
   expect(res.statusCode).toBe(200);
 }
 
@@ -96,7 +119,9 @@ describe('queue over HTTP', () => {
     await registerServer();
     const events = await collect('bob');
     const leaderToken = await access('alice');
-    const res = await call('POST', '/queue', leaderToken, { ticket: await queueTicket('alice', ['alice', 'bob']) });
+    const res = await call('POST', '/queue', leaderToken, {
+      ticket: await queueTicket('alice', ['alice', 'bob']),
+    });
     expect(res.statusCode).toBe(200);
     expect(res.json().status).toMatchObject({ searching: 2, etaSec: 25 });
 
@@ -122,13 +147,17 @@ describe('queue over HTTP', () => {
   it('rejects non-leaders, bad tickets and missing auth', async () => {
     const ticket = await queueTicket('alice', ['alice', 'bob']);
     expect((await call('POST', '/queue', await access('bob'), { ticket })).json().error).toBe('not_leader');
-    expect((await call('POST', '/queue', await access('alice'), { ticket: `${ticket}x` })).json().error).toBe('invalid_ticket');
+    expect((await call('POST', '/queue', await access('alice'), { ticket: `${ticket}x` })).json().error).toBe(
+      'invalid_ticket',
+    );
     expect((await call('POST', '/queue', undefined, { ticket })).statusCode).toBe(401);
   });
 
   it('cancels the whole party', async () => {
     const events = await collect('bob');
-    await call('POST', '/queue', await access('alice'), { ticket: await queueTicket('alice', ['alice', 'bob']) });
+    await call('POST', '/queue', await access('alice'), {
+      ticket: await queueTicket('alice', ['alice', 'bob']),
+    });
     expect((await call('DELETE', '/queue', await access('bob'))).statusCode).toBe(204);
     expect(await mmApp.mm.entries()).toHaveLength(0);
     expect(events.some((e) => e.type === 'queue_cancelled')).toBe(true);
@@ -175,7 +204,9 @@ describe('custom lobbies', () => {
   it('create → join by code → host settings → start', async () => {
     await registerServer();
     const host = await access('host');
-    const created = await call('POST', '/lobbies', host, { settings: { maxPlayers: 12, bots: true, rounds: ['gumdrop-gauntlet', 'crown-climb'] } });
+    const created = await call('POST', '/lobbies', host, {
+      settings: { maxPlayers: 12, bots: true, rounds: ['gumdrop-gauntlet', 'crown-climb'] },
+    });
     expect(created.statusCode).toBe(200);
     const code = created.json().lobby.code as string;
     expect(code).toMatch(/^[A-Z2-9]{6}$/);
@@ -186,7 +217,9 @@ describe('custom lobbies', () => {
     const spec = await call('POST', `/lobbies/${code}/join`, await access('watcher'), { spectator: true });
     expect(spec.json().lobby.spectators).toHaveLength(1);
 
-    expect((await call('PATCH', `/lobbies/${code}`, await access('guest'), { bots: false })).json().error).toBe('not_host');
+    expect(
+      (await call('PATCH', `/lobbies/${code}`, await access('guest'), { bots: false })).json().error,
+    ).toBe('not_host');
     const patched = await call('PATCH', `/lobbies/${code}`, host, { roundTimeScale: 1.5 });
     expect(patched.json().lobby.settings).toMatchObject({ roundTimeScale: 1.5, maxPlayers: 12 });
     expect(guestEvents.some((e) => e.type === 'lobby_update')).toBe(true);
@@ -199,11 +232,16 @@ describe('custom lobbies', () => {
     const found = guestEvents.find((e) => e.type === 'match_found');
     if (found?.type !== 'match_found') throw new Error('no ticket');
     const claims = await verifyJoinTicket(TICKET_SECRET, found.ticket, new Date(clock));
-    expect(claims).toMatchObject({ queue: 'custom', custom: { maxPlayers: 12, roundTimeScale: 1.5, rounds: ['gumdrop-gauntlet', 'crown-climb'] } });
+    expect(claims).toMatchObject({
+      queue: 'custom',
+      custom: { maxPlayers: 12, roundTimeScale: 1.5, rounds: ['gumdrop-gauntlet', 'crown-climb'] },
+    });
     const record = (await call('GET', `/matches/${started.json().matchId}`, SERVER_SECRET)).json();
     expect(record.roster.find((r: { userId: string }) => r.userId === 'watcher').role).toBe('spectator');
 
-    expect((await call('POST', `/lobbies/${code}/join`, await access('late'), {})).json().error).toBe('lobby_started');
+    expect((await call('POST', `/lobbies/${code}/join`, await access('late'), {})).json().error).toBe(
+      'lobby_started',
+    );
   });
 
   it('returns 404 for unknown codes and passes hosting on when the host leaves', async () => {

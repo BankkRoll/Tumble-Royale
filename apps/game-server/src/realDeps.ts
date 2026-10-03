@@ -43,7 +43,10 @@ function estimateRoundCount(p: ShowPlaylist, players: number): number {
  * pool (finals from the base playlist are kept when none was picked, so the
  * show can still end on a final).
  */
-export function playlistForMatch(defaultId: string | undefined, match: MatchSettings | null | undefined): ShowPlaylist {
+export function playlistForMatch(
+  defaultId: string | undefined,
+  match: MatchSettings | null | undefined,
+): ShowPlaylist {
   const id = match?.custom?.playlistId ?? match?.playlistId ?? defaultId;
   const base = ShowPlaylistSchema.parse((id && getPlaylist(id)) || MAIN_SHOW);
   const picks = (match?.custom?.rounds ?? []).filter((r) => getRound(r));
@@ -79,9 +82,14 @@ export function createRealRoomDeps(R: Rapier, opts: RealDepsOptions = {}): RoomD
       if (!round) throw new Error(`Unknown round "${id}"`);
       return round;
     },
-    createShowController: ({ match }) => new ShowDirectorController({ playlist: playlistForMatch(opts.playlistId, match), rounds }),
+    createShowController: ({ match }) =>
+      new ShowDirectorController({ playlist: playlistForMatch(opts.playlistId, match), rounds }),
     describePlaylist: (playlistId, players) => {
-      const p = ShowPlaylistSchema.parse((playlistId && getPlaylist(playlistId)) || (opts.playlistId && getPlaylist(opts.playlistId)) || MAIN_SHOW);
+      const p = ShowPlaylistSchema.parse(
+        (playlistId && getPlaylist(playlistId)) ||
+          (opts.playlistId && getPlaylist(opts.playlistId)) ||
+          MAIN_SHOW,
+      );
       return { id: p.id, name: p.name, roundCount: estimateRoundCount(p, players) };
     },
     // The real match sim runs its own bot brains.

@@ -196,15 +196,23 @@ export function createLevelMaterial(u: LevelUniforms, opts: LevelMaterialOptions
       albedo = mix(albedo, vec3(0.9, 0.97, 1.0), 0.35) as Node<'vec3'>;
       const cell = floor(p.mul(5.0));
       const h = hash(cell.x.add(cell.y.mul(57.0)).add(cell.z.mul(113.0)));
-      const twinkle = step(0.965, h).mul(sin(t.mul(4.0).add(h.mul(60.0))).mul(0.5).add(0.5));
-      emissive = emissive.add(glossHighlight(u, 40, 0.9)).add(vec3(0.9, 0.97, 1.0).mul(twinkle.mul(1.6))) as Node<'vec3'>;
+      const twinkle = step(0.965, h).mul(
+        sin(t.mul(4.0).add(h.mul(60.0)))
+          .mul(0.5)
+          .add(0.5),
+      );
+      emissive = emissive
+        .add(glossHighlight(u, 40, 0.9))
+        .add(vec3(0.9, 0.97, 1.0).mul(twinkle.mul(1.6))) as Node<'vec3'>;
       break;
     }
     case 'slime': {
       const flow = mx_noise_float(vec3(p.x.mul(0.35), p.z.mul(0.35).sub(t.mul(0.25)), t.mul(0.2)));
       albedo = mix(albedo, albedo.mul(1.35), smoothstep(-0.2, 0.6, flow)) as Node<'vec3'>;
       emissive = emissive.add(glossHighlight(u, 18, 0.7)).add(albedo.mul(0.12)) as Node<'vec3'>;
-      const wave = sin(p.x.mul(1.3).add(t.mul(2.2))).mul(sin(p.z.mul(1.1).sub(t.mul(1.7)))).mul(0.035);
+      const wave = sin(p.x.mul(1.3).add(t.mul(2.2)))
+        .mul(sin(p.z.mul(1.1).sub(t.mul(1.7))))
+        .mul(0.035);
       mat.positionNode = positionLocal.add(normalLocal.mul(wave));
       break;
     }
@@ -214,8 +222,12 @@ export function createLevelMaterial(u: LevelUniforms, opts: LevelMaterialOptions
       const id = floor(cells);
       const local = fract(cells).sub(0.5);
       const rnd = hash(id.x.add(id.y.mul(31.0)));
-      const pulse = sin(t.mul(1.5).add(rnd.mul(20.0))).mul(0.5).add(0.5);
-      const bubble = float(1).sub(aaStep(rnd.mul(0.18).add(0.08).mul(pulse.mul(0.6).add(0.6)), length(local) as F));
+      const pulse = sin(t.mul(1.5).add(rnd.mul(20.0)))
+        .mul(0.5)
+        .add(0.5);
+      const bubble = float(1).sub(
+        aaStep(rnd.mul(0.18).add(0.08).mul(pulse.mul(0.6).add(0.6)), length(local) as F),
+      );
       albedo = mix(albedo, albedo.mul(1.45), bubble.mul(step(0.35, rnd))) as Node<'vec3'>;
       emissive = emissive.add(glossHighlight(u, 22, 0.55)) as Node<'vec3'>;
       break;
@@ -239,7 +251,8 @@ export function createLevelMaterial(u: LevelUniforms, opts: LevelMaterialOptions
   }
 
   emissive = emissive.add(albedo.mul(u.nightGlow.mul(0.18))) as Node<'vec3'>;
-  if (pattern === 'hazard') emissive = emissive.add(u.hazardA.mul(mask.mul(u.nightGlow).mul(0.35))) as Node<'vec3'>;
+  if (pattern === 'hazard')
+    emissive = emissive.add(u.hazardA.mul(mask.mul(u.nightGlow).mul(0.35))) as Node<'vec3'>;
 
   mat.colorNode = albedo;
   (mat as MeshToonNodeMaterial & { emissiveNode: Node | null }).emissiveNode = emissive;

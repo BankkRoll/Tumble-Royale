@@ -6,7 +6,14 @@
  */
 import { z } from 'zod';
 import type { Collider } from '@dimforge/rapier3d-compat';
-import { KinematicDriver, ObstacleGroups, RuntimeBase, createPoseBuffer, leadTelegraph, setPose } from './helpers-a.ts';
+import {
+  KinematicDriver,
+  ObstacleGroups,
+  RuntimeBase,
+  createPoseBuffer,
+  leadTelegraph,
+  setPose,
+} from './helpers-a.ts';
 import type {
   ObstacleActor,
   ObstacleBuildContext,
@@ -87,7 +94,12 @@ export function risingSlimeTelegraph(t: number, p: RisingSlimeParams, speedScale
 /**
  * Pure pose: a single sample at the surface height.
  */
-export function risingSlimePose(t: number, p: RisingSlimeParams, out: PoseSample[], speedScale: number): void {
+export function risingSlimePose(
+  t: number,
+  p: RisingSlimeParams,
+  out: PoseSample[],
+  speedScale: number,
+): void {
   if (out[0]) setPose(out[0], 0, slimeHeight(t, p, speedScale), 0, 0, 1, 0, 0);
 }
 
@@ -131,7 +143,12 @@ class RisingSlimeRuntime extends RuntimeBase {
   onTrigger(actor: ObstacleActor, _collider: Collider, entered: boolean, ctx: ObstacleStepContext): void {
     if (!entered) return;
     const p = actor.body.translation();
-    ctx.events.push({ type: 'obstacleCue', obstacle: this.instance.id, cue: 'splash', pos: { x: p.x, y: p.y, z: p.z } });
+    ctx.events.push({
+      type: 'obstacleCue',
+      obstacle: this.instance.id,
+      cue: 'splash',
+      pos: { x: p.x, y: p.y, z: p.z },
+    });
   }
 
   telegraph(t: number): number {

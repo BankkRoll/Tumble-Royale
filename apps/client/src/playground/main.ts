@@ -23,7 +23,14 @@ import { float, smoothstep, uniform, uv } from 'three/tsl';
 import { createRenderer, createSkyDome, type BackendPreference } from '@tumble/render';
 import { ThirdPersonCamera, type CameraMode } from '@tumble/render/camera';
 import { CollisionGroup, InteractionGroups, SIM_DT, groups, type Vec3 } from '@tumble/shared';
-import { EventSink, FixedStepper, SurfaceRegistry, createWorld, loadRapier, type SimEvent } from '@tumble/sim';
+import {
+  EventSink,
+  FixedStepper,
+  SurfaceRegistry,
+  createWorld,
+  loadRapier,
+  type SimEvent,
+} from '@tumble/sim';
 import {
   CharacterFlag,
   CharacterState,
@@ -68,7 +75,10 @@ async function boot(): Promise<void> {
   const params = new URLSearchParams(location.search);
   const R = await loadRapier();
   const canvas = document.getElementById('game') as HTMLCanvasElement;
-  const { renderer, backend } = await createRenderer(canvas, (params.get('backend') ?? 'auto') as BackendPreference);
+  const { renderer, backend } = await createRenderer(
+    canvas,
+    (params.get('backend') ?? 'auto') as BackendPreference,
+  );
 
   // ---------------------------------------------------------------------------
   // Scene
@@ -122,7 +132,11 @@ async function boot(): Promise<void> {
     const visual = new PlaceholderTumbler(color);
     scene.add(visual.object);
     const shadowOpacity = uniform(0.4);
-    const sm = new MeshBasicNodeMaterial({ color: new Color('#2b1d3a'), transparent: true, depthWrite: false });
+    const sm = new MeshBasicNodeMaterial({
+      color: new Color('#2b1d3a'),
+      transparent: true,
+      depthWrite: false,
+    });
     sm.opacityNode = shadowOpacity.mul(float(1).sub(smoothstep(0.18, 0.5, uv().sub(0.5).length())));
     const shadow = new Mesh(shadowGeo, sm);
     shadow.rotation.x = -Math.PI / 2;
@@ -193,7 +207,10 @@ async function boot(): Promise<void> {
   const respawn = (a: Actor): void => {
     const i = actors.indexOf(a);
     const offset = a === player ? 0 : (i - 2) * 1.5;
-    a.ctrl.teleport({ x: course.spawn.x + offset, y: course.spawn.y + 0.05, z: course.spawn.z }, course.spawnYaw);
+    a.ctrl.teleport(
+      { x: course.spawn.x + offset, y: course.spawn.y + 0.05, z: course.spawn.z },
+      course.spawnYaw,
+    );
     a.ctrl.setGhost(true, 1);
     snapActor(a);
     events.push({ type: 'respawn', player: a.ctrl.id, pos: { ...course.spawn } });
@@ -280,7 +297,11 @@ async function boot(): Promise<void> {
     cameraMode: 'orbit' as Exclude<CameraMode, 'flyover'>,
     frozen: false,
     respawn: (): void => respawn(player),
-    knockMe: (): void => player.ctrl.knock({ x: Math.sin(player.ctrl.facing) * -8, y: 6, z: Math.cos(player.ctrl.facing) * -8 }, true),
+    knockMe: (): void =>
+      player.ctrl.knock(
+        { x: Math.sin(player.ctrl.facing) * -8, y: 6, z: Math.cos(player.ctrl.facing) * -8 },
+        true,
+      ),
     ghost: (): void => player.ctrl.setGhost(true, 3),
     flyover: (): void =>
       rig.playFlyover({
@@ -305,9 +326,15 @@ async function boot(): Promise<void> {
   const gui = new GUI({ title: 'Tumbler playground' });
   const dbg = gui.addFolder('Debug');
   dbg.add(settings, 'timeScale', 0.05, 2, 0.05).name('Time scale');
-  dbg.add(settings, 'physicsWireframe').name('Physics wireframe').onChange((v: boolean) => (debugDraw.enabled = v));
+  dbg
+    .add(settings, 'physicsWireframe')
+    .name('Physics wireframe')
+    .onChange((v: boolean) => (debugDraw.enabled = v));
   dbg.add(settings, 'readout').name('State readout');
-  dbg.add(settings, 'frozen').name('Frozen (start gate)').onChange((v: boolean) => player.ctrl.setFrozen(v));
+  dbg
+    .add(settings, 'frozen')
+    .name('Frozen (start gate)')
+    .onChange((v: boolean) => player.ctrl.setFrozen(v));
   dbg.add(settings, 'respawn').name('Respawn (R)');
   dbg.add(settings, 'knockMe').name('Knock me (stun)');
   dbg.add(settings, 'ghost').name('Ghost 3 s');
@@ -444,7 +471,14 @@ async function boot(): Promise<void> {
     shadowRay.origin.x = center.x;
     shadowRay.origin.y = center.y - foot + 0.1;
     shadowRay.origin.z = center.z;
-    const hit = world.castRay(shadowRay, 40, true, EXCLUDE_SENSORS, InteractionGroups.groundQuery, a.ctrl.collider);
+    const hit = world.castRay(
+      shadowRay,
+      40,
+      true,
+      EXCLUDE_SENSORS,
+      InteractionGroups.groundQuery,
+      a.ctrl.collider,
+    );
     if (!hit) {
       a.shadow.visible = false;
       return;
@@ -509,14 +543,110 @@ const RANGES: Partial<Record<keyof CharacterTuning, [number, number, number]>> =
 };
 
 const GROUPS: [string, (keyof CharacterTuning)[]][] = [
-  ['Locomotion', ['maxSpeed', 'groundAccel', 'groundDecel', 'turnAccel', 'airAccel', 'airDecel', 'airOverspeedDrag', 'turnSpeed', 'airTurnSpeed', 'runThreshold', 'carryHalfLife', 'pushHalfLife']],
+  [
+    'Locomotion',
+    [
+      'maxSpeed',
+      'groundAccel',
+      'groundDecel',
+      'turnAccel',
+      'airAccel',
+      'airDecel',
+      'airOverspeedDrag',
+      'turnSpeed',
+      'airTurnSpeed',
+      'runThreshold',
+      'carryHalfLife',
+      'pushHalfLife',
+    ],
+  ],
   ['Ground', ['maxSlopeDeg', 'groundEpsilon', 'snapDistance', 'stepHeight']],
-  ['Jump', ['jumpSpeed', 'coyoteTime', 'jumpBufferTime', 'jumpCutMultiplier', 'riseGravityScale', 'fallGravityScale', 'apexGravityScale', 'apexThreshold', 'maxFallSpeed']],
-  ['Dive', ['diveSpeed', 'diveBoost', 'diveMaxSpeed', 'diveUpSpeed', 'diveAirUpSpeed', 'diveGravityScale', 'diveSteer', 'slideFriction', 'slideSteer', 'slideMinTime', 'slideMaxTime', 'slideStopSpeed', 'getUpTime']],
-  ['Stun', ['stunImpactThreshold', 'knockStunThreshold', 'stunMinTime', 'stunMaxTime', 'stunMaxStrength', 'stunSpin', 'stunFriction', 'stunRecoverTime', 'knockControlTime', 'knockControlMul', 'diveHitThreshold', 'hazardStunStrength']],
-  ['Grab', ['grabRange', 'grabRadius', 'grabHoldDistance', 'grabPull', 'grabMaxPull', 'grabStaminaTime', 'grabStaminaRegen', 'grabCooldown', 'reachSpeedMul', 'grabberSpeedMul', 'grabbedSpeedMul', 'breakFreeMashes', 'breakFreeDecay', 'carrySpeedMul', 'carryDistance', 'carryHeight']],
-  ['Ledges', ['ledgeReachMin', 'ledgeReachMax', 'ledgeProbe', 'ledgeHangOffset', 'ledgeClimbTime', 'autoLedgeGrab', 'ledgeMaxRiseSpeed']],
-  ['Bounce & emote', ['bounceSpeed', 'bounceCooldown', 'emoteTime', 'emoteCancelInput', 'slideSurfaceMaxSpeed']],
+  [
+    'Jump',
+    [
+      'jumpSpeed',
+      'coyoteTime',
+      'jumpBufferTime',
+      'jumpCutMultiplier',
+      'riseGravityScale',
+      'fallGravityScale',
+      'apexGravityScale',
+      'apexThreshold',
+      'maxFallSpeed',
+    ],
+  ],
+  [
+    'Dive',
+    [
+      'diveSpeed',
+      'diveBoost',
+      'diveMaxSpeed',
+      'diveUpSpeed',
+      'diveAirUpSpeed',
+      'diveGravityScale',
+      'diveSteer',
+      'slideFriction',
+      'slideSteer',
+      'slideMinTime',
+      'slideMaxTime',
+      'slideStopSpeed',
+      'getUpTime',
+    ],
+  ],
+  [
+    'Stun',
+    [
+      'stunImpactThreshold',
+      'knockStunThreshold',
+      'stunMinTime',
+      'stunMaxTime',
+      'stunMaxStrength',
+      'stunSpin',
+      'stunFriction',
+      'stunRecoverTime',
+      'knockControlTime',
+      'knockControlMul',
+      'diveHitThreshold',
+      'hazardStunStrength',
+    ],
+  ],
+  [
+    'Grab',
+    [
+      'grabRange',
+      'grabRadius',
+      'grabHoldDistance',
+      'grabPull',
+      'grabMaxPull',
+      'grabStaminaTime',
+      'grabStaminaRegen',
+      'grabCooldown',
+      'reachSpeedMul',
+      'grabberSpeedMul',
+      'grabbedSpeedMul',
+      'breakFreeMashes',
+      'breakFreeDecay',
+      'carrySpeedMul',
+      'carryDistance',
+      'carryHeight',
+    ],
+  ],
+  [
+    'Ledges',
+    [
+      'ledgeReachMin',
+      'ledgeReachMax',
+      'ledgeProbe',
+      'ledgeHangOffset',
+      'ledgeClimbTime',
+      'autoLedgeGrab',
+      'ledgeMaxRiseSpeed',
+    ],
+  ],
+  [
+    'Bounce & emote',
+    ['bounceSpeed', 'bounceCooldown', 'emoteTime', 'emoteCancelInput', 'slideSurfaceMaxSpeed'],
+  ],
 ];
 
 /** Builds lil-gui controls for every tuning field, editing `tuning` in place. */
@@ -529,7 +659,11 @@ function buildTuningPanel(folder: GUI, tuning: CharacterTuning, onChange: () => 
       if (typeof value === 'boolean') {
         f.add(t, key).onChange(onChange);
       } else if (typeof value === 'number') {
-        const [min, max, step] = RANGES[key] ?? [0, Math.max(1, Math.abs(value) * 3), Math.abs(value) >= 10 ? 0.5 : 0.01];
+        const [min, max, step] = RANGES[key] ?? [
+          0,
+          Math.max(1, Math.abs(value) * 3),
+          Math.abs(value) >= 10 ? 0.5 : 0.01,
+        ];
         f.add(t, key, min, max, step).onChange(onChange);
       }
     }

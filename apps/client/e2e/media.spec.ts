@@ -15,7 +15,14 @@ const OUT = process.env.MEDIA_OUT ?? 'test-results/media';
 /** Base URL of a private `vite preview` build; the shared dev server hot-reloads mid-capture. */
 const BASE = process.env.MEDIA_URL ?? '';
 const SIZE = { width: 1600, height: 900 };
-const LEVELS = ['gumdrop-gauntlet', 'slip-n-spiral', 'paint-the-plaza', 'wind-tunnel-peaks', 'goo-peak-final', 'tile-panic'];
+const LEVELS = [
+  'gumdrop-gauntlet',
+  'slip-n-spiral',
+  'paint-the-plaza',
+  'wind-tunnel-peaks',
+  'goo-peak-final',
+  'tile-panic',
+];
 
 mkdirSync(OUT, { recursive: true });
 
@@ -25,7 +32,10 @@ async function screenOf(page: Page): Promise<string> {
 
 test('show stills and trailer recording', async ({ browser }) => {
   test.setTimeout(15 * 60_000);
-  const context = await browser.newContext({ viewport: SIZE, recordVideo: { dir: `${OUT}/video`, size: SIZE } });
+  const context = await browser.newContext({
+    viewport: SIZE,
+    recordVideo: { dir: `${OUT}/video`, size: SIZE },
+  });
   const page = await context.newPage();
   const t0 = Date.now();
   const timeline: { t: number; screen: string }[] = [];
@@ -46,7 +56,14 @@ test('show stills and trailer recording', async ({ browser }) => {
         roundShotAt = now + 9000;
       }
       // Let entrance animations settle before taking the still.
-      const settle: Record<string, number> = { menu: 1500, preShow: 3500, roundIntro: 1200, victory: 2500, winnerCam: 2500, rewards: 2500 };
+      const settle: Record<string, number> = {
+        menu: 1500,
+        preShow: 3500,
+        roundIntro: 1200,
+        victory: 2500,
+        winnerCam: 2500,
+        rewards: 2500,
+      };
       if (s in settle && !shot.has(s)) {
         shot.add(s);
         await page.waitForTimeout(settle[s]!);
@@ -79,7 +96,9 @@ for (const id of LEVELS) {
     await page.setViewportSize(SIZE);
     await page.goto(`${BASE}/level.html?round=${id}&bots=30&seed=4`);
     await page.waitForFunction(() => window.__level?.ready === true, undefined, { timeout: 60_000 });
-    await page.addStyleTag({ content: '#hud, div[style*="position:fixed;left:8px"] { display: none !important; }' });
+    await page.addStyleTag({
+      content: '#hud, div[style*="position:fixed;left:8px"] { display: none !important; }',
+    });
     await page.evaluate(() => window.__level!.setCamera('flyover', 0.35));
     await page.waitForTimeout(400);
     await page.screenshot({ path: `${OUT}/level-${id}-fly.png` });

@@ -6,4 +6,10 @@ import patternPanic from './pattern-panic/index.ts';
 import tailChase from './tail-chase/index.ts';
 
 /** Rounds authored by level-builder group 4: the team, hunt and logic rounds. */
-export const ROUNDS_GROUP_4: RoundDefinitionInput[] = [eggHeist, bounceBallBlitz, paintThePlaza, tailChase, patternPanic];
+export const ROUNDS_GROUP_4: RoundDefinitionInput[] = [
+  eggHeist,
+  bounceBallBlitz,
+  paintThePlaza,
+  tailChase,
+  patternPanic,
+];

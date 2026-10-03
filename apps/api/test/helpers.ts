@@ -28,9 +28,16 @@ export interface TestApi extends BuiltApp {
   mailer: MemoryMailer;
   clock: { now(): Date; advance(ms: number): void; set(iso: string): void };
   guest(displayName?: string): Promise<TestUser>;
-  req(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, opts?: { token?: string; body?: unknown; headers?: Record<string, string> }): Promise<LightMyRequestResponse>;
+  req(
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    url: string,
+    opts?: { token?: string; body?: unknown; headers?: Record<string, string> },
+  ): Promise<LightMyRequestResponse>;
   grant(userId: string, currency: 'gumballs' | 'gems' | 'crown_shards', amount: number): Promise<void>;
-  postMatch(payload: MatchResultInput, opts?: { secret?: string; nonce?: string; timestamp?: number }): Promise<LightMyRequestResponse>;
+  postMatch(
+    payload: MatchResultInput,
+    opts?: { secret?: string; nonce?: string; timestamp?: number },
+  ): Promise<LightMyRequestResponse>;
 }
 
 /**
@@ -73,7 +80,9 @@ export async function createTestApi(startIso = '2026-10-02T12:00:00.000Z'): Prom
     req,
     async guest(displayName) {
       guestNo++;
-      const res = await req('POST', '/auth/guest', { body: { displayName: displayName ?? `Tester_${guestNo}` } });
+      const res = await req('POST', '/auth/guest', {
+        body: { displayName: displayName ?? `Tester_${guestNo}` },
+      });
       if (res.statusCode !== 200) throw new Error(`guest signup failed: ${res.statusCode} ${res.body}`);
       const j = res.json();
       return {
@@ -133,7 +142,9 @@ export function buildShow(opts: {
       userId,
       isBot: userId === null,
       name: userId ? `Human ${placement}` : `Bot ${placement}`,
-      ...(userId ? { stats: { jumps: 200, dives: 50, grabs: 30, checkpoints: 20, bounces: 25, emotes: 12 } } : {}),
+      ...(userId
+        ? { stats: { jumps: 200, dives: 50, grabs: 30, checkpoints: 20, bounces: 25, emotes: 12 } }
+        : {}),
     };
   });
   const cut = [size, 26, 14, 7, 1];
@@ -144,7 +155,12 @@ export function buildShow(opts: {
     durationMs: 120_000,
     results: participants
       .filter((_, i) => i < cut[r]!)
-      .map((p, i) => ({ key: p.key, qualified: i < cut[r + 1]!, position: roundType === 'race' ? i + 1 : null, timeMs: roundType === 'race' ? 60_000 + i * 500 : null })),
+      .map((p, i) => ({
+        key: p.key,
+        qualified: i < cut[r + 1]!,
+        position: roundType === 'race' ? i + 1 : null,
+        timeMs: roundType === 'race' ? 60_000 + i * 500 : null,
+      })),
   }));
   const start = Date.parse(opts.startIso ?? '2026-10-02T11:50:00.000Z');
   return {

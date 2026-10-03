@@ -80,7 +80,11 @@ export interface InputBatchHeader {
  *
  * @param inputs - Newest first; at most {@link INPUT_REDUNDANCY}.
  */
-export function writeInputBatch(w: BitWriter, header: InputBatchHeader, inputs: readonly CharacterInput[]): void {
+export function writeInputBatch(
+  w: BitWriter,
+  header: InputBatchHeader,
+  inputs: readonly CharacterInput[],
+): void {
   const count = Math.min(header.count, inputs.length, INPUT_REDUNDANCY);
   w.writeBits(MsgType.InputBatch, 8);
   w.writeBits(header.newestSeq, 32);
@@ -106,7 +110,11 @@ export function writeInputBatch(w: BitWriter, header: InputBatchHeader, inputs: 
  * @param out - At least {@link INPUT_REDUNDANCY} preallocated inputs, filled newest-first.
  * @returns The header (inputs in `out[0 … count-1]`).
  */
-export function readInputBatch(r: BitReader, out: CharacterInput[], header: InputBatchHeader): InputBatchHeader {
+export function readInputBatch(
+  r: BitReader,
+  out: CharacterInput[],
+  header: InputBatchHeader,
+): InputBatchHeader {
   header.newestSeq = r.readBits(32);
   header.clientTick = r.readBits(32);
   header.ackSnapshotId = r.readBool() ? r.readBits(16) : NO_SNAPSHOT;

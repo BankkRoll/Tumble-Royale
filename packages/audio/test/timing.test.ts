@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { nextBarTime, nextBeatTime, nextBoundary, secondsPerBar, secondsPerBeat, secondsPerStep, smoothstep, stepAtTime, stepTime } from '../src/music/timing.ts';
+import {
+  nextBarTime,
+  nextBeatTime,
+  nextBoundary,
+  secondsPerBar,
+  secondsPerBeat,
+  secondsPerStep,
+  smoothstep,
+  stepAtTime,
+  stepTime,
+} from '../src/music/timing.ts';
 
 describe('music timing', () => {
   it('converts tempo to durations', () => {

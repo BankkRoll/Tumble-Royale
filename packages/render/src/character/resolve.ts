@@ -3,12 +3,7 @@
  * Unknown ids degrade gracefully: the renderer must never crash on stale
  * inventory data, so bad ids fall back to defaults (validation is the API's job).
  */
-import {
-  ANIM_CLIP_IDS,
-  getCosmetic,
-  type AnimClipId,
-  type FaceStyle,
-} from '@tumble/content/cosmetics';
+import { ANIM_CLIP_IDS, getCosmetic, type AnimClipId, type FaceStyle } from '@tumble/content/cosmetics';
 import type { AccessorySpec } from './assembly.ts';
 import type { FaceStyleParams } from './face.ts';
 import { SHADER_PATTERNS, SHADER_PUPILS } from './material.ts';

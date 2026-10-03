@@ -318,7 +318,9 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
     this.variationId = variation?.id ?? null;
     const stageScales = round.speedScaleByStage;
     const speedScale =
-      stageScales.length > 0 ? (stageScales[Math.max(0, Math.min(opts.stage, stageScales.length - 1))] ?? 1) : 1;
+      stageScales.length > 0
+        ? (stageScales[Math.max(0, Math.min(opts.stage, stageScales.length - 1))] ?? 1)
+        : 1;
     for (const inst of resolveObstacles(round, variation)) {
       const mod = deps.obstacles.get(inst.type);
       if (!mod) {
@@ -345,7 +347,12 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
 
     // Players.
     const teams = opts.players.map((p) => p.team);
-    if (round.qualification.mode === 'teamScore') assignTeams(teams, opts.players.map((p) => p.id), round.qualification.teams);
+    if (round.qualification.mode === 'teamScore')
+      assignTeams(
+        teams,
+        opts.players.map((p) => p.id),
+        round.qualification.teams,
+      );
     const spawns = spawnSlots(round, opts.seed, teams);
     this.entrants = opts.players.length;
     const brainFactory = deps.createBotBrain ?? createBotBrain;
@@ -357,8 +364,16 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
       const proxy = isLocal ? null : new RemoteProxy(R, this.world, info.id, pos);
       const ctrl =
         proxy ??
-        deps.createController({ R, world: this.world, id: info.id, position: pos, yaw: spawn.yaw, tuning: deps.controllerTuning });
-      if (!proxy) ctrl.collider.setActiveEvents(ctrl.collider.activeEvents() | R.ActiveEvents.COLLISION_EVENTS);
+        deps.createController({
+          R,
+          world: this.world,
+          id: info.id,
+          position: pos,
+          yaw: spawn.yaw,
+          tuning: deps.controllerTuning,
+        });
+      if (!proxy)
+        ctrl.collider.setActiveEvents(ctrl.collider.activeEvents() | R.ActiveEvents.COLLISION_EVENTS);
       const rp: RulesPlayer = {
         id: info.id,
         team: teams[index] as number,
@@ -449,11 +464,21 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
       finished: false,
     };
     for (const s of this.slots) {
-      this.status.players.set(s.info.id, { status: 0, score: 0, progress: 0, place: 0, team: s.rp.team, hasItem: false });
+      this.status.players.set(s.info.id, {
+        status: 0,
+        score: 0,
+        progress: 0,
+        place: 0,
+        team: s.rp.team,
+        hasItem: false,
+      });
     }
 
     if (simulateAll) {
-      this.rules = createRoundRules(round, this.entrants, { ...opts.rules, qualifyTarget: opts.qualifyTarget ?? opts.rules?.qualifyTarget });
+      this.rules = createRoundRules(round, this.entrants, {
+        ...opts.rules,
+        qualifyTarget: opts.qualifyTarget ?? opts.rules?.qualifyTarget,
+      });
       this.rules.init(this);
       for (const s of this.slots) s.self.team = s.rp.team;
       if (round.qualification.mode === 'teamScore') this.assignTeamCheckpoints();
@@ -765,7 +790,8 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
     const owner = this.ownerOf(handle);
     if (owner < 0) return undefined;
     const rt = this.obstacleRuntimes[owner] as Partial<PropSpawnerRuntime>;
-    if (typeof rt.indexOfCollider !== 'function' || !rt.kind || !PROP_SPECS[rt.kind]?.carryable) return undefined;
+    if (typeof rt.indexOfCollider !== 'function' || !rt.kind || !PROP_SPECS[rt.kind]?.carryable)
+      return undefined;
     const i = rt.indexOfCollider(handle);
     if (i < 0 || rt.mode?.(i) !== PropMode.Free) return undefined;
     return rt.propId?.(i);
@@ -892,7 +918,8 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
       const def = this.triggers.defs[ti] as TriggerDef;
       const slot = this.slotByCollider.get(other);
       if (!slot) {
-        if (authority && live && this.rules && this.triggers.indexOf(other) < 0) this.rules.onPropTrigger(def, other, started);
+        if (authority && live && this.rules && this.triggers.indexOf(other) < 0)
+          this.rules.onPropTrigger(def, other, started);
         continue;
       }
       if (!authority || slot.proxy || !slot.active) continue;
@@ -933,7 +960,11 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
       const sub = this.finSub[i] as number;
       const sl = this.finSlot[i] as number;
       let j = i - 1;
-      while (j >= 0 && ((this.finSub[j] as number) > sub || ((this.finSub[j] as number) === sub && (this.finSlot[j] as number) > sl))) {
+      while (
+        j >= 0 &&
+        ((this.finSub[j] as number) > sub ||
+          ((this.finSub[j] as number) === sub && (this.finSlot[j] as number) > sl))
+      ) {
         this.finSub[j + 1] = this.finSub[j] as number;
         this.finSlot[j + 1] = this.finSlot[j] as number;
         j--;
@@ -951,7 +982,8 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
 
   private updatePositions(tick: number): void {
     const progressMode = this.rules?.mode;
-    const survivalLike = progressMode === 'survive' || progressMode === 'logicSurvive' || progressMode === 'lastStanding';
+    const survivalLike =
+      progressMode === 'survive' || progressMode === 'logicSurvive' || progressMode === 'lastStanding';
     for (const s of this.slots) {
       if (!s.active) continue;
       if (!s.proxy) {
@@ -983,7 +1015,9 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
     const pos = s.ctrl.body.translation(this.scratchVec);
     this.events.push({ type: 'fellOut', player: s.info.id, pos: { x: pos.x, y: pos.y, z: pos.z } });
     const verdict =
-      s.rp.status === PlayerRoundStatus.Playing && this.rules ? this.rules.onFellOut(s.rp) : ('respawn' as const);
+      s.rp.status === PlayerRoundStatus.Playing && this.rules
+        ? this.rules.onFellOut(s.rp)
+        : ('respawn' as const);
     if (verdict === 'eliminate') {
       this.eliminate(s.rp);
       return;

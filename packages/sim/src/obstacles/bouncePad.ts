@@ -107,7 +107,12 @@ class BouncePadRuntime extends RuntimeBase implements BouncePadView {
     if (this.dv.x * this.dv.x + this.dv.y * this.dv.y + this.dv.z * this.dv.z > 1e-6) actor.push(this.dv);
     this.lastBounceTime = ctx.t;
     const pos = actor.body.translation();
-    ctx.events.push({ type: 'bounce', player: actor.id, pos: { x: pos.x, y: pos.y, z: pos.z }, obstacle: this.instance.id });
+    ctx.events.push({
+      type: 'bounce',
+      player: actor.id,
+      pos: { x: pos.x, y: pos.y, z: pos.z },
+      obstacle: this.instance.id,
+    });
     this.cue(ctx.events, 'boing', 0, this.p.height, 0);
   }
 

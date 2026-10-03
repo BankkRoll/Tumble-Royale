@@ -221,7 +221,10 @@ export const SEASON_PASS: SeasonPass = SeasonPassSchema.parse(buildSeason1());
  * @param pass - The season (defaults to the current one).
  * @returns Tiers cleared (0–100) and progress into the next.
  */
-export function passTierForXp(seasonXp: number, pass: SeasonPass = SEASON_PASS): { tier: number; intoTier: number; tierXp: number } {
+export function passTierForXp(
+  seasonXp: number,
+  pass: SeasonPass = SEASON_PASS,
+): { tier: number; intoTier: number; tierXp: number } {
   let xp = Math.max(0, Math.floor(seasonXp));
   for (const t of pass.tiers) {
     if (xp < t.xp) return { tier: t.tier - 1, intoTier: xp, tierXp: t.xp };

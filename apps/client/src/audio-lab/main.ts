@@ -54,7 +54,11 @@ document.getElementById('unlock-btn')?.addEventListener('click', () => {
 
 type Attrs = Record<string, string>;
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs = {}, ...children: Array<Node | string>): HTMLElementTagNameMap[K] {
+function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  attrs: Attrs = {},
+  ...children: Array<Node | string>
+): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
     if (k === 'class') node.className = v;
@@ -64,7 +68,12 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs = {}, ..
   return node;
 }
 
-function button(label: string, onClick: (b: HTMLButtonElement) => void, cls = '', title = ''): HTMLButtonElement {
+function button(
+  label: string,
+  onClick: (b: HTMLButtonElement) => void,
+  cls = '',
+  title = '',
+): HTMLButtonElement {
   const b = el('button', { type: 'button', class: cls, title }, label);
   b.addEventListener('click', () => {
     onClick(b);
@@ -74,8 +83,21 @@ function button(label: string, onClick: (b: HTMLButtonElement) => void, cls = ''
   return b;
 }
 
-function slider(label: string, value: number, onInput: (v: number) => void, min = 0, max = 1, step = 0.01): HTMLLabelElement {
-  const input = el('input', { type: 'range', min: String(min), max: String(max), step: String(step), value: String(value) });
+function slider(
+  label: string,
+  value: number,
+  onInput: (v: number) => void,
+  min = 0,
+  max = 1,
+  step = 0.01,
+): HTMLLabelElement {
+  const input = el('input', {
+    type: 'range',
+    min: String(min),
+    max: String(max),
+    step: String(step),
+    value: String(value),
+  });
   const out = el('span', {}, value.toFixed(2));
   input.addEventListener('input', () => {
     const v = Number(input.value);
@@ -154,7 +176,14 @@ app.append(
     ),
     button('Stop all SFX', () => engine.stopAllVoices()),
   );
-  p.append(row, el('p', { class: 'hint' }, `Panning: ${engine.mobile ? 'equal-power (mobile)' : 'HRTF (desktop)'} · limiter on master · music ducks under the announcer.`));
+  p.append(
+    row,
+    el(
+      'p',
+      { class: 'hint' },
+      `Panning: ${engine.mobile ? 'equal-power (mobile)' : 'HRTF (desktop)'} · limiter on master · music ducks under the announcer.`,
+    ),
+  );
 }
 
 // -----------------------------------------------------------------------------
@@ -168,7 +197,14 @@ let crossfadeTimer: ReturnType<typeof setInterval> | null = null;
   const trackGrid = el('div', { class: 'grid' });
   for (const id of TRACK_IDS) {
     const t = TRACKS[id];
-    trackGrid.append(button(id, () => audio.music.play(id), '', `${t.title} — ${t.bpm} BPM, ${t.key} ${t.scale}${t.beatsPerBar === 3 ? ', 6/8' : ''}`));
+    trackGrid.append(
+      button(
+        id,
+        () => audio.music.play(id),
+        '',
+        `${t.title} — ${t.bpm} BPM, ${t.key} ${t.scale}${t.beatsPerBar === 3 ? ', 6/8' : ''}`,
+      ),
+    );
   }
   p.append(el('h3', {}, 'Tracks (crossfade on the next bar)'), trackGrid);
 
@@ -253,7 +289,13 @@ audio.announcer.onCaption((text, ms) => {
     button('Stop', () => audio.announcer.cancel()),
   );
   p.append(grid, row, captionBox);
-  p.append(el('p', { class: 'hint' }, `Voice: ${audio.announcer.voiceName ?? 'babble fallback (no Web Speech voice)'}`));
+  p.append(
+    el(
+      'p',
+      { class: 'hint' },
+      `Voice: ${audio.announcer.voiceName ?? 'babble fallback (no Web Speech voice)'}`,
+    ),
+  );
 }
 
 // -----------------------------------------------------------------------------
@@ -268,7 +310,8 @@ const canvas = el('canvas', { class: 'spatial', width: '600', height: '600' });
 {
   const p = panel('Spatial (top-down)');
   const emitterSelect = el('select');
-  for (const [type, sound] of Object.entries(OBSTACLE_LOOPS)) emitterSelect.append(el('option', { value: sound }, `${type} → ${sound}`));
+  for (const [type, sound] of Object.entries(OBSTACLE_LOOPS))
+    emitterSelect.append(el('option', { value: sound }, `${type} → ${sound}`));
   const row = el('div', { class: 'row' });
   row.append(
     emitterSelect,
@@ -283,12 +326,28 @@ const canvas = el('canvas', { class: 'spatial', width: '600', height: '600' });
     }),
   );
   const oneShot = el('select');
-  for (const n of SFX_NAMES) if ((SFX_DEFS[n]?.bus ?? 'sfx') === 'sfx' && !SFX_DEFS[n]?.loop) oneShot.append(el('option', { value: n }, n));
+  for (const n of SFX_NAMES)
+    if ((SFX_DEFS[n]?.bus ?? 'sfx') === 'sfx' && !SFX_DEFS[n]?.loop)
+      oneShot.append(el('option', { value: n }, n));
   oneShot.value = 'cannon.thump';
   const row2 = el('div', { class: 'row' });
-  row2.append(oneShot, button('Play at source', () => engine.play(oneShot.value, { pos: source })));
-  p.append(canvas, row, row2, slider('listener yaw', 0, (v) => (listenerYaw = v), -Math.PI, Math.PI, 0.01));
-  p.append(el('p', { class: 'hint' }, 'Drag the pink source. Listener (cyan) faces up. Emitters beyond 45 m go virtual and free their nodes.'));
+  row2.append(
+    oneShot,
+    button('Play at source', () => engine.play(oneShot.value, { pos: source })),
+  );
+  p.append(
+    canvas,
+    row,
+    row2,
+    slider('listener yaw', 0, (v) => (listenerYaw = v), -Math.PI, Math.PI, 0.01),
+  );
+  p.append(
+    el(
+      'p',
+      { class: 'hint' },
+      'Drag the pink source. Listener (cyan) faces up. Emitters beyond 45 m go virtual and free their nodes.',
+    ),
+  );
 
   let dragging = false;
   const toWorld = (ev: PointerEvent): void => {
@@ -342,7 +401,11 @@ function drawSpatial(): void {
   g.fill();
   g.fillStyle = '#fff7fd';
   g.font = '14px Trebuchet MS';
-  g.fillText(`${d.toFixed(1)} m${emitter ? (emitter.isRealised ? ' · live' : ' · virtual') : ''}`, sx(source.x) + 16, sz(source.z) + 5);
+  g.fillText(
+    `${d.toFixed(1)} m${emitter ? (emitter.isRealised ? ' · live' : ' · virtual') : ''}`,
+    sx(source.x) + 16,
+    sz(source.z) + 5,
+  );
 }
 
 // -----------------------------------------------------------------------------
@@ -362,12 +425,24 @@ function drawSpatial(): void {
       },
       'on',
     ),
-    el('span', { class: 'hint' }, `${SFX_NAMES.length} procedural sounds · dashed = loop (click again to stop)`),
+    el(
+      'span',
+      { class: 'hint' },
+      `${SFX_NAMES.length} procedural sounds · dashed = loop (click again to stop)`,
+    ),
   );
   p.append(row);
   const groups = new Map<string, string[]>();
   for (const n of SFX_NAMES) {
-    const g = n.startsWith('ui.rarity') ? 'rarity reveals' : n.startsWith('ui.') ? 'ui' : n.startsWith('crowd') ? 'crowd' : (SFX_DEFS[n]?.loop ? 'loops' : groupOf(n));
+    const g = n.startsWith('ui.rarity')
+      ? 'rarity reveals'
+      : n.startsWith('ui.')
+        ? 'ui'
+        : n.startsWith('crowd')
+          ? 'crowd'
+          : SFX_DEFS[n]?.loop
+            ? 'loops'
+            : groupOf(n);
     const list = groups.get(g) ?? [];
     list.push(n);
     groups.set(g, list);
@@ -422,8 +497,17 @@ function groupOf(n: string): string {
   for (const c of MUSIC_CUE_NAMES) mgrid.append(button(c, () => audio.playCue(c)));
   const input = el('input', { type: 'text', value: 'sfx_land_hard', size: '24' });
   const row = el('div', { class: 'row' });
-  row.append(input, button('playCue', () => audio.playCue(input.value), 'primary'));
-  p.append(grid, el('h3', {}, 'music.*'), mgrid, el('h3', {}, 'Any cue name (aliases, snake_case, fallbacks)'), row);
+  row.append(
+    input,
+    button('playCue', () => audio.playCue(input.value), 'primary'),
+  );
+  p.append(
+    grid,
+    el('h3', {}, 'music.*'),
+    mgrid,
+    el('h3', {}, 'Any cue name (aliases, snake_case, fallbacks)'),
+    row,
+  );
 }
 
 const near = (): Vec3 => ({ x: (Math.random() - 0.5) * 20, y: 0, z: (Math.random() - 0.5) * 20 });
@@ -448,8 +532,12 @@ const near = (): Vec3 => ({ x: (Math.random() - 0.5) * 20, y: 0, z: (Math.random
   add('finish (you)', () => ev({ type: 'finish', player: LOCAL, tick: 0, subTick: 0 }));
   add('qualified (you)', () => ev({ type: 'qualified', player: LOCAL, place: 3 }));
   add('eliminated (you)', () => ev({ type: 'eliminated', player: LOCAL, place: 30 }));
-  add('cannon.fire', () => ev({ type: 'obstacleCue', obstacle: 'cannon-1', cue: 'cannon.fire', pos: near() }));
-  add('punchWall.telegraph', () => ev({ type: 'obstacleCue', obstacle: 'pw-1', cue: 'punchWall.telegraph', pos: near() }));
+  add('cannon.fire', () =>
+    ev({ type: 'obstacleCue', obstacle: 'cannon-1', cue: 'cannon.fire', pos: near() }),
+  );
+  add('punchWall.telegraph', () =>
+    ev({ type: 'obstacleCue', obstacle: 'pw-1', cue: 'punchWall.telegraph', pos: near() }),
+  );
   add('teleport', () => ev({ type: 'teleport', player: remote(), from: near(), to: near() }));
   add('team score', () => ev({ type: 'score', team: 0, player: remote(), delta: 1, total: 3 }));
   p.append(el('h3', {}, 'SimEvents'), grid);
@@ -457,12 +545,18 @@ const near = (): Vec3 => ({ x: (Math.random() - 0.5) * 20, y: 0, z: (Math.random
   const theme = el('select');
   for (const t of TRACK_IDS.slice(0, 10)) theme.append(el('option', { value: t }, t));
   const type = el('select');
-  for (const t of ['race', 'survival', 'team', 'hunt', 'logic', 'final']) type.append(el('option', { value: t }, t));
+  for (const t of ['race', 'survival', 'team', 'hunt', 'logic', 'final'])
+    type.append(el('option', { value: t }, t));
   const phases = el('div', { class: 'grid' });
   const phase = (label: string, id: RoundPhaseId): void => {
     phases.append(
       button(label, () =>
-        audio.onRoundPhase(id, type.value as RoundType, { roundNumber: 2, roundName: 'Gumdrop Gauntlet', theme: theme.value as ThemeId, playersRemaining: 26 }),
+        audio.onRoundPhase(id, type.value as RoundType, {
+          roundNumber: 2,
+          roundName: 'Gumdrop Gauntlet',
+          theme: theme.value as ThemeId,
+          playersRemaining: 26,
+        }),
       ),
     );
   };
@@ -481,7 +575,13 @@ const near = (): Vec3 => ({ x: (Math.random() - 0.5) * 20, y: 0, z: (Math.random
     button('Victory (other)', () => audio.onShowPhase(ShowPhase.Victory, { winnerName: 'Sprinkles' })),
     button('Show ended', () => audio.onShowPhase(ShowPhase.Ended)),
   );
-  p.append(el('h3', {}, 'Round phases'), el('div', { class: 'row' }, theme, type), phases, el('h3', {}, 'Show phases'), show);
+  p.append(
+    el('h3', {}, 'Round phases'),
+    el('div', { class: 'row' }, theme, type),
+    phases,
+    el('h3', {}, 'Show phases'),
+    show,
+  );
 
   const stress = el('div', { class: 'row' });
   stress.append(
@@ -528,7 +628,9 @@ function frame(): void {
   stBank.value.textContent = `${engine.sfx.renderedCount} / ${SFX_NAMES.length}`;
   const pos = audio.music.position();
   stTrack.value.textContent = pos.track ? `${pos.track} · bar ${pos.bar + 1} · ${pos.bpm} bpm` : '—';
-  beatDots.querySelectorAll('i').forEach((d, i) => d.classList.toggle('on', pos.track !== null && i === pos.beat));
+  beatDots
+    .querySelectorAll('i')
+    .forEach((d, i) => d.classList.toggle('on', pos.track !== null && i === pos.beat));
   stemLevels(audio.music.currentIntensity, audio.music.isFinal30, levels);
   for (const s of STEM_IDS) {
     const bar = stemBars.get(s);

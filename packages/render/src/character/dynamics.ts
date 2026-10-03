@@ -129,7 +129,9 @@ export class ChainRuntime {
   }
 
   private target(i: number, attachWorld: Matrix4, out: Vector3): Vector3 {
-    return out.set(this.local[i * 3]!, this.local[i * 3 + 1]!, this.local[i * 3 + 2]!).applyMatrix4(attachWorld);
+    return out
+      .set(this.local[i * 3]!, this.local[i * 3 + 1]!, this.local[i * 3 + 2]!)
+      .applyMatrix4(attachWorld);
   }
 
   /** Places every point at its rest target (spawn, teleport, LOD change). */
@@ -289,7 +291,11 @@ export class ChainRuntime {
       const o = i * 3;
       const j = i + 1 < this.n ? i + 1 : i;
       const k = i + 1 < this.n ? i : i - 1;
-      tmpDir.set(this.pos[j * 3]! - this.pos[k * 3]!, this.pos[j * 3 + 1]! - this.pos[k * 3 + 1]!, this.pos[j * 3 + 2]! - this.pos[k * 3 + 2]!);
+      tmpDir.set(
+        this.pos[j * 3]! - this.pos[k * 3]!,
+        this.pos[j * 3 + 1]! - this.pos[k * 3 + 1]!,
+        this.pos[j * 3 + 2]! - this.pos[k * 3 + 2]!,
+      );
       if (tmpDir.lengthSq() < 1e-10) tmpDir.set(this.restDir[o]!, this.restDir[o + 1]!, this.restDir[o + 2]!);
       tmpDir.normalize().applyQuaternion(tmpQ2);
       tmpRest.set(this.restDir[o]!, this.restDir[o + 1]!, this.restDir[o + 2]!);

@@ -1,6 +1,12 @@
 import { Rng } from '@tumble/shared';
 import { describe, expect, it } from 'vitest';
-import { VoicePool, VoicePriority, inverseDistanceGain, pickVoiceToSteal, voiceKeepScore } from '../src/core/voicePool.ts';
+import {
+  VoicePool,
+  VoicePriority,
+  inverseDistanceGain,
+  pickVoiceToSteal,
+  voiceKeepScore,
+} from '../src/core/voicePool.ts';
 import type { VoiceSlot } from '../src/core/voicePool.ts';
 
 function fill(pool: VoicePool, priority: number, audibility: number, now: number): number[] {
@@ -86,7 +92,8 @@ describe('voice pool', () => {
       const events = rng.int(2, 14);
       for (let k = 0; k < events; k++) {
         const roll = rng.next();
-        const priority = roll < 0.6 ? VoicePriority.Footstep : roll < 0.95 ? VoicePriority.Normal : VoicePriority.Critical;
+        const priority =
+          roll < 0.6 ? VoicePriority.Footstep : roll < 0.95 ? VoicePriority.Normal : VoicePriority.Critical;
         const v = pool.acquire(priority, rng.range(0.02, 1), now);
         if (v.slot < 0) {
           if (priority === VoicePriority.Critical) criticalDropped++;

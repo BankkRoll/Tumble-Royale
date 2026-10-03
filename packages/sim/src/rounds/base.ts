@@ -1,7 +1,14 @@
 import { SIM_DT, type TriggerDef } from '@tumble/shared';
 import type { SimEvent } from '../events.ts';
 import { PlayerRoundStatus } from '../match/types.ts';
-import type { FallVerdict, QualificationMode, RoundRules, RoundRulesOptions, RulesHost, RulesPlayer } from './types.ts';
+import type {
+  FallVerdict,
+  QualificationMode,
+  RoundRules,
+  RoundRulesOptions,
+  RulesHost,
+  RulesPlayer,
+} from './types.ts';
 
 /**
  * Orders players best-first for batch fate decisions: finished players by
@@ -88,7 +95,9 @@ export abstract class BaseRules implements RoundRules {
   protected abstract onTimeUp(): void;
 
   /** Players still Playing, best first. Returns a shared scratch array. */
-  protected playingSorted(compare: (a: RulesPlayer, b: RulesPlayer) => number = compareStanding): RulesPlayer[] {
+  protected playingSorted(
+    compare: (a: RulesPlayer, b: RulesPlayer) => number = compareStanding,
+  ): RulesPlayer[] {
     const out = this.scratch;
     out.length = 0;
     for (const p of this.host.players) if (p.status === PlayerRoundStatus.Playing) out.push(p);

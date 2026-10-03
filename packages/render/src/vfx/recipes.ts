@@ -151,7 +151,16 @@ function at(pos: VfxVec3, s: ParticleSpec | ConfettiSpec | BalloonSpec): void {
   s.z = pos.z;
 }
 
-function flash(t: RecipeTargets, x: number, y: number, z: number, size: number, delay: number, c: Color, life = 0.2): void {
+function flash(
+  t: RecipeTargets,
+  x: number,
+  y: number,
+  z: number,
+  size: number,
+  delay: number,
+  c: Color,
+  life = 0.2,
+): void {
   P.reset();
   P.x = x;
   P.y = y;
@@ -165,7 +174,16 @@ function flash(t: RecipeTargets, x: number, y: number, z: number, size: number, 
   t.glow.emit(P, t.now);
 }
 
-function glowRing(t: RecipeTargets, x: number, y: number, z: number, size: number, delay: number, c: Color, life = 0.35): void {
+function glowRing(
+  t: RecipeTargets,
+  x: number,
+  y: number,
+  z: number,
+  size: number,
+  delay: number,
+  c: Color,
+  life = 0.35,
+): void {
   P.reset();
   P.x = x;
   P.y = y;
@@ -240,7 +258,8 @@ function confetti(t: RecipeTargets, pos: VfxVec3): void {
     const roll = Math.random();
     C.shape = roll < 0.7 ? ConfettiShape.rect : roll < 0.88 ? ConfettiShape.disc : ConfettiShape.streamer;
     C.size = rand(0.07, 0.11) * k * (C.shape === ConfettiShape.streamer ? 2.4 : 1);
-    C.aspect = C.shape === ConfettiShape.streamer ? 0.16 : C.shape === ConfettiShape.disc ? 1 : rand(0.5, 0.75);
+    C.aspect =
+      C.shape === ConfettiShape.streamer ? 0.16 : C.shape === ConfettiShape.disc ? 1 : rand(0.5, 0.75);
     C.spin = rand(6, 14);
     C.flutter = rand(0.12, 0.32) * k;
     C.flutterFreq = rand(4, 7);
@@ -330,7 +349,18 @@ function stunStars(t: RecipeTargets, pos: VfxVec3): void {
   const k = O.scale;
   const duration = O.duration > 0 ? O.duration : 1.2;
   t.stars.add(pos.x, pos.y, pos.z, O.playerId, duration, k, t.now, O.delay);
-  sparkBurst(t, pos.x, pos.y + 0.9 * k, pos.z, n(6, t.density, 2), 2.5 * k, O.delay, GOLD_COLORS, 0.2 * k, 0.3);
+  sparkBurst(
+    t,
+    pos.x,
+    pos.y + 0.9 * k,
+    pos.z,
+    n(6, t.density, 2),
+    2.5 * k,
+    O.delay,
+    GOLD_COLORS,
+    0.2 * k,
+    0.3,
+  );
 }
 
 function slimeSplash(t: RecipeTargets, pos: VfxVec3): void {
@@ -512,7 +542,9 @@ function qualifySparkle(t: RecipeTargets, pos: VfxVec3): void {
     P.shape = Math.random() < 0.7 ? GlowShape.star : GlowShape.dot;
     P.spin = rand(-3, 3);
     P.twinkle = 0.5;
-    const c = colors ? pick(colors, COLORS.gold) : O.color ?? (i % 3 === 0 ? pick(MINT_COLORS, COLORS.mint) : pick(GOLD_COLORS, COLORS.gold));
+    const c = colors
+      ? pick(colors, COLORS.gold)
+      : (O.color ?? (i % 3 === 0 ? pick(MINT_COLORS, COLORS.mint) : pick(GOLD_COLORS, COLORS.gold)));
     P.color(c, 1.2);
     t.glow.emit(P, t.now);
   }
@@ -676,7 +708,18 @@ function bounceRing(t: RecipeTargets, pos: VfxVec3): void {
     D.color(tmpColor);
     t.decals.emit(D, t.now);
   }
-  sparkBurst(t, pos.x, pos.y + 0.2, pos.z, n(10, t.density, 3), 4 * k, O.delay, O.color ? listOf(c) : MINT_COLORS, 0.22 * k, 0.9);
+  sparkBurst(
+    t,
+    pos.x,
+    pos.y + 0.2,
+    pos.z,
+    n(10, t.density, 3),
+    4 * k,
+    O.delay,
+    O.color ? listOf(c) : MINT_COLORS,
+    0.22 * k,
+    0.9,
+  );
   flash(t, pos.x, pos.y + 0.15, pos.z, 1.2 * k, O.delay, c, 0.15);
 }
 
@@ -811,7 +854,18 @@ function teleport(t: RecipeTargets, pos: VfxVec3): void {
     t.glow.emit(P, t.now);
   }
   const bang = O.delay + implode;
-  sparkBurst(t, pos.x, pos.y, pos.z, n(24, t.density, 6), 5.5 * k, bang, O.color ? listOf(c) : listOf(c, COLORS.cyan, COLORS.white), 0.24 * k, 0.2);
+  sparkBurst(
+    t,
+    pos.x,
+    pos.y,
+    pos.z,
+    n(24, t.density, 6),
+    5.5 * k,
+    bang,
+    O.color ? listOf(c) : listOf(c, COLORS.cyan, COLORS.white),
+    0.24 * k,
+    0.2,
+  );
   flash(t, pos.x, pos.y, pos.z, 2.4 * k, bang, c, 0.24);
   glowRing(t, pos.x, pos.y, pos.z, 3 * k, bang, COLORS.cyan, 0.35);
   D.x = pos.x;
@@ -831,10 +885,22 @@ function teleport(t: RecipeTargets, pos: VfxVec3): void {
 function sparkle(t: RecipeTargets, pos: VfxVec3): void {
   const k = O.scale;
   const colors = O.palette.length > 0 ? O.palette : O.color ? null : GOLD_COLORS;
-  if (colors) sparkBurst(t, pos.x, pos.y, pos.z, n(14, t.density, 4), 2.8 * k, O.delay, colors, 0.24 * k, 0.6);
+  if (colors)
+    sparkBurst(t, pos.x, pos.y, pos.z, n(14, t.density, 4), 2.8 * k, O.delay, colors, 0.24 * k, 0.6);
   else {
     tmpColor.copy(O.color ?? COLORS.interact);
-    sparkBurst(t, pos.x, pos.y, pos.z, n(14, t.density, 4), 2.8 * k, O.delay, listOf(tmpColor, COLORS.white), 0.24 * k, 0.6);
+    sparkBurst(
+      t,
+      pos.x,
+      pos.y,
+      pos.z,
+      n(14, t.density, 4),
+      2.8 * k,
+      O.delay,
+      listOf(tmpColor, COLORS.white),
+      0.24 * k,
+      0.6,
+    );
   }
   flash(t, pos.x, pos.y, pos.z, 0.9 * k, O.delay, O.color ?? COLORS.interact, 0.18);
 }

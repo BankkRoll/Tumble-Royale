@@ -87,7 +87,10 @@ describe('createMatchSim', () => {
     R = await loadRapier();
     const round = createTestArenaRound();
     const ids = Array.from({ length: 40 }, (_, i) => i);
-    const sim = createMatchSim({ R, round, seed: 7, stage: 0, players: players(40), mode: 'authority' }, deps());
+    const sim = createMatchSim(
+      { R, round, seed: 7, stage: 0, players: players(40), mode: 'authority' },
+      deps(),
+    );
     expect(sim.warnings).toEqual([]);
     expect(sim.obstacleRuntimes).toHaveLength(2);
     expect(sim.phase).toBe(RoundPhase.Loading);
@@ -113,7 +116,14 @@ describe('createMatchSim', () => {
     R = await loadRapier();
     const run = (): string => {
       const sim = createMatchSim(
-        { R, round: createTestArenaRound(), seed: 99, stage: 1, players: players(24, 'half'), mode: 'authority' },
+        {
+          R,
+          round: createTestArenaRound(),
+          seed: 99,
+          stage: 1,
+          players: players(24, 'half'),
+          mode: 'authority',
+        },
         deps(),
       );
       const humans = Array.from({ length: 12 }, (_, i) => i * 2);
@@ -122,7 +132,10 @@ describe('createMatchSim', () => {
         scriptedInput(sim, humans, i);
         sim.step();
       }
-      const h = stateHash(sim, Array.from({ length: 24 }, (_, i) => i));
+      const h = stateHash(
+        sim,
+        Array.from({ length: 24 }, (_, i) => i),
+      );
       sim.dispose();
       return h;
     };
@@ -131,7 +144,10 @@ describe('createMatchSim', () => {
 
   it('keeps players frozen on the start grid during the countdown', async () => {
     R = await loadRapier();
-    const sim = createMatchSim({ R, round: createTestArenaRound(), seed: 1, stage: 0, players: players(4), mode: 'offline' }, deps());
+    const sim = createMatchSim(
+      { R, round: createTestArenaRound(), seed: 1, stage: 0, players: players(4), mode: 'offline' },
+      deps(),
+    );
     const s = fullState();
     sim.getPlayerState(0, s);
     const z0 = s.pos.z;
@@ -149,7 +165,10 @@ describe('createMatchSim', () => {
 
   it('respawns fallers at their checkpoint after the delay, with ghosting', async () => {
     R = await loadRapier();
-    const sim = createMatchSim({ R, round: createTestArenaRound(), seed: 3, stage: 0, players: players(2), mode: 'authority' }, deps());
+    const sim = createMatchSim(
+      { R, round: createTestArenaRound(), seed: 3, stage: 0, players: players(2), mode: 'authority' },
+      deps(),
+    );
     startPlaying(sim);
     const ctrl = sim.controller(0)!;
     ctrl.teleport({ x: 0, y: 3.2, z: 30 });
@@ -176,7 +195,10 @@ describe('createMatchSim', () => {
   it('eliminates fallers when the round says so', async () => {
     R = await loadRapier();
     const round = createTestArenaRound({ fallBehavior: 'eliminate' });
-    const sim = createMatchSim({ R, round, seed: 3, stage: 0, players: players(3), mode: 'authority' }, deps());
+    const sim = createMatchSim(
+      { R, round, seed: 3, stage: 0, players: players(3), mode: 'authority' },
+      deps(),
+    );
     startPlaying(sim);
     sim.controller(1)!.teleport({ x: 0, y: -30, z: 0 });
     sim.step();
@@ -189,7 +211,10 @@ describe('createMatchSim', () => {
 
   it('routes obstacle sensors and replicates obstacle net state', async () => {
     R = await loadRapier();
-    const sim = createMatchSim({ R, round: createTestArenaRound(), seed: 5, stage: 0, players: players(1), mode: 'authority' }, deps());
+    const sim = createMatchSim(
+      { R, round: createTestArenaRound(), seed: 5, stage: 0, players: players(1), mode: 'authority' },
+      deps(),
+    );
     startPlaying(sim);
     sim.controller(0)!.teleport({ x: 3.5, y: 2.5, z: 16 });
     const seen: SimEvent[] = [];
@@ -208,7 +233,15 @@ describe('createMatchSim', () => {
   it('predict mode simulates only the local player; remote players are kinematic proxies', async () => {
     R = await loadRapier();
     const sim = createMatchSim(
-      { R, round: createTestArenaRound(), seed: 5, stage: 0, players: players(3), mode: 'predict', localPlayerId: 1 },
+      {
+        R,
+        round: createTestArenaRound(),
+        seed: 5,
+        stage: 0,
+        players: players(3),
+        mode: 'predict',
+        localPlayerId: 1,
+      },
       deps(),
     );
     expect(sim.rules).toBeNull();
@@ -227,9 +260,19 @@ describe('createMatchSim', () => {
   it('predicts obstacle clearance from pose(t) for bots (waitForGap)', async () => {
     R = await loadRapier();
     const round = createTestArenaRound({
-      obstacles: [{ id: 'sweep-off', type: 'sweeperArm', position: { x: 6, y: 2, z: 36 }, params: { length: 14, speed: 1.3 } }],
+      obstacles: [
+        {
+          id: 'sweep-off',
+          type: 'sweeperArm',
+          position: { x: 6, y: 2, z: 36 },
+          params: { length: 14, speed: 1.3 },
+        },
+      ],
     });
-    const sim = createMatchSim({ R, round, seed: 4, stage: 2, players: players(1), mode: 'authority' }, deps());
+    const sim = createMatchSim(
+      { R, round, seed: 4, stage: 2, players: players(1), mode: 'authority' },
+      deps(),
+    );
     startPlaying(sim);
     for (let i = 0; i < 10; i++) sim.step();
     const view = sim.botView;
@@ -266,7 +309,16 @@ describe('createMatchSim', () => {
 describe('level building', () => {
   it('creates colliders for every static shape', async () => {
     const R = await loadRapier();
-    const shapes: StaticPiece['shape'][] = ['box', 'cylinder', 'ramp', 'wedge', 'sphere', 'hexPrism', 'torus', 'arch'];
+    const shapes: StaticPiece['shape'][] = [
+      'box',
+      'cylinder',
+      'ramp',
+      'wedge',
+      'sphere',
+      'hexPrism',
+      'torus',
+      'arch',
+    ];
     for (const shape of shapes) {
       const piece = RoundDefinitionSchema.shape.geometry.element.parse({
         shape,

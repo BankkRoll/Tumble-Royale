@@ -10,10 +10,22 @@ export const NAME_MIN = 3;
 export const NAME_MAX = 16;
 
 const NAME_RE = /^[A-Za-z0-9_]+(?: [A-Za-z0-9_]+)*$/;
-const RESERVED = ['admin', 'moderator', 'mod', 'staff', 'official', 'tumbleroyale', 'support', 'system', 'server', 'bot'];
+const RESERVED = [
+  'admin',
+  'moderator',
+  'mod',
+  'staff',
+  'official',
+  'tumbleroyale',
+  'support',
+  'system',
+  'server',
+  'bot',
+];
 
 /** Outcome of validating a display name. */
-export type NameCheck = { ok: true; name: string } | { ok: false; reason: 'length' | 'characters' | 'profanity' | 'reserved' };
+export type NameCheck =
+  { ok: true; name: string } | { ok: false; reason: 'length' | 'characters' | 'profanity' | 'reserved' };
 
 /**
  * Validates a requested display name.
@@ -52,8 +64,42 @@ export function randomTag(): string {
   return String(randomInt(1, 10000)).padStart(4, '0');
 }
 
-const ADJ = ['Bouncy', 'Wobbly', 'Zippy', 'Fizzy', 'Jolly', 'Sneaky', 'Plucky', 'Giddy', 'Snappy', 'Sunny', 'Dizzy', 'Peppy', 'Squishy', 'Bubbly', 'Toasty', 'Sparkly'];
-const NOUN = ['Gumdrop', 'Muffin', 'Pebble', 'Noodle', 'Biscuit', 'Waffle', 'Sprout', 'Marble', 'Pickle', 'Dumpling', 'Jellyroll', 'Tumbler', 'Button', 'Taffy', 'Sundae', 'Pretzel'];
+const ADJ = [
+  'Bouncy',
+  'Wobbly',
+  'Zippy',
+  'Fizzy',
+  'Jolly',
+  'Sneaky',
+  'Plucky',
+  'Giddy',
+  'Snappy',
+  'Sunny',
+  'Dizzy',
+  'Peppy',
+  'Squishy',
+  'Bubbly',
+  'Toasty',
+  'Sparkly',
+];
+const NOUN = [
+  'Gumdrop',
+  'Muffin',
+  'Pebble',
+  'Noodle',
+  'Biscuit',
+  'Waffle',
+  'Sprout',
+  'Marble',
+  'Pickle',
+  'Dumpling',
+  'Jellyroll',
+  'Tumbler',
+  'Button',
+  'Taffy',
+  'Sundae',
+  'Pretzel',
+];
 
 /** Generates a friendly guest display name such as `ZippyNoodle`. */
 export function generateGuestName(): string {

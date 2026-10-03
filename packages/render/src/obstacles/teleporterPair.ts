@@ -4,7 +4,14 @@
  * flash ring and sparkle burst at both ends. The `sendBack` variant swaps to
  * danger colours.
  */
-import { CircleGeometry, CylinderGeometry, Group, Mesh, OctahedronGeometry, TorusGeometry } from 'three/webgpu';
+import {
+  CircleGeometry,
+  CylinderGeometry,
+  Group,
+  Mesh,
+  OctahedronGeometry,
+  TorusGeometry,
+} from 'three/webgpu';
 import type { ObstacleRuntime } from '@tumble/sim';
 import { TeleporterPairSchema, teleporterPadLocal } from '@tumble/sim/obstacles';
 import type { ObstacleVisualFactory } from './types.ts';
@@ -53,7 +60,11 @@ export const teleporterPairVisual: ObstacleVisualFactory = (instance) => {
   const ringGeo = d.track(new TorusGeometry(p.padRadius * 0.85, 0.05, 8, 40));
   const beaconGeo = d.track(new OctahedronGeometry(0.28, 0));
   const baseMat = toon(d, { color: PAL.ink, rimStrength: 0.4 });
-  const rimMat = toon(d, { color: trap ? PAL.orange : PAL.yellow, emissive: trap ? PAL.orange : PAL.yellow, emissiveIntensity: 0.35 });
+  const rimMat = toon(d, {
+    color: trap ? PAL.orange : PAL.yellow,
+    emissive: trap ? PAL.orange : PAL.yellow,
+    emissiveIntensity: 0.35,
+  });
 
   const pads: PadParts[] = [];
   const local = { x: 0, y: 0, z: 0 };
@@ -92,7 +103,10 @@ export const teleporterPairVisual: ObstacleVisualFactory = (instance) => {
     flash.position.y = 0.4;
     g.add(flash);
 
-    const beacon = solid(beaconGeo, toon(d, { color: a, emissive: a, emissiveIntensity: 0.6, rimStrength: 0.8 }));
+    const beacon = solid(
+      beaconGeo,
+      toon(d, { color: a, emissive: a, emissiveIntensity: 0.6, rimStrength: 0.8 }),
+    );
     addOutline(d, beacon, 0.03);
     // Only entrances (and two-way exits) get a beacon: it marks "step here".
     beacon.visible = entrance || p.twoWay;
@@ -101,7 +115,15 @@ export const teleporterPairVisual: ObstacleVisualFactory = (instance) => {
     const burst = new Sparkles(d, BURST, '#ffffff', 0.12);
     g.add(burst.mesh);
     root.add(g);
-    pads.push({ group: g, rings, ringGlow: ringGlow.intensity, flash, flashGlow: flashGlow.intensity, beacon, burst });
+    pads.push({
+      group: g,
+      rings,
+      ringGlow: ringGlow.intensity,
+      flash,
+      flashGlow: flashGlow.intensity,
+      beacon,
+      burst,
+    });
   }
 
   const readZap = (runtime: ObstacleRuntime | undefined, i: number): number => {
@@ -132,7 +154,13 @@ export const teleporterPairVisual: ObstacleVisualFactory = (instance) => {
         for (let s = 0; s < BURST; s++) {
           const ang = (s / BURST) * Math.PI * 2 + rand01(s, 1);
           const r = p.padRadius * (0.3 + k * (1.2 + rand01(s, 2)));
-          pad.burst.set(s, Math.cos(ang) * r, 0.3 + k * (1 + rand01(s, 3) * 1.6), Math.sin(ang) * r, on ? 1 - k : 0);
+          pad.burst.set(
+            s,
+            Math.cos(ang) * r,
+            0.3 + k * (1 + rand01(s, 3) * 1.6),
+            Math.sin(ang) * r,
+            on ? 1 - k : 0,
+          );
         }
         pad.burst.commit();
       }

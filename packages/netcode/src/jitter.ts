@@ -233,7 +233,8 @@ export class InputJitterBuffer {
 
   private countBuffered(): number {
     let n = 0;
-    for (let i = 0; i < this.capacity; i++) if (this.seqs[i]! >= 0 && this.seqs[i]! > this.newest - this.capacity) n++;
+    for (let i = 0; i < this.capacity; i++)
+      if (this.seqs[i]! >= 0 && this.seqs[i]! > this.newest - this.capacity) n++;
     return n;
   }
 

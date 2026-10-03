@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import type { AddressInfo, Socket } from 'node:net';
 
 /**
  * Online smoke: `?online=1&autoplay=1` connects to the game server, joins the
@@ -20,11 +21,17 @@ test('online show reaches a live round with moving remotes', async ({ page }) =>
   const gs = GS ? `&gs=${encodeURIComponent(GS)}` : '';
   await page.goto(`${process.env.GAME_URL ?? ''}/?online=1&autoplay=1&fresh=1&api=0&tier=medium${gs}`);
   await page.waitForFunction(() => window.__tumble?.ready === true, undefined, { timeout: 120_000 });
-  await page.waitForFunction(() => window.__tumble?.screen?.() === 'preShow', undefined, { timeout: 120_000 });
+  await page.waitForFunction(() => window.__tumble?.screen?.() === 'preShow', undefined, {
+    timeout: 120_000,
+  });
   await page.waitForTimeout(2500);
   await page.screenshot({ path: `${SHOTS}/online-preshow.png` });
 
-  await page.waitForFunction(() => window.__tumble?.screen?.() === 'round' && (window.__tumble?.roundPhase?.() ?? 0) >= 4, undefined, { timeout: 180_000 });
+  await page.waitForFunction(
+    () => window.__tumble?.screen?.() === 'round' && (window.__tumble?.roundPhase?.() ?? 0) >= 4,
+    undefined,
+    { timeout: 180_000 },
+  );
   await page.waitForTimeout(4000);
   const info = await page.evaluate(() => ({
     round: window.__tumble!.roundId!(),
@@ -49,7 +56,7 @@ test('reconnect: link drop mid-round resumes the same player', async ({ page }) 
   test.setTimeout(6 * 60_000);
   const { createServer, connect } = await import('node:net');
   const target = Number(process.env.GS_PORT ?? 7350);
-  const sockets = new Set<import('node:net').Socket>();
+  const sockets = new Set<Socket>();
   const proxy = createServer((client) => {
     const upstream = connect(target, 'localhost');
     for (const s of [client, upstream]) {
@@ -60,13 +67,22 @@ test('reconnect: link drop mid-round resumes the same player', async ({ page }) 
     client.pipe(upstream).pipe(client);
   });
   await new Promise<void>((r) => proxy.listen(0, r));
-  const port = (proxy.address() as import('node:net').AddressInfo).port;
+  const port = (proxy.address() as AddressInfo).port;
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(`${e.name}: ${e.message}`));
   await page.setViewportSize({ width: 1280, height: 720 });
-  await page.goto(`${process.env.GAME_URL ?? ''}/?online=1&autoplay=1&fresh=1&api=0&tier=low&gs=${encodeURIComponent(`ws://localhost:${port}/ws`)}`);
-  await page.waitForFunction(() => window.__tumble?.screen?.() === 'round' && (window.__tumble?.roundPhase?.() ?? 0) >= 4, undefined, { timeout: 240_000 });
-  const before = await page.evaluate(() => ({ round: window.__tumble!.roundId!(), status: window.__tumble!.ui!.getState().connection.status }));
+  await page.goto(
+    `${process.env.GAME_URL ?? ''}/?online=1&autoplay=1&fresh=1&api=0&tier=low&gs=${encodeURIComponent(`ws://localhost:${port}/ws`)}`,
+  );
+  await page.waitForFunction(
+    () => window.__tumble?.screen?.() === 'round' && (window.__tumble?.roundPhase?.() ?? 0) >= 4,
+    undefined,
+    { timeout: 240_000 },
+  );
+  const before = await page.evaluate(() => ({
+    round: window.__tumble!.roundId!(),
+    status: window.__tumble!.ui!.getState().connection.status,
+  }));
   console.log('[reconnect] playing', JSON.stringify(before));
 
   // Drop the link: close the listener and every live connection.
@@ -74,15 +90,27 @@ test('reconnect: link drop mid-round resumes the same player', async ({ page }) 
   const closed = new Promise<void>((r) => proxy.close(() => r()));
   for (const s of sockets) s.destroy();
   await closed;
-  await page.waitForFunction(() => window.__tumble!.ui!.getState().connection.status === 'reconnecting', undefined, { timeout: 15_000 });
+  await page.waitForFunction(
+    () => window.__tumble!.ui!.getState().connection.status === 'reconnecting',
+    undefined,
+    { timeout: 15_000 },
+  );
   await page.screenshot({ path: `${SHOTS}/online-reconnecting.png` });
   const dropAt = Date.now();
   await page.waitForTimeout(6000);
 
   await new Promise<void>((r) => proxy.listen(port, r));
-  await page.waitForFunction(() => window.__tumble!.ui!.getState().connection.status === 'online', undefined, { timeout: 30_000 });
+  await page.waitForFunction(
+    () => window.__tumble!.ui!.getState().connection.status === 'online',
+    undefined,
+    { timeout: 30_000 },
+  );
   const resumedIn = Date.now() - dropAt;
-  const after = await page.evaluate(() => ({ round: window.__tumble!.roundId!(), screen: window.__tumble!.screen!(), dialog: window.__tumble!.ui!.getState().dialog }));
+  const after = await page.evaluate(() => ({
+    round: window.__tumble!.roundId!(),
+    screen: window.__tumble!.screen!(),
+    dialog: window.__tumble!.ui!.getState().dialog,
+  }));
   console.log(`[reconnect] back online after ${resumedIn} ms`, JSON.stringify(after));
   expect(resumedIn).toBeLessThan(30_000);
   expect(after.dialog).toBeNull();

@@ -221,7 +221,8 @@ export class PredictionController {
     this.lastAcked = ackedSeq;
     const newest = this.history.newest;
     const pred = this.predicted.get(ackedSeq);
-    if (pred && serverMatchTime !== undefined) this.trackTimeError(this.seqTimes[ackedSeq % this.seqTimes.length]! - serverMatchTime);
+    if (pred && serverMatchTime !== undefined)
+      this.trackTimeError(this.seqTimes[ackedSeq % this.seqTimes.length]! - serverMatchTime);
     if (!pred || newest < 0) {
       // Too old to replay from (long stall): adopt the server state as-is.
       this.adopt(server, ackedSeq);
@@ -262,7 +263,8 @@ export class PredictionController {
       this.offset.x += this.before.x - after.pos.x;
       this.offset.y += this.before.y - after.pos.y;
       this.offset.z += this.before.z - after.pos.z;
-      if (Math.hypot(this.offset.x, this.offset.y, this.offset.z) > this.opts.snapDistance) this.clearOffset();
+      if (Math.hypot(this.offset.x, this.offset.y, this.offset.z) > this.opts.snapDistance)
+        this.clearOffset();
     }
     return true;
   }

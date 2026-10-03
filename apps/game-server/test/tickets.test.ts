@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { KickReason, type LowFreqMessage } from '@tumble/netcode';
 import { ServerMetrics } from '../src/metrics.ts';
-import { computePlacements, signInternal, type IngestResponse, type MatchResultPayload, type ResultsSink } from '../src/results.ts';
+import {
+  computePlacements,
+  signInternal,
+  type IngestResponse,
+  type MatchResultPayload,
+  type ResultsSink,
+} from '../src/results.ts';
 import { RoomManager } from '../src/room/RoomManager.ts';
 import { SimpleShowController } from '../src/show/SimpleShowController.ts';
 import { signJoinTicket, verifyJoinTicket, type JoinTicketClaims } from '../src/tickets.ts';
@@ -44,7 +50,9 @@ describe('join tickets', () => {
     expect(verifyJoinTicket('another-secret-0123456789', t, WALL)).toBeNull();
     expect(verifyJoinTicket(SECRET, t, WALL + 91_000)).toBeNull();
     const [h, p, s] = t.split('.') as [string, string, string];
-    const forged = Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(p, 'base64url').toString()), size: 60 })).toString('base64url');
+    const forged = Buffer.from(
+      JSON.stringify({ ...JSON.parse(Buffer.from(p, 'base64url').toString()), size: 60 }),
+    ).toString('base64url');
     expect(verifyJoinTicket(SECRET, `${h}.${forged}.${s}`, WALL)).toBeNull();
     const none = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url');
     expect(verifyJoinTicket(SECRET, `${none}.${p}.`, WALL)).toBeNull();
@@ -84,7 +92,15 @@ describe('ticketed rooms', () => {
     const sims: FakeMatchSim[] = [];
     const deps = {
       ...testDeps(clock, sims),
-      createShowController: () => new SimpleShowController({ roundId: 'test-round', playSeconds: 1, countdownSeconds: 0.2, roundEndSeconds: 0.2, resultsSeconds: 0.2, loops: 1 }),
+      createShowController: () =>
+        new SimpleShowController({
+          roundId: 'test-round',
+          playSeconds: 1,
+          countdownSeconds: 0.2,
+          roundEndSeconds: 0.2,
+          resultsSeconds: 0.2,
+          loops: 1,
+        }),
       results: sink,
     };
     const manager = new RoomManager(deps, new ServerMetrics(), null, {
@@ -130,7 +146,12 @@ describe('ticketed rooms', () => {
           alreadyProcessed: false,
           rewards: payload.participants
             .filter((p) => !p.isBot)
-            .map((p) => ({ userId: p.userId!, participantKey: p.key, placement: 1, xp: { total: 300, lines: [{ label: 'Show played', amount: 300 }] } })),
+            .map((p) => ({
+              userId: p.userId!,
+              participantKey: p.key,
+              placement: 1,
+              xp: { total: 300, lines: [{ label: 'Show played', amount: 300 }] },
+            })),
         };
       },
     };
@@ -161,10 +182,16 @@ describe('ticketed rooms', () => {
     expect(posted).toHaveLength(1);
     const p = posted[0]!;
     expect(p.matchId).toBe('m_test_match_1');
-    expect(p.participants.filter((x) => !x.isBot).map((x) => x.userId).sort()).toEqual([u1, u2]);
+    expect(
+      p.participants
+        .filter((x) => !x.isBot)
+        .map((x) => x.userId)
+        .sort(),
+    ).toEqual([u1, u2]);
     expect(p.placements).toHaveLength(4);
     expect(p.rounds[0]!.results).toHaveLength(4);
-    const rewards = a.lowFreq('showRewards').at(-1) as Extract<LowFreqMessage, { t: 'showRewards' }> | undefined;
+    const rewards = a.lowFreq('showRewards').at(-1) as
+      Extract<LowFreqMessage, { t: 'showRewards' }> | undefined;
     expect(rewards?.reward?.xp.total).toBe(300);
 
     // A reload (no resume token) with the same account rejoins the same slot.

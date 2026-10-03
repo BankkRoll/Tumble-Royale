@@ -96,12 +96,19 @@ export function rpFromRating(mu: number, sigma: number): number {
  */
 export function computeRankedUpdate(entrants: readonly RankedEntrant[]): RankedOutcome[] {
   if (entrants.length === 0) return [];
-  const ordered = [...entrants].sort((a, b) => a.placement - b.placement || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  const ordered = [...entrants].sort(
+    (a, b) => a.placement - b.placement || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+  );
   const humans = ordered.filter((e) => !e.isBot);
   if (humans.length === 0) return [];
 
   const prior = (e: RankedEntrant): RankedPrior =>
-    e.prior ?? { mu: DEFAULT_RATING.mu, sigma: DEFAULT_RATING.sigma, rp: 0, placementsLeft: PLACEMENT_MATCHES };
+    e.prior ?? {
+      mu: DEFAULT_RATING.mu,
+      sigma: DEFAULT_RATING.sigma,
+      rp: 0,
+      placementsLeft: PLACEMENT_MATCHES,
+    };
   const meanMu = humans.reduce((s, h) => s + prior(h).mu, 0) / humans.length;
   const meanSigma = humans.reduce((s, h) => s + prior(h).sigma, 0) / humans.length;
   const botProxy: Rating = { mu: meanMu, sigma: meanSigma };

@@ -41,7 +41,9 @@ export class RagdollWorld {
   addGround(y = 0, halfExtent = 200): void {
     const body = this.world.createRigidBody(this.R.RigidBodyDesc.fixed().setTranslation(0, y - 0.5, 0));
     this.world.createCollider(
-      this.R.ColliderDesc.cuboid(halfExtent, 0.5, halfExtent).setFriction(0.9).setCollisionGroups(InteractionGroups.static),
+      this.R.ColliderDesc.cuboid(halfExtent, 0.5, halfExtent)
+        .setFriction(0.9)
+        .setCollisionGroups(InteractionGroups.static),
       body,
     );
   }
@@ -52,7 +54,9 @@ export class RagdollWorld {
     if (rotation) desc.setRotation({ x: rotation.x, y: rotation.y, z: rotation.z, w: rotation.w });
     const body = this.world.createRigidBody(desc);
     this.world.createCollider(
-      this.R.ColliderDesc.cuboid(halfExtents.x, halfExtents.y, halfExtents.z).setFriction(0.9).setCollisionGroups(InteractionGroups.static),
+      this.R.ColliderDesc.cuboid(halfExtents.x, halfExtents.y, halfExtents.z)
+        .setFriction(0.9)
+        .setCollisionGroups(InteractionGroups.static),
       body,
     );
   }
@@ -98,17 +102,120 @@ const midArmR = (len: number): [number, number, number] => [-ad.x * len * 0.5, a
 
 /** Ragdoll parts. Hands, feet and the spine follow their parents' animated locals. */
 const PARTS: PartDef[] = [
-  { bone: Bone.hips, parent: -1, shape: 'ball', radius: 0.47, halfHeight: 0, center: [0, 0.0, 0], axis: [0, 1, 0], joint: 'none' },
-  { bone: Bone.chest, parent: 0, shape: 'capsule', radius: 0.42, halfHeight: 0.06, center: [0, 0.0, 0], axis: [0, 1, 0], joint: 'spherical' },
-  { bone: Bone.head, parent: 1, shape: 'ball', radius: 0.34, halfHeight: 0, center: [0, 0.12, 0], axis: [0, 1, 0], joint: 'spherical' },
-  { bone: Bone.upperArmL, parent: 1, shape: 'capsule', radius: 0.08, halfHeight: 0.05, center: midArm(RIG.upperArm), axis: [ad.x, ad.y, 0], joint: 'spherical' },
-  { bone: Bone.lowerArmL, parent: 3, shape: 'capsule', radius: 0.1, halfHeight: 0.07, center: midArm(RIG.lowerArm + 0.12), axis: [ad.x, ad.y, 0], joint: 'revolute', limits: [-2.3, 0.15] },
-  { bone: Bone.upperArmR, parent: 1, shape: 'capsule', radius: 0.08, halfHeight: 0.05, center: midArmR(RIG.upperArm), axis: [-ad.x, ad.y, 0], joint: 'spherical' },
-  { bone: Bone.lowerArmR, parent: 5, shape: 'capsule', radius: 0.1, halfHeight: 0.07, center: midArmR(RIG.lowerArm + 0.12), axis: [-ad.x, ad.y, 0], joint: 'revolute', limits: [-2.3, 0.15] },
-  { bone: Bone.upperLegL, parent: 0, shape: 'capsule', radius: 0.075, halfHeight: 0.04, center: [0, -0.085, 0], axis: [0, 1, 0], joint: 'spherical' },
-  { bone: Bone.lowerLegL, parent: 7, shape: 'ball', radius: 0.11, halfHeight: 0, center: [0, -0.12, 0.03], axis: [0, 1, 0], joint: 'revolute', limits: [-0.15, 2.3] },
-  { bone: Bone.upperLegR, parent: 0, shape: 'capsule', radius: 0.075, halfHeight: 0.04, center: [0, -0.085, 0], axis: [0, 1, 0], joint: 'spherical' },
-  { bone: Bone.lowerLegR, parent: 9, shape: 'ball', radius: 0.11, halfHeight: 0, center: [0, -0.12, 0.03], axis: [0, 1, 0], joint: 'revolute', limits: [-0.15, 2.3] },
+  {
+    bone: Bone.hips,
+    parent: -1,
+    shape: 'ball',
+    radius: 0.47,
+    halfHeight: 0,
+    center: [0, 0.0, 0],
+    axis: [0, 1, 0],
+    joint: 'none',
+  },
+  {
+    bone: Bone.chest,
+    parent: 0,
+    shape: 'capsule',
+    radius: 0.42,
+    halfHeight: 0.06,
+    center: [0, 0.0, 0],
+    axis: [0, 1, 0],
+    joint: 'spherical',
+  },
+  {
+    bone: Bone.head,
+    parent: 1,
+    shape: 'ball',
+    radius: 0.34,
+    halfHeight: 0,
+    center: [0, 0.12, 0],
+    axis: [0, 1, 0],
+    joint: 'spherical',
+  },
+  {
+    bone: Bone.upperArmL,
+    parent: 1,
+    shape: 'capsule',
+    radius: 0.08,
+    halfHeight: 0.05,
+    center: midArm(RIG.upperArm),
+    axis: [ad.x, ad.y, 0],
+    joint: 'spherical',
+  },
+  {
+    bone: Bone.lowerArmL,
+    parent: 3,
+    shape: 'capsule',
+    radius: 0.1,
+    halfHeight: 0.07,
+    center: midArm(RIG.lowerArm + 0.12),
+    axis: [ad.x, ad.y, 0],
+    joint: 'revolute',
+    limits: [-2.3, 0.15],
+  },
+  {
+    bone: Bone.upperArmR,
+    parent: 1,
+    shape: 'capsule',
+    radius: 0.08,
+    halfHeight: 0.05,
+    center: midArmR(RIG.upperArm),
+    axis: [-ad.x, ad.y, 0],
+    joint: 'spherical',
+  },
+  {
+    bone: Bone.lowerArmR,
+    parent: 5,
+    shape: 'capsule',
+    radius: 0.1,
+    halfHeight: 0.07,
+    center: midArmR(RIG.lowerArm + 0.12),
+    axis: [-ad.x, ad.y, 0],
+    joint: 'revolute',
+    limits: [-2.3, 0.15],
+  },
+  {
+    bone: Bone.upperLegL,
+    parent: 0,
+    shape: 'capsule',
+    radius: 0.075,
+    halfHeight: 0.04,
+    center: [0, -0.085, 0],
+    axis: [0, 1, 0],
+    joint: 'spherical',
+  },
+  {
+    bone: Bone.lowerLegL,
+    parent: 7,
+    shape: 'ball',
+    radius: 0.11,
+    halfHeight: 0,
+    center: [0, -0.12, 0.03],
+    axis: [0, 1, 0],
+    joint: 'revolute',
+    limits: [-0.15, 2.3],
+  },
+  {
+    bone: Bone.upperLegR,
+    parent: 0,
+    shape: 'capsule',
+    radius: 0.075,
+    halfHeight: 0.04,
+    center: [0, -0.085, 0],
+    axis: [0, 1, 0],
+    joint: 'spherical',
+  },
+  {
+    bone: Bone.lowerLegR,
+    parent: 9,
+    shape: 'ball',
+    radius: 0.11,
+    halfHeight: 0,
+    center: [0, -0.12, 0.03],
+    axis: [0, 1, 0],
+    joint: 'revolute',
+    limits: [-0.15, 2.3],
+  },
 ];
 
 const PART_OF_BONE = new Int8Array(CORE_BONE_COUNT).fill(-1);
@@ -155,7 +262,10 @@ export class TumblerRagdoll {
           .setLinearDamping(0.25)
           .setAngularDamping(1.6),
       );
-      const desc = part.shape === 'ball' ? R.ColliderDesc.ball(part.radius) : R.ColliderDesc.capsule(part.halfHeight, part.radius);
+      const desc =
+        part.shape === 'ball'
+          ? R.ColliderDesc.ball(part.radius)
+          : R.ColliderDesc.capsule(part.halfHeight, part.radius);
       tmpQ2.setFromUnitVectors(UP, tmpV2.set(...part.axis).normalize());
       desc
         .setTranslation(...part.center)
@@ -179,7 +289,10 @@ export class TumblerRagdoll {
       tmpV.set(pt.x - pp.x, pt.y - pp.y, pt.z - pp.z).applyQuaternion(tmpQ);
       const a1 = { x: tmpV.x, y: tmpV.y, z: tmpV.z };
       const a2 = { x: 0, y: 0, z: 0 };
-      const data = part.joint === 'revolute' ? R.JointData.revolute(a1, a2, { x: 1, y: 0, z: 0 }) : R.JointData.spherical(a1, a2);
+      const data =
+        part.joint === 'revolute'
+          ? R.JointData.revolute(a1, a2, { x: 1, y: 0, z: 0 })
+          : R.JointData.spherical(a1, a2);
       if (part.limits) {
         data.limitsEnabled = true;
         data.limits = part.limits;
@@ -330,6 +443,7 @@ export class RagdollManager {
 
   /** Makes this the manager every Tumbler uses. */
   install(): this {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- the installed manager is a deliberate module-level singleton
     installed = this;
     return this;
   }
@@ -375,7 +489,8 @@ export class RagdollManager {
    * @param cameraPosition - Camera world position.
    */
   update(dt: number, cameraPosition: Vector3): void {
-    for (const e of this.entries) e.dist = e.host.ragdollAnchor(this.anchor).distanceToSquared(cameraPosition);
+    for (const e of this.entries)
+      e.dist = e.host.ragdollAnchor(this.anchor).distanceToSquared(cameraPosition);
     this.entries.sort(byDistance);
     for (let i = 0; i < this.entries.length; i++) {
       const e = this.entries[i]!;

@@ -34,7 +34,17 @@ import {
   type PaintGridView,
   type PaintLayout,
 } from '@tumble/sim/obstacles';
-import { Disposer, PAL, addOutline, applyInstanceTransform, glowMaterial, parseParams, solid, stripedToon, toon } from './visual-helpers-b.ts';
+import {
+  Disposer,
+  PAL,
+  addOutline,
+  applyInstanceTransform,
+  glowMaterial,
+  parseParams,
+  solid,
+  stripedToon,
+  toon,
+} from './visual-helpers-b.ts';
 import type { ObstacleVisualFactory } from './types.ts';
 
 const POP_TIME = 0.32;
@@ -104,7 +114,11 @@ class PaintGridVisual {
     // wet sheen band drifts across the blobs.
     const mat = d.track(new MeshBasicNodeMaterial());
     const r = uv().sub(0.5).length().mul(2);
-    const sheen = smoothstep(float(0.82), float(1), sin(positionLocal.x.mul(2.2).add(positionLocal.z.mul(1.4)).add(time.mul(1.3))));
+    const sheen = smoothstep(
+      float(0.82),
+      float(1),
+      sin(positionLocal.x.mul(2.2).add(positionLocal.z.mul(1.4)).add(time.mul(1.3))),
+    );
     mat.colorNode = mix(float(1.18), float(0.9), r).mul(float(1).add(sheen.mul(0.25)));
     mat.polygonOffset = true;
     mat.polygonOffsetFactor = -2;
@@ -128,10 +142,16 @@ class PaintGridVisual {
     const p = this.p;
     if (p.rinseArms <= 0) return;
     // Fountain tower on the hub.
-    const tower = solid(d.track(new CylinderGeometry(0.7, 1.1, p.rinseHeight + 0.6, 24)), stripedToon(d, PAL.cyan, PAL.white, 2, 'y'));
+    const tower = solid(
+      d.track(new CylinderGeometry(0.7, 1.1, p.rinseHeight + 0.6, 24)),
+      stripedToon(d, PAL.cyan, PAL.white, 2, 'y'),
+    );
     tower.position.y = (p.rinseHeight + 0.6) / 2;
     this.object.add(tower);
-    const bowl = solid(d.track(new CylinderGeometry(1.6, 1.0, 0.5, 28)), toon(d, { color: PAL.cyan, rimStrength: 0.8 }));
+    const bowl = solid(
+      d.track(new CylinderGeometry(1.6, 1.0, 0.5, 28)),
+      toon(d, { color: PAL.cyan, rimStrength: 0.8 }),
+    );
     bowl.position.y = p.rinseHeight + 0.7;
     addOutline(d, bowl, 0.04);
     this.object.add(bowl);
@@ -141,13 +161,20 @@ class PaintGridVisual {
     const pipeGeo = d.track(new CylinderGeometry(0.22, 0.22, len, 12));
     const curtain = glowMaterial(d, '#7fe8ff', { additive: true, doubleSide: true });
     // Falling-water streaks scrolling down the curtain.
-    curtain.mat.opacityNode = fract(uv().y.mul(3).add(time.mul(1.8)).add(sin(uv().x.mul(40)).mul(0.08)))
+    curtain.mat.opacityNode = fract(
+      uv()
+        .y.mul(3)
+        .add(time.mul(1.8))
+        .add(sin(uv().x.mul(40)).mul(0.08)),
+    )
       .mul(0.35)
       .add(0.12)
       .mul(smoothstep(float(0), float(0.15), uv().y));
     const curtainGeo = d.track(new PlaneGeometry(len, p.rinseHeight));
     const wash = glowMaterial(d, '#b8f6ff', { additive: true });
-    wash.mat.opacityNode = sin(positionLocal.x.mul(3).sub(time.mul(6))).mul(0.15).add(0.35);
+    wash.mat.opacityNode = sin(positionLocal.x.mul(3).sub(time.mul(6)))
+      .mul(0.15)
+      .add(0.35);
     const washGeo = d.track(new PlaneGeometry(len, p.rinseWidth));
     washGeo.rotateX(-Math.PI / 2);
     for (let k = 0; k < p.rinseArms; k++) {
@@ -190,7 +217,10 @@ class PaintGridVisual {
       addOutline(d, pail, 0.035);
       g.add(pail);
       // Rainbow of the four team colours: buckets belong to nobody.
-      const top = solid(paintGeo, toon(d, { color: TEAM_COLORS[i % 4]!, emissive: TEAM_COLORS[i % 4]!, emissiveIntensity: 0.4 }));
+      const top = solid(
+        paintGeo,
+        toon(d, { color: TEAM_COLORS[i % 4]!, emissive: TEAM_COLORS[i % 4]!, emissiveIntensity: 0.4 }),
+      );
       top.position.y = 0.36;
       g.add(top);
       const handle = solid(handleGeo, toon(d, { color: PAL.ink }));
@@ -232,7 +262,11 @@ class PaintGridVisual {
       // Overshoot pop: 0 → 1.25 → 1.
       const sc = base * (k < 0.6 ? (k / 0.6) * 1.25 : 1.25 - 0.25 * ((k - 0.6) / 0.4));
       this.q.setFromAxisAngle(this.up, this.yaw[i]!);
-      this.v.set(this.centres[i * 2]!, this.layout.height[i]! + 0.035 + (i % 3) * 0.002, this.centres[i * 2 + 1]!);
+      this.v.set(
+        this.centres[i * 2]!,
+        this.layout.height[i]! + 0.035 + (i % 3) * 0.002,
+        this.centres[i * 2 + 1]!,
+      );
       this.s.set(sc, 1, sc);
       this.splats.setMatrixAt(i, this.m.compose(this.v, this.q, this.s));
       dirtyM = true;
@@ -268,7 +302,6 @@ class PaintGridVisual {
     this.d.dispose();
   }
 }
-
 
 /** Paint Grid visual factory. */
 export const paintGridVisual: ObstacleVisualFactory = (instance, ctx) => new PaintGridVisual(instance, ctx);

@@ -16,7 +16,12 @@ describe('guest auth', () => {
     expect(u.tag).toMatch(/^\d{4}$/);
     const me = await api.req('GET', '/me', { token: u.accessToken });
     expect(me.statusCode).toBe(200);
-    expect(me.json()).toMatchObject({ userId: u.id, isGuest: true, level: 1, wallet: { gumballs: 0, gems: 0 } });
+    expect(me.json()).toMatchObject({
+      userId: u.id,
+      isGuest: true,
+      level: 1,
+      wallet: { gumballs: 0, gems: 0 },
+    });
     const inv = await api.req('GET', '/inventory', { token: u.accessToken });
     expect(inv.json().items.length).toBeGreaterThan(5);
   });
@@ -60,20 +65,31 @@ describe('guest auth', () => {
 
   it('logout revokes the refresh family', async () => {
     const u = await api.guest();
-    expect((await api.req('POST', '/auth/logout', { body: { refreshToken: u.refreshToken } })).statusCode).toBe(204);
-    expect((await api.req('POST', '/auth/refresh', { body: { refreshToken: u.refreshToken } })).statusCode).toBe(401);
+    expect(
+      (await api.req('POST', '/auth/logout', { body: { refreshToken: u.refreshToken } })).statusCode,
+    ).toBe(204);
+    expect(
+      (await api.req('POST', '/auth/refresh', { body: { refreshToken: u.refreshToken } })).statusCode,
+    ).toBe(401);
   });
 
   it('reports OAuth providers as disabled without credentials', async () => {
     const res = await api.req('GET', '/auth/discord/start');
     expect(res.statusCode).toBe(503);
     expect(res.json().error).toBe('provider_disabled');
-    expect((await api.req('GET', '/auth/providers')).json()).toMatchObject({ discord: false, google: false, email: true });
+    expect((await api.req('GET', '/auth/providers')).json()).toMatchObject({
+      discord: false,
+      google: false,
+      email: true,
+    });
   });
 
   it('upgrades a guest through an email magic link', async () => {
     const u = await api.guest();
-    const start = await api.req('POST', '/auth/email/start', { token: u.accessToken, body: { email: 'Player@Example.com' } });
+    const start = await api.req('POST', '/auth/email/start', {
+      token: u.accessToken,
+      body: { email: 'Player@Example.com' },
+    });
     expect(start.statusCode).toBe(202);
     const mail = api.mailer.sent.at(-1)!;
     const token = /token=([A-Za-z0-9_-]+)/.exec(mail.text)![1]!;
@@ -89,7 +105,10 @@ describe('guest auth', () => {
     expect(bad.statusCode).toBe(400);
     const ok = await api.req('PATCH', '/me', { token: u.accessToken, body: { displayName: 'Bouncy Bob' } });
     expect(ok.statusCode).toBe(200);
-    const again = await api.req('PATCH', '/me', { token: u.accessToken, body: { displayName: 'Bouncy Rob' } });
+    const again = await api.req('PATCH', '/me', {
+      token: u.accessToken,
+      body: { displayName: 'Bouncy Rob' },
+    });
     expect(again.statusCode).toBe(429);
     expect(again.json().error).toBe('name_cooldown');
   });

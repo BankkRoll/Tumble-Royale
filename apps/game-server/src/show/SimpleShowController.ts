@@ -70,7 +70,8 @@ export class SimpleShowController implements ShowController {
         if (this.phaseTime >= this.opts.countdownSeconds) this.setRoundPhase(RoundPhase.Playing, 0);
         break;
       case RoundPhase.Playing:
-        if (this.phaseTime >= this.opts.playSeconds || ctx.status?.finished) this.setRoundPhase(RoundPhase.RoundEnd);
+        if (this.phaseTime >= this.opts.playSeconds || ctx.status?.finished)
+          this.setRoundPhase(RoundPhase.RoundEnd);
         break;
       case RoundPhase.RoundEnd:
         if (this.phaseTime >= this.opts.roundEndSeconds) {
@@ -141,7 +142,9 @@ export class SimpleShowController implements ShowController {
   private setRoundPhase(phase: RoundPhaseId, time?: number): void {
     this.roundPhase = phase;
     this.phaseTime = 0;
-    this.events.push(time === undefined ? { type: 'roundPhase', phase } : { type: 'roundPhase', phase, time });
+    this.events.push(
+      time === undefined ? { type: 'roundPhase', phase } : { type: 'roundPhase', phase, time },
+    );
   }
 
   private setShowPhase(phase: ShowPhaseId): void {

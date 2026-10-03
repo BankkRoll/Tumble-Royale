@@ -5,7 +5,12 @@
  */
 import { describe, expect, it } from 'vitest';
 import { loadRapier } from '@tumble/sim';
-import { createMatchSim, createSimpleController, createTestArenaRound, testObstacleModules } from '@tumble/sim/match';
+import {
+  createMatchSim,
+  createSimpleController,
+  createTestArenaRound,
+  testObstacleModules,
+} from '@tumble/sim/match';
 import { ServerMetrics } from '../src/metrics.ts';
 import { RoomManager } from '../src/room/RoomManager.ts';
 import { ShowDirectorController } from '../src/show/ShowDirectorController.ts';
@@ -20,7 +25,8 @@ describe('Room + real MatchSim + ShowDirector', () => {
     const manager = new RoomManager(
       {
         R,
-        createMatchSim: (o) => createMatchSim(o, { createController: createSimpleController, obstacles: testObstacleModules() }),
+        createMatchSim: (o) =>
+          createMatchSim(o, { createController: createSimpleController, obstacles: testObstacleModules() }),
         loadRound: () => round,
         createShowController: () =>
           new ShowDirectorController({
@@ -56,7 +62,8 @@ describe('Room + real MatchSim + ShowDirector', () => {
       manager.tick();
       c.pump(clock.now);
     }
-    const count = (pred: (m: (typeof c.messages)[number]) => boolean): number => c.messages.filter(pred).length;
+    const count = (pred: (m: (typeof c.messages)[number]) => boolean): number =>
+      c.messages.filter(pred).length;
     expect(c.lowFreq('joinRound').length).toBe(2);
     expect(c.lowFreq('roundResults').length).toBeGreaterThanOrEqual(1);
     expect(count((m) => m.kind === 'sim' && m.event.type === 'qualified')).toBeGreaterThan(10);

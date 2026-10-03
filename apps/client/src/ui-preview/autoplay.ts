@@ -198,14 +198,12 @@ async function playRound(
       }
       patch.qualified = qualified;
       patch.progress = Math.min(1, frac * 1.6);
-      patch.leaders = finishOrder
-        .slice(0, 3)
-        .map((p, i) => ({
-          id: p.id,
-          name: p.name,
-          color: p.colors.primary,
-          progress: Math.min(1, frac * (1.9 - i * 0.12)),
-        }));
+      patch.leaders = finishOrder.slice(0, 3).map((p, i) => ({
+        id: p.id,
+        name: p.name,
+        color: p.colors.primary,
+        progress: Math.min(1, frac * (1.9 - i * 0.12)),
+      }));
     } else {
       const left = Math.round(alive.length - (alive.length - target) * Math.pow(frac, 1.2));
       if (left < (ui.getState().hud.alive || alive.length) && Math.random() < 0.5) {

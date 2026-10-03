@@ -5,7 +5,17 @@
 import { Color, Group, InstancedMesh, Matrix4, Quaternion, Vector3 } from 'three/webgpu';
 import { ClimbWallSchema, climbWallParts } from '@tumble/sim/obstacles';
 import type { ObstacleVisualFactory } from './types.ts';
-import { Disposer, PAL, addOutline, applyInstanceTransform, parseParams, roundedBox, solid, stripedToon, toon } from './visual-helpers-b.ts';
+import {
+  Disposer,
+  PAL,
+  addOutline,
+  applyInstanceTransform,
+  parseParams,
+  roundedBox,
+  solid,
+  stripedToon,
+  toon,
+} from './visual-helpers-b.ts';
 
 const HOLD_COLORS = [PAL.yellow, PAL.orange, PAL.pink, PAL.cyan, PAL.violet];
 
@@ -23,7 +33,10 @@ export const climbWallVisual: ObstacleVisualFactory = (instance) => {
   const lipMat = toon(d, { color: PAL.yellow, rimStrength: 0.6 });
   for (const part of parts) {
     if (part.role === 'hold') continue;
-    const m = solid(roundedBox(d, part.half.x, part.half.y, part.half.z, part.role === 'lip' ? 0.1 : 0.2), part.role === 'lip' ? lipMat : wallMat);
+    const m = solid(
+      roundedBox(d, part.half.x, part.half.y, part.half.z, part.role === 'lip' ? 0.1 : 0.2),
+      part.role === 'lip' ? lipMat : wallMat,
+    );
     m.position.set(part.pos.x, part.pos.y, part.pos.z);
     m.quaternion.set(part.rot.x, part.rot.y, part.rot.z, part.rot.w);
     root.add(m);

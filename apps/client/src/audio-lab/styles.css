@@ -22,7 +22,10 @@ body {
   margin: 0;
   background: radial-gradient(circle at 20% 0%, #3a2466 0%, var(--bg) 55%);
   color: var(--ink);
-  font: 14px/1.4 'Trebuchet MS', system-ui, sans-serif;
+  font:
+    14px/1.4 'Trebuchet MS',
+    system-ui,
+    sans-serif;
   min-height: 100%;
 }
 
@@ -230,8 +233,7 @@ canvas.spatial {
   max-height: 460px;
   background:
     radial-gradient(circle, rgba(63, 169, 255, 0.12) 0 30%, transparent 31%),
-    repeating-radial-gradient(circle, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 48px),
-    #150e27;
+    repeating-radial-gradient(circle, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 48px), #150e27;
   border-radius: 12px;
   touch-action: none;
   cursor: crosshair;

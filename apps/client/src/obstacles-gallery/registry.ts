@@ -69,7 +69,8 @@ export async function discoverObstacles(): Promise<Discovery> {
     for (const value of Object.values(mod)) {
       if (!Array.isArray(value)) continue;
       for (const item of value) {
-        if (isModule(item) && !defs.has(item.type)) defs.set(item.type, { type: item.type, module: item, source: file.replace(/\.ts$/, '') });
+        if (isModule(item) && !defs.has(item.type))
+          defs.set(item.type, { type: item.type, module: item, source: file.replace(/\.ts$/, '') });
       }
     }
   }
@@ -78,7 +79,8 @@ export async function discoverObstacles(): Promise<Discovery> {
       if (typeof value !== 'object' || value === null || Array.isArray(value)) continue;
       for (const [type, factory] of Object.entries(value as Record<string, unknown>)) {
         const def = defs.get(type);
-        if (def && typeof factory === 'function' && !def.visual) def.visual = factory as ObstacleVisualFactory;
+        if (def && typeof factory === 'function' && !def.visual)
+          def.visual = factory as ObstacleVisualFactory;
       }
     }
   }

@@ -117,7 +117,9 @@ function harness(speedScale = 1): Harness {
     floor(y = 0, half = 60) {
       const b = world.createRigidBody(R.RigidBodyDesc.fixed());
       world.createCollider(
-        R.ColliderDesc.cuboid(half, 0.5, half).setTranslation(0, y - 0.5, 0).setCollisionGroups(InteractionGroups.static),
+        R.ColliderDesc.cuboid(half, 0.5, half)
+          .setTranslation(0, y - 0.5, 0)
+          .setCollisionGroups(InteractionGroups.static),
         b,
       );
     },
@@ -144,7 +146,11 @@ function harness(speedScale = 1): Harness {
   };
 }
 
-function inst<P>(type: ObstacleType, params: Partial<P> = {}, position: Vec3 = { x: 0, y: 0, z: 0 }): ObstacleInstance<P> {
+function inst<P>(
+  type: ObstacleType,
+  params: Partial<P> = {},
+  position: Vec3 = { x: 0, y: 0, z: 0 },
+): ObstacleInstance<P> {
   return { id: `${type}-1`, type, position, params: params as P };
 }
 
@@ -198,7 +204,17 @@ describe('pure poses', () => {
 
   it('every kinematic set-B type exposes pose()', () => {
     expect(posed.sort()).toEqual(
-      ['bumperCar', 'cannon', 'collapsingBridge', 'jumpRopeBeam', 'laserSweep', 'popupBlocks', 'propSpawner', 'rollingDrum', 'startGate'].sort(),
+      [
+        'bumperCar',
+        'cannon',
+        'collapsingBridge',
+        'jumpRopeBeam',
+        'laserSweep',
+        'popupBlocks',
+        'propSpawner',
+        'rollingDrum',
+        'startGate',
+      ].sort(),
     );
   });
 
@@ -222,15 +238,26 @@ describe('pure poses', () => {
       for (let k = 0; k < a.length; k++) {
         const sa = a[k]!;
         const sb = b[k]!;
-        if (sa.pos.x !== sb.pos.x || sa.pos.y !== sb.pos.y || sa.pos.z !== sb.pos.z || sa.rot.w !== sb.rot.w || sa.rot.y !== sb.rot.y)
+        if (
+          sa.pos.x !== sb.pos.x ||
+          sa.pos.y !== sb.pos.y ||
+          sa.pos.z !== sb.pos.z ||
+          sa.rot.w !== sb.rot.w ||
+          sa.rot.y !== sb.rot.y
+        )
           mismatches++;
-        for (const v of [sa.pos.x, sa.pos.y, sa.pos.z, sa.rot.x, sa.rot.y, sa.rot.z, sa.rot.w]) if (!Number.isFinite(v)) nonFinite++;
+        for (const v of [sa.pos.x, sa.pos.y, sa.pos.z, sa.rot.x, sa.rot.y, sa.rot.z, sa.rot.w])
+          if (!Number.isFinite(v)) nonFinite++;
         if (Math.abs(Math.hypot(sa.rot.x, sa.rot.y, sa.rot.z, sa.rot.w) - 1) > 1e-6) badQuat++;
         if (!first) {
           const pp = prev[k]!;
           // Parking (spent balls, fallen segments) is a deliberate teleport.
           const parked = sa.pos.y < PARK_Y / 2 || pp.pos.y < PARK_Y / 2;
-          if (!parked) maxStep = Math.max(maxStep, Math.hypot(sa.pos.x - pp.pos.x, sa.pos.y - pp.pos.y, sa.pos.z - pp.pos.z));
+          if (!parked)
+            maxStep = Math.max(
+              maxStep,
+              Math.hypot(sa.pos.x - pp.pos.x, sa.pos.y - pp.pos.y, sa.pos.z - pp.pos.z),
+            );
         }
       }
       for (let k = 0; k < a.length; k++) {
@@ -292,7 +319,10 @@ describe('runtimes in a real Rapier world', () => {
   it('kinematic parts track pose(t) composed with the instance transform', () => {
     const h = harness(1);
     const m = moduleOf('bumperCar');
-    const rt = m.create({ id: 'bc', type: 'bumperCar', position: { x: 5, y: 1, z: -3 }, rotation: { yaw: 90 }, params: {} }, h.ctx);
+    const rt = m.create(
+      { id: 'bc', type: 'bumperCar', position: { x: 5, y: 1, z: -3 }, rotation: { yaw: 90 }, params: {} },
+      h.ctx,
+    );
     h.run(rt, [], 120);
     const out: PoseSample[] = [];
     m.pose!(120 * SIM_DT, m.schema.parse({}), out, 1);
@@ -315,7 +345,10 @@ describe('teleporterPair', () => {
   it('zaps an actor standing on the entrance to the exit and emits teleport', () => {
     const h = harness();
     h.floor();
-    const rt = moduleOf('teleporterPair').create(inst('teleporterPair', { exits: [{ x: 0, y: 0, z: 14 }] }), h.ctx);
+    const rt = moduleOf('teleporterPair').create(
+      inst('teleporterPair', { exits: [{ x: 0, y: 0, z: 14 }] }),
+      h.ctx,
+    );
     const actor = new FakeActor(h.world, 4, { x: 0, y: 1.2, z: 0 });
     h.run(rt, [actor], 30);
     expect(actor.teleports.length).toBe(1);
@@ -330,7 +363,10 @@ describe('teleporterPair', () => {
   it('two-way pads do not ping-pong while the player stands on the arrival pad', () => {
     const h = harness();
     h.floor();
-    const rt = moduleOf('teleporterPair').create(inst('teleporterPair', { twoWay: true, cooldown: 0.2 }), h.ctx);
+    const rt = moduleOf('teleporterPair').create(
+      inst('teleporterPair', { twoWay: true, cooldown: 0.2 }),
+      h.ctx,
+    );
     const actor = new FakeActor(h.world, 2, { x: 0, y: 1.2, z: 0 });
     h.run(rt, [actor], 180);
     expect(actor.teleports.length).toBe(1);
@@ -482,10 +518,17 @@ describe('jumpRopeBeam', () => {
 describe('collapsingBridge', () => {
   it('warns then drops segments with tileWarn / tileFell events', () => {
     const h = harness();
-    const rt = moduleOf('collapsingBridge').create(inst('collapsingBridge', { segments: 4, startDelay: 0.5, interval: 0.5 }), h.ctx);
+    const rt = moduleOf('collapsingBridge').create(
+      inst('collapsingBridge', { segments: 4, startDelay: 0.5, interval: 0.5 }),
+      h.ctx,
+    );
     h.run(rt, [], 60 * 6);
-    const warns = h.log.filter((e) => e.type === 'tileWarn').map((e) => (e.type === 'tileWarn' ? e.tile : -1));
-    const fells = h.log.filter((e) => e.type === 'tileFell').map((e) => (e.type === 'tileFell' ? e.tile : -1));
+    const warns = h.log
+      .filter((e) => e.type === 'tileWarn')
+      .map((e) => (e.type === 'tileWarn' ? e.tile : -1));
+    const fells = h.log
+      .filter((e) => e.type === 'tileFell')
+      .map((e) => (e.type === 'tileFell' ? e.tile : -1));
     expect(warns).toEqual([0, 1, 2, 3]);
     expect(fells).toEqual([0, 1, 2, 3]);
     h.world.free();
@@ -494,7 +537,14 @@ describe('collapsingBridge', () => {
 
 describe('propSpawner', () => {
   it('net state round-trips between two worlds', () => {
-    const params = { kind: 'egg', points: [{ x: 0, y: 0, z: 0 }, { x: 4, y: 0, z: 0 }], perPoint: 3 };
+    const params = {
+      kind: 'egg',
+      points: [
+        { x: 0, y: 0, z: 0 },
+        { x: 4, y: 0, z: 0 },
+      ],
+      perPoint: 3,
+    };
     const h1 = harness();
     h1.floor();
     const a = moduleOf('propSpawner').create(inst('propSpawner', params), h1.ctx) as PropSpawnerRuntime;
@@ -534,7 +584,10 @@ describe('propSpawner', () => {
 
   it('floating crown bobs on its pure pose until grabbed', () => {
     const h = harness();
-    const rt = moduleOf('propSpawner').create(inst('propSpawner', { kind: 'crown' }), h.ctx) as PropSpawnerRuntime;
+    const rt = moduleOf('propSpawner').create(
+      inst('propSpawner', { kind: 'crown' }),
+      h.ctx,
+    ) as PropSpawnerRuntime;
     h.run(rt, [], 90);
     expect(rt.mode(0)).toBe(PropMode.Home);
     const pos = { x: 0, y: 0, z: 0 };

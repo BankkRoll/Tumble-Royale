@@ -12,4 +12,5 @@ export * from './islands.ts';
 export * from './balloons.ts';
 export * from './crowd.ts';
 export * from './weather.ts';
+export * from './dressing.ts';
 export * from './environment.ts';

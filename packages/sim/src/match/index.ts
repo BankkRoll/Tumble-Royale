@@ -13,6 +13,14 @@ export {
 } from './match-sim.ts';
 export { obstacleRegistry, type AnyObstacleModule, type MatchDeps } from './deps.ts';
 export { buildStaticGeometry, pieceParts, type StaticGeometry } from './geometry.ts';
+export {
+  emptyBox,
+  growPoint,
+  isBoxEmpty,
+  measureCourse,
+  pieceHalfExtents,
+  type CourseBox,
+} from './course.ts';
 export { chooseVariation, resolveObstacles, spawnSlots, type SpawnSlot } from './layout.ts';
 export {
   ROUND_TIME_SCALE_MAX,

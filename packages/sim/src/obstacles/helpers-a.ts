@@ -531,6 +531,34 @@ export function configureHinge(
   j.setContactsEnabled(false);
 }
 
+/**
+ * Retargets a hinge's self-centring motor (set up by {@link configureHinge}).
+ *
+ * @param target - Rest angle the motor pulls towards (rad).
+ */
+export function setHingeTarget(
+  joint: ImpulseJoint,
+  target: number,
+  stiffness: number,
+  damping: number,
+): void {
+  (joint as RevoluteImpulseJoint).configureMotorPosition(target, stiffness, damping);
+}
+
+/**
+ * Idle sway: the rest angle a hinge drifts around at match time `t`, so an
+ * unloaded plate or plank still rocks gently and reads as "this tips". Pure
+ * in `t`, so server and predicting clients agree.
+ *
+ * @param amplitude - Peak angle (rad); 0 disables the sway.
+ * @param period - Seconds per full rock.
+ * @param phase - Radians, to desynchronise neighbours.
+ */
+export function swayAngle(t: number, amplitude: number, period: number, phase: number): number {
+  if (amplitude <= 0 || period <= 0) return 0;
+  return amplitude * Math.sin((t / period) * Math.PI * 2 + phase);
+}
+
 const hingeScratch = { q: quatIdentity(), v: vec3() };
 
 /**

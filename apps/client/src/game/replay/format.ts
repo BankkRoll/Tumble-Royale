@@ -115,6 +115,11 @@ export interface ReplayHeader {
   seed: number;
   stage: number;
   variationId: string | null;
+  /**
+   * Show mutator of the recorded round. Optional so older recordings still
+   * load; without it a Speed Demons round would replay its obstacles at base speed.
+   */
+  mutatorId?: string | null;
   qualifyTarget: number;
   /** Local player id, or -1 when the round was spectated. */
   localId: number;
@@ -568,6 +573,8 @@ export function validateReplayHeader(raw: unknown): ReplayHeader {
   if (rate <= 0 || rate > 120) fail('rate');
   const variation = o.variationId;
   if (variation !== null && typeof variation !== 'string') fail('variationId');
+  const mutator = o.mutatorId ?? null;
+  if (mutator !== null && typeof mutator !== 'string') fail('mutatorId');
   let outcome: ReplayOutcome | null = null;
   if (o.outcome !== null && o.outcome !== undefined) {
     if (typeof o.outcome !== 'object') fail('outcome');
@@ -594,6 +601,7 @@ export function validateReplayHeader(raw: unknown): ReplayHeader {
     seed: num(o, 'seed', true) >>> 0,
     stage: num(o, 'stage', true),
     variationId: variation as string | null,
+    ...(mutator !== null ? { mutatorId: mutator as string } : {}),
     qualifyTarget: num(o, 'qualifyTarget', true),
     localId: num(o, 'localId', true),
     rate,

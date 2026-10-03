@@ -12,7 +12,7 @@ import type { RoundDefinition } from '@tumble/shared';
 import { getTheme, type Weather } from '@tumble/content/themes';
 import type { ThemeId } from '@tumble/shared';
 import { buildLevelVisuals, type LevelVisuals } from '@tumble/render/level';
-import { createEnvironment, type Environment } from '@tumble/render/environment';
+import { createEnvironment, roundDressing, type Environment } from '@tumble/render/environment';
 import { gradeFromTheme, type GradeParams } from '@tumble/render/post';
 import type { QualityPreset } from '@tumble/render/quality';
 import { TumblerActor, defaultLoadout, createPlaceholderTumbler, SceneState } from '@tumble/render/scenes';
@@ -74,7 +74,7 @@ export class LevelView {
     const b = this.level.bounds;
     this.env = createEnvironment(theme, {
       weather,
-      courseBounds: { min: b.min, max: b.max },
+      ...roundDressing(this.round, { min: b.min, max: b.max }),
       seed: this.round.decorSeed,
       detail: preset.environment,
       lighting: {

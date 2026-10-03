@@ -39,6 +39,7 @@ export function createReplaySim(
       mode: 'predict',
       localPlayerId: -1,
       ...(h.variationId ? { variationId: h.variationId } : {}),
+      ...(h.mutatorId ? { mutatorId: h.mutatorId } : {}),
     },
     deps,
   );

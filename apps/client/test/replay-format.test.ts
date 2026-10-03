@@ -254,6 +254,8 @@ describe('replay file', () => {
     expect(bad({ format: 99 })).toMatch(/format/);
     expect(bad({ outcome: { qualified: ['x'], eliminated: [] } })).toMatch(/outcome/);
     expect(bad({ variationId: 3 })).toMatch(/variationId/);
+    expect(bad({ mutatorId: 3 })).toMatch(/mutatorId/);
+    expect(validateReplayHeader({ ...ok, mutatorId: 'speed-demons' }).mutatorId).toBe('speed-demons');
     expect(() => validateReplayHeader(null)).toThrow(ReplayFileError);
   });
 

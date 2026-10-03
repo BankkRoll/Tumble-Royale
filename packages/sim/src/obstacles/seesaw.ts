@@ -11,6 +11,8 @@ import {
   ObstacleGroups,
   RuntimeBase,
   configureHinge,
+  setHingeTarget,
+  swayAngle,
   dequantize,
   hingeAngle,
   hingeRate,
@@ -45,6 +47,12 @@ export const seesawSchema = z.object({
   mass: z.number().positive().default(20),
   /** Build the static fulcrum wedge. */
   fulcrum: z.boolean().default(true),
+  /** Idle sway: peak rest-angle drift (degrees) so an empty plank still rocks. 0 = still. */
+  swayDeg: z.number().min(0).max(30).default(0),
+  /** Seconds per sway cycle. Scaled by speedScale. */
+  swayPeriod: z.number().positive().default(5),
+  /** Sway phase (radians), to desynchronise neighbouring planks. */
+  swayPhase: z.number().default(0),
 });
 
 /** Validated seesaw params. */
@@ -139,6 +147,11 @@ export class SeesawRuntime extends RuntimeBase implements SeesawView {
   }
 
   update(ctx: ObstacleStepContext): void {
+    const p = this.p;
+    if (p.swayDeg > 0) {
+      const target = swayAngle(ctx.t * this.build.speedScale, p.swayDeg * DEG2RAD, p.swayPeriod, p.swayPhase);
+      setHingeTarget(this.joints[0]!, target, p.stiffness, p.damping);
+    }
     if (ctx.tick % 4 === 0) {
       const a = Math.abs(this.angle);
       const max = this.p.maxTiltDeg * DEG2RAD;

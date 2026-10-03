@@ -70,7 +70,12 @@ export interface UIIntents {
   claimChallenge: { id: string };
   leaderboardQuery: { board: LeaderboardId; scope?: LeaderboardScope };
   /** Open another player's profile card (ranks, results, friends). */
-  inspectPlayer: { playerId: string; name?: string };
+  inspectPlayer: {
+    playerId: string;
+    name?: string;
+    /** Open the full profile even for party members (whose click opens the player card). */
+    direct?: boolean;
+  };
   /** News posts the player has opened (clears unread badges). */
   newsRead: { ids: string[] };
   requestMatchHistory: undefined;

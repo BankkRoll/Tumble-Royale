@@ -12,6 +12,7 @@ import { WatchChoicePanel } from '../screens/overlays/WatchChoice.tsx';
 import { keyLabel } from '../screens/overlays/SettingsSheet.tsx';
 import { formatClock, useDisplayName } from '../components/hooks.ts';
 import { uiEvents } from '../store/events.ts';
+import { social } from '../store/social.ts';
 import { useUI } from '../store/uiStore.ts';
 import { squash } from '../theme/motion.ts';
 import { Icon } from '../components/icons/index.tsx';
@@ -344,7 +345,24 @@ export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null
         <TumblerAvatar colors={spec.player.colors} hat={spec.player.hat} size="2.6em" blink={false} />
         <span className="tr-col" style={{ gap: '0.1em', minWidth: 0 }}>
           <span className="tr-row" style={{ gap: '0.4em', minWidth: 0 }}>
-            <b className="tr-ellipsis">{name(spec.player)}</b>
+            {spec.player.userId && !spec.player.isLocal ? (
+              <button
+                type="button"
+                className="tr-player-link tr-ellipsis"
+                aria-label={`Player card for ${name(spec.player)}`}
+                onClick={() =>
+                  social.getState().openPlayerMenu({
+                    userId: spec.player.userId!,
+                    name: spec.player.name,
+                    key: spec.player.userId!,
+                  })
+                }
+              >
+                <b className="tr-ellipsis">{name(spec.player)}</b>
+              </button>
+            ) : (
+              <b className="tr-ellipsis">{name(spec.player)}</b>
+            )}
             <BotTag isBot={spec.player.isBot} />
           </span>
           <span className="tr-small tr-muted">

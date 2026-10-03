@@ -137,6 +137,8 @@ export interface ShowPlayer {
   isLocal?: boolean;
   /** True for members of the local player's party. */
   isParty?: boolean;
+  /** Account id (online humans): names open the player card. */
+  userId?: string;
   /** Team index in team rounds, else -1/undefined. */
   team?: number;
 }

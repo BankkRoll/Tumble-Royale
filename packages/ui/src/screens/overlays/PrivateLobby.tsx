@@ -19,6 +19,7 @@ import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { CustomLobbyMember, CustomLobbyOptions, CustomLobbyState } from '../../store/types.ts';
+import { PlayerButton } from './PlayerActions.tsx';
 import { RoundPicker } from './RoundPicker.tsx';
 
 /** Settings edits are sent after this much quiet, so a slider drag is one request. */
@@ -248,16 +249,18 @@ function MemberRow({
       className={`tr-lobby-member${m.isSelf ? ' is-self' : ''}${m.away ? ' is-away' : ''}`}
       data-testid="lobby-member"
     >
-      <TumblerAvatar colors={m.colors} size="2.2em" blink={false} noShadow />
-      <span className="tr-grow tr-ellipsis tr-lobby-member-name">
-        {m.isHost ? (
-          <span className="tr-lobby-crown" aria-label="Host" title="Host">
-            <Icon name="crown" size="0.95em" />
-          </span>
-        ) : null}
-        {m.name}
-        {m.isSelf ? <span className="tr-muted"> (you)</span> : null}
-      </span>
+      <PlayerButton player={{ userId: m.id, name: m.name, key: m.id }} disabled={m.isSelf}>
+        <TumblerAvatar colors={m.colors} size="2.2em" blink={false} noShadow />
+        <span className="tr-grow tr-ellipsis tr-lobby-member-name">
+          {m.isHost ? (
+            <span className="tr-lobby-crown" aria-label="Host" title="Host">
+              <Icon name="crown" size="0.95em" />
+            </span>
+          ) : null}
+          {m.name}
+          {m.isSelf ? <span className="tr-muted"> (you)</span> : null}
+        </span>
+      </PlayerButton>
       {armed ? (
         <span className="tr-row tr-lobby-confirm" role="group" aria-label={`Remove ${m.name}?`}>
           <span className="tr-small">Remove?</span>

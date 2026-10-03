@@ -9,7 +9,7 @@ import { SCREEN_MUSIC } from '../store/defaults.ts';
 import { uiEvents } from '../store/events.ts';
 import { useUI } from '../store/uiStore.ts';
 import type { ScreenId } from '../store/types.ts';
-import { CustomLobbyScreen, MatchHistoryScreen } from './CustomLobby.tsx';
+import { MatchHistoryScreen } from './MatchHistory.tsx';
 import { BootScreen, SplashScreen, TutorialPromptScreen, WelcomeScreen } from './FirstLaunch.tsx';
 import { MainMenu } from './menu/MainMenu.tsx';
 import { PlayerWallScreen } from './PlayerWall.tsx';
@@ -76,8 +76,6 @@ export function renderScreen(screen: ScreenId): JSX.Element | null {
       return <PlayerWallScreen />;
     case 'rewards':
       return <RewardsScreen />;
-    case 'customLobby':
-      return <CustomLobbyScreen />;
     case 'matchHistory':
       return <MatchHistoryScreen />;
   }

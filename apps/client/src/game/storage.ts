@@ -54,3 +54,16 @@ export function removeKey(key: StorageKey): void {
     // Storage unavailable: nothing to remove.
   }
 }
+
+/**
+ * Deletes a stored value.
+ *
+ * @param key - Storage key.
+ */
+export function removeJson(key: StorageKey): void {
+  try {
+    window.localStorage.removeItem(PREFIX + key);
+  } catch {
+    // Storage unavailable: there is nothing to remove.
+  }
+}

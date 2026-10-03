@@ -10,6 +10,7 @@
 import { useState, type CSSProperties, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
 import { Bar, ItemArt, TypeBadge } from '../../components/bits.tsx';
+import { confirmSignOut } from '../../components/account.ts';
 import { Button } from '../../components/controls.tsx';
 import { formatNumber, ordinal } from '../../components/hooks.ts';
 import { Icon, type IconName } from '../../components/icons/index.tsx';
@@ -470,7 +471,27 @@ export function HistoryList({ entries }: { entries: MatchHistoryEntry[] }): JSX.
   );
 }
 
-/** Profile tab. */
+function AccountCard({ p }: { p: ProfileData }): JSX.Element {
+  return (
+    <div className="tr-panel tr-profile-account">
+      <div className="tr-col tr-grow" style={{ gap: '0.15em', minWidth: 0 }}>
+        <span className="tr-label">Account</span>
+        <b className="tr-ellipsis">
+          {p.name}
+          <small className="tr-muted">#{p.tag}</small>
+        </b>
+        <small className="tr-muted">
+          {p.isGuest ? 'Guest · saved on this device only' : 'Signed in · saved to your account'}
+        </small>
+      </div>
+      <Button variant="secondary" size="sm" data-testid="profile-sign-out" onClick={confirmSignOut}>
+        Sign out
+      </Button>
+    </div>
+  );
+}
+
+/** Profile tab (self). */
 export function ProfileTab(): JSX.Element {
   const p = useUI((s) => s.profile);
   const history = useUI((s) => s.matchHistory);
@@ -480,6 +501,7 @@ export function ProfileTab(): JSX.Element {
       <div className="tr-profile-left tr-scroll">
         <ProfileCard p={p} self />
         <Showcase p={p} />
+        <AccountCard p={p} />
       </div>
       <div className="tr-profile-right tr-scroll">
         <Stats p={p} />

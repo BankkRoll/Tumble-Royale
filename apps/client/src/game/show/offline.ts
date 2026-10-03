@@ -18,7 +18,6 @@ import {
   type ShowPlaylist,
   type ShowSummary,
 } from '@tumble/sim/show';
-import { ui } from '@tumble/ui';
 import { botLoadout } from '../cosmetics.ts';
 import type { HudInput, HudPlayerStatus } from '../round/hud.ts';
 import { OfflineRoundSource, type RoundSource } from '../round/source.ts';
@@ -97,34 +96,14 @@ export class OfflineShowSession extends ShowSession {
     this.show.director.on((e) => this.onDirector(e));
   }
 
-  /** Fake matchmaking (it is a bot show), match found, then the pre-show platform. */
+  /**
+   * Straight to the pre-show platform. A bot show has nobody to wait for, so a
+   * fake queue (with a Cancel button and a dimmed menu) only read as a glitch.
+   */
   start(): void {
-    const s = ui.getState();
-    const n = this.order.length;
-    s.setQueue({
-      status: 'searching',
-      startedAt: Date.now(),
-      playersFound: 1,
-      playersNeeded: n,
-      etaSec: 4,
-      region: 'Local',
-    });
-    s.setScreen('matchmaking');
-    for (let k = 1; k <= 10; k++) {
-      this.after(0.3 * k, () =>
-        ui.getState().setQueue({
-          playersFound: Math.min(n, Math.round((n * k) / 10)),
-          etaSec: Math.max(0, Math.round((10 - k) * 0.3)),
-        }),
-      );
-    }
-    this.after(3.3, () => {
-      ui.getState().setQueue({ status: 'found', playersFound: n });
-      ui.getState().setScreen('matchFound');
-    });
     const preShow = this.ctx.cfg.autoplay ? 6 : 9;
-    this.after(4.8, () => this.enterPreShow(preShow, this.playlist));
-    this.after(4.8 + preShow, () => {
+    this.enterPreShow(preShow, this.playlist);
+    this.after(preShow, () => {
       this.running = true;
     });
   }

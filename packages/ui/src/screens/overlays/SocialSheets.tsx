@@ -2,7 +2,7 @@
  * Friends / party sheet (invite link, party list, friend search, presence
  * sections) and the notifications drop-down. docs/design/SCREENS.md §5.8, §12.5.
  */
-import { useState, type JSX } from 'react';
+import { useEffect, useState, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
 import { Button } from '../../components/controls.tsx';
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
@@ -10,6 +10,7 @@ import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import { Icon } from '../../components/icons/index.tsx';
 import type { Friend, Presence } from '../../store/types.ts';
+import { openJoinCode } from './PrivateShow.tsx';
 
 const PRESENCE: Record<Presence, { label: string; cls: string }> = {
   online: { label: 'Online', cls: 'is-online' },
@@ -53,10 +54,16 @@ export function FriendsSheet(): JSX.Element {
   const party = useUI((s) => s.party);
   const streamer = useUI((s) => s.settings.gameplay.streamerMode);
   const [reveal, setReveal] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'code' | 'link' | null>(null);
   const [search, setSearch] = useState('');
   const code = party?.code ?? '';
-  const link = `tumble.gg/join/${code}`;
+  const link = `${globalThis.location?.origin ?? ''}/join/${code}`;
+  const copy = (what: 'code' | 'link'): void => {
+    void navigator.clipboard?.writeText(what === 'code' ? code : link);
+    uiEvents.emit('copyInvite', { code });
+    setCopied(what);
+    window.setTimeout(() => setCopied(null), 1600);
+  };
   const self = party?.members.find((m) => m.isSelf);
   const memberIds = new Set(party?.members.map((m) => m.id));
   const groups: [string, Friend[]][] = [
@@ -92,13 +99,14 @@ export function FriendsSheet(): JSX.Element {
           </button>
         </div>
         <div className="tr-sheet-body tr-scroll">
+          <Button variant="sky" block onClick={openJoinCode}>
+            <Icon name="key" size="1em" /> Join a show with a code
+          </Button>
           {code && (
             <div className="tr-invite-box">
-              <span className="tr-label">Invite link</span>
+              <span className="tr-label">Party code</span>
               <div className="tr-row">
-                <code className="tr-invite-link tr-grow tr-ellipsis">
-                  {streamer && !reveal ? 'tumble.gg/join/••••••' : link}
-                </code>
+                <code className="tr-invite-code tr-grow">{streamer && !reveal ? '••••••' : code}</code>
                 {streamer && (
                   <Button size="sm" variant="ghost" onClick={() => setReveal((r) => !r)}>
                     {reveal ? 'Hide' : 'Reveal'}
@@ -106,22 +114,20 @@ export function FriendsSheet(): JSX.Element {
                 )}
                 <Button
                   size="sm"
-                  variant={copied ? 'mint' : 'primary'}
+                  variant={copied === 'code' ? 'mint' : 'primary'}
                   autoFocusNav
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(`https://${link}`);
-                    uiEvents.emit('copyInvite', { code });
-                    setCopied(true);
-                    window.setTimeout(() => setCopied(false), 1600);
-                  }}
+                  onClick={() => copy('code')}
                 >
-                  {copied ? (
-                    'Copied!'
-                  ) : (
-                    <>
-                      <Icon name="copy" size="1em" /> Copy
-                    </>
-                  )}
+                  {copied === 'code' ? 'Copied!' : 'Copy code'}
+                </Button>
+              </div>
+              <span className="tr-label">Invite link</span>
+              <div className="tr-row">
+                <code className="tr-invite-link tr-grow tr-ellipsis">
+                  {streamer && !reveal ? link.replace(code, '••••••') : link.replace(/^https?:\/\//, '')}
+                </code>
+                <Button size="sm" variant={copied === 'link' ? 'mint' : 'sky'} onClick={() => copy('link')}>
+                  {copied === 'link' ? 'Copied!' : 'Copy link'}
                 </Button>
               </div>
             </div>
@@ -218,6 +224,14 @@ export function FriendsSheet(): JSX.Element {
 export function NotificationsPanel(): JSX.Element {
   const items = useUI((s) => s.notifications);
   const icon = { invite: 'party', friendRequest: 'friends', news: 'news', reward: 'gift' } as const;
+  // Opening the panel is reading it; the bell badge clears once the panel closes.
+  useEffect(
+    () => () => {
+      const list = ui.getState().notifications;
+      if (list.some((n) => !n.read)) ui.getState().setNotifications(list.map((n) => ({ ...n, read: true })));
+    },
+    [],
+  );
   return (
     <div className="tr-notif-wrap tr-interactive" data-nav-scope="10">
       <div className="tr-notif-catcher" onClick={() => ui.getState().setOverlay('none')} />

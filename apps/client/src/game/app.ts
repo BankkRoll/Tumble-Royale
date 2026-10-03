@@ -488,7 +488,23 @@ export class GameApp {
     this.director.show(this.menu);
   }
 
+  /**
+   * Forgets this device's Tumbler and session, then reloads into the welcome
+   * screen. A reload drops every live socket, scene and cached account view
+   * in one go instead of unwinding each by hand.
+   */
+  private async signOut(): Promise<void> {
+    await this.api.signOut();
+    this.profile.clear();
+    window.location.reload();
+  }
+
   private goMenu(): void {
+    // Nothing reaches the menu without a named Tumbler.
+    if (!this.profile.exists) {
+      ui.getState().setScreen('welcome', { transition: 'wipe' });
+      return;
+    }
     swapUnderWipe('menu', { transition: 'wipe' }, () => {
       this.showMenuScene();
       this.pushMeta();
@@ -529,7 +545,7 @@ export class GameApp {
     if (!up && s.playMode === 'online') ui.setState({ playMode: 'offline' });
   }
 
-  /** Starts an offline show vs bots right away (Play Offline, Custom Show vs bots). */
+  /** Starts an offline show vs bots right away (Vs Bots, private show with bots). */
   private startOfflineShow(playlist: ShowPlaylist): void {
     if (this.session) return;
     this.menu?.setIdlePlay(false);
@@ -749,6 +765,7 @@ export class GameApp {
       },
     };
     ui.getState().setCustomLobby(state);
+    if (ui.getState().screen === 'menu') ui.getState().setOverlay('privateShow');
   }
 
   private customUnavailable(): boolean {
@@ -756,7 +773,7 @@ export class GameApp {
     ui.getState().showDialog({
       id: 'custom-offline',
       kind: 'error',
-      title: 'Custom shows need the online server',
+      title: 'Invite codes need the online servers',
       body: 'Sign in and make sure matchmaking is reachable.',
       code: 'E-LOBBY-503',
     });
@@ -974,6 +991,10 @@ export class GameApp {
       },
       onAccountAction: ({ action, value }) => {
         const a = online();
+        if (action === 'signOut' || action === 'deleteAccount') {
+          void this.signOut();
+          return;
+        }
         if (action === 'rename' && value) {
           this.profile.rename(value);
           if (a) void a.rename(value);

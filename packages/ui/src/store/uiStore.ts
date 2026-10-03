@@ -497,7 +497,7 @@ function applyScreen(screen: ScreenId, transition: TransitionKind): void {
     inputMode: MENU_INPUT_SCREENS.has(screen) ? 'menu' : 'game',
     // Leaving the round clears in-round transient UI so it never leaks into menus.
     ...(screen !== 'round' ? { eliminatedSheet: false, emoteWheelOpen: false, countdown: null } : {}),
-    overlay: screen === 'menu' || screen === 'customLobby' ? s.overlay : 'none',
+    overlay: screen === 'menu' ? s.overlay : 'none',
   });
 }
 

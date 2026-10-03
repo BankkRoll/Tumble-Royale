@@ -4,7 +4,7 @@
  * - left: info cards only (Season Pass progress → Pass, today's challenges →
  *   Challenges, the latest news post → News reader);
  * - bottom-right: everything that starts a game, in one card — how to play
- *   (Play Online / Offline vs Bots / Custom Show), the playlist, the party
+ *   (Play Online / Vs Bots / Private), the playlist, the party, Join with code
  *   and the big PLAY button. While queueing the same card becomes the
  *   matchmaking status. docs/design/SCREENS.md §6.
  */
@@ -22,6 +22,7 @@ import { ui, useUI } from '../../store/uiStore.ts';
 import type { PassReward, PlayMode, Playlist, SeasonPassData } from '../../store/types.ts';
 import { LobbyEmotes } from './LobbyEmotes.tsx';
 import { openNewsPost } from './NewsTab.tsx';
+import { openJoinCode, openPrivateShow } from '../overlays/PrivateShow.tsx';
 
 /** Tips shown while queueing. */
 export const MATCHMAKING_TIPS: readonly string[] = [
@@ -210,7 +211,7 @@ function NewsCard(): JSX.Element | null {
 const MODES: { id: PlayMode | 'custom'; label: string; sub: string; icon: IconName }[] = [
   { id: 'online', label: 'Play Online', sub: 'Real players + bot fill', icon: 'globe' },
   { id: 'offline', label: 'Vs Bots', sub: 'Offline · always on', icon: 'bot' },
-  { id: 'custom', label: 'Custom Show', sub: 'Codes & house rules', icon: 'key' },
+  { id: 'custom', label: 'Private', sub: 'Your rounds · invite friends', icon: 'key' },
 ];
 
 /** The mode a Play press will use: online only when it's reachable. */
@@ -251,8 +252,7 @@ function ModeTiles({ disabled }: { disabled: boolean }): JSX.Element {
             disabled={disabled}
             onClick={() => {
               if (m.id === 'custom') {
-                playCue('ui.confirm');
-                ui.getState().setScreen('customLobby');
+                openPrivateShow();
                 return;
               }
               if (unavailable) {
@@ -422,6 +422,15 @@ function PartyRow(): JSX.Element {
             ? `${notReady} not ready`
             : `Party of ${members.length} · all ready`}
       </span>
+      <button
+        type="button"
+        className="tr-link-btn tr-join-code-btn"
+        data-nav=""
+        data-testid="join-code"
+        onClick={openJoinCode}
+      >
+        <Icon name="key" size="1em" /> Join with code
+      </button>
     </div>
   );
 }

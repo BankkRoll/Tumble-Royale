@@ -6,8 +6,8 @@
 import { useEffect, useMemo, useState, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
 import { ItemCard } from '../../components/bits.tsx';
-import { Button, Swatch } from '../../components/controls.tsx';
-import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
+import { ColorEditor } from '../../components/ColorEditor.tsx';
+import { Button } from '../../components/controls.tsx';
 import { Icon } from '../../components/icons/index.tsx';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
@@ -17,84 +17,27 @@ import {
   SLOT_NAMES,
   type CosmeticItem,
   type CosmeticSlot,
-  type PatternId,
   type Rarity,
-  type TumblerColors,
 } from '../../store/types.ts';
-import { rarityLabels, tumblerSwatches } from '../../theme/tokens.ts';
+import { rarityLabels } from '../../theme/tokens.ts';
 import { DressingRoom, ItemDetail, isEquipped } from './DressingRoom.tsx';
 
-const PATTERN_IDS: PatternId[] = [
-  'plain',
-  'stripes',
-  'dots',
-  'checker',
-  'zigzag',
-  'stars',
-  'gradient',
-  'galaxy',
-  'camo',
-];
+/** Pattern lives in the Skin editor, so it gets no chip of its own. */
+const LOCKER_SLOTS = COSMETIC_SLOTS.filter((s) => s !== 'pattern');
 
-function ColorEditor({ colors, patternOnly }: { colors: TumblerColors; patternOnly: boolean }): JSX.Element {
-  const set = (patch: Partial<TumblerColors>): void =>
-    uiEvents.emit('customizeColors', { colors: { ...colors, ...patch } });
-  const rows: { key: 'primary' | 'secondary' | 'tertiary'; label: string }[] = [
-    { key: 'primary', label: 'Main colour' },
-    { key: 'secondary', label: 'Pattern colour' },
-    { key: 'tertiary', label: 'Face plate' },
-  ];
-  return (
-    <div className="tr-col tr-color-editor" style={{ gap: '1em' }}>
-      {!patternOnly &&
-        rows.map((r) => (
-          <div key={r.key} className="tr-col" style={{ gap: '0.4em' }}>
-            <span className="tr-label">{r.label}</span>
-            <div className="tr-swatch-grid tr-swatch-grid--wide">
-              {(r.key === 'tertiary'
-                ? ['#fff7ea', '#ffffff', '#ffe8a3', '#d8f7ff', '#ffd6f2', '#2b1a5e']
-                : tumblerSwatches
-              ).map((c) => (
-                <Swatch
-                  key={c}
-                  color={c}
-                  selected={(colors[r.key] ?? '#fff7ea') === c}
-                  onSelect={() => set({ [r.key]: c })}
-                />
-              ))}
-            </div>
-          </div>
-        ))}
-      <div className="tr-col" style={{ gap: '0.4em' }}>
-        <span className="tr-label">Pattern</span>
-        <div className="tr-pattern-grid">
-          {PATTERN_IDS.map((p) => (
-            <button
-              key={p}
-              type="button"
-              className={`tr-pattern-tile${colors.pattern === p ? ' is-on' : ''}`}
-              aria-pressed={colors.pattern === p}
-              data-nav=""
-              onClick={() => set({ pattern: p })}
-            >
-              <TumblerAvatar colors={{ ...colors, pattern: p }} size="3em" blink={false} noShadow />
-              <small>{p}</small>
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
+/** Deep links to the pattern slot open the Skin editor, which includes it. */
+function lockerSlot(slot: CosmeticSlot | null): CosmeticSlot {
+  return !slot || slot === 'pattern' ? 'colors' : slot;
 }
 
 /** Locker tab. */
 export function LockerTab(): JSX.Element {
   const inv = useUI((s) => s.inventory);
   const deepSlot = useUI((s) => s.lockerSlot);
-  const [slot, setSlot] = useState<CosmeticSlot>(() => deepSlot ?? 'headwear');
+  const [slot, setSlot] = useState<CosmeticSlot>(() => lockerSlot(deepSlot));
   useEffect(() => {
     if (!deepSlot) return;
-    setSlot(deepSlot);
+    setSlot(lockerSlot(deepSlot));
     ui.setState({ lockerSlot: null });
   }, [deepSlot]);
   const [rarity, setRarity] = useState<Rarity | 'all'>('all');
@@ -131,7 +74,7 @@ export function LockerTab(): JSX.Element {
     <DressingRoom className="tr-locker" tryingOn={tryingOn} onReset={reset}>
       <div className="tr-panel tr-locker-shelf">
         <div className="tr-slot-chips tr-scroll-x" role="tablist" aria-label="Slots">
-          {COSMETIC_SLOTS.map((s) => (
+          {LOCKER_SLOTS.map((s) => (
             <button
               key={s}
               type="button"
@@ -146,12 +89,12 @@ export function LockerTab(): JSX.Element {
                 uiEvents.emit('tryOn', { slot: s, itemId: null });
               }}
             >
-              {SLOT_NAMES[s]}
+              {s === 'colors' ? 'Skin' : SLOT_NAMES[s]}
             </button>
           ))}
         </div>
         <div className="tr-panel-head">
-          <h2 className="tr-title tr-h3 tr-grow">{SLOT_NAMES[slot]}</h2>
+          <h2 className="tr-title tr-h3 tr-grow">{slot === 'colors' ? 'Skin' : SLOT_NAMES[slot]}</h2>
           {inv && (
             <div className="tr-row tr-loadouts" aria-label="Loadouts">
               {inv.loadouts.map((l, i) => (
@@ -176,7 +119,10 @@ export function LockerTab(): JSX.Element {
           </Button>
         </div>
         {editor && loadout ? (
-          <ColorEditor colors={loadout.colors} patternOnly={slot === 'pattern'} />
+          <ColorEditor
+            colors={loadout.colors}
+            onChange={(colors) => uiEvents.emit('customizeColors', { colors })}
+          />
         ) : (
           <>
             <div className="tr-row tr-wrap tr-locker-filters">

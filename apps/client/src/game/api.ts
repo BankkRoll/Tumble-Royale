@@ -9,7 +9,7 @@
  *   API's `{ error, message }` as {@link ApiError};
  * - typed endpoint helpers mirroring `apps/api/README.md`.
  */
-import { loadJson, saveJson } from './storage.ts';
+import { loadJson, removeJson, saveJson } from './storage.ts';
 
 /** Tokens returned by `/auth/guest` and `/auth/refresh`. */
 interface AuthTokens {
@@ -344,6 +344,26 @@ export class ApiClient {
     if (!this.online || !this.tokens) return false;
     if (await this.refresh()) return true;
     return this.signInGuest(displayName);
+  }
+
+  /**
+   * Revokes the session on the server (best effort) and forgets every token,
+   * including the device token, so the next launch starts a new guest.
+   */
+  async signOut(): Promise<void> {
+    const tokens = this.tokens;
+    this.tokens = null;
+    removeJson('auth');
+    if (!tokens || !this.online) return;
+    await fetchJson(
+      `${this.baseUrl}/auth/logout`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken: tokens.refreshToken }),
+      },
+      REQUEST_TIMEOUT_MS,
+    );
   }
 
   /** Rotates the refresh token; concurrent callers share one rotation. */

@@ -57,7 +57,7 @@ export function resolvePlaylist(requested: string | null, firstShow: boolean): S
 }
 
 /**
- * An offline Custom Show: the host's picked rounds (played in that pool, the
+ * An offline private show: the host's picked rounds (played in that pool, the
  * last one a final when one was picked), bots filling every other seat.
  *
  * @param options - Custom lobby options from the UI.
@@ -69,7 +69,7 @@ export function customPlaylist(options: CustomLobbyOptions): ShowPlaylist {
   return ShowPlaylistSchema.parse({
     ...base,
     id: 'custom-offline',
-    name: 'Custom Show',
+    name: 'Private Show',
     description: 'Your rounds, your rules.',
     maxPlayers: Math.max(2, Math.min(60, options.maxPlayers)),
     minRounds: Math.min(base.minRounds, n),

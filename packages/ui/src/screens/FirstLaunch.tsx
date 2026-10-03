@@ -2,15 +2,16 @@
  * First-launch screens: boot loader, click-to-start splash, welcome (name +
  * colour), tutorial prompt. docs/design/SCREENS.md §3.
  */
-import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
+import { useEffect, useRef, useState, type JSX } from 'react';
 import { playCue } from '../audio-cues.ts';
 import { Bar, Logo, Panel } from '../components/bits.tsx';
-import { Button, Swatch } from '../components/controls.tsx';
+import { ColorEditor } from '../components/ColorEditor.tsx';
+import { Button } from '../components/controls.tsx';
 import { TumblerAvatar } from '../components/TumblerAvatar.tsx';
 import { randomTumblerName, validateDisplayName } from '../names.ts';
 import { uiEvents } from '../store/events.ts';
 import { useUI } from '../store/uiStore.ts';
-import type { PatternId, TumblerColors } from '../store/types.ts';
+import type { TumblerColors } from '../store/types.ts';
 import { shakeNo, squash } from '../theme/motion.ts';
 import { tumblerSwatches } from '../theme/tokens.ts';
 import { Icon } from '../components/icons/index.tsx';
@@ -134,40 +135,27 @@ export function SplashScreen(): JSX.Element {
   );
 }
 
-const PATTERNS: { id: PatternId; label: string }[] = [
-  { id: 'plain', label: 'Plain' },
-  { id: 'stripes', label: 'Stripes' },
-  { id: 'dots', label: 'Dots' },
-  { id: 'checker', label: 'Checker' },
-  { id: 'stars', label: 'Stars' },
-];
-
-/** Guest name + quick colour. */
+/** Required guest name plus the full skin editor. */
 export function WelcomeScreen(): JSX.Element {
   const profile = useUI((s) => s.profile);
-  const placeholder = useMemo(() => randomTumblerName(), []);
   const [name, setName] = useState(profile?.isGuest === false ? profile.name : '');
-  const [primary, setPrimary] = useState(profile?.colors.primary ?? tumblerSwatches[0] ?? '#ff4f9a');
-  const [pattern, setPattern] = useState<PatternId>(profile?.colors.pattern ?? 'dots');
+  const [colors, setColors] = useState<TumblerColors>(
+    () =>
+      profile?.colors ?? { primary: tumblerSwatches[5] ?? '#3ec7e6', secondary: '#ffffff', pattern: 'plain' },
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const formRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
-  const colors: TumblerColors = {
-    primary,
-    secondary: primary === '#ffffff' ? '#ff4f9a' : '#ffffff',
-    pattern,
-  };
+  const trimmed = name.trim();
 
   useEffect(() => {
-    uiEvents.emit('previewColors', { colors, pattern });
+    uiEvents.emit('previewColors', { colors, pattern: colors.pattern });
     if (previewRef.current) squash(previewRef.current, 1);
-    // colors is derived from these two.
-  }, [primary, pattern]);
+  }, [colors]);
 
   const submit = (): void => {
-    const finalName = name.trim() || placeholder;
-    const err = validateDisplayName(finalName);
+    const err = trimmed ? validateDisplayName(trimmed) : 'Pick a name first — or roll the dice for one.';
     if (err) {
       setError(err);
       playCue('ui.error');
@@ -176,7 +164,7 @@ export function WelcomeScreen(): JSX.Element {
     }
     setBusy(true);
     playCue('ui.confirm');
-    uiEvents.emit('welcomeDone', { name: finalName, colors });
+    uiEvents.emit('welcomeDone', { name: trimmed, colors });
   };
 
   return (
@@ -187,10 +175,11 @@ export function WelcomeScreen(): JSX.Element {
         <div className="tr-welcome-avatar tr-loop">
           <TumblerAvatar colors={colors} expression="grin" size="11em" />
         </div>
+        {trimmed && <div className="tr-welcome-name">{trimmed}</div>}
       </div>
       <div className="tr-welcome-form" data-nav-scope="1">
-        <Panel enter="right" tilt={1} className="tr-col" style={{ gap: '1em' }}>
-          <div ref={formRef} className="tr-col" style={{ gap: '1em' }}>
+        <Panel enter="right" tilt={1} className="tr-welcome-panel">
+          <div ref={formRef} className="tr-welcome-inner">
             <h1 className="tr-title tr-h2">Who's tumbling?</h1>
             <label className="tr-col" style={{ gap: '0.35em' }}>
               <span className="tr-label">Your name</span>
@@ -198,10 +187,11 @@ export function WelcomeScreen(): JSX.Element {
                 <input
                   className="tr-input"
                   maxLength={16}
-                  placeholder={placeholder}
+                  placeholder="Type a name"
                   value={name}
                   data-nav=""
                   data-autofocus=""
+                  data-testid="welcome-name"
                   onChange={(e) => {
                     setName(e.target.value);
                     setError(null);
@@ -210,53 +200,35 @@ export function WelcomeScreen(): JSX.Element {
                     if (e.key === 'Enter') submit();
                   }}
                   aria-invalid={error !== null}
+                  aria-required
                 />
                 <Button
                   variant="secondary"
                   aria-label="Random name"
                   icon={<Icon name="dice" size="1.4em" />}
-                  onClick={() => setName(randomTumblerName())}
+                  onClick={() => {
+                    setName(randomTumblerName());
+                    setError(null);
+                  }}
                 />
               </span>
               {error && <span className="tr-field-error">{error}</span>}
             </label>
-            <div className="tr-col" style={{ gap: '0.5em' }}>
-              <span className="tr-label">Pick your colour</span>
-              <div className="tr-swatch-grid">
-                {tumblerSwatches.slice(0, 12).map((c) => (
-                  <Swatch key={c} color={c} selected={c === primary} onSelect={() => setPrimary(c)} />
-                ))}
-              </div>
+            <div className="tr-welcome-editor">
+              <ColorEditor colors={colors} onChange={setColors} tileSize="2.4em" />
             </div>
-            <div className="tr-col" style={{ gap: '0.5em' }}>
-              <span className="tr-label">Pattern</span>
-              <div className="tr-row tr-wrap">
-                {PATTERNS.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    className={`tr-pattern-tile${p.id === pattern ? ' is-on' : ''}`}
-                    data-nav=""
-                    aria-pressed={p.id === pattern}
-                    onClick={() => setPattern(p.id)}
-                  >
-                    <TumblerAvatar
-                      colors={{ ...colors, pattern: p.id }}
-                      size="2.2em"
-                      blink={false}
-                      noShadow
-                    />
-                    <small>{p.label}</small>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <Button variant="go" size="lg" block cue={null} disabled={busy} onClick={submit}>
+            <Button
+              variant="go"
+              size="lg"
+              block
+              cue={null}
+              disabled={busy || !trimmed}
+              data-testid="welcome-go"
+              onClick={submit}
+            >
               {busy ? <span className="tr-gumball-spinner tr-gumball-spinner--sm" /> : "Let's go!"}
             </Button>
-            <p className="tr-small tr-muted">
-              You're a guest — link an account later to keep your stuff safe.
-            </p>
+            <p className="tr-small tr-muted">You can change your look any time in the Locker.</p>
           </div>
         </Panel>
       </div>

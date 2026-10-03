@@ -579,7 +579,7 @@ export abstract class ShowSession {
     let wait: number;
     if (rs.index === 0) {
       s.setShowIntro({ showName: this.showName, roundIndex: 0, roundCount: this.roundCount });
-      s.setScreen('showIntro', { transition: 'wipe' });
+      s.setScreen('showIntro', { transition: 'fade' });
       wait = 2.6;
     } else {
       s.setBetweenRounds({
@@ -598,7 +598,7 @@ export abstract class ShowSession {
           roundName: rs.round.name,
           finalists: rs.players.map((p) => this.uiPlayer(p.id)),
         });
-        ui.getState().setScreen('finalHype', { transition: 'wipe' });
+        ui.getState().setScreen('finalHype', { transition: 'fade' });
       });
       wait += 3.6;
     }

@@ -13,7 +13,6 @@ const LOBBY = new Set([
   'matchmaking',
   'welcome',
   'tutorialPrompt',
-  'customLobby',
   'matchHistory',
   'preShow',
   'splash',

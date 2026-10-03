@@ -2206,22 +2206,6 @@
 }
 
 /* -----------------------------------------------------------------------------
- * Custom show
- * -------------------------------------------------------------------------- */
-
-.tr-custom-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6em;
-}
-.tr-custom-actions .tr-btn {
-  flex: 1 1 12em;
-}
-.tr-custom-note {
-  margin: 0;
-}
-
-/* -----------------------------------------------------------------------------
  * Phone / narrow layout
  * -------------------------------------------------------------------------- */
 
@@ -2591,44 +2575,6 @@
   justify-content: center;
 }
 
-/* Custom Show create form: rounds (scrolls) | settings + actions. */
-.tr-custom .tr-custom-form {
-  width: min(64em, 100%);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-.tr-custom-create {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-  gap: 1.2em;
-  min-height: 0;
-}
-.tr-custom-create .tr-custom-rounds {
-  max-height: min(60vh, 34em);
-  align-content: start;
-  padding-right: 0.4em;
-}
-.tr-custom-side {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2em;
-}
-.tr-custom-side .tr-custom-actions {
-  flex-direction: column;
-  margin-top: 0.8em;
-}
-@media (max-width: 760px), (orientation: portrait) {
-  .tr-custom .tr-custom-form {
-    overflow: auto;
-  }
-  .tr-custom-create {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .tr-custom-create .tr-custom-rounds {
-    max-height: 30vh;
-  }
-}
 @media (max-width: 760px), (orientation: portrait) {
   .tr-pr-thumb {
     max-height: 3.6em;
@@ -2639,4 +2585,16 @@
   .tr-pr-name {
     font-size: 0.75em;
   }
+}
+
+.tr-join-code-btn {
+  align-self: flex-start;
+  margin-top: 0.15em;
+}
+
+.tr-profile-account {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  padding: 0.8em 1em;
 }

@@ -10,16 +10,17 @@ import { BIND_ACTION_LABELS, DEFAULT_KEYBINDS } from '../../store/defaults.ts';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { BindAction, Keybinds, SettingsSection } from '../../store/types.ts';
-import { Icon, type IconName } from '../../components/icons/index.tsx';
+import { Icon } from '../../components/icons/index.tsx';
+import { confirmDeleteAccount, confirmSignOut } from '../../components/account.ts';
 import { semanticColors } from '../../theme/tokens.ts';
 
-const SECTIONS: { id: SettingsSection; label: string; icon: IconName }[] = [
-  { id: 'graphics', label: 'Graphics', icon: 'monitor' },
-  { id: 'controls', label: 'Controls', icon: 'gamepad' },
-  { id: 'audio', label: 'Audio', icon: 'speaker' },
-  { id: 'accessibility', label: 'Accessibility', icon: 'access' },
-  { id: 'gameplay', label: 'Gameplay', icon: 'ticket' },
-  { id: 'account', label: 'Account', icon: 'profile' },
+const SECTIONS: { id: SettingsSection; label: string }[] = [
+  { id: 'graphics', label: 'Graphics' },
+  { id: 'controls', label: 'Controls' },
+  { id: 'audio', label: 'Audio' },
+  { id: 'accessibility', label: 'Accessibility' },
+  { id: 'gameplay', label: 'Gameplay' },
+  { id: 'account', label: 'Account' },
 ];
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }): JSX.Element {
@@ -492,31 +493,12 @@ function Section({ id }: { id: SettingsSection }): JSX.Element {
             </div>
           </Row>
           <Row label="Sign out">
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => uiEvents.emit('accountAction', { action: 'signOut' })}
-            >
+            <Button size="sm" variant="secondary" data-testid="sign-out" onClick={confirmSignOut}>
               Sign out
             </Button>
           </Row>
-          <Row label="Delete account" hint="Gone forever. Like a Tumbler in the goo.">
-            <Button
-              size="sm"
-              variant="danger"
-              onClick={() =>
-                ui.getState().showDialog({
-                  id: 'deleteAccount',
-                  kind: 'confirm',
-                  title: 'Delete account?',
-                  body: 'This removes your Tumbler, items and Crowns forever. There is no undo.',
-                  buttons: [
-                    { id: 'cancel', label: 'Keep it', variant: 'secondary', autofocus: true },
-                    { id: 'confirm', label: 'Delete', variant: 'danger' },
-                  ],
-                })
-              }
-            >
+          <Row label="Delete Tumbler" hint="Gone forever. Like a Tumbler in the goo.">
+            <Button size="sm" variant="danger" onClick={confirmDeleteAccount}>
               Delete…
             </Button>
           </Row>
@@ -528,14 +510,6 @@ function Section({ id }: { id: SettingsSection }): JSX.Element {
 /** Settings overlay sheet. */
 export function SettingsSheet(): JSX.Element {
   const [section, setSection] = useState<SettingsSection>('graphics');
-  useEffect(
-    () =>
-      uiEvents.on('dialogResult', ({ dialogId, buttonId }) => {
-        if (dialogId === 'deleteAccount' && buttonId === 'confirm')
-          uiEvents.emit('accountAction', { action: 'deleteAccount' });
-      }),
-    [],
-  );
   return (
     <div
       className="tr-sheet-wrap tr-interactive"
@@ -577,7 +551,7 @@ export function SettingsSheet(): JSX.Element {
                 setSection(sec.id);
               }}
             >
-              <Icon name={sec.icon} size="1.3em" /> <span className="tr-settings-tab-label">{sec.label}</span>
+              <span className="tr-settings-tab-label">{sec.label}</span>
             </button>
           ))}
         </div>

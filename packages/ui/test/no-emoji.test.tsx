@@ -1,13 +1,13 @@
 /**
  * Product rule: no emoji on buttons, tabs or chips. Server-renders every
  * main-menu tab, the wallet popovers, settings/friends/notifications sheets
- * and the custom show screen with representative data, then scans the text
+ * and the private show dialogs with representative data, then scans the text
  * of every button, tab and chip for emoji codepoints.
  */
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { CustomLobbyScreen } from '../src/screens/CustomLobby.tsx';
 import { MainMenu } from '../src/screens/menu/MainMenu.tsx';
+import { JoinCodeDialog, PrivateShowDialog } from '../src/screens/overlays/PrivateShow.tsx';
 import { SettingsSheet } from '../src/screens/overlays/SettingsSheet.tsx';
 import { FriendsSheet, NotificationsPanel } from '../src/screens/overlays/SocialSheets.tsx';
 import { ui } from '../src/store/uiStore.ts';
@@ -229,10 +229,18 @@ describe('no emoji on buttons, tabs or chips', () => {
     expectNoEmoji(renderToStaticMarkup(<MainMenu matchmaking />), 'matchmaking');
   });
 
-  it('sheets and custom show', () => {
+  it('sheets and private show dialogs', () => {
     expectNoEmoji(renderToStaticMarkup(<SettingsSheet />), 'settings');
     expectNoEmoji(renderToStaticMarkup(<FriendsSheet />), 'friends');
     expectNoEmoji(renderToStaticMarkup(<NotificationsPanel />), 'notifications');
-    expectNoEmoji(renderToStaticMarkup(<CustomLobbyScreen />), 'custom');
+    expectNoEmoji(renderToStaticMarkup(<PrivateShowDialog />), 'private show');
+    expectNoEmoji(renderToStaticMarkup(<JoinCodeDialog />), 'join code');
+  });
+
+  it('settings tabs are words only', () => {
+    const tabs =
+      renderToStaticMarkup(<SettingsSheet />).match(/<button[^>]*role="tab"[\s\S]*?<\/button>/g) ?? [];
+    expect(tabs.length).toBe(6);
+    for (const t of tabs) expect(t).not.toContain('<svg');
   });
 });

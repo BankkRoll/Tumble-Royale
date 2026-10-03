@@ -39,6 +39,7 @@ export {
 } from './Results.tsx';
 export { PlayerWall, PlayerWallScreen, wallGrid, type PlayerWallProps } from './PlayerWall.tsx';
 export { RewardsScreen } from './Rewards.tsx';
-export { CustomLobbyScreen, MatchHistoryScreen } from './CustomLobby.tsx';
+export { MatchHistoryScreen } from './MatchHistory.tsx';
+export { JoinCodeDialog, PrivateShowDialog, openJoinCode, openPrivateShow } from './overlays/PrivateShow.tsx';
 export { SettingsSheet, keyLabel } from './overlays/SettingsSheet.tsx';
 export { FriendsSheet, NotificationsPanel } from './overlays/SocialSheets.tsx';

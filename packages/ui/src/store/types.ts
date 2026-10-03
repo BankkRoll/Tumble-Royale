@@ -35,7 +35,6 @@ export type ScreenId =
   | 'winnerCam'
   | 'playerWall'
   | 'rewards'
-  | 'customLobby'
   | 'matchHistory';
 
 /** All screen ids, in flow order. */
@@ -60,7 +59,6 @@ export const SCREEN_IDS: readonly ScreenId[] = [
   'winnerCam',
   'playerWall',
   'rewards',
-  'customLobby',
   'matchHistory',
 ];
 
@@ -81,7 +79,7 @@ export const MENU_TABS: readonly MenuTab[] = [
 ];
 
 /** Side sheets / drop-downs layered over any screen. */
-export type OverlayId = 'none' | 'settings' | 'friends' | 'notifications';
+export type OverlayId = 'none' | 'settings' | 'friends' | 'notifications' | 'privateShow' | 'joinCode';
 
 /** How a screen change is presented. */
 export type TransitionKind = 'none' | 'fade' | 'wipe';

@@ -130,19 +130,18 @@ export const DEFAULT_TRANSITIONS: Record<ScreenId, TransitionKind> = {
   matchmaking: 'none',
   matchFound: 'none',
   preShow: 'wipe',
-  showIntro: 'wipe',
+  showIntro: 'fade',
   roundLoading: 'wipe',
   roundIntro: 'wipe',
   rules: 'fade',
   round: 'fade',
   roundResults: 'wipe',
   betweenRounds: 'fade',
-  finalHype: 'wipe',
+  finalHype: 'fade',
   victory: 'fade',
   winnerCam: 'fade',
   playerWall: 'wipe',
   rewards: 'wipe',
-  customLobby: 'wipe',
   matchHistory: 'fade',
 };
 
@@ -161,7 +160,6 @@ export const MENU_INPUT_SCREENS: ReadonlySet<ScreenId> = new Set<ScreenId>([
   'winnerCam',
   'playerWall',
   'rewards',
-  'customLobby',
   'matchHistory',
 ]);
 
@@ -179,5 +177,4 @@ export const SCREEN_MUSIC: Partial<Record<ScreenId, string>> = {
   winnerCam: 'music.victory',
   playerWall: 'music.wall',
   rewards: 'music.rewards',
-  customLobby: 'music.menu',
 };

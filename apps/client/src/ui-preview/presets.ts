@@ -223,13 +223,17 @@ export const PRESETS: Preset[] = [
   },
   {
     id: 'customLobby',
-    label: 'Custom lobby (create/join)',
+    label: 'Private show (setup)',
     group: 'Menu',
-    apply: () => (s().setCustomLobby(null), s().setScreen('customLobby', { transition: 'none' })),
+    apply: () => {
+      s().setCustomLobby(null);
+      menu('play')();
+      s().setOverlay('privateShow');
+    },
   },
   {
     id: 'customLobbyHost',
-    label: 'Custom lobby (hosting)',
+    label: 'Private show (hosting)',
     group: 'Menu',
     apply: () => {
       s().setCustomLobby({
@@ -247,7 +251,8 @@ export const PRESETS: Preset[] = [
           isPrivate: true,
         },
       });
-      s().setScreen('customLobby', { transition: 'none' });
+      menu('play')();
+      s().setOverlay('privateShow');
     },
   },
 

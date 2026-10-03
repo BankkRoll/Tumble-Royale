@@ -50,7 +50,7 @@ import {
   uiItem,
   uiLoadoutToTumbler,
 } from './cosmetics.ts';
-import { loadJson, saveJson } from './storage.ts';
+import { loadJson, removeJson, saveJson } from './storage.ts';
 
 // -----------------------------------------------------------------------------
 // Persisted shape
@@ -326,6 +326,12 @@ export class ProfileStore {
       premiumPass: false,
     };
     this.save();
+  }
+
+  /** Forgets the saved Tumbler; the welcome screen creates a new one. */
+  clear(): void {
+    this.data = null;
+    removeJson('profile');
   }
 
   /** Renames the Tumbler. */

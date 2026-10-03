@@ -184,10 +184,15 @@ test.describe('main menu button map', () => {
     await expect(page.getByTestId('mode-offline')).toHaveAttribute('aria-checked', 'true');
 
     await page.getByTestId('mode-custom').click();
-    await expect.poll(() => screen(page)).toBe('customLobby');
+    await expect.poll(() => overlay(page)).toBe('privateShow');
     await expect(page.getByTestId('custom-offline')).toBeEnabled();
     await page.keyboard.press('Escape');
-    await expect.poll(() => screen(page)).toBe('menu');
+    await expect.poll(() => overlay(page)).toBe('none');
+
+    await page.getByTestId('join-code').click();
+    await expect.poll(() => overlay(page)).toBe('joinCode');
+    await page.keyboard.press('Escape');
+    await expect.poll(() => overlay(page)).toBe('none');
     await page.waitForTimeout(1500);
 
     await page.getByTestId('play').click();

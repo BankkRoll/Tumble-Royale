@@ -7,6 +7,7 @@ import { useEffect, useRef, type JSX } from 'react';
 import { ConnectionLayer, DialogLayer, ToastLayer } from './components/system.tsx';
 import { Hud } from './hud/Hud.tsx';
 import { SettingsSheet } from './screens/overlays/SettingsSheet.tsx';
+import { JoinCodeDialog, PrivateShowDialog } from './screens/overlays/PrivateShow.tsx';
 import { FriendsSheet, NotificationsPanel } from './screens/overlays/SocialSheets.tsx';
 import { ScreenLayer } from './screens/ScreenLayer.tsx';
 import { useUI } from './store/uiStore.ts';
@@ -24,6 +25,10 @@ function OverlayLayer(): JSX.Element | null {
       return <FriendsSheet />;
     case 'notifications':
       return <NotificationsPanel />;
+    case 'privateShow':
+      return <PrivateShowDialog />;
+    case 'joinCode':
+      return <JoinCodeDialog />;
     default:
       return null;
   }

@@ -151,6 +151,8 @@
 }
 .tr-edit-chip {
   position: absolute;
+  /* The profile id row is pulled up over the banner; keep the chip clickable above it. */
+  z-index: 2;
   top: 0.6em;
   right: 0.6em;
   padding: 0.2em 0.75em 0.25em;

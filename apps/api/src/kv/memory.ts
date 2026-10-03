@@ -134,6 +134,8 @@ export class MemoryKV implements KV {
     };
   }
 
+  async ping(): Promise<void> {}
+
   async close(): Promise<void> {
     this.values.clear();
     this.zsets.clear();

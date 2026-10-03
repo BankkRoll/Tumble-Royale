@@ -126,6 +126,17 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
   const onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (url.pathname !== '/ws') return;
+    // SECURITY: CORS does not apply to WebSocket handshakes; without this any
+    // site could open the gateway with a token it obtained. Origin-less
+    // clients (tools, tests) still need a valid token.
+    const origin = req.headers.origin;
+    const allowed = ctx.config.corsOrigins;
+    const norm = (o: string): string => o.replace(/\/$/, '');
+    if (origin && allowed !== true && !allowed.some((a) => norm(a) === norm(origin))) {
+      socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+      socket.destroy();
+      return;
+    }
     void (async () => {
       const token = url.searchParams.get('token') ?? '';
       const claims = await verifyAccessToken(

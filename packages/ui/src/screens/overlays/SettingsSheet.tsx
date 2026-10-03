@@ -518,9 +518,24 @@ function closeSettings(): void {
   ui.getState().setOverlay(ui.getState().screen === 'round' ? 'inGameMenu' : 'none');
 }
 
+let requestedSection: SettingsSection | null = null;
+
+/**
+ * Opens Settings on the Account section, where guests link a sign-in method
+ * (e.g. when Gem checkout answers `account_required`).
+ */
+export function openAccountSettings(): void {
+  requestedSection = 'account';
+  ui.getState().setOverlay('settings');
+}
+
 /** Settings overlay sheet. */
 export function SettingsSheet(): JSX.Element {
-  const [section, setSection] = useState<SettingsSection>('graphics');
+  const [section, setSection] = useState<SettingsSection>(() => requestedSection ?? 'graphics');
+  // Cleared after mount, not in the initializer, which StrictMode runs twice.
+  useEffect(() => {
+    requestedSection = null;
+  }, []);
   return (
     <div
       className="tr-sheet-wrap tr-interactive"

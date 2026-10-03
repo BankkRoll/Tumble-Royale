@@ -70,6 +70,7 @@ describe('live news', () => {
     expect(res.statusCode).toBe(201);
     const after = (await api.req('GET', '/news')).json().posts as { id: string }[];
     expect(after.some((p) => p.id === target.id)).toBe(false);
+    expect((await api.req('GET', '/news')).json().withdrawn).toEqual([target.id]);
     expect(after).toHaveLength(before.length - 1);
   });
 });

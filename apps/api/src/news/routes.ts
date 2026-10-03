@@ -33,16 +33,18 @@ export type LiveNewsPostInput = z.input<typeof LiveNewsPostSchema>;
 
 /**
  * The merged feed, newest first: stored posts replace bundled posts with the
- * same id, hidden stored posts remove them.
+ * same id, hidden stored posts remove them (and are listed in `withdrawn`).
  *
  * @param ctx - API context.
  */
-export async function newsFeed(ctx: AppContext): Promise<NewsPost[]> {
+export async function newsFeed(ctx: AppContext): Promise<{ posts: NewsPost[]; withdrawn: string[] }> {
   const rows = await ctx.db.select().from(newsPosts).orderBy(desc(newsPosts.publishedAt)).limit(200);
   const byId = new Map<string, NewsPost>(NEWS_POSTS.map((p) => [p.id, p]));
+  const withdrawn: string[] = [];
   for (const r of rows) {
     if (r.hidden) {
       byId.delete(r.id);
+      withdrawn.push(r.id);
       continue;
     }
     const post = LiveNewsPostSchema.safeParse(r.data);
@@ -51,7 +53,7 @@ export async function newsFeed(ctx: AppContext): Promise<NewsPost[]> {
       byId.set(r.id, rest);
     }
   }
-  return [...byId.values()].sort((a, b) => b.date.localeCompare(a.date));
+  return { posts: [...byId.values()].sort((a, b) => b.date.localeCompare(a.date)), withdrawn };
 }
 
 /**
@@ -64,7 +66,8 @@ export function registerNewsRoutes(app: FastifyInstance, ctx: AppContext): void 
   app.get('/news', async (_req, reply) => {
     // Short shared cache: news changes rarely and every menu open asks for it.
     reply.header('cache-control', 'public, max-age=60');
-    return { posts: await newsFeed(ctx) };
+    // `withdrawn` lets clients drop their bundled copy of a post the server retracted.
+    return newsFeed(ctx);
   });
 
   // SECURITY: publishing reaches every player's menu, so it is admin-only.

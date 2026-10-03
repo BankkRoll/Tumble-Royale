@@ -109,6 +109,12 @@ export const profiles = pgTable(
     crownShards: integer('crown_shards').notNull().default(0),
     gumballs: integer('gumballs').notNull().default(0),
     gems: integer('gems').notNull().default(0),
+    /**
+     * Gems owed after a refund or chargeback revoked more than the balance
+     * held (ledger currency `gem_debt`). While positive, Gem checkout is
+     * refused and Gem credits repay it before reaching `gems`.
+     */
+    gemDebt: integer('gem_debt').notNull().default(0),
     activeLoadout: integer('active_loadout').notNull().default(0),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
@@ -242,6 +248,12 @@ export const purchases = pgTable(
     status: text('status').notNull(),
     provider: text('provider'),
     providerRef: text('provider_ref'),
+    /**
+     * Stripe PaymentIntent id, recorded when the checkout completes. Refund and
+     * dispute webhooks only name the charge's PaymentIntent, so this is how
+     * they find the purchase.
+     */
+    paymentIntent: text('payment_intent'),
     /** Response returned to the client, replayed verbatim on a retried request. */
     response: jsonb('response'),
     createdAt: createdAt(),
@@ -250,7 +262,47 @@ export const purchases = pgTable(
   (t) => [
     uniqueIndex('purchases_user_key_uq').on(t.userId, t.idempotencyKey),
     uniqueIndex('purchases_provider_ref_uq').on(t.providerRef),
+    uniqueIndex('purchases_payment_intent_uq').on(t.paymentIntent),
   ],
+);
+
+/**
+ * Stripe webhook event ids already applied. Inserted in the same transaction
+ * as the event's effects, so a redelivered event is a no-op and a failed one
+ * is retried.
+ */
+export const stripeEvents = pgTable('stripe_events', {
+  id: text('id').primaryKey(),
+  type: text('type').notNull(),
+  createdAt: createdAt(),
+});
+
+/**
+ * What Stripe has told us about refunds and disputes on one PaymentIntent, and
+ * how many Gems that has already taken back. Rows may exist before the
+ * purchase is known (refund delivered before the checkout completion), and
+ * are reconciled once it is.
+ */
+export const paymentReversals = pgTable(
+  'payment_reversals',
+  {
+    paymentIntent: text('payment_intent').primaryKey(),
+    chargeId: text('charge_id'),
+    /** Charged amount in minor units, as Stripe reports it. */
+    amountCents: integer('amount_cents'),
+    /** Highest cumulative refunded amount seen (Stripe's `amount_refunded`). */
+    amountRefundedCents: integer('amount_refunded_cents').notNull().default(0),
+    disputeId: text('dispute_id'),
+    /** `open`, `won` or `lost`; null when never disputed. */
+    disputeStatus: text('dispute_status'),
+    /** Gems currently taken back for this payment (balance plus debt). */
+    gemsReversed: integer('gems_reversed').notNull().default(0),
+    /** Ledger adjustments made so far; numbers the next adjustment's ref. */
+    adjustments: integer('adjustments').notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('payment_reversals_charge_idx').on(t.chargeId)],
 );
 
 /** Persisted daily store rotations (deterministic; stored for audit and support). */

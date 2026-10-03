@@ -103,6 +103,18 @@ grant nothing.
 
 ## Design notes
 
+- **Bans survive deletion** (`src/moderation/ban-evasion.ts`): deleting an
+  account stores each active ban in `ban_evasion_marks`, once per identifier
+  (OAuth provider + subject, lowercased email, guest device secret) as
+  `HMAC-SHA256(INTERNAL_HMAC_SECRET, …)` — no raw values, no user id. Every
+  guest, OAuth and magic-link sign-in re-applies a matching ban to the new
+  account with the original scope, reason and expiry (so an `all` ban answers
+  403 `banned`, a chat ban still lets the player in). Lifting a re-applied ban
+  revokes its marks. Rotating `INTERNAL_HMAC_SECRET` orphans existing marks.
+- **Ban cache**: active bans are cached per instance for 15 s; every ban
+  change publishes the user id on the KV channel `bans:invalidate`, which
+  every instance subscribes to, so a ban or unban takes effect cluster-wide at
+  once.
 - **Ledger**: `currencies_ledger` is append-only (DB trigger); `profiles`
   caches balances, updated in the same transaction under a row lock;
   `(user, currency, reason, ref)` is unique so keyed grants apply once.

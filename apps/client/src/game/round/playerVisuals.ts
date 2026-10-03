@@ -9,7 +9,7 @@
 import { Vector3, type Camera, type Object3D } from 'three/webgpu';
 import type { GameAudio } from '@tumble/audio';
 import { getCosmetic } from '@tumble/content/cosmetics';
-import { NameplateLayer, type Nameplate } from '@tumble/render/character';
+import { NameplateLayer, Tumbler, TumblerCrowd, type Nameplate } from '@tumble/render/character';
 import type { QualityPreset } from '@tumble/render/quality';
 import type { CreateTumblerVisual, TumblerAnimInput, TumblerLoadout, TumblerVisual } from '@tumble/render/scenes';
 import type { TrailHandle, TrailStyle, VfxSystem } from '@tumble/render/vfx';
@@ -25,15 +25,37 @@ const SHADOW_RADIUS = 0.55;
 const MAX_PLATES = 8;
 /** Names closer than this would fill the screen. */
 const PLATE_MIN_DIST = 5;
+/** Moving closer must cross this fraction of a LOD distance, so Tumblers near a boundary don't flip every frame. */
+const LOD_HYSTERESIS = 0.9;
 
 /**
  * Keeps one Tumbler visual per show participant alive for the whole show, so
- * rounds reuse them instead of rebuilding 40 rigs behind every wipe.
+ * rounds reuse them instead of rebuilding 40 rigs behind every wipe. Real
+ * Tumblers are drawn through one shared {@link TumblerCrowd} (a few draw calls
+ * for the whole field instead of 2–3 per Tumbler).
  */
 export class TumblerPool {
   private readonly visuals = new Map<number, TumblerVisual>();
+  private crowd: TumblerCrowd | null = null;
 
   constructor(private readonly factory: CreateTumblerVisual) {}
+
+  /**
+   * Routes a round's Tumblers through the crowd renderer and drops everyone
+   * else from it, so eliminated players cost nothing.
+   *
+   * @param active - Visuals on screen this round.
+   * @returns The crowd's root (add it to the round scene), or null when no visual can be batched.
+   */
+  batch(active: readonly TumblerVisual[]): TumblerCrowd | null {
+    const tumblers = active.filter((v): v is Tumbler => v instanceof Tumbler);
+    if (tumblers.length === 0) return null;
+    this.crowd ??= new TumblerCrowd();
+    const keep = new Set(tumblers);
+    for (const v of this.visuals.values()) if (v instanceof Tumbler && !keep.has(v) && this.crowd.has(v)) this.crowd.remove(v);
+    for (const t of tumblers) this.crowd.add(t);
+    return this.crowd;
+  }
 
   /**
    * Gets (or builds) the visual for a player.
@@ -59,6 +81,8 @@ export class TumblerPool {
   dispose(): void {
     for (const v of this.visuals.values()) v.dispose();
     this.visuals.clear();
+    this.crowd?.dispose();
+    this.crowd = null;
   }
 }
 
@@ -116,6 +140,7 @@ export class PlayerVisuals {
   private lod2: number;
   private showPlates: boolean;
   private readonly dists = new Float32Array(64);
+  private readonly crowd: TumblerCrowd | null;
 
   constructor(
     private readonly source: RoundSource,
@@ -128,6 +153,7 @@ export class PlayerVisuals {
     this.lod2 = opts.preset.lodDistances[1];
     this.showPlates = opts.nameplates;
     let trails = opts.preset.vfx.trails;
+    const visuals: TumblerVisual[] = [];
     const order = [...source.players].sort((a, b) => (a.id === source.localId ? -1 : b.id === source.localId ? 1 : 0));
     for (const info of order) {
       const loadout = opts.loadouts.get(info.id);
@@ -136,6 +162,7 @@ export class PlayerVisuals {
       visual.setLoadout(loadout);
       visual.setLod(info.id === source.localId ? 0 : 1);
       opts.parent.add(visual.object);
+      visuals.push(visual);
       const isLocal = info.id === source.localId;
       const plate = isLocal ? null : this.plates.create(info.name, { style: loadout.nameplate, teamColor: info.team >= 0 ? (TEAM_COLORS[info.team % TEAM_COLORS.length] ?? null) : null });
       if (plate) plate.target = visual.object;
@@ -168,6 +195,8 @@ export class PlayerVisuals {
       this.entries.push(e);
       this.byId.set(info.id, e);
     }
+    this.crowd = opts.pool.batch(visuals);
+    if (this.crowd) opts.parent.add(this.crowd.object);
   }
 
   /** Applies quality changes (LOD distances). */
@@ -274,7 +303,9 @@ export class PlayerVisuals {
 
       const dist = this.tmp.copy(e.centre).distanceTo(this.camPos);
       e.dist = dist;
-      const lod: 0 | 1 | 2 = e.info.id === this.source.localId ? 0 : dist > this.lod2 ? 2 : dist > this.lod1 ? 1 : 0;
+      const far: 0 | 1 | 2 = dist > this.lod2 ? 2 : dist > this.lod1 ? 1 : 0;
+      const near: 0 | 1 | 2 = dist > this.lod2 * LOD_HYSTERESIS ? 2 : dist > this.lod1 * LOD_HYSTERESIS ? 1 : 0;
+      const lod: 0 | 1 | 2 = e.info.id === this.source.localId ? 0 : far > e.lod ? far : near < e.lod ? near : e.lod;
       if (lod !== e.lod) {
         e.lod = lod;
         e.visual.setLod(lod);
@@ -341,5 +372,6 @@ export class PlayerVisuals {
     this.entries.length = 0;
     this.byId.clear();
     this.plates.dispose();
+    this.crowd?.object.removeFromParent();
   }
 }

@@ -10,6 +10,7 @@
 import { PerspectiveCamera, Quaternion, Scene, Vector3 } from 'three/webgpu';
 import type { GameAudio, LoopEmitter } from '@tumble/audio';
 import { getTheme, type ThemeDefinition, type Weather } from '@tumble/content/themes';
+import { MeshBatcher } from '@tumble/render/batching';
 import { RagdollManager, RagdollWorld } from '@tumble/render/character';
 import { ThirdPersonCamera, type CameraFollowTarget, type CameraVec3 } from '@tumble/render/camera';
 import { createEnvironment, type Environment } from '@tumble/render/environment';
@@ -73,6 +74,8 @@ export class RoundView implements GameView {
   private readonly level: LevelVisuals;
   private readonly env: Environment;
   private readonly obstacles: { visual: ObstacleVisual; runtime: ObstacleRuntime }[] = [];
+  /** Instances render-identical obstacle parts across the whole course (hundreds of draws → dozens). */
+  private readonly batcher = new MeshBatcher();
   private readonly loops: LoopEmitter[] = [];
   private readonly ragdollMgr: RagdollManager | null = null;
   private readonly ragdollWorld: RagdollWorld | null = null;
@@ -138,6 +141,10 @@ export class RoundView implements GameView {
         this.loops.push(loop);
       }
     }
+
+    for (const o of this.obstacles) this.batcher.add(o.visual.object);
+    this.batcher.build();
+    this.scene.add(this.batcher.object);
 
     this.players = new PlayerVisuals(source, {
       parent: this.scene,
@@ -406,6 +413,7 @@ export class RoundView implements GameView {
     this.ragdollMgr?.uninstall();
     this.ragdollWorld?.dispose();
     this.players.dispose();
+    this.batcher.dispose();
     for (const o of this.obstacles) o.visual.dispose();
     this.obstacles.length = 0;
     this.vfx.dispose();

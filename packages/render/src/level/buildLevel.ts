@@ -1,7 +1,7 @@
 import {
+  type BufferGeometry,
   AdditiveBlending,
   BufferAttribute,
-  BufferGeometry,
   Color,
   DoubleSide,
   Group,
@@ -48,7 +48,7 @@ import { quaternionFromRotation } from './toolkit.ts';
 export interface LevelBuildOptions {
   /** Tessellation level (quality tier). Default 1. */
   detail?: GeometryDetail;
-  /** Spatial merge cell size in metres. Default 48. */
+  /** Spatial merge cell size in metres. Default 256. */
   cellSize?: number;
   /** Whether level meshes cast shadows. Default true. */
   castShadows?: boolean;
@@ -181,7 +181,8 @@ function createZoneMarker(trigger: TriggerDef, theme: ThemeDefinition, time: Lev
  */
 export function buildLevelVisuals(round: RoundDefinition, theme: ThemeDefinition, opts: LevelBuildOptions = {}): LevelVisuals {
   const detail = opts.detail ?? 1;
-  const cellSize = opts.cellSize ?? 48;
+  // PERF: draw calls cost far more CPU than the vertices big cells add (a whole course is < 200k tris), so cells only split very large maps.
+  const cellSize = opts.cellSize ?? 256;
   const castShadows = opts.castShadows ?? true;
   const root = new Group();
   root.name = `level-${round.id}`;

@@ -93,7 +93,8 @@ export const cannonVisual: ObstacleVisualFactory = (instance, ctx) => {
 
   // Balls: instanced pool with a shared-matrix outline twin.
   const ballGeo = d.track(new SphereGeometry(p.ballRadius, 28, 18));
-  const ballMat = stripedToon(d, PAL.orange, PAL.cream, 1.6 / p.ballRadius, 'y', { rimStrength: 0.6 });
+  // Balls are one InstancedMesh: 'local' keeps the stripes in the cannon's space, as they always were.
+  const ballMat = stripedToon(d, PAL.orange, PAL.cream, 1.6 / p.ballRadius, 'y', { rimStrength: 0.6 }, 'local');
   const balls = new InstancedMesh(ballGeo, ballMat, pool);
   balls.castShadow = true;
   balls.frustumCulled = false;

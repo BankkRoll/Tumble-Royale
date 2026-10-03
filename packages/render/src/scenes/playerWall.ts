@@ -85,6 +85,22 @@ export interface PlayerWallCallbacks {
   onDone?(): void;
 }
 
+/**
+ * One beat of an externally scheduled recap (see {@link PlayerWallScene.beat}).
+ * The UI's `playerWallTimeline` maps onto these one to one, so the 3D wall
+ * lands every banner, drop and crown exactly when the overlay does.
+ */
+export type PlayerWallBeat =
+  | { type: 'intro' }
+  | { type: 'round'; roundIndex: number }
+  | { type: 'flash'; roundIndex: number; ids: readonly string[] }
+  | { type: 'drop'; roundIndex: number; id: string; order: number }
+  | { type: 'roundEnd'; roundIndex: number }
+  | { type: 'winnerFocus' }
+  | { type: 'crown' }
+  | { type: 'reveal' }
+  | { type: 'end' };
+
 /** Options for {@link createPlayerWallScene}. */
 export interface PlayerWallOptions extends SceneCommonOptions {
   /** Cubby capacity; the grid is sized for it. Default 40 (8 × 5). */
@@ -104,6 +120,13 @@ export interface PlayerWallScene extends MenuScene {
    * @param callbacks - Timing hooks.
    */
   playRecap(summary: PlayerWallSummary, callbacks?: PlayerWallCallbacks): void;
+  /**
+   * Populates the wall without its built-in schedule; the integrator drives
+   * the recap with {@link beat} (e.g. from the UI's wall timeline).
+   */
+  startDrivenRecap(summary: PlayerWallSummary, callbacks?: PlayerWallCallbacks): void;
+  /** Plays one beat of a driven recap. */
+  beat(b: PlayerWallBeat): void;
   /** Jumps to the final crowned state (fires any pending `onWinner`, then `onDone`). */
   skip(): void;
   /** True while a recap is running. */
@@ -394,6 +417,9 @@ export function createPlayerWallScene(opts: PlayerWallOptions): PlayerWallScene 
   // ---------------------------------------------------------------------------
   let post: Pick<PostPipeline, 'punch' | 'flash' | 'setFocusVignette'> | null = null;
   let timeline: TimelineAction[] = [];
+  /** Set while `startDrivenRecap` populates the wall; the recap then advances only on `beat()`. */
+  let driving = false;
+  let drivenSummary: PlayerWallSummary | null = null;
   let cursor = 0;
   let clock = 0;
   let playing = false;
@@ -628,13 +654,124 @@ export function createPlayerWallScene(opts: PlayerWallOptions): PlayerWallScene 
       clock = 0;
       playing = true;
       camInit = false;
-      buildTimeline(summary);
+      if (driving) {
+        timeline = [];
+        cursor = 0;
+        drivenSummary = summary;
+      } else {
+        drivenSummary = null;
+        buildTimeline(summary);
+      }
+    },
+    startDrivenRecap(summary: PlayerWallSummary, cbs: PlayerWallCallbacks = {}): void {
+      driving = true;
+      try {
+        api.playRecap(summary, cbs);
+      } finally {
+        driving = false;
+      }
+    },
+    beat(b: PlayerWallBeat): void {
+      const summary = drivenSummary;
+      if (!summary || !playing) return;
+      switch (b.type) {
+        case 'intro':
+          shot = 'intro';
+          header.draw(opts.title ?? 'SHOW RECAP', `${summary.players.length} players`);
+          for (const c of cubbies) if (c.state === 'idle') c.actor?.playEmote('wave', 2.2);
+          return;
+        case 'round': {
+          const round = summary.rounds[b.roundIndex];
+          shot = 'wide';
+          header.draw(`ROUND ${b.roundIndex + 1}`, round?.name ?? '');
+          header.mesh.rotation.x = -Math.PI / 2;
+          if (round) callbacks.onRoundStart?.(b.roundIndex, round);
+          return;
+        }
+        case 'flash': {
+          const victims = b.ids.map((id) => byPlayer.get(id)).filter((c): c is Cubby => !!c && c !== winner);
+          if (victims.length === 0) return;
+          focusPoint.set(0, 0, 0);
+          for (const v of victims) focusPoint.add(v.center);
+          focusPoint.multiplyScalar(1 / victims.length);
+          shot = 'focus';
+          for (const v of victims) {
+            if (v.state === 'idle') {
+              v.state = 'blink';
+              v.blinkTime = 0;
+              v.actor?.setState(SceneState.Fall);
+            }
+          }
+          return;
+        }
+        case 'drop': {
+          const c = byPlayer.get(b.id);
+          if (c && c !== winner) eliminate(c, b.roundIndex, b.order);
+          return;
+        }
+        case 'roundEnd':
+          shake.add(0.35);
+          shot = 'wide';
+          return;
+        case 'winnerFocus': {
+          // Anyone the recap never dropped (left mid-show) goes now, so the winner stands alone.
+          for (const c of cubbies) if ((c.state === 'idle' || c.state === 'blink') && c !== winner) eliminate(c, summary.rounds.length, c.index);
+          const w = winner;
+          if (!w) return;
+          header.draw('WINNER!', summary.players.find((p) => p.id === w.playerId)?.name ?? '');
+          header.mesh.rotation.x = -Math.PI / 2;
+          dimTarget = 1;
+          w.state = 'winner';
+          if (opts.crownHeight === undefined && w.actor) crownHeight = measureHeadHeight(w.holder) + 0.1;
+          shot = 'winner';
+          winnerBeam.mesh.position.set(w.center.x, w.floorY + 12, 2.5);
+          winnerBeam.mesh.lookAt(w.center.x, w.floorY, -CD / 2);
+          winnerBeam.mesh.rotateX(-Math.PI / 2);
+          spot.position.set(w.center.x, w.floorY + 9, 6);
+          spot.target.position.set(w.center.x, w.floorY + 0.6, -CD / 2);
+          post?.setFocusVignette(0.35);
+          return;
+        }
+        case 'crown':
+          if (!winner) return;
+          shake.add(0.6);
+          post?.punch(0.6);
+          crown.visible = true;
+          crownT = 0;
+          return;
+        case 'reveal': {
+          const w = winner;
+          if (!w) return;
+          // The crown keeps falling if it is still mid-air; only a missed drop snaps it on.
+          if (crownT < 0) finishCrown();
+          else if (!winnerFired) {
+            winnerFired = true;
+            callbacks.onWinner?.(w.playerId);
+          }
+          post?.flash(0.5);
+          w.actor?.playEmote('cheer', 6);
+          vfx.spawn('confetti', { x: w.center.x, y: w.floorY + 2.4, z: 0.6 }, { intensity: 1.6 });
+          vfx.spawn('crownShine', { x: w.center.x, y: w.floorY + crownHeight + 0.3, z: w.holder.position.z }, { duration: 8 });
+          for (let k = 0; k < 4; k++) vfx.spawn('fireworks', { x: (k - 1.5) * (wallW / 3.2), y: BASE_Y + wallH + 2, z: 3 }, { delay: k * 0.35 });
+          return;
+        }
+        case 'end':
+          for (let k = 0; k < 3; k++) vfx.spawn('fireworks', { x: (k - 1) * 6, y: BASE_Y + wallH + 4, z: 2 }, { delay: k * 0.25, scale: 1.3 });
+          playing = false;
+          callbacks.onDone?.();
+          return;
+      }
     },
     skip(): void {
       if (!playing) return;
       for (; cursor < timeline.length; cursor++) {
         const a = timeline[cursor]!;
         if (a.essential) a.run();
+      }
+      // A driven recap has no schedule to fast-forward: everyone but the winner just leaves.
+      if (drivenSummary) {
+        for (const c of cubbies) if ((c.state === 'idle' || c.state === 'blink') && c !== winner) c.state = 'falling';
+        if (winner) winner.state = 'winner';
       }
       for (const c of cubbies) {
         if (c.state === 'falling' || c.state === 'blink') {

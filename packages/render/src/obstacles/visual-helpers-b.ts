@@ -51,6 +51,7 @@ import {
   mix,
   mx_noise_float,
   normalLocal,
+  positionGeometry,
   positionLocal,
   positionWorld,
   sin,
@@ -235,8 +236,16 @@ export function setGlow(mat: MeshToonNodeMaterial, intensity: number): void {
 /** Stripe axis in object space. */
 export type StripeAxis = 'x' | 'y' | 'z' | 'diagXZ' | 'diagXY' | 'spiralX' | 'aroundY';
 
-function stripeCoord(axis: StripeAxis, freq: number): Node<'float'> {
-  const p = positionLocal;
+/**
+ * Which object space patterns are evaluated in. `geometry` is the mesh's own
+ * vertex space; on plain meshes it equals `local`, and unlike `local` it
+ * survives automatic instancing (MeshBatcher). On an InstancedMesh, `local`
+ * is the instancer's space (stripes stay put while instances move).
+ */
+export type PatternSpace = 'geometry' | 'local';
+
+function stripeCoord(axis: StripeAxis, freq: number, space: PatternSpace): Node<'float'> {
+  const p = space === 'local' ? positionLocal : positionGeometry;
   switch (axis) {
     case 'x':
       return p.x.mul(freq);
@@ -267,9 +276,10 @@ export function stripedToon(
   freq: number,
   axis: StripeAxis,
   opts: Partial<ToonMaterialOptions> = {},
+  space: PatternSpace = 'geometry',
 ): MeshToonNodeMaterial {
   const mat = toon(d, { color: '#ffffff', rimStrength: 0.5, ...opts });
-  const s = step(float(0.5), fract(stripeCoord(axis, freq)));
+  const s = step(float(0.5), fract(stripeCoord(axis, freq, space)));
   mat.colorNode = mix(color(new Color(a)), color(new Color(b)), s);
   return mat;
 }
@@ -283,7 +293,7 @@ export function checkerToon(
   plane: 'xy' | 'xz' = 'xy',
 ): MeshToonNodeMaterial {
   const mat = toon(d, { color: '#ffffff', rimStrength: 0.3 });
-  const p = positionLocal;
+  const p = positionGeometry;
   const u = floor(p.x.div(cell));
   const v = floor((plane === 'xy' ? p.y : p.z).div(cell));
   const k = fract(u.add(v).mul(0.5)).mul(2);

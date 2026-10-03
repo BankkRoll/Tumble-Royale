@@ -9,6 +9,9 @@
  * - Applies loadouts (colours, pattern, face style, accessory geometry).
  *
  * Draw calls per Tumbler: LOD 0/1 = body + outline (+1 shadow); LOD 2 = 1 (+1 shadow).
+ * Registered with a {@link TumblerCrowd}, its body/outline/LOD 2 meshes stop
+ * rendering and the crowd draws it instead (the rig, animation and face still
+ * run here).
  */
 import {
   Euler,
@@ -20,13 +23,15 @@ import {
   SkinnedMesh,
   Vector3,
   type BufferGeometry,
+  type Object3D,
+  type Bone as ThreeBone,
 } from 'three/webgpu';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { AnimClipId } from '@tumble/content/cosmetics';
 import { CharacterState } from '@tumble/sim';
 import { starGeometry } from './accessories.ts';
 import { Animator } from './animator.ts';
-import { TUMBLER_BOUNDS, acquireAssembly, releaseAssembly, type Assembly } from './assembly.ts';
+import { TUMBLER_BOUNDS, acquireAssembly, releaseAssembly, type AccessorySpec, type Assembly } from './assembly.ts';
 import { ChainRuntime, SecondOrder } from './dynamics.ts';
 import { FaceController } from './face.ts';
 import type { Lod } from './geometry.ts';
@@ -111,6 +116,7 @@ export class Tumbler implements TumblerVisual, RagdollHost {
   private chains: ChainRuntime[] = [];
   private resolved: ResolvedLoadout;
   private lod: Lod = 0;
+  private crowdOwner: { remove(t: Tumbler): void } | null = null;
   private time = 0;
   private hidden = false;
   private popT = 1;
@@ -150,6 +156,8 @@ export class Tumbler implements TumblerVisual, RagdollHost {
     };
     this.autoRagdoll = opts.autoRagdoll ?? true;
     this.object.name = 'Tumbler';
+    // Debug/automation handle (see TumblerCrowd); a symbol so userData stays JSON-clonable.
+    (this.object as unknown as Record<symbol, unknown>)[Symbol.for('tumble.tumbler')] = this;
     this.object.add(this.pivot);
     this.rig = createRig(this.pivot);
 
@@ -247,16 +255,14 @@ export class Tumbler implements TumblerVisual, RagdollHost {
     if (level === 2) {
       this.lod2Assembly ??= acquireAssembly(2, []);
       this.lod2.geometry = this.lod2Assembly.geometry;
-      this.body.visible = false;
-      this.outline.visible = false;
       this.lod2Group.visible = true;
       this.stars.visible = false;
+      this.applyMeshVisibility();
       this.syncRagdollWant();
       return;
     }
-    this.body.visible = true;
-    this.outline.visible = true;
     this.lod2Group.visible = false;
+    this.applyMeshVisibility();
     if (prev === 2 || this.assembly.lod !== level) this.rebuildGeometry(level);
     this.syncRagdollWant();
   }
@@ -264,6 +270,55 @@ export class Tumbler implements TumblerVisual, RagdollHost {
   /** Current level of detail. */
   get currentLod(): Lod {
     return this.lod;
+  }
+
+  private applyMeshVisibility(): void {
+    const own = this.crowdOwner === null;
+    this.body.visible = own && this.lod < 2;
+    this.outline.visible = this.body.visible;
+    this.lod2.visible = own;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Crowd hooks (see TumblerCrowd)
+  // ---------------------------------------------------------------------------
+
+  /** @internal Called by the crowd that draws this Tumbler's meshes (null: draw them here again). */
+  setCrowdOwner(owner: { remove(t: Tumbler): void } | null): void {
+    this.crowdOwner = owner;
+    this.applyMeshVisibility();
+  }
+
+  /** @internal Accessories of the current loadout (crowd geometry packing). */
+  crowdAccessories(): readonly AccessorySpec[] {
+    return this.resolved.accessories;
+  }
+
+  /** @internal Stable key of the current accessory set. */
+  crowdAccessoryKey(): string {
+    return this.resolved.accessoryKey;
+  }
+
+  /** @internal Skeleton bones, core then pool. */
+  crowdBones(): readonly ThreeBone[] {
+    return this.rig.bones;
+  }
+
+  /** @internal Inverse bind matrices, index-aligned with {@link crowdBones}. */
+  crowdBoneInverses(): readonly Matrix4[] {
+    return this.rig.skeleton.boneInverses;
+  }
+
+  /** @internal World matrix of the rigid LOD 2 stand-in. */
+  crowdLod2Matrix(): Matrix4 {
+    return this.lod2.matrixWorld;
+  }
+
+  /** @internal Whether the Tumbler would be visible: itself and every ancestor shown. */
+  crowdVisible(): boolean {
+    if (!this.pivot.visible) return false;
+    for (let o: Object3D | null = this.object; o; o = o.parent) if (!o.visible) return false;
+    return true;
   }
 
   // ---------------------------------------------------------------------------
@@ -491,6 +546,7 @@ export class Tumbler implements TumblerVisual, RagdollHost {
 
   /** @inheritdoc */
   dispose(): void {
+    this.crowdOwner?.remove(this);
     this.ragdollMgr?.unwant(this);
     this.ragdollMgr = null;
     this.ragdoll = null;

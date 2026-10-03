@@ -425,6 +425,9 @@ function buildMaterial(time: UniformNode<'float', number>): MeshBasicNodeMateria
   material.colorNode = vec4(rgb, alpha);
   material.transparent = true;
   material.depthWrite = false;
+  // PERF: a camera-facing ribbon rarely overlaps itself, so one double-sided pass looks the same as
+  // three's default back-then-front pair and halves the trail draws.
+  material.forceSinglePass = true;
   material.fog = true;
   return material;
 }

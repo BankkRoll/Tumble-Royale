@@ -1,6 +1,6 @@
 import { Color, Group, Mesh, MeshBasicNodeMaterial, RingGeometry, Vector3, type Object3D } from 'three/webgpu';
 import { float, sin, smoothstep, uniform, uv } from 'three/tsl';
-import type { TumblerLoadout } from '../character/types.ts';
+import type { TumblerAnimInput, TumblerLoadout } from '../character/types.ts';
 import { createFloatingPlatform, type FloatingPlatform } from './props.ts';
 import {
   SceneState,
@@ -31,6 +31,12 @@ export interface MainMenuStageOptions extends SceneCommonOptions {
 export interface MainMenuStage extends MenuScene {
   /** The local player's root object (integrator drives it in idle-play mode). */
   readonly playerObject: Object3D;
+  /**
+   * The player Tumbler's animation input. In idle play the integrator writes
+   * state/speed/facing/emote from its physics each frame; the stage keeps
+   * advancing and rendering the same Tumbler.
+   */
+  readonly playerAnim: TumblerAnimInput;
   setPlayerLoadout(loadout: TumblerLoadout): void;
   /** Replace party slots 0–2 (`null` empties a slot). */
   setParty(party: readonly (TumblerLoadout | null)[]): void;
@@ -136,6 +142,7 @@ export function createMainMenuStage(opts: MainMenuStageOptions): MainMenuStage {
     camera,
     grade: stage.grade,
     playerObject: playerHolder,
+    playerAnim: player.anim,
     platformRadius: radius - 0.6,
     setPlayerLoadout(l: TumblerLoadout): void {
       player.visual.setLoadout(l);

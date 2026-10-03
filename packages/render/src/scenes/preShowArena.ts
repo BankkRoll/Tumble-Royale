@@ -1,5 +1,5 @@
 import { Group, Vector3, type Object3D } from 'three/webgpu';
-import type { TumblerLoadout } from '../character/types.ts';
+import type { TumblerAnimInput, TumblerLoadout } from '../character/types.ts';
 import { DecorRandom } from '../level/toolkit.ts';
 import { PropBuilder, type PropBatch } from '../environment/propKit.ts';
 import { NameplateSet } from './nameplates.ts';
@@ -42,6 +42,8 @@ export interface PreShowArena extends MenuScene {
   readonly platformRadius: number;
   /** Root object for a player (null if unknown). */
   getActorObject(id: string): Object3D | null;
+  /** Animation input for a player (the integrator writes it for a `driveLocal` player). */
+  getActorAnim(id: string): TumblerAnimInput | null;
   /** Updates the arch banner (e.g. show name + "starting in 12"). */
   setBanner(title: string, subtitle?: string): void;
   /** Everyone emotes at once (countdown hype). */
@@ -140,6 +142,9 @@ export function createPreShowArena(opts: PreShowArenaOptions): PreShowArena {
     platformRadius: radius - 0.8,
     getActorObject(id: string): Object3D | null {
       return byId.get(id)?.holder ?? null;
+    },
+    getActorAnim(id: string): TumblerAnimInput | null {
+      return byId.get(id)?.actor.anim ?? null;
     },
     setBanner(title: string, subtitle?: string): void {
       banner.draw(title, subtitle);

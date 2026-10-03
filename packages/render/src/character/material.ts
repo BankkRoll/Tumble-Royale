@@ -13,6 +13,7 @@
  * - The inverted-hull outline material, tinted from the body colour.
  */
 import {
+  type DataTexture,
   BackSide,
   Color,
   MeshBasicNodeMaterial,
@@ -28,6 +29,7 @@ import {
   Fn,
   If,
   abs,
+  add,
   atan,
   attribute,
   cameraPosition,
@@ -40,7 +42,11 @@ import {
   floor,
   fract,
   fwidth,
+  int,
+  ivec2,
   length,
+  mat3,
+  mat4,
   max,
   min,
   mix,
@@ -49,6 +55,7 @@ import {
   mx_fractal_noise_float,
   mx_noise_float,
   mx_worley_noise_float,
+  normalGeometry,
   normalLocal,
   normalView,
   normalize,
@@ -61,7 +68,9 @@ import {
   sin,
   smoothstep,
   sqrt,
+  texture,
   uniform,
+  varying,
   vec2,
   vec3,
   vec4,
@@ -211,7 +220,21 @@ interface PatternInputs {
   time: F;
 }
 
-/** Returns vec4(rgb, glow). Branches on a uniform, so only one pattern runs per draw. */
+/**
+ * Returns vec4(rgb, glow) for the body pattern selected by `pattern.x`.
+ *
+ * Evaluated in three passes so that no screen-space derivative sits inside the
+ * pattern branches:
+ *   1. an `If` chain computes each pattern's raw signals — up to four AA edge
+ *      inputs `x0..x3` with thresholds `e0..e3`, plus colours that need no AA;
+ *   2. the four edges are antialiased with `fwidth` in uniform control flow;
+ *   3. a second chain mixes the colours from the antialiased masks.
+ *
+ * The result is identical to stepping inside each branch (a quad never spans
+ * two Tumblers, so it always took one branch), but it lets the pattern index
+ * come from per-vertex data: WGSL rejects derivatives in non-uniform control
+ * flow, and the crowd renderer reads the index from a data texture.
+ */
 function buildPattern(u: PatternInputs): Node<'vec4'> {
   return Fn(() => {
     const p = positionGeometry;
@@ -223,6 +246,16 @@ function buildPattern(u: PatternInputs): Node<'vec4'> {
     const T = u.tertiary;
     const col = vec3(P).toVar();
     const glow = float(0).toVar();
+    // Colour computed in pass 1 and mixed in pass 3 (hearts / sprinkles).
+    const c2 = vec3(P).toVar();
+    const x0 = float(0).toVar();
+    const x1 = float(0).toVar();
+    const x2 = float(0).toVar();
+    const x3 = float(0).toVar();
+    const e0 = float(0).toVar();
+    const e1 = float(0).toVar();
+    const e2 = float(0).toVar();
+    const e3 = float(0).toVar();
 
     // Seamless cylindrical cells: an integer number of cells around the body.
     // IMPORTANT: shared intermediates must be materialised with toVar() before the
@@ -235,14 +268,17 @@ function buildPattern(u: PatternInputs): Node<'vec4'> {
     const dir = vec3(sin(A), cos(A), 0).toVar();
     const d = dot(p, dir).toVar();
 
+    // Pass 1: raw signals.
     If(idx.lessThan(0.5), () => {
       col.assign(P);
     })
       .ElseIf(idx.lessThan(1.5), () => {
         // stripes
         const tri = abs(fract(d.mul(S).mul(5.5)).sub(0.5));
-        col.assign(mix(P, Sc, aaStep(0.25, tri)));
-        col.assign(mix(col, T, float(1).sub(aaStep(0.022, abs(tri.sub(0.25))))));
+        x0.assign(tri);
+        e0.assign(0.25);
+        x1.assign(abs(tri.sub(0.25)));
+        e1.assign(0.022);
       })
       .ElseIf(idx.lessThan(2.5), () => {
         // dots
@@ -250,17 +286,19 @@ function buildPattern(u: PatternInputs): Node<'vec4'> {
         const fu = fract(cu.add(mod(row, 2).mul(0.5))).sub(0.5);
         const fv = fract(cv).sub(0.5);
         const r = length(vec2(fu, fv));
-        col.assign(mix(Sc, P, aaStep(0.27, r)));
-        col.assign(mix(col, T, float(1).sub(aaStep(0.09, r))));
+        x0.assign(r);
+        e0.assign(0.27);
+        x1.assign(r);
+        e1.assign(0.09);
       })
       .ElseIf(idx.lessThan(3.5), () => {
         // camo
-        const n1 = mx_noise_float(p.mul(S.mul(3.2)));
-        const n2 = mx_noise_float(p.mul(S.mul(5.3)).add(7.31));
-        const n3 = mx_noise_float(p.mul(S.mul(4.1)).add(19.7));
-        col.assign(mix(P, P.mul(0.62), aaStep(0.22, n3)));
-        col.assign(mix(col, Sc, aaStep(0.18, n1)));
-        col.assign(mix(col, T, aaStep(0.3, n2)));
+        x1.assign(mx_noise_float(p.mul(S.mul(3.2))));
+        e1.assign(0.18);
+        x2.assign(mx_noise_float(p.mul(S.mul(5.3)).add(7.31)));
+        e2.assign(0.3);
+        x0.assign(mx_noise_float(p.mul(S.mul(4.1)).add(19.7)));
+        e0.assign(0.22);
       })
       .ElseIf(idx.lessThan(4.5), () => {
         // gradient
@@ -285,8 +323,7 @@ function buildPattern(u: PatternInputs): Node<'vec4'> {
       .ElseIf(idx.lessThan(6.5), () => {
         // checker (3D sine checker: seamless and antialiasable)
         const k = S.mul(Math.PI * 4.2);
-        const s = sin(p.x.mul(k)).mul(sin(p.y.mul(k))).mul(sin(p.z.mul(k).add(0.5)));
-        col.assign(mix(P, Sc, aaStep(0, s)));
+        x0.assign(sin(p.x.mul(k)).mul(sin(p.y.mul(k))).mul(sin(p.z.mul(k).add(0.5))));
       })
       .ElseIf(idx.lessThan(7.5), () => {
         // zigzag
@@ -299,29 +336,33 @@ function buildPattern(u: PatternInputs): Node<'vec4'> {
         const row = floor(cv);
         const cx = cu.add(mod(row, 2).mul(0.5));
         const q = vec2(fract(cx).sub(0.5), fract(cv).sub(0.5)).mul(2.6).add(vec2(0, 0.55));
-        const hd = sdHeart(q);
+        x0.assign(sdHeart(q));
         const alt = mod(floor(cx).add(row), 2);
-        const hc = mix(Sc, T, alt);
-        col.assign(mix(hc, P, aaStep(0, hd)));
+        c2.assign(mix(Sc, T, alt));
       })
       .ElseIf(idx.lessThan(9.5), () => {
         // spots
         const w = mx_worley_noise_float(p.mul(S.mul(3.4)), 0.9);
-        col.assign(mix(Sc, P, aaStep(0.38, w)));
-        col.assign(mix(T, col, aaStep(0.24, w)));
+        x0.assign(w);
+        e0.assign(0.38);
+        x1.assign(w);
+        e1.assign(0.24);
       })
       .ElseIf(idx.lessThan(10.5), () => {
         // swirl
         const sw = fract(theta.div(Math.PI * 2).mul(3).add(p.y.mul(S).mul(2.6)));
         const tri = abs(sw.sub(0.5));
-        col.assign(mix(P, Sc, aaStep(0.25, tri)));
-        col.assign(mix(col, T, float(1).sub(aaStep(0.03, abs(tri.sub(0.25))))));
+        x0.assign(tri);
+        e0.assign(0.25);
+        x1.assign(abs(tri.sub(0.25)));
+        e1.assign(0.03);
       })
       .ElseIf(idx.lessThan(11.5), () => {
         // two-tone split
         const x = p.x.mul(cos(A)).add(p.y.sub(1).mul(sin(A)));
-        col.assign(mix(P, Sc, aaStep(0, x)));
-        col.assign(mix(col, T, float(1).sub(aaStep(0.018, abs(x)))));
+        x0.assign(x);
+        x1.assign(abs(x));
+        e1.assign(0.018);
       })
       .ElseIf(idx.lessThan(12.5), () => {
         // sprinkles
@@ -335,20 +376,20 @@ function buildPattern(u: PatternInputs): Node<'vec4'> {
         const ang = h3.mul(Math.PI * 2);
         const ax = vec2(cos(ang), sin(ang));
         const t = clamp(dot(lp, ax), -0.17, 0.17);
-        const sd = length(lp.sub(ax.mul(t))).sub(0.075);
+        x0.assign(length(lp.sub(ax.mul(t))).sub(0.075));
         const pick = hash31(cell.add(2.9));
-        const sc = select(pick.lessThan(0.33), Sc, select(pick.lessThan(0.66), T, vec3(1, 1, 1)));
-        col.assign(mix(sc, P, aaStep(0, sd)));
+        c2.assign(select(pick.lessThan(0.33), Sc, select(pick.lessThan(0.66), T, vec3(1, 1, 1))));
       })
       .ElseIf(idx.lessThan(13.5), () => {
         // plaid
-        const bu = float(1).sub(aaStep(0.17, abs(fract(cu.mul(0.5)).sub(0.5))));
-        const bv = float(1).sub(aaStep(0.17, abs(fract(cv.mul(0.5)).sub(0.5))));
-        col.assign(mix(P, Sc, bu.mul(0.55)));
-        col.assign(mix(col, Sc.mul(0.8), bv.mul(0.55)));
-        const lu = float(1).sub(aaStep(0.035, abs(fract(cu.mul(0.5).add(0.25)).sub(0.5))));
-        const lv = float(1).sub(aaStep(0.035, abs(fract(cv.mul(0.5).add(0.25)).sub(0.5))));
-        col.assign(mix(col, T, max(lu, lv)));
+        x0.assign(abs(fract(cu.mul(0.5)).sub(0.5)));
+        e0.assign(0.17);
+        x1.assign(abs(fract(cv.mul(0.5)).sub(0.5)));
+        e1.assign(0.17);
+        x2.assign(abs(fract(cu.mul(0.5).add(0.25)).sub(0.5)));
+        e2.assign(0.035);
+        x3.assign(abs(fract(cv.mul(0.5).add(0.25)).sub(0.5)));
+        e3.assign(0.035);
       })
       .ElseIf(idx.lessThan(14.5), () => {
         // waves
@@ -361,8 +402,56 @@ function buildPattern(u: PatternInputs): Node<'vec4'> {
         const a = cu.add(cv).mul(0.5);
         const b = cu.sub(cv).mul(0.5);
         const s = sin(a.mul(Math.PI * 2)).mul(sin(b.mul(Math.PI * 2)));
-        col.assign(mix(P, Sc, aaStep(0, s)));
-        col.assign(mix(col, T, float(1).sub(aaStep(0.06, abs(s)))));
+        x0.assign(s);
+        x1.assign(abs(s));
+        e1.assign(0.06);
+      });
+
+    // Pass 2: antialiased edges, in uniform control flow.
+    const a0 = aaStep(e0, x0).toVar();
+    const a1 = aaStep(e1, x1).toVar();
+    const a2 = aaStep(e2, x2).toVar();
+    const a3 = aaStep(e3, x3).toVar();
+    const na1 = float(1).sub(a1);
+
+    // Pass 3: colours from the masks (no derivatives below this line).
+    If(idx.lessThan(0.5), () => {})
+      .ElseIf(idx.lessThan(1.5), () => {
+        col.assign(mix(mix(P, Sc, a0), T, na1));
+      })
+      .ElseIf(idx.lessThan(2.5), () => {
+        col.assign(mix(mix(Sc, P, a0), T, na1));
+      })
+      .ElseIf(idx.lessThan(3.5), () => {
+        col.assign(mix(mix(mix(P, P.mul(0.62), a0), Sc, a1), T, a2));
+      })
+      .ElseIf(idx.lessThan(5.5), () => {})
+      .ElseIf(idx.lessThan(6.5), () => {
+        col.assign(mix(P, Sc, a0));
+      })
+      .ElseIf(idx.lessThan(7.5), () => {})
+      .ElseIf(idx.lessThan(8.5), () => {
+        col.assign(mix(c2, P, a0));
+      })
+      .ElseIf(idx.lessThan(9.5), () => {
+        col.assign(mix(T, mix(Sc, P, a0), a1));
+      })
+      .ElseIf(idx.lessThan(11.5), () => {
+        // swirl and split share the two-edge layout of stripes.
+        col.assign(mix(mix(P, Sc, a0), T, na1));
+      })
+      .ElseIf(idx.lessThan(12.5), () => {
+        col.assign(mix(c2, P, a0));
+      })
+      .ElseIf(idx.lessThan(13.5), () => {
+        const bu = float(1).sub(a0);
+        const bv = float(1).sub(a1);
+        const plaid = mix(mix(P, Sc, bu.mul(0.55)), Sc.mul(0.8), bv.mul(0.55));
+        col.assign(mix(plaid, T, max(float(1).sub(a2), float(1).sub(a3))));
+      })
+      .ElseIf(idx.lessThan(14.5), () => {})
+      .Else(() => {
+        col.assign(mix(mix(P, Sc, a0), T, na1));
       });
 
     return vec4(col, glow);
@@ -546,14 +635,36 @@ export interface TumblerMaterials {
   outline: MeshBasicNodeMaterial;
 }
 
+/** Every per-Tumbler shader input, as nodes (uniforms for one Tumbler, texture reads for a crowd). */
+interface TumblerParamNodes {
+  primary: V3;
+  secondary: V3;
+  tertiary: V3;
+  plate: V3;
+  iris: V3;
+  pattern: Node<'vec4'>;
+  faceA: Node<'vec4'>;
+  faceB: Node<'vec4'>;
+  faceC: Node<'vec4'>;
+  faceD: Node<'vec4'>;
+  faceE: Node<'vec4'>;
+  fx: Node<'vec4'>;
+  /**
+   * Shader variables to declare before any branch. Texture-fed inputs are local
+   * variables, and TSL declares a variable where it is first used — inside an
+   * `If` branch, later branches would read it unassigned.
+   */
+  prime?: readonly Node[];
+}
+
 let shared: TumblerMaterials | null = null;
 
-const uniforms = {
-  primary: objColor((s) => s.primary),
-  secondary: objColor((s) => s.secondary),
-  tertiary: objColor((s) => s.tertiary),
-  plate: objColor((s) => s.plate),
-  iris: objColor((s) => s.iris),
+const uniforms: TumblerParamNodes = {
+  primary: objColor((s) => s.primary) as unknown as V3,
+  secondary: objColor((s) => s.secondary) as unknown as V3,
+  tertiary: objColor((s) => s.tertiary) as unknown as V3,
+  plate: objColor((s) => s.plate) as unknown as V3,
+  iris: objColor((s) => s.iris) as unknown as V3,
   pattern: objVec4((s) => s.pattern),
   faceA: objVec4((s) => s.faceA),
   faceB: objVec4((s) => s.faceB),
@@ -574,17 +685,9 @@ const dither = (opacity: F): void => {
 /** Global outline width (local units). Scaled up with distance so far Tumblers stay readable. */
 export const outlineThickness = uniform(0.018);
 
-/**
- * The shared Tumbler materials. Created on first use; never disposed while
- * Tumblers exist (call {@link disposeTumblerMaterials} on teardown).
- *
- * @returns Body + outline materials.
- */
-export function getTumblerMaterials(): TumblerMaterials {
-  if (shared) return shared;
-
+/** Fills a body material's albedo and lighting graph from a set of per-Tumbler inputs. */
+function buildBodyGraph(body: TumblerToonMaterial, u: TumblerParamNodes): void {
   const ref = createToonMaterial({ color: '#ffffff', rimStrength: 0 });
-  const body = new TumblerToonMaterial();
   body.gradientMap = ref.gradientMap;
   ref.dispose();
   const kind = attribute('aKind', 'float') as unknown as F;
@@ -592,44 +695,21 @@ export function getTumblerMaterials(): TumblerMaterials {
   const faceUV = attribute('aFace', 'vec2') as unknown as V2;
   const aa = max(fwidth(faceUV.y), 0.0004);
 
-  const pat = buildPattern({
-    primary: uniforms.primary as unknown as V3,
-    secondary: uniforms.secondary as unknown as V3,
-    tertiary: uniforms.tertiary as unknown as V3,
-    pattern: uniforms.pattern,
-    time: uniforms.faceE.w,
-  });
+  const pat = buildPattern({ primary: u.primary, secondary: u.secondary, tertiary: u.tertiary, pattern: u.pattern, time: u.faceE.w });
   const face = buildFace(
-    {
-      primary: uniforms.primary as unknown as V3,
-      plate: uniforms.plate as unknown as V3,
-      iris: uniforms.iris as unknown as V3,
-      faceA: uniforms.faceA,
-      faceB: uniforms.faceB,
-      faceC: uniforms.faceC,
-      faceD: uniforms.faceD,
-      faceE: uniforms.faceE,
-      fx: uniforms.fx,
-    },
+    { primary: u.primary, plate: u.plate, iris: u.iris, faceA: u.faceA, faceB: u.faceB, faceC: u.faceC, faceD: u.faceD, faceE: u.faceE, fx: u.fx },
     faceUV,
     aa,
   );
 
-  const P = uniforms.primary as unknown as V3;
+  const P = u.primary;
   const isPattern = kind.lessThan(0.5);
   const bodyCol = mix(pat.xyz, face.color, face.mask);
-  const albedo = select(
-    isPattern,
-    bodyCol,
-    select(
-      kind.lessThan(1.5),
-      P,
-      select(kind.lessThan(2.5), uniforms.secondary as unknown as V3, select(kind.lessThan(3.5), uniforms.tertiary as unknown as V3, vcol)),
-    ),
-  );
+  const albedo = select(isPattern, bodyCol, select(kind.lessThan(1.5), P, select(kind.lessThan(2.5), u.secondary, select(kind.lessThan(3.5), u.tertiary, vcol))));
 
   body.albedoNode = Fn(() => {
-    dither(uniforms.fx.x);
+    for (const n of u.prime ?? []) n.toStack();
+    dither(u.fx.x);
     return albedo;
   })();
 
@@ -656,7 +736,7 @@ export function getTumblerMaterials(): TumblerMaterials {
   const spec = smoothstep(specEdge, specEdge.add(0.018), NdotH).mul(specAmt).mul(smoothstep(-0.1, 0.25, NdotL));
   const glassSheen = pow(float(1).sub(NdotV), 2).mul(0.6).mul(select(isGlass, float(1), float(0)));
   const glow = albedo.mul(select(isGlow, float(0.85), float(0))).add(vec3(pat.w.mul(select(isPattern, float(1), float(0))).mul(float(1).sub(face.mask))));
-  const flash = uniforms.fx.y;
+  const flash = u.fx.y;
 
   body.emissiveNode = rimColor
     .mul(rim)
@@ -666,15 +746,36 @@ export function getTumblerMaterials(): TumblerMaterials {
     .add(vec3(glassSheen))
     .add(glow)
     .add(vec3(flash));
+}
+
+/** Outline colour: ink tinted towards the body colour, sharing the body's dither. */
+function outlineColor(u: TumblerParamNodes): Node<'vec4'> {
+  return Fn(() => {
+    for (const n of u.prime ?? []) n.toStack();
+    dither(u.fx.x);
+    return vec4(mix(INK, u.primary.mul(0.32), 0.35), 1);
+  })();
+}
+
+/** Outline push distance for a Tumbler whose feet are at `origin` (world space). */
+const outlinePush = (origin: V3): F => outlineThickness.mul(clamp(origin.distance(cameraPosition).mul(0.1), 1, 2.6));
+
+/**
+ * The shared Tumbler materials. Created on first use; never disposed while
+ * Tumblers exist (call {@link disposeTumblerMaterials} on teardown).
+ *
+ * @returns Body + outline materials.
+ */
+export function getTumblerMaterials(): TumblerMaterials {
+  if (shared) return shared;
+
+  const body = new TumblerToonMaterial();
+  buildBodyGraph(body, uniforms);
 
   const outline = new MeshBasicNodeMaterial({ side: BackSide });
   const origin = modelWorldMatrix.mul(vec4(0, 0, 0, 1)).xyz;
-  const distScale = clamp(origin.distance(cameraPosition).mul(0.1), 1, 2.6);
-  outline.positionNode = positionLocal.add(normalLocal.mul(outlineThickness.mul(distScale)));
-  outline.colorNode = Fn(() => {
-    dither(uniforms.fx.x);
-    return vec4(mix(INK, P.mul(0.32), 0.35), 1);
-  })();
+  outline.positionNode = positionLocal.add(normalLocal.mul(outlinePush(origin)));
+  outline.colorNode = outlineColor(uniforms);
 
   shared = { body, outline };
   return shared;
@@ -685,4 +786,140 @@ export function disposeTumblerMaterials(): void {
   shared?.body.dispose();
   shared?.outline.dispose();
   shared = null;
+}
+
+// -----------------------------------------------------------------------------
+// Crowd materials
+// -----------------------------------------------------------------------------
+
+/** Texels per slot row in the crowd parameter texture (see {@link writeCrowdParams}). */
+export const CROWD_PARAM_TEXELS = 16;
+
+/** Texel holding the Tumbler's world origin (xyz) for the outline distance scale. */
+const ORIGIN_TEXEL = 12;
+
+/**
+ * Writes one Tumbler's shader inputs into its row of the crowd parameter texture.
+ *
+ * @param out - Texture data (RGBA float, {@link CROWD_PARAM_TEXELS} texels per row).
+ * @param slot - Row.
+ * @param s - The Tumbler's shader state.
+ * @param ox - World origin x (feet).
+ * @param oy - World origin y.
+ * @param oz - World origin z.
+ */
+export function writeCrowdParams(out: Float32Array, slot: number, s: TumblerShaderState, ox: number, oy: number, oz: number): void {
+  let o = slot * CROWD_PARAM_TEXELS * 4;
+  const col = (c: Color): void => {
+    out[o] = c.r;
+    out[o + 1] = c.g;
+    out[o + 2] = c.b;
+    out[o + 3] = 1;
+    o += 4;
+  };
+  const v4 = (v: Vector4): void => {
+    out[o] = v.x;
+    out[o + 1] = v.y;
+    out[o + 2] = v.z;
+    out[o + 3] = v.w;
+    o += 4;
+  };
+  col(s.primary);
+  col(s.secondary);
+  col(s.tertiary);
+  col(s.plate);
+  col(s.iris);
+  v4(s.pattern);
+  v4(s.faceA);
+  v4(s.faceB);
+  v4(s.faceC);
+  v4(s.faceD);
+  v4(s.faceE);
+  v4(s.fx);
+  out[o] = ox;
+  out[o + 1] = oy;
+  out[o + 2] = oz;
+  out[o + 3] = 1;
+}
+
+/** Crowd body material: skins every slot from the bone texture before the usual position setup. */
+class TumblerCrowdToonMaterial extends TumblerToonMaterial {
+  skinnedNormal: Node | null = null;
+  override setupPosition(builder: NodeBuilder): Node {
+    // The shadow pass only copies `positionNode`, which carries the skinned position on its own;
+    // the main passes also need skinned normals for lighting.
+    if (this.skinnedNormal) normalLocal.assign(this.skinnedNormal as V3);
+    return super.setupPosition(builder) as Node;
+  }
+}
+
+/**
+ * Builds a body + outline material pair that renders every Tumbler of a crowd
+ * in one draw: per-vertex `aSlot` picks the row of the bone texture (41 world
+ * bone matrices) and of the parameter texture (colours, pattern, face, fx,
+ * origin). Visually identical to {@link getTumblerMaterials}.
+ *
+ * @param bones - RGBA float texture, `TOTAL_BONE_COUNT * 4` texels wide, one row per slot.
+ * @param params - RGBA float texture, {@link CROWD_PARAM_TEXELS} texels wide, one row per slot.
+ * @returns Materials owned by the caller (dispose them with the crowd).
+ */
+export function createTumblerCrowdMaterials(bones: DataTexture, params: DataTexture): TumblerMaterials {
+  const boneTex = texture(bones);
+  const paramTex = texture(params);
+
+  // Vertex stage: skinning from the slot's bone row.
+  const slotV = int(attribute('aSlot', 'float'));
+  const skinIndex = attribute('skinIndex', 'uvec4');
+  const skinWeight = attribute('skinWeight', 'vec4');
+  const bone = (i: Node<'uint'>): Node<'mat4'> => {
+    const x = int(i).mul(4);
+    return mat4(
+      boneTex.load(ivec2(x, slotV)),
+      boneTex.load(ivec2(x.add(1), slotV)),
+      boneTex.load(ivec2(x.add(2), slotV)),
+      boneTex.load(ivec2(x.add(3), slotV)),
+    ).toVar() as unknown as Node<'mat4'>;
+  };
+  const bx = bone(skinIndex.x);
+  const by = bone(skinIndex.y);
+  const bz = bone(skinIndex.z);
+  const bw = bone(skinIndex.w);
+  const skinMatrix = add(skinWeight.x.mul(bx), skinWeight.y.mul(by), skinWeight.z.mul(bz), skinWeight.w.mul(bw)).toVar();
+  const skinnedPosition = skinMatrix.mul(vec4(positionGeometry, 1)).xyz.toVar() as unknown as V3;
+  const skinnedNormal = mat3(skinMatrix).mul(normalGeometry).toVar() as unknown as V3;
+  const vertexOrigin = paramTex.load(ivec2(ORIGIN_TEXEL, slotV)).xyz as unknown as V3;
+
+  // Fragment stage: the slot travels as a varying (constant per triangle, so rounding is exact).
+  const slotF = int(varying(attribute('aSlot', 'float')).add(0.5));
+  const prime: Node[] = [];
+  const row = (k: number): Node<'vec4'> => {
+    const v = paramTex.load(ivec2(k, slotF)).toVar();
+    prime.push(v);
+    return v as unknown as Node<'vec4'>;
+  };
+  const inputs: TumblerParamNodes = {
+    prime,
+    primary: row(0).xyz as unknown as V3,
+    secondary: row(1).xyz as unknown as V3,
+    tertiary: row(2).xyz as unknown as V3,
+    plate: row(3).xyz as unknown as V3,
+    iris: row(4).xyz as unknown as V3,
+    pattern: row(5),
+    faceA: row(6),
+    faceB: row(7),
+    faceC: row(8),
+    faceD: row(9),
+    faceE: row(10),
+    fx: row(11),
+  };
+
+  const body = new TumblerCrowdToonMaterial();
+  buildBodyGraph(body, inputs);
+  body.positionNode = skinnedPosition;
+  body.skinnedNormal = skinnedNormal;
+
+  const outline = new MeshBasicNodeMaterial({ side: BackSide });
+  outline.positionNode = skinnedPosition.add(skinnedNormal.mul(outlinePush(vertexOrigin)));
+  outline.colorNode = outlineColor(inputs);
+  return { body, outline };
 }

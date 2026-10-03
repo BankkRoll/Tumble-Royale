@@ -39,5 +39,8 @@ export async function createRenderer(
   const backendFlags = renderer.backend as unknown as { isWebGPUBackend?: boolean };
   const backend = backendFlags.isWebGPUBackend === true ? 'webgpu' : 'webgl2';
 
+  // NOTE: automation handle for perf tooling (draw-call breakdowns in Playwright); never read by game code.
+  (globalThis as { __tumbleRenderer?: WebGPURenderer }).__tumbleRenderer = renderer;
+
   return { renderer, backend };
 }

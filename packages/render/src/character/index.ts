@@ -3,11 +3,12 @@
  * face/pattern material, procedural animation, accessories with verlet
  * chains, cosmetic ragdolls, LODs and nameplates.
  *
- * Entry points: {@link createTumblerVisual}, {@link RagdollManager},
+ * Entry points: {@link createTumblerVisual}, {@link TumblerCrowd}, {@link RagdollManager},
  * {@link NameplateLayer}, {@link loadTumblerGLTF}.
  */
 export * from './types.ts';
 export { createTumblerVisual, Tumbler, type TumblerOptions } from './tumbler.ts';
+export { TumblerCrowd, type TumblerCrowdOptions } from './crowd.ts';
 export { RagdollManager, RagdollWorld, TumblerRagdoll, type RagdollHost } from './ragdoll.ts';
 export { NameplateLayer, Nameplate, type NameplateOptions, type NameplateStyle } from './nameplate.ts';
 export { loadTumblerGLTF, applyTumblerGLTF, TUMBLER_BONE_PARENTS, type GltfBoneMap, type TumblerGLTFBody } from './gltf.ts';

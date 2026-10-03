@@ -244,6 +244,7 @@ export function createPostPipeline(
   const pipeline = new RenderPipeline(renderer);
   pipeline.outputColorTransform = false;
   let bloomNode: BloomNode | null = null;
+  let scenePassNode: ReturnType<typeof pass> | null = null;
   let disposables: { dispose(): void }[] = [];
 
   const build = (): void => {
@@ -254,6 +255,7 @@ export function createPostPipeline(
     const scenePass = pass(view.scene, view.camera);
     disposables.push(scenePass);
     scenePass.setResolutionScale(current.resolutionScale);
+    scenePassNode = scenePass;
     const targets: Record<string, Node> = { output };
     if (current.bloom) targets.emissive = emissive;
     if (current.outline) targets.normal = directionToColor(normalView);
@@ -366,7 +368,11 @@ export function createPostPipeline(
       const scaleChanged = patch.resolutionScale !== undefined && patch.resolutionScale !== current.resolutionScale;
       Object.assign(current, patch);
       if (structural && current.enabled) build();
-      else if (scaleChanged && current.enabled) build();
+      // Adaptive resolution steps often: resize the scene pass in place instead of recompiling the graph.
+      else if (scaleChanged && current.enabled) {
+        if (scenePassNode) scenePassNode.setResolutionScale(current.resolutionScale);
+        else build();
+      }
     },
     setGrade(g: GradeParams): void {
       u.exposure.value = g.exposure;

@@ -6,9 +6,11 @@
  * channel (see `Notifier`) and maintains presence.
  *
  * Client → server: `{type:'ping'}`, `{type:'presence', status, playlistId?,
- * lobbyCode?}`, `{type:'party_chat', text}` and `{type:'whisper', to, text}`. Server → client:
- * `RealtimeEvent`s plus `{type:'hello'}`, `{type:'pong'}` and
- * `{type:'error', code, message}` for refused client messages.
+ * lobbyCode?}`, `{type:'party_chat', text}`, `{type:'whisper', to, text}` and
+ * `{type:'global_chat', text}`. Server → client: `RealtimeEvent`s plus
+ * `{type:'hello'}`, `{type:'pong'}`, `{type:'global_chat', ...line}` (every
+ * connection), `{type:'global_chat_history', lines}` (once, after `hello`)
+ * and `{type:'error', code, message}` for refused client messages.
  *
  * Presence:
  * - every tab reports its own status; friends see the most engaged one
@@ -31,6 +33,7 @@ import type { AppContext } from '../context.ts';
 import { activeBans } from '../http/auth.ts';
 import { ApiError } from '../http/errors.ts';
 import { broadcastPresence, friendIds } from '../social/friends.ts';
+import { GlobalChatRoom, sendGlobalChat } from '../social/globalChat.ts';
 import { sendPartyChat } from '../social/partyChat.ts';
 import { sendWhisper } from '../social/whisper.ts';
 import { PartyService } from '../social/party.ts';
@@ -50,6 +53,7 @@ const ClientMessage = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('party_chat'), text: z.string().max(500) }),
   z.object({ type: z.literal('whisper'), to: z.string().uuid(), text: z.string().max(500) }),
+  z.object({ type: z.literal('global_chat'), text: z.string().max(500) }),
 ]);
 
 const HEARTBEAT_MS = 30_000;
@@ -89,6 +93,11 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
   const parties = new PartyService(ctx);
   /** Last presence each user's friends were told about (skips duplicate broadcasts). */
   const lastBroadcast = new Map<string, string>();
+  const globalChat = new GlobalChatRoom((line) => {
+    const payload = JSON.stringify({ type: 'global_chat', ...line });
+    for (const ws of wss.clients) if (ws.readyState === WebSocket.OPEN) ws.send(payload);
+  });
+  const globalChatReady = globalChat.start(ctx.kv);
 
   /** Stores the most engaged tab's state; returns true when friends should hear about it. */
   const storePresence = async (userId: string): Promise<boolean> => {
@@ -142,6 +151,7 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
 
   const onConnection = async (ws: WebSocket, userId: string) => {
     alive.set(ws, true);
+    await globalChatReady;
     const pendingOffline = offlineTimers.get(userId);
     if (pendingOffline) {
       clearTimeout(pendingOffline);
@@ -158,6 +168,7 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
     });
     if (await storePresence(userId)) await broadcastPresence(ctx, userId);
     send(ws, { type: 'hello', userId, presenceTtlMs: PRESENCE_TTL_MS });
+    send(ws, { type: 'global_chat_history', lines: globalChat.history() });
     const ids = await friendIds(ctx.db, userId);
     const views = await presenceViews(ctx.kv, ids);
     send(ws, {
@@ -184,6 +195,7 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
         } else {
           try {
             if (parsed.type === 'whisper') await sendWhisper(ctx, userId, parsed.to, parsed.text);
+            else if (parsed.type === 'global_chat') await sendGlobalChat(ctx, userId, parsed.text);
             else await sendPartyChat(ctx, parties, userId, parsed.text);
           } catch (err) {
             if (err instanceof ApiError) send(ws, { type: 'error', code: err.code, message: err.message });
@@ -227,6 +239,7 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
     connections: () => wss.clients.size,
     close: async () => {
       clearInterval(heartbeat);
+      await globalChat.stop().catch(() => undefined);
       for (const t of offlineTimers.values()) clearTimeout(t);
       offlineTimers.clear();
       app.server.off('upgrade', onUpgrade);

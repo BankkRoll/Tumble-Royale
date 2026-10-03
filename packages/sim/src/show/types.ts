@@ -16,8 +16,13 @@ export interface ShowParticipant {
 export interface ShowTimings {
   /** Waiting platform countdown before round 1. */
   preShow: number;
-  /** Longest wait for human load acks. */
-  loadingMax: number;
+  /**
+   * A connected human who is still loading is waited for as long as their
+   * client keeps reporting progress; one silent for this long is given up on.
+   */
+  loadingStall: number;
+  /** Absolute ceiling on LOADING, however slowly someone is still progressing. */
+  loadingHardCap: number;
   /** Used when a round has no flyover duration. */
   introFlyover: number;
   rulesCard: number;
@@ -34,7 +39,8 @@ export interface ShowTimings {
 /** Defaults from the spec's round lifecycle. */
 export const DEFAULT_SHOW_TIMINGS: Readonly<ShowTimings> = {
   preShow: 10,
-  loadingMax: 12,
+  loadingStall: 15,
+  loadingHardCap: 60,
   introFlyover: 7,
   rulesCard: 4,
   countdown: 3,
@@ -145,6 +151,17 @@ export interface ShowState {
   qualifyTarget: number | null;
   /** The show's mutator id, or null. Fixed for the whole show. */
   mutatorId: string | null;
+}
+
+/** Who the current round is still waiting on while it loads. */
+export interface LoadingRoster {
+  roundId: string;
+  /** Human entrants who acked `loaded`. */
+  loaded: number;
+  /** Human entrants still in the show (connected or resumable). */
+  total: number;
+  /** Connected humans the round is waiting for, in entrant order. */
+  waitingOn: number[];
 }
 
 /** Notifications from the director. */

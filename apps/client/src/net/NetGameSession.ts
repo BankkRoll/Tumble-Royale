@@ -171,7 +171,7 @@ export class NetGameSession {
       },
       this.opts.prediction,
     );
-    if (!join.lobby) net.sendLowFreq({ t: 'loaded', roundId: join.roundId });
+    // No `loaded` here: the owner acks once the round's view is built and compiled, not just the sim.
     this.opts.onRoundReady?.(join, sim);
   }
 

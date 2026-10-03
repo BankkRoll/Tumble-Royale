@@ -18,6 +18,7 @@ import {
   INPUT_REDUNDANCY,
   InputJitterBuffer,
   KickReason,
+  LOADING_STATUS_MAX_WAITING,
   MsgType,
   ObstacleTable,
   PROTOCOL_VERSION,
@@ -193,6 +194,10 @@ export interface RoomInfo {
 }
 
 const SPECTATOR_ID_BASE = 64;
+/** `loadingStatus` is broadcast at most this often (2 Hz)… */
+const LOADING_STATUS_INTERVAL_MS = 500;
+/** …and at least this often while a round loads, even when nothing changed. */
+const LOADING_STATUS_KEEPALIVE_MS = 1000;
 const BOT_NAMES_A = [
   'Bouncy',
   'Wobbly',
@@ -286,6 +291,9 @@ export class Room {
   /** Rewards per user id once the API answered (replayed to late reconnects). */
   private readonly rewardsByUser = new Map<string, Record<string, unknown> | null>();
   private rewardsDone = false;
+  private loadingPolledAt = -Infinity;
+  private loadingSentAt = -Infinity;
+  private loadingKey = '';
   /** The running sim is the pre-show platform, not a show round. */
   private lobbyActive = false;
   /** Server tick at which the pre-show countdown ends (-1 before the show starts). */
@@ -589,6 +597,7 @@ export class Room {
     slot.disconnectedAt = now;
     slot.jitter.reset();
     slot.jitter.setIdle(slot.lastYaw);
+    this.show.onPlayerConnection?.(slot.id, false);
     this.log(
       `[room ${this.id}] player ${slot.id} disconnected (resumable for ${this.config.resumeWindowMs / 1000}s)`,
     );
@@ -632,6 +641,7 @@ export class Room {
     for (const s of this.slots.values()) if (!s.left && !s.spectator) this.presentPlayers.add(s.id);
     this.show.onTick(1 / SERVER_TICK_HZ, { status: this.status, presentPlayers: this.presentPlayers });
     this.applyShowEvents(this.show.drainEvents(), now);
+    this.updateLoadingStatus(now);
 
     const tSnap = performance.now();
     const every = this.config.snapshotEvery * (this.lobbyActive ? this.config.lobbySnapshotDivisor : 1);
@@ -787,6 +797,8 @@ export class Room {
     this.broadcastShowInfo();
     this.broadcast(this.preShowPhase());
     this.show.start(roster, seed);
+    for (const s of this.slots.values())
+      if (!s.isBot && !s.spectator && !s.session) this.show.onPlayerConnection?.(s.id, false);
   }
 
   /**
@@ -1070,6 +1082,11 @@ export class Room {
         if (this.round && msg.roundId === this.round.id && !this.lobbyActive)
           this.show.onPlayerLoaded?.(slot.id);
         return;
+      case 'loadProgress':
+        if (slot.spectator || typeof msg.pct !== 'number' || !Number.isFinite(msg.pct)) return;
+        if (this.round && msg.roundId === this.round.id && !this.lobbyActive)
+          this.show.onPlayerLoadProgress?.(slot.id, Math.max(0, Math.min(1, msg.pct)));
+        return;
       default:
         this.violation(session, now);
     }
@@ -1094,6 +1111,9 @@ export class Room {
             this.broadcast({ t: 'roundPhase', phase: e.phase, time: e.time ?? this.sim.time });
           }
           break;
+        case 'forfeit':
+          (this.sim as { forfeit?: (id: number) => void } | null)?.forfeit?.(e.playerId);
+          break;
         case 'roundEnd':
           this.broadcast({ t: 'roundResults', roundId: e.roundId, results: e.results });
           this.recordRound(e.roundId, e.results, now);
@@ -1106,6 +1126,32 @@ export class Room {
           break;
       }
     }
+  }
+
+  /**
+   * Mirrors the LOADING roster to clients: polled at most 2 Hz (the roster
+   * allocates), sent when it changed, plus a 1 Hz keepalive so a client that
+   * resumed mid-load catches up.
+   */
+  private updateLoadingStatus(now: number): void {
+    if (!this.show.loadingStatus || now - this.loadingPolledAt < LOADING_STATUS_INTERVAL_MS) return;
+    this.loadingPolledAt = now;
+    const st = this.show.loadingStatus();
+    if (!st) {
+      this.loadingKey = '';
+      return;
+    }
+    const key = `${st.roundId}|${st.loaded}|${st.total}|${st.waitingOn.join(',')}`;
+    if (key === this.loadingKey && now - this.loadingSentAt < LOADING_STATUS_KEEPALIVE_MS) return;
+    this.loadingKey = key;
+    this.loadingSentAt = now;
+    this.broadcast({
+      t: 'loadingStatus',
+      roundId: st.roundId,
+      loaded: st.loaded,
+      total: st.total,
+      waitingOn: st.waitingOn.slice(0, LOADING_STATUS_MAX_WAITING),
+    });
   }
 
   private startRound(plan: ShowRoundPlan): void {
@@ -1240,6 +1286,7 @@ export class Room {
     session.reliable.reset();
     slot.session = session;
     this.sessions.add(session);
+    if (!slot.spectator && !slot.isBot) this.show.onPlayerConnection?.(slot.id, true);
     this.sendWelcome(session, slot, resumed);
     if (this.state !== 'lobby' || this.match) session.sendLowFreq(this.showInfo());
     if (this.state === 'show' && this.roundIndex < 0 && this.preShowEndTick >= 0)

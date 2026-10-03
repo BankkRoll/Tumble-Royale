@@ -4,6 +4,7 @@
  */
 import type { ui as uiStore, UIIntentName } from '@tumble/ui';
 import type { DeterminismReport } from '../debug/determinism.ts';
+import type { LoadTimings } from './round/loadPipeline.ts';
 import type { LobbyDebugState } from './views/menuView.ts';
 
 /** Debug hooks exposed on `window.__tumble`. */
@@ -36,6 +37,12 @@ export interface TumbleHooks {
   tumblers?: () => number;
   /** Active quality tier (game only). */
   tier?: () => string;
+  /**
+   * Recent round builds, newest last: per-step wall/busy time and the longest
+   * main-thread block (game only). Also in the Performance panel as
+   * `tumble:load:<round>:<step>` measures.
+   */
+  loadTimings?: LoadTimings[];
   /** Per-round GPU memory log (game only). */
   memoryLog?: { round: string; geometries: number; textures: number }[];
   /** Online account state (game only): null when playing offline. */

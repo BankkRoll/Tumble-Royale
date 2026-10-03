@@ -83,6 +83,8 @@ export class OfflineShowSession extends ShowSession {
       humanName: ctx.playerName(),
       ...(ctx.cfg.players ? { players: Math.max(2, Math.min(60, Math.round(ctx.cfg.players))) } : {}),
       timings: TIMINGS,
+      // The round waits for this machine's build (and shader compile), however long it takes.
+      localLoad: 'manual',
       ...(roundTimeScale !== undefined ? { roundTimeScale } : {}),
     });
     this.localId = this.show.humanId;
@@ -133,6 +135,14 @@ export class OfflineShowSession extends ShowSession {
     this.show.setInput(this.fillInput(this.input));
     m.step();
     this.source?.capture();
+  }
+
+  protected override onRoundBuilt(): void {
+    const director = this.show.director;
+    if (this.localId < 0) return;
+    director.onPlayerLoaded(this.localId);
+    // NOTE: the director clock is held while the loading card is up; a zero step still lets LOADING end now.
+    director.tick(0);
   }
 
   protected createSource(rs: RoundStart): RoundSource | null {

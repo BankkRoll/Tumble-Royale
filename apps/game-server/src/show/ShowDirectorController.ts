@@ -22,7 +22,13 @@ import {
   type ShowEvent as DirectorEvent,
 } from '@tumble/sim/show';
 import { RoundPhase, ShowPhase, type ShowPhaseId } from '@tumble/shared';
-import type { ShowController, ShowEvent, ShowRoundPlan, ShowTickContext } from '../room/types.ts';
+import type {
+  ShowController,
+  ShowEvent,
+  ShowLoadingStatus,
+  ShowRoundPlan,
+  ShowTickContext,
+} from '../room/types.ts';
 
 /** Show configuration forwarded to the director. */
 export interface ShowDirectorControllerOptions {
@@ -115,6 +121,18 @@ export class ShowDirectorController implements ShowController {
     this.director?.onPlayerLoaded(playerId);
   }
 
+  onPlayerLoadProgress(playerId: number): void {
+    this.director?.onPlayerLoadProgress(playerId);
+  }
+
+  onPlayerConnection(playerId: number, connected: boolean): void {
+    this.director?.onPlayerConnection(playerId, connected);
+  }
+
+  loadingStatus(): ShowLoadingStatus | null {
+    return this.director?.loadingRoster() ?? null;
+  }
+
   currentRound(): ShowRoundPlan | null {
     return this.plan;
   }
@@ -146,7 +164,10 @@ export class ShowDirectorController implements ShowController {
         );
       },
       getStatus: () => this.status ?? { phase: RoundPhase.Loading, finished: false, players: EMPTY_PLAYERS },
-      // The room disposes the sim when the next round starts or the room closes, and forfeits departed players itself.
+      forfeit: (playerId) => {
+        this.events.push({ type: 'forfeit', playerId });
+      },
+      // The room disposes the sim when the next round starts or the room closes.
       dispose: () => {},
     };
   }

@@ -50,7 +50,9 @@ Race (reach finish; last players eliminated when quota fills) · Survival (don't
 
 `LOADING → INTRO_FLYOVER → RULES_CARD → COUNTDOWN (3-2-1-GO) → PLAYING → (OVERTIME) → ROUND_END → RESULTS → TRANSITION`
 
-- LOADING: wait for all humans to ack or 12 s; late loaders treated as eliminated (config flag).
+- LOADING: wait until every connected human has acked (scene built and shaders compiled). A client
+  that keeps reporting load progress is waited for; one silent for 15 s, or anyone still loading at
+  60 s, is treated as eliminated (config flag). Disconnected players and bots never hold a round.
 - INTRO_FLYOVER: authored camera spline, title card, type badge, one-line objective, tips carousel.
 - COUNTDOWN: players frozen on start gates; can emote and jump in place.
 - PLAYING: timer, "QUALIFIED 12 / 26" counter.

@@ -70,7 +70,7 @@ describe('show mutators and round time scale online', () => {
             rounds: [round],
             playlist,
             roundTimeScale: 0.5,
-            timings: { preShow: 1, loadingMax: 1 },
+            timings: { preShow: 1, loadingStall: 1 },
           }),
         createBot: null,
         now: () => clock.now,

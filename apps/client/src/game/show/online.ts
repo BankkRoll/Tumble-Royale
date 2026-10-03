@@ -20,6 +20,7 @@ import {
   KickReason,
   type DecodedSnapshot,
   type JoinRoundMsg,
+  type LoadingStatusMsg,
   type NetPlayerInfo,
   type PlayerRewardMsg,
   type RoundResultEntry,
@@ -76,6 +77,8 @@ const AIRBORNE: ReadonlySet<number> = new Set([
 ]);
 /** Leader/progress recompute rate (the HUD pushes at 12 Hz). */
 const LEADER_INTERVAL_S = 0.1;
+/** `loadProgress` heartbeat period while this machine builds a round. */
+const LOAD_PROGRESS_MS = 500;
 
 /**
  * Probes the game server through the Vite proxy.
@@ -164,6 +167,7 @@ export class OnlineShowSession extends ShowSession {
   private apiReward: PlayerRewardMsg | null | undefined = undefined;
   private welcomed = false;
   private readonly unsub: (() => void)[] = [];
+  private heartbeat = 0;
   private readonly emoteSlots = new Map<number, number>();
   private readonly fates = new Map<number, number>();
   private readonly qualifyOrder: number[] = [];
@@ -209,7 +213,7 @@ export class OnlineShowSession extends ShowSession {
     this.session = new NetGameSession(this.net, (join) => this.createPredictSim(join), {
       onEvent: (e) => this.events.push(e),
       onRoundReady: (join) => {
-        if (!join.lobby) this.buildRoundView();
+        if (!join.lobby) this.requestRoundBuild();
       },
     });
     this.lobbySource = this.createLobbySource();
@@ -364,6 +368,7 @@ export class OnlineShowSession extends ShowSession {
       net.on('message', (m) => {
         if (m.t === 'showInfo') this.onShowInfo(m);
         else if (m.t === 'showRewards') this.apiReward = m.reward;
+        else if (m.t === 'loadingStatus') this.onLoadingStatus(m);
         else if (m.t === 'showPhase' && m.phase === ShowPhase.PreShow && m.startsInMs !== undefined) {
           this.showStarted = true;
           this.preShowSeconds = m.startsInMs / 1000;
@@ -548,7 +553,14 @@ export class OnlineShowSession extends ShowSession {
     }
     // A resume re-sends the current round's joinRound; only a new round index starts a new round.
     const index = j.roundIndex;
-    if (index === this.roundIndex && this.round?.start.round.id === j.roundId) return;
+    if (index === this.roundIndex && this.round?.start.round.id === j.roundId) {
+      // The server may have missed our ack while we were away: say it again, or keep reporting progress.
+      if (this.phase === RoundPhase.Loading) {
+        if (this.round.view) this.net.sendLowFreq({ t: 'loaded', roundId: j.roundId });
+        else this.startLoadHeartbeat(j.roundId);
+      }
+      return;
+    }
     this.roundIndex = index;
     this.fates.clear();
     this.qualifyOrder.length = 0;
@@ -567,6 +579,50 @@ export class OnlineShowSession extends ShowSession {
       mutatorId: j.mutatorId ?? null,
     };
     this.onRoundSelected(start);
+    this.startLoadHeartbeat(j.roundId);
+  }
+
+  /**
+   * Reports load progress every {@link LOAD_PROGRESS_MS} from the moment a
+   * round is announced until it is built: the server keeps the round in
+   * LOADING for as long as these arrive. A timer, not the frame loop, so it
+   * keeps beating while build slices or a background tab starve frames.
+   */
+  private startLoadHeartbeat(roundId: string): void {
+    this.stopLoadHeartbeat();
+    const beat = (): void => {
+      if (this.round?.start.round.id !== roundId || this.round.view) {
+        this.stopLoadHeartbeat();
+        return;
+      }
+      this.net.sendLowFreq({ t: 'loadProgress', roundId, pct: this.localLoadProgress() });
+    };
+    beat();
+    this.heartbeat = window.setInterval(beat, LOAD_PROGRESS_MS);
+  }
+
+  private stopLoadHeartbeat(): void {
+    if (this.heartbeat) window.clearInterval(this.heartbeat);
+    this.heartbeat = 0;
+  }
+
+  protected override get waitsForOthers(): boolean {
+    return true;
+  }
+
+  protected override onRoundBuilt(rs: RoundStart): void {
+    this.stopLoadHeartbeat();
+    this.net.sendLowFreq({ t: 'loaded', roundId: rs.round.id });
+  }
+
+  /** The server's LOADING roster: who the round is still waiting for. */
+  private onLoadingStatus(m: LoadingStatusMsg): void {
+    if (this.round?.start.round.id !== m.roundId || this.round.everyoneIn) return;
+    ui.getState().setRoundLoading({
+      loaded: m.loaded,
+      total: m.total,
+      waiting: m.waitingOn.filter((id) => id !== this.localId).map((id) => this.uiPlayer(id)),
+    });
   }
 
   private onResults(roundId: string, results: RoundResultEntry[]): void {
@@ -759,6 +815,7 @@ export class OnlineShowSession extends ShowSession {
   }
 
   protected override onDispose(): void {
+    this.stopLoadHeartbeat();
     for (const u of this.unsub) u();
     this.unsub.length = 0;
     this.session.dispose();

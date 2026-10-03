@@ -26,6 +26,7 @@ import {
   type ShowParticipant,
   type ShowPlaylistInput,
   type ShowSummary,
+  type ShowTimings,
 } from '../src/show/index.ts';
 
 type Mode = RoundDefinition['qualification']['mode'];
@@ -310,8 +311,10 @@ describe('ShowDirector', () => {
     expect(director.current().alive).not.toContain(5);
     director.tick(1.01);
     director.onPlayerLoaded(0);
-    // Player 1 never acks: after the 12 s loading cap they are forfeited.
-    director.tick(12.5);
+    // Player 1 never acks nor reports progress: after the 15 s stall window they are forfeited.
+    director.tick(14.9);
+    expect(director.current().roundPhase).toBe(RoundPhase.Loading);
+    director.tick(0.2);
     expect(director.current().roundPhase).toBe(RoundPhase.IntroFlyover);
     expect(drivers[0]!.getStatus().players.get(1)!.status).toBe(PlayerRoundStatus.Eliminated);
   });
@@ -356,7 +359,163 @@ describe('ShowDirector', () => {
   });
 });
 
+describe('ShowDirector loading gate', () => {
+  /** Two humans (0, 1) and ten bots, round 1 selected and in LOADING. */
+  function loadingShow(timings: Partial<ShowTimings> = {}) {
+    const drivers: FakeDriver[] = [];
+    const director = new ShowDirector({
+      seed: 11,
+      playlist: MAIN,
+      rounds: CATALOG,
+      participants: [
+        { id: 0, name: 'A', isBot: false },
+        { id: 1, name: 'B', isBot: false },
+        ...participants(12).slice(2),
+      ],
+      timings: { preShow: 1, ...timings },
+      host: {
+        startRound(info) {
+          const d = new FakeDriver(info, new Rng(1), { phases: [], disposed: false });
+          drivers.push(d);
+          return d;
+        },
+      },
+    });
+    director.tick(1);
+    expect(director.current().roundPhase).toBe(RoundPhase.Loading);
+    const status = (id: number) => drivers[0]!.getStatus().players.get(id)!.status;
+    return { director, status };
+  }
+
+  it('waits for a connected player who keeps reporting progress', () => {
+    const { director, status } = loadingShow();
+    director.onPlayerLoaded(0);
+    // 40 s of a slow but alive client: far past the stall window, under the hard cap.
+    for (let t = 0; t < 40; t += 0.5) {
+      director.onPlayerLoadProgress(1);
+      director.tick(0.5);
+      expect(director.current().roundPhase).toBe(RoundPhase.Loading);
+    }
+    expect(director.loadingRoster()).toMatchObject({ loaded: 1, total: 2, waitingOn: [1] });
+    director.onPlayerLoaded(1);
+    director.tick(1 / 30);
+    expect(director.current().roundPhase).toBe(RoundPhase.IntroFlyover);
+    expect(status(1)).toBe(PlayerRoundStatus.Playing);
+    expect(director.loadingRoster()).toBeNull();
+  });
+
+  it('forfeits a player whose progress stalls for loadingStall seconds', () => {
+    const { director, status } = loadingShow({ loadingStall: 15 });
+    director.onPlayerLoaded(0);
+    director.tick(2);
+    director.onPlayerLoadProgress(1);
+    director.tick(14.9);
+    expect(director.current().roundPhase).toBe(RoundPhase.Loading);
+    director.tick(0.2);
+    expect(director.current().roundPhase).toBe(RoundPhase.IntroFlyover);
+    expect(status(1)).toBe(PlayerRoundStatus.Eliminated);
+    expect(status(0)).toBe(PlayerRoundStatus.Playing);
+  });
+
+  it('gives up at the hard cap even while progress still arrives', () => {
+    const { director, status } = loadingShow({ loadingHardCap: 60 });
+    director.onPlayerLoaded(0);
+    for (let t = 0; t < 59.5; t += 0.5) {
+      director.onPlayerLoadProgress(1);
+      director.tick(0.5);
+    }
+    expect(director.current().roundPhase).toBe(RoundPhase.Loading);
+    director.onPlayerLoadProgress(1);
+    director.tick(0.6);
+    expect(director.current().roundPhase).toBe(RoundPhase.IntroFlyover);
+    expect(status(1)).toBe(PlayerRoundStatus.Eliminated);
+  });
+
+  it('never waits on disconnected players, but does again once they reconnect', () => {
+    const { director, status } = loadingShow();
+    director.onPlayerConnection(1, false);
+    director.tick(1);
+    expect(director.current().roundPhase).toBe(RoundPhase.Loading);
+    expect(director.loadingRoster()?.waitingOn).toEqual([0]);
+    director.onPlayerConnection(1, true);
+    director.onPlayerLoaded(0);
+    director.tick(10);
+    expect(director.current().roundPhase).toBe(RoundPhase.Loading);
+    director.onPlayerConnection(1, false);
+    director.tick(1 / 30);
+    expect(director.current().roundPhase).toBe(RoundPhase.IntroFlyover);
+    expect(status(1)).toBe(PlayerRoundStatus.Eliminated);
+  });
+
+  it('players who left never block', () => {
+    const { director, status } = loadingShow();
+    director.onPlayerLoaded(0);
+    director.onPlayerLeft(1);
+    director.tick(1 / 30);
+    expect(director.current().roundPhase).toBe(RoundPhase.IntroFlyover);
+    expect(status(1)).toBe(PlayerRoundStatus.Eliminated);
+    expect(director.current().alive).toContain(0);
+  });
+
+  it('bots never block', () => {
+    const { director } = loadingShow();
+    director.onPlayerLoaded(0);
+    director.onPlayerLoaded(1);
+    director.tick(1 / 30);
+    expect(director.current().roundPhase).toBe(RoundPhase.IntroFlyover);
+  });
+
+  it('keeps late loaders when lateLoadersEliminated is off', () => {
+    const drivers: FakeDriver[] = [];
+    const director = new ShowDirector({
+      seed: 2,
+      playlist: MAIN,
+      rounds: CATALOG,
+      participants: [{ id: 0, name: 'A', isBot: false }, ...participants(8).slice(1)],
+      timings: { preShow: 0, loadingStall: 3 },
+      lateLoadersEliminated: false,
+      host: {
+        startRound(info) {
+          const d = new FakeDriver(info, new Rng(1), { phases: [], disposed: false });
+          drivers.push(d);
+          return d;
+        },
+      },
+    });
+    director.tick(3.1);
+    expect(director.current().roundPhase).toBe(RoundPhase.IntroFlyover);
+    expect(drivers[0]!.getStatus().players.get(0)!.status).toBe(PlayerRoundStatus.Playing);
+  });
+});
+
 describe('offline show', () => {
+  it('waits for the local build before leaving LOADING (manual load ack)', async () => {
+    const R = await loadRapier();
+    const rounds = [createTestArenaRound({ id: 'gumdrop-gauntlet' })];
+    const show = createOfflineShow({
+      R,
+      deps: { createController: createSimpleController, obstacles: testObstacleModules() },
+      playlist: { id: 'test', name: 'Test', pool: rounds.map((r) => ({ roundId: r.id })) },
+      rounds,
+      seed: 4,
+      humanName: 'You',
+      players: 6,
+      timings: { preShow: 0 },
+      localLoad: 'manual',
+    });
+    show.advance(0.1);
+    expect(show.director.current().roundPhase).toBe(RoundPhase.Loading);
+    // A slow machine: minutes of building never time the local player out.
+    for (let i = 0; i < 300; i++) show.director.tick(1);
+    expect(show.director.current().roundPhase).toBe(RoundPhase.Loading);
+    show.director.onPlayerLoaded(show.humanId);
+    show.director.tick(0);
+    expect(show.director.current().roundPhase).toBe(RoundPhase.IntroFlyover);
+    const status = show.match!.getStatus().players.get(show.humanId);
+    expect(status?.status).toBe(PlayerRoundStatus.Playing);
+    show.dispose();
+  }, 60_000);
+
   it('runs a real all-bot show end to end with match sims', async () => {
     const R = await loadRapier();
     const rounds = [

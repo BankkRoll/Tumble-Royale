@@ -92,6 +92,8 @@ export class FakeMatchSim implements MatchSim {
   /** Every input applied, per player, in step order. */
   readonly applied = new Map<number, CharacterInput[]>();
   phaseSet: { phase: RoundPhaseId; time?: number }[] = [];
+  /** Players eliminated through {@link forfeit}, in call order. */
+  readonly forfeited: number[] = [];
   private steps = 0;
   private t = 0;
   disposed = false;
@@ -176,6 +178,10 @@ export class FakeMatchSim implements MatchSim {
   }
 
   setObstacleNetState(): void {}
+
+  forfeit(playerId: number): void {
+    if (!this.forfeited.includes(playerId)) this.forfeited.push(playerId);
+  }
 
   getStatus(): RoundStatus {
     return {

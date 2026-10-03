@@ -92,6 +92,7 @@ import type { ShowSession } from './show/session.ts';
 import { loadJson, saveJson } from './storage.ts';
 import type { CeremonyPost } from './views/ceremonies.ts';
 import { MenuView } from './views/menuView.ts';
+import { loadTimingsLog } from './round/loadPipeline.ts';
 import { rosterFromParty, type PartyRoster } from './views/partyLobby.ts';
 import { SceneDirector } from './views/sceneDirector.ts';
 import { ThumbnailRenderer } from './thumbnails.ts';
@@ -291,6 +292,7 @@ export class GameApp {
       localPlayer: () => this.session?.localDebug() ?? null,
       tier: () => quality.tier,
       memoryLog: this.memoryLog,
+      loadTimings: loadTimingsLog,
       account: () => {
         const a = this.account;
         if (!a?.active || !a.userId) return null;
@@ -546,17 +548,21 @@ export class GameApp {
     }
     this.replays.frame(realDt);
     const warp = this.session?.timeWarp ?? 1;
-    this.director.update(dt * warp, realDt);
-    this.photo.update(realDt);
     const d = this.director;
+    // PERF: an opaque loading screen hides the canvas; drawing it would only steal frame time from the build.
+    if (!d.covered) d.update(dt * warp, realDt);
+    this.photo.update(realDt);
     this.audio.setListener(d.listenerPos, d.listenerFwd, d.listenerUp);
     this.audio.update();
     this.post.update(realDt);
-    this.post.render();
-    this.photo.afterRender();
+    if (!d.covered) {
+      this.post.render();
+      this.photo.afterRender();
+    }
     // Thumbnails only render in the menus, one per frame, so shows never hitch.
     if (!this.session) this.thumbs.pump(realDt * 1000);
-    this.quality.sample(realDt * 1000);
+    // Build slices stretch frames while covered; they say nothing about render cost.
+    if (!d.covered) this.quality.sample(realDt * 1000);
     this.stats.set('view', `${d.kind} · ${this.quality.tier} · ${this.quality.adaptive.scale.toFixed(2)}x`);
     this.stats.update(realDt, this.renderer);
     this.hooks.frames++;

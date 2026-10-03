@@ -1,6 +1,6 @@
-# Tumble Royale wire protocol — v3
+# Tumble Royale wire protocol — v4
 
-`PROTOCOL_VERSION = 3` (`src/protocol.ts`). Any incompatible change bumps it;
+`PROTOCOL_VERSION = 4` (`src/protocol.ts`). Any incompatible change bumps it;
 the server rejects a Hello with a different version (`Kick{VersionMismatch}`).
 
 Transport: binary WebSocket frames (`/ws`; `/gs/ws` is also accepted for the
@@ -159,9 +159,10 @@ larger message is sent alone). Payloads:
   `showInfo` (match id, playlist, show name, queue, round estimate — once per
   connection), `showRewards` (the account API's `PlayerRewardSummary` for
   this player, forwarded after the server posted the results), `playerList`, `roundPhase`, `showPhase`,
-  `roundResults`, `showSummary`, `lobby`, `chat`; client→server: `chat`,
-  `loaded`, `spectate` (sent whenever the spectated player changes; drives
-  interest management). Clients may never send SimEvents.
+  `roundResults`, `showSummary`, `lobby`, `chat`, `loadingStatus` (v4);
+  client→server: `chat`, `loaded`, `loadProgress` (v4), `spectate` (sent
+  whenever the spectated player changes; drives interest management). Clients
+  may never send SimEvents.
 
   v3 additions: `playerList[].partyId` (duos/squads), `joinRound.lobby` (the
   live pre-show platform: a rule-less lobby sim players join and leave while
@@ -171,6 +172,25 @@ larger message is sent alone). Payloads:
   `MatchSimOptions.roundTimeScale`, which is the only place a timer is scaled),
   `roundResults[].carried` (eliminated but carried by a qualifying teammate)
   and `showPhase.startsInMs` (pre-show countdown).
+
+  v4 additions: `loadProgress` and `loadingStatus` (see Round loading). v4
+  exists because a v3 server counts an unknown client message
+  (`loadProgress`) as a protocol violation and eventually kicks for it.
+
+### Round loading (v4)
+
+A round stays in LOADING until every connected human entrant has sent
+`loaded{roundId}`, which clients send only once the round's scene is built and
+its shaders are compiled. While building, a client sends
+`loadProgress{roundId, pct 0..1}` about every 500 ms, from the moment
+`joinRound` arrives; each one keeps the server waiting on that player for
+another `loadingStall` (15 s). A player who goes quiet that long, or anyone
+still loading at `loadingHardCap` (60 s), is forfeited. Disconnected players
+never hold the round, and bots never load. Meanwhile the server broadcasts
+`loadingStatus{roundId, loaded, total, waitingOn ≤ 8 ids}` at most 2 Hz (when
+it changed, plus a 1 Hz keepalive). IntroFlyover then starts on the same
+server tick for everyone, so clients that finished early wait on their loading
+screen instead of seeing the round begin.
 
 ## Clock sync (Ping/Pong)
 

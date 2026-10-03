@@ -7,6 +7,7 @@ import {
   Vector3,
   type Camera,
   type Node,
+  type Object3D,
   type Scene,
   type ToneMapping,
   type WebGPURenderer,
@@ -168,6 +169,15 @@ export interface PostPipeline {
   render(): void;
   /** Swap scene/camera (menu scene switches) without losing settings. */
   setView(scene: Scene, camera: Camera): void;
+  /**
+   * Compiles the current view's materials for the exact render target the
+   * scene pass draws into (formats, MSAA, MRT), yielding between objects, so
+   * the first real frame of a new scene does not stall on shader and
+   * pipeline creation. Objects outside the camera frustum are compiled too.
+   *
+   * @param onProgress - Fraction of objects compiled (0..1).
+   */
+  compileAsync(onProgress?: (fraction: number) => void): Promise<void>;
   setSettings(patch: Partial<PostSettings>): void;
   /** Applies a grade instantly. */
   setGrade(grade: GradeParams): void;
@@ -202,6 +212,31 @@ const FILTERS: Record<PhotoFilter, FilterParams> = {
   noir: { saturation: 1, contrast: 1.45, mono: 1, tint: [0.95, 0.97, 1.05], vignette: 0.45, bloom: 0.6 },
   pop: { saturation: 1.6, contrast: 1.25, mono: 0, tint: [1.02, 1, 1.03], vignette: 0, bloom: 1.3 },
 };
+
+/**
+ * Turns off frustum culling for everything in `root` so a precompile or warm
+ * render touches objects the current camera cannot see yet.
+ *
+ * @param root - Scene (or subtree) to affect.
+ * @returns Restores the previous flags.
+ *
+ * @example
+ * const restore = disableFrustumCulling(scene);
+ * renderer.render(scene, camera);
+ * restore();
+ */
+export function disableFrustumCulling(root: Object3D): () => void {
+  const touched: Object3D[] = [];
+  root.traverse((o) => {
+    if (o.frustumCulled) {
+      o.frustumCulled = false;
+      touched.push(o);
+    }
+  });
+  return () => {
+    for (const o of touched) o.frustumCulled = true;
+  };
+}
 
 /**
  * Creates the post-processing pipeline for a renderer.
@@ -367,8 +402,36 @@ export function createPostPipeline(
       else renderer.render(view.scene, view.camera);
     },
     setView(s: Scene, cam: Camera): void {
+      // Rebuilding the graph would drop the scene pass a precompile just targeted.
+      if (view.scene === s && view.camera === cam && scenePassNode) return;
       view = { scene: s, camera: cam };
       if (current.enabled) build();
+    },
+    compileAsync(onProgress?: (fraction: number) => void): Promise<void> {
+      const progress = onProgress
+        ? (e: ProgressEvent): void => onProgress(e.total > 0 ? e.loaded / e.total : 1)
+        : null;
+      const passNode = current.enabled ? scenePassNode : null;
+      const prevTarget = renderer.getRenderTarget();
+      const prevMrt = renderer.getMRT();
+      // IMPORTANT: renderer.compileAsync picks its render context and culls the
+      // scene synchronously before its first await, so the target, MRT and
+      // culling overrides only need to hold for this call, not for the whole
+      // compile (frames keep rendering in between).
+      const restoreCulling = disableFrustumCulling(view.scene);
+      try {
+        if (passNode) {
+          // PassNode.setup() sets this on the pass's first render; pipelines must be built for the same MSAA count.
+          passNode.renderTarget.samples = passNode.options.samples ?? renderer.samples;
+          renderer.setRenderTarget(passNode.renderTarget);
+          renderer.setMRT(passNode.getMRT());
+        }
+        return renderer.compileAsync(view.scene, view.camera, null, progress);
+      } finally {
+        renderer.setRenderTarget(prevTarget);
+        renderer.setMRT(prevMrt);
+        restoreCulling();
+      }
     },
     setSettings(patch: Partial<PostSettings>): void {
       const structural =

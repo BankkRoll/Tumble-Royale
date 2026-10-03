@@ -162,7 +162,7 @@ const duoController = (extra: Partial<ConstructorParameters<typeof ShowDirectorC
     },
     timings: {
       preShow: 0.5,
-      loadingMax: 1,
+      loadingStall: 1,
       introFlyover: 0.1,
       rulesCard: 0.1,
       countdown: 0.1,

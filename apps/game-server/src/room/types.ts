@@ -71,10 +71,23 @@ export type ShowEvent =
   | { type: 'roundStart'; plan: ShowRoundPlan }
   /** Force the round phase (sim.setPhase) and mirror it to clients. */
   | { type: 'roundPhase'; phase: RoundPhaseId; time?: number }
+  /** Eliminate a player from the running round (e.g. gave up waiting for them to load). */
+  | { type: 'forfeit'; playerId: number }
   /** The round is over; results go to clients. */
   | { type: 'roundEnd'; roundId: string; results: RoundResultEntry[] }
   /** The show is over; the room winds down. */
   | { type: 'showEnd'; winners: number[]; rounds: { roundId: string; qualified: number[] }[] };
+
+/** The LOADING roster mirrored to clients as `loadingStatus`. */
+export interface ShowLoadingStatus {
+  roundId: string;
+  /** Human entrants who finished loading. */
+  loaded: number;
+  /** Human entrants still in the show. */
+  total: number;
+  /** Connected players the round is still waiting for. */
+  waitingOn: number[];
+}
 
 /** What the show director can see each tick. */
 export interface ShowTickContext {
@@ -102,6 +115,12 @@ export interface ShowController {
   onPlayerLeft(playerId: number): void;
   /** A human finished loading the current round (client `loaded` message). */
   onPlayerLoaded?(playerId: number): void;
+  /** A human is still building the current round (client `loadProgress` heartbeat). */
+  onPlayerLoadProgress?(playerId: number, pct: number): void;
+  /** A human's connection dropped (`false`) or was (re)attached (`true`). */
+  onPlayerConnection?(playerId: number, connected: boolean): void;
+  /** Who the round is waiting on while it loads; null outside LOADING. Allocates: poll at ≤ 2 Hz. */
+  loadingStatus?(): ShowLoadingStatus | null;
   /** The round being played, or null. */
   currentRound(): ShowRoundPlan | null;
   /** Playlist party size (duos 2, squads 4); the room assigns party ids with it. */

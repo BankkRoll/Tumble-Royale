@@ -328,7 +328,29 @@ export const PRESETS: Preset[] = [
     id: 'roundLoading',
     label: 'Round loading',
     group: 'Show flow',
-    apply: () => (s().setRoundIntro(roundIntro(1)), s().setScreen('roundLoading', { transition: 'none' })),
+    apply: () => (
+      s().setRoundIntro(roundIntro(1)),
+      s().setRoundLoading(null),
+      s().setRoundLoading({ progress: 0.42 }),
+      s().setScreen('roundLoading', { transition: 'none' })
+    ),
+  },
+  {
+    id: 'roundLoadingWaiting',
+    label: 'Round loading: waiting for players',
+    group: 'Show flow',
+    apply: () => (
+      s().setRoundIntro(roundIntro(1)),
+      s().setRoundLoading({
+        progress: 1,
+        ready: true,
+        loaded: 23,
+        total: 26,
+        waiting: world.players.filter((p) => !p.isLocal).slice(0, 3),
+        everyoneIn: false,
+      }),
+      s().setScreen('roundLoading', { transition: 'none' })
+    ),
   },
   {
     id: 'roundIntro',

@@ -158,6 +158,8 @@
     inset -0.4em -0.4em 0 rgba(0, 0, 0, 0.15),
     0 0.2em 0 var(--ink);
   animation: tr-spin 900ms cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite;
+  /* PERF: its own compositor layer, so it keeps spinning while a round build holds the main thread. */
+  will-change: transform;
 }
 .tr-gumball-spinner--sm {
   width: 1.3em;
@@ -2063,6 +2065,94 @@
 }
 .tr-roundloading-inner .tr-title {
   color: var(--bubblegum);
+}
+.tr-roundloading.is-go .tr-roundloading-inner .tr-title {
+  color: var(--grape);
+}
+/* Progress fill: scaled, never resized, so updates skip layout and paint. */
+.tr-roundloading-meter {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  width: min(22em, 80vw);
+}
+.tr-roundloading-bar {
+  flex: 1;
+  height: 0.9em;
+  overflow: hidden;
+  border: 0.14em solid var(--ink);
+  border-radius: 1em;
+  background: rgba(43, 26, 94, 0.12);
+}
+.tr-roundloading-bar > i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--bubblegum), var(--lemon));
+  transform-origin: 0 50%;
+  transition: transform 240ms linear;
+  will-change: transform;
+}
+.tr-roundloading-pct {
+  min-width: 3ch;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.tr-roundloading-waiting {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5em;
+  max-width: min(36em, 90vw);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tr-roundloading-player {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.2em 0.7em 0.2em 0.3em;
+  border: 0.12em solid var(--ink);
+  border-radius: 1em;
+  background: rgba(255, 247, 234, 0.95);
+  font-weight: 700;
+  animation: tr-loading-bob 1.6s ease-in-out infinite;
+  will-change: transform;
+}
+.tr-roundloading-player:nth-child(2n) {
+  animation-delay: -0.8s;
+}
+.tr-roundloading-player > span {
+  max-width: 10em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@keyframes tr-loading-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-0.18em);
+  }
+}
+/* Tips stack in one cell and cross-fade via WAAPI opacity (see CompositorTips). */
+.tr-loading-tips {
+  display: grid;
+  justify-items: center;
+}
+.tr-loading-tips > .tr-loading-tip {
+  grid-area: 1 / 1;
+  animation: none;
+  will-change: opacity;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tr-roundloading-player {
+    animation: none;
+  }
 }
 
 .tr-roundintro-card {

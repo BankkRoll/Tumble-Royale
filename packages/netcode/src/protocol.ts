@@ -37,6 +37,8 @@ export const KickReason = {
   Shutdown: 6,
   /** Missing, invalid or expired join ticket. */
   BadTicket: 7,
+  /** A private show's host removed the player (relayed by the matchmaker). */
+  RemovedByHost: 8,
 } as const;
 
 /** Numeric kick reason. */

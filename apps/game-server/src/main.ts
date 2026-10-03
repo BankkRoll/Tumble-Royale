@@ -17,6 +17,9 @@
  *   (both required; reporting is skipped otherwise)
  * - `MATCHMAKER_URL` + `GAME_SERVER_SECRET` + `PUBLIC_WS_URL` (+ `SERVER_ID`, `REGION`) —
  *   register with the matchmaker and heartbeat (optional)
+ * - `GAME_SERVER_SECRET` also enables the signed `POST /internal/kick` control endpoint;
+ *   `CONTROL_URL` tells the matchmaker where to reach it when the public WS host is not
+ *   the internal one (default: derived from `PUBLIC_WS_URL`)
  *
  * Integration: `createDevRoomDeps` is the standalone wiring (capsule sim,
  * dev arena, single-round loop, random-walk bots); `createRealRoomDeps`
@@ -67,6 +70,7 @@ const server = await startGameServer({
     ticketedFillWaitMs: env('TICKET_FILL_WAIT_MS', 15_000),
   },
   tickets: { secret: ticketSecret, allowUnticketed },
+  ...(process.env.GAME_SERVER_SECRET ? { control: { secret: process.env.GAME_SERVER_SECRET } } : {}),
 });
 
 console.log(
@@ -82,6 +86,7 @@ if (mmUrl && serverSecret) {
     secret: serverSecret,
     serverId: process.env.SERVER_ID ?? `gs-${hostname()}-${server.port}`,
     publicUrl: process.env.PUBLIC_WS_URL ?? `ws://localhost:${server.port}/ws`,
+    ...(process.env.CONTROL_URL ? { controlUrl: process.env.CONTROL_URL } : {}),
     region: process.env.REGION ?? 'na',
     capacity: env('SERVER_CAPACITY', 400),
     load: () => server.rooms.list().reduce((n, r) => n + r.humans, 0),

@@ -308,6 +308,33 @@ export class Room {
     return slot ? this.resume(session, slot.token) : false;
   }
 
+  /**
+   * Removes an account for good (a private show's host kicked them): closes
+   * their connection, frees the seat in the pre-show lobby or forfeits it
+   * mid-show, and tells everyone so the Tumbler despawns.
+   *
+   * @returns False when the account holds no live slot here.
+   */
+  removeUser(userId: string): boolean {
+    const id = this.slotOfUser(userId);
+    const slot = id >= 0 ? this.slots.get(id) : undefined;
+    if (!slot) return false;
+    const session = slot.session;
+    // Detach first so the close callback doesn't treat this as a resumable disconnect.
+    slot.session = null;
+    if (session) this.kick(session, KickReason.RemovedByHost, 'removed by the host');
+    if (this.state === 'lobby' || slot.spectator) {
+      this.slots.delete(slot.id);
+    } else {
+      slot.left = true;
+      (this.sim as { forfeit?: (id: number) => void } | null)?.forfeit?.(slot.id);
+      this.show.onPlayerLeft(slot.id);
+    }
+    this.log(`[room ${this.id}] ${slot.name} (player ${slot.id}) removed by the host`);
+    this.broadcastPlayerList();
+    return true;
+  }
+
   /** True when the room can take a spectator. */
   canAcceptSpectator(): boolean {
     return this.state === 'show' && this.slots.size < 255 - SPECTATOR_ID_BASE;

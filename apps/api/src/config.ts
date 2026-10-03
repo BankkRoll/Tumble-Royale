@@ -17,7 +17,11 @@ const optionalString = z
   .optional()
   .transform((v) => (v === undefined || v.trim() === '' ? undefined : v.trim()));
 
-const flag = z.enum(['0', '1']).optional();
+// An empty value (`ALLOW_EMBEDDED_DB=` in a .env or compose file) means unset.
+const flag = z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+  z.enum(['0', '1']).optional(),
+);
 
 /** Self-hosting and operations knobs (pool, migrations, retention, metrics). */
 const OpsEnvSchema = z.object({

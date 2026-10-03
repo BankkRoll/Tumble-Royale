@@ -42,6 +42,7 @@ describe('api config', () => {
     const embedded = { ...prod, REDIS_URL: 'redis://r', DATABASE_URL: '' };
     expect(issueNames(embedded)).toEqual(['DATABASE_URL']);
     expect(issueNames({ ...embedded, ALLOW_EMBEDDED_DB: '1' })).toEqual([]);
+    expect(issueNames({ ...embedded, ALLOW_EMBEDDED_DB: '' })).toEqual(['DATABASE_URL']);
     expect(issueNames(testEnv({ NODE_ENV: 'development' }))).toEqual([]);
   });
 

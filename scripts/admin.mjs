@@ -38,7 +38,7 @@ Users
   user rename <userId> <new display name>
 
 Options
-  --api-url <url>   API base URL (default: ADMIN_API_URL, PUBLIC_API_URL, API_URL, http://localhost:7360)
+  --api-url <url>   API base URL (default: ADMIN_API_URL, PUBLIC_API_URL, API_URL, http://127.0.0.1:7360)
   --token <token>   admin token (default: ADMIN_TOKEN)
   --json            print raw JSON responses
   --help            show this help`;
@@ -230,7 +230,7 @@ export async function run(argv, io = {}) {
     return 2;
   }
   const base = String(
-    opts['api-url'] ?? env.ADMIN_API_URL ?? env.PUBLIC_API_URL ?? env.API_URL ?? 'http://localhost:7360',
+    opts['api-url'] ?? env.ADMIN_API_URL ?? env.PUBLIC_API_URL ?? env.API_URL ?? 'http://127.0.0.1:7360',
   ).replace(/\/$/, '');
   const token = String(opts.token ?? env.ADMIN_TOKEN ?? '');
   if (!token) {

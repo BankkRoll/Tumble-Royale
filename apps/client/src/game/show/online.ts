@@ -537,6 +537,24 @@ export class OnlineShowSession extends ShowSession {
     return this.net.rtt;
   }
 
+  protected override isOnline(): boolean {
+    return true;
+  }
+
+  /**
+   * A matchmade show's results reach the account API from the game server,
+   * which keeps a leaver's played rounds (reported with `quit`), so nothing is
+   * banked locally. Dev shows without a ticket fall back to the local profile.
+   */
+  protected override bankOnLeave(facts: ShowResultForProfile): void {
+    if (this.reportsToAccount()) return;
+    super.bankOnLeave(facts);
+  }
+
+  private reportsToAccount(): boolean {
+    return !!this.opts.matchId && !!this.ctx.account?.active;
+  }
+
   protected override rewardsPending(): boolean {
     return !!this.opts.matchId && !!this.ctx.account?.active && this.apiReward === undefined;
   }

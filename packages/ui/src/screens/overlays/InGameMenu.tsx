@@ -12,7 +12,7 @@ import { Icon } from '../../components/icons/index.tsx';
 import { BIND_ACTION_LABELS } from '../../store/defaults.ts';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
-import type { BindAction, LocalStatus } from '../../store/types.ts';
+import type { BindAction, LocalStatus, ShowSeat } from '../../store/types.ts';
 import { keyLabel } from './SettingsSheet.tsx';
 
 const STATUS: Record<LocalStatus, { label: string; tone: string }> = {
@@ -22,7 +22,11 @@ const STATUS: Record<LocalStatus, { label: string; tone: string }> = {
   spectating: { label: 'Spectating', tone: 'is-out' },
 };
 
+/** Knocked out of the show and watching the rest of it. */
+const OUT_OF_SHOW = { label: 'Eliminated · Spectating', tone: 'is-out' };
+
 const CONTROL_ROWS: BindAction[] = ['jump', 'dive', 'grab', 'emoteWheel'];
+const SPECTATE_ROWS: BindAction[] = ['spectatePrev', 'spectateNext'];
 
 /** Opens the in-round menu. */
 export function openInGameMenu(): void {
@@ -35,14 +39,35 @@ function close(): void {
   ui.getState().setOverlay('none');
 }
 
+/**
+ * Leave-show dialog body, accurate per mode: offline the profile banks the
+ * played rounds on the spot; online the game server reports the leaver's
+ * rounds with the show and the account API grants them then.
+ *
+ * @param seat - The local seat (null outside a show: treated as offline).
+ * @returns Dialog body copy.
+ */
+export function leaveShowBody(seat: ShowSeat | null): string {
+  const rounds = seat?.online
+    ? 'Rewards for the rounds you already played are added when the show finishes.'
+    : 'Rewards for the rounds you already played are saved now.';
+  return `You'll be out of this show and back in the menu. ${rounds} Show and placement bonuses need you to stay until the end.`;
+}
+
 function confirmLeave(): void {
+  const seat = ui.getState().showSeat;
   ui.getState().showDialog({
     id: 'leaveShow',
     kind: 'confirm',
     title: 'Leave the show?',
-    body: "You'll be out of this show and back in the menu. Rewards for rounds you already played still count.",
+    body: leaveShowBody(seat),
     buttons: [
-      { id: 'cancel', label: 'Keep playing', variant: 'secondary', autofocus: true },
+      {
+        id: 'cancel',
+        label: seat?.outOfShow ? 'Keep watching' : 'Keep playing',
+        variant: 'secondary',
+        autofocus: true,
+      },
       { id: 'confirm', label: 'Leave show', variant: 'danger' },
     ],
   });
@@ -69,7 +94,8 @@ export function InGameMenu(): JSX.Element {
     })),
   );
   const binds = useUI((s) => s.settings.controls.keybinds);
-  const status = STATUS[hud.status];
+  const outOfShow = useUI((s) => s.showSeat?.outOfShow ?? false);
+  const status = outOfShow ? OUT_OF_SHOW : STATUS[hud.status];
   return (
     <div
       className="tr-dialog-wrap tr-interactive"
@@ -110,7 +136,7 @@ export function InGameMenu(): JSX.Element {
           open.
         </p>
         <div className="tr-igm-keys" aria-label="Controls">
-          {CONTROL_ROWS.map((a) => (
+          {(hud.status === 'spectating' || outOfShow ? SPECTATE_ROWS : CONTROL_ROWS).map((a) => (
             <span key={a} className="tr-hud-hint-item">
               <kbd>{keyLabel(binds[a][0] ?? '')}</kbd>
               {BIND_ACTION_LABELS[a]}

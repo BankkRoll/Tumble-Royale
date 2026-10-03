@@ -5,11 +5,14 @@
 import { memo, useEffect, useRef, useState, type JSX } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { playCue } from '../audio-cues.ts';
+import { BotTag } from '../components/bits.tsx';
 import { TumblerAvatar } from '../components/TumblerAvatar.tsx';
 import { Button } from '../components/controls.tsx';
+import { WatchChoicePanel } from '../screens/overlays/WatchChoice.tsx';
+import { keyLabel } from '../screens/overlays/SettingsSheet.tsx';
 import { formatClock, useDisplayName } from '../components/hooks.ts';
 import { uiEvents } from '../store/events.ts';
-import { ui, useUI } from '../store/uiStore.ts';
+import { useUI } from '../store/uiStore.ts';
 import { squash } from '../theme/motion.ts';
 import { Icon } from '../components/icons/index.tsx';
 import { roundTypeStyle } from '../theme/tokens.ts';
@@ -250,29 +253,45 @@ export const CountdownNumerals = memo(function CountdownNumerals(): JSX.Element 
   );
 });
 
-/** Bottom spectating bar with Q/E cycling. */
+/** Prev/next hints per device: the rebindable keys, the pad's shoulder buttons, nothing on touch. */
+function useSpectateHints(): [string | undefined, string | undefined] {
+  const device = useUI((s) => s.hud.device);
+  const prev = useUI((s) => s.settings.controls.keybinds.spectatePrev[0]);
+  const next = useUI((s) => s.settings.controls.keybinds.spectateNext[0]);
+  if (device === 'touch') return [undefined, undefined];
+  if (device === 'gamepad') return ['LB', 'RB'];
+  return [prev ? keyLabel(prev) : undefined, next ? keyLabel(next) : undefined];
+}
+
+/** Bottom spectating bar: who you're watching, prev/next (keys, pad shoulders, tap) and who is left. */
 export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null {
   const spec = useUI((s) => s.spectate);
+  const out = useUI((s) => s.showSeat?.outOfShow ?? false);
   const name = useDisplayName();
+  const [prevHint, nextHint] = useSpectateHints();
   if (!spec) return null;
   return (
-    <div className="tr-spectate tr-interactive" data-nav-scope="5">
+    <div className="tr-spectate tr-interactive" data-nav-scope="5" data-testid="spectate-banner">
       <Button
         variant="secondary"
         size="sm"
-        hint="Q"
+        {...(prevHint ? { hint: prevHint } : {})}
         aria-label="Previous player"
         onClick={() => uiEvents.emit('spectateNext', { dir: -1 })}
       >
         <Icon name="chevron-left" size="1em" />
       </Button>
       <div key={spec.player.id} className="tr-spectate-card">
-        <span className="tr-label tr-spectate-label">Spectating</span>
+        <span className="tr-label tr-spectate-label">{out ? 'Eliminated · Spectating' : 'Spectating'}</span>
         <TumblerAvatar colors={spec.player.colors} hat={spec.player.hat} size="2.6em" blink={false} />
         <span className="tr-col" style={{ gap: '0.1em', minWidth: 0 }}>
-          <b className="tr-ellipsis">{name(spec.player)}</b>
+          <span className="tr-row" style={{ gap: '0.4em', minWidth: 0 }}>
+            <b className="tr-ellipsis">{name(spec.player)}</b>
+            <BotTag isBot={spec.player.isBot} />
+          </span>
           <span className="tr-small tr-muted">
             {spec.detail} · {spec.index + 1}/{spec.count}
+            {spec.remaining !== undefined && ` · ${spec.remaining} still in`}
           </span>
         </span>
         {spec.qualified && (
@@ -284,7 +303,7 @@ export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null
       <Button
         variant="secondary"
         size="sm"
-        hint="E"
+        {...(nextHint ? { hint: nextHint } : {})}
         aria-label="Next player"
         onClick={() => uiEvents.emit('spectateNext', { dir: 1 })}
       >
@@ -294,40 +313,14 @@ export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null
   );
 });
 
-/** Spectate / Back to lobby / Play again after elimination. */
+/** "Keep watching / Leave show" after the ELIMINATED stamp. */
 export const EliminatedSheet = memo(function EliminatedSheet(): JSX.Element | null {
   const open = useUI((s) => s.eliminatedSheet);
+  const choice = useUI((s) => s.watchChoice);
   if (!open) return null;
   return (
     <div className="tr-elim-sheet tr-interactive" data-nav-scope="8">
-      <div className="tr-panel tr-elim-panel">
-        <div className="tr-title tr-h3">What now, champ?</div>
-        <div className="tr-row tr-wrap" style={{ justifyContent: 'center' }}>
-          <Button
-            variant="sky"
-            size="lg"
-            autoFocusNav
-            onClick={() => {
-              ui.getState().setEliminatedSheet(false);
-              uiEvents.emit('spectate');
-            }}
-          >
-            <Icon name="eye" size="1.1em" /> Spectate
-          </Button>
-          <Button
-            variant="secondary"
-            size="lg"
-            data-nav-back=""
-            cue="ui.back"
-            onClick={() => uiEvents.emit('backToLobby')}
-          >
-            <Icon name="home" size="1.1em" /> Back to lobby
-          </Button>
-          <Button variant="go" size="lg" cue="ui.confirm" onClick={() => uiEvents.emit('playAgain')}>
-            <Icon name="refresh" size="1.1em" /> Play again
-          </Button>
-        </div>
-      </div>
+      <WatchChoicePanel choice={choice} title="Knocked out!" />
     </div>
   );
 });

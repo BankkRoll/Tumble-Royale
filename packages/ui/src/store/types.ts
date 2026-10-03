@@ -812,6 +812,27 @@ export interface SpectateInfo {
   qualified: boolean;
   index: number;
   count: number;
+  /** Players still in the running this round (qualified or playing), when known. */
+  remaining?: number;
+}
+
+/** The local player's seat in the running show. */
+export interface ShowSeat {
+  /** The show runs on a game server (rewards are granted by the account API). */
+  online: boolean;
+  /** Knocked out of the show: watching the remaining rounds as a spectator. */
+  outOfShow: boolean;
+}
+
+/**
+ * "Keep watching / Leave show" choice, offered once the local player is
+ * knocked out (the in-round sheet, and the card over the results wall).
+ */
+export interface WatchChoice {
+  /** Epoch ms when Keep watching is picked automatically (null = waits for the player). */
+  autoAt: number | null;
+  /** Players still in the show, when known. */
+  remaining?: number;
 }
 
 /** One cell of the round results grid. */
@@ -1015,7 +1036,10 @@ export interface Settings {
     nameplates: boolean;
     streamerMode: boolean;
     showPing: boolean;
+    /** Pick "Keep watching" automatically after qualifying or being knocked out. */
     autoSpectate: boolean;
+    /** Small "BOT" tag beside bot names (nameplates, results, wall, spectate). */
+    botTags: boolean;
     chatFilter: boolean;
     region: string;
   };

@@ -6,8 +6,10 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "build": "node ../../scripts/build-server.mjs",
+    "build": "node ../../scripts/build-server.mjs src/migrate.ts",
     "start": "node --enable-source-maps dist/main.js",
+    "migrate": "node --enable-source-maps dist/migrate.js",
+    "migrate:dev": "tsx src/migrate.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests"
   },

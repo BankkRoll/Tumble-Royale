@@ -46,22 +46,78 @@ const MIGRATIONS_DIR =
   fileURLToPath(new URL('../../drizzle', import.meta.url));
 
 /**
+ * Key of the session-level advisory lock held while migrating. Any constant
+ * works as long as every API version uses the same one.
+ */
+export const MIGRATION_LOCK_KEY = 7_360_001;
+
+/** Options for {@link openDatabase}. */
+export interface OpenDatabaseOptions {
+  /** Postgres URL; when absent PGlite is used. */
+  databaseUrl: string | undefined;
+  /** PGlite directory, or `memory://` for an ephemeral database. */
+  pgliteDir: string;
+  /** Postgres pool size (default 10). */
+  poolMax?: number;
+  /** Errors of idle pooled connections (server restart, network blip). */
+  onPoolError?: (err: Error) => void;
+  /** Called once when another instance holds the migration lock. */
+  onLockWait?: () => void;
+}
+
+/**
+ * Applies pending migrations while holding a Postgres advisory lock, so API
+ * replicas (or a `migrate` job and an API) starting together run them once
+ * instead of racing on the same DDL.
+ *
+ * The lock and the migration share one dedicated connection: the lock is
+ * session-scoped and dies with that connection, so a crashed or killed
+ * migrator never leaves it held. Drizzle applies all pending migrations in
+ * one transaction, so an interrupted run rolls back completely and the next
+ * run retries it.
+ */
+async function migrateWithLock(pool: pg.Pool, onLockWait?: () => void): Promise<void> {
+  const client = await pool.connect();
+  let failed = false;
+  try {
+    const { rows } = await client.query<{ locked: boolean }>('select pg_try_advisory_lock($1) as locked', [
+      MIGRATION_LOCK_KEY,
+    ]);
+    if (!rows[0]?.locked) {
+      onLockWait?.();
+      await client.query('select pg_advisory_lock($1)', [MIGRATION_LOCK_KEY]);
+    }
+    try {
+      await migratePg(drizzlePg({ client, schema }), { migrationsFolder: MIGRATIONS_DIR });
+    } finally {
+      await client.query('select pg_advisory_unlock($1)', [MIGRATION_LOCK_KEY]).catch(() => {
+        failed = true;
+      });
+    }
+  } catch (err) {
+    failed = true;
+    throw err;
+  } finally {
+    // A connection that failed mid-migration may still hold the lock or be broken; destroy it, never reuse it.
+    client.release(failed);
+  }
+}
+
+/**
  * Opens the database.
  *
- * @param opts.databaseUrl - Postgres URL; when absent PGlite is used.
- * @param opts.pgliteDir - PGlite directory, or `memory://` for an ephemeral database.
+ * @param opts - Connection settings.
  */
-export async function openDatabase(opts: {
-  databaseUrl: string | undefined;
-  pgliteDir: string;
-}): Promise<Database> {
+export async function openDatabase(opts: OpenDatabaseOptions): Promise<Database> {
   if (opts.databaseUrl) {
-    const pool = new pg.Pool({ connectionString: opts.databaseUrl, max: 10 });
+    const pool = new pg.Pool({ connectionString: opts.databaseUrl, max: opts.poolMax ?? 10 });
+    // IMPORTANT: without a listener, an idle client's error (Postgres restart) is an uncaught exception.
+    pool.on('error', (err) => opts.onPoolError?.(err));
     const db = drizzlePg({ client: pool, schema });
     return {
       db: db as unknown as Db,
       driver: 'postgres',
-      migrate: () => migratePg(db, { migrationsFolder: MIGRATIONS_DIR }),
+      migrate: () => migrateWithLock(pool, opts.onLockWait),
       close: () => pool.end(),
     };
   }

@@ -11,11 +11,14 @@ import { conflict, notFound, parse } from '../http/errors.ts';
 import { LOADOUT_COUNT, LoadoutItemsSchema, validateLoadout } from '../inventory/loadout.ts';
 import { moveLeaderboardRegion } from '../leaderboards/service.ts';
 import { accountRegion, changeDisplayName, getProfileCard, RegionSchema } from './accounts.ts';
+import { deleteAccount } from './erase.ts';
 
 const PatchMe = z.object({
   displayName: z.string().max(32).optional(),
   region: RegionSchema.optional(),
 });
+/** Deleting an account cannot be undone, so the client must echo an explicit confirmation. */
+const DeleteMe = z.object({ confirm: z.literal('DELETE') });
 const IdParam = z.object({ id: z.string().uuid() });
 const IndexParam = z.object({
   index: z.coerce
@@ -91,6 +94,14 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: AppContext): vo
       await moveLeaderboardRegion(ctx, auth.userId, previousRegion, body.region);
     }
     return result;
+  });
+
+  app.delete('/me', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (req, reply) => {
+    const auth = await requireUser(ctx, req);
+    parse(DeleteMe, req.body);
+    await deleteAccount(ctx, auth.userId, { ip: req.ip, userAgent: req.headers['user-agent'] });
+    req.log.info({ userId: auth.userId }, 'account deleted');
+    return reply.code(204).send();
   });
 
   app.get('/profile/:id', async (req) => {

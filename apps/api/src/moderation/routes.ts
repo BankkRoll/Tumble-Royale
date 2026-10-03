@@ -6,6 +6,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { accountRegion, RegionSchema } from '../accounts/accounts.ts';
+import { isErased } from '../accounts/tombstone.ts';
 import type { AppContext } from '../context.ts';
 import { bans, events, featureFlags, reports, users } from '../db/schema.ts';
 import { verifyLedger } from '../economy/ledger.ts';
@@ -144,7 +145,9 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
     const out: Record<string, { scope: string; reason: string; expiresAt: string | null }[]> = {};
     for (const id of new Set(userIds)) {
       // Ids that are not account ids (bots, forged slots) cannot carry bans.
-      const rows = UUID_RE.test(id) ? await activeBans(ctx, id, true) : [];
+      const rows = UUID_RE.test(id) ? [...(await activeBans(ctx, id, true))] : [];
+      // Tokens of a just-deleted account are still unexpired; treat it as suspended.
+      if (await isErased(ctx.kv, id)) rows.push({ scope: 'all', reason: 'account deleted', expiresAt: null });
       out[id] = rows.map((b) => ({
         scope: b.scope,
         reason: b.reason,

@@ -10,7 +10,7 @@ import type { BitReader, BitWriter } from './bits.ts';
 import type { Bounds } from './quantize.ts';
 
 /** Bumped on any incompatible wire change; peers with different versions are rejected in the handshake. */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /** First byte of every binary message. Values are stable wire ids. */
 export const MsgType = {
@@ -187,6 +187,8 @@ export interface NetPlayerInfo {
   /** Opaque loadout blob from Hello (bots: generated). */
   loadout: string;
   connected: boolean;
+  /** Duos/squads party id (teammates share fates and the Crown); absent in solo shows. */
+  partyId?: number;
 }
 
 /** Everything a client needs to build the round locally and decode its snapshots. */
@@ -211,6 +213,13 @@ export interface JoinRoundMsg {
   qualifyTarget: number;
   /** Seeded (or forced) layout variation id; null when the round has none. */
   variationId: string | null;
+  /**
+   * v3: the pre-show lobby platform (`PRE_SHOW_LOBBY_ROUND`), not a show round.
+   * Players join and leave it live; it never produces results.
+   */
+  lobby?: boolean;
+  /** v3: private-show timer multiplier already applied to the round's time limit (default 1). */
+  durationScale?: number;
 }
 
 /** Show context, sent once per connection right after Welcome. */
@@ -272,6 +281,8 @@ export interface RoundResultEntry {
   status: number;
   place: number;
   score: number;
+  /** v3: eliminated but carried into the next round by a qualifying teammate (duos/squads). */
+  carried?: boolean;
 }
 
 /** Union of low-frequency messages. `t` is the discriminant. */
@@ -287,7 +298,8 @@ export type LowFreqMessage =
   | { t: 'spectate'; target: number }
   /** Server → client: lobby countdown before the show fills with bots. */
   | { t: 'lobby'; humans: number; capacity: number; startsInMs: number }
-  | { t: 'showPhase'; phase: ShowPhaseId }
+  /** `startsInMs` (v3, PreShow only): time until round 1 is selected. */
+  | { t: 'showPhase'; phase: ShowPhaseId; startsInMs?: number }
   | { t: 'roundPhase'; phase: RoundPhaseId; time: number }
   | ShowInfoMsg
   | ShowRewardsMsg;

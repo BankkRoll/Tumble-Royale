@@ -130,6 +130,10 @@ intents with `bindUI({...})` (see `packages/ui/README.md`).
 - **Gamepad**: the input system calls `ui.getState().navigate(dir)` with
   `up|down|left|right|accept|back|tabPrev|tabNext`. LB/RB = tabs, A = accept,
   B = back, Start = settings, Y = context action (e.g. Ready / Try on).
+  In rounds Start opens the in-game menu instead, and LB/RB cycle the
+  spectated player. Held directions repeat after ~380 ms, then every ~110 ms.
+  While a menu owns the pad its buttons press nothing in the round. Prompts
+  switch to pad glyphs (Ⓐ, RT, Start…) once a controller is the last device.
 - Focus ring: 0.2em lemon ring + 0.36em ink ring outside, gentle 1.2 s pulse.
 - Each screen declares its **initial focus** (`data-autofocus`) — usually the
   primary CTA — so a gamepad player can press A immediately.

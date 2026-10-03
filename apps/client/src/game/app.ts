@@ -38,6 +38,7 @@ import type { MatchDeps } from '@tumble/sim/match';
 import type { ShowPlaylist } from '@tumble/sim/show';
 import { PerspectiveCamera, Scene, type WebGPURenderer } from 'three/webgpu';
 import { InputSystem, type InputAction } from '../input/index.ts';
+import { GamepadNavigator, firstStandardPad } from '../input/gamepadNav.ts';
 import { StatsOverlay } from '../debug/stats.ts';
 import { checkDeterminism } from '../debug/determinism.ts';
 import { ApiClient, ApiError } from './api.ts';
@@ -141,6 +142,7 @@ export class GameApp {
   private pendingJoin: string | null = deepLinkCode();
   private lobby: Lobby | null = null;
   private readonly thumbs: ThumbnailRenderer;
+  private readonly padNav = new GamepadNavigator();
 
   private constructor(
     private readonly cfg: GameConfig,
@@ -440,6 +442,7 @@ export class GameApp {
     const dt = realDt * this.timeScale.value;
     if (realDt > 0) this.fpsSmooth += (1 / realDt - this.fpsSmooth) * 0.05;
 
+    this.pollPadNav(now);
     const device = this.input.lastDevice;
     if (ui.getState().hud.device !== device) ui.getState().setHud({ device });
 
@@ -462,6 +465,57 @@ export class GameApp {
     this.stats.update(realDt, this.renderer);
     this.hooks.frames++;
     this.trackMemory();
+  }
+
+  /**
+   * Gamepad menu navigation (SCREENS.md §1.1). Whenever a menu owns the pad
+   * (menu screens, overlays, dialogs, the eliminated sheet) the D-pad/stick,
+   * A, B, LB and RB drive `navigate` and gameplay ignores the pad; Start
+   * toggles the in-round menu or Settings. While spectating, LB/RB cycle
+   * players.
+   */
+  private pollPadNav(now: number): void {
+    const s = ui.getState();
+    const idle = this.menu?.idlePlaying ?? false;
+    const menuOwnsPad =
+      !idle && (s.inputMode === 'menu' || s.dialog !== null || s.overlay !== 'none' || s.eliminatedSheet);
+    this.input.setGamepadGameplay(!menuOwnsPad);
+    const pad =
+      typeof navigator.getGamepads === 'function' ? firstStandardPad(navigator.getGamepads()) : null;
+    const actions = this.padNav.update(pad, now, true);
+    for (const a of actions) {
+      this.input.lastDevice = 'gamepad';
+      if (a === 'start') this.onPadStart();
+      else if (menuOwnsPad) ui.getState().navigate(a);
+      else if (
+        (a === 'tabPrev' || a === 'tabNext') &&
+        s.screen === 'round' &&
+        s.hud.localStatus === 'spectating'
+      )
+        uiEvents.emit('spectateNext', { dir: a === 'tabNext' ? 1 : -1 });
+    }
+  }
+
+  /** Start: the in-round menu during rounds, Settings elsewhere; leaves idle play first. */
+  private onPadStart(): void {
+    const s = ui.getState();
+    if (s.dialog) return;
+    if (this.menu?.idlePlaying) {
+      this.menu.setIdlePlay(false);
+      return;
+    }
+    if (s.screen === 'round') {
+      s.setOverlay(s.overlay === 'none' ? 'inGameMenu' : 'none');
+      return;
+    }
+    if (s.overlay === 'settings') s.setOverlay('none');
+    else if (
+      s.overlay === 'none' &&
+      s.inputMode === 'menu' &&
+      s.screen !== 'splash' &&
+      s.screen !== 'welcome'
+    )
+      s.setOverlay('settings');
   }
 
   /** Logs GPU memory once per round, after the previous round's view was disposed. */

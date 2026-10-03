@@ -13,6 +13,7 @@ import { BIND_ACTION_LABELS } from '../../store/defaults.ts';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { BindAction, LocalStatus } from '../../store/types.ts';
+import { PAD_GLYPHS, controlGlyph } from '../../hud/glyphs.ts';
 import { keyLabel } from './SettingsSheet.tsx';
 
 const STATUS: Record<LocalStatus, { label: string; tone: string }> = {
@@ -69,6 +70,7 @@ export function InGameMenu(): JSX.Element {
     })),
   );
   const binds = useUI((s) => s.settings.controls.keybinds);
+  const device = useUI((s) => s.hud.device);
   const status = STATUS[hud.status];
   return (
     <div
@@ -109,22 +111,26 @@ export function InGameMenu(): JSX.Element {
           <i className="tr-status-dot is-online" aria-hidden /> The show keeps running while this menu is
           open.
         </p>
-        <div className="tr-igm-keys" aria-label="Controls">
-          {CONTROL_ROWS.map((a) => (
-            <span key={a} className="tr-hud-hint-item">
-              <kbd>{keyLabel(binds[a][0] ?? '')}</kbd>
-              {BIND_ACTION_LABELS[a]}
+        {device !== 'touch' && (
+          <div className="tr-igm-keys" aria-label="Controls">
+            {CONTROL_ROWS.map((a) => (
+              <span key={a} className="tr-hud-hint-item">
+                <kbd>{controlGlyph(a, device, binds)}</kbd>
+                {BIND_ACTION_LABELS[a]}
+              </span>
+            ))}
+            <span className="tr-hud-hint-item" data-testid="igm-menu-key">
+              <kbd>{device === 'gamepad' ? PAD_GLYPHS.pause : keyLabel(binds.pause[0] || 'Escape')}</kbd>
+              {BIND_ACTION_LABELS.pause}
             </span>
-          ))}
-          <span className="tr-hud-hint-item" data-testid="igm-menu-key">
-            <kbd>{keyLabel(binds.pause[0] || 'Escape')}</kbd>
-            {BIND_ACTION_LABELS.pause}
-          </span>
-          <span className="tr-hud-hint-item">
-            <kbd>Esc</kbd>
-            Free the mouse
-          </span>
-        </div>
+            {device === 'keyboard' && (
+              <span className="tr-hud-hint-item">
+                <kbd>Esc</kbd>
+                Free the mouse
+              </span>
+            )}
+          </div>
+        )}
         <div className="tr-igm-actions">
           <Button variant="go" size="lg" block autoFocusNav cue="ui.confirm" data-nav-back="" onClick={close}>
             Resume

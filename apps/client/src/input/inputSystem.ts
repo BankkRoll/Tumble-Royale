@@ -126,6 +126,7 @@ export class InputSystem {
   private readonly look: LookDelta = { yaw: 0, pitch: 0 };
   private readonly unlisten: (() => void)[] = [];
   private mouseActions = true;
+  private padGameplay = true;
   private grabToggled = false;
   private grabWasHeld = false;
 
@@ -194,6 +195,23 @@ export class InputSystem {
     this.mouseDx = 0;
     this.mouseDy = 0;
     if (this.pointerLocked) document.exitPointerLock();
+  }
+
+  /**
+   * Gamepad gameplay switch. While a menu owns the pad (in-round menu,
+   * dialogs, main menu) its buttons and sticks press nothing in the game, so
+   * A to confirm is not also a jump. Buttons held across the switch never
+   * produce a press on the other side.
+   *
+   * @param enabled - False while menu navigation reads the pad.
+   */
+  setGamepadGameplay(enabled: boolean): void {
+    if (enabled === this.padGameplay) return;
+    this.padGameplay = enabled;
+    if (enabled) return;
+    for (const l of this.pad.values()) l.reset();
+    this.padStick.x = this.padStick.y = 0;
+    this.padLook.x = this.padLook.y = 0;
   }
 
   /**
@@ -497,12 +515,20 @@ export class InputSystem {
     if (Math.hypot(this.padStick.x, this.padStick.y) > 0 || Math.hypot(this.padLook.x, this.padLook.y) > 0) {
       this.lastDevice = 'gamepad';
     }
+    if (!this.padGameplay) {
+      this.padStick.x = this.padStick.y = 0;
+      this.padLook.x = this.padLook.y = 0;
+    }
   }
 
   private padButton(index: number, down: boolean, action: InputAction): void {
     const prev = this.padPrev[index] ?? false;
     if (down === prev) return;
     this.padPrev[index] = down;
+    if (!this.padGameplay) {
+      if (down) this.lastDevice = 'gamepad';
+      return;
+    }
     const latch = this.pad.get(action)!;
     if (down) {
       latch.press();

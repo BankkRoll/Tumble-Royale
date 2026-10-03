@@ -14,6 +14,8 @@ import { squash } from '../theme/motion.ts';
 import { Icon } from '../components/icons/index.tsx';
 import { roundTypeStyle } from '../theme/tokens.ts';
 import { keyLabel } from '../screens/overlays/SettingsSheet.tsx';
+import type { BindAction } from '../store/types.ts';
+import { PAD_GLYPHS, controlGlyph } from './glyphs.ts';
 
 /** Round timer pill; turns tangerine < 30 s and bubblegum + pulsing < 10 s. */
 export const HudTimer = memo(function HudTimer(): JSX.Element | null {
@@ -182,33 +184,27 @@ export const NetStats = memo(function NetStats(): JSX.Element | null {
   );
 });
 
-const HINTS: Record<'keyboard' | 'gamepad' | 'touch', [string, string][]> = {
-  keyboard: [
-    ['WASD', 'Move'],
-    ['Space', 'Jump'],
-    ['Ctrl', 'Dive'],
-    ['Shift', 'Grab'],
-    ['E', 'Emote'],
-  ],
-  gamepad: [
-    ['Ⓛ', 'Move'],
-    ['Ⓐ', 'Jump'],
-    ['Ⓧ', 'Dive'],
-    ['RT', 'Grab'],
-    ['✚', 'Emote'],
-  ],
-  touch: [],
-};
+const HINT_ACTIONS: [BindAction, string][] = [
+  ['jump', 'Jump'],
+  ['dive', 'Dive'],
+  ['grab', 'Grab'],
+  ['emoteWheel', 'Emote'],
+];
 
-/** Bottom-left controls hint. */
+/** Bottom-left controls hint: bound keys on keyboard, pad buttons once a controller is used. */
 export const ControlsHint = memo(function ControlsHint(): JSX.Element | null {
   const { show, device } = useUI(useShallow((s) => ({ show: s.hud.controlsHint, device: s.hud.device })));
+  const binds = useUI((s) => s.settings.controls.keybinds);
   if (!show || device === 'touch') return null;
   return (
-    <div className="tr-hud-hint">
-      {HINTS[device].map(([k, label]) => (
+    <div className="tr-hud-hint" data-testid="controls-hint">
+      <span className="tr-hud-hint-item">
+        <kbd>{device === 'gamepad' ? PAD_GLYPHS.moveForward : 'WASD'}</kbd>
+        Move
+      </span>
+      {HINT_ACTIONS.map(([action, label]) => (
         <span key={label} className="tr-hud-hint-item">
-          <kbd>{k}</kbd>
+          <kbd>{controlGlyph(action, device, binds)}</kbd>
           {label}
         </span>
       ))}
@@ -283,13 +279,15 @@ export const CountdownNumerals = memo(function CountdownNumerals(): JSX.Element 
 export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null {
   const spec = useUI((s) => s.spectate);
   const name = useDisplayName();
+  const device = useUI((s) => s.hud.device);
+  const binds = useUI((s) => s.settings.controls.keybinds);
   if (!spec) return null;
   return (
     <div className="tr-spectate tr-interactive" data-nav-scope="5">
       <Button
         variant="secondary"
         size="sm"
-        hint="Q"
+        hint={controlGlyph('spectatePrev', device, binds)}
         aria-label="Previous player"
         onClick={() => uiEvents.emit('spectateNext', { dir: -1 })}
       >
@@ -313,7 +311,7 @@ export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null
       <Button
         variant="secondary"
         size="sm"
-        hint="E"
+        hint={controlGlyph('spectateNext', device, binds)}
         aria-label="Next player"
         onClick={() => uiEvents.emit('spectateNext', { dir: 1 })}
       >

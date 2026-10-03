@@ -164,6 +164,8 @@ export const PROP_SPECS: Readonly<Record<PropKind, PropKindSpec>> = {
 /** Prop lifecycle modes (replicated). */
 export const PropMode = { Home: 0, Free: 1, Carried: 2, Respawning: 3 } as const;
 
+const ZERO_VEL = Object.freeze({ x: 0, y: 0, z: 0 });
+
 /** Numeric prop mode id. */
 export type PropModeId = (typeof PropMode)[keyof typeof PropMode];
 
@@ -512,7 +514,10 @@ export const propSpawner: ObstacleModule<PropSpawnerParams> = {
           const o = 1 + i * PROP_NET_STRIDE;
           const t = b.translation();
           const r = b.rotation();
-          const v = b.linvel();
+          // Only free props have a velocity to replicate. A kinematic body keeps whatever linvel it
+          // had when it stopped being dynamic, and Rapier will not let a receiver set it, so
+          // sending it would only make peers disagree about a number nothing uses.
+          const v = modes[i] === PropMode.Free ? b.linvel() : ZERO_VEL;
           out[o] = modes[i]!;
           out[o + 1] = carriers[i]!;
           out[o + 2] = timers[i]!;

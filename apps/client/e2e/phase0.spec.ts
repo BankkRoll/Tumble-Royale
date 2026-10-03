@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 async function bootAndSettle(page: Page, backend: string): Promise<{ backend: string; fps: number; frames: number }> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto(`/?backend=${backend}`);
+  await page.goto(`/?scene=test&backend=${backend}`);
   await page.waitForFunction(() => window.__tumble?.ready === true, undefined, { timeout: 60_000 });
   await page.waitForTimeout(3000);
   const info = await page.evaluate(() => ({
@@ -28,7 +28,7 @@ for (const backend of ['webgpu', 'webgl'] as const) {
 }
 
 test('client and server Rapier agree after 600 steps', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/?scene=test');
   await page.waitForFunction(() => window.__tumble?.ready === true, undefined, { timeout: 60_000 });
   const report = await page.evaluate(async () => {
     const r = await window.__tumble!.determinism();

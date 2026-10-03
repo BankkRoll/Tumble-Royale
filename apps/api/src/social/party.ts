@@ -11,6 +11,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { accountRegion, RegionSchema } from '../accounts/accounts.ts';
 import { signServiceToken } from '../auth/tokens.ts';
 import type { AppContext } from '../context.ts';
 import { profiles, ratings } from '../db/schema.ts';
@@ -80,7 +81,7 @@ const UserBody = z.object({ userId: z.string().uuid() });
 const ReadyBody = z.object({ ready: z.boolean() });
 const PlaylistBody = z.object({ playlistId: z.string().min(1).max(64) });
 const TicketBody = z
-  .object({ playlistId: z.string().min(1).max(64).optional(), region: z.string().min(2).max(8).optional() })
+  .object({ playlistId: z.string().min(1).max(64).optional(), region: RegionSchema.optional() })
   .optional();
 
 function newCode(): string {
@@ -189,24 +190,53 @@ export class PartyService {
   async leave(userId: string): Promise<void> {
     const cur = await this.current(userId);
     if (!cur) return;
-    const after = await withLock(this.ctx.kv, `party:${cur.id}`, async () => {
+    const after = await withLock(
+      this.ctx.kv,
+      `party:${cur.id}`,
+      async (): Promise<Party | 'empty' | null> => {
+        const p = await this.load(cur.id);
+        if (!p) return null;
+        p.members = p.members.filter((m) => m.userId !== userId);
+        await this.ctx.kv.del(`user-party:${userId}`);
+        if (p.members.length === 0) {
+          await this.ctx.kv.del(`party:${p.id}`, `party-code:${p.code}`);
+          return 'empty';
+        }
+        if (p.leaderId === userId) {
+          const next = [...p.members].sort((a, b) => a.joinedAt - b.joinedAt)[0]!;
+          p.leaderId = next.userId;
+          next.ready = true;
+        }
+        await this.save(p);
+        return p;
+      },
+    );
+    // The last member's other tabs and devices still show the party until told otherwise.
+    if (after === 'empty')
+      await this.ctx.notifier.notifyUser(userId, { type: 'party_disbanded', partyId: cur.id });
+    else if (after) await this.broadcast(after);
+  }
+
+  /**
+   * Breaks the party up (leader only): every member is removed and told.
+   *
+   * @throws {ApiError} 404 without a party, 403 `not_leader`.
+   */
+  async disband(leaderId: string): Promise<void> {
+    const cur = await this.current(leaderId);
+    if (!cur) throw notFound('Party');
+    const members = await withLock(this.ctx.kv, `party:${cur.id}`, async () => {
       const p = await this.load(cur.id);
-      if (!p) return null;
-      p.members = p.members.filter((m) => m.userId !== userId);
-      await this.ctx.kv.del(`user-party:${userId}`);
-      if (p.members.length === 0) {
-        await this.ctx.kv.del(`party:${p.id}`, `party-code:${p.code}`);
-        return null;
-      }
-      if (p.leaderId === userId) {
-        const next = [...p.members].sort((a, b) => a.joinedAt - b.joinedAt)[0]!;
-        p.leaderId = next.userId;
-        next.ready = true;
-      }
-      await this.save(p);
-      return p;
+      if (!p) throw notFound('Party');
+      if (p.leaderId !== leaderId) throw forbidden('not_leader', 'Only the party leader can disband');
+      await this.ctx.kv.del(
+        `party:${p.id}`,
+        `party-code:${p.code}`,
+        ...p.members.map((m) => `user-party:${m.userId}`),
+      );
+      return p.members.map((m) => m.userId);
     });
-    if (after) await this.broadcast(after);
+    await this.ctx.notifier.notifyMany(members, { type: 'party_disbanded', partyId: cur.id });
   }
 
   /** Mutates the caller's party under the lock and broadcasts the result. */
@@ -282,11 +312,14 @@ export async function issueQueueTicket(
   if (playlist.queue === 'ranked' && memberIds.length > playlist.teamSize) {
     throw conflict('party_too_large', `${playlist.name} is solo-only`);
   }
-  if (playlist.queue === 'ranked') {
-    for (const id of memberIds) {
-      if ((await activeBans(ctx, id)).some((b) => b.scope === 'ranked')) {
-        throw forbidden('ranked_banned', 'A party member is suspended from ranked play');
-      }
+  for (const id of memberIds) {
+    // Members joined before a ban landed stay in the party, so check everyone, not just the caller.
+    const memberBans = await activeBans(ctx, id);
+    if (memberBans.some((b) => b.scope === 'all')) {
+      throw forbidden('member_banned', 'A party member is suspended');
+    }
+    if (playlist.queue === 'ranked' && memberBans.some((b) => b.scope === 'ranked')) {
+      throw forbidden('ranked_banned', 'A party member is suspended from ranked play');
     }
   }
   const names = await ctx.db
@@ -313,7 +346,7 @@ export async function issueQueueTicket(
     maxPlayers: playlist.maxPlayers,
     minPlayers: playlist.minPlayers,
     botsAllowed: playlist.botsAllowed,
-    region: opts.region ?? auth.region,
+    region: opts.region ?? (await accountRegion(ctx.db, auth.userId)),
     members: memberIds.map((id) => {
       const n = names.find((x) => x.id === id);
       const r = rated.find((x) => x.id === id) ?? DEFAULT_RATING;
@@ -383,6 +416,12 @@ export function registerPartyRoutes(app: FastifyInstance, ctx: AppContext): void
   app.post('/party/leave', async (req, reply) => {
     const auth = await requireUser(ctx, req);
     await parties.leave(auth.userId);
+    return reply.code(204).send();
+  });
+
+  app.post('/party/disband', async (req, reply) => {
+    const auth = await requireUser(ctx, req);
+    await parties.disband(auth.userId);
     return reply.code(204).send();
   });
 

@@ -111,6 +111,8 @@ export interface OpponentRecord {
   /** Best final placement (1 = Crown). */
   best: number;
   lastSeen: number;
+  /** Shows where they placed better than the local player (absent in records from older builds). */
+  ahead?: number;
 }
 
 export interface ShowResultForProfile {
@@ -782,7 +784,10 @@ export class ProfileStore {
           crowns: 0,
           best: o.place,
           lastSeen: 0,
+          ahead: 0,
         });
+        // Older records never counted this; start counting from now rather than guess.
+        if (o.place < r.place) rec.ahead = (rec.ahead ?? 0) + 1;
         rec.faced++;
         rec.colors = o.colors;
         if (o.crowned) rec.crowns++;

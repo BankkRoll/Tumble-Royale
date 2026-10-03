@@ -45,6 +45,23 @@ export interface TicketPolicy {
   allowUnticketed: boolean;
   /** Wall clock for ticket expiry (tests). */
   now?: () => number;
+  /**
+   * This server's id as registered with the matchmaker. When set, tickets for
+   * matches placed on another server (`sid`) are refused, so a leaked or
+   * replayed ticket cannot open a duplicate room for someone else's match.
+   */
+  serverId?: string;
+  /** Also accept `sid: "default"`, the matchmaker's unregistered development fallback. */
+  allowDefaultSid?: boolean;
+}
+
+/** Load summary sent to the matchmaker on every heartbeat. */
+export interface CapacityReport {
+  /** Seats in use, humans and bots (matchmade rooms count their full planned size). */
+  load: number;
+  rooms: number;
+  /** Match ids of ticketed rooms, so the matchmaker can release their reservations. */
+  matches: string[];
 }
 
 /**
@@ -139,6 +156,30 @@ export class RoomManager {
     return true;
   }
 
+  /** Upper bound on concurrent rooms; reported to the matchmaker at registration. */
+  get roomLimit(): number {
+    return this.maxRooms;
+  }
+
+  /**
+   * What this process hosts, in the matchmaker's units: seats (humans and
+   * bots) and rooms. A matchmade room counts its full planned size from the
+   * first ticket on, because the matchmaker reserved that many seats for it
+   * and bots join later.
+   */
+  capacityReport(): CapacityReport {
+    let load = 0;
+    const matches: string[] = [];
+    for (const room of this.rooms.values()) {
+      if (room.state === 'closed') continue;
+      const info = room.info();
+      const live = info.humans + info.bots;
+      load += room.match ? Math.max(live, room.match.humans + room.match.bots) : live;
+      if (room.match) matches.push(room.match.matchId);
+    }
+    return { load, rooms: this.rooms.size, matches };
+  }
+
   /** Looks up a room (tests, tools). */
   room(id: string): Room | undefined {
     return this.rooms.get(id);
@@ -211,6 +252,12 @@ export class RoomManager {
       const claims = verifyJoinTicket(policy.secret, hello.ticket, (policy.now ?? Date.now)());
       if (!claims) return KickReason.BadTicket;
       if (this.bannedFromMatch.get(claims.mid)?.has(claims.sub)) return KickReason.RemovedByHost;
+      if (
+        policy.serverId &&
+        claims.sid !== policy.serverId &&
+        !(policy.allowDefaultSid && claims.sid === 'default')
+      )
+        return KickReason.BadTicket;
       return this.placeTicketed(session, hello, claims, now);
     }
     if (policy && !policy.allowUnticketed) return KickReason.BadTicket;

@@ -5,6 +5,7 @@
 import { createHmac } from 'node:crypto';
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
+import { isErased } from '../accounts/tombstone.ts';
 import { safeEqual, verifyAccessToken } from '../auth/tokens.ts';
 import type { AppContext } from '../context.ts';
 import { bans } from '../db/schema.ts';
@@ -88,6 +89,7 @@ export async function optionalUser(ctx: AppContext, req: FastifyRequest): Promis
   if (!token) return null;
   const claims = await verifyAccessToken(ctx.config.jwtSecret, token, Math.floor(ctx.now().getTime() / 1000));
   if (!claims) throw unauthorized('Invalid or expired access token');
+  if (await isErased(ctx.kv, claims.sub)) throw unauthorized('This account was deleted');
   const banned = (await activeBans(ctx, claims.sub)).find((b) => b.scope === 'all');
   if (banned) {
     throw new ApiError(403, 'banned', 'This account is suspended', {

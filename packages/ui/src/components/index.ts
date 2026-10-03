@@ -27,6 +27,7 @@ export {
   Logo,
   CountUp,
   TipCarousel,
+  BotTag,
   type PanelProps,
   type BarProps,
   type CurrencyPillProps,

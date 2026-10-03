@@ -10,3 +10,6 @@ playwright-report
 coverage
 .DS_Store
 .media-build
+
+# Parallel agent worktrees
+.claude/worktrees/

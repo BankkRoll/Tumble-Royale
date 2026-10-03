@@ -14,9 +14,13 @@
  * - `GAME_TICKET_SECRET` — verifies matchmaker join tickets (dev default outside production)
  * - `ALLOW_UNTICKETED` — `1`/`0`; defaults to allowed except when `NODE_ENV=production`
  * - `API_URL` + `INTERNAL_HMAC_SECRET` — post matchmade show results to the account API
- *   (both required; reporting is skipped otherwise)
+ *   (development defaults: the local API and its dev secret; production must set both)
+ * - `RESULTS_OUTBOX_DIR` (`./.data/results-outbox`) — durable queue of undelivered results;
+ *   `REPORT_RESULTS=0` turns reporting off
  * - `MATCHMAKER_URL` + `GAME_SERVER_SECRET` + `PUBLIC_WS_URL` (+ `SERVER_ID`, `REGION`) —
- *   register with the matchmaker and heartbeat (optional)
+ *   register with the matchmaker and heartbeat (optional); tickets for other servers are refused
+ * - `MAX_ROOMS` (10) and `SERVER_CAPACITY` (= MAX_ROOMS × ROOM_CAPACITY seats, bots included) —
+ *   what the matchmaker may place here
  * - `GAME_SERVER_SECRET` also enables the signed `POST /internal/kick` control endpoint;
  *   `CONTROL_URL` tells the matchmaker where to reach it when the public WS host is not
  *   the internal one (default: derived from `PUBLIC_WS_URL`)
@@ -25,12 +29,13 @@
  * dev arena, single-round loop, random-walk bots); `createRealRoomDeps`
  * plays real shows through `ShowDirectorController`.
  */
-import { hostname } from 'node:os';
 import { loadRapier } from '@tumble/sim';
+import { capacityConfig, linkConfig, resultsConfig } from './config.ts';
 import { createDevRoomDeps } from './devDeps.ts';
 import { startMatchmakerLink, type MatchmakerLink } from './matchmakerLink.ts';
 import { createRealRoomDeps } from './realDeps.ts';
-import { HttpResultsSink } from './results.ts';
+import { ResultsOutbox } from './outbox.ts';
+import { sendResultsOnce } from './results.ts';
 import { startGameServer } from './server.ts';
 import { DEV_TICKET_SECRET } from './tickets.ts';
 
@@ -45,11 +50,19 @@ if (!ticketSecret) throw new Error('GAME_TICKET_SECRET must be set in production
 const allowUnticketed = process.env.ALLOW_UNTICKETED ? process.env.ALLOW_UNTICKETED === '1' : !production;
 
 const R = await loadRapier();
-const capacity = env('ROOM_CAPACITY', 40);
+const { roomCapacity: capacity, maxRooms, serverCapacity } = capacityConfig(process.env);
+const port = env('PORT', 7350);
+const linkCfg = linkConfig(process.env, port);
 const log = (m: string): void => console.log(m);
-const apiUrl = process.env.API_URL;
-const hmacSecret = process.env.INTERNAL_HMAC_SECRET;
-const results = apiUrl && hmacSecret ? new HttpResultsSink({ apiUrl, secret: hmacSecret, log }) : null;
+const resultsCfg = resultsConfig(process.env);
+const results = resultsCfg
+  ? new ResultsOutbox({
+      dir: resultsCfg.outboxDir,
+      send: (payload) => sendResultsOnce({ ...resultsCfg, log }, payload),
+      log,
+    })
+  : null;
+await results?.start();
 // GS_DEV=1 swaps in the capsule stand-in sim for load tests that should not depend on content.
 const deps =
   process.env.GS_DEV === '1'
@@ -61,41 +74,42 @@ const deps =
       });
 
 const server = await startGameServer({
-  port: env('PORT', 7350),
+  port,
   deps,
+  maxRooms,
   config: {
     capacity,
     fillWaitMs: env('FILL_WAIT_MS', 25_000),
     startAtHumans: env('START_AT_HUMANS', capacity),
     ticketedFillWaitMs: env('TICKET_FILL_WAIT_MS', 15_000),
   },
-  tickets: { secret: ticketSecret, allowUnticketed },
+  tickets: {
+    secret: ticketSecret,
+    allowUnticketed,
+    ...(linkCfg ? { serverId: linkCfg.serverId, allowDefaultSid: !production } : {}),
+  },
   ...(process.env.GAME_SERVER_SECRET ? { control: { secret: process.env.GAME_SERVER_SECRET } } : {}),
 });
 
 console.log(
-  `[game-server] listening on :${server.port} (rapier ${R.version()}) ws=/ws metrics=/metrics · tickets ${allowUnticketed ? 'optional (dev)' : 'required'} · results ${results ? `→ ${apiUrl}` : 'off'}`,
+  `[game-server] listening on :${server.port} (rapier ${R.version()}) ws=/ws metrics=/metrics · tickets ${allowUnticketed ? 'optional (dev)' : 'required'} · results ${resultsCfg ? `→ ${resultsCfg.apiUrl} (outbox ${resultsCfg.outboxDir})` : 'off'}`,
 );
 
-let link: MatchmakerLink | null = null;
-const mmUrl = process.env.MATCHMAKER_URL;
-const serverSecret = process.env.GAME_SERVER_SECRET;
-if (mmUrl && serverSecret) {
-  link = startMatchmakerLink({
-    matchmakerUrl: mmUrl,
-    secret: serverSecret,
-    serverId: process.env.SERVER_ID ?? `gs-${hostname()}-${server.port}`,
-    publicUrl: process.env.PUBLIC_WS_URL ?? `ws://localhost:${server.port}/ws`,
-    ...(process.env.CONTROL_URL ? { controlUrl: process.env.CONTROL_URL } : {}),
-    region: process.env.REGION ?? 'na',
-    capacity: env('SERVER_CAPACITY', 400),
-    load: () => server.rooms.list().reduce((n, r) => n + r.humans, 0),
-    log,
-  });
-}
+const link: MatchmakerLink | null = linkCfg
+  ? startMatchmakerLink({
+      ...linkCfg,
+      ...(process.env.CONTROL_URL ? { controlUrl: process.env.CONTROL_URL } : {}),
+      capacity: serverCapacity,
+      maxRooms,
+      report: () => server.rooms.capacityReport(),
+      humans: () => server.rooms.list().reduce((n, r) => n + r.humans, 0),
+      log,
+    })
+  : null;
 
 const shutdown = (): void => {
   console.log('[game-server] shutting down');
+  results?.stop();
   void (link?.stop() ?? Promise.resolve()).then(() => server.close()).then(() => process.exit(0));
 };
 process.on('SIGINT', shutdown);

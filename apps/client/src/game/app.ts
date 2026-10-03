@@ -48,6 +48,7 @@ import type { GameConfig } from './config.ts';
 import { botLoadout, tumblerColors } from './cosmetics.ts';
 import { createDebugPanel } from './debugPanel.ts';
 import type { TumbleHooks } from './hooks.ts';
+import { playAgainAction, type LastShow } from './lastShow.ts';
 import {
   customPlaylist,
   localPlayerCard,
@@ -64,6 +65,7 @@ import {
   toCustomLobbyState,
   type LobbyEvent,
 } from './online/lobbyState.ts';
+import { onlineCounts, queueTarget } from './online/playerCounts.ts';
 import { MatchmakerClient, gameSocketUrl, type Lobby, type MatchFound } from './online/matchmaker.ts';
 import { ProfileStore } from './profile.ts';
 import { QualityManager } from './quality.ts';
@@ -130,7 +132,8 @@ type Progress = (fraction: number, label: string) => void;
 export class GameApp {
   private session: ShowSession | null = null;
   private menu: MenuView | null = null;
-  private lastPlaylist: string | null = null;
+  /** How the last show was started, for Play again. */
+  private lastShow: LastShow | null = null;
   private fpsSmooth = 60;
   private last = performance.now();
   private lastRender = 0;
@@ -227,6 +230,7 @@ export class GameApp {
       }),
       drawCalls: () => renderer.info.render.drawCalls,
       tumblers: () => this.session?.visibleTumblers() ?? 0,
+      localPlayer: () => this.session?.localDebug() ?? null,
       tier: () => quality.tier,
       memoryLog: this.memoryLog,
       account: () => {
@@ -547,12 +551,11 @@ export class GameApp {
     let up = false;
     if (this.cfg.online) up = await gameServerAvailable();
     else if (this.account?.active && this.mm) up = await this.mm.probe();
+    const mm = up && !this.cfg.online ? this.mm : null;
+    const counts = mm ? onlineCounts(await mm.stats(), mm.searching) : {};
     s.setOnlineStatus(
       up
-        ? {
-            state: 'online',
-            ...(this.mm && this.mm.searching > 0 ? { playersOnline: this.mm.searching } : {}),
-          }
+        ? { state: 'online', ...counts }
         : { state: 'offline', message: 'The game servers are offline right now.' },
     );
     if (up && !this.modePicked) s.setPlayMode('online');
@@ -570,6 +573,34 @@ export class GameApp {
     session.start();
   }
 
+  /** Vs Bots on a playlist (the first-ever show uses the gentler starter playlist). */
+  private startBotShow(playlistId: string | null): void {
+    this.lastShow = { kind: 'offline', playlistId };
+    this.startOfflineShow(
+      resolvePlaylist(
+        this.cfg.playlist ?? playlistId,
+        this.profile.showsPlayed === 0 && !this.cfg.playlist && !this.account?.active,
+      ),
+    );
+  }
+
+  /** Play again: the same kind of show as last time (mode, playlist, private-show options). */
+  private replayLastShow(): void {
+    const next = playAgainAction(this.lastShow);
+    switch (next.action) {
+      case 'offline':
+        this.startBotShow(next.playlistId);
+        break;
+      case 'custom':
+        this.lastShow = { kind: 'custom', options: next.options };
+        this.startOfflineShow(customPlaylist(next.options));
+        break;
+      case 'play':
+        void this.startShow(next.playlistId);
+        break;
+    }
+  }
+
   /** True when Play should go through the matchmaker. */
   private get canMatchmake(): boolean {
     return !this.cfg.online && !!this.mm?.online && !!this.account?.active;
@@ -578,7 +609,7 @@ export class GameApp {
   private async startShow(playlistId: string | null): Promise<void> {
     if (this.session) return;
     this.menu?.setIdlePlay(false);
-    this.lastPlaylist = playlistId;
+    this.lastShow = { kind: 'auto', playlistId };
     this.lastSummary = null;
     if (this.canMatchmake) {
       await this.queue(playlistId ?? ui.getState().selectedPlaylist);
@@ -629,7 +660,7 @@ export class GameApp {
       });
       return;
     }
-    this.showSearching(account.party?.members.length ?? 1);
+    this.showSearching(account.party?.members.length ?? 1, playlistId);
     try {
       const { ticket } = await this.api.queueTicket(playlistId);
       await mm.queue(ticket);
@@ -650,13 +681,13 @@ export class GameApp {
     }
   }
 
-  private showSearching(partySize: number): void {
+  private showSearching(partySize: number, playlistId: string | null): void {
     const s = ui.getState();
     s.setQueue({
       status: 'searching',
       startedAt: Date.now(),
       playersFound: partySize,
-      playersNeeded: 40,
+      playersNeeded: queueTarget(s.playlists, playlistId ?? s.selectedPlaylist),
       etaSec: -1,
       region: (this.account?.me?.region ?? 'na').toUpperCase(),
     });
@@ -667,9 +698,10 @@ export class GameApp {
   private bindMatchmaker(): void {
     const mm = this.mm;
     if (!mm) return;
-    mm.on('queued', () => {
+    mm.on('queued', (m) => {
       this.queued = true;
-      if (!this.session) this.showSearching(this.account?.party?.members.length ?? 1);
+      const playlistId = typeof m.playlistId === 'string' ? m.playlistId : null;
+      if (!this.session) this.showSearching(this.account?.party?.members.length ?? 1, playlistId);
     });
     mm.on('status', (m) => {
       if (this.session) return;
@@ -711,7 +743,7 @@ export class GameApp {
     if (this.session) return;
     this.menu?.setIdlePlay(false);
     this.lastSummary = null;
-    this.lastPlaylist = m.playlistId;
+    this.lastShow = { kind: 'matchmade', playlistId: m.playlistId };
     this.applyLobby(null);
     const session = new OnlineShowSession(this.ctx, {
       url: gameSocketUrl(m.server.url),
@@ -744,7 +776,7 @@ export class GameApp {
       swapUnderWipe('rewards', { transition: 'wipe' }, () => this.showMenuScene());
     } else if (reason === 'playAgain') {
       this.showMenuScene();
-      void this.startShow(this.lastPlaylist);
+      this.replayLastShow();
     } else this.goMenu();
   }
 
@@ -876,6 +908,8 @@ export class GameApp {
       },
       onMenuTab: ({ tab }) => {
         if (tab !== 'play') this.menu?.setIdlePlay(false);
+        // The Profile tab lists the latest shows; an account's history lives on the API.
+        if (tab === 'profile') void online()?.history();
       },
       onOverlay: ({ overlay }) => {
         if (overlay === 'friends') void online()?.ensureParty();
@@ -1015,7 +1049,7 @@ export class GameApp {
       },
       onPlayCustomOffline: ({ options }) => {
         if (options.rounds.length === 0) return;
-        this.lastPlaylist = null;
+        this.lastShow = { kind: 'custom', options };
         this.startOfflineShow(customPlaylist(options));
       },
       onInspectPlayer: ({ playerId, name }) => {
@@ -1088,13 +1122,7 @@ export class GameApp {
       },
       onPlay: ({ playlistId, mode }) => {
         if (mode === 'offline' && !this.cfg.online) {
-          this.lastPlaylist = playlistId;
-          this.startOfflineShow(
-            resolvePlaylist(
-              this.cfg.playlist ?? playlistId,
-              this.profile.showsPlayed === 0 && !this.cfg.playlist && !this.account?.active,
-            ),
-          );
+          this.startBotShow(playlistId);
           return;
         }
         void this.startShow(playlistId);
@@ -1119,7 +1147,7 @@ export class GameApp {
           this.session.quit();
           this.session = null;
         }
-        void this.startShow(this.lastPlaylist);
+        this.replayLastShow();
       },
       onBackToLobby: () => this.leaveToMenu(),
       onLeaveShow: () => this.leaveToMenu(),
@@ -1223,7 +1251,10 @@ export class GameApp {
       onNavUnhandled: ({ dir }) => {
         if (dir === 'back' && s().screen === 'menu' && s().overlay === 'none') s().setOverlay('settings');
       },
-      onRetryConnection: () => s().setConnection({ status: 'connecting' }),
+      onRetryConnection: () => {
+        if (this.session) this.session.retryConnection();
+        else s().setConnection({ status: 'online' });
+      },
     });
 
     const canvas = this.renderer.domElement;
@@ -1284,6 +1315,7 @@ export class GameApp {
     }
     const view = this.session?.roundView;
     view?.setAccessibility(st.accessibility.reduceShake, st.gameplay.nameplates, st.gameplay.streamerMode);
+    view?.setBotTags(st.gameplay.botTags);
     if (view) view.setPreset(this.quality.preset);
     this.stats.setVisible(this.cfg.debug || st.graphics.showFps);
   }

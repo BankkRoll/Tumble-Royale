@@ -156,9 +156,13 @@ export interface BootState {
 
 /** Network status. `reconnecting` shows the curtain overlay. */
 export interface ConnectionState {
-  status: 'online' | 'connecting' | 'reconnecting' | 'offline';
+  /** `lost`: every reconnect attempt failed; the curtain offers Try again and Leave. */
+  status: 'online' | 'connecting' | 'reconnecting' | 'lost' | 'offline';
+  /** Current reconnect attempt (1-based). */
   attempt?: number;
   maxAttempts?: number;
+  /** Epoch ms of the next reconnect attempt (curtain countdown). */
+  nextAttemptAt?: number;
   message?: string;
 }
 
@@ -436,6 +440,12 @@ export interface RankInfo {
 
 /** Profile + stats for the profile card and top bar. */
 export interface ProfileData {
+  /**
+   * Set for a Tumbler only met in offline shows: just what this device saw.
+   * The card shows these facts and hides level, XP, rank and lifetime stats,
+   * which are unknown for them.
+   */
+  metOffline?: MetOfflineInfo;
   id: string;
   name: string;
   tag: string;
@@ -477,6 +487,21 @@ export interface ProfileData {
   banner?: ProfileBanner;
   /** Equipped nameplate styling. */
   nameplate?: ProfileNameplate;
+}
+
+/** What this device knows about a Tumbler met in offline shows. */
+export interface MetOfflineInfo {
+  isBot: boolean;
+  /** Shows played together. */
+  showsTogether: number;
+  /** Their best final place in those shows (1 = Crown). */
+  bestPlace: number;
+  /** Crowns they won in those shows. */
+  crownsTogether: number;
+  /** Shows where they finished ahead of you, when tracked. */
+  aheadOfYou?: number;
+  /** Epoch ms of the last show together. */
+  lastSeen: number;
 }
 
 /** Profile banner art (from the equipped banner cosmetic). */
@@ -583,8 +608,10 @@ export type PlayMode = 'online' | 'offline';
 /** Whether online play (account API + matchmaker) is reachable. */
 export interface OnlineStatus {
   state: 'checking' | 'online' | 'offline' | 'disabled';
-  /** Players online / in queue, when the server reports it. */
+  /** Humans online in shows right now (matchmaker `GET /stats`), when reported. */
   playersOnline?: number;
+  /** Players waiting in the matchmaking queue, when reported. */
+  inQueue?: number;
   /** Short human explanation for the offline state. */
   message?: string;
 }
@@ -745,6 +772,15 @@ export interface RoundIntroInfo {
   qualifyTarget: number;
 }
 
+/** Local grab feedback for the HUD. */
+export interface HudGrab {
+  mode: 'none' | 'holding' | 'held' | 'carrying';
+  /** Partner's display name (empty when carrying). */
+  name: string;
+  /** Holding/carrying: stamina left. Held: progress toward breaking free. */
+  meter: number;
+}
+
 /** Local player's fate this round. */
 export type LocalStatus = 'playing' | 'qualified' | 'eliminated' | 'spectating';
 
@@ -787,6 +823,8 @@ export interface HudState {
   alive: number;
   objective: string;
   localStatus: LocalStatus;
+  /** Local grab: who you hold or who holds you, with the stamina or break-free meter (0..1). */
+  grab: HudGrab;
   /** Local race progress 0..1. */
   progress: number;
   /** Leaders shown on the race bar (top 3 recommended). */
@@ -839,6 +877,27 @@ export interface SpectateInfo {
   qualified: boolean;
   index: number;
   count: number;
+  /** Players still in the running this round (qualified or playing), when known. */
+  remaining?: number;
+}
+
+/** The local player's seat in the running show. */
+export interface ShowSeat {
+  /** The show runs on a game server (rewards are granted by the account API). */
+  online: boolean;
+  /** Knocked out of the show: watching the remaining rounds as a spectator. */
+  outOfShow: boolean;
+}
+
+/**
+ * "Keep watching / Leave show" choice, offered once the local player is
+ * knocked out (the in-round sheet, and the card over the results wall).
+ */
+export interface WatchChoice {
+  /** Epoch ms when Keep watching is picked automatically (null = waits for the player). */
+  autoAt: number | null;
+  /** Players still in the show, when known. */
+  remaining?: number;
 }
 
 /** One cell of the round results grid. */
@@ -1042,7 +1101,10 @@ export interface Settings {
     nameplates: boolean;
     streamerMode: boolean;
     showPing: boolean;
+    /** Pick "Keep watching" automatically after qualifying or being knocked out. */
     autoSpectate: boolean;
+    /** Small "BOT" tag beside bot names (nameplates, results, wall, spectate). */
+    botTags: boolean;
     chatFilter: boolean;
     region: string;
   };

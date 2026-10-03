@@ -5,6 +5,7 @@
  */
 import { ApiError, type ApiClient } from '../api.ts';
 import { JsonSocket, type TypedMessage } from './jsonSocket.ts';
+import { parseMatchmakerStats, type MatchmakerStatsBody } from './playerCounts.ts';
 
 /** `match_found` from the matchmaker stream. */
 export interface MatchFound {
@@ -108,6 +109,24 @@ export class MatchmakerClient {
       window.clearTimeout(t);
     }
     return this.online;
+  }
+
+  /**
+   * Public player counts (`GET /stats`).
+   *
+   * @returns The counts, or null when the matchmaker is down or predates the route.
+   */
+  async stats(): Promise<MatchmakerStatsBody | null> {
+    const ctrl = new AbortController();
+    const t = window.setTimeout(() => ctrl.abort(), PROBE_TIMEOUT_MS);
+    try {
+      const res = await fetch(`${this.baseUrl}/stats`, { signal: ctrl.signal });
+      return res.ok ? parseMatchmakerStats(await res.json()) : null;
+    } catch {
+      return null;
+    } finally {
+      window.clearTimeout(t);
+    }
   }
 
   /** Subscribes to a stream message type. */

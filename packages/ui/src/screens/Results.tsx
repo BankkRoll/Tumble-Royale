@@ -5,7 +5,7 @@
  */
 import { useEffect, useMemo, type JSX } from 'react';
 import { playCue } from '../audio-cues.ts';
-import { CountUp, RoundDots, TypeBadge } from '../components/bits.tsx';
+import { BotTag, CountUp, RoundDots, TypeBadge } from '../components/bits.tsx';
 import { Button } from '../components/controls.tsx';
 import { useDisplayName, useReducedFlashing, useSequence } from '../components/hooks.ts';
 import { TumblerAvatar } from '../components/TumblerAvatar.tsx';
@@ -97,6 +97,7 @@ export function RoundResultsScreen(): JSX.Element | null {
                     noShadow
                   />
                   <span className="tr-res-name tr-ellipsis">{name(e.player)}</span>
+                  <BotTag isBot={e.player.isBot} className="tr-res-bot" />
                   <span className="tr-res-mark" aria-label={e.qualified ? 'Qualified' : 'Eliminated'}>
                     {e.qualified ? <Icon name="check" size="0.8em" /> : <Icon name="close" size="0.8em" />}
                   </span>
@@ -196,6 +197,7 @@ export function FinalHypeScreen(): JSX.Element | null {
             >
               <TumblerAvatar colors={p.colors} hat={p.hat} expression="determined" size="4.6em" />
               <span className="tr-finalist-name tr-ellipsis">{name(p)}</span>
+              <BotTag isBot={p.isBot} />
             </div>
           ))}
         </div>

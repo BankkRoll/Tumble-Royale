@@ -19,7 +19,7 @@ import { Icon, challengeIcon, type IconName } from '../../components/icons/index
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
-import type { PassReward, PlayMode, Playlist, SeasonPassData } from '../../store/types.ts';
+import type { OnlineStatus, PassReward, PlayMode, Playlist, SeasonPassData } from '../../store/types.ts';
 import { LobbyEmotes } from './LobbyEmotes.tsx';
 import { openNewsPost } from './NewsTab.tsx';
 import { openJoinCode, openPrivateShow } from '../overlays/PrivateShow.tsx';
@@ -210,13 +210,30 @@ function NewsCard(): JSX.Element | null {
 
 const MODES: { id: PlayMode | 'custom'; label: string; sub: string; icon: IconName }[] = [
   { id: 'online', label: 'Play Online', sub: 'Real players + bot fill', icon: 'globe' },
-  { id: 'offline', label: 'Vs Bots', sub: 'Offline · always on', icon: 'bot' },
-  { id: 'custom', label: 'Private', sub: 'Your rounds · invite friends', icon: 'key' },
+  { id: 'offline', label: 'Vs Bots', sub: 'Offline · all bots', icon: 'bot' },
+  { id: 'custom', label: 'Private', sub: 'Your rounds · bots or friends', icon: 'key' },
 ];
 
 /** The mode a Play press will use: online only when it's reachable. */
 export function effectiveMode(mode: PlayMode, online: boolean): PlayMode {
   return mode === 'online' && online ? 'online' : 'offline';
+}
+
+/**
+ * Play Online tile subtitle: only numbers the servers actually report
+ * ("N online · M in queue"), else the honest "Real players + bot fill".
+ *
+ * @param status - Online reachability and counts.
+ * @returns Subtitle copy.
+ */
+export function onlineTileSub(status: OnlineStatus): string {
+  if (status.state === 'checking') return 'Checking servers…';
+  if (status.state !== 'online') return 'Servers offline';
+  const fmt = (n: number): string => n.toLocaleString('en-US');
+  const parts: string[] = [];
+  if (status.playersOnline !== undefined) parts.push(`${fmt(status.playersOnline)} online`);
+  if (status.inQueue !== undefined) parts.push(`${fmt(status.inQueue)} in queue`);
+  return parts.length > 0 ? parts.join(' · ') : 'Real players + bot fill';
 }
 
 function ModeTiles({ disabled }: { disabled: boolean }): JSX.Element {
@@ -230,15 +247,7 @@ function ModeTiles({ disabled }: { disabled: boolean }): JSX.Element {
         const isOnline = m.id === 'online';
         const unavailable = isOnline && !online;
         const selected = m.id === eff;
-        const sub = isOnline
-          ? status.state === 'checking'
-            ? 'Checking servers…'
-            : status.state === 'online'
-              ? status.playersOnline
-                ? `${status.playersOnline.toLocaleString('en-US')} playing`
-                : m.sub
-              : 'Servers offline'
-          : m.sub;
+        const sub = isOnline ? onlineTileSub(status) : m.sub;
         return (
           <button
             key={m.id}

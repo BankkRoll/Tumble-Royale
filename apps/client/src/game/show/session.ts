@@ -22,12 +22,13 @@ import type { TumblerLoadout } from '@tumble/render/scenes';
 import { RoundPhase, ShowPhase, type RoundPhaseId, type RoundType } from '@tumble/shared';
 import { CharacterState, type CharacterFullState, type CharacterInput, type SimEvent } from '@tumble/sim';
 import { createBotBrain, type BotBrainLike, type BotSelfView } from '@tumble/sim/bots';
-import { createCharacterFullState } from '@tumble/sim/character';
+import { DEFAULT_TUNING, GrabKind, createCharacterFullState } from '@tumble/sim/character';
 import { PlayerRoundStatus } from '@tumble/sim/match';
 import type { ShowPlaylist } from '@tumble/sim/show';
 import {
   bindUI,
   ui,
+  type HudGrab,
   type PlayerWallEvent,
   type RoundIntroInfo,
   type ScreenId,
@@ -50,6 +51,19 @@ import {
   type PreShowView,
 } from '../views/ceremonies.ts';
 import type { GameContext, RoundOutcomeInfo, RoundStart, SessionPlayer, SessionSummary } from './context.ts';
+import {
+  PAD_SPECTATE_NEXT,
+  PAD_SPECTATE_PREV,
+  SpectatePadCycler,
+  afterRoundResults,
+  cycleSpectateIndex,
+  planAfterEliminated,
+  spectateCandidates,
+  spectateDetail,
+  type SpectateStatus,
+  type WatchDecision,
+  type WatchPrefs,
+} from './spectator.ts';
 
 /** Local player's fate in the current round. */
 type Fate = 'playing' | 'qualified' | 'eliminated' | 'spectating';
@@ -77,6 +91,21 @@ interface ActiveRound {
 const SLOWMO_SCALE = 0.3;
 const SLOWMO_SECONDS = 1.5;
 const WIPE_FALLBACK_S = 1.6;
+/** How often the spectate banner refreshes the watched player's place. */
+const SPECTATE_REFRESH_S = 0.5;
+
+/** Live round status → spectate status. */
+function spectateStatusOf(status: number | undefined): SpectateStatus | undefined {
+  if (status === undefined) return undefined;
+  if (status === PlayerRoundStatus.Qualified) return 'qualified';
+  if (status === PlayerRoundStatus.Eliminated) return 'eliminated';
+  return 'playing';
+}
+
+/** Short key name for a `KeyboardEvent.code` in hints. */
+function shortKey(code: string | undefined): string {
+  return (code ?? '').replace(/^Key|^Digit/, '') || '?';
+}
 
 /**
  * Estimated rounds in a show, replaying the director's final-round rule with
@@ -205,9 +234,19 @@ export abstract class ShowSession {
   };
   private readonly pilotState: CharacterFullState = createCharacterFullState();
   private readonly onKey = (e: KeyboardEvent): void => this.handleKey(e);
+  /** What the local player chose once knocked out ("Keep watching" sticks for the show). */
+  private watch: WatchDecision = 'undecided';
+  /** The local player is out of the show and watching it as a spectator. */
+  private outOfShow = false;
+  /** The watch choice holds the (offline) show clock. */
+  private choiceHeld = false;
+  private readonly padCycler = new SpectatePadCycler();
+  private spectateRefresh = 0;
 
   constructor(protected readonly ctx: GameContext) {
     this.pool = new TumblerPool(ctx.tumblers.create);
+    ui.getState().setShowSeat({ online: this.isOnline(), outOfShow: false });
+    ui.getState().setWatchChoice(null);
     this.offs.push(
       bindUI({
         onTransitionCovered: ({ to }) => {
@@ -217,7 +256,7 @@ export abstract class ShowSession {
             fn();
           }
         },
-        onSpectate: () => this.beginSpectating(),
+        onSpectate: () => this.keepWatching(),
         onSpectateNext: ({ dir }) => this.cycleSpectate(dir),
         onEmote: ({ slot }) => {
           this.pendingEmote = Math.min(4, slot + 1);
@@ -260,6 +299,15 @@ export abstract class ShowSession {
   }
 
   /**
+   * True for a show on a game server. Online the show never waits for this
+   * player, and rewards come from the account API once the server reports the
+   * show. Called from the base constructor, so overrides must not read fields.
+   */
+  protected isOnline(): boolean {
+    return false;
+  }
+
+  /**
    * Records a show phase change (hooks, audio).
    *
    * @param phase - New show phase.
@@ -271,6 +319,9 @@ export abstract class ShowSession {
 
   /** Extra teardown in subclasses. */
   protected onDispose(): void {}
+
+  /** Connection-lost curtain's Try again (online sessions reconnect; nothing to do offline). */
+  retryConnection(): void {}
 
   /** Debug: force-ends the current round (offline). */
   skipRound(): void {}
@@ -321,6 +372,50 @@ export abstract class ShowSession {
     return this.round?.view?.players.count ?? 0;
   }
 
+  /** Publishes who the local Tumbler holds (or is held by) and the matching meter. */
+  private updateGrabHud(): void {
+    const c = this.round?.source?.sim.controller(this.localId);
+    const st = c ? c.getState(this.debugState) : null;
+    let mode: HudGrab['mode'] = 'none';
+    let name = '';
+    let meter = 0;
+    if (st?.ext?.grabKind === GrabKind.Player) {
+      name = this.players.get(st.grabTarget)?.name ?? '';
+      if (st.state === CharacterState.Grabbed) {
+        mode = 'held';
+        meter = Math.min(1, st.ext.breakFree / DEFAULT_TUNING.breakFreeMashes);
+      } else {
+        mode = 'holding';
+        meter = st.grabStamina;
+      }
+    } else if (st?.ext?.grabKind === GrabKind.Prop) {
+      mode = 'carrying';
+      meter = st.grabStamina;
+    }
+    // Quantised so the store only updates when the bar visibly moves.
+    meter = Math.round(meter * 20) / 20;
+    const prev = ui.getState().hud.grab;
+    if (prev.mode !== mode || prev.name !== name || prev.meter !== meter)
+      ui.getState().setHud({ grab: { mode, name, meter } });
+  }
+
+  /** Local Tumbler's controller state for automation (null outside a round). */
+  localDebug(): { state: number; grabTarget: number; x: number; y: number; z: number; grabs: number } | null {
+    const c = this.round?.source?.sim.controller(this.localId);
+    if (!c) return null;
+    const p = c.body.translation();
+    const full = c.getState(this.debugState);
+    return {
+      state: c.state,
+      grabTarget: full.grabTarget,
+      x: p.x,
+      y: p.y,
+      z: p.z,
+      grabs: this.counters.grabs ?? 0,
+    };
+  }
+  private readonly debugState = createCharacterFullState();
+
   /** The live round view (debug, quality changes). */
   get roundView(): RoundView | null {
     return this.round?.view ?? null;
@@ -342,22 +437,41 @@ export abstract class ShowSession {
     this.roundFrame(realDt);
   }
 
-  /** The player left mid-show (eliminated sheet, pause menu). Banks round rewards. */
+  /**
+   * The player left before the rewards screen (watch choice, in-game menu,
+   * play again). Banks what they earned: the played rounds as a quit mid-show,
+   * or the full show once it is already over (victory, winner cam, wall).
+   */
   quit(): void {
     if (this.ended) return;
-    if (!this.summary && this.localRounds().length > 0) {
-      this.ctx.profile.applyShow({
-        playlistName: this.showName,
-        rounds: this.localRounds(),
-        reachedFinal: false,
-        wonCrown: false,
-        place: this.order.length,
-        participants: this.order.length,
-        quit: true,
-        counters: this.counters,
-      });
+    if (this.awaiting !== 'rewards' && this.localRounds().length > 0) {
+      this.bankOnLeave(
+        this.summary
+          ? this.showFacts(this.summary)
+          : {
+              playlistName: this.showName,
+              rounds: this.localRounds(),
+              reachedFinal: false,
+              wonCrown: false,
+              place: this.order.length,
+              participants: this.order.length,
+              quit: true,
+              counters: this.counters,
+            },
+      );
     }
     this.dispose();
+  }
+
+  /**
+   * Banks rewards for a player leaving before the rewards screen. Offline the
+   * local profile records them; online sessions whose results the server
+   * reports to the account API override this.
+   *
+   * @param facts - What happened from the local player's seat.
+   */
+  protected bankOnLeave(facts: ShowResultForProfile): void {
+    this.ctx.profile.applyShow(facts);
   }
 
   /** Tears everything down (views are disposed by the scene director's next swap). */
@@ -375,6 +489,9 @@ export abstract class ShowSession {
     ui.getState().setEmoteWheel(false);
     ui.getState().setSpectate(null);
     ui.getState().setCaption(null);
+    ui.getState().setEliminatedSheet(false);
+    ui.getState().setWatchChoice(null);
+    ui.getState().setShowSeat(null);
     this.onDispose();
     // The round view on screen may still render pooled Tumblers until the next wipe swaps it out.
     const pool = this.pool;
@@ -668,6 +785,7 @@ export abstract class ShowSession {
       reduceShake: set.accessibility.reduceShake,
       nameplates: set.gameplay.nameplates,
       streamerMode: set.gameplay.streamerMode,
+      botTags: set.gameplay.botTags,
     });
     r.view = view;
     this.preShow = null;
@@ -760,6 +878,8 @@ export abstract class ShowSession {
         if (!r.inRound) {
           r.fate = 'spectating';
           this.spectateLeader();
+          // Online the show doesn't wait for an unanswered watch choice; keep offering it in the round.
+          if (ui.getState().watchChoice) s.setEliminatedSheet(true);
         } else r.view?.followLocal();
         s.setScreen('round', { transition: 'fade' });
         if (!set.gameplay.showPing) s.setHud({ ping: -1 });
@@ -842,10 +962,12 @@ export abstract class ShowSession {
       render3D: true,
     });
     if (r.inRound) this.recordLocalRound(qualified.has(this.localId));
+    this.afterResults(r, qualified.has(this.localId), o.qualified.length);
+    const botTags = this.ctx.settings().gameplay.botTags;
     const wallPlayers = rs.players
       .map((p) => this.players.get(p.id))
       .filter((p): p is SessionPlayer => !!p)
-      .map((p) => ({ id: String(p.id), name: p.name, loadout: p.loadout }));
+      .map((p) => ({ id: String(p.id), name: p.name, loadout: p.loadout, isBot: p.isBot && botTags }));
     const eliminated = o.eliminated.filter((id) => entrants.has(id)).map(String);
     this.swapUnder('roundResults', { transition: 'wipe' }, () => {
       this.ctx.director.show(
@@ -868,6 +990,91 @@ export abstract class ShowSession {
       theme: rs.round.theme,
     });
     this.ctx.audio.game.onShowPhase(ShowPhase.BetweenRounds);
+  }
+
+  /**
+   * Out of the show after this wall? Offer "Keep watching / Leave show"
+   * (holding the offline show clock until the player picks), or carry on as
+   * a spectator when they already chose to keep watching.
+   */
+  private afterResults(r: ActiveRound, localQualified: boolean, remaining: number): void {
+    const next = afterRoundResults(
+      { inRound: r.inRound, qualified: localQualified, isFinal: r.start.isFinal },
+      this.watch,
+      this.watchPrefs(),
+    );
+    switch (next.kind) {
+      case 'stillIn':
+        // Party fate sharing can carry a knocked-out player through: drop any pending offer.
+        this.clearWatchChoice();
+        break;
+      case 'spectate':
+        this.markOutOfShow();
+        break;
+      case 'ask':
+        this.markOutOfShow();
+        this.offerWatchChoice(next.autoAfterS, remaining, true);
+        break;
+      case 'showOver':
+        this.clearWatchChoice();
+        break;
+    }
+  }
+
+  private watchPrefs(): WatchPrefs {
+    return { autoSpectate: this.ctx.settings().gameplay.autoSpectate, autoplay: this.ctx.cfg.autoplay };
+  }
+
+  private markOutOfShow(): void {
+    if (this.outOfShow) return;
+    this.outOfShow = true;
+    ui.getState().setShowSeat({ online: this.isOnline(), outOfShow: true });
+  }
+
+  /**
+   * Puts "Keep watching / Leave show" up and schedules the automatic Keep
+   * watching.
+   *
+   * @param autoAfterS - Flow seconds until Keep watching is picked (null = wait).
+   * @param remaining - Players still in the show.
+   * @param holdShow - Pause the offline show clock until the player picks.
+   */
+  private offerWatchChoice(autoAfterS: number | null, remaining: number, holdShow: boolean): void {
+    const autoAt = autoAfterS === null ? null : Date.now() + (autoAfterS / this.flowScale) * 1000;
+    ui.getState().setWatchChoice({ autoAt, remaining });
+    if (holdShow && !this.choiceHeld) {
+      this.choiceHeld = true;
+      this.hold();
+    }
+    if (autoAfterS === null) return;
+    const offer = ui.getState().watchChoice;
+    this.after(autoAfterS, () => {
+      if (this.watch === 'undecided' && ui.getState().watchChoice === offer) this.keepWatching();
+    });
+  }
+
+  private clearWatchChoice(): void {
+    ui.getState().setWatchChoice(null);
+    if (this.choiceHeld) {
+      this.choiceHeld = false;
+      this.release();
+    }
+  }
+
+  /**
+   * "Keep watching" (button, Auto-spectate, the eliminated sheet): the show
+   * continues for this player as a spectator through every remaining round.
+   */
+  private keepWatching(): void {
+    this.watch = 'watching';
+    this.clearWatchChoice();
+    const s = ui.getState();
+    s.setEliminatedSheet(false);
+    const r = this.round;
+    const p = this.phase ?? 0;
+    // Between rounds there is nobody to watch yet; the next countdown starts spectating.
+    if (!r || p < RoundPhase.Countdown || p >= RoundPhase.RoundEnd) return;
+    if (r.fate === 'eliminated' || r.fate === 'qualified' || !r.inRound) this.beginSpectating();
   }
 
   private readonly playedRounds: ShowResultForProfile['rounds'] = [];
@@ -981,7 +1188,19 @@ export abstract class ShowSession {
     r.view?.celebrate();
     this.after(2.6, () => {
       if (this.round !== r || r.fate !== 'qualified' || (this.phase ?? 0) >= RoundPhase.RoundEnd) return;
-      if (this.ctx.settings().gameplay.autoSpectate) this.beginSpectating();
+      if (this.ctx.settings().gameplay.autoSpectate) {
+        this.beginSpectating();
+        return;
+      }
+      // Waiting for the others: spectating is one key / shoulder press away.
+      const binds = ui.getState().settings.controls.keybinds;
+      ui.getState().pushToast({
+        kind: 'info',
+        variant: 'feed',
+        title: 'Qualified! Waiting for the round to end',
+        body: `${shortKey(binds.spectatePrev[0])} / ${shortKey(binds.spectateNext[0])} or LB / RB to watch the others`,
+        durationMs: 5000,
+      });
     });
   }
 
@@ -994,11 +1213,25 @@ export abstract class ShowSession {
     s.setEmoteWheel(false);
     s.showStamp('eliminated');
     if (document.pointerLockElement) document.exitPointerLock();
-    this.after(1.6, () => {
-      if (this.round !== r || r.fate !== 'eliminated' || (this.phase ?? 0) >= RoundPhase.Results) return;
+    const plan = planAfterEliminated(this.watch, this.watchPrefs());
+    this.after(plan.afterS, () => {
+      if (this.round !== r || r.fate !== 'eliminated' || (this.phase ?? 0) >= RoundPhase.RoundEnd) return;
+      if (plan.kind === 'spectate') {
+        this.beginSpectating();
+        return;
+      }
+      // The round keeps running for everyone else, so this offer never holds the show clock.
+      this.offerWatchChoice(plan.autoAfterS, this.stillInCount(), false);
       ui.getState().setEliminatedSheet(true);
-      if (this.ctx.cfg.autoplay) this.after(1.4, () => this.beginSpectating());
     });
+  }
+
+  /** Entrants of the current round not yet knocked out. */
+  private stillInCount(): number {
+    const r = this.round;
+    if (!r) return 0;
+    const st = this.liveStatus()?.players;
+    return r.start.players.filter((p) => st?.get(p.id)?.status !== PlayerRoundStatus.Eliminated).length;
   }
 
   // ---------------------------------------------------------------------------
@@ -1009,13 +1242,8 @@ export abstract class ShowSession {
     const r = this.round;
     if (!r) return [];
     const st = this.liveStatus();
-    const stillIn = (id: number): boolean => {
-      const p = st?.players?.get(id);
-      return !p || p.status === PlayerRoundStatus.Playing;
-    };
     const order = st?.standings ?? r.start.players.map((p) => p.id);
-    const list = order.filter((id) => id !== this.localId && stillIn(id));
-    return list.length > 0 ? list : order.filter((id) => id !== this.localId);
+    return spectateCandidates(order, this.localId, (id) => spectateStatusOf(st?.players?.get(id)?.status));
   }
 
   private beginSpectating(): void {
@@ -1034,13 +1262,21 @@ export abstract class ShowSession {
     if (id !== undefined) this.spectatePlayer(id, 0, list.length);
   }
 
+  /**
+   * Watches the next/previous Tumbler. A qualified player waiting for the
+   * round to end starts spectating on their first cycle.
+   */
   private cycleSpectate(dir: 1 | -1): void {
     const r = this.round;
-    if (!r || r.fate !== 'spectating') return;
+    if (!r) return;
+    if (r.fate === 'qualified' && (this.phase ?? 0) < RoundPhase.RoundEnd) {
+      this.beginSpectating();
+      return;
+    }
+    if (r.fate !== 'spectating') return;
     const list = this.candidates();
-    if (list.length === 0) return;
-    const i = Math.max(0, list.indexOf(r.spectateId));
-    const next = (i + dir + list.length) % list.length;
+    const next = cycleSpectateIndex(list, r.spectateId, dir);
+    if (next < 0) return;
     this.spectatePlayer(list[next] as number, next, list.length);
   }
 
@@ -1051,12 +1287,41 @@ export abstract class ShowSession {
     r.view?.spectate(id);
     const st = this.liveStatus()?.players?.get(id);
     const qualified = st?.status === PlayerRoundStatus.Qualified;
-    const detail = qualified
-      ? 'Qualified!'
-      : index === 0
-        ? 'In the lead'
-        : `${index + 1}${['st', 'nd', 'rd'][index] ?? 'th'} place`;
-    ui.getState().setSpectate({ player: this.uiPlayer(id), detail, qualified, index, count });
+    ui.getState().setSpectate({
+      player: this.uiPlayer(id),
+      detail: spectateDetail(index, qualified),
+      qualified,
+      index,
+      count,
+      remaining: this.stillInCount(),
+    });
+  }
+
+  /** Keeps the banner's place and "still in" count current while watching. */
+  private refreshSpectateBanner(realDt: number): void {
+    const r = this.round;
+    if (!r || r.fate !== 'spectating' || r.spectateId < 0) return;
+    this.spectateRefresh += realDt;
+    if (this.spectateRefresh < SPECTATE_REFRESH_S) return;
+    this.spectateRefresh = 0;
+    const list = this.candidates();
+    const i = list.indexOf(r.spectateId);
+    if (i >= 0) this.spectatePlayer(r.spectateId, i, list.length);
+  }
+
+  /** Gamepad shoulder buttons cycle spectate targets (the input system has no spectate actions). */
+  private pollSpectatePad(): void {
+    const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : [];
+    let gp: Gamepad | null = null;
+    for (const p of pads) {
+      if (p && p.connected && p.mapping === 'standard') {
+        gp = p;
+        break;
+      }
+    }
+    const down = (i: number): boolean => !!gp?.buttons[i]?.pressed;
+    const dir = this.padCycler.update(down(PAD_SPECTATE_PREV), down(PAD_SPECTATE_NEXT));
+    if (dir !== 0) this.cycleSpectate(dir);
   }
 
   private handleKey(e: KeyboardEvent): void {
@@ -1064,7 +1329,8 @@ export abstract class ShowSession {
     const r = this.round;
     if (!r) return;
     const binds = ui.getState().settings.controls.keybinds;
-    if (r.fate === 'spectating' && ui.getState().screen === 'round') {
+    const watching = r.fate === 'spectating' || r.fate === 'qualified';
+    if (watching && ui.getState().screen === 'round' && ui.getState().overlay === 'none') {
       if (binds.spectatePrev.includes(e.code)) this.cycleSpectate(-1);
       else if (binds.spectateNext.includes(e.code)) this.cycleSpectate(1);
     }
@@ -1154,6 +1420,7 @@ export abstract class ShowSession {
       input.settings.pointerLock && !us.isTouch ? (input.pointerLocked ? 'locked' : 'unlocked') : 'off';
     if (us.cameraLock !== lock) ui.setState({ cameraLock: lock });
     const look = input.readLook(realDt);
+    this.updateGrabHud();
     if (!view || !r) return;
     if (active || spectating) view.rig.addLook(look.yaw, look.pitch);
 
@@ -1183,6 +1450,10 @@ export abstract class ShowSession {
       const ps = st?.players?.get(r.spectateId);
       if (ps && ps.status === PlayerRoundStatus.Eliminated) this.cycleSpectate(1);
     }
+    if (spectating && us.screen === 'round' && us.overlay === 'none' && !us.eliminatedSheet)
+      this.pollSpectatePad();
+    else this.padCycler.reset(true, true);
+    this.refreshSpectateBanner(realDt);
   }
 
   // ---------------------------------------------------------------------------
@@ -1272,10 +1543,11 @@ export abstract class ShowSession {
     const s = ui.getState();
     s.setPlayerWall(uiSummary, { render3D: true, autoContinueMs: this.ctx.cfg.autoplay ? 2500 : 9000 });
     this.swapUnder('playerWall', { transition: 'wipe' }, () => {
+      const botTags = this.ctx.settings().gameplay.botTags;
       const wall3d = {
         players: this.order.map((id) => {
           const p = this.players.get(id) as SessionPlayer;
-          return { id: String(id), name: p.name, loadout: p.loadout };
+          return { id: String(id), name: p.name, loadout: p.loadout, isBot: p.isBot && botTags };
         }),
         rounds: uiSummary.rounds.map((r) => ({ name: r.name, eliminatedIds: r.eliminatedIds.map(String) })),
         winnerId: summary.winnerId !== null ? String(summary.winnerId) : null,
@@ -1311,6 +1583,31 @@ export abstract class ShowSession {
 
   private rewardsWait = 0;
 
+  /**
+   * The finished show from the local seat. Only rounds the player actually
+   * entered count; a spectator who was knocked out early still gets the
+   * show's participation and their final placement.
+   *
+   * @param summary - The show recap.
+   */
+  private showFacts(summary: SessionSummary): ShowResultForProfile {
+    const finalOutcome = summary.rounds[summary.rounds.length - 1];
+    const reachedFinal =
+      !!finalOutcome?.isFinal &&
+      (finalOutcome.qualified.includes(this.localId) || finalOutcome.eliminated.includes(this.localId));
+    return {
+      playlistName: this.showName,
+      rounds: this.localRounds(),
+      reachedFinal,
+      wonCrown: summary.winnerId === this.localId,
+      place: summary.placements.get(this.localId) ?? this.order.length,
+      participants: this.order.length,
+      quit: false,
+      counters: this.counters,
+      field: this.fieldSummary(),
+    };
+  }
+
   private goRewards(): void {
     if (this.awaiting === 'rewards' || !this.summary) return;
     // Give the server's reward summary a few seconds before falling back to the local estimate.
@@ -1320,23 +1617,7 @@ export abstract class ShowSession {
       return;
     }
     this.awaiting = 'rewards';
-    const summary = this.summary;
-    const rounds = this.localRounds();
-    const finalOutcome = summary.rounds[summary.rounds.length - 1];
-    const reachedFinal =
-      !!finalOutcome?.isFinal &&
-      (finalOutcome.qualified.includes(this.localId) || finalOutcome.eliminated.includes(this.localId));
-    const rewards = this.computeRewards({
-      playlistName: this.showName,
-      rounds,
-      reachedFinal,
-      wonCrown: summary.winnerId === this.localId,
-      place: summary.placements.get(this.localId) ?? this.order.length,
-      participants: this.order.length,
-      quit: false,
-      counters: this.counters,
-      field: this.fieldSummary(),
-    });
+    const rewards = this.computeRewards(this.showFacts(this.summary));
     const s = ui.getState();
     s.setRewards(rewards);
     this.wall = null;

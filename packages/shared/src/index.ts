@@ -10,3 +10,4 @@ export * from './game.ts';
 export * from './schema/round.ts';
 export * from './chat/profanity.ts';
 export * from './chat/chat.ts';
+export * from './social/partyLobby.ts';

@@ -8,13 +8,16 @@
  * {@link frame} every animation frame.
  */
 import {
+  MAX_ENTITIES,
   createRenderEntityState,
   type DecodedSnapshot,
   type JoinRoundMsg,
+  type MatchPlayerInfo,
   type MatchSim,
   type RenderEntityState,
 } from '@tumble/netcode';
 import type { CharacterInput, SimEvent } from '@tumble/sim';
+import { RoundPhase } from '@tumble/shared';
 import type { NetClient } from './NetClient.ts';
 import { PredictionController, type PredictionOptions } from './PredictionController.ts';
 import { RemoteEntities } from './RemoteEntities.ts';
@@ -64,6 +67,14 @@ export class NetGameSession {
   sim: MatchSim | null = null;
   private lastFrameMs = -1;
   private loading = 0;
+  /**
+   * Lobby: 1 for ids the server explicitly removed (left for good), as
+   * opposed to remotes momentarily unknown after a reconnect rebuild.
+   */
+  readonly lobbyLeft = new Uint8Array(MAX_ENTITIES);
+  /** Lobby sims: remote ids that already have a proxy. */
+  private readonly lobbyKnown = new Uint8Array(MAX_ENTITIES);
+  private readonly lobbyInfo: MatchPlayerInfo = { id: 0, name: '', isBot: false, team: -1 };
   private readonly offs: (() => void)[] = [];
 
   /**
@@ -136,12 +147,17 @@ export class NetGameSession {
     this.sim = null;
     this.prediction = null;
     this.remotes.reset();
+    this.lobbyKnown.fill(0);
+    this.lobbyLeft.fill(0);
+    if (join.lobby) for (const p of join.players) if (p.id !== this.net.playerId) this.lobbyKnown[p.id] = 1;
     const sim = await this.createPredictSim(join, this.net.playerId);
     // A newer round started while this one was loading.
     if (token !== this.loading) {
       sim.dispose();
       return;
     }
+    // The pre-show platform is always live: no LOADING/countdown gate.
+    if (join.lobby) sim.setPhase(RoundPhase.Playing, 0);
     this.sim = sim;
     const net = this.net;
     this.prediction = new PredictionController(
@@ -155,8 +171,32 @@ export class NetGameSession {
       },
       this.opts.prediction,
     );
-    net.sendLowFreq({ t: 'loaded', roundId: join.roundId });
+    if (!join.lobby) net.sendLowFreq({ t: 'loaded', roundId: join.roundId });
     this.opts.onRoundReady?.(join, sim);
+  }
+
+  /**
+   * Lobby sims gain and lose players live: give every newly seen remote a
+   * kinematic proxy (so the local Tumbler bumps into it) and drop leavers.
+   */
+  private syncLobbyProxies(s: DecodedSnapshot, sim: MatchSim): void {
+    for (let i = 0; i < s.removedCount; i++) {
+      const id = s.removed[i]!;
+      this.lobbyLeft[id] = 1;
+      if (this.lobbyKnown[id]) {
+        this.lobbyKnown[id] = 0;
+        sim.removePlayer?.(id);
+      }
+    }
+    for (let i = 0; i < s.entityCount; i++) {
+      const e = s.entities[i]!;
+      this.lobbyLeft[e.id] = 0;
+      if (e.id === this.net.playerId || this.lobbyKnown[e.id]) continue;
+      this.lobbyKnown[e.id] = 1;
+      const info = this.lobbyInfo;
+      info.id = e.id;
+      sim.addPlayer?.(info, e.pos);
+    }
   }
 
   private onSnapshot(s: DecodedSnapshot): void {
@@ -164,6 +204,7 @@ export class NetGameSession {
     this.remotes.onSnapshot(s, now, s.serverTick * this.net.tickMs);
     const sim = this.sim;
     const round = this.net.round;
+    if (sim && round?.lobby) this.syncLobbyProxies(s, sim);
     if (sim && round) {
       for (let i = 0; i < s.obstacleCount; i++) {
         const id = round.obstacleIds[s.obstacleIndices[i]!];

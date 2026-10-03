@@ -1,6 +1,6 @@
-# Tumble Royale wire protocol — v2
+# Tumble Royale wire protocol — v3
 
-`PROTOCOL_VERSION = 2` (`src/protocol.ts`). Any incompatible change bumps it;
+`PROTOCOL_VERSION = 3` (`src/protocol.ts`). Any incompatible change bumps it;
 the server rejects a Hello with a different version (`Kick{VersionMismatch}`).
 
 Transport: binary WebSocket frames (`/ws`; `/gs/ws` is also accepted for the
@@ -160,7 +160,17 @@ larger message is sent alone). Payloads:
   connection), `showRewards` (the account API's `PlayerRewardSummary` for
   this player, forwarded after the server posted the results), `playerList`, `roundPhase`, `showPhase`,
   `roundResults`, `showSummary`, `lobby`, `chat`; client→server: `chat`,
-  `loaded`, `spectate`. Clients may never send SimEvents.
+  `loaded`, `spectate` (sent whenever the spectated player changes; drives
+  interest management). Clients may never send SimEvents.
+
+  v3 additions: `playerList[].partyId` (duos/squads), `joinRound.lobby` (the
+  live pre-show platform: a rule-less lobby sim players join and leave while
+  snapshots stream; joiners appear as snapshot entities, leavers as removals),
+  `joinRound.mutatorId` (show mutator every peer passes to its sim),
+  `joinRound.roundTimeScale` (round timer multiplier, 0.5–2; peers pass it as
+  `MatchSimOptions.roundTimeScale`, which is the only place a timer is scaled),
+  `roundResults[].carried` (eliminated but carried by a qualifying teammate)
+  and `showPhase.startsInMs` (pre-show countdown).
 
 ## Clock sync (Ping/Pong)
 

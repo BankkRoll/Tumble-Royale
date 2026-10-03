@@ -307,6 +307,7 @@ export class RoomManager {
       region: claims.region,
       humans: Math.max(1, claims.humans),
       bots: claims.custom && !claims.custom.bots ? 0 : Math.max(0, claims.bots),
+      teamSize: Math.max(1, Math.min(4, claims.teamSize)),
       custom: claims.custom ?? null,
     };
     room = new Room(

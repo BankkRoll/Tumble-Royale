@@ -62,7 +62,15 @@ export async function startGameServer(opts: GameServerOptions): Promise<GameServ
     switch (url.pathname) {
       case '/health':
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, rapier: deps.R.version(), rooms: rooms.list().length }));
+        res.end(
+          JSON.stringify({
+            ok: true,
+            rapier: deps.R.version(),
+            rooms: rooms.list().length,
+            anomalies: metrics.anomalies,
+            lagComp: { grabs: metrics.lagCompGrabs, tackles: metrics.lagCompTackles },
+          }),
+        );
         return;
       case '/debug/determinism': {
         const steps = Math.min(Math.max(Number(url.searchParams.get('steps') ?? 600), 1), 10_000);

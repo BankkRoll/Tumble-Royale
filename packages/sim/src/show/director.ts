@@ -432,7 +432,14 @@ export class ShowDirector {
     }
     return ids.map((id, i) => {
       const p = this.byId.get(id) as ShowParticipant;
-      return { id, name: p.name, isBot: p.isBot, team: teams[i] as number, botSkill: p.botSkill };
+      return {
+        id,
+        name: p.name,
+        isBot: p.isBot,
+        team: teams[i] as number,
+        botSkill: p.botSkill,
+        ...(p.partyId !== undefined ? { partyId: p.partyId } : {}),
+      };
     });
   }
 

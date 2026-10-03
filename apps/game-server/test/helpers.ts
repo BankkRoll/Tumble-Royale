@@ -31,6 +31,7 @@ import {
   type CharacterFullState,
   type CharacterInput,
   type Rapier,
+  type SimEvent,
   type World,
 } from '@tumble/sim';
 import {
@@ -114,6 +115,23 @@ export class FakeMatchSim implements MatchSim {
 
   setInput(playerId: number, input: CharacterInput): void {
     this.inputs.set(playerId, { ...input });
+  }
+
+  /** Lobby sims only (the real sim's contract). */
+  addPlayer(info: { id: number }, feet: Vec3): boolean {
+    if (!this.opts.lobby || this.states.has(info.id)) return false;
+    const s = createCharacterFullState();
+    s.pos.x = feet.x;
+    s.pos.y = feet.y;
+    s.pos.z = feet.z;
+    this.states.set(info.id, s);
+    this.applied.set(info.id, []);
+    return true;
+  }
+
+  removePlayer(id: number): boolean {
+    this.inputs.delete(id);
+    return this.states.delete(id);
   }
 
   step(): void {
@@ -291,9 +309,24 @@ export class TestClient {
     return seq;
   }
 
-  /** Queues a low-frequency message; it goes out on the next `pump`. */
+  /** Sends one input batch with an explicit newest sequence. */
+  inputAt(seq: number, input: CharacterInput): void {
+    writeInputBatch(
+      this.w.reset(),
+      { newestSeq: seq, clientTick: seq, ackSnapshotId: this.decoder.newestId, count: 1 },
+      [input],
+    );
+    this.conn.receive(this.w.finish());
+  }
+
+  /** Queues a low-frequency message to the server (flushed by the next {@link pump}). */
   send(msg: LowFreqMessage): void {
     this.reliable.send(encodeReliableMessage({ kind: 'msg', msg }));
+  }
+
+  /** Every sim event received, in order. */
+  simEvents(): SimEvent[] {
+    return this.messages.flatMap((m) => (m.kind === 'sim' ? [m.event] : []));
   }
 
   /** Queues a chat line on the reliable channel; it goes out on the next {@link pump}. */

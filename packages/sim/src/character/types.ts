@@ -185,6 +185,10 @@ export interface TumblerControllerLike {
   setFrozen(frozen: boolean): void;
   /** Mark finished/eliminated etc.; switches to Finished/Spectating/Eliminated states. */
   setFate(state: CharacterStateId): void;
+  /** Server hit assist: start holding `other` if a normal grab could (see the Tumbler controller). */
+  assistGrab?(other: TumblerControllerLike, ctx: CharacterStepContext): boolean;
+  /** Server hit assist: take a dive tackle pushing along (dirX, dirZ) with Δv `strength`. */
+  applyTackle?(dirX: number, dirZ: number, strength: number): boolean;
   dispose(): void;
 }
 

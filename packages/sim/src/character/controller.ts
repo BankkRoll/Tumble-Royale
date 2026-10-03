@@ -2521,6 +2521,70 @@ export class TumblerController implements TumblerControllerLike {
   }
 
   /** Removes the body and collider from the world. The controller must not be used afterwards. */
+  /**
+   * Starts holding `other` as if this step's grab query had found it. Used by
+   * the server's lag-compensated hit assist when the client saw the target in
+   * reach; every rule of a normal grab (cooldown, stamina, ghosting, freezes,
+   * the target's own state) still applies.
+   *
+   * @returns True when the grab started.
+   */
+  assistGrab(other: TumblerControllerLike, ctx: CharacterStepContext): boolean {
+    if (!(other instanceof TumblerController) || other === this) return false;
+    const ext = this.ext;
+    const s = this._state;
+    // Grab with nothing held is the empty-handed reach pose.
+    const free =
+      s === CharacterState.Idle ||
+      s === CharacterState.Run ||
+      s === CharacterState.Jump ||
+      s === CharacterState.Fall ||
+      s === CharacterState.Grab;
+    if (
+      !free ||
+      ext.grabKind !== GrabKind.None ||
+      ext.grabCooldown > 0 ||
+      this.grabStamina <= 0.1 ||
+      this.frozen ||
+      (this.flags & CharacterFlag.Ghost) !== 0 ||
+      !other.canBeGrabbed(this.id)
+    )
+      return false;
+    this.beginHoldPlayer(other, ctx);
+    return true;
+  }
+
+  /**
+   * Applies a dive tackle exactly like the contact scan does when a diving
+   * Tumbler hits this one (server hit assist).
+   *
+   * @param dirX - Horizontal push direction (unit, away from the diver).
+   * @param dirZ - Horizontal push direction.
+   * @param strength - Impact Δv in m/s (at least the dive-hit threshold).
+   * @returns True when the tackle stunned this Tumbler.
+   */
+  applyTackle(dirX: number, dirZ: number, strength: number): boolean {
+    const s = this._state;
+    if (
+      s === CharacterState.Stunned ||
+      s === CharacterState.Finished ||
+      s === CharacterState.Respawning ||
+      s === CharacterState.LedgeClimb ||
+      s === CharacterState.Eliminated ||
+      s === CharacterState.Spectating ||
+      (this.flags & CharacterFlag.Ghost) !== 0
+    )
+      return false;
+    const dv = Math.max(strength, this.tuning.diveHitThreshold);
+    this.body.linvel(this.vel);
+    this.vel.x += dirX * dv * 0.5;
+    this.vel.z += dirZ * dv * 0.5;
+    this.vel.y = Math.max(this.vel.y, 2.5);
+    this.body.setLinvel(this.vel, true);
+    this.enterStun(this.tuning.stunImpactThreshold + dv, dirX, dirZ);
+    return true;
+  }
+
   dispose(): void {
     if (this.body.isValid()) this.world.removeRigidBody(this.body);
     this.stepCtx = null;

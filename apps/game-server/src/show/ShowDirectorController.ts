@@ -12,8 +12,11 @@
  */
 import type { MatchPlayerInfo, PlayerRoundStatusId, RoundResultEntry, RoundStatus } from '@tumble/netcode';
 import {
+  DEFAULT_SHOW_TIMINGS,
   ShowDirector,
+  ShowPlaylistSchema,
   type RoundDriver,
+  type ShowPlaylist,
   type RoundStartInfo,
   type ShowDirectorOptions,
   type ShowEvent as DirectorEvent,
@@ -50,10 +53,26 @@ export class ShowDirectorController implements ShowController {
   private phase: ShowPhaseId = ShowPhase.PreShow;
 
   /** @param opts - Playlist, rounds and timings. */
-  constructor(private readonly opts: ShowDirectorControllerOptions) {}
+  private readonly playlist: ShowPlaylist;
+
+  constructor(private readonly opts: ShowDirectorControllerOptions) {
+    this.playlist = ShowPlaylistSchema.parse(opts.playlist);
+  }
 
   get showPhase(): ShowPhaseId {
     return this.phase;
+  }
+
+  get partySize(): number {
+    return this.playlist.partySize;
+  }
+
+  get botSkillMix(): ShowController['botSkillMix'] {
+    return this.playlist.botSkillMix;
+  }
+
+  get preShowSeconds(): number {
+    return this.opts.timings?.preShow ?? DEFAULT_SHOW_TIMINGS.preShow;
   }
 
   start(players: readonly MatchPlayerInfo[], seed: number): void {
@@ -66,6 +85,7 @@ export class ShowDirectorController implements ShowController {
         name: p.name,
         isBot: p.isBot,
         ...(p.botSkill ? { botSkill: p.botSkill } : {}),
+        ...(p.partyId !== undefined ? { partyId: p.partyId } : {}),
       })),
       host: { startRound: (info) => this.startRound(info) },
       ...(this.opts.timings ? { timings: this.opts.timings } : {}),
@@ -113,6 +133,7 @@ export class ShowDirectorController implements ShowController {
       stage: info.stage,
       seed: info.seed,
       playerIds: info.players.map((p) => p.id),
+      players: info.players,
       ...(info.qualifyTarget !== undefined ? { qualifyTarget: info.qualifyTarget } : {}),
       mutatorId: info.mutatorId,
       roundTimeScale: info.roundTimeScale,
@@ -138,12 +159,22 @@ export class ShowDirectorController implements ShowController {
         return;
       case 'roundResult': {
         const o = e.outcome;
+        // Teammates carried by a qualifier advance like qualifiers (status 1), flagged so clients say why.
+        const carried = new Set(o.carried);
+        const out = o.eliminated.filter((id) => !carried.has(id));
         const results: RoundResultEntry[] = [
           ...o.qualified.map((id, i) => ({ id, status: 1, place: i + 1, score: this.score(id) })),
-          ...o.eliminated.map((id, i) => ({
+          ...o.carried.map((id, i) => ({
+            id,
+            status: 1,
+            place: o.qualified.length + i + 1,
+            score: this.score(id),
+            carried: true,
+          })),
+          ...out.map((id, i) => ({
             id,
             status: 2,
-            place: o.qualified.length + i + 1,
+            place: o.qualified.length + o.carried.length + i + 1,
             score: this.score(id),
           })),
         ];

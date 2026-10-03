@@ -1068,8 +1068,11 @@ export abstract class ShowSession {
       if (binds.spectatePrev.includes(e.code)) this.cycleSpectate(-1);
       else if (binds.spectateNext.includes(e.code)) this.cycleSpectate(1);
     }
-    if (e.code === 'Escape' && ui.getState().screen === 'round' && ui.getState().overlay === 'none')
-      ui.getState().setOverlay('settings');
+    if (e.code === 'Escape' && ui.getState().screen === 'round') {
+      const overlay = ui.getState().overlay;
+      if (overlay === 'none') ui.getState().setOverlay('inGameMenu');
+      else if (overlay === 'inGameMenu') ui.getState().setOverlay('none');
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1143,7 +1146,10 @@ export abstract class ShowSession {
       !!view &&
       (active || spectating) &&
       !this.ctx.cfg.autoplay &&
-      us.screen === 'round';
+      us.screen === 'round' &&
+      us.overlay === 'none';
+    if (!input.settings.pointerLock && us.overlay !== 'none' && document.pointerLockElement)
+      document.exitPointerLock();
     const lock =
       input.settings.pointerLock && !us.isTouch ? (input.pointerLocked ? 'locked' : 'unlocked') : 'off';
     if (us.cameraLock !== lock) ui.setState({ cameraLock: lock });

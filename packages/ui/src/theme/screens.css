@@ -3628,3 +3628,56 @@
     max-width: none;
   }
 }
+
+/* In-round menu: a compact card; the round keeps running behind the dim. */
+.tr-igm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8em;
+  width: min(30em, calc(100vw - 2em));
+  max-height: calc(100% - 2em);
+  overflow: auto;
+}
+.tr-igm-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8em;
+}
+.tr-igm-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4em;
+}
+.tr-igm-status.is-playing {
+  background: var(--lemon);
+}
+.tr-igm-status.is-qualified {
+  background: var(--mint);
+}
+.tr-igm-status.is-out {
+  background: #ffd6e4;
+}
+.tr-igm-objective {
+  margin: 0;
+  font-weight: 700;
+}
+.tr-igm-live {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  margin: 0;
+}
+.tr-igm-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em 0.9em;
+  padding: 0.6em 0.8em;
+  border-radius: 0.9em;
+  background: rgba(43, 26, 94, 0.07);
+  font-size: 0.85em;
+}
+.tr-igm-actions {
+  display: grid;
+  gap: 0.5em;
+}

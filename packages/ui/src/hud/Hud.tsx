@@ -3,6 +3,8 @@
  * widget subscribes to its own HUD fields.
  */
 import { memo, type JSX } from 'react';
+import { Icon } from '../components/icons/index.tsx';
+import { openInGameMenu } from '../screens/overlays/InGameMenu.tsx';
 import { useUI } from '../store/uiStore.ts';
 import { EmoteWheel } from './EmoteWheel.tsx';
 import { TouchControls } from './TouchControls.tsx';
@@ -37,6 +39,15 @@ export const Hud = memo(function Hud(): JSX.Element {
           <RaceProgress />
         </div>
         <div className="tr-hud-tr">
+          <button
+            type="button"
+            className="tr-hud-menu-btn tr-interactive"
+            aria-label="Show menu"
+            data-testid="hud-menu"
+            onClick={openInGameMenu}
+          >
+            <Icon name="gear" size="1.3em" />
+          </button>
           <NetStats />
           <TeamScores />
         </div>

@@ -514,6 +514,11 @@ function Section({ id }: { id: SettingsSection }): JSX.Element {
   }
 }
 
+/** Opened from the in-round menu, Settings closes back to it. */
+function closeSettings(): void {
+  ui.getState().setOverlay(ui.getState().screen === 'round' ? 'inGameMenu' : 'none');
+}
+
 /** Settings overlay sheet. */
 export function SettingsSheet(): JSX.Element {
   const [section, setSection] = useState<SettingsSection>('graphics');
@@ -525,7 +530,7 @@ export function SettingsSheet(): JSX.Element {
       aria-modal="true"
       aria-label="Settings"
     >
-      <div className="tr-dim" onClick={() => ui.getState().setOverlay('none')} />
+      <div className="tr-dim" onClick={() => closeSettings()} />
       <aside className="tr-sheet tr-settings">
         <div className="tr-sheet-head">
           <h2 className="tr-title tr-h2 tr-grow">Settings</h2>
@@ -537,7 +542,7 @@ export function SettingsSheet(): JSX.Element {
             aria-label="Close settings"
             onClick={() => {
               playCue('ui.back');
-              ui.getState().setOverlay('none');
+              closeSettings();
             }}
           >
             <Icon name="close" size="1em" />

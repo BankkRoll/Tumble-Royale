@@ -7,6 +7,7 @@ import { useEffect, useRef, type JSX } from 'react';
 import { ConnectionLayer, DialogLayer, ToastLayer } from './components/system.tsx';
 import { Hud } from './hud/Hud.tsx';
 import { SettingsSheet } from './screens/overlays/SettingsSheet.tsx';
+import { InGameMenu } from './screens/overlays/InGameMenu.tsx';
 import { JoinCodeDialog, PrivateShowDialog } from './screens/overlays/PrivateShow.tsx';
 import { FriendsSheet, NotificationsPanel } from './screens/overlays/SocialSheets.tsx';
 import { ScreenLayer } from './screens/ScreenLayer.tsx';
@@ -29,6 +30,8 @@ function OverlayLayer(): JSX.Element | null {
       return <PrivateShowDialog />;
     case 'joinCode':
       return <JoinCodeDialog />;
+    case 'inGameMenu':
+      return <InGameMenu />;
     default:
       return null;
   }

@@ -79,7 +79,8 @@ export const MENU_TABS: readonly MenuTab[] = [
 ];
 
 /** Side sheets / drop-downs layered over any screen. */
-export type OverlayId = 'none' | 'settings' | 'friends' | 'notifications' | 'privateShow' | 'joinCode';
+export type OverlayId =
+  'none' | 'settings' | 'friends' | 'notifications' | 'privateShow' | 'joinCode' | 'inGameMenu';
 
 /** How a screen change is presented. */
 export type TransitionKind = 'none' | 'fade' | 'wipe';

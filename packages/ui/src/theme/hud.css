@@ -688,3 +688,18 @@
   font-size: 0.8em;
   box-shadow: none;
 }
+
+.tr-hud-menu-btn {
+  display: grid;
+  place-items: center;
+  width: 2.6em;
+  height: 2.6em;
+  border-radius: 50%;
+  border: 0.14em solid var(--ink) !important;
+  background: var(--cloud) !important;
+  box-shadow: 0 0.14em 0 var(--ink);
+  pointer-events: auto;
+}
+.tr-hud-menu-btn:hover {
+  transform: rotate(-12deg) scale(1.06);
+}

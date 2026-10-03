@@ -3,9 +3,12 @@
  *
  * - Gumballs (soft currency) are only ever earned by playing: the popover
  *   explains how and links to Challenges and the Season Pass. Never a purchase.
- * - Gems (premium currency): what they're for, plus the Gem packs in a clear
- *   disabled "Coming soon — secure checkout via Stripe" state until real
- *   checkout is enabled (`StoreData.gemCheckout === 'enabled'`).
+ * - Gems (premium currency): what they're for, how to earn them by playing,
+ *   and the Gem packs the account API lists. Packs are buyable only when the
+ *   API can complete a purchase (`StoreData.gemCheckout`): `enabled` (Stripe)
+ *   or `test` (dev fake provider, labelled "Test purchase (dev)"). Otherwise
+ *   they are read-only under "Coming soon — Secure checkout via Stripe".
+ *   No placeholder packs are ever invented.
  */
 import { useEffect, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
@@ -15,14 +18,30 @@ import { formatNumber } from '../../components/hooks.ts';
 import { Icon, type IconName } from '../../components/icons/index.tsx';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
-import type { GemPackOffer, MenuTab } from '../../store/types.ts';
+import type { MenuTab } from '../../store/types.ts';
 
-/** Packs shown before the account API lists real ones (amounts only, never a price). */
-const PREVIEW_PACKS: GemPackOffer[] = [
-  { id: 'preview-small', name: 'Handful', gems: 500, price: '' },
-  { id: 'preview-medium', name: 'Jar', gems: 1100, price: '' },
-  { id: 'preview-large', name: 'Bucket', gems: 2400, price: '' },
-  { id: 'preview-huge', name: 'Vault', gems: 5000, price: '' },
+/** Free Gem sources (docs/design/ECONOMY.md §3); amounts live in content. */
+const GEM_EARN: { icon: IconName; title: string; body: string }[] = [
+  {
+    icon: 'challenges',
+    title: 'Weekly challenges',
+    body: 'Every weekly challenge you claim pays Gems on top of its usual reward.',
+  },
+  {
+    icon: 'crown',
+    title: 'First Crown of the day',
+    body: 'Your first Crown each day comes with a Gem bonus.',
+  },
+  {
+    icon: 'star',
+    title: 'Level milestones',
+    body: 'Every tenth account level pays a stack of Gems.',
+  },
+  {
+    icon: 'pass',
+    title: 'Season Pass',
+    body: 'Spotlight tiers on the free track pay Gems; premium tiers pay back most of the pass.',
+  },
 ];
 
 const EARN: { icon: IconName; title: string; body: string }[] = [
@@ -91,8 +110,9 @@ function GumballsBody({ amount }: { amount: number }): JSX.Element {
 
 function GemsBody({ amount }: { amount: number }): JSX.Element {
   const store = useUI((s) => s.store);
-  const live = store?.gemCheckout === 'enabled';
-  const packs = store?.gemPacks && store.gemPacks.length > 0 ? store.gemPacks : PREVIEW_PACKS;
+  const mode = store?.gemCheckout ?? 'comingSoon';
+  const buyable = mode === 'enabled' || mode === 'test';
+  const packs = store?.gemPacks ?? [];
   return (
     <>
       <div className="tr-wallet-hero tr-wallet-hero--gems">
@@ -104,39 +124,71 @@ function GemsBody({ amount }: { amount: number }): JSX.Element {
       </div>
       <p className="tr-small tr-wallet-lede">
         Gems are the <b>premium currency</b>: they unlock the Premium Pass track and Legendary &amp; Mythic
-        store items. Never pay-to-win — everything is cosmetic.
+        store items. Never pay-to-win — everything is cosmetic. You can <b>earn Gems by playing</b>:
       </p>
-      {!live && (
-        <div className="tr-wallet-soon" role="note">
-          <Icon name="lock" size="1.4em" />
+      <ul className="tr-wallet-ways" data-testid="gem-earn">
+        {GEM_EARN.map((e) => (
+          <li key={e.title}>
+            <Icon name={e.icon} size="1.8em" />
+            <span className="tr-col" style={{ gap: 0 }}>
+              <b>{e.title}</b>
+              <span className="tr-small tr-muted">{e.body}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {mode === 'test' && (
+        <div className="tr-wallet-soon" role="note" data-testid="gem-test-mode">
+          <Icon name="gear" size="1.4em" />
           <span className="tr-col" style={{ gap: 0 }}>
-            <b>Coming soon</b>
-            <span className="tr-small">Secure checkout via Stripe</span>
+            <b>Test purchase (dev)</b>
+            <span className="tr-small">
+              Development server: packs credit instantly, no real money is taken.
+            </span>
           </span>
         </div>
       )}
-      <div className="tr-gem-grid">
-        {packs.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            className={`tr-gem-pack${live ? '' : ' is-soon'}`}
-            data-nav=""
-            disabled={!live}
-            aria-label={`${p.name}: ${p.gems} Gems${live ? `, ${p.price}` : ', coming soon'}`}
-            onClick={() => {
-              if (!live) return;
-              playCue('ui.confirm');
-              uiEvents.emit('buyGems', { packId: p.id });
-            }}
-          >
-            <Coin currency="gems" />
-            <b>{formatNumber(p.gems)}</b>
-            <span className="tr-small">{p.name}</span>
-            <span className="tr-gem-pack-price">{live ? p.price : 'Soon'}</span>
-          </button>
-        ))}
-      </div>
+      {!buyable && (
+        <div className="tr-wallet-soon" role="note" data-testid="gem-coming-soon">
+          <Icon name="lock" size="1.4em" />
+          <span className="tr-col" style={{ gap: 0 }}>
+            <b>Coming soon — Secure checkout via Stripe</b>
+            <span className="tr-small">
+              {packs.length > 0
+                ? 'Gem packs are listed for reference and cannot be bought yet.'
+                : 'Gem packs are listed here when you play online.'}
+            </span>
+          </span>
+        </div>
+      )}
+      {packs.length > 0 && (
+        <div className="tr-gem-grid">
+          {packs.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={`tr-gem-pack${buyable ? '' : ' is-soon'}`}
+              data-nav=""
+              disabled={!buyable}
+              aria-label={`${p.name}: ${p.gems} Gems, ${
+                mode === 'test' ? 'test purchase (dev)' : buyable ? p.price : 'coming soon'
+              }`}
+              onClick={() => {
+                if (!buyable) return;
+                playCue('ui.confirm');
+                uiEvents.emit('buyGems', { packId: p.id });
+              }}
+            >
+              <Coin currency="gems" />
+              <b>{formatNumber(p.gems)}</b>
+              <span className="tr-small">{p.name}</span>
+              <span className="tr-gem-pack-price">
+                {mode === 'test' ? 'Test purchase (dev)' : buyable ? p.price : 'Soon'}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
     </>
   );
 }

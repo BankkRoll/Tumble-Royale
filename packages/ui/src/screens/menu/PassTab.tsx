@@ -248,6 +248,31 @@ function Preview({ pass, sel }: { pass: SeasonPassData; sel: Selection }): JSX.E
   );
 }
 
+/** How close to the end a season must be before the next one is announced. */
+export const NEXT_SEASON_TEASE_MS = 14 * 86_400_000;
+
+/**
+ * Season time left; in the last {@link NEXT_SEASON_TEASE_MS} also when the
+ * next season starts and that unclaimed rewards will be auto-granted.
+ */
+export function SeasonClock({ pass, now }: { pass: SeasonPassData; now: number }): JSX.Element {
+  const left = pass.endsAt - now;
+  const next = pass.nextSeason;
+  return (
+    <span className="tr-col" style={{ gap: '0.2em' }} data-testid="season-clock">
+      <span className="tr-label">
+        Season {pass.seasonNumber} · ends in {formatRemaining(left)}
+      </span>
+      {next && left <= NEXT_SEASON_TEASE_MS && (
+        <span className="tr-chip tr-chip--lemon" style={{ alignSelf: 'flex-start' }}>
+          Season {next.number} starts in {formatRemaining(next.startsAt - now)} · unclaimed rewards are added
+          automatically
+        </span>
+      )}
+    </span>
+  );
+}
+
 function PremiumState({ pass }: { pass: SeasonPassData }): JSX.Element {
   const gems = useUI((s) => s.profile?.gems ?? 0);
   if (pass.premium)
@@ -269,7 +294,12 @@ function PremiumState({ pass }: { pass: SeasonPassData }): JSX.Element {
       >
         Unlock Premium <Coin currency="gems" /> {formatNumber(pass.premiumPrice)}
       </Button>
-      {!afford && <small className="tr-muted">Gems coming soon</small>}
+      {!afford && (
+        <small className="tr-muted">
+          Need {formatNumber(pass.premiumPrice - gems)} more Gems — earn them from weekly challenges, daily
+          Crowns and free-track tiers
+        </small>
+      )}
     </div>
   );
 }
@@ -345,9 +375,7 @@ export function PassTab(): JSX.Element {
     >
       <div className="tr-panel tr-pass-head">
         <div className="tr-col tr-grow" style={{ gap: '0.35em', minWidth: 0 }}>
-          <span className="tr-label">
-            Season {pass.seasonNumber} · ends in {formatRemaining(pass.endsAt - now)}
-          </span>
+          <SeasonClock pass={pass} now={now} />
           <h2 className="tr-title tr-h2 tr-pass-title">{pass.seasonName.replace(/^Season \d+:\s*/, '')}</h2>
           <div className="tr-row" style={{ gap: '0.7em' }}>
             <span className="tr-pass-tier-badge">

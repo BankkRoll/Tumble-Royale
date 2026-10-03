@@ -122,19 +122,22 @@ export function TypeBadge({
 }
 
 /** Coin glyph for a currency. */
-export function Coin({ currency }: { currency: Currency | 'crown' | 'xp' }): JSX.Element {
+export function Coin({ currency }: { currency: Currency | 'crown' | 'crownShards' | 'xp' }): JSX.Element {
   if (currency === 'xp')
     return (
       <span className="tr-coin-xp" aria-hidden>
         <Icon name="star" size="1.5em" />
       </span>
     );
-  return (
-    <span
-      className={`tr-coin${currency === 'gems' ? ' tr-coin--gem' : currency === 'crown' ? ' tr-coin--crown' : ''}`}
-      aria-hidden
-    />
-  );
+  const variant =
+    currency === 'gems'
+      ? ' tr-coin--gem'
+      : currency === 'crown'
+        ? ' tr-coin--crown'
+        : currency === 'crownShards'
+          ? ' tr-coin--shard'
+          : '';
+  return <span className={`tr-coin${variant}`} aria-hidden />;
 }
 
 /** Props for `CurrencyPill`. */
@@ -175,12 +178,13 @@ export function Price({
   amount,
   original,
 }: {
-  currency: Currency;
+  currency: Currency | 'crownShards';
   amount: number;
   original?: number;
 }): JSX.Element {
+  const label = currency === 'gems' ? 'Gems' : currency === 'crownShards' ? 'Crown Shards' : 'Gumballs';
   return (
-    <span className="tr-price">
+    <span className="tr-price" aria-label={`${amount} ${label}`}>
       <Coin currency={currency} />
       {original !== undefined && <s className="tr-muted">{formatNumber(original)}</s>}
       <b>{formatNumber(amount)}</b>

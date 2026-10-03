@@ -7,7 +7,11 @@
  * - projections into every `@tumble/ui` data shape the menus render;
  * - locker mutations (equip, colours, loadout slots, randomise);
  * - end-of-show rewards through `@tumble/content/progression`, with level-ups,
- *   pass tiers, unlock reveals, challenge progress and history.
+ *   pass tiers, unlock reveals, challenge progress and history;
+ * - the offline economy rules the API also applies: season rollover (unclaimed
+ *   unlocked pass rewards auto-granted, history kept), free Gem earn paths,
+ *   Crown Shard conversion and the weekly Crown Shard shop
+ *   (docs/design/ECONOMY.md).
  *
  * The online API (when reachable) is the authority for a signed-in account;
  * this store remains the offline source of truth and the cache the UI reads.
@@ -15,14 +19,25 @@
 import { COSMETICS, DEFAULT_LOADOUT, getCosmetic, randomLoadout } from '@tumble/content/cosmetics';
 import {
   CHALLENGE_POOL,
-  SEASON_PASS,
+  GEM_EARN,
+  PASS_DUPLICATE_GUMBALLS,
   computeShowRewards,
   levelForXp,
+  levelRangeGems,
+  nextSeason,
+  passForSeason,
   SHARDS_PER_CROWN,
   passTierForXp,
   pickChallenges,
+  seasonAt,
+  seasonById,
+  shardShopAt,
+  unclaimedPassRewards,
   type ChallengeDef,
   type ChallengeMetric,
+  type PassReward,
+  type Season,
+  type SeasonPass,
 } from '@tumble/content/progression';
 import type { TumblerLoadout } from '@tumble/render/scenes';
 import { Rng, hashString, type RoundType } from '@tumble/shared';
@@ -37,6 +52,7 @@ import type {
   ProfileData,
   RewardsSummary,
   SeasonPassData,
+  ShardShopData,
   StoreData,
   StoreOffer,
   TumblerColors,
@@ -101,6 +117,28 @@ interface SavedProfile {
   weekly: ChallengeCounters;
   passClaimed: string[];
   premiumPass: boolean;
+  /**
+   * Season `seasonXp`, `passClaimed` and `premiumPass` belong to. Missing on
+   * saves from before seasons rolled over, which were all Season 1.
+   */
+  seasonId?: string;
+  /** Ended seasons, oldest first. */
+  seasonHistory?: SeasonRecord[];
+  /** UTC day of the last first-Crown-of-the-day Gem bonus. */
+  lastCrownDay?: string;
+}
+
+/** One ended season in the offline profile. */
+export interface SeasonRecord {
+  seasonId: string;
+  name: string;
+  xp: number;
+  tier: number;
+  premium: boolean;
+  /** Tier rewards granted automatically at rollover. */
+  autoGranted: number;
+  /** Epoch ms of the rollover. */
+  endedAt: number;
 }
 
 /** One finished show, as the runner saw it from the local player's seat. */
@@ -150,12 +188,12 @@ export function profileDressing(l: UiLoadout): Pick<ProfileData, 'banner' | 'nam
   return out;
 }
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
+function today(at: number = Date.now()): string {
+  return new Date(at).toISOString().slice(0, 10);
 }
 
-function isoWeek(): string {
-  const d = new Date();
+function isoWeek(at: number = Date.now()): string {
+  const d = new Date(at);
   const day = (d.getUTCDay() + 6) % 7;
   d.setUTCDate(d.getUTCDate() - day + 3);
   const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
@@ -167,8 +205,8 @@ function isoWeek(): string {
   return `${d.getUTCFullYear()}-W${week}`;
 }
 
-function nextMidnight(): number {
-  const d = new Date();
+function nextMidnight(at: number = Date.now()): number {
+  const d = new Date(at);
   d.setHours(24, 0, 0, 0);
   return d.getTime();
 }
@@ -259,9 +297,14 @@ export class ProfileStore {
 
   /**
    * @param fresh - Ignore any saved profile (first-launch testing).
+   * @param clock - Wall clock (epoch ms); injected so rollovers and rotations are testable.
    */
-  constructor(fresh = false) {
+  constructor(
+    fresh = false,
+    private readonly clock: () => number = Date.now,
+  ) {
     this.data = fresh ? null : this.load();
+    this.rollSeason();
   }
 
   /** True once the welcome screen has created a Tumbler. */
@@ -282,6 +325,16 @@ export class ProfileStore {
   /** Lifetime Crowns. */
   get crowns(): number {
     return this.data?.crowns ?? 0;
+  }
+
+  /** UTC day (`YYYY-MM-DD`) the first-Crown-of-the-day Gem bonus was last paid. */
+  get lastCrownDay(): string | null {
+    return this.data?.lastCrownDay ?? null;
+  }
+
+  /** Current wall-clock time as this store sees it (epoch ms). */
+  now(): number {
+    return this.clock();
   }
 
   /** Whether the tutorial prompt was already answered. */
@@ -345,10 +398,12 @@ export class ProfileStore {
       history: [],
       tutorialAnswered: false,
       lastShowDay: '',
-      daily: { period: today(), counts: {}, claimed: [] },
-      weekly: { period: isoWeek(), counts: {}, claimed: [] },
+      daily: { period: today(this.clock()), counts: {}, claimed: [] },
+      weekly: { period: isoWeek(this.clock()), counts: {}, claimed: [] },
       passClaimed: [],
       premiumPass: false,
+      seasonId: this.season().id,
+      seasonHistory: [],
     };
     this.save();
   }
@@ -451,7 +506,7 @@ export class ProfileStore {
     d.loadouts[d.activeLoadout] = randomizedLoadout(
       this.loadout,
       (id) => this.owns(id),
-      (Date.now() ^ hashString(d.id)) >>> 0,
+      (this.clock() ^ hashString(d.id)) >>> 0,
     );
     this.save();
   }
@@ -469,6 +524,8 @@ export class ProfileStore {
 
   /** Profile card + top bar data. */
   uiProfile(): ProfileData {
+    // The menu reads the profile first, so a rollover's auto-granted rewards show up straight away.
+    this.rollSeason();
     const d = this.data;
     const lvl = levelForXp(d?.totalXp ?? 0);
     const l = this.tumblerLoadout();
@@ -535,7 +592,7 @@ export class ProfileStore {
   uiStore(): StoreData {
     const owned = new Set(this.data?.owned ?? []);
     const forSale = COSMETICS.filter((c) => c.price !== null);
-    const rng = new Rng(hashString(`store:${today()}`));
+    const rng = new Rng(hashString(`store:${today(this.clock())}`));
     const shuffled = rng.shuffle([...forSale]);
     const offer = (c: (typeof forSale)[number], featured: boolean): StoreOffer => ({
       id: `offer:${c.id}`,
@@ -550,16 +607,36 @@ export class ProfileStore {
     return {
       featured: featured.map((c) => offer(c, true)),
       daily: daily.map((c) => offer(c, false)),
-      rotationEndsAt: nextMidnight(),
+      rotationEndsAt: nextMidnight(this.clock()),
+      shardShop: this.uiShardShop(),
+      // Gem packs need the account API; offline the Gems popover explains that.
+      gemCheckout: 'comingSoon',
+    };
+  }
+
+  /** This week's Crown Shard shelf (the same one the API serves). */
+  uiShardShop(): ShardShopData {
+    const shelf = shardShopAt(new Date(this.clock()));
+    return {
+      offers: shelf.offers.flatMap((o) => {
+        const item = getCosmetic(o.itemId);
+        return item
+          ? [{ id: `shards:${o.itemId}`, item: uiItem(item, this.owns(o.itemId)), price: o.price }]
+          : [];
+      }),
+      rotationEndsAt: Date.parse(shelf.refreshesAt),
+      shardsPerCrown: SHARDS_PER_CROWN,
     };
   }
 
   /**
-   * Buys a store offer with the local wallet.
+   * Buys a store offer (`offer:<id>`) or a Crown Shard offer (`shards:<id>`)
+   * with the local wallet.
    *
    * @returns The bought item, or an error code.
    */
   purchase(offerId: string): { item: UiItem } | { error: 'unknown' | 'owned' | 'funds' } {
+    if (offerId.startsWith('shards:')) return this.buyShardOffer(offerId.slice('shards:'.length));
     const d = this.data;
     const id = offerId.replace(/^offer:/, '');
     const item = getCosmetic(id);
@@ -573,13 +650,103 @@ export class ProfileStore {
     return { item: uiItem(item, true) };
   }
 
+  private buyShardOffer(itemId: string): { item: UiItem } | { error: 'unknown' | 'owned' | 'funds' } {
+    const d = this.data;
+    const offer = shardShopAt(new Date(this.clock())).offers.find((o) => o.itemId === itemId);
+    const item = getCosmetic(itemId);
+    if (!d || !offer || !item) return { error: 'unknown' };
+    if (this.owns(itemId)) return { error: 'owned' };
+    if (d.crownShards < offer.price) return { error: 'funds' };
+    d.crownShards -= offer.price;
+    d.owned.push(itemId);
+    this.save();
+    return { item: uiItem(item, true) };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Seasons & pass
+  // ---------------------------------------------------------------------------
+
+  /** The live season. */
+  season(): Season {
+    return seasonAt(new Date(this.clock()));
+  }
+
+  /** Ended seasons on this device, oldest first. */
+  seasonHistory(): readonly SeasonRecord[] {
+    return this.data?.seasonHistory ?? [];
+  }
+
+  private pass(): SeasonPass {
+    return passForSeason(this.season());
+  }
+
+  /** Adds one tier's rewards to the wallet/locker; owned cosmetics pay Gumballs instead. */
+  private grantPassRewards(d: SavedProfile, rewards: readonly PassReward[]): void {
+    for (const r of rewards) {
+      if (r.kind === 'cosmetic') {
+        if (getCosmetic(r.itemId) && !d.owned.includes(r.itemId)) d.owned.push(r.itemId);
+        else d.gumballs += PASS_DUPLICATE_GUMBALLS;
+      } else if (r.kind === 'gumballs') d.gumballs += r.amount;
+      else if (r.kind === 'gems') d.gems += r.amount;
+      else d.crownShards += r.amount;
+    }
+  }
+
+  /**
+   * Moves the profile into the live season when it changed: grants every
+   * unlocked unclaimed reward of the ended season, records it in the history
+   * and starts a fresh pass. Idempotent (a no-op once the season matches), and
+   * a clock that runs backwards never settles a season that has not ended.
+   *
+   * @returns The record of the season that ended, or null.
+   */
+  rollSeason(): SeasonRecord | null {
+    const d = this.data;
+    if (!d) return null;
+    const cur = this.season();
+    const old = seasonById(d.seasonId ?? 's1');
+    if (!old || old.id === cur.id || old.number > cur.number) {
+      if (!old) d.seasonId = cur.id;
+      return null;
+    }
+    const pass = passForSeason(old);
+    const claimed = { free: [] as number[], premium: [] as number[] };
+    for (const key of d.passClaimed) {
+      const [tier, track] = key.split(':');
+      if (track === 'free' || track === 'premium') claimed[track].push(Number(tier));
+    }
+    const due = unclaimedPassRewards(pass, d.seasonXp, claimed, d.premiumPass);
+    for (const u of due) this.grantPassRewards(d, u.rewards);
+    const record: SeasonRecord = {
+      seasonId: old.id,
+      name: old.name,
+      xp: d.seasonXp,
+      tier: passTierForXp(d.seasonXp, pass).tier,
+      premium: d.premiumPass,
+      autoGranted: due.length,
+      endedAt: this.clock(),
+    };
+    d.seasonHistory = [...(d.seasonHistory ?? []), record].slice(-20);
+    d.seasonId = cur.id;
+    d.seasonXp = 0;
+    d.passClaimed = [];
+    d.premiumPass = false;
+    this.save();
+    return record;
+  }
+
   /** Season pass view. */
   uiPass(): SeasonPassData {
+    this.rollSeason();
     const d = this.data;
+    const season = this.season();
+    const next = nextSeason(season);
+    const pass = this.pass();
     const owned = new Set(d?.owned ?? []);
     const claimed = new Set(d?.passClaimed ?? []);
-    const prog = passTierForXp(d?.seasonXp ?? 0);
-    const reward = (list: (typeof SEASON_PASS.tiers)[number]['free'], key: string): PassTier['free'] => {
+    const prog = passTierForXp(d?.seasonXp ?? 0, pass);
+    const reward = (list: readonly PassReward[], key: string): PassTier['free'] => {
       const r = list[0];
       if (!r) return undefined;
       if (r.kind === 'cosmetic') {
@@ -592,14 +759,15 @@ export class ProfileStore {
       return { currency: { kind: r.kind, amount: r.amount }, claimed: claimed.has(key) };
     };
     return {
-      seasonName: SEASON_PASS.name,
-      seasonNumber: 1,
-      endsAt: Date.now() + 41 * 86400_000,
+      seasonName: season.name,
+      seasonNumber: season.number,
+      endsAt: Date.parse(season.endsAt),
+      nextSeason: { number: next.number, name: next.name, startsAt: Date.parse(next.startsAt) },
       currentTier: prog.tier,
       tierProgress: prog.tierXp > 0 ? prog.intoTier / prog.tierXp : 1,
       premium: d?.premiumPass ?? false,
-      premiumPrice: SEASON_PASS.premiumPriceGems,
-      tiers: SEASON_PASS.tiers.map((t) => ({
+      premiumPrice: pass.premiumPriceGems,
+      tiers: pass.tiers.map((t) => ({
         tier: t.tier,
         free: reward(t.free, `${t.tier}:free`),
         premium: reward(t.premium, `${t.tier}:premium`),
@@ -613,20 +781,16 @@ export class ProfileStore {
    * @returns True when something was granted.
    */
   claimPassTier(tier: number, track: 'free' | 'premium'): boolean {
+    this.rollSeason();
     const d = this.data;
     if (!d) return false;
-    const t = SEASON_PASS.tiers[tier - 1];
+    const pass = this.pass();
+    const t = pass.tiers[tier - 1];
     const key = `${tier}:${track}`;
-    if (!t || d.passClaimed.includes(key) || passTierForXp(d.seasonXp).tier < tier) return false;
+    if (!t || t[track].length === 0) return false;
+    if (d.passClaimed.includes(key) || passTierForXp(d.seasonXp, pass).tier < tier) return false;
     if (track === 'premium' && !d.premiumPass) return false;
-    for (const r of t[track]) {
-      if (r.kind === 'cosmetic') {
-        if (getCosmetic(r.itemId) && !d.owned.includes(r.itemId)) d.owned.push(r.itemId);
-        else d.gumballs += 100;
-      } else if (r.kind === 'gumballs') d.gumballs += r.amount;
-      else if (r.kind === 'gems') d.gems += r.amount;
-      else d.crownShards += r.amount;
-    }
+    this.grantPassRewards(d, t[track]);
     d.passClaimed.push(key);
     this.save();
     return true;
@@ -638,9 +802,11 @@ export class ProfileStore {
    * @returns True on success.
    */
   buyPremiumPass(): boolean {
+    this.rollSeason();
     const d = this.data;
-    if (!d || d.premiumPass || d.gems < SEASON_PASS.premiumPriceGems) return false;
-    d.gems -= SEASON_PASS.premiumPriceGems;
+    const price = this.pass().premiumPriceGems;
+    if (!d || d.premiumPass || d.gems < price) return false;
+    d.gems -= price;
     d.premiumPass = true;
     this.save();
     return true;
@@ -649,8 +815,10 @@ export class ProfileStore {
   private rollPeriods(): void {
     const d = this.data;
     if (!d) return;
-    if (d.daily.period !== today()) d.daily = { period: today(), counts: {}, claimed: [] };
-    if (d.weekly.period !== isoWeek()) d.weekly = { period: isoWeek(), counts: {}, claimed: [] };
+    if (d.daily.period !== today(this.clock()))
+      d.daily = { period: today(this.clock()), counts: {}, claimed: [] };
+    if (d.weekly.period !== isoWeek(this.clock()))
+      d.weekly = { period: isoWeek(this.clock()), counts: {}, claimed: [] };
   }
 
   private activeChallenges(): { def: ChallengeDef; counters: ChallengeCounters }[] {
@@ -683,7 +851,7 @@ export class ProfileStore {
       emotes: '💃',
       checkpoints: '🚩',
     };
-    const week = new Date();
+    const week = new Date(this.clock());
     week.setDate(week.getDate() + ((8 - week.getDay()) % 7 || 7));
     week.setHours(0, 0, 0, 0);
     return {
@@ -702,10 +870,13 @@ export class ProfileStore {
           def.rewardGumballs > 0
             ? { kind: 'gumballs' as const, amount: def.rewardGumballs }
             : { kind: 'xp' as const, amount: def.rewardXp },
+        ...(def.cadence === 'weekly' && GEM_EARN.weeklyChallenge > 0
+          ? { gems: GEM_EARN.weeklyChallenge }
+          : {}),
         claimed: counters.claimed.includes(def.id),
         canReroll: false,
       })),
-      dailyResetsAt: nextMidnight(),
+      dailyResetsAt: nextMidnight(this.clock()),
       weeklyResetsAt: week.getTime(),
     };
   }
@@ -716,14 +887,18 @@ export class ProfileStore {
    * @returns True when the reward was granted.
    */
   claimChallenge(id: string): boolean {
+    this.rollSeason();
     const d = this.data;
     const c = this.activeChallenges().find((x) => x.def.id === id);
     if (!d || !c || c.counters.claimed.includes(id)) return false;
     if ((c.counters.counts[c.def.metric] ?? 0) < c.def.target) return false;
     c.counters.claimed.push(id);
+    const levelBefore = levelForXp(d.totalXp).level;
     d.totalXp += c.def.rewardXp;
     d.seasonXp += c.def.rewardXp;
     d.gumballs += c.def.rewardGumballs;
+    d.gems += levelRangeGems(levelBefore, levelForXp(d.totalXp).level);
+    if (c.def.cadence === 'weekly') d.gems += GEM_EARN.weeklyChallenge;
     this.save();
     return true;
   }
@@ -746,12 +921,13 @@ export class ProfileStore {
   applyShow(r: ShowResultForProfile): RewardsSummary {
     const d = this.data;
     if (!d) this.create(this.name, NEW_COLORS);
+    this.rollSeason();
     const p = this.data as SavedProfile;
     this.rollPeriods();
     const qualifiedNonFinal = r.rounds.filter(
       (x, i) => x.qualified && !(r.reachedFinal && i === r.rounds.length - 1),
     ).length;
-    const firstShowOfDay = p.lastShowDay !== today();
+    const firstShowOfDay = p.lastShowDay !== today(this.clock());
     const breakdown = computeShowRewards({
       roundsPlayed: r.rounds.length,
       roundsQualified: qualifiedNonFinal,
@@ -763,8 +939,9 @@ export class ProfileStore {
       firstShowOfDay,
     });
 
+    const pass = this.pass();
     const before = levelForXp(p.totalXp);
-    const passBefore = passTierForXp(p.seasonXp);
+    const passBefore = passTierForXp(p.seasonXp, pass);
     const challengeBefore = this.activeChallenges().map(({ def, counters }) => ({
       def,
       from: counters.counts[def.metric] ?? 0,
@@ -774,8 +951,16 @@ export class ProfileStore {
     p.seasonXp += breakdown.xp;
     p.gumballs += breakdown.gumballs;
     p.crownShards += breakdown.crownShards;
-    p.crowns += breakdown.crowns;
-    p.lastShowDay = today();
+    // Same rule as the API: every full set of shards becomes a Crown.
+    const crownsFromShards = Math.floor(p.crownShards / SHARDS_PER_CROWN);
+    p.crownShards -= crownsFromShards * SHARDS_PER_CROWN;
+    p.crowns += breakdown.crowns + crownsFromShards;
+    if (breakdown.crowns > 0 && p.lastCrownDay !== today(this.clock())) {
+      p.lastCrownDay = today(this.clock());
+      p.gems += GEM_EARN.firstCrownOfDay;
+    }
+    p.gems += levelRangeGems(before.level, levelForXp(p.totalXp).level);
+    p.lastShowDay = today(this.clock());
     p.stats.shows++;
     if (r.reachedFinal) p.stats.finals++;
     p.stats.roundsQualified += r.rounds.filter((x) => x.qualified).length;
@@ -815,7 +1000,7 @@ export class ProfileStore {
         rec.colors = o.colors;
         if (o.crowned) rec.crowns++;
         rec.best = Math.min(rec.best, o.place);
-        rec.lastSeen = Date.now();
+        rec.lastSeen = this.clock();
       }
       // Keep the Hall of Fame bounded: drop the least notable, least recent names.
       const names = Object.keys(opp);
@@ -852,7 +1037,7 @@ export class ProfileStore {
     }
 
     const after = levelForXp(p.totalXp);
-    const passAfter = passTierForXp(p.seasonXp);
+    const passAfter = passTierForXp(p.seasonXp, pass);
     const owned = new Set(p.owned);
     const unlocks: UiItem[] = [];
     for (let lv = before.level + 1; lv <= after.level; lv++) {
@@ -864,8 +1049,8 @@ export class ProfileStore {
     }
 
     p.history.unshift({
-      id: `local-${Date.now()}`,
-      time: Date.now(),
+      id: `local-${this.clock()}`,
+      time: this.clock(),
       playlist: r.playlistName,
       rounds: r.rounds,
       result: r.wonCrown ? 'crown' : r.reachedFinal ? 'final' : 'eliminated',
@@ -897,7 +1082,7 @@ export class ProfileStore {
       levelFrom: { level: before.level, xp: before.intoLevel, xpToNext: Math.max(1, before.toNext) },
       levelTo: { level: after.level, xp: after.intoLevel, xpToNext: Math.max(1, after.toNext) },
       gumballs: breakdown.gumballs,
-      crowns: breakdown.crowns,
+      crowns: breakdown.crowns + crownsFromShards,
       pass: {
         tierFrom: passBefore.tier,
         tierTo: passAfter.tier,

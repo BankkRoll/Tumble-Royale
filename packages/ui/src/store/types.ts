@@ -364,10 +364,33 @@ export interface StoreData {
   /** Gem packs (online accounts), listed in the Gems shop. */
   gemPacks?: GemPackOffer[];
   /**
-   * `enabled` when real checkout works (Stripe configured, or the dev fake
-   * provider behind `?debug=1`); otherwise packs show "Coming soon".
+   * What buying a pack does, as reported by the account API:
+   * - `enabled`: real checkout (the server has Stripe keys);
+   * - `test`: the development API's fake provider credits instantly, so packs
+   *   are buyable but labelled "Test purchase (dev)";
+   * - `comingSoon` (or absent): no provider — packs are read-only.
    */
-  gemCheckout?: 'enabled' | 'comingSoon';
+  gemCheckout?: 'enabled' | 'test' | 'comingSoon';
+  /** This week's Crown Shard shop. */
+  shardShop?: ShardShopData;
+}
+
+/** A Crown Shard shop offer. */
+export interface ShardOffer {
+  /** Offer id (`shards:<item id>`); buying emits `purchase` with it. */
+  id: string;
+  item: CosmeticItem;
+  /** Price in Crown Shards. */
+  price: number;
+}
+
+/** The weekly Crown Shard shop. */
+export interface ShardShopData {
+  offers: ShardOffer[];
+  /** Epoch ms when the shelf restocks. */
+  rotationEndsAt: number;
+  /** Shards that combine into one Crown (prices are always below this). */
+  shardsPerCrown: number;
 }
 
 /** One Season Pass reward. */
@@ -391,6 +414,8 @@ export interface SeasonPassData {
   seasonNumber: number;
   /** Epoch ms. */
   endsAt: number;
+  /** The season after this one, for "Season N+1 starts in …". */
+  nextSeason?: { number: number; name: string; /** Epoch ms. */ startsAt: number };
   currentTier: number;
   /** 0..1 progress into the next tier. */
   tierProgress: number;
@@ -414,6 +439,8 @@ export interface Challenge {
   metric?: string;
   /** Secondary reward shown beside the main one (e.g. XP on a Gumball challenge). */
   bonus?: { kind: Currency | 'xp'; amount: number };
+  /** Free Gems paid on claim (weekly challenges). */
+  gems?: number;
 }
 
 /** Challenge board. */

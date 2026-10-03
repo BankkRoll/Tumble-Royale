@@ -125,7 +125,7 @@ describe('season pass', () => {
     expect(cosmeticsOf(all).length / all.length).toBeGreaterThanOrEqual(0.6);
     expect(cosmeticsOf(premium).length / premium.length).toBeGreaterThanOrEqual(0.65);
     expect(free.length).toBeGreaterThanOrEqual(90);
-    for (const r of free) expect(['cosmetic', 'gumballs']).toContain(r.kind);
+    for (const r of free) expect(['cosmetic', 'gumballs', 'gems']).toContain(r.kind);
     expect(new Set(cosmeticsOf(all).map((r) => r.slot)).size).toBe(CosmeticSlotSchema.options.length);
   });
 

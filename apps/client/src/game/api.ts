@@ -139,11 +139,35 @@ export interface ApiGemPack {
 export type ApiPassReward =
   { type: 'cosmetic'; id: string } | { type: 'gumballs' | 'gems' | 'crown_shards'; amount: number };
 
+/** `GET /shop/shards`. */
+export interface ApiShardShop {
+  week: string;
+  refreshesAt: string;
+  shardsPerCrown: number;
+  /** Signed-in balance, null when anonymous. */
+  balance: number | null;
+  offers: { offerId: string; price: { currency: 'crown_shards'; amount: number }; owned: boolean }[];
+}
+
+/** `GET /gems/packs`. */
+export interface ApiGemPacks {
+  provider: string;
+  /** Older APIs omit it; `provider` then decides. */
+  checkout?: 'live' | 'test' | 'unavailable';
+  packs: ApiGemPack[];
+}
+
 /** `GET /pass`. */
 export interface ApiPass {
   seasonId: string;
+  /** Absent on APIs from before season rollover (always Season 1). */
+  seasonNumber?: number;
   name: string;
+  startsAt?: string;
   endsAt: string;
+  next?: { id: string; number: number; name: string; startsAt: string };
+  /** Ended seasons this request settled (unclaimed rewards auto-granted). */
+  settled?: { seasonId: string; name: string; autoGranted: number }[];
   xp: number;
   tier: number;
   maxTier: number;
@@ -172,7 +196,7 @@ export interface ApiChallenge {
   target: number;
   completed: boolean;
   claimed: boolean;
-  reward: { xp: number; gumballs: number };
+  reward: { xp: number; gumballs: number; gems?: number };
   rerolled: boolean;
 }
 
@@ -615,7 +639,13 @@ export class ApiClient {
   wallet = (): Promise<{ wallet: ApiMe['wallet'] } & WalletLedger> => this.request('GET', '/wallet');
   purchase = (offerId: string, key: string): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> =>
     this.request('POST', '/purchase', { offerId }, { idempotencyKey: key });
-  gemPacks = (): Promise<{ provider: string; packs: ApiGemPack[] }> => this.request('GET', '/gems/packs');
+  gemPacks = (): Promise<ApiGemPacks> => this.request('GET', '/gems/packs');
+  shardShop = (): Promise<ApiShardShop> => this.request('GET', '/shop/shards');
+  buyShardOffer = (offerId: string, key: string): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> =>
+    this.request('POST', '/shop/shards/buy', { offerId }, { idempotencyKey: key });
+  /** Live news feed (public; no sign-in needed). */
+  news = (): Promise<{ posts: unknown[]; withdrawn?: string[] }> =>
+    this.request('GET', '/news', undefined, { auth: false });
   gemCheckout = (
     packId: string,
     key: string,

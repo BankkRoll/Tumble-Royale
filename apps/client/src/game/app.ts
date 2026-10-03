@@ -50,7 +50,14 @@ import { botLoadout, tumblerColors } from './cosmetics.ts';
 import { createDebugPanel } from './debugPanel.ts';
 import type { TumbleHooks } from './hooks.ts';
 import { playAgainAction, type LastShow } from './lastShow.ts';
-import { localPlayerCard, markNewsRead, pushLeaderboard, pushMeta, pushStaticMeta } from './meta.ts';
+import {
+  localPlayerCard,
+  markNewsRead,
+  pushLeaderboard,
+  pushLiveNews,
+  pushMeta,
+  pushStaticMeta,
+} from './meta.ts';
 import { playlistIdForPlay, privateShow, resolvePlaylist } from './playlists.ts';
 import { OnlineAccount } from './online/account.ts';
 import { AccountAuth } from './online/auth.ts';
@@ -393,6 +400,7 @@ export class GameApp {
     if (cfg.debug)
       createDebugPanel({ renderer, quality, stats, session: () => app.session, timeScale: app.timeScale });
     if (cfg.autoplay) installAutoplay(cfg.autoShows);
+    if (cfg.api) void pushLiveNews(api.news);
     loadMutes();
     if (cfg.api) {
       // OAuth/email returns settle which session to resume before the normal connect.
@@ -1070,7 +1078,7 @@ export class GameApp {
             id: 'pass-funds',
             kind: 'error',
             title: 'Not enough Gems',
-            body: 'Gems come from the store and the pass.',
+            body: 'Earn Gems from weekly challenges, your first Crown each day, level milestones and the pass.',
           });
       },
       onClaimChallenge: ({ id }) => {

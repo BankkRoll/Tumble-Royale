@@ -3,7 +3,6 @@
  * challenges, history, playlists, news, leaderboards, party) into the UI
  * while playing offline; `online/account.ts` does the same from the API.
  */
-import { NEWS_POSTS } from '@tumble/content/news';
 import { roundCatalog, DEV_ROUND_IDS } from '@tumble/content/rounds';
 import { PLAYLISTS, getPlaylist } from '@tumble/content/shows';
 import {
@@ -16,8 +15,21 @@ import {
 } from '@tumble/ui';
 import { facedCard } from './facedCard.ts';
 import { DEFAULT_PLAYLIST_ID, isNewcomer } from './playlists.ts';
+import { currentNews, refreshLiveNews } from './liveNews.ts';
+import { syncLocalNotifications } from './localNotifications.ts';
 import type { ProfileStore } from './profile.ts';
 import { loadJson, saveJson } from './storage.ts';
+
+/**
+ * Fetches the live news feed and refreshes the News tab when it arrives.
+ *
+ * @param fetchNews - `ApiClient.news`.
+ */
+export async function pushLiveNews(
+  fetchNews: () => Promise<{ posts: unknown[]; withdrawn?: unknown[] }>,
+): Promise<void> {
+  if (await refreshLiveNews(fetchNews)) ui.getState().setNews(uiNews());
+}
 
 const PLAYLIST_ART: Readonly<Record<string, { art: [string, string]; icon: string }>> = {
   'main-show': { art: ['#ff6fae', '#ffd23f'], icon: '🎪' },
@@ -57,13 +69,15 @@ function readNews(): Set<string> {
 }
 
 /**
- * The news feed (`@tumble/content/news`) as UI items, with unread flags.
+ * The news feed as UI items, with unread flags: the bundled posts
+ * (`@tumble/content/news`) with the last live feed from the API merged over
+ * them (see `liveNews.ts`).
  *
  * @returns Posts, newest first.
  */
 export function uiNews(): NewsItem[] {
   const read = readNews();
-  return NEWS_POSTS.map((p) => ({
+  return currentNews().map((p) => ({
     id: p.id,
     title: p.title,
     body: p.summary,
@@ -103,6 +117,7 @@ export function pushMeta(profile: ProfileStore): void {
   s.setPass(profile.uiPass());
   s.setChallenges(profile.uiChallenges());
   s.setMatchHistory(profile.uiHistory());
+  syncLocalNotifications(profile);
   pushStaticMeta(profile.showsPlayed);
   const p = s.profile;
   if (p) {

@@ -170,7 +170,7 @@ export interface ItemDetailProps {
   item: CosmeticItem;
   equipped: boolean;
   /** Store price when the item is for sale. */
-  price?: { currency: Currency; amount: number; original?: number };
+  price?: { currency: Currency | 'crownShards'; amount: number; original?: number };
   /** Why the item can't be bought right now (e.g. Gems coming soon). */
   priceNote?: string;
   canAfford?: boolean;

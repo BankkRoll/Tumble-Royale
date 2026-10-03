@@ -7,7 +7,18 @@
 const PREFIX = 'tumble.v1.';
 
 /** Keys the client persists. */
-export type StorageKey = 'profile' | 'settings' | 'quality' | 'auth' | 'newsRead' | 'mutes';
+export type StorageKey =
+  | 'profile'
+  | 'settings'
+  | 'quality'
+  | 'auth'
+  | 'newsRead'
+  /** Last live news feed from the API (offline fallback over the bundled posts). */
+  | 'newsLive'
+  /** Local (offline) notification inbox with read flags. */
+  | 'notifications'
+  /** Players muted on this device. */
+  | 'mutes';
 
 /**
  * The raw `localStorage` key behind a {@link StorageKey}, for matching

@@ -277,9 +277,45 @@ export const seasonPassProgress = pgTable(
     premium: boolean('premium').notNull().default(false),
     claimedFree: jsonb('claimed_free').$type<number[]>().notNull().default([]),
     claimedPremium: jsonb('claimed_premium').$type<number[]>().notNull().default([]),
+    /**
+     * Set once the season has ended and its unclaimed unlocked rewards were
+     * auto-granted; the row is then history only.
+     */
+    settledAt: ts('settled_at'),
+    /** Rewards auto-granted at settlement (for support and the client's recap). */
+    autoGranted: integer('auto_granted').notNull().default(0),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.seasonId] })],
+);
+
+/**
+ * One row per season the API has seen go live. Inserting the row is the
+ * cluster-wide "this season started" event: only the instance whose insert
+ * wins fires the season-change hooks.
+ */
+export const seasonRollovers = pgTable('season_rollovers', {
+  seasonId: text('season_id').primaryKey(),
+  previousSeasonId: text('previous_season_id'),
+  rolledAt: ts('rolled_at').notNull().defaultNow(),
+});
+
+/**
+ * Live news posts published through `POST /internal/news`, merged over the
+ * news bundled with content so posts ship without a client release.
+ */
+export const newsPosts = pgTable(
+  'news_posts',
+  {
+    id: text('id').primaryKey(),
+    /** The post (content `NewsPost` shape), validated on write. */
+    data: jsonb('data').notNull(),
+    /** Hidden posts are withdrawn; a hidden id also hides a bundled post with that id. */
+    hidden: boolean('hidden').notNull().default(false),
+    publishedAt: ts('published_at').notNull().defaultNow(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('news_published_idx').on(t.publishedAt)],
 );
 
 /** Challenge definitions, synced from content. */

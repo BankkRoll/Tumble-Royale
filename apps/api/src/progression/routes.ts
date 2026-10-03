@@ -1,8 +1,9 @@
 /**
- * `/pass` and `/challenges` routes.
+ * `/seasons`, `/pass` and `/challenges` routes.
  */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import type { CatalogSeason } from '../catalog.ts';
 import type { AppContext } from '../context.ts';
 import { idempotencyKey } from '../economy/routes.ts';
 import { requireUser } from '../http/auth.ts';
@@ -23,6 +24,24 @@ const ChallengeIdBody = z.object({ id: z.string().uuid() });
  * @param ctx - Shared services.
  */
 export function registerProgressionRoutes(app: FastifyInstance, ctx: AppContext): void {
+  app.get('/seasons', async () => {
+    const now = ctx.now();
+    const current = ctx.catalog.season;
+    const view = (s: CatalogSeason) => ({
+      id: s.id,
+      number: s.number,
+      name: s.name,
+      theme: s.theme,
+      startsAt: s.startsAt,
+      endsAt: s.endsAt,
+    });
+    return {
+      current: view(current),
+      next: view(ctx.catalog.nextSeason(current)),
+      secondsRemaining: Math.max(0, Math.floor((Date.parse(current.endsAt) - now.getTime()) / 1000)),
+    };
+  });
+
   app.get('/pass', async (req) => {
     const auth = await requireUser(ctx, req);
     return passState(ctx, auth.userId);

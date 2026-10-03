@@ -66,6 +66,14 @@ function RewardChip({ c }: { c: Challenge }): JSX.Element {
           <small>{c.bonus.kind === 'xp' ? 'XP' : c.bonus.kind === 'gems' ? 'Gems' : 'Gumballs'}</small>
         </>
       )}
+      {c.gems !== undefined && c.gems > 0 && (
+        <>
+          <span className="tr-ch-plus">+</span>
+          <Coin currency="gems" />
+          <b>{formatNumber(c.gems)}</b>
+          <small>Gems</small>
+        </>
+      )}
     </span>
   );
 }

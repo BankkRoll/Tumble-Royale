@@ -372,6 +372,9 @@ finishers after the 70 % mark slow to Clumsy pace (never stop). Off in ranked
 All grants are computed by the game server and written by the API only
 (idempotent per `matchId + userId`), per SPEC §16.
 
+Currencies, free Gem earn paths, season rollover and the Crown Shard shop are
+specified in [ECONOMY.md](./ECONOMY.md).
+
 ### 6.1 XP
 
 | Event                               | XP                                                             |

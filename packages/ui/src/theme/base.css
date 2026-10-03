@@ -563,6 +563,11 @@
   border-radius: 0.25em 0.25em 0.5em 0.5em;
   background: linear-gradient(180deg, #fff3a8, var(--lemon) 50%, #ffb021);
 }
+.tr-coin--shard {
+  border-radius: 0.15em 0.6em 0.15em 0.6em;
+  transform: rotate(-12deg) scale(0.86);
+  background: linear-gradient(150deg, #fff 0 14%, #a9f6ff 15% 45%, #3fc7e0 46%);
+}
 
 /* -----------------------------------------------------------------------------
  * Progress bars

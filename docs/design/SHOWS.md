@@ -8,7 +8,7 @@
 
 1. Show anatomy & pacing timeline
 2. Round selection algorithm (shared by every playlist)
-3. Qualification curves (40 / 30 / 20 starting players, plus custom sizes)
+3. Qualification curves (40 / 30 / 20 starting players, plus private-show sizes)
 4. Playlists — Main Show · Duos · Squads · Chaos Mode · Ranked · First Show
 5. Bots: fill rules and skill mix
 6. Rewards: XP, Gumballs, Crown Shards, Crowns
@@ -146,7 +146,7 @@ Small shows use **`maxEliminationRounds = 2`** when N₀ ≤ 24 (a 4-player fina
 | 2     | 13       | **7**  | 0.54 |
 | Final | 7        | 1      | —    |
 
-### 3.4 Other sizes (custom lobbies)
+### 3.4 Other sizes (private shows)
 
 | N₀  | F   | Curve                                           |
 | --- | --- | ----------------------------------------------- |
@@ -237,18 +237,19 @@ variations (`stiff-town`, `delicates`, `dead-calm`) are excluded.
 | Final          | individual; winning squad shares the Crown (all 4 receive Crown + rewards)                                                                    |
 | Pools          | Main pools. T3 Paint the Plaza (weight 10) is eligible only when exactly 4 squads remain, so each squad is one team. Stage 0 is always a race |
 
-### 4.4 Chaos Mode (`chaos`)
+### 4.4 Chaos Mode (`chaos-mode`)
 
-Limited-time / rotating playlist. Everything louder.
+Everything louder. Built as `CHAOS_MODE` in `packages/content/src/shows`.
 
-| Setting            | Value                                                                                                                                                                                         |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Lobby              | 32 (bots fill)                                                                                                                                                                                |
-| Elimination rounds | 2, then Final (short shows ≈ 8 min)                                                                                                                                                           |
-| speedScale bonus   | +0.2 at every stage                                                                                                                                                                           |
-| Variations         | Every variation weight set to 1, then rare/extreme ones (`gumball-storm`, `avalanche`, `broadside`, `ball-pit`, `heavy-duty`, `surge-storm`, `heavy-final`, `solar-storm`, `jesters-joke`) ×3 |
-| Weather            | random from the round's allowed list, `stormy`/`windy` ×2                                                                                                                                     |
-| Mutators           | one per show, announced on the intro card                                                                                                                                                     |
+| Setting    | Value                                                                                                        |
+| ---------- | ------------------------------------------------------------------------------------------------------------ |
+| Lobby      | 40 (bots fill); bots are 2:3 Average:Sharp                                                                   |
+| Rounds     | 3–5, Final at ≤ 8 left; harsher cuts (qualify curve 0.55 / 0.45 / 0.45 / 0.4)                                |
+| Difficulty | `stageOffset` +2: obstacle speed scales are picked as if two rounds later in the show                        |
+| Pool       | all rounds; survival ×1.6, logic ×0.6; Cannonball Canyon, Hammer Highway, Tile Panic, Spin Cycle up-weighted |
+| Mutators   | one per show, announced on the intro card and HUD                                                            |
+
+Not built: Chaos-specific variation or weather weights.
 
 Mutators are plain data in `@tumble/sim/mutators` (multipliers on character
 tuning, surface response, world gravity and obstacle speed, plus mirrored
@@ -275,47 +276,44 @@ patches).
 
 | Setting      | Value                                                                                                                                                                                                                |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Lobby        | 40 humans; **no bots**. If < 40 after 60 s, start with ≥ 24 humans (curve recomputed)                                                                                                                                |
-| Pools        | Races R1–R7, Survivals S1–S4, L1 Pattern Panic, H1 Tail Chase, Finals F1–F4. **No team rounds** (individual skill)                                                                                                   |
-| Variations   | only the authored default + the second-highest-weight variation per round (predictable, practicable); no beginner, no mutators                                                                                       |
+| Lobby        | 40 humans; **no bots**. If not full after the queue timeout, start with ≥ 24 humans (curve recomputed)                                                                                                               |
+| Rounds       | 4–5, Final at ≤ 10 left, qualify curve 0.65 / 0.55 / 0.5 / 0.5                                                                                                                                                       |
+| Pools        | Races R1–R7, Survivals S1–S4, L1 Pattern Panic, H1 Tail Chase (weight ×0.5), Finals F1–F4. **No team rounds** (a teammate's play would move your rating)                                                             |
+| Variations   | no mutators. A ranked-only variation filter is not built                                                                                                                                                             |
 | Late loaders | eliminated (flag on)                                                                                                                                                                                                 |
 | Placement    | Final order = winner, then finalists by elimination time, then by round reached; within a round by in-round rank (race finish order; survival/logic elimination time; hunt: holders > non-holders, then steal count) |
-| Rating       | OpenSkill Plackett-Luce on the full order; visible RP derived from rating (see table)                                                                                                                                |
+| Rating       | OpenSkill Plackett-Luce on the full order; visible RP derived from rating                                                                                                                                            |
 
-**RP table (per show, before placement/streak modifiers)**
+**RP** (`apps/api/src/ranked/rating.ts`): placement moves RP linearly from +30
+(winner) to −30 (last), the Crown adds +15, scaled by lobby strength (×0.5–1.5)
+and nudged toward the RP the hidden rating implies. The first 5 shows are
+placements: they move only the hidden rating, then RP is seeded from it
+(capped in Diamond). Tiers and divisions follow SPEC §12.
 
-| Placement percentile | RP                                            |
-| -------------------- | --------------------------------------------- |
-| Win                  | +60                                           |
-| Finalist (top ~17 %) | +30                                           |
-| Top 35 % (round 3)   | +15                                           |
-| Top 65 % (round 2)   | 0                                             |
-| Out in round 1       | −15 (−5 below Gold; never below 0 for Bronze) |
-
-Tier thresholds and divisions follow SPEC §12 (Bronze → Crown League, I–III); 5
-placement shows; seasonal soft reset. Exact rating math lives with the ranked
-engineer; this table is the **design intent** for visible RP.
+**Seasonal soft reset** (`apps/api/src/ranked/season.ts`): when a season
+starts, every rated player gets a new-season rating compressed halfway
+toward the previous season's mean; last season's rows stay as final
+standings.
 
 ### 4.6 First Show (`first-show`) — tutorial-ish, bot-heavy
 
-Used for a player's first 3 shows (then Main Show). Goal: laugh in round 1,
-understand every round from its card, reach a final.
+Used for a player's first 3 shows (`FIRST_SHOW_COUNT`, then Main Show). Goal:
+laugh in round 1, understand every round from its card, reach a final.
 
-| Setting      | Show 1                                                                                                                                 | Show 2                                                                  | Show 3       |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------ |
-| Lobby size   | 20                                                                                                                                     | 30                                                                      | 40           |
-| Humans       | the newcomer + any other new players (≤ 4)                                                                                             | ≤ 9                                                                     | ≤ 20         |
-| Bots         | rest; skill mix 60 % Clumsy / 40 % Average                                                                                             | 40 / 50 / 10 Sharp                                                      | 25 / 55 / 20 |
-| Rounds       | **R1 Gumdrop Gauntlet** (`classic`) → one of S4 `low-tide` / T1 `jungle-classic` / R3 `stiff-town` → **F1 Crown Climb** (`coronation`) | Main pools, stage 0 restricted to R1/R2/R7; beginner variations allowed | Main pools   |
-| Curve        | 20 → 15 (0.75) → 6 → Final                                                                                                             | 30 → 21 → 11 → 6 → Final                                                | Main         |
-| speedScale   | stage scale −0.1 (floor 0.9)                                                                                                           | −0.05                                                                   | 0            |
-| Bot assist   | Bots never finish ahead of a human who is within 20 m of the finish in R1 (they slow to Clumsy pace near the line)                     | none                                                                    | none         |
-| Final assist | In F1, bots won't attempt the crown before 70 s, and only Average/Clumsy bots are in the final                                         | Bots' crown attempts before 50 s have 50 % miss                         | none         |
+Built as one playlist for all three shows: 40 players, 3–4 rounds, Final at
+≤ 12 left, generous cuts (0.75 / 0.65 / 0.6), `stageOffset` −1 (gentler
+obstacle speeds), bots 4:1 Clumsy:Average, and a pool of 11 friendly rounds (Gumdrop
+Gauntlet, Conveyor Chaos, Tilt Town, Slip 'n' Spiral, Spin Cycle, Jump Rope
+Royale, Egg Heist, Paint the Plaza, Tail Chase, Crown Climb, Last Tumbler
+Standing).
 
-The newcomer **can still lose** — the assists only remove "impossible" bot
-perfection, they never guarantee a win. The tutorial coach Tumbler's tips appear
-on rules cards (`tips[0]` is replaced with a control hint, e.g. "Space to jump,
-Ctrl to dive").
+Not built: per-show lobby sizes and bot mixes, a fixed show-1 lineup, bot
+finish/crown assists, coach tips on rules cards.
+
+**Tutorial reward**: finishing Practice Island once grants 150 XP and the
+`nameplate.mint` nameplate (`packages/content/src/progression/tutorial.ts`);
+accounts claim it via `POST /me/tutorial-complete` (idempotent); offline
+profiles record it locally.
 
 ---
 
@@ -329,24 +327,22 @@ Ctrl to dive").
 | How many   | Fill to the playlist's lobby size; duos/squads fill whole units, partial units get bot partners                |
 | Names      | Original generator (adjective + noun + 2 digits, e.g. "WobblyMuffin42"); no collisions with online human names |
 | Cosmetics  | Random from the free/common pool + seasonal; 10 % chance of an uncommon                                        |
-| Visibility | Bots are not labelled in casual playlists; hidden from ranked (not present)                                    |
+| Visibility | Bots carry a bot tag in shows (Settings → Show bot tags); ranked has none                                      |
 | Leaving    | Bots never leave mid-show; when humans leave, no backfill                                                      |
 | Network    | Bots run server-side with the same input interface (§SPEC 11)                                                  |
 
-### 5.2 Skill mix by lobby context
+### 5.2 Skill mix per playlist
 
-Average human skill bracket = mean hidden rating of humans in the lobby (casual
-playlists use the hidden MMR too, for bot tuning only).
+Built as a fixed `botSkillMix` per playlist (`packages/content/src/shows`):
 
-| Bracket                | Clumsy | Average | Sharp | Notes                            |
-| ---------------------- | ------ | ------- | ----- | -------------------------------- |
-| First Show 1           | 60 %   | 40 %    | 0 %   |                                  |
-| First Show 2           | 40 %   | 50 %    | 10 %  |                                  |
-| First Show 3           | 25 %   | 55 %    | 20 %  |                                  |
-| Newcomer (< 15 shows)  | 25 %   | 55 %    | 20 %  |                                  |
-| Regular                | 15 %   | 50 %    | 35 %  |                                  |
-| Veteran (top 30 % MMR) | 10 %   | 40 %    | 50 %  |                                  |
-| Chaos Mode             | 30 %   | 50 %    | 20 %  | Chaos is about comedy, not skill |
+| Playlist                   | Clumsy | Average | Sharp |
+| -------------------------- | ------ | ------- | ----- |
+| Default (Main/Duos/Squads) | 25 %   | 50 %    | 25 %  |
+| First Show                 | 80 %   | 20 %    | 0 %   |
+| Chaos Mode                 | 0 %    | 40 %    | 60 %  |
+
+Not built: mixes keyed to the lobby's hidden rating (newcomer / regular /
+veteran brackets).
 
 ### 5.3 Tier parameters (bot engineers tune to these targets)
 
@@ -375,44 +371,31 @@ All grants are computed by the game server and written by the API only
 Currencies, free Gem earn paths, season rollover and the Crown Shard shop are
 specified in [ECONOMY.md](./ECONOMY.md).
 
-### 6.1 XP
+### 6.1 XP, Gumballs and Shards per show
 
-| Event                               | XP                                                             |
-| ----------------------------------- | -------------------------------------------------------------- |
-| Round played (per round entered)    | 40                                                             |
-| Round qualified                     | 80 × stage multiplier (stage 0: 1.0, 1: 1.25, 2: 1.5, 3: 1.75) |
-| Final reached                       | +200                                                           |
-| Crown (win)                         | +1000                                                          |
-| Team round won (your team survived) | +40 on top of qualified                                        |
-| Race top-3 finisher                 | +30                                                            |
-| First show of the day               | ×2 total (once per day)                                        |
-| Party bonus (in a party of ≥ 2)     | +10 %                                                          |
-| Duos/Squads shared crown            | full +1000 for every member                                    |
+`REWARD_RULES` in `packages/content/src/progression/rewards.ts`:
 
-Example (Main Show, out in the final): 4 × 40 + 80 × (1 + 1.25 + 1.5) + 200 = 160 +
-300 + 200 = **660 XP**. Winner: **1660 XP** (+ bonuses).
+| Component                          | XP            | Gumballs | Crown Shards |
+| ---------------------------------- | ------------- | -------- | ------------ |
+| Participation (finishing the show) | 150           | 15       | —            |
+| Each round played                  | 40            | 5        | —            |
+| Each non-final round qualified     | 90            | 15       | —            |
+| Reached the final                  | 250           | 60       | 1            |
+| Crown (shared in duos/squads)      | 900           | 250      | —            |
+| Placement bonus (top 10/25/50 %)   | 150 / 80 / 30 | —        | —            |
+| First show of the day              | ×2 XP         | —        | —            |
 
-### 6.2 Gumballs (soft currency)
+Leaving mid-show keeps the per-round rewards earned so far. Not built: team
+win, race top-3 and party XP bonuses.
 
-| Outcome               | Gumballs                                                                   |
-| --------------------- | -------------------------------------------------------------------------- |
-| Eliminated in round 1 | 15                                                                         |
-| Eliminated in round 2 | 30                                                                         |
-| Eliminated in round 3 | 50                                                                         |
-| Finalist (not winner) | 80                                                                         |
-| Win                   | 200                                                                        |
-| Daily first-win bonus | +100                                                                       |
-| Duos/Squads           | each member earns their own outcome; shared crown pays 200 to every member |
+### 6.2 Crowns & Crown Shards
 
-### 6.3 Crowns & Crown Shards
+- **Crown**: +1 for a win (every member of a winning duo/squad).
+- **Crown Shard**: +1 for reaching a final. Shards are spent in the Crown
+  Shard shop, and every 60 combine into a Crown (`SHARDS_PER_CROWN`; see
+  ECONOMY.md).
 
-| Item            | Rule                                                                                                                                                                                                                                                     |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Crown**       | +1 for a win (shared crown in duos/squads gives +1 to every member). Crowns drive the Crown counter and Crown-rank cosmetics                                                                                                                             |
-| **Crown Shard** | +1 for reaching a final without winning; +1 for 3 rounds qualified in a row across shows (streak). Shards are a separate currency spent in the Crown Shard shop (exclusive cosmetics). Shards **never convert into Crowns** — Crowns only come from wins |
-| Ranked          | Win also grants +1 Crown; ranked-only "League Crown" counter for leaderboards                                                                                                                                                                            |
-
-### 6.4 Season Pass & challenges
+### 6.3 Season Pass & challenges
 
 Season Pass XP = normal XP (no separate currency). Challenges (SPEC §12) grant
 bonus XP; example dailies that the round set supports: "Qualify from a door row

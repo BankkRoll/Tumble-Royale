@@ -106,13 +106,19 @@ gold). Cue `ui.confetti`.
 #game  (three.js canvas, receives pointer input where UI is transparent)
 #ui    (pointer-events: none)
  └─ .tr-root  [data-reduce-motion][data-cb][data-streamer][style --ui-scale]
-     ├─ ScreenLayer     current screen (interactive panels pointer-events:auto)
-     ├─ HudLayer        only during the round screen
-     ├─ StampLayer      stamp queue
-     ├─ ConfettiLayer   one shared canvas
-     ├─ ToastLayer      top-right cards + left feed
-     ├─ OverlayLayer    settings / friends / notifications sheets
-     ├─ DialogLayer     confirm / error / purchase dialogs
+     ├─ ScreenLayer      current screen (interactive panels pointer-events:auto)
+     ├─ HudLayer         only during the round screen
+     ├─ ShowChatLayer    chat feed
+     ├─ StampLayer       stamp queue
+     ├─ ConfettiLayer    one shared canvas
+     │   (everything above is hidden, not unmounted, in photo mode)
+     ├─ WatchChoiceLayer keep watching / leave after elimination
+     ├─ ToastLayer       top-right cards + left feed
+     ├─ ReplayLayer      replay viewer
+     ├─ OverlayLayer     settings, friends, notifications, privateShow, joinCode, inGameMenu
+     │   (PhotoModeBar replaces it in photo mode)
+     ├─ SocialLayer      player actions, report dialog
+     ├─ DialogLayer      confirm / error / purchase dialogs
      ├─ ConnectionLayer reconnecting curtain
      └─ TumbleWipe      always top-most
 ```
@@ -127,9 +133,11 @@ intents with `bindUI({...})` (see `packages/ui/README.md`).
   back/close, `Q`/`E` (or `[`/`]`) cycle menu tabs, `Tab` normal order.
   Keyboard nav is active only on non-gameplay screens (`inputMode === 'menu'`),
   so WASD/arrows in a round go to the Tumbler.
-- **Gamepad**: the input system calls `ui.getState().navigate(dir)` with
-  `up|down|left|right|accept|back|tabPrev|tabNext`. LB/RB = tabs, A = accept,
-  B = back, Start = settings, Y = context action (e.g. Ready / Try on).
+- **Gamepad**: `apps/client/src/input/gamepadNav.ts` calls
+  `ui.getState().navigate(dir)` with
+  `up|down|left|right|accept|back|tabPrev|tabNext`; the spatial focus system
+  is `packages/ui/src/nav/` (`data-nav`, `data-nav-scope`, `data-nav-back`).
+  D-pad/stick move, LB/RB = tabs, A = accept, B = back, Start = settings.
   In rounds Start opens the in-game menu instead, and LB/RB cycle the
   spectated player. Held directions repeat after ~380 ms, then every ~110 ms.
   While a menu owns the pad its buttons press nothing in the round. Prompts
@@ -235,26 +243,19 @@ Music (`playMusic(track)` hook): `music.menu`, `music.matchmaking`,
 - **3D**: the menu sky renders; camera drifts slowly around floating islands.
 - **Nav**: any key / click / gamepad button → `onStart`.
 
-### 3.3 Welcome — name + colour — `welcome`
+### 3.3 Welcome — name + skin — `welcome`
 
 - **Purpose**: guest account creation in < 10 s.
-- **Layout (desktop)**: left = big live CSS/3D Tumbler preview bouncing on a
-  plinth; right = sticker panel "WHO'S TUMBLING?" with:
-  name field (3–16 chars, placeholder is a random generated name, 🎲 reroll
-  button), "Pick your colour" swatch grid (12 candy colours in 2 rows, chosen one
-  pops out with a ring), pattern quick row (Plain / Stripes / Dots / Checker),
-  big **LET'S GO!** button. Small print: "You're a guest — link an account later
-  to keep your stuff safe."
-- **Mobile**: preview on top (40% height), panel below as bottom sheet.
-- **States**: idle · invalid name (field shakes, `ui.error`, helper text
-  "Letters, numbers and spaces only — keep it friendly!") · submitting (button
-  shows spinning gumball).
-- **Motion**: panel springs in from right; each swatch pops on select
-  (`squash`); preview Tumbler hops when colour changes.
-- **3D**: when the 3D lobby exists it renders the Tumbler with `onTryOn`-style
-  colour updates (`colorChange` intent); the DOM preview hides if `use3DPreview`.
-- **Nav**: name → reroll → swatches (grid nav) → patterns → LET'S GO. Enter submits.
-- **Intent**: `welcomeDone({ name, primary, pattern })`.
+- **Layout**: the 3D Tumbler on the left; a panel with a **required** name
+  field (🎲 rolls a random name), the full skin editor (`ColorEditor`: body,
+  pattern and face colours plus the pattern grid) and **Let's go!**, which
+  stays disabled until there is a name ("Pick a name first — or roll the dice
+  for one.").
+- **Sign in to an existing Tumbler**: ghost button that expands to one button
+  per provider the server offers (email opens a magic-link form). Hidden when
+  the server offers no sign-in.
+- **Intents**: `previewColors` on every edit, `welcomeDone { name, colors }`,
+  `accountAction 'signIn-<provider>'`.
 
 ### 3.4 Tutorial prompt — `tutorialPrompt`
 
@@ -278,7 +279,7 @@ Music (`playMusic(track)` hook): `music.menu`, `music.matchmaking`,
 │                              RANKS NEWS E]      [● 4,250 +][◆ 0 +][bell][friends][gear]
 ├───────────────────────────────────────────────────────────────────────────┤
 │ ┌ Season card ┐                                       ┌ Start card ──────┐│
-│ │ Tier 23 ▓▓▒ │          (3D lobby: your Tumbler,     │[Online][Bots][Custom]│
+│ │ Tier 23 ▓▓▒ │          (3D lobby: your Tumbler,     │[Online][Bots][Private]
 │ └─────────────┘           party, candy stage)         │ ◀ Main Show · 40 ▶│
 │ ┌ Challenges ─┐                                       │ ◯◯◯◯  [  PLAY  ] ││
 │ └─────────────┘                                       └──────────────────┘│
@@ -293,20 +294,20 @@ Music (`playMusic(track)` hook): `music.menu`, `music.matchmaking`,
   **text-only tab strip** (no emoji, no icons; claimable/unread tabs get a
   small pink dot; Q/E hints); currency pills = coin + amount + `+` only (the
   currency name is in the tooltip/aria label and inside the popovers, never as
-  visible text in the bar); round sticker buttons for bell (unread count incl.
-  unread news), friends (online count) and settings.
+  visible text in the bar); round sticker buttons for bell (unread
+  notifications only; unread news dots the News tab instead), friends (online
+  count) and settings.
 - **Info cards (left)**: Season card (tier, progress, next marquee reward
   thumbnail, "N rewards to claim" glow) → Pass; Today's challenges (3 dailies
   with progress, "N ready to claim") → Challenges; latest/featured news post
   with its hero image → opens that post in the News reader.
-- **Start card (right)**: mode tiles **Play Online** (status dot: checking /
-  N playing / "Servers offline" + Retry) · **Vs Bots** (always works) ·
-  **Custom Show** (opens `customLobby`); playlist picker (Main Show, Duos,
-  Squads, Chaos Mode; Ranked only when online); party slots (you + 3, empty
-  `+` invites) with status line; **PLAY** with a sub-label ("Online · Main
-  Show" / "Vs bots · Duos"). Non-leader party members get **Ready up**.
-  While queueing the same card becomes the matchmaking status (count, timer,
-  ETA, region, tips, Cancel).
+- **Start card (right)**: mode tiles **Play Online** (live player counts, or
+  "Servers offline" + Retry) · **Vs Bots** (always works) · **Private** (opens
+  the `privateShow` dialog); playlist picker (Main Show, Duos, Squads, Chaos
+  Mode; Ranked only when online); party row (you + 3, empty `+` invites, **Join
+  with code**); **PLAY** with a sub-label ("Online · Main Show" / "Vs bots ·
+  Duos"). Non-leader party members get **Ready up**. While queueing the same
+  card becomes the matchmaking status (§6).
 - **Mobile portrait**: tabs scroll horizontally under the bar; info cards
   become one swipeable row at the top; the start card spans the bottom.
 
@@ -316,18 +317,19 @@ Music (`playMusic(track)` hook): `music.menu`, `music.matchmaking`,
 splash ─▶ menu (Play tab)
             ├─ Play Online ──(account + matchmaker reachable)──▶ matchmaking ─▶ matchFound ─▶ preShow ─▶ rounds
             │        └─(unreachable)── tile shows "Servers offline" + Retry; PLAY falls back to Vs Bots
-            ├─ Vs Bots ───────────────────────────────────────────▶ preShow (40 incl. bots) ─▶ rounds
-            └─ Custom Show ─▶ customLobby
-                     ├─ Create online lobby (needs servers) ─▶ lobby code + players ─▶ Start show
-                     ├─ Join with code (needs servers)
-                     └─ Play now vs bots (picked rounds, always works) ─▶ preShow ─▶ rounds
+            ├─ Vs Bots ──────────────────── straight to preShow (40 incl. bots, no matchmaking screen) ─▶ rounds
+            └─ Private ─▶ privateShow dialog
+                     ├─ Invite friends (needs servers) ─▶ private lobby (code, host controls) ─▶ Start show
+                     ├─ Have a code? ─▶ joinCode dialog (needs servers)
+                     └─ Play with bots (picked rounds, always works) ─▶ preShow ─▶ rounds
 rounds ─▶ victory / winnerCam ─▶ playerWall ─▶ rewards ─▶ menu (Play again restarts the same mode)
 ```
 
 The selected mode is `UIState.playMode`; reachability is `onlineStatus`
 (published by the client). `play { playlistId, mode }` carries the mode;
-`retryOnline` re-probes; `playCustomOffline { options }` starts a custom show
-against bots.
+`retryOnline` re-probes; `playCustomOffline { options }` starts a private
+show against bots. New players play the First Show playlist for their first
+shows (`docs/design/SHOWS.md`).
 
 ### 4.3 Tabs and the 3D lobby
 
@@ -346,44 +348,47 @@ against bots.
 Every clickable on the menu and where it goes. `apps/client/e2e/menu.spec.ts`
 clicks each top-level control and asserts the destination.
 
-| Control                              | Where             | Result                                                                                                                                                    |
-| ------------------------------------ | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Tabs (8)                             | top bar           | `menuTab` = that tab; panel cross-fades in                                                                                                                |
-| Q / E (LB / RB)                      | keyboard / pad    | previous / next tab                                                                                                                                       |
-| Level badge + XP                     | top bar           | Profile tab                                                                                                                                               |
-| Gumballs `+` (or pill)               | top bar           | "Earn Gumballs" popover: shows, challenges, pass; buttons → Challenges, Season Pass, Store. Never a purchase                                              |
-| Gems `+` (or pill)                   | top bar           | Gems popover: what Gems are for + packs in a disabled "Coming soon — secure checkout via Stripe" state (live packs only when `gemCheckout === 'enabled'`) |
-| Bell                                 | top bar           | notifications drop-down (toggle)                                                                                                                          |
-| Friends                              | top bar           | Party & friends sheet (toggle)                                                                                                                            |
-| Gear                                 | top bar           | Settings sheet (toggle); Esc/back on the root menu also opens it                                                                                          |
-| Season card                          | Play, left        | **Season Pass** tab                                                                                                                                       |
-| Today's challenges card ("All")      | Play, left        | Challenges tab                                                                                                                                            |
-| News card                            | Play, left        | News tab with that post open in the reader                                                                                                                |
-| Play Online tile                     | start card        | `playMode = 'online'`; when servers are offline: Retry (`retryOnline`)                                                                                    |
-| Vs Bots tile                         | start card        | `playMode = 'offline'`                                                                                                                                    |
-| Custom Show tile                     | start card        | `customLobby` screen                                                                                                                                      |
-| ◀ / ▶ playlist                       | start card        | cycle playlists (`selectPlaylist`)                                                                                                                        |
-| Party `+` slots                      | start card        | Party & friends sheet                                                                                                                                     |
-| PLAY                                 | start card        | `play { playlistId, mode }` → matchmaking (online) or pre-show vs bots                                                                                    |
-| Ready up (party member)              | start card        | `ready` toggle                                                                                                                                            |
-| Cancel                               | matchmaking card  | `cancelQueue`                                                                                                                                             |
-| Emote button / B, 1–4                | Play, bottom-left | lobby emote wheel; plays owned emotes on the 3D Tumbler, locked → Store                                                                                   |
-| Item card                            | Store / Locker    | live try-on (emotes play), docked detail; "Trying on" chip + Reset                                                                                        |
-| Buy → Confirm                        | Store detail      | `purchase`; then "Equip now" (`equip`)                                                                                                                    |
-| Find in Store                        | Locker detail     | Store tab                                                                                                                                                 |
-| Reward card                          | Pass track        | select (3D try-on + preview card); claimable → `claimPassTier`                                                                                            |
-| Claim all                            | Pass header       | claims every cleared, unclaimed reward                                                                                                                    |
-| Unlock Premium                       | Pass header       | `buyPremiumPass` (disabled with "Gems coming soon" when unaffordable)                                                                                     |
-| Milestone chips                      | Pass board        | scroll the track to that tier                                                                                                                             |
-| Claim / Swap                         | Challenge card    | `claimChallenge` (confetti) / `rerollChallenge` (only when swaps left today)                                                                              |
-| Season progress strip                | Challenges        | Season Pass tab                                                                                                                                           |
-| Edit banner / Change nameplate       | Profile card      | Locker on that slot                                                                                                                                       |
-| History row                          | Profile           | expands per-round results                                                                                                                                 |
-| Leaderboard row / podium             | Ranks             | that player's profile card overlay (`inspectPlayer`)                                                                                                      |
-| Board / scope chips                  | Ranks             | `leaderboardQuery { board, scope }`                                                                                                                       |
-| Post / featured                      | News              | reader view; `newsRead` clears the unread badges                                                                                                          |
-| All news / Esc                       | News reader       | back to the list                                                                                                                                          |
-| Results / Rewards / Eliminated sheet | show flow         | Spectate (`spectate`), Back to lobby (`backToLobby`), Play again (`playAgain`, same mode), Continue (`continue`)                                          |
+| Control                         | Where             | Result                                                                                                                                                    |
+| ------------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tabs (8)                        | top bar           | `menuTab` = that tab; panel cross-fades in                                                                                                                |
+| Q / E (LB / RB)                 | keyboard / pad    | previous / next tab                                                                                                                                       |
+| Level badge + XP                | top bar           | Profile tab                                                                                                                                               |
+| Gumballs `+` (or pill)          | top bar           | "Earn Gumballs" popover: shows, challenges, pass; buttons → Challenges, Season Pass, Store. Never a purchase                                              |
+| Gems `+` (or pill)              | top bar           | Gems popover: what Gems are for + packs in a disabled "Coming soon — secure checkout via Stripe" state (live packs only when `gemCheckout === 'enabled'`) |
+| Bell                            | top bar           | notifications drop-down (toggle)                                                                                                                          |
+| Friends                         | top bar           | Party & friends sheet (toggle)                                                                                                                            |
+| Gear                            | top bar           | Settings sheet (toggle); Esc/back on the root menu also opens it                                                                                          |
+| Season card                     | Play, left        | **Season Pass** tab                                                                                                                                       |
+| Today's challenges card ("All") | Play, left        | Challenges tab                                                                                                                                            |
+| News card                       | Play, left        | News tab with that post open in the reader                                                                                                                |
+| Play Online tile                | start card        | `playMode = 'online'`; when servers are offline: Retry (`retryOnline`)                                                                                    |
+| Vs Bots tile                    | start card        | `playMode = 'offline'`                                                                                                                                    |
+| Private tile                    | start card        | `privateShow` dialog                                                                                                                                      |
+| Join with code                  | start card        | `joinCode` dialog                                                                                                                                         |
+| ◀ / ▶ playlist                  | start card        | cycle playlists (`selectPlaylist`)                                                                                                                        |
+| Party `+` slots                 | start card        | Party & friends sheet                                                                                                                                     |
+| PLAY                            | start card        | `play { playlistId, mode }` → matchmaking (online) or pre-show vs bots                                                                                    |
+| Ready up (party member)         | start card        | `ready` toggle                                                                                                                                            |
+| Cancel                          | matchmaking card  | `cancelQueue`                                                                                                                                             |
+| Emote button / B, 1–4           | Play, bottom-left | lobby emote wheel; plays owned emotes on the 3D Tumbler, locked → Store                                                                                   |
+| Item card                       | Store / Locker    | live try-on (emotes play), docked detail; "Trying on" chip + Reset                                                                                        |
+| Buy → Confirm                   | Store detail      | `purchase`; then "Equip now" (`equip`)                                                                                                                    |
+| Find in Store                   | Locker detail     | Store tab                                                                                                                                                 |
+| Reward card                     | Pass track        | select (3D try-on + preview card); claimable → `claimPassTier`                                                                                            |
+| Claim all                       | Pass header       | claims every cleared, unclaimed reward                                                                                                                    |
+| Unlock Premium                  | Pass header       | `buyPremiumPass` (disabled with "Gems coming soon" when unaffordable)                                                                                     |
+| Milestone chips                 | Pass board        | scroll the track to that tier                                                                                                                             |
+| Claim / Swap                    | Challenge card    | `claimChallenge` (confetti) / `rerollChallenge` (only when swaps left today)                                                                              |
+| Season progress strip           | Challenges        | Season Pass tab                                                                                                                                           |
+| Edit banner / Change nameplate  | Profile card      | Locker on that slot                                                                                                                                       |
+| History row                     | Profile           | expands per-round results                                                                                                                                 |
+| Leaderboard row / podium        | Ranks             | that player's profile card overlay (`inspectPlayer`)                                                                                                      |
+| Board / scope chips             | Ranks             | `leaderboardQuery { board, scope }`                                                                                                                       |
+| Post / featured                 | News              | reader view; `newsRead` clears the unread badges                                                                                                          |
+| All news / Esc                  | News reader       | back to the list                                                                                                                                          |
+| Eliminated choice               | show flow         | Keep watching (`spectate`, auto after a countdown) or Leave show (`leaveShow`)                                                                            |
+| Results / Rewards               | show flow         | Watch replay (`replayOpen`), Back to lobby (`backToLobby`), Play again (`playAgain`, same mode), Continue (`continue`)                                    |
+| Open replay file                | Profile / History | `replayOpenFile` (a saved `.tumblereplay`)                                                                                                                |
 
 ---
 
@@ -393,10 +398,12 @@ clicks each top-level control and asserts the destination.
 
 - **Layout**: stage (left 40% / top on phones) with the real 3D Tumbler,
   "Trying on: X" chip + Reset, drag-to-spin/scroll-to-zoom hint; shelf on the
-  right: text slot chips (Colours … Footsteps), loadouts 1–6, Randomize,
-  rarity filter, owned-only, search, thumbnail grid; docked item detail
-  (never a modal over the character) with Equip / Find in Store.
-- Colours/Pattern slots show the swatch + pattern editor instead of the grid.
+  right: text slot chips (**Skin**, Face, Top, Bottoms, Hat, Back item, Emote,
+  Celebration, Victory pose, Nameplate, Banner, Trail, Footsteps), loadouts,
+  Randomize, rarity filter, owned-only, search, thumbnail grid; docked item
+  detail (never a modal over the character) with Equip / Find in Store.
+- **Skin** is a single tab with the full skin editor (colours and patterns);
+  links to the old pattern slot open it.
 - Leaving restores the equipped look. Intents: `tryOn`, `tryOnBundle`,
   `equip`, `selectLoadout`, `customizeColors`, `randomizeOutfit`,
   `dressingRoom`, `turntable`.
@@ -469,47 +476,90 @@ clicks each top-level control and asserts the destination.
 
 ### 5.8 Friends / party panel (overlay `friends`)
 
-Right-side sheet: invite link box (`tumble.gg/join/AB12CD` + Copy → "Copied!"
-chip), party list with ready states and kick (leader), friend search
-(`name#tag`), sections Online / In a show / Offline / Recent players. Each row:
-avatar, name, status, Invite button. Streamer mode masks the code (`••••••`
-with a "Reveal" hold button). Intents: `inviteFriend`, `copyInvite`,
-`kickPartyMember`, `leaveParty`, `addFriend`.
+Right-side sheet: party invite code/link (Copy), party members with ready
+states, promote and kick (leader), Leave, **party chat**; add a friend by
+`name#tag` or search; friend requests (accept / decline / cancel); friends
+by presence (Join, Invite, profile, remove, block); recent players; blocked
+list with Unblock; **Join with code**. Offline it shows an empty state with
+Retry. Streamer mode masks codes (`••••••` + Reveal).
 
-### 5.9 Custom Show — `customLobby`
+Any player name opens **player actions**: Add friend, Mute (local), Block
+(confirm), Report (Harassment / Offensive name / Cheating / Griefing / Spam
+/ Something else, plus details).
 
-Two tabs: **Create** (round picker grouped by type, bots on/off, max players,
-round timer multiplier, spectators) with **Create online lobby** (needs the
-servers) and **Play now vs bots** (always works; the picked rounds against
-bots), and **Join** (6-character code cells; invalid → shake + `ui.error`;
-servers offline → explanation + Retry). A created lobby shows the code huge
-with Copy, the player list and the host's Start show. Intents:
-`createCustom`, `joinCode`, `startCustom`, `leaveCustom`, `playCustomOffline`.
+Intents: `inviteFriend`, `copyInvite`, `promotePartyMember`,
+`kickPartyMember`, `leaveParty`, `sendPartyChat`, `addFriend`,
+`searchPlayers`, `requestFriend`, `friendRequestAction`, `removeFriend`,
+`joinFriend`, `inspectPlayer`, `mutePlayer`, `blockPlayer`, `unblockPlayer`,
+`reportPlayer`.
+
+### 5.9 Private show (overlays `privateShow`, `joinCode`)
+
+A dialog, not a screen. **Setup**: round picker, house rules (fill with
+bots, players 2–60, round length ×0.5–×2, allow spectators); footer **Have a
+code?** (→ `joinCode`), **Invite friends** (`createCustom`; disabled with a
+note when offline) and **Play with bots** (`playCustomOffline`, always
+works). Closing the dialog keeps a joined lobby.
+
+**`joinCode`**: six code cells (A–Z/0–9) → `joinCode { code }`; offline →
+empty state with Try again (`retryOnline`). Opened from the start card, the
+private-show dialog and the friends sheet.
+
+**Private lobby** (same dialog, once created or joined):
+
+- Code panel with Copy (masked in streamer mode). Host: Lock/Unlock
+  (`lockCustom`), New code (`newCustomCode`).
+- Host settings apply live (`updateCustom`, debounced): rounds, bots, max
+  players, players needed to start, round length, pre-show countdown,
+  spectators and spectator slots. Members see a read-only summary.
+- Member rows: Make host (`transferCustomHost`), Remove → confirm
+  (`kickCustomMember`, also bans from that lobby); the host's Removed list
+  has Unban (`unbanCustomMember`).
+- Host: **Start show** (`startCustom`); with unready players it asks first
+  and offers Start anyway (`startCustom { force: true }`).
+- Members: **Ready up** (`readyCustom`), Spectate / Play instead
+  (`spectateCustom`), Leave (`leaveCustom`).
+- During the show the host can still remove players from the in-game menu.
 
 ### 5.10 Settings (overlay `settings`)
 
-Full-height sheet with section tabs: **Graphics** (preset Auto/Low/Med/High/
-Ultra, resolution scale, FPS cap, shadows, post FX, show FPS), **Controls**
-(mouse sensitivity, invert Y, toggle grab, vibration, touch layout & button
-size, **rebinding table**: action | primary | secondary; click a cell → "Press a
-key…" capture state with 5 s timeout, Escape cancels, conflicts swap with a
-warning toast; Reset to defaults), **Audio** (master, music, SFX, UI,
-announcer, mute when unfocused), **Accessibility** (colour-blind mode with live
-swatch preview, Reduce Motion, Reduce Flashing, Reduce Camera Shake, Captions,
-UI Scale 80–140%, High-contrast HUD), **Gameplay** (nameplates, Streamer Mode,
-show ping, auto-spectate, chat filter, region), **Account** (name, linked
-providers, sign out, delete account → confirm dialog).
-Every change applies live and emits `settingsChange`.
+Full-height sheet with text-only tabs:
+
+- **Graphics**: preset Auto/Low/Med/High/Ultra, resolution scale, FPS cap
+  30/60/120/Off, shadows, post effects, show FPS.
+- **Controls**: camera sensitivity, **Lock mouse to camera** (moving or
+  clicking in a round grabs the mouse; Esc lets go), invert Y, toggle grab,
+  controller vibration, touch buttons side and size, rebinding table (primary
+  / secondary per action, including **Menu**; conflicts swap; Reset to
+  defaults).
+- **Audio**: Master, Music, Sound effects, Menu sounds, Announcer; Mute when
+  unfocused.
+- **Accessibility**: colour-blind mode (Protan/Deutan/Tritan, palette
+  preview; also recolours teams in 3D), Reduce motion, Reduce flashing,
+  Reduce camera shake, Captions, Spoken announcer (off by default), UI scale,
+  High-contrast HUD.
+- **Gameplay**: nameplates, Streamer mode (hides other players' names and
+  lobby codes), show ping, auto-spectate, **Show bot tags**, **Show chat**
+  (off also hides quick pings), **Chat filter** (masks swearing; slurs are
+  always hidden), **Region** (Auto or a fixed region, each with its measured
+  ping; `probeRegions` when shown).
+- **Account**: display name with Rename (monthly cooldown online), linked
+  logins (Link / Unlink per provider), Sign in to an existing Tumbler, Sign
+  out, Delete Tumbler (confirm).
+
+Every change applies live and emits `settingsChange`. Opened from the
+in-game menu, closing returns to it.
 
 ---
 
 ## 6. Matchmaking — `matchmaking`
 
-- **Layout**: bottom-centre card replaces BottomBar: spinning gumball machine
-  icon, "FINDING TUMBLERS…", counter `27 / 40` (each tick pops), elapsed timer,
-  "ETA ~0:20", region chip, **CANCEL** (Escape/B). Above it a rotating tips
-  carousel ("Dive mid-jump to cover more ground!"). The rest of the menu stays
-  visible but dimmed 30% (tabs disabled).
+- **Layout**: the start card becomes the matchmaking card: "Finding
+  Tumblers…" / "Show found!", found / needed count, elapsed time, ETA, region
+  chip, progress bar, tips carousel, **Cancel** (Escape/B). The menu is not
+  dimmed; tabs other than the current one are disabled and lobby emotes hide.
+- Only online play queues. Vs Bots and Play with bots skip this and go
+  straight to `preShow`.
 - **Motion**: card rises with spring; counter digits roll; tip cards slide
   every 5 s.
 - **3D**: lobby Tumbler sits in a waiting pose, looking at a watch.
@@ -529,7 +579,10 @@ Every change applies live and emits `settingsChange`.
   big countdown ring top-right ("Starting in 0:18"); left ticker of joins
   ("Wobbleton joined!" chips sliding up, max 6 visible); bottom-centre player
   count `32 / 40` with a filling bar; controls hint ("WASD move · Space jump ·
-  1–4 emote"). Players move freely in 3D.
+  1–4 emote"). Players move freely in 3D. Online, the platform is a live
+  synced lobby: every Tumbler's movement and emotes come from the server, and
+  joiners/leavers pop in and out; the join feed and count follow the server
+  roster.
 - **Motion**: join chips slide up with spring; at 5 s left the ring turns
   tangerine and pulses; at 0 the ring pops and wipe.
 - **Cues**: `music.preshow`, `ui.joinTick`, last 5 s `ui.countdown.tick`.
@@ -594,15 +647,31 @@ ring, cue `ui.countdown.go`, HUD brightens to 100%.
   their colours), your marker a larger bouncing diamond with your colour.
 - **Team scores**: up to 4 team pills (colour, score); your team outlined; the
   lead team has a crown icon. Score change pops.
-- **Emote wheel**: hold-to-open radial (4 or 8 slots), pointer angle selects,
-  release emits `emote(slot)`; also quick pings (Go here / Watch out / Nice!).
+- **Emote wheel**: hold-to-open radial, pointer angle selects, release emits
+  `emote(slot)`; ping slots (Go here! / Watch out! / Nice! / GG!) emit
+  `quickPing` and show as speech bubbles over the Tumbler.
 - **Toasts / feed**: left-side short feed ("Gloop fell off!", "Team Pink
   scored!"), max 4, 3.5 s each.
+- **Chat feed** (online): fading feed of up to 7 lines, 8 s each; Enter (or
+  the Chat button on touch) opens the input (`chatInput`, `sendChat`).
+  Messages also appear as speech bubbles. Shown on preShow, round, results,
+  between rounds, victory and winner cam; respects Show chat, the chat
+  filter, mutes and blocks.
+- **Camera-lock prompt** (keyboard + mouse): unlocked → "Click or start
+  moving to lock the camera"; locked → "Esc frees the mouse · <Menu key>
+  menu".
+- **Grab status**: "Grabbed by X! Mash Jump to break free" / "Holding X" /
+  "Carrying", each with a meter.
+- **Bot tags**: bots are labelled in shows unless Show bot tags is off.
 - **Ping/FPS**: tiny top-right, coloured by quality; hidden unless setting on.
 - **Controls hint**: bottom-left, fades after 10 s or first input; gamepad
   glyphs if last input was a pad.
-- **Mobile**: `TouchControls` — joystick (left 40% of screen, floating origin),
-  buttons Jump (big), Dive, Grab (hold), Emote; emits `touchInput`.
+- **Touch**: `TouchControls` is the only touch layer, shown when touch was
+  the last device: floating joystick, Jump / Dive / Grab buttons, an Emote
+  button that toggles the wheel, camera drag elsewhere (`touchInput`,
+  `touchLook`). Big moments vibrate the phone or controller (Controller
+  vibration setting).
+- **Gear button** opens the in-game menu (§9.16).
 - **Overtime**: timer becomes "OVERTIME!" flashing (steady with Reduce Flashing).
 
 ### 9.7 QUALIFIED! stamp
@@ -617,10 +686,11 @@ Bubblegum stamp slams **crooked** (rotate -12°), then one letter ("I") falls of
 with gravity and bounces off-screen; stamp wobbles (`wobble`), cue
 `ui.stamp.eliminated` + `ui.wall.aww`. Consolation line underneath picked at
 random: "Gravity: 1, You: 0", "That was a strategic nap.", "Tumbled with
-style.", "The floor was very welcoming.". After 1.6 s the **choice sheet** rises
-from the bottom: **SPECTATE** · **BACK TO LOBBY** · **PLAY AGAIN** (play again =
-leave and queue). XP-so-far chip on the sheet.
-Intents: `spectate`, `backToLobby`, `playAgain`.
+style.", "The floor was very welcoming.". Then the **keep-watching choice**
+("Knocked out!" in the round; "You're out of the show" over later show
+screens): **Keep watching** (auto-selected after a countdown) or **Leave
+show**, with a rewards note and "N still in the show".
+Intents: `spectate`, `leaveShow`.
 
 ### 9.9 Spectating banner
 
@@ -669,6 +739,33 @@ buttons: **PHOTO MODE** (`photoMode` intent), **CONTINUE**. `music.victory`.
 winner's player card, "GG!" quick emote buttons, **CONTINUE**.
 
 ---
+
+### 9.16 In-game menu (overlay `inGameMenu`)
+
+Opened in a round with Esc (always), the rebindable **Menu** key, gamepad
+Start or the HUD gear. The show keeps running. Shows the show and round
+name, round X of N, status, qualified count, objective and control hints;
+private-show hosts get Remove player. Actions: Resume · Watch replay
+(`replayOpenLive`, when eliminated or spectating) · Settings (returns here
+on close) · Photo mode (not while playing) · Leave show (confirm →
+`leaveShow`).
+
+### 9.17 Replay viewer
+
+Full-screen layer over a private replay sim (`docs/design/REPLAYS.md`).
+Exit, scrub bar with qualify/elimination markers, play/pause, ±5 s, speed
+0.25–2×, cameras Follow / Free / Your view, previous/next player, Save replay.
+Keys: Space, ←/→ seek, ↑/↓ speed, C camera, WASD free camera. Opened from
+round results (Watch replay), the rewards picker, the in-game menu (live
+round) and Profile / Match history (open a `.tumblereplay` file). Intents:
+`replayOpen`, `replayOpenLive`, `replayOpenFile`, `replayCommand`.
+
+### 9.18 Photo mode
+
+From Victory, Winner cam or the in-game menu (not while playing, never
+during a replay). Hides all other UI. Bar: field of view 20–100°, filter
+None / Warm / Mono / Vivid, logo watermark, Take photo (`photoCapture`),
+Exit (`photoExit`). Per-device hints for keyboard, gamepad and touch.
 
 ## 10. THE PLAYER WALL — `playerWall`
 
@@ -807,7 +904,10 @@ left feed (`variant: 'feed'`).
 
 ### 12.5 Notifications panel
 
-Bell drop-down list: invites, friend requests, season news, unclaimed rewards.
+Bell drop-down list: party invites (Join / Decline), friend requests
+(Accept / Decline), season and shard notices, rewards. Works offline from
+local notices. Mark all read; closing marks everything read. The bell count
+is unread notifications only.
 
 ---
 
@@ -816,11 +916,14 @@ Bell drop-down list: invites, friend requests, season news, unclaimed rewards.
 `boot`, `splash`, `welcome`, `tutorialPrompt`, `menu`, `matchmaking`,
 `matchFound`, `preShow`, `showIntro`, `roundLoading`, `roundIntro`, `rules`,
 `round`, `roundResults`, `betweenRounds`, `finalHype`, `victory`, `winnerCam`,
-`playerWall`, `rewards`, `customLobby`, `matchHistory`.
+`playerWall`, `rewards`, `matchHistory`.
 
-Sub-states are store fields, not screens: `menuTab`, `overlay`
-(`settings|friends|notifications`), `countdown`, `stamps`, `hud.localStatus`,
-`eliminatedSheet`, `spectate`, `dialog`, `connection`.
+Overlays (`OverlayId`): `settings`, `friends`, `notifications`,
+`privateShow`, `joinCode`, `inGameMenu`.
+
+Sub-states are store fields, not screens: `menuTab`, `overlay`,
+`countdown`, `stamps`, `hud.localStatus`, `eliminatedSheet`, `spectate`,
+`dialog`, `connection`, the private lobby, the replay viewer and photo mode.
 
 ## 14. The full show flow (happy path)
 

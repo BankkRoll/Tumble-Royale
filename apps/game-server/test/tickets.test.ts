@@ -126,6 +126,22 @@ describe('ticketed rooms', () => {
     return { clock, sims, manager, connect, advance };
   }
 
+  it('drops chat from players whose ticket says they are chat-suspended', () => {
+    const { connect, advance } = setup(false, null);
+    const muted = connect(signJoinTicket(SECRET, claims('u-muted', { mute: true }), WALL));
+    const other = connect(signJoinTicket(SECRET, claims('u-other'), WALL));
+    expect(
+      verifyJoinTicket(SECRET, signJoinTicket(SECRET, claims('x', { mute: true }), WALL), WALL)?.mute,
+    ).toBe(true);
+    muted.chat('hello from a muted player');
+    other.chat('hello from a normal player');
+    advance(3, [muted, other]);
+    const texts = (c: TestClient) =>
+      c.lowFreq('chat').map((m) => (m as Extract<LowFreqMessage, { t: 'chat' }>).text);
+    expect(texts(other)).toEqual(['hello from a normal player']);
+    expect(texts(muted)).toEqual(['hello from a normal player']);
+  });
+
   it('rejects unticketed joins when tickets are required', () => {
     const { connect } = setup(false, null);
     const c = connect('');

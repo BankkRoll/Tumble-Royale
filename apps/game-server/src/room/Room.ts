@@ -89,6 +89,8 @@ interface PlayerSlot {
   lastYaw: number;
   /** Account id from the join ticket (null for bots and unticketed dev joins). */
   userId: string | null;
+  /** Chat-suspended (join ticket `mute`): chat from this slot is dropped. */
+  muted?: boolean;
   /** Action counters for challenge progress. */
   stats: PlayerStatsCounters;
 }
@@ -373,6 +375,7 @@ export class Room {
       id,
       name,
       userId: ticket?.sub ?? null,
+      muted: ticket?.mute === true,
       stats: newStats(),
       isBot: false,
       loadout: hello.loadout.slice(0, 255),
@@ -710,6 +713,7 @@ export class Room {
   private onLowFreq(session: ClientSession, slot: PlayerSlot, msg: LowFreqMessage, now: number): void {
     switch (msg.t) {
       case 'chat': {
+        if (slot.muted) return;
         const text = sanitizeChat(msg.text);
         if (!text || !session.guard.admitChat(now)) return;
         this.broadcast({ t: 'chat', from: slot.id, text });

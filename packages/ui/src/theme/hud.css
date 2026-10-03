@@ -269,6 +269,11 @@
 .tr-hud-team-name {
   flex: 1;
 }
+.tr-team-shape {
+  flex: none;
+  color: var(--ink);
+  vertical-align: -0.12em;
+}
 .tr-hud-team-score {
   display: inline-grid;
   place-items: center;

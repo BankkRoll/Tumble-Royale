@@ -28,7 +28,7 @@ import {
   type CustomLobbyState,
   type Settings,
 } from '@tumble/ui';
-import { createRenderer } from '@tumble/render';
+import { createRenderer, setTeamColorMode } from '@tumble/render';
 import { createPostPipeline, type PostPipeline } from '@tumble/render/post';
 import type { TumblerLoadout } from '@tumble/render/scenes';
 import { loadRapier, type Rapier } from '@tumble/sim';
@@ -1254,6 +1254,8 @@ export class GameApp {
   private applySettings(st: Settings): void {
     this.quality.applySettings(st.graphics);
     this.audio.applySettings(st);
+    // 3D team colours are read when a round is built, so this applies from the next round.
+    setTeamColorMode(st.accessibility.colorBlind);
     this.input.settings.sensitivity = st.controls.mouseSensitivity;
     this.input.settings.invertY = st.controls.invertY;
     this.input.settings.toggleGrab = st.controls.toggleGrab;

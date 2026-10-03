@@ -3,6 +3,7 @@
  * mirrors these as custom properties; TS consumers (canvas confetti, inline
  * SVG, the 3D lobby) read them from here.
  */
+import { TEAM_COLORS_BY_VISION } from '@tumble/shared';
 import type { ColorBlindMode, Rarity, RoundType } from '../store/types.ts';
 
 /** Core palette. */
@@ -97,7 +98,7 @@ export const confettiSets = {
   levelUp: [palette.lemon, palette.grape, palette.cloud, palette.sky],
 } as const;
 
-/** Good / bad / warn semantic colours per colour-blind mode. */
+/** Good / bad / warn semantic colours per colour-blind mode; team colours come from the shared 3D palette. */
 export const semanticColors: Record<
   ColorBlindMode,
   { good: string; bad: string; warn: string; teams: [string, string, string, string] }
@@ -106,25 +107,25 @@ export const semanticColors: Record<
     good: '#3ee6b4',
     bad: '#ff4f9a',
     warn: '#ff8a3d',
-    teams: ['#ff4f8b', '#3fa9ff', '#ffd23f', '#6ee7a8'],
+    teams: [...TEAM_COLORS_BY_VISION.off],
   },
   protanopia: {
     good: '#3fa9ff',
     bad: '#ffb021',
     warn: '#ffe14d',
-    teams: ['#ffb021', '#3fa9ff', '#f0f0f0', '#7b6cff'],
+    teams: [...TEAM_COLORS_BY_VISION.protanopia],
   },
   deuteranopia: {
     good: '#3fa9ff',
     bad: '#ff8a3d',
     warn: '#ffe14d',
-    teams: ['#ff8a3d', '#3fa9ff', '#f0f0f0', '#b05cff'],
+    teams: [...TEAM_COLORS_BY_VISION.deuteranopia],
   },
   tritanopia: {
     good: '#3ec7c7',
     bad: '#ff4f6b',
     warn: '#ff9ad5',
-    teams: ['#ff4f6b', '#3ec7c7', '#f0f0f0', '#7b3a8a'],
+    teams: [...TEAM_COLORS_BY_VISION.tritanopia],
   },
 };
 

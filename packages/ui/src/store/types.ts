@@ -5,7 +5,7 @@
  * server messages, API responses or mocks. The UI never imports runtime code
  * from `@tumble/sim` or three.js; only `@tumble/shared` types.
  */
-import type { RoundType, ThemeId } from '@tumble/shared';
+import type { RoundType, TeamShape, ThemeId } from '@tumble/shared';
 
 export type { RoundType, ThemeId };
 
@@ -747,6 +747,8 @@ export interface ProgressMarker {
 export interface TeamScore {
   name: string;
   color: string;
+  /** Shape cue drawn on the pill (matches the 3D nameplate dot), so colour is never the only cue. */
+  shape?: TeamShape;
   score: number;
   isMine: boolean;
 }

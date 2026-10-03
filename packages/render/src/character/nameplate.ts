@@ -14,6 +14,7 @@
  * atlas renders identically on both backends.
  */
 import type { Object3D } from 'three/webgpu';
+import type { TeamShape } from '@tumble/shared';
 import {
   CanvasTexture,
   DoubleSide,
@@ -62,6 +63,8 @@ export interface NameplateOptions {
   style?: string;
   /** Team or party colour shown as a dot before the name. */
   teamColor?: string | null;
+  /** Shape of that dot, so the team reads without colour (default circle). */
+  teamShape?: TeamShape | null;
   /** Height above the target's origin. Default 2.3 m. */
   height?: number;
 }
@@ -83,6 +86,7 @@ export class Nameplate {
     private style: NameplateStyle,
     private teamColor: string | null,
     height: number,
+    private teamShape: TeamShape | null = null,
   ) {
     this.height = height;
   }
@@ -100,20 +104,59 @@ export class Nameplate {
     this.redraw();
   }
 
-  /** Sets (or clears) the team / party colour dot. */
-  setTeamColor(color: string | null): void {
+  /** Sets (or clears) the team / party colour dot and its shape. */
+  setTeamColor(color: string | null, shape: TeamShape | null = this.teamShape): void {
     this.teamColor = color;
+    this.teamShape = shape;
     this.redraw();
   }
 
   /** @internal */
   redraw(): void {
-    this.layer.draw(this.slot, this.name, this.style, this.teamColor);
+    this.layer.draw(this.slot, this.name, this.style, this.teamColor, this.teamShape);
   }
 
   /** Frees the slot. */
   dispose(): void {
     this.layer.release(this);
+  }
+}
+
+/**
+ * Adds a team shape cue to the current path, centred on (cx, cy).
+ *
+ * @param ctx - Any 2D path sink (a canvas context).
+ * @param shape - Team shape.
+ * @param r - Outer radius in pixels.
+ */
+export function traceTeamShape(
+  ctx: Pick<CanvasRenderingContext2D, 'arc' | 'rect' | 'moveTo' | 'lineTo' | 'closePath'>,
+  shape: TeamShape,
+  cx: number,
+  cy: number,
+  r: number,
+): void {
+  switch (shape) {
+    case 'square': {
+      const a = r * 0.82;
+      ctx.rect(cx - a, cy - a, a * 2, a * 2);
+      return;
+    }
+    case 'triangle':
+      ctx.moveTo(cx, cy - r);
+      ctx.lineTo(cx + r * 0.95, cy + r * 0.75);
+      ctx.lineTo(cx - r * 0.95, cy + r * 0.75);
+      ctx.closePath();
+      return;
+    case 'diamond':
+      ctx.moveTo(cx, cy - r);
+      ctx.lineTo(cx + r, cy);
+      ctx.lineTo(cx, cy + r);
+      ctx.lineTo(cx - r, cy);
+      ctx.closePath();
+      return;
+    default:
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
   }
 }
 
@@ -252,6 +295,7 @@ export class NameplateLayer {
       resolveStyle(opts.style),
       opts.teamColor ?? null,
       opts.height ?? 2.3,
+      opts.teamShape ?? null,
     );
     this.plates[slot] = p;
     p.redraw();
@@ -269,7 +313,13 @@ export class NameplateLayer {
   }
 
   /** @internal Paints one atlas slot. */
-  draw(slot: number, name: string, style: NameplateStyle, team: string | null): void {
+  draw(
+    slot: number,
+    name: string,
+    style: NameplateStyle,
+    team: string | null,
+    shape: TeamShape | null = null,
+  ): void {
     const ctx = this.ctx;
     const x0 = (slot % COLS) * SLOT_W;
     const y0 = Math.floor(slot / COLS) * SLOT_H;
@@ -305,7 +355,7 @@ export class NameplateLayer {
     let maxW = w - 36;
     if (team) {
       ctx.beginPath();
-      ctx.arc(x + 24, y + h / 2, 9, 0, Math.PI * 2);
+      traceTeamShape(ctx, shape ?? 'circle', x + 24, y + h / 2, shape && shape !== 'circle' ? 10 : 9);
       ctx.fillStyle = team;
       ctx.fill();
       ctx.lineWidth = 2;

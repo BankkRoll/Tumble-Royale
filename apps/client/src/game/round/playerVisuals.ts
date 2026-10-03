@@ -18,7 +18,7 @@ import type {
   TumblerVisual,
 } from '@tumble/render/scenes';
 import type { TrailHandle, TrailStyle, VfxSystem } from '@tumble/render/vfx';
-import { TEAM_COLORS } from '@tumble/shared';
+import { teamColor, teamShape } from '@tumble/render';
 import { CharacterFlag, CharacterState } from '@tumble/sim';
 import type { MatchPlayerInfo } from '@tumble/sim/match';
 import {
@@ -182,7 +182,8 @@ export class PlayerVisuals {
         ? null
         : this.plates.create(info.name, {
             style: loadout.nameplate,
-            teamColor: info.team >= 0 ? (TEAM_COLORS[info.team % TEAM_COLORS.length] ?? null) : null,
+            teamColor: info.team >= 0 ? teamColor(info.team) : null,
+            teamShape: info.team >= 0 ? teamShape(info.team) : null,
           });
       if (plate) plate.target = visual.object;
       let trail: TrailHandle | null = null;

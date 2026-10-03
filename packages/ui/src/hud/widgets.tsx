@@ -14,7 +14,7 @@ import { squash } from '../theme/motion.ts';
 import { Icon } from '../components/icons/index.tsx';
 import { roundTypeStyle } from '../theme/tokens.ts';
 import { keyLabel } from '../screens/overlays/SettingsSheet.tsx';
-import type { BindAction } from '../store/types.ts';
+import type { BindAction, TeamScore } from '../store/types.ts';
 import { PAD_GLYPHS, controlGlyph } from './glyphs.ts';
 
 /** Round timer pill; turns tangerine < 30 s and bubblegum + pulsing < 10 s. */
@@ -139,6 +139,39 @@ export const RaceProgress = memo(function RaceProgress(): JSX.Element | null {
   );
 });
 
+const SHAPE_PATHS: Record<NonNullable<TeamScore['shape']>, JSX.Element> = {
+  circle: <circle cx="8" cy="8" r="6" />,
+  square: <rect x="2.5" y="2.5" width="11" height="11" />,
+  triangle: <path d="M8 1.5 15 14H1z" />,
+  diamond: <path d="M8 1 15 8 8 15 1 8z" />,
+};
+
+/** A team's shape cue in its colour (same shape as the team dot on 3D nameplates). */
+export function TeamShapeIcon({
+  shape,
+  color,
+}: {
+  shape: NonNullable<TeamScore['shape']>;
+  color: string;
+}): JSX.Element {
+  return (
+    <svg
+      className="tr-team-shape"
+      data-shape={shape}
+      viewBox="0 0 16 16"
+      width="0.95em"
+      height="0.95em"
+      aria-hidden
+      fill={color}
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+    >
+      {SHAPE_PATHS[shape]}
+    </svg>
+  );
+}
+
 /** Team score pills. */
 export const TeamScores = memo(function TeamScores(): JSX.Element | null {
   const teams = useUI((s) => s.hud.teams);
@@ -157,6 +190,7 @@ export const TeamScores = memo(function TeamScores(): JSX.Element | null {
               <Icon name="crown" size="1em" />
             </span>
           )}
+          {t.shape && <TeamShapeIcon shape={t.shape} color={t.color} />}
           <span className="tr-hud-team-name">{t.name}</span>
           <span key={t.score} className="tr-hud-team-score">
             {t.score}

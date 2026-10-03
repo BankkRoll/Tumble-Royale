@@ -2,7 +2,8 @@
  * Composition root for the API.
  *
  * Responsibilities:
- * - Open the database (Postgres or PGlite), run migrations, sync the content catalog.
+ * - Open the database (Postgres or PGlite), run migrations, sync the content catalog,
+ *   soft-reset ranked ratings when the active season is new.
  * - Pick the KV (Redis or memory), payment provider (Stripe or fake) and mailer.
  * - Configure Fastify: CORS, rate limits, raw-body JSON parsing, error mapping.
  * - Register every route module and the realtime gateway.
@@ -32,6 +33,8 @@ import { createKV, type KV } from './kv/index.ts';
 import { registerMatchRoutes } from './matches/routes.ts';
 import { registerModerationRoutes } from './moderation/routes.ts';
 import { registerProgressionRoutes } from './progression/routes.ts';
+import { registerTutorialRoutes } from './progression/tutorial.ts';
+import { ensureRankedSeason } from './ranked/season.ts';
 import { attachGateway, type Gateway } from './realtime/gateway.ts';
 import { Notifier } from './realtime/notifier.ts';
 import { registerFriendRoutes } from './social/friends.ts';
@@ -133,6 +136,7 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     notifier: new Notifier(kv),
   };
   await syncCatalog(ctx);
+  await ensureRankedSeason(ctx);
 
   const app = Fastify({
     logger: opts.logger === false ? false : { level: config.logLevel },
@@ -208,6 +212,7 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
   registerAccountRoutes(app, ctx);
   registerEconomyRoutes(app, ctx);
   registerProgressionRoutes(app, ctx);
+  registerTutorialRoutes(app, ctx);
   registerMatchRoutes(app, ctx);
   registerFriendRoutes(app, ctx);
   registerPartyRoutes(app, ctx);

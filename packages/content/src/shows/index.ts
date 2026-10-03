@@ -3,6 +3,7 @@
  * director skips ids that are not (yet) in the round registry, so playlists
  * can reference the full launch set before every level exists.
  */
+import { MUTATOR_IDS } from '@tumble/sim/mutators';
 import { ShowPlaylistSchema, type ShowPlaylist, type ShowPlaylistInput } from '@tumble/sim/show/schema';
 
 /** The 20 launch rounds, by id, grouped by type. */
@@ -102,11 +103,20 @@ export const SQUADS: ShowPlaylistInput = {
   pool: pool(PLANNED_ROUND_IDS),
 };
 
-/** Faster obstacles, harsher cuts, more survival. */
+/**
+ * Chaos Mode's mutator rotation: one is picked per show from the seed
+ * (SHOWS.md §4.4). Every `@tumble/sim/mutators` entry is eligible.
+ */
+export const CHAOS_MUTATORS: readonly { id: string; weight: number }[] = MUTATOR_IDS.map((id) => ({
+  id,
+  weight: 1,
+}));
+
+/** Faster obstacles, harsher cuts, more survival, and one mutator per show. */
 export const CHAOS_MODE: ShowPlaylistInput = {
   id: 'chaos-mode',
   name: 'Chaos Mode',
-  description: 'Everything spins faster and the cuts are brutal. Good luck.',
+  description: 'Everything spins faster, the cuts are brutal and every show has a twist. Good luck.',
   maxPlayers: 40,
   minRounds: 3,
   maxRounds: 5,
@@ -121,15 +131,21 @@ export const CHAOS_MODE: ShowPlaylistInput = {
     'tile-panic': 1.3,
     'spin-cycle': 1.3,
   }),
+  mutators: [...CHAOS_MUTATORS],
 };
 
-/** Rated shows: humans only, standard cuts, no hunt randomness. */
+/**
+ * Rated shows: humans only, individual skill (SHOWS.md §4.5). Team rounds are
+ * out because a teammate's play would move your rating; hunts stay but are
+ * down-weighted. If the lobby is not full after the queue timeout it starts
+ * with at least 24 humans.
+ */
 export const RANKED: ShowPlaylistInput = {
   id: 'ranked',
   name: 'Ranked',
   description: 'Climb the ladder. Every placement counts.',
   maxPlayers: 40,
-  minPlayers: 20,
+  minPlayers: 24,
   minRounds: 4,
   maxRounds: 5,
   finalAtOrBelow: 10,
@@ -137,7 +153,7 @@ export const RANKED: ShowPlaylistInput = {
   ranked: true,
   botsAllowed: false,
   typeWeights: { hunt: 0.5 },
-  pool: pool(PLANNED_ROUND_IDS),
+  pool: pool(PLANNED_ROUND_IDS.filter((id) => !(PLANNED_ROUNDS.team as readonly string[]).includes(id))),
 };
 
 /** A new player's first shows: friendly rounds, generous cuts, mostly clumsy bots. */

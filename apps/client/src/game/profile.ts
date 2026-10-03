@@ -94,6 +94,8 @@ interface SavedProfile {
   opponents?: Record<string, OpponentRecord>;
   history: MatchHistoryEntry[];
   tutorialAnswered: boolean;
+  /** Added later: the Practice Island reward was granted. Optional for old saves. */
+  tutorialCompleted?: boolean;
   lastShowDay: string;
   daily: ChallengeCounters;
   weekly: ChallengeCounters;
@@ -292,6 +294,27 @@ export class ProfileStore {
     if (!this.data) return;
     this.data.tutorialAnswered = true;
     this.save();
+  }
+
+  /**
+   * Grants the offline Practice Island reward once per profile (online
+   * accounts claim it from the API instead) and marks the tutorial answered.
+   *
+   * @param xp - XP to add (account and season).
+   * @param cosmeticId - Cosmetic to unlock.
+   * @returns Whether this call granted it, and whether the cosmetic was new.
+   */
+  completeTutorial(xp: number, cosmeticId: string): { granted: boolean; unlocked: boolean } {
+    const d = this.data;
+    if (!d || d.tutorialCompleted) return { granted: false, unlocked: false };
+    d.tutorialCompleted = true;
+    d.tutorialAnswered = true;
+    d.totalXp += xp;
+    d.seasonXp += xp;
+    const unlocked = !d.owned.includes(cosmeticId);
+    if (unlocked) d.owned.push(cosmeticId);
+    this.save();
+    return { granted: true, unlocked };
   }
 
   /**

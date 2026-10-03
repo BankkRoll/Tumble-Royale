@@ -29,7 +29,9 @@ import { RoundPhase, ShowPhase, type RoundDefinition, type RoundPhaseId } from '
 import { emptyInput, type SimEvent } from '@tumble/sim';
 import {
   PlayerRoundStatus,
+  clampRoundTimeScale,
   createMatchSim,
+  scaleRoundTimer,
   type MatchPlayerInfo,
   type MatchSim,
   type MatchSimHandle,
@@ -271,6 +273,8 @@ export class OnlineShowSession extends ShowSession {
         // Same layout and quota as the server, so predicted obstacles match the authoritative ones.
         ...(join.variationId ? { variationId: join.variationId } : {}),
         ...(join.qualifyTarget > 0 ? { qualifyTarget: join.qualifyTarget } : {}),
+        ...(join.mutatorId ? { mutatorId: join.mutatorId } : {}),
+        ...(join.roundTimeScale !== undefined ? { roundTimeScale: join.roundTimeScale } : {}),
       },
       this.ctx.matchDeps,
     ) as MatchSimHandle;
@@ -398,11 +402,13 @@ export class OnlineShowSession extends ShowSession {
     const start: RoundStart = {
       index,
       isFinal: j.isFinal,
-      round,
+      // Same timer the server runs, so the rules card and HUD clock match it.
+      round: scaleRoundTimer(round, clampRoundTimeScale(j.roundTimeScale)),
       players: j.players,
       seed: j.seed,
       stage: j.stage,
       qualifyTarget: j.isFinal ? 1 : Math.max(1, j.qualifyTarget),
+      mutatorId: j.mutatorId ?? null,
     };
     this.onRoundSelected(start);
   }

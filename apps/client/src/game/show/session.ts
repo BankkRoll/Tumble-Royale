@@ -24,6 +24,7 @@ import { CharacterState, type CharacterFullState, type CharacterInput, type SimE
 import { createBotBrain, type BotBrainLike, type BotSelfView } from '@tumble/sim/bots';
 import { DEFAULT_TUNING, GrabKind, createCharacterFullState } from '@tumble/sim/character';
 import { PlayerRoundStatus } from '@tumble/sim/match';
+import { getMutator } from '@tumble/sim/mutators';
 import type { ShowPlaylist } from '@tumble/sim/show';
 import {
   bindUI,
@@ -728,7 +729,11 @@ export abstract class ShowSession {
 
   private introInfo(rs: RoundStart): RoundIntroInfo {
     const r = rs.round;
+    const mutator = getMutator(rs.mutatorId);
     return {
+      ...(mutator
+        ? { mutator: { name: mutator.name, description: mutator.description, icon: mutator.icon } }
+        : {}),
       roundId: r.id,
       name: r.name,
       type: rs.isFinal ? 'final' : r.type,
@@ -828,6 +833,7 @@ export abstract class ShowSession {
       },
       this.ctx.audio.game,
       r.start.isFinal,
+      getMutator(r.start.mutatorId),
     );
     this.ctx.audio.game.setLocalPlayer(r.inRound ? this.localId : null);
     if (this.ctx.cfg.autoplay && r.inRound) {

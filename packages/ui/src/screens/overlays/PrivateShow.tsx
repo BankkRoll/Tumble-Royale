@@ -246,6 +246,12 @@ function SetupView(): JSX.Element {
             <span>Fill empty spots with bots</span>
             <Toggle label="Bots" checked={opts.bots} onChange={(bots) => patch({ bots })} />
           </div>
+          {!opts.bots && (
+            <span className="tr-small tr-muted">
+              Vs-bots play still adds the fewest bots your rounds need (a rival for finals, full teams for
+              team rounds).
+            </span>
+          )}
           <div className="tr-settings-row">
             <span>Players</span>
             <Slider

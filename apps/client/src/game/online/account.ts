@@ -61,6 +61,7 @@ import {
   type ApiParty,
   type ApiPass,
   type ApiPassReward,
+  type ApiTutorialComplete,
 } from '../api.ts';
 import {
   avatarHat,
@@ -747,6 +748,22 @@ export class OnlineAccount {
         title: soon ? 'Gems are coming soon' : 'Checkout failed',
         body: soon ? 'Secure checkout via Stripe is on its way.' : describe(err),
       });
+    }
+  }
+
+  /**
+   * Claims the one-time Practice Island reward on the account.
+   *
+   * @returns The server's answer, or null when the API could not be reached.
+   */
+  async completeTutorial(): Promise<ApiTutorialComplete | null> {
+    try {
+      const r = await this.api.tutorialComplete();
+      if (r.granted) void this.refreshProgress();
+      return r;
+    } catch (err) {
+      console.warn('[account] tutorial reward failed', err);
+      return null;
     }
   }
 

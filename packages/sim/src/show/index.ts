@@ -13,4 +13,4 @@ export {
 } from './schema/index.ts';
 export { selectRound, playerFit, type RoundSelectContext } from './selector.ts';
 export { ShowDirector, showSeed, type ShowDirectorOptions } from './director.ts';
-export { createOfflineShow, type OfflineShow, type OfflineShowOptions } from './offline.ts';
+export { createOfflineShow, minimumShowSeats, type OfflineShow, type OfflineShowOptions } from './offline.ts';

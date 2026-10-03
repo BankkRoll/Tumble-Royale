@@ -14,6 +14,12 @@ export {
 export { obstacleRegistry, type AnyObstacleModule, type MatchDeps } from './deps.ts';
 export { buildStaticGeometry, pieceParts, type StaticGeometry } from './geometry.ts';
 export { chooseVariation, resolveObstacles, spawnSlots, type SpawnSlot } from './layout.ts';
+export {
+  ROUND_TIME_SCALE_MAX,
+  ROUND_TIME_SCALE_MIN,
+  clampRoundTimeScale,
+  scaleRoundTimer,
+} from './round-time.ts';
 export { RoundTriggers } from './triggers.ts';
 export { RemoteProxy } from './proxy.ts';
 export { ObstacleOracle, type BotSafeSpotProvider } from './oracle.ts';

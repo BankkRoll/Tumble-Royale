@@ -785,6 +785,8 @@ export class Room {
       mode: 'authority',
       ...(plan.qualifyTarget !== undefined ? { qualifyTarget: plan.qualifyTarget } : {}),
       ...(plan.variationId !== undefined ? { variationId: plan.variationId } : {}),
+      ...(plan.mutatorId ? { mutatorId: plan.mutatorId } : {}),
+      ...(plan.roundTimeScale !== undefined ? { roundTimeScale: plan.roundTimeScale } : {}),
     });
     this.sim = sim;
     this.round = round;
@@ -923,6 +925,8 @@ export class Room {
       isFinal: this.currentPlan?.isFinal ?? this.round.type === 'final',
       qualifyTarget: this.currentPlan?.qualifyTarget ?? this.sim.getStatus().qualifyTarget,
       variationId: this.sim.variationId ?? null,
+      mutatorId: this.currentPlan?.mutatorId ?? null,
+      roundTimeScale: this.currentPlan?.roundTimeScale ?? 1,
     });
   }
 

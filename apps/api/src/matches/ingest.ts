@@ -33,6 +33,7 @@ import { recordLeaderboards, RANKED_QUEUE } from '../leaderboards/service.ts';
 import { applyChallengeProgress, type ChallengeUpdate } from '../progression/challenges.ts';
 import { addXp } from '../progression/xp.ts';
 import { computeRankedUpdate, type RankedPrior } from '../ranked/rating.ts';
+import { ensureRankedSeason } from '../ranked/season.ts';
 import { tierLabel, type TierInfo } from '../ranked/tiers.ts';
 import { dayKey } from '../util/time.ts';
 import type { MatchResult } from './schema.ts';
@@ -148,6 +149,9 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
   if (stored) return stored;
 
   const seasonId = m.seasonId ?? ctx.catalog.season.id;
+  // Only the live season is ever seeded: a late result for an old season must
+  // not "reset" that season from the newer one.
+  if (m.queue === 'ranked' && seasonId === ctx.catalog.season.id) await ensureRankedSeason(ctx, seasonId);
   const now = ctx.now();
   const grants = m.queue !== 'custom';
   let leaderboardUpdates: Parameters<typeof recordLeaderboards>[1][] = [];

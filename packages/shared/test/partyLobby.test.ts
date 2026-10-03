@@ -116,3 +116,47 @@ describe('party lobby frames', () => {
     expect(isNewerLobbySeq(0, 2 ** 31 - 1)).toBe(true);
   });
 });
+
+describe('party lobby extras', () => {
+  it('round-trips status, grab, ball and bump', () => {
+    const m = encodeLobbyFrame(pose, 4, null, {
+      status: 'locker',
+      grab: 'b1f9c2c0-1111-4222-8333-444455556666',
+      ball: [1.234, 0.4, -2, 3.333, 0, -1],
+      bump: [2, 1, 0],
+    });
+    expect(m.ball).toEqual([1.23, 0.4, -2, 3.33, 0, -1]);
+    const f = sanitizeLobbyFrame(JSON.parse(JSON.stringify(m)), known)!;
+    expect(f).toMatchObject({ status: 'locker', grab: m.grab, ball: m.ball, bump: [2, 1, 0] });
+  });
+
+  it('omits the default status and strips malformed extras', () => {
+    expect(encodeLobbyFrame(pose, 1, null, { status: 'menu' }).status).toBeUndefined();
+    const f = sanitizeLobbyFrame(
+      {
+        ...encodeLobbyFrame(pose, 1),
+        status: 'hacking',
+        grab: '<x>',
+        ball: [1, 2, 3],
+        bump: [Number.NaN, 0, 0],
+      },
+      known,
+    )!;
+    expect(f.status).toBeUndefined();
+    expect(f.grab).toBeUndefined();
+    expect(f.ball).toBeUndefined();
+    expect(f.bump).toBeUndefined();
+  });
+
+  it('clamps the ball to the platform and its speed', () => {
+    const f = sanitizeLobbyFrame({ ...encodeLobbyFrame(pose, 1), ball: [90, 99, 0, 500, -500, 0] }, known)!;
+    expect(f.ball).toEqual([PARTY_LOBBY_LIMITS.radius, PARTY_LOBBY_LIMITS.maxY, 0, 25, -25, 0]);
+  });
+
+  it('accepts the lobby clips without a catalog', () => {
+    expect(sanitizeLobbyFrame({ ...encodeLobbyFrame(pose, 1), emote: 'cheer' }, () => false)!.emote).toBe(
+      'cheer',
+    );
+    expect(sanitizeLobbyFrame({ ...encodeLobbyFrame(pose, 1), emote: 'sit' }, () => false)!.emote).toBeNull();
+  });
+});

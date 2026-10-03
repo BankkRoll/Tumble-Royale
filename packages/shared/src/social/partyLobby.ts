@@ -9,7 +9,9 @@
  * - {@link sanitizeLobbyFrame}: the single validation/clamp step the gateway
  *   applies before relaying (and the client re-applies on receipt);
  * - {@link sanitizeLobbyLook}: structural check of a cosmetic loadout (the
- *   API additionally checks catalog slots and ownership).
+ *   API additionally checks catalog slots and ownership);
+ * - the hangout extras riding on frames: menu status, who the sender is
+ *   grabbing, the leader's ball state and a member's ball bump.
  *
  * Nothing here is persisted; frames are fire-and-forget.
  */
@@ -40,6 +42,23 @@ export const PARTY_LOBBY_LIMITS = {
   /** A loadout rides along at most this often per user; extra ones are stripped. */
   lookMinIntervalMs: 1000,
 } as const;
+
+/**
+ * Pose id for a Tumbler sitting on the floor (AFK in the menu lobby). It sits
+ * past the sim's `CharacterState` ids; only the renderer knows it.
+ */
+export const LOBBY_SIT_STATE = 20;
+
+/** Raw animation clips a lobby frame may name besides catalog emotes (join wave, Play cheer). */
+export const LOBBY_CLIP_IDS = ['wave', 'cheer'] as const;
+
+/** Where a member is in the menu, shown above their Tumbler. */
+export const LOBBY_STATUSES = ['menu', 'locker', 'store', 'queue', 'away'] as const;
+/** A member's menu status. */
+export type LobbyStatus = (typeof LOBBY_STATUSES)[number];
+
+/** Largest ball speed relayed (m/s). */
+const MAX_BALL_SPEED = 25;
 
 /** Client send cadence. */
 export const PARTY_LOBBY_RATE = {
@@ -86,8 +105,20 @@ export interface LobbyPose {
   emote: string | null;
 }
 
+/** Shared toys and interactions that ride on a frame. */
+export interface LobbyExtras {
+  /** Menu status (default `menu`). */
+  status?: LobbyStatus;
+  /** Party member the sender is holding (grab), if any. */
+  grab?: string;
+  /** Leader only: the shared ball `[x, y, z, vx, vy, vz]`. */
+  ball?: [number, number, number, number, number, number];
+  /** A member knocked the ball: its new velocity `[vx, vy, vz]` for the leader to apply. */
+  bump?: [number, number, number];
+}
+
 /** A sanitised frame (client → server body, and the relayed payload). */
-export interface PartyLobbyFrame extends LobbyPose {
+export interface PartyLobbyFrame extends LobbyPose, LobbyExtras {
   /** Sender's sequence number (wraps at 2^31; resets on reload). */
   seq: number;
   /** Present only when the sender's equipped look changed (or a member joined). */
@@ -129,11 +160,17 @@ function wrapAngle(a: number): number {
  * @param pose - Local Tumbler pose.
  * @param seq - Sender sequence number.
  * @param look - Equipped loadout, only when it should be (re)announced.
+ * @param extras - Status, grab, ball state or bump to include.
  * @returns The `party_lobby` message to send.
  * @example
  * socket.send(encodeLobbyFrame(pose, ++seq));
  */
-export function encodeLobbyFrame(pose: LobbyPose, seq: number, look?: LobbyLook | null): PartyLobbyMessage {
+export function encodeLobbyFrame(
+  pose: LobbyPose,
+  seq: number,
+  look?: LobbyLook | null,
+  extras?: LobbyExtras | null,
+): PartyLobbyMessage {
   const msg: PartyLobbyMessage = {
     type: PARTY_LOBBY_TYPE,
     seq: ((Math.floor(seq) % SEQ_MOD) + SEQ_MOD) % SEQ_MOD,
@@ -148,7 +185,34 @@ export function encodeLobbyFrame(pose: LobbyPose, seq: number, look?: LobbyLook 
     emote: pose.emote,
   };
   if (look) msg.look = look;
+  if (extras?.status && extras.status !== 'menu') msg.status = extras.status;
+  if (extras?.grab) msg.grab = extras.grab;
+  if (extras?.ball) {
+    const b = extras.ball;
+    msg.ball = [round2(b[0]), round2(b[1]), round2(b[2]), round2(b[3]), round2(b[4]), round2(b[5])];
+  }
+  if (extras?.bump) msg.bump = [round2(extras.bump[0]), round2(extras.bump[1]), round2(extras.bump[2])];
   return msg;
+}
+
+function sanitizeBall(raw: unknown): LobbyExtras['ball'] | undefined {
+  if (!Array.isArray(raw) || raw.length !== 6 || !raw.every(isNum)) return undefined;
+  const L = PARTY_LOBBY_LIMITS;
+  let [x, y, z] = raw as number[] as [number, number, number];
+  const d = Math.hypot(x, z);
+  if (d > L.radius) {
+    x = (x / d) * L.radius;
+    z = (z / d) * L.radius;
+  }
+  y = clamp(y, L.minY, L.maxY);
+  const v = (i: number) => round2(clamp(raw[i] as number, -MAX_BALL_SPEED, MAX_BALL_SPEED));
+  return [round2(x), round2(y), round2(z), v(3), v(4), v(5)];
+}
+
+function sanitizeBump(raw: unknown): LobbyExtras['bump'] | undefined {
+  if (!Array.isArray(raw) || raw.length !== 3 || !raw.every(isNum)) return undefined;
+  const v = (i: number) => round2(clamp(raw[i] as number, -MAX_BALL_SPEED, MAX_BALL_SPEED));
+  return [v(0), v(1), v(2)];
 }
 
 /**
@@ -201,8 +265,9 @@ export function sanitizeLobbyLook(raw: unknown): LobbyLook | null {
  * - Non-finite or missing numbers drop the whole frame (nothing sensible to show).
  * - Positions are clamped to the platform disc and height band; speeds and
  *   state to their ranges; yaw wrapped.
- * - An emote that `isEmote` does not recognise is cleared (the pose still relays).
- * - A malformed `look` is stripped (the pose still relays).
+ * - An emote that `isEmote` does not recognise (and that is not one of
+ *   {@link LOBBY_CLIP_IDS}) is cleared (the pose still relays).
+ * - A malformed `look`, status, grab, ball or bump is stripped (the pose still relays).
  *
  * @param raw - Parsed JSON from the socket.
  * @param isEmote - Recognises emote item ids (the API uses the catalog).
@@ -223,7 +288,11 @@ export function sanitizeLobbyFrame(raw: unknown, isEmote: (id: string) => boolea
     px = (px / d) * L.radius;
     pz = (pz / d) * L.radius;
   }
-  const emote = typeof r.emote === 'string' && isId(r.emote) && isEmote(r.emote) ? r.emote : null;
+  const emote =
+    typeof r.emote === 'string' &&
+    ((LOBBY_CLIP_IDS as readonly string[]).includes(r.emote) || (isId(r.emote) && isEmote(r.emote)))
+      ? r.emote
+      : null;
   const frame: PartyLobbyFrame = {
     seq: ((Math.floor(seq) % SEQ_MOD) + SEQ_MOD) % SEQ_MOD,
     x: round2(px),
@@ -240,6 +309,17 @@ export function sanitizeLobbyFrame(raw: unknown, isEmote: (id: string) => boolea
     const look = sanitizeLobbyLook(r.look);
     if (look) frame.look = look;
   }
+  if (
+    typeof r.status === 'string' &&
+    r.status !== 'menu' &&
+    (LOBBY_STATUSES as readonly string[]).includes(r.status)
+  )
+    frame.status = r.status as LobbyStatus;
+  if (isId(r.grab)) frame.grab = r.grab;
+  const ball = sanitizeBall(r.ball);
+  if (ball) frame.ball = ball;
+  const bump = sanitizeBump(r.bump);
+  if (bump) frame.bump = bump;
   return frame;
 }
 

@@ -6,11 +6,11 @@
  * holds a copy, so the whole family is revoked and the caller must sign in again.
  */
 import { randomUUID } from 'node:crypto';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import type { AccountRef } from '../accounts/accounts.ts';
 import { getAccountRef } from '../accounts/accounts.ts';
 import type { Db, DbOrTx } from '../db/client.ts';
-import { sessions, users } from '../db/schema.ts';
+import { bans, sessions, users } from '../db/schema.ts';
 import { ApiError } from '../http/errors.ts';
 import {
   ACCESS_TOKEN_TTL_SEC,
@@ -28,6 +28,33 @@ export interface TokenPair {
   refreshToken: string;
   refreshExpiresAt: string;
   user: { id: string; displayName: string; tag: string; region: string; isGuest: boolean };
+}
+
+/**
+ * Refuses to mint tokens for an account under an active `all` ban, so a
+ * suspended player cannot keep a session alive by refreshing.
+ *
+ * @throws {ApiError} 403 `banned` with the reason and expiry.
+ */
+async function assertNotSuspended(tx: DbOrTx, userId: string, now: Date): Promise<void> {
+  const [ban] = await tx
+    .select({ reason: bans.reason, expiresAt: bans.expiresAt })
+    .from(bans)
+    .where(
+      and(
+        eq(bans.userId, userId),
+        eq(bans.scope, 'all'),
+        isNull(bans.revokedAt),
+        or(isNull(bans.expiresAt), gt(bans.expiresAt, now)),
+      ),
+    )
+    .limit(1);
+  if (ban) {
+    throw new ApiError(403, 'banned', 'This account is suspended', {
+      reason: ban.reason,
+      expiresAt: ban.expiresAt?.toISOString() ?? null,
+    });
+  }
 }
 
 async function mint(
@@ -87,6 +114,7 @@ async function mint(
  * @param userId - Who signed in.
  * @param now - Current time.
  * @param userAgent - Stored for the session list.
+ * @throws {ApiError} 403 `banned` while the account is suspended.
  */
 export async function startSession(
   tx: DbOrTx,
@@ -95,6 +123,7 @@ export async function startSession(
   now: Date,
   userAgent?: string,
 ): Promise<TokenPair> {
+  await assertNotSuspended(tx, userId, now);
   const account = await getAccountRef(tx, userId);
   await tx.update(users).set({ lastSeenAt: now }).where(eq(users.id, userId));
   return (await mint(tx, secret, account, randomUUID(), now, userAgent)).pair;
@@ -104,7 +133,7 @@ export async function startSession(
  * Exchanges a refresh token for a new pair (rotation).
  *
  * @throws {ApiError} 401 `invalid_refresh` (unknown/expired) or `refresh_reused`
- *   (family revoked because a rotated token was replayed).
+ *   (family revoked because a rotated token was replayed); 403 `banned` while suspended.
  */
 export async function rotateSession(
   db: Db,
@@ -128,6 +157,7 @@ export async function rotateSession(
       return true;
     }
     if (row.expiresAt <= now) throw new ApiError(401, 'invalid_refresh', 'Refresh token expired');
+    await assertNotSuspended(tx, row.userId, now);
     const account = await getAccountRef(tx, row.userId);
     const next = await mint(tx, secret, account, row.familyId, now, userAgent);
     await tx

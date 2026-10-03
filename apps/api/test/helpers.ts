@@ -38,6 +38,14 @@ export interface TestApi extends BuiltApp {
     payload: MatchResultInput,
     opts?: { secret?: string; nonce?: string; timestamp?: number },
   ): Promise<LightMyRequestResponse>;
+  /** POSTs an HMAC-signed body to an `/internal/*` route, as game servers and the matchmaker do. */
+  internal(
+    url: string,
+    payload: unknown,
+    opts?: { secret?: string; nonce?: string; timestamp?: number },
+  ): Promise<LightMyRequestResponse>;
+  /** Bans a user through the admin route. */
+  ban(userId: string, scope?: 'all' | 'ranked' | 'chat'): Promise<void>;
 }
 
 /**
@@ -82,6 +90,24 @@ export async function createTestApi(
       ...(opts.body !== undefined ? { payload: JSON.stringify(opts.body) } : {}),
     });
 
+  const internal: TestApi['internal'] = (url, payload, opts = {}) => {
+    const body = JSON.stringify(payload);
+    const ts = String(opts.timestamp ?? clock.now().getTime());
+    const nonce = opts.nonce ?? randomUUID();
+    const sig = signInternal(opts.secret ?? config.internalHmacSecret, ts, nonce, body);
+    return built.app.inject({
+      method: 'POST',
+      url,
+      headers: {
+        'content-type': 'application/json',
+        [HMAC_HEADERS.timestamp]: ts,
+        [HMAC_HEADERS.nonce]: nonce,
+        [HMAC_HEADERS.signature]: sig,
+      },
+      payload: body,
+    });
+  };
+
   let guestNo = 0;
   return {
     ...built,
@@ -109,23 +135,15 @@ export async function createTestApi(
         applyLedger(tx, { userId, currency, delta: amount, reason: 'admin_adjust', ref: randomUUID() }),
       );
     },
-    postMatch(payload, opts = {}) {
-      const body = JSON.stringify(payload);
-      const ts = String(opts.timestamp ?? clock.now().getTime());
-      const nonce = opts.nonce ?? randomUUID();
-      const sig = signInternal(opts.secret ?? config.internalHmacSecret, ts, nonce, body);
-      return built.app.inject({
-        method: 'POST',
-        url: '/internal/match-results',
-        headers: {
-          'content-type': 'application/json',
-          [HMAC_HEADERS.timestamp]: ts,
-          [HMAC_HEADERS.nonce]: nonce,
-          [HMAC_HEADERS.signature]: sig,
-        },
-        payload: body,
+    async ban(userId, scope = 'all') {
+      const res = await req('POST', '/internal/bans', {
+        headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+        body: { userId, scope, reason: 'testing bans', durationHours: 1 },
       });
+      if (res.statusCode !== 201) throw new Error(`ban failed: ${res.statusCode} ${res.body}`);
     },
+    postMatch: (payload, opts = {}) => internal('/internal/match-results', payload, opts),
+    internal,
   };
 }
 

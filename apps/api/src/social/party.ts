@@ -265,11 +265,14 @@ export async function issueQueueTicket(
   if (playlist.queue === 'ranked' && memberIds.length > playlist.teamSize) {
     throw conflict('party_too_large', `${playlist.name} is solo-only`);
   }
-  if (playlist.queue === 'ranked') {
-    for (const id of memberIds) {
-      if ((await activeBans(ctx, id)).some((b) => b.scope === 'ranked')) {
-        throw forbidden('ranked_banned', 'A party member is suspended from ranked play');
-      }
+  for (const id of memberIds) {
+    // Members joined before a ban landed stay in the party, so check everyone, not just the caller.
+    const memberBans = await activeBans(ctx, id);
+    if (memberBans.some((b) => b.scope === 'all')) {
+      throw forbidden('member_banned', 'A party member is suspended');
+    }
+    if (playlist.queue === 'ranked' && memberBans.some((b) => b.scope === 'ranked')) {
+      throw forbidden('ranked_banned', 'A party member is suspended from ranked play');
     }
   }
   const names = await ctx.db

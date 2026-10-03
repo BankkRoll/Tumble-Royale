@@ -8,7 +8,14 @@ import { z } from 'zod';
 import type { AppContext } from '../context.ts';
 import { bans, events, featureFlags, reports, users } from '../db/schema.ts';
 import { verifyLedger } from '../economy/ledger.ts';
-import { invalidateBanCache, optionalUser, requireAdmin, requireUser } from '../http/auth.ts';
+import {
+  activeBans,
+  invalidateBanCache,
+  optionalUser,
+  requireAdmin,
+  requireInternalSignature,
+  requireUser,
+} from '../http/auth.ts';
 import { badRequest, notFound, parse } from '../http/errors.ts';
 import { BOARD_TYPES, readLeaderboard } from '../leaderboards/service.ts';
 import { maskProfanity } from '../names/profanity.ts';
@@ -49,6 +56,8 @@ const BanBody = z.object({
     .max(24 * 365 * 10)
     .optional(),
 });
+const BanLookupBody = z.object({ userIds: z.array(z.string().min(1).max(64)).min(1).max(64) });
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FlagBody = z.object({
   enabled: z.boolean(),
   rolloutPercent: z.number().int().min(0).max(100).default(100),
@@ -125,6 +134,23 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
       limit: q.limit,
       offset: q.offset,
     });
+  });
+
+  // Matchmaker → API (HMAC): which of these players are suspended, and from what.
+  app.post('/internal/bans/lookup', { config: { rateLimit: false } }, async (req) => {
+    await requireInternalSignature(ctx, req);
+    const { userIds } = parse(BanLookupBody, req.body);
+    const out: Record<string, { scope: string; reason: string; expiresAt: string | null }[]> = {};
+    for (const id of new Set(userIds)) {
+      // Ids that are not account ids (bots, forged slots) cannot carry bans.
+      const rows = UUID_RE.test(id) ? await activeBans(ctx, id, true) : [];
+      out[id] = rows.map((b) => ({
+        scope: b.scope,
+        reason: b.reason,
+        expiresAt: b.expiresAt?.toISOString() ?? null,
+      }));
+    }
+    return { bans: out };
   });
 
   // --- Admin (ADMIN_TOKEN) -------------------------------------------------

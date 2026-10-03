@@ -10,7 +10,6 @@
  */
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
-import { sql } from 'drizzle-orm';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { registerIdentityRoutes } from './accounts/identities.ts';
 import { registerAccountRoutes } from './accounts/routes.ts';
@@ -32,8 +31,10 @@ import { ApiError } from './http/errors.ts';
 import { rateLimitKey } from './http/rate-limit.ts';
 import { createKV, type KV } from './kv/index.ts';
 import { registerMatchRoutes } from './matches/routes.ts';
+import { registerAdminRoutes } from './moderation/admin.ts';
 import { registerModerationRoutes } from './moderation/routes.ts';
 import { registerNewsRoutes } from './news/routes.ts';
+import { registerOps, requestIdOptions, type Ops } from './ops/index.ts';
 import { registerProgressionRoutes } from './progression/routes.ts';
 import { ensureSeason, onSeasonChanged, type SeasonChangeListener } from './progression/seasons.ts';
 import { registerTutorialRoutes } from './progression/tutorial.ts';
@@ -68,6 +69,8 @@ export interface BuiltApp {
   ctx: AppContext;
   database: Database;
   gateway: Gateway;
+  /** Readiness, metrics and the retention job. */
+  ops: Ops;
   close(): Promise<void>;
 }
 
@@ -118,9 +121,18 @@ export async function syncCatalog(ctx: AppContext): Promise<void> {
  * @param opts - Overrides for tests.
  */
 export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Promise<BuiltApp> {
+  // The pool can report errors before Fastify's logger exists.
+  const logRef: { current?: Pick<FastifyInstance['log'], 'error'> } = {};
   const database =
-    opts.database ?? (await openDatabase({ databaseUrl: config.databaseUrl, pgliteDir: config.pgliteDir }));
-  await database.migrate();
+    opts.database ??
+    (await openDatabase({
+      databaseUrl: config.databaseUrl,
+      pgliteDir: config.pgliteDir,
+      poolMax: config.ops.dbPoolMax,
+      onPoolError: (err) => (logRef.current ?? console).error({ err }, 'postgres idle connection error'),
+      onLockWait: () => console.warn('[api] another instance is migrating; waiting for its lock'),
+    }));
+  if (config.ops.migrateOnBoot) await database.migrate();
   const now = opts.now ?? (() => new Date());
   const kv = opts.kv ?? createKV(config.redisUrl, () => now().getTime());
   const catalog = clockedCatalog(opts.catalog ?? loadCatalog(), now);
@@ -162,7 +174,9 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     logger: opts.logger === false ? false : { level: config.logLevel },
     trustProxy: true,
     bodyLimit: 256 * 1024,
+    ...requestIdOptions,
   });
+  logRef.current = app.log;
 
   // Signature checks (internal HMAC, Stripe) need the exact bytes that were signed.
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
@@ -225,8 +239,8 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     }
   });
 
-  app.get('/health', { config: { rateLimit: false } }, async () => {
-    await ctx.db.execute(sql`select 1`);
+  // Liveness only: dependencies are checked by /ready, so a database outage never restarts healthy processes.
+  app.get('/health', { config: { rateLimit: false }, logLevel: 'warn' }, async () => {
     return {
       ok: true,
       db: database.driver,
@@ -248,15 +262,19 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
   registerPartyRoutes(app, ctx);
   registerModerationRoutes(app, ctx);
   registerNewsRoutes(app, ctx);
+  registerAdminRoutes(app, ctx);
   const gateway = attachGateway(app, ctx);
+  const ops = registerOps(app, ctx, { database, gateway });
 
   return {
     app,
     ctx,
     database,
     gateway,
+    ops,
     close: async () => {
       clearInterval(seasonTimer);
+      ops.close();
       await gateway.close();
       await app.close();
       await kv.close();

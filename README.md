@@ -44,6 +44,24 @@ on desktop and mobile.
 - **UI:** React 19 + Zustand overlay on top of the canvas
 - **Content:** 20 rounds plus a tutorial island, 36 obstacle types, 225 cosmetics, 10 themes, all procedural (zero external art assets)
 
+What a player can do today:
+
+- **Play:** solo, Duos and Squads online with parties, or any show offline
+  against bots; Chaos Mode (one mutator per show), Ranked (solo rounds only,
+  seasonal soft reset) and a gentler First Show for newcomers
+- **Private shows:** invite codes, host-picked rounds and rules changed live,
+  kick/ban, lock, transfer host, ready checks and spectator slots
+- **Social:** friends (requests, presence, join), party and in-show text chat
+  with a filter, quick pings, report / block / mute, streamer mode
+- **Progression:** accounts (guest, Discord, Google, email link), seasons,
+  a 100-tier pass, challenges, store, Crown Shard shop, free Gem paths, live
+  news and notifications
+- **Watch:** keep spectating after elimination, round replays (save and
+  reopen them), photo mode
+- **Input & access:** keyboard/mouse with rebinding, gamepad menus,
+  single-layer touch controls, vibration, colour-blind palettes (also in 3D),
+  captions and an opt-in spoken announcer
+
 All characters, rounds, obstacles and cosmetics are original IP.
 
 ## Quick start
@@ -74,7 +92,7 @@ server, API and matchmaker.
 | Game client | `apps/client`      | 5173 | everything                                                                                            |
 | Game server | `apps/game-server` | 7350 | online play                                                                                           |
 | Account API | `apps/api`         | 7360 | accounts, inventory, store, pass, ranked, social (optional; the client falls back to a local profile) |
-| Matchmaker  | `apps/matchmaker`  | 7370 | queues, parties, custom lobbies                                                                       |
+| Matchmaker  | `apps/matchmaker`  | 7370 | queues, parties, private shows                                                                        |
 
 The API uses an embedded Postgres (PGlite) and in-memory Redis when
 `DATABASE_URL` / `REDIS_URL` are unset, and a fake payment provider without
@@ -100,6 +118,12 @@ servers with `NODE_ENV=production` and real secrets (see
 matchmaker tickets to join a game, and disables Gem checkout unless Stripe is
 configured.
 
+The client is a single-page app. Party invites (`/join/<code>`), OAuth and
+email sign-in returns (`/auth/*`) and Stripe returns (`/store`) must serve
+`index.html`. The build includes `_redirects` (Netlify, Cloudflare Pages)
+from `apps/client/public/`, and `apps/client/vercel.json` does the same on
+Vercel; other hosts need equivalent rewrites.
+
 ### Client URL options
 
 Two options work everywhere, so players can troubleshoot graphics:
@@ -118,6 +142,8 @@ how the game runs or point the client at another server.
 | ------------------------------------------- | ----------------------------------------------------------------- |
 | `?online=1`                                 | Skip the mode select and play against the game server             |
 | `?autoplay=1`                               | A bot drives your Tumbler and menus auto-advance (demos, e2e)     |
+| `?shows=N`                                  | With autoplay: shows to start from the menu (0 = stop at menu)    |
+| `?mm=0`                                     | Never matchmake; Play runs an offline show unless `?online=1`     |
 | `?ts=N`                                     | Time scale (max 16)                                               |
 | `?debug=1`                                  | Debug panel (skip round, force qualify, teleport) + stats overlay |
 | `?playlist=<id>` / `?players=N` / `?seed=N` | Offline show overrides                                            |
@@ -139,6 +165,7 @@ and `build:sandbox` builds them; a production build ships only the game.
 | `/world.html`            | Themes, weather, VFX, post-processing, and the menu, wall and podium scenes            |
 | `/ui.html?screen=<id>`   | Every UI screen with mock data, plus an auto-played show                               |
 | `/audio.html`            | Sound board: SFX, adaptive music, stingers, spatial demo                               |
+| `/tutorial.html`         | Practice Island on its own, without the splash and menu flow                           |
 
 ## Repository layout
 
@@ -147,7 +174,7 @@ apps/
   client/        Vite app: composition root, game loop, input, net, dev sandboxes
   game-server/   Authoritative rooms (Rapier in Node), show flow, bots, metrics
   api/           Fastify + Drizzle: accounts, economy, pass, ranked, social
-  matchmaker/    Queues, parties, custom lobbies, server registry, join tickets
+  matchmaker/    Queues, parties, private shows, server registry, join tickets
 packages/
   shared/        Constants, math, seeded RNG, collision groups, round schema
   sim/           Headless simulation shared by server and client prediction
@@ -158,6 +185,7 @@ packages/
   ui/            React overlay: every screen, HUD and transition
 tools/
   bot-swarm/     Headless WebSocket load tester
+  media/         Turns e2e captures into the README trailer and stills (ffmpeg)
 docs/
   SPEC.md        Product brief
   ARCHITECTURE.md  Package boundaries, contracts and team rules
@@ -195,6 +223,8 @@ For long e2e runs while files are changing, point the specs at a private
 preview of a sandbox build (`build:sandbox`, then `vite preview`) with
 `GAME_URL=http://localhost:<port>` so hot reloads don't restart the page. The
 specs rely on dev URL options, so a plain production build won't work.
+CI runs the menu and phase 0 specs this way on every push to main; see
+[CONTRIBUTING.md](CONTRIBUTING.md) for the exact commands.
 
 Rules that keep the simulation deterministic (lint-enforced in `sim`,
 `shared`, `netcode` and `content`): no DOM, no three.js, no `Date.now()`, no
@@ -219,16 +249,25 @@ the same pose with zero bandwidth.
 
 ## Status
 
-| Phase | Scope                       | State                                                                                 |
-| ----- | --------------------------- | ------------------------------------------------------------------------------------- |
-| 0     | Foundations                 | Done: both GPU backends verified, client/server Rapier bit-identical after 600 steps  |
-| 1     | The Tumbler                 | Done; tuning benefits from human playtesting                                          |
-| 2     | Netcode slice               | Done: ~3 ms ticks at 40 players, no steady-state corrections at 150 ms + 2% loss      |
-| 3     | First show                  | Done: full 40-player shows play end to end in the browser on both backends            |
-| 4     | Meta & accounts             | Done: guest accounts, locker, parties, matchmaking and server-granted rewards (e2e)   |
-| 5     | Content MVP                 | Done: 20 rounds, tutorial island, procedural audio; touch controls untested on phones |
-| 6     | Ranked, store, pass, social | Done: OpenSkill ranked, store, season pass, challenges, friends, custom lobbies       |
-| 7     | Launch hardening            | Partly: perf budgets met, reconnect, metrics; soak/load tests and deployment not run  |
+| Area                        | State                                                                                                                                            |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Foundations                 | Done: both GPU backends render, client/server Rapier bit-identical after 600 steps (`e2e/phase0.spec.ts`)                                        |
+| The Tumbler                 | Done; tuning still needs human playtesting                                                                                                       |
+| Netcode                     | Done: no steady-state corrections at 150 ms + 2% loss (unit-tested), lag-compensated grab/dive hit assist, protocol v3                           |
+| Shows                       | Done: full 40-player shows end to end in the browser (`e2e/game.spec.ts`), solo/Duos/Squads online, live pre-show lobby                          |
+| Meta & accounts             | Done: guest + OAuth/email accounts, locker, parties, matchmaking, server-granted rewards, seasons, shard shop                                    |
+| Content                     | 20 rounds, tutorial island, procedural audio. Touch controls exist but no phone frame rate has been measured                                     |
+| Ranked, store, pass, social | Done: OpenSkill ranked with soft reset, store, pass, challenges, friends, chat, private shows, moderation                                        |
+| Launch hardening            | Partly: rate limits, bans, reconnect, results outbox, metrics. Not done: long soak, load test against a deployed stack, crash reporting, hosting |
 
-Production still needs Discord/Google OAuth credentials, Stripe keys and
-hosting. Everything else runs locally on the fallbacks described above.
+Server tick time is measured, not asserted in CI: run the game server and
+`pnpm --filter @tumble/bot-swarm start -- --clients 40 --duration 60`, which
+prints the server's `/metrics` including `tumble_tick_ms` avg / p95 / max.
+Results depend on the machine.
+
+Production still needs hosting for the client and the four services, a
+Postgres database (without `DATABASE_URL` the API uses an embedded PGlite
+file), and Redis (required by the API and matchmaker in production;
+`ALLOW_MEMORY_STORE=1` runs a single instance without it). Discord/Google
+OAuth, Stripe and SMTP are optional: without them those sign-in methods and
+Gem checkout are simply off.

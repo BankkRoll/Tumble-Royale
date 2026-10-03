@@ -237,6 +237,23 @@ export class PartyService {
     await this.ctx.notifier.notifyUser(targetId, { type: 'party_kicked', partyId: p.id });
     return p;
   }
+
+  /**
+   * Hands leadership to another member (leader only). Every member receives
+   * the new party through `party_update`.
+   *
+   * @throws {ApiError} 400 self, 403 not leader, 404 not a member.
+   */
+  async promote(leaderId: string, targetId: string): Promise<Party> {
+    if (leaderId === targetId) throw badRequest('already_leader', 'You already lead this party');
+    return this.mutate(leaderId, (party) => {
+      if (party.leaderId !== leaderId) throw forbidden('not_leader', 'Only the party leader can promote');
+      const m = party.members.find((x) => x.userId === targetId);
+      if (!m) throw notFound('Member');
+      party.leaderId = targetId;
+      m.ready = true;
+    });
+  }
 }
 
 /**
@@ -378,14 +395,7 @@ export function registerPartyRoutes(app: FastifyInstance, ctx: AppContext): void
   app.post('/party/promote', async (req) => {
     const auth = await requireUser(ctx, req);
     const { userId } = parse(UserBody, req.body);
-    const p = await parties.mutate(auth.userId, (party) => {
-      if (party.leaderId !== auth.userId) throw forbidden('not_leader', 'Only the party leader can promote');
-      const m = party.members.find((x) => x.userId === userId);
-      if (!m) throw notFound('Member');
-      party.leaderId = userId;
-      m.ready = true;
-    });
-    return { party: parties.view(p) };
+    return { party: parties.view(await parties.promote(auth.userId, userId)) };
   });
 
   app.post('/party/ready', async (req) => {

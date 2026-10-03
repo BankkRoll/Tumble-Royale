@@ -472,8 +472,9 @@ export class Room {
 
   /**
    * Adds a new human (player in the lobby, spectator during a show).
+   * Nothing changes when every id of that kind is taken.
    *
-   * @returns The assigned player id.
+   * @returns The assigned player id, or -1 when the room is full.
    */
   join(session: ClientSession, hello: HelloMsg, now: number, ticket: JoinTicketClaims | null = null): number {
     // Ticketed names come from the account (`name#tag`); the tag stays off the nameplate.
@@ -493,6 +494,7 @@ export class Room {
     }
     const spectator = this.state !== 'lobby' || ticket?.role === 'spectator';
     const id = this.allocateId(spectator);
+    if (id < 0) return -1;
     const slot = newSlot({
       id,
       name,

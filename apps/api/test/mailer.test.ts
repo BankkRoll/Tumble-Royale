@@ -14,6 +14,7 @@ const PROD = {
   JWT_SECRET: 'prod-jwt-secret-0123456789abcdef0123456789',
   INTERNAL_HMAC_SECRET: 'prod-internal-secret-0123456789',
   PUBLIC_WEB_URL: 'https://play.example.com',
+  ALLOW_MEMORY_STORE: '1',
   LOG_LEVEL: 'silent',
 };
 

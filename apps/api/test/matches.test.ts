@@ -1,3 +1,4 @@
+import { DEFAULT_SHOW_PLAYERS, MAX_PLAYERS } from '@tumble/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { verifyLedger } from '../src/economy/ledger.ts';
 import { buildShow, createTestApi, type TestApi } from './helpers.ts';
@@ -11,13 +12,23 @@ afterAll(async () => {
 });
 
 describe('match results ingest', () => {
+  it(`accepts a show of exactly ${MAX_PLAYERS} participants and refuses one more`, async () => {
+    const u = await api.guest();
+    const full = buildShow({ humans: [{ userId: u.id, placement: MAX_PLAYERS }], size: MAX_PLAYERS });
+    const res = await api.postMatch(full);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().rewards[0]).toMatchObject({ placement: MAX_PLAYERS });
+    const over = buildShow({ humans: [], size: MAX_PLAYERS + 1 });
+    expect((await api.postMatch(over)).statusCode).toBe(400);
+  });
+
   it('grants rewards once even when posted twice', async () => {
     const winner = await api.guest();
     const loser = await api.guest();
     const show = buildShow({
       humans: [
         { userId: winner.id, placement: 1 },
-        { userId: loser.id, placement: 30 },
+        { userId: loser.id, placement: 80 },
       ],
     });
 
@@ -45,7 +56,7 @@ describe('match results ingest', () => {
 
     const history = (await api.req('GET', '/me/matches', { token: loser.accessToken })).json();
     expect(history.matches).toHaveLength(1);
-    expect(history.matches[0]).toMatchObject({ id: show.matchId, placement: 30, crowned: false });
+    expect(history.matches[0]).toMatchObject({ id: show.matchId, placement: 80, crowned: false });
     expect(history.matches[0].rounds.map((r: { qualified: boolean }) => r.qualified)).toEqual([
       false,
       false,
@@ -60,8 +71,8 @@ describe('match results ingest', () => {
     ]);
 
     const detail = (await api.req('GET', `/matches/${show.matchId}`, { token: loser.accessToken })).json();
-    expect(detail.participants).toHaveLength(40);
-    expect(detail.botCount).toBe(38);
+    expect(detail.participants).toHaveLength(DEFAULT_SHOW_PLAYERS);
+    expect(detail.botCount).toBe(DEFAULT_SHOW_PLAYERS - 2);
   });
 
   it('replays instead of re-granting when a game-server outbox retries much later', async () => {

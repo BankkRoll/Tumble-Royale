@@ -233,7 +233,7 @@ Music (`playMusic(track)` hook): `music.menu`, `music.matchmaking`,
 - **Purpose**: unlock audio (user gesture) and land the brand.
 - **Layout**: giant **TUMBLE ROYALE** logo (two stacked sticker words, each
   letter a separately-bouncing glyph), crown perched on the "O", subtitle chip
-  "40 Tumblers. 1 Crown. Zero dignity.", pulsing "CLICK / TAP / PRESS ANY BUTTON
+  "100 Tumblers. 1 Crown. Zero dignity.", pulsing "CLICK / TAP / PRESS ANY BUTTON
   TO START" pill at the bottom third. Footer: build, legal, "Original game —
   every Tumbler is hand-squished".
 - **Motion**: letters drop in from -120% with `gravity`, land with `squash`,

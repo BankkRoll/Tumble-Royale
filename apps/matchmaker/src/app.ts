@@ -12,6 +12,7 @@ import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { WebSocket, WebSocketServer } from 'ws';
+import { MAX_PLAYERS } from '@tumble/shared';
 import { clientIp, trustFunction } from '@tumble/shared/proxy';
 import { z } from 'zod';
 import { ApiBanLookup, NO_BANS, type BanLookup } from './bans.ts';
@@ -71,12 +72,12 @@ const SettingsSchema = z
   .object({
     playlistId: z.string().min(1).max(64),
     rounds: z.array(z.string().min(1).max(64)).max(10),
-    maxPlayers: z.number().int().min(2).max(60),
+    maxPlayers: z.number().int().min(2).max(MAX_PLAYERS),
     bots: z.boolean(),
     roundTimeScale: z.number().min(0.5).max(2),
     lobbyCountdownSec: z.number().int().min(0).max(120),
     spectatorSlots: z.number().int().min(0).max(10),
-    minPlayers: z.number().int().min(1).max(60),
+    minPlayers: z.number().int().min(1).max(MAX_PLAYERS),
   })
   .partial();
 const CreateLobbyBody = z.object({

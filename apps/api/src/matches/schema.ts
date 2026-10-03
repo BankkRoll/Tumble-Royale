@@ -6,6 +6,7 @@
  * order: 1 is the Crown winner, larger numbers were eliminated earlier, and
  * players knocked out together (same round, no finish order) share a value.
  */
+import { MAX_PLAYERS } from '@tumble/shared';
 import { z } from 'zod';
 
 /** Round categories (`RoundType` in `@tumble/shared`). */
@@ -58,14 +59,14 @@ export const MatchRoundSchema = z.object({
     .min(0)
     .max(30 * 60_000),
   /** Every participant who started the round. */
-  results: z.array(RoundResultSchema).max(60),
+  results: z.array(RoundResultSchema).max(MAX_PLAYERS),
 });
 
 /** Final standing of a participant. */
 export const PlacementSchema = z.object({
   key: z.string().min(1).max(40),
   /** 1 = winner; equal values tie. */
-  placement: z.number().int().min(1).max(60),
+  placement: z.number().int().min(1).max(MAX_PLAYERS),
   /** Won (or shares, in team modes) the Crown. */
   crowned: z.boolean(),
 });
@@ -81,9 +82,9 @@ export const MatchResultSchema = z.object({
   region: z.string().min(2).max(8).default('na'),
   startedAt: z.iso.datetime(),
   endedAt: z.iso.datetime(),
-  participants: z.array(MatchParticipantSchema).min(1).max(60),
+  participants: z.array(MatchParticipantSchema).min(1).max(MAX_PLAYERS),
   rounds: z.array(MatchRoundSchema).min(1).max(10),
-  placements: z.array(PlacementSchema).min(1).max(60),
+  placements: z.array(PlacementSchema).min(1).max(MAX_PLAYERS),
 });
 
 /** Match result payload (input). */

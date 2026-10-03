@@ -3,7 +3,8 @@
  *
  * Responsibilities:
  * - A {@link NameplateLayer}: every nameplate in the scene drawn by ONE
- *   instanced draw call, from a shared 1024² canvas atlas (64 slots).
+ *   instanced draw call, from a shared 1024 × 2048 canvas atlas (128 slots: a
+ *   plate for every possible player id, so a full 100-player show never runs out).
  * - Styled plates from the nameplate cosmetics (pill, ribbon, bubble, ticket,
  *   neon), an optional team/party colour dot, distance fade, streamer mode.
  *
@@ -33,12 +34,15 @@ import {
 import { instancedBufferAttribute, texture, uv, vec2 } from 'three/tsl';
 import { getCosmeticInSlot } from '@tumble/content/cosmetics';
 
-const ATLAS = 1024;
+const ATLAS_W = 1024;
+const ATLAS_H = 2048;
 const COLS = 4;
-const ROWS = 16;
-const SLOT_W = ATLAS / COLS;
-const SLOT_H = ATLAS / ROWS;
-const CAPACITY = COLS * ROWS;
+const ROWS = 32;
+const SLOT_W = ATLAS_W / COLS;
+const SLOT_H = ATLAS_H / ROWS;
+/** Plates one {@link NameplateLayer} can hold at once. */
+export const NAMEPLATE_CAPACITY = COLS * ROWS;
+const CAPACITY = NAMEPLATE_CAPACITY;
 
 /** Visual style of a plate (from a `nameplate.*` cosmetic). */
 export interface NameplateStyle {
@@ -264,8 +268,8 @@ export class NameplateLayer {
 
   constructor() {
     this.canvas = document.createElement('canvas');
-    this.canvas.width = ATLAS;
-    this.canvas.height = ATLAS;
+    this.canvas.width = ATLAS_W;
+    this.canvas.height = ATLAS_H;
     const ctx = this.canvas.getContext('2d');
     if (!ctx) throw new Error('2D canvas unavailable for nameplates');
     this.ctx = ctx;
@@ -295,7 +299,7 @@ export class NameplateLayer {
    *
    * @param name - Display name.
    * @param opts - Style, team colour, height.
-   * @returns The plate, or null when all 64 slots are taken.
+   * @returns The plate, or null when all {@link NAMEPLATE_CAPACITY} slots are taken.
    */
   create(name: string, opts: NameplateOptions = {}): Nameplate | null {
     const slot = this.plates.indexOf(null);

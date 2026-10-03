@@ -4,7 +4,7 @@
  * Responsibilities: hero Tumbler on a turntable with orbit camera, a lineup of
  * 12 random Tumblers, buttons for every state / emote / celebration / victory
  * pose, run-speed slider, squash impulse, physics ragdolls, loadout editor,
- * LOD toggle and a 40-Tumbler crowd stress test with FPS / draw-call readout.
+ * LOD toggle and a full-show (MAX_PLAYERS) crowd stress test with FPS / draw-call readout.
  */
 import GUI from 'lil-gui';
 import { PerspectiveCamera, Vector3 } from 'three/webgpu';
@@ -29,7 +29,7 @@ import {
   type CosmeticSlot,
 } from '@tumble/content/cosmetics';
 import { CharacterState, loadRapier } from '@tumble/sim';
-import { Rng } from '@tumble/shared';
+import { MAX_PLAYERS, Rng } from '@tumble/shared';
 import { StatsOverlay } from '../debug/stats.ts';
 import { Puppet } from './puppet.ts';
 import { FLOOR_Y, createStage } from './stage.ts';
@@ -205,7 +205,7 @@ async function boot(): Promise<void> {
 
   function buildCrowd(): void {
     const rng = new Rng(4242);
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < MAX_PLAYERS; i++) {
       const a = addActor(randomLoadout(new Rng(1000 + i)), funName(), 0, 0, i % 5 === 0 ? '#3fa9ff' : null);
       const r = 3 + (i % 8) * 1.6 + rng.range(-0.3, 0.3);
       const speed = rng.range(3.5, 8.5);
@@ -466,7 +466,7 @@ async function boot(): Promise<void> {
   };
   modeButtons.showroom.textContent = 'Showroom + lineup';
   modeButtons.wardrobe.textContent = 'Wardrobe';
-  modeButtons.crowd.textContent = '40 crowd stress test';
+  modeButtons.crowd.textContent = `${MAX_PLAYERS} crowd stress test`;
   for (const [m, b] of Object.entries(modeButtons) as [Mode, HTMLButtonElement][]) {
     b.onclick = () => setMode(m);
     modesEl.appendChild(b);

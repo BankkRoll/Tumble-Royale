@@ -389,7 +389,7 @@ export const NEWS_POSTS: readonly NewsPost[] = z.array(NewsPostSchema).parse([
     body: [
       {
         type: 'paragraph',
-        text: 'Up to 40 Tumblers enter a show. Each round, only some go through: finish the race, survive the longest, or help your team win. Make it through the final and the Crown is yours.',
+        text: 'Up to 100 Tumblers enter a show. Each round, only some go through: finish the race, survive the longest, or help your team win. Make it through the final and the Crown is yours.',
       },
       { type: 'heading', text: 'Keyboard & mouse' },
       {
@@ -555,7 +555,7 @@ export const NEWS_POSTS: readonly NewsPost[] = z.array(NewsPostSchema).parse([
     id: 'patch-1-0-opening-night',
     title: 'Patch 1.0: Opening night',
     summary:
-      'Tumble Royale is open! 40-player shows, sixteen launch rounds and a whole candy world to fall off. Here’s what’s in the box.',
+      'Tumble Royale is open! 100-player shows, sixteen launch rounds and a whole candy world to fall off. Here’s what’s in the box.',
     tag: 'PATCH NOTES',
     date: '2026-09-10',
     image: roundImage('gumdrop-gauntlet'),
@@ -571,7 +571,7 @@ export const NEWS_POSTS: readonly NewsPost[] = z.array(NewsPostSchema).parse([
       {
         type: 'list',
         items: [
-          'Up to 40 Tumblers per show, with friendly bots filling any empty spots.',
+          'Up to 100 Tumblers per show, with friendly bots filling any empty spots.',
           'Races, survivals, team games, a hunt, a memory round and four finals.',
           'Playlists: Main Show, Duos, Squads, Chaos Mode and Ranked.',
           'A gentler First Show for brand-new players.',

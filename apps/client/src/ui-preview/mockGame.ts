@@ -5,7 +5,7 @@
 import { bindUI, ui, type CosmeticItem, type InventoryData } from '@tumble/ui';
 import { autoplayRunning, runShow, stopAutoplay } from './autoplay.ts';
 import { makeRewards, randomColors } from './mocks.ts';
-import { Rng } from '@tumble/shared';
+import { MAX_PLAYERS, Rng } from '@tumble/shared';
 import { world } from './world.ts';
 
 const s = () => ui.getState();
@@ -218,7 +218,14 @@ export function installMockGame(): () => void {
           away: false,
         })),
         spectators: [],
-        options: { rounds: [], bots: true, maxPlayers: 40, timerScale: 1, spectators: true, isPrivate: true },
+        options: {
+          rounds: [],
+          bots: true,
+          maxPlayers: MAX_PLAYERS,
+          timerScale: 1,
+          spectators: true,
+          isPrivate: true,
+        },
         locked: false,
         banned: [],
       });

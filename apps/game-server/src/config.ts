@@ -13,14 +13,15 @@
  * or opening a port.
  */
 import { hostname } from 'node:os';
+import { DEFAULT_SHOW_PLAYERS, MAX_PLAYERS } from '@tumble/shared';
 import { EnvIssues, type Env, type NodeEnv } from '@tumble/shared/env';
 import type { TrustProxy } from '@tumble/shared/proxy';
 
 /** How much this process hosts. */
 export interface CapacityConfig {
-  /** Show size including bots for unticketed rooms (`ROOM_CAPACITY`, 40). */
+  /** Show size including bots for unticketed rooms (`ROOM_CAPACITY`, 100; at most `MAX_PLAYERS`). */
   roomCapacity: number;
-  /** Concurrent rooms (`MAX_ROOMS`, 10). */
+  /** Concurrent rooms (`MAX_ROOMS`, {@link DEFAULT_MAX_ROOMS}). */
   maxRooms: number;
   /**
    * Concurrent seats, humans and bots, advertised to the matchmaker
@@ -134,11 +135,19 @@ function exposure(issues: EnvIssues, env: NodeEnv, port: number): ExposureConfig
   };
 }
 
+/**
+ * Default rooms per process. Every room ticks on the one Node event loop, so
+ * this is rooms per core: a full 100-player room measured 6.5 ms mean / 9 ms
+ * p95 per 30 Hz tick (test/tickBudget.test.ts), and three of them leave a
+ * third of the 33 ms tick spare for GC, I/O and a bad tick.
+ */
+export const DEFAULT_MAX_ROOMS = 3;
+
 const HTTP = ['http:', 'https:'] as const;
 
 function capacity(issues: EnvIssues): CapacityConfig {
-  const roomCapacity = issues.int('ROOM_CAPACITY', 40, { min: 1 });
-  const maxRooms = issues.int('MAX_ROOMS', 10, { min: 1 });
+  const roomCapacity = issues.int('ROOM_CAPACITY', DEFAULT_SHOW_PLAYERS, { min: 1, max: MAX_PLAYERS });
+  const maxRooms = issues.int('MAX_ROOMS', DEFAULT_MAX_ROOMS, { min: 1 });
   return {
     roomCapacity,
     maxRooms,

@@ -8,6 +8,7 @@
  *
  * No DOM, store or network here, so the rules are unit-tested directly.
  */
+import { MAX_PLAYERS } from '@tumble/shared';
 import type { CustomLobbyOptions, CustomLobbyState, TumblerColors } from '@tumble/ui';
 import type { Lobby, LobbySeat, LobbySettings } from './matchmaker.ts';
 
@@ -164,10 +165,10 @@ export function optionsToSettings(o: Partial<CustomLobbyOptions>): Partial<Lobby
   const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
   if (o.rounds !== undefined) out.rounds = o.rounds.slice(0, 10);
   if (o.bots !== undefined) out.bots = o.bots;
-  if (o.maxPlayers !== undefined) out.maxPlayers = clamp(Math.round(o.maxPlayers), 2, 60);
+  if (o.maxPlayers !== undefined) out.maxPlayers = clamp(Math.round(o.maxPlayers), 2, MAX_PLAYERS);
   if (o.timerScale !== undefined) out.roundTimeScale = clamp(o.timerScale, 0.5, 2);
   if (o.countdownSec !== undefined) out.lobbyCountdownSec = clamp(Math.round(o.countdownSec), 0, 120);
-  if (o.minPlayers !== undefined) out.minPlayers = clamp(Math.round(o.minPlayers), 1, 60);
+  if (o.minPlayers !== undefined) out.minPlayers = clamp(Math.round(o.minPlayers), 1, MAX_PLAYERS);
   if (o.spectatorSlots !== undefined) out.spectatorSlots = clamp(Math.round(o.spectatorSlots), 0, 10);
   else if (o.spectators !== undefined) out.spectatorSlots = o.spectators ? 2 : 0;
   return out;

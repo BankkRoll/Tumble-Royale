@@ -1,6 +1,6 @@
-# Tumble Royale wire protocol — v4
+# Tumble Royale wire protocol — v5
 
-`PROTOCOL_VERSION = 4` (`src/protocol.ts`). Any incompatible change bumps it;
+`PROTOCOL_VERSION = 5` (`src/protocol.ts`). Any incompatible change bumps it;
 the server rejects a Hello with a different version (`Kick{VersionMismatch}`).
 
 Transport: binary WebSocket frames (`/ws`; `/gs/ws` is also accepted for the
@@ -48,8 +48,9 @@ Welcome  type:8 version:16 playerId:8 resumeToken:str roomId:str serverTick:32
 Kick     type:8 reason:8 detail:str
 ```
 
-`str` = varint byte length + UTF-8. Player ids 0–63 are entities (players and
-bots); 64–254 are spectators who joined mid-show. Server tick T happened at
+`str` = varint byte length + UTF-8. Player ids 0–127 are entities (players and
+bots; a show uses 0–99, `MAX_PLAYERS`); 128–254 are spectators who joined
+mid-show (127 seats; the next is refused with `ServerFull`). Server tick T happened at
 server time `tickEpochMs + T × tickMs`.
 
 **Resume:** a Hello carrying the token within 30 s of the drop reattaches the
@@ -91,10 +92,10 @@ header   type:8 snapshotId:16 serverTick:32 epoch:8 baselineAge:5
          hasAckedInput:1 [ackedInputSeq:32] matchTime:f32          102–134 bits
 status   phase:4 finished:1 timeLeft:varint(0.1 s, 0 = untimed)
          qualified:8 target:8 eliminated:8 teamCount:3 score:varint×n  ≈ 40–48 bits
-removed  count:7 id:6 × count
+removed  count:8 id:7 × count
 obstacle { more:1=1 index:varint count:varint value×count }* more:1=0
          value = isFloat:1 (varint-zigzag | f32)
-entity   { more:1=1 id:6 full:1 [mask:7] fields… }* more:1=0
+entity   { more:1=1 id:7 full:1 [mask:7] fields… }* more:1=0
 ```
 
 Field groups (mask bit → payload):
@@ -109,8 +110,8 @@ Field groups (mask bit → payload):
 | 5   | Flags  | 8                             |
 | 6   | Grab   | 1 [+ 16 (target + 1)]         |
 
-Per-entity cost: 15 bits header; full record 151 bits (19 B, upright) / 167
-bits (21 B, tumbling); typical running delta (pos + vel + facing ± rot) 115–132
+Per-entity cost: 16 bits header; full record 152 bits (19 B, upright) / 168
+bits (21 B, tumbling); typical running delta (pos + vel + facing ± rot) 116–133
 bits ≈ 15–17 B. Unchanged entities cost **0 bits** (not written).
 
 `ackedInputSeq` is the last input the server consumed for this client, which
@@ -138,6 +139,12 @@ on appearance or state change. Entities with accumulator ≥ 1 are written,
 highest first, until the packet reaches **1200 B**; the rest roll over.
 Obstacles are written before entities (up to half the budget) so tile
 collapses are never starved.
+
+The budget caps a client at 1200 B × 30 Hz = **36 KB/s** down, under the
+40 KB/s target, whatever the field size. Worst case, all 100 Tumblers piled
+within 10 m of the viewer and moving every tick (`test/snapshot.test.ts`):
+every snapshot stays ≤ 1200 B and no moving Tumbler goes more than 3
+snapshots (100 ms) without an update.
 
 ## Reliable channel (both directions)
 
@@ -177,6 +184,11 @@ larger message is sent alone). Payloads:
   exists because a v3 server counts an unknown client message
   (`loadProgress`) as a protocol violation and eventually kicks for it.
 
+  v5: 100-player shows. Snapshot entity ids grow from 6 to 7 bits
+  (`ENTITY_ID_BITS = ceil(log2(MAX_PLAYERS))`, `MAX_ENTITIES = 128`) and the
+  removal count from 7 to 8 bits so a whole lobby can leave in one snapshot;
+  spectator ids move from 64–254 to 128–254. No message changed shape.
+
 ### Round loading (v4)
 
 A round stays in LOADING until every connected human entrant has sent
@@ -214,7 +226,20 @@ and slews offset changes (25% per sample, snaps above 120 ms).
   replicated velocity (linear when velocity disagrees with displacement, i.e. a
   bounce), extrapolate ≤ 250 ms then hold, no blending across teleports.
 
-## Measured (dev capsule sim, 40 dynamic capsules + kinematic sweepers)
+## Measured at 100 players (v5)
+
+In process, real `createMatchSim` + show director + snapshot encoders, Tilt
+Town, 60 s of PLAYING, fixed seed (`apps/game-server/test/tickBudget.test.ts`
+with `TUMBLE_PERF=1`):
+
+| scenario               | tick p50 / p95 / p99 / max | mean split (sim + snapshot + send) | per client     |
+| ---------------------- | -------------------------- | ---------------------------------- | -------------- |
+| 100 protocol clients   | 6.4 / 9.0 / 11.5 / 26.8 ms | 4.1 + 2.4 + 0.1 ms                 | 33.9 KB/s down |
+| 1 client + 99 sim bots | 5.2 / 8.1 / 9.4 / 11.2 ms  | 5.3 + 0.2 + 0.0 ms                 | 24.1 KB/s down |
+
+No PLAYING tick exceeded two tick periods (67 ms) in either run.
+
+## Measured at 40 players (v4, dev capsule sim, 40 dynamic capsules + kinematic sweepers)
 
 | scenario                                                            | tick avg / p95 / max       | snapshot avg / p95    | per client                                               |
 | ------------------------------------------------------------------- | -------------------------- | --------------------- | -------------------------------------------------------- |

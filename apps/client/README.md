@@ -51,7 +51,7 @@ equivalent SPA fallback. `vite dev` and `vite preview` already fall back to
 ```sh
 pnpm --filter @tumble/client test         # unit tests
 npx playwright test e2e/phase0.spec.ts    # renderer parity + determinism
-npx playwright test e2e/game.spec.ts      # full 40-player show, splash to rewards
+npx playwright test e2e/game.spec.ts      # full 100-player show, splash to rewards
 npx playwright test e2e/online.spec.ts    # online show against a local game server
 ROUNDS=<id,…> npx playwright test e2e/level.spec.ts
 ```

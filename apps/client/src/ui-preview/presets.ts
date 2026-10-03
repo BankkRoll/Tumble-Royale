@@ -1,6 +1,7 @@
 /**
  * Every previewable screen/state, deep-linkable as `ui.html?screen=<id>`.
  */
+import { MAX_PLAYERS } from '@tumble/shared';
 import { openNewsPost, ui, type MenuTab } from '@tumble/ui';
 import { hudForRound, stopAutoplay } from './autoplay.ts';
 import {
@@ -42,7 +43,7 @@ function round(kind: 'race' | 'survival' | 'team' | 'hunt' | 'final'): void {
   s().resetHud(
     hudForRound(
       kind,
-      kind === 'final' ? 7 : 40,
+      kind === 'final' ? 12 : MAX_PLAYERS,
       kind === 'final' ? 1 : 26,
       120,
       local,
@@ -260,7 +261,7 @@ export const PRESETS: Preset[] = [
         options: {
           rounds: [...SHOW_ROUNDS],
           bots: true,
-          maxPlayers: 40,
+          maxPlayers: MAX_PLAYERS,
           timerScale: 1,
           spectators: true,
           spectatorSlots: 2,
@@ -286,7 +287,7 @@ export const PRESETS: Preset[] = [
         status: 'searching',
         startedAt: Date.now() - 14000,
         playersFound: 27,
-        playersNeeded: 40,
+        playersNeeded: MAX_PLAYERS,
         etaSec: 12,
         region: 'EU West',
       });
@@ -308,7 +309,7 @@ export const PRESETS: Preset[] = [
         showName: SHOW_NAME,
         roundCount: SHOW_ROUNDS.length,
         playersJoined: 32,
-        maxPlayers: 40,
+        maxPlayers: MAX_PLAYERS,
         startsAt: Date.now() + 18000,
         joinFeed: world.players.slice(0, 32).map((p) => p.name),
       });

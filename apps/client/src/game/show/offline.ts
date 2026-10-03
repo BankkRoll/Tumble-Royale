@@ -8,7 +8,15 @@
  * while a title card is on screen.
  */
 import { showRoundCatalog } from '@tumble/content/rounds';
-import { RoundPhase, Rng, SIM_DT, ShowPhase, hashString, type RoundDefinition } from '@tumble/shared';
+import {
+  MAX_PLAYERS,
+  RoundPhase,
+  Rng,
+  SIM_DT,
+  ShowPhase,
+  hashString,
+  type RoundDefinition,
+} from '@tumble/shared';
 import { FixedStepper, emptyInput } from '@tumble/sim';
 import { PlayerRoundStatus, type MatchPlayerInfo, type MatchSimHandle } from '@tumble/sim/match';
 import {
@@ -81,7 +89,9 @@ export class OfflineShowSession extends ShowSession {
       rounds: this.rounds,
       seed,
       humanName: ctx.playerName(),
-      ...(ctx.cfg.players ? { players: Math.max(2, Math.min(60, Math.round(ctx.cfg.players))) } : {}),
+      ...(ctx.cfg.players
+        ? { players: Math.max(2, Math.min(MAX_PLAYERS, Math.round(ctx.cfg.players))) }
+        : {}),
       timings: TIMINGS,
       // The round waits for this machine's build (and shader compile), however long it takes.
       localLoad: 'manual',

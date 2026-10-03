@@ -1,3 +1,4 @@
+import { MAX_PLAYERS } from '@tumble/shared';
 import type { VfxBudget } from './types.ts';
 
 /**
@@ -16,18 +17,18 @@ export const DEFAULT_VFX_BUDGET: Readonly<VfxBudget> = Object.freeze({
   particles: 4096,
   confetti: 1500,
   trails: 12,
-  shadows: 64,
+  shadows: MAX_PLAYERS,
 });
 
 const TIERS: Readonly<Record<VfxQualityTier, Readonly<VfxBudget>>> = {
-  low: { particles: 1024, confetti: 400, trails: 4, shadows: 48 },
-  medium: { particles: 2048, confetti: 800, trails: 8, shadows: 64 },
+  low: { particles: 1024, confetti: 400, trails: 4, shadows: MAX_PLAYERS },
+  medium: { particles: 2048, confetti: 800, trails: 8, shadows: MAX_PLAYERS },
   high: DEFAULT_VFX_BUDGET,
-  ultra: { particles: 8192, confetti: 3000, trails: 20, shadows: 64 },
+  ultra: { particles: 8192, confetti: 3000, trails: 20, shadows: MAX_PLAYERS },
 };
 
 /**
- * Budget preset for a quality tier. Shadows never drop below a full 40-player
+ * Budget preset for a quality tier. Shadows never drop below a full `MAX_PLAYERS`
  * lobby, because every character must always have one.
  *
  * @param tier - Quality tier.

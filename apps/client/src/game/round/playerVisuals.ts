@@ -25,6 +25,7 @@ import type {
 } from '@tumble/render/scenes';
 import type { TrailHandle, TrailStyle, VfxSystem } from '@tumble/render/vfx';
 import { teamColor, teamShape } from '@tumble/render';
+import { MAX_PLAYERS } from '@tumble/shared';
 import { CharacterFlag, CharacterState } from '@tumble/sim';
 import type { MatchPlayerInfo } from '@tumble/sim/match';
 import {
@@ -38,7 +39,7 @@ import {
 /** Players within this distance of the camera get footstep sounds. */
 const FOOTSTEP_RANGE = 28;
 const SHADOW_RADIUS = 0.55;
-/** Only the nearest few names are drawn: a 40-player crowd of plates hides the course. */
+/** Only the nearest few names are drawn: a full show's crowd of plates hides the course. */
 const MAX_PLATES = 8;
 /** Names closer than this would fill the screen. */
 const PLATE_MIN_DIST = 5;
@@ -47,7 +48,7 @@ const LOD_HYSTERESIS = 0.9;
 
 /**
  * Keeps one Tumbler visual per show participant alive for the whole show, so
- * rounds reuse them instead of rebuilding 40 rigs behind every wipe. Real
+ * rounds reuse them instead of rebuilding a show's rigs behind every wipe. Real
  * Tumblers are drawn through one shared {@link TumblerCrowd} (a few draw calls
  * for the whole field instead of 2–3 per Tumbler).
  */
@@ -175,7 +176,7 @@ export class PlayerVisuals {
   private lod1: number;
   private lod2: number;
   private showPlates: boolean;
-  private readonly dists = new Float32Array(64);
+  private readonly dists = new Float32Array(MAX_PLAYERS);
   private readonly crowd: TumblerCrowd | null;
 
   constructor(

@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { Scene, type BufferGeometry, type Mesh } from 'three/webgpu';
 import { randomLoadout } from '@tumble/content/cosmetics';
-import { Rng } from '@tumble/shared';
+import { MAX_PLAYERS, Rng } from '@tumble/shared';
 import { CharacterState } from '@tumble/sim';
 import { TumblerCrowd } from '../src/character/crowd.ts';
+import { NAMEPLATE_CAPACITY } from '../src/character/nameplate.ts';
 import { Tumbler } from '../src/character/tumbler.ts';
 import { TOTAL_BONE_COUNT } from '../src/character/rig.ts';
+import { MAX_VFX_BUDGET, vfxBudgetForTier } from '../src/vfx/budget.ts';
 
 const anim = {
   state: CharacterState.Idle,
@@ -70,5 +72,30 @@ describe('TumblerCrowd', () => {
     for (const t of ts) t.dispose();
     expect(crowd.size).toBe(0);
     crowd.dispose();
+  });
+});
+
+describe(`a ${MAX_PLAYERS}-player field`, () => {
+  it('batches every Tumbler of a full show in one default crowd and refuses past capacity', () => {
+    const crowd = new TumblerCrowd();
+    expect(crowd.capacity).toBeGreaterThanOrEqual(MAX_PLAYERS);
+    const rng = new Rng(9);
+    const ts = Array.from({ length: crowd.capacity + 1 }, () => new Tumbler(randomLoadout(rng)));
+    const added = ts.map((t) => crowd.add(t));
+    expect(added.slice(0, crowd.capacity).every(Boolean)).toBe(true);
+    // One past capacity keeps drawing itself rather than corrupting a texture row.
+    expect(added.at(-1)).toBe(false);
+    for (const t of ts) t.dispose();
+    crowd.dispose();
+  });
+
+  it('has a nameplate slot for every player id', () => {
+    expect(NAMEPLATE_CAPACITY).toBeGreaterThanOrEqual(MAX_PLAYERS);
+  });
+
+  it('gives every Tumbler a blob shadow on every quality tier', () => {
+    for (const tier of ['low', 'medium', 'high', 'ultra'] as const)
+      expect(vfxBudgetForTier(tier).shadows, tier).toBeGreaterThanOrEqual(MAX_PLAYERS);
+    expect(MAX_VFX_BUDGET.shadows).toBeGreaterThanOrEqual(MAX_PLAYERS);
   });
 });

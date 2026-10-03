@@ -2,6 +2,7 @@
  * The preview's single mock "world": one roster, one locker, one show recap,
  * plus helpers to push meta data into the UI store and reset transient state.
  */
+import { MAX_PLAYERS } from '@tumble/shared';
 import { ui, type ShowSummary } from '@tumble/ui';
 import { uiNews } from '../game/meta.ts';
 import {
@@ -25,7 +26,7 @@ import {
 
 /** Mutable mock world shared by presets, the mock game and auto-play. */
 export const world = {
-  players: makePlayers(40),
+  players: makePlayers(MAX_PLAYERS),
   items: makeItems(),
   /** Recap where the local player wins. */
   winSummary: null as unknown as ShowSummary,

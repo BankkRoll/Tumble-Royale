@@ -1,9 +1,10 @@
+import { MAX_PLAYERS } from '@tumble/shared';
 import type { PlayerWallSummary, TumblerLoadout } from '@tumble/render/scenes';
 import { defaultLoadout } from '@tumble/render/scenes';
 
 /**
- * Mock 40-player show for the lab's Player Wall recap: deterministic names,
- * colours and a 4-round elimination schedule (40 → 26 → 14 → 7 → 1).
+ * Mock full-show (MAX_PLAYERS) for the lab's Player Wall recap: deterministic names,
+ * colours and a 4-round elimination schedule (100 → 60 → 30 → 12 → 1, scaled to `count`).
  */
 
 const FIRST = [
@@ -37,7 +38,7 @@ const COLORS = [
 ];
 
 /** Builds a mock summary with `count` players over 4 rounds. */
-export function createMockShow(count = 40): PlayerWallSummary {
+export function createMockShow(count = MAX_PLAYERS): PlayerWallSummary {
   const players = Array.from({ length: count }, (_, i) => {
     const loadout: TumblerLoadout = defaultLoadout(
       COLORS[i % COLORS.length],
@@ -53,7 +54,7 @@ export function createMockShow(count = 40): PlayerWallSummary {
     const j = s % (i + 1);
     [order[i], order[j]] = [order[j]!, order[i]!];
   }
-  const keep = [26, 14, 7, 1].map((k) => Math.max(1, Math.round((k / 40) * count)));
+  const keep = [60, 30, 12, 1].map((k) => Math.max(1, Math.round((k / 100) * count)));
   const names = ['Gumdrop Gauntlet', 'Tile Panic', 'Egg Heist', 'Crown Climb'];
   const rounds = keep.map((k, r) => {
     const before = r === 0 ? count : keep[r - 1]!;

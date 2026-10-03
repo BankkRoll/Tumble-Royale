@@ -12,6 +12,7 @@
  * - Private shows: picked rounds, seat count, bots on/off and the timer scale.
  */
 import { getPlaylist } from '@tumble/content/shows';
+import { MAX_PLAYERS } from '@tumble/shared';
 import { clampRoundTimeScale } from '@tumble/sim/match';
 import type { ShowPlaylist } from '@tumble/sim/show';
 import { ShowPlaylistSchema } from '@tumble/sim/show/schema';
@@ -107,7 +108,7 @@ export function privateShow(options: PrivateShowOptions): PrivateShow {
     id: 'custom-offline',
     name: 'Private Show',
     description: 'Your rounds, your rules.',
-    maxPlayers: Math.max(2, Math.min(60, Math.round(options.maxPlayers))),
+    maxPlayers: Math.max(2, Math.min(MAX_PLAYERS, Math.round(options.maxPlayers))),
     minRounds: Math.min(base.minRounds, n),
     maxRounds: Math.max(2, Math.min(n, 8)),
     pool: options.rounds.map((roundId) => ({ roundId, weight: 1 })),

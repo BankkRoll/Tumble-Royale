@@ -115,7 +115,25 @@ Round 1 keeps 0.65 (race). Remaining elimination rounds R′ = 2 (N₀ ≥ 14) o
 (N₀ < 14). Each later stage keeps k = (F / N₁)^(1/R′), where N₁ is the actual
 number alive after round 1. Targets round half-up; never below F.
 
-### 3.1 40 players (SPEC curve)
+### 3.0 100 players (Main Show since protocol v5)
+
+Every playlist except First Show fills to `MAX_PLAYERS` = 100 and walks it
+down with an explicit curve (`packages/content/src/shows`); every non-final
+round admits 100, and `packages/content/test/capacity.test.ts` plays 200
+seeds per playlist checking each round's field fits its player range.
+
+| Round | Alive in | Target out | Keep | Typical round types            |
+| ----- | -------- | ---------- | ---- | ------------------------------ |
+| 1     | 100      | **60**     | 0.6  | race                           |
+| 2     | 60       | **30**     | 0.5  | survival / team / hunt / logic |
+| 3     | 30       | **12**     | 0.4  | any non-final                  |
+| Final | 12       | 1          | —    | F1–F4                          |
+
+Duos 0.55 / 0.5 / 0.4 / 0.45, Squads and Chaos 0.5 / 0.45 / 0.4 / 0.4. Team
+rounds decide their own cut, so some shows take a fifth round; finals never
+receive more than 15.
+
+### 3.1 40 players (SPEC curve, before v5)
 
 | Round | Alive in | Target out | Keep | Typical round types                  |
 | ----- | -------- | ---------- | ---- | ------------------------------------ |
@@ -276,8 +294,8 @@ patches).
 
 | Setting      | Value                                                                                                                                                                                                                |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Lobby        | 40 humans; **no bots**. If not full after the queue timeout, start with ≥ 24 humans (curve recomputed)                                                                                                               |
-| Rounds       | 4–5, Final at ≤ 10 left, qualify curve 0.65 / 0.55 / 0.5 / 0.5                                                                                                                                                       |
+| Lobby        | 100 humans; **no bots**. If not full after the queue timeout, start with ≥ 24 humans (curve recomputed)                                                                                                              |
+| Rounds       | 4–5, Final at ≤ 12 left, qualify curve 0.6 / 0.5 / 0.4 / 0.5                                                                                                                                                         |
 | Pools        | Races R1–R7, Survivals S1–S4, L1 Pattern Panic, H1 Tail Chase (weight ×0.5), Finals F1–F4. **No team rounds** (a teammate's play would move your rating)                                                             |
 | Variations   | no mutators. A ranked-only variation filter is not built                                                                                                                                                             |
 | Late loaders | eliminated (flag on)                                                                                                                                                                                                 |
@@ -300,7 +318,8 @@ standings.
 Used for a player's first 3 shows (`FIRST_SHOW_COUNT`, then Main Show). Goal:
 laugh in round 1, understand every round from its card, reach a final.
 
-Built as one playlist for all three shows: 40 players, 3–4 rounds, Final at
+Built as one playlist for all three shows: 40 players (deliberately below the
+100 of every other playlist: fewer Tumblers to read, lighter on weak devices), 3–4 rounds, Final at
 ≤ 12 left, generous cuts (0.75 / 0.65 / 0.6), `stageOffset` −1 (gentler
 obstacle speeds), bots 4:1 Clumsy:Average, and a pool of 11 friendly rounds (Gumdrop
 Gauntlet, Conveyor Chaos, Tilt Town, Slip 'n' Spiral, Spin Cycle, Jump Rope

@@ -1,3 +1,4 @@
+import { MAX_PLAYERS } from '@tumble/shared';
 import { Group, Mesh, MeshBasicNodeMaterial, SphereGeometry, Vector3, type Object3D } from 'three/webgpu';
 import type { TumblerAnimInput, TumblerLoadout } from '../character/types.ts';
 import { DecorRandom } from '../level/toolkit.ts';
@@ -14,7 +15,7 @@ import {
 } from './common.ts';
 
 /**
- * Pre-show waiting platform: up to 40 Tumblers milling about a huge floating
+ * Pre-show waiting platform: up to `MAX_PLAYERS` Tumblers milling about a huge floating
  * candy platform under a "show starting" arch, with nameplates (one instanced
  * draw) and an orbiting crane camera. Bots wander/emote on their own; the
  * integrator can take over any actor via `getActorObject`.
@@ -59,7 +60,7 @@ export interface PreShowArena extends MenuScene {
    * overshoot + puff) and its nameplate fades in; without, it is just there
    * (players already on the platform when the view opens).
    *
-   * @param plate - Nameplate slot (player id, < 64).
+   * @param plate - Nameplate slot (player id, below `MAX_PLAYERS`).
    * @returns False when the id is already present.
    */
   spawnActor(player: ArenaPlayer, plate: number, animate: boolean): boolean;
@@ -84,9 +85,8 @@ interface Wanderer {
   despawnT: number;
 }
 
-const MAX_PLAYERS = 60;
-/** Nameplate slots in live mode (one per wire player id). */
-const LIVE_PLATES = 64;
+/** Nameplate slots in live mode: one per player id (spectators never stand on the platform). */
+const LIVE_PLATES = MAX_PLAYERS;
 const SPAWN_TIME = 0.45;
 const DESPAWN_TIME = 0.4;
 const PUFF_POOL = 8;

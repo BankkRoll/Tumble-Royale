@@ -5,7 +5,7 @@
  * players replicate exactly like in rounds. The render side
  * (`createPreShowArena`) draws a disc of the same radius at the same height.
  */
-import { RoundDefinitionSchema, type RoundDefinition, type Vec3 } from '@tumble/shared';
+import { MAX_PLAYERS, RoundDefinitionSchema, type RoundDefinition, type Vec3 } from '@tumble/shared';
 
 /** Round id of the lobby; never part of a playlist pool. */
 export const PRE_SHOW_LOBBY_ROUND_ID = 'pre-show-lobby';
@@ -20,7 +20,7 @@ export const PRE_SHOW_LOBBY_ROUND: RoundDefinition = RoundDefinitionSchema.parse
   type: 'survival',
   theme: 'candy',
   objective: 'Warm up while the show fills!',
-  players: { min: 1, max: 60, ideal: 40 },
+  players: { min: 1, max: MAX_PLAYERS, ideal: MAX_PLAYERS },
   qualification: { mode: 'survive' },
   duration: { seconds: 0 },
   killY: -10,
@@ -48,20 +48,22 @@ export const PRE_SHOW_LOBBY_ROUND: RoundDefinition = RoundDefinitionSchema.parse
 });
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+const SPIRAL_EDGE = LOBBY_PLATFORM_RADIUS - 2.5;
 
 /**
  * Deterministic drop-in spot for a player joining the lobby: a sunflower
  * spiral by player id, so simultaneous joiners never land on each other.
  *
- * @param id - Player id (0–63).
+ * @param id - Player id (0 to `MAX_PLAYERS` - 1; larger ids wrap).
  * @param out - Receives the feet position on the platform (y = 0).
  * @returns `out`.
  * @example
  * const p = lobbySpawnPoint(3, { x: 0, y: 0, z: 0 });
  */
 export function lobbySpawnPoint(id: number, out: Vec3): Vec3 {
-  const k = (id % 48) + 1;
-  const r = Math.min(LOBBY_PLATFORM_RADIUS - 2.5, 2 * Math.sqrt(k));
+  const k = (id % MAX_PLAYERS) + 1;
+  // Scaled so the last seat lands just inside the rim: ~2.6 m between neighbours at 100 players.
+  const r = SPIRAL_EDGE * Math.sqrt(k / MAX_PLAYERS);
   const a = k * GOLDEN_ANGLE;
   out.x = Math.sin(a) * r;
   out.y = 0;

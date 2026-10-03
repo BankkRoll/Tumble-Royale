@@ -335,7 +335,7 @@ export default defineRound({
     'Grab a paint bucket for a few seconds of super-roller.',
     'Stages count double. Rinse arms wash paint away!',
   ],
-  players: { min: 8, max: 40, ideal: 24 },
+  players: { min: 8, max: 100, ideal: 60 },
   qualification: { mode: 'teamScore', teams: 4, teamsEliminated: 1, ratio: 0.75 },
   duration: { seconds: 90, overtimeSeconds: 0 },
   killY: -8,
@@ -343,10 +343,10 @@ export default defineRound({
   spawn: {
     origin: v(0, 0, 0),
     yaw: 45,
-    cols: 3,
-    spacing: 1.5,
+    cols: 8,
+    spacing: 1.3,
     teamOrigins: TEAMS.map((k) => {
-      const p = rotPoint(v(-20, 0.1, -20), teamRot(k));
+      const p = rotPoint(v(-19, 0.1, -19), teamRot(k));
       return v(p.x, 0.1, p.z);
     }),
   },

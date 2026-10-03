@@ -251,7 +251,7 @@ test('account → customize → party queue → show → XP & unlock persisted',
   await a.screenshot({ path: `${SHOTS}/04-preshow-party.png` });
 
   const finish = async (p: Page, l: string): Promise<void> => {
-    // The show runs at real time on the server; a full 40-player show takes several minutes.
+    // The show runs at real time on the server; a full 100-player show takes several minutes.
     await p.waitForFunction(() => window.__tumble!.screen!() === 'rewards', undefined, {
       timeout: 20 * 60_000,
       polling: 1000,

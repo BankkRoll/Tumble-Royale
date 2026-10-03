@@ -57,6 +57,8 @@ export class FakeConnection implements Connection {
   readonly sent: Uint8Array[] = [];
   onMessage: ((data: Uint8Array) => void) | null = null;
   onClose: ((code: number, reason: string) => void) | null = null;
+  /** Close code once closed (the server closes kicks with 4000 + reason). */
+  closeCode = -1;
 
   send(data: Uint8Array): boolean {
     if (!this.open) return false;
@@ -67,6 +69,7 @@ export class FakeConnection implements Connection {
   close(code = 1000, reason = ''): void {
     if (!this.open) return;
     this.open = false;
+    this.closeCode = code;
     this.onClose?.(code, reason);
   }
 
@@ -264,6 +267,17 @@ export class TestClient {
   welcome: WelcomeMsg | null = null;
   readonly messages: ReliableMessage[] = [];
   readonly snapshots: DecodedSnapshot[] = [];
+  /**
+   * Keep every decoded snapshot (default). Load tests turn this off: the client
+   * then decodes into one reused buffer and only tallies sizes, so its garbage
+   * never lands in the server tick being timed.
+   */
+  keepSnapshots = true;
+  /** Snapshots decoded and their total encoded bytes, kept or not. */
+  snapshotCount = 0;
+  snapshotBytes = 0;
+  snapshotMaxBytes = 0;
+  private readonly scratch = createDecodedSnapshot();
   readonly reliable = new ReliableEndpoint();
   readonly decoder = new SnapshotDecoder();
   quantizer: PositionQuantizer | null = null;
@@ -297,8 +311,13 @@ export class TestClient {
           }
         });
       } else if (type === MsgType.Snapshot && this.quantizer) {
-        const out = createDecodedSnapshot();
-        if (this.decoder.decode(r, this.quantizer, out) === 'ok') this.snapshots.push(out);
+        const out = this.keepSnapshots ? createDecodedSnapshot() : this.scratch;
+        if (this.decoder.decode(r, this.quantizer, out) === 'ok') {
+          this.snapshotCount++;
+          this.snapshotBytes += out.bytes;
+          this.snapshotMaxBytes = Math.max(this.snapshotMaxBytes, out.bytes);
+          if (this.keepSnapshots) this.snapshots.push(out);
+        }
       }
     }
     if (this.reliable.flush(now, 50, this.w.reset())) this.conn.receive(this.w.finish());

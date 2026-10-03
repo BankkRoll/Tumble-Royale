@@ -277,7 +277,7 @@ export default defineRound({
     "Falling isn't the end: there are three layers. Use them.",
     "Jump to save tiles: airtime doesn't crack them.",
   ],
-  players: { min: 10, max: 50, ideal: 32 },
+  players: { min: 10, max: 100, ideal: 80 },
   qualification: { mode: 'survive', ratio: 0.6 },
   duration: { seconds: 120, overtimeSeconds: 0 },
   killY: -8,

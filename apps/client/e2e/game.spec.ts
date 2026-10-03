@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * Phase 3 acceptance: a full offline show with 40 Tumblers runs end to end in
+ * Phase 3 acceptance: a full offline show with 100 Tumblers runs end to end in
  * the browser — boot → splash → welcome → menu → matchmaking → pre-show →
  * every round (flyover, countdown, play, results) → final → victory/winner
  * cam → player wall → rewards — with zero page errors.
@@ -73,7 +73,7 @@ const FLOW = [
   'rewards',
 ];
 
-test('full offline show with 40 players, boot to rewards', async ({ page }) => {
+test('full offline show with 100 players, boot to rewards', async ({ page }) => {
   test.setTimeout(15 * 60_000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(`${e.name}: ${e.message}`));
@@ -118,7 +118,8 @@ test('full offline show with 40 players, boot to rewards', async ({ page }) => {
       await page.waitForTimeout(2500);
       const p = await perf(page);
       console.log(`[game] round ${round} playing`, JSON.stringify(p));
-      if (round === 1) expect(p.tumblers).toBe(40);
+      // DEFAULT_SHOW_PLAYERS: the Main Show fills to the cap.
+      if (round === 1) expect(p.tumblers).toBe(100);
       await snap(page, `05-r${round}-play`);
       last = 'round';
     } else if (s === 'roundResults') {
@@ -155,10 +156,10 @@ test('full offline show with 40 players, boot to rewards', async ({ page }) => {
 });
 
 /**
- * Real-time performance sample (PERF=1): 40 Tumblers at ts=1, FPS and draw
+ * Real-time performance sample (PERF=1): 100 Tumblers at ts=1, FPS and draw
  * calls averaged over 6 s of the first round's play.
  */
-test('perf: 40 Tumblers at real time', async ({ page }) => {
+test('perf: 100 Tumblers at real time', async ({ page }) => {
   test.skip(process.env.PERF !== '1', 'set PERF=1');
   test.setTimeout(5 * 60_000);
   await page.setViewportSize({ width: 1280, height: 720 });

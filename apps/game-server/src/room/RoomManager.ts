@@ -316,7 +316,8 @@ export class RoomManager {
       this.rooms.set(id, target);
       this.deps.log?.(`[rooms] created ${id}`);
     }
-    target.join(session, hello, now);
+    // Full (every player id taken): refuse rather than seat the session without an id.
+    if (target.join(session, hello, now) < 0) return null;
     return target;
   }
 
@@ -332,7 +333,7 @@ export class RoomManager {
     if (room) {
       if (room.rejoinUser(session, claims.sub)) return this.noteJoined(claims, room);
       if (room.state === 'ended') return null;
-      room.join(session, hello, now, claims);
+      if (room.join(session, hello, now, claims) < 0) return null;
       return this.noteJoined(claims, room);
     }
     // A rejoin ticket returns to a running show; without its room (this

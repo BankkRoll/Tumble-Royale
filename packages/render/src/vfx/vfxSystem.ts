@@ -34,7 +34,8 @@ import { TrailPool } from './trails.ts';
  * - Budget changes and teardown.
  */
 
-const MAX_PLAYERS = 256;
+/** Anchor slots: the whole 8-bit wire id space, players and spectators alike. */
+const MAX_IDS = 256;
 /** Feet → body-centre offset (m); sim events report feet, anchors are body centres. */
 const BODY_CENTRE = 0.8;
 /** Live tile-crack decals tracked so a falling tile can retire its crack. */
@@ -129,9 +130,9 @@ export function createVfxSystem(opts: VfxSystemOptions = {}): VfxSystem {
 
   const targets: RecipeTargets = { glow, puffs, confetti, balloons, decals, stars, now: 0, density: 1 };
 
-  const anchors = new Float32Array(MAX_PLAYERS * 3);
-  const heading = new Float32Array(MAX_PLAYERS * 3);
-  const known = new Uint8Array(MAX_PLAYERS);
+  const anchors = new Float32Array(MAX_IDS * 3);
+  const heading = new Float32Array(MAX_IDS * 3);
+  const known = new Uint8Array(MAX_IDS);
 
   const crackObstacle: string[] = new Array<string>(MAX_TRACKED_CRACKS).fill('');
   const crackTile = new Int32Array(MAX_TRACKED_CRACKS).fill(-1);
@@ -149,7 +150,7 @@ export function createVfxSystem(opts: VfxSystemOptions = {}): VfxSystem {
 
   const anchorLookup: AnchorLookup = {
     getAnchor(id: number, out: Vector3): boolean {
-      if (id < 0 || id >= MAX_PLAYERS || !known[id]) return false;
+      if (id < 0 || id >= MAX_IDS || !known[id]) return false;
       out.set(anchors[id * 3] ?? 0, anchors[id * 3 + 1] ?? 0, anchors[id * 3 + 2] ?? 0);
       return true;
     },
@@ -182,7 +183,7 @@ export function createVfxSystem(opts: VfxSystemOptions = {}): VfxSystem {
 
   /** Writes the player's anchor (or the fallback) into `out`. */
   function anchorOr(id: number, fallback: VfxVec3 | null, out: VfxVec3): boolean {
-    if (id >= 0 && id < MAX_PLAYERS && known[id]) {
+    if (id >= 0 && id < MAX_IDS && known[id]) {
       out.x = anchors[id * 3] ?? 0;
       out.y = anchors[id * 3 + 1] ?? 0;
       out.z = anchors[id * 3 + 2] ?? 0;
@@ -257,7 +258,7 @@ export function createVfxSystem(opts: VfxSystemOptions = {}): VfxSystem {
         const id = e.player;
         let dx = 0;
         let dz = 1;
-        if (id >= 0 && id < MAX_PLAYERS && known[id]) {
+        if (id >= 0 && id < MAX_IDS && known[id]) {
           dx = heading[id * 3] ?? 0;
           dz = heading[id * 3 + 2] ?? 1;
         }
@@ -413,7 +414,7 @@ export function createVfxSystem(opts: VfxSystemOptions = {}): VfxSystem {
     spawn,
     handleSimEvent,
     setPlayerPosition(id: number, x: number, y: number, z: number): void {
-      if (id < 0 || id >= MAX_PLAYERS) return;
+      if (id < 0 || id >= MAX_IDS) return;
       const o = id * 3;
       if (known[id]) {
         const dx = x - (anchors[o] ?? 0);

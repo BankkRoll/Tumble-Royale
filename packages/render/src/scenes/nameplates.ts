@@ -59,7 +59,7 @@ export function fitName(
  * A batch of camera-facing nameplates.
  *
  * @example
- * const plates = new NameplateSet({ capacity: 40 });
+ * const plates = new NameplateSet({ capacity: MAX_PLAYERS });
  * plates.setName(0, 'Sprinkles', '#ff6fb5');
  * plates.setPosition(0, x, y + 1.8, z);
  * scene.add(plates.object);

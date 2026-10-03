@@ -2,6 +2,7 @@
  * First-launch screens: boot loader, click-to-start splash, welcome (name +
  * colour), tutorial prompt. docs/design/SCREENS.md §3.
  */
+import { MAX_PLAYERS } from '@tumble/shared';
 import { useEffect, useRef, useState, type JSX } from 'react';
 import { playCue } from '../audio-cues.ts';
 import { Bar, Logo, Panel } from '../components/bits.tsx';
@@ -119,7 +120,7 @@ export function SplashScreen(): JSX.Element {
           className="tr-chip tr-chip--lemon tr-splash-tag tr-enter-pop"
           style={{ animationDelay: '900ms' }}
         >
-          40 Tumblers. 1 Crown. Zero dignity.
+          {MAX_PLAYERS} Tumblers. 1 Crown. Zero dignity.
         </div>
       </div>
       <button

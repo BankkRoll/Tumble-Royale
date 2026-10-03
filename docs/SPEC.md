@@ -8,7 +8,7 @@ This is the product owner's master brief. Engineering contracts live in
 
 ## 0. Mission
 
-Build **Tumble Royale**: a browser-native, real-time multiplayer party royale where up to **40 players** (humans + bots) compete through a "Show" of 3–5 randomly selected rounds — races, survivals, team games, logic games and a final — until one player wins the Crown. It must feel like a premium console party game: bouncy, chaotic, readable, hilarious, colorful, responsive at 60 FPS on a mid-range laptop and playable on modern phones. The product owner wants it **entirely super advanced** — premium polish, rich detail, long full playable levels.
+Build **Tumble Royale**: a browser-native, real-time multiplayer party royale where up to **100 players** (humans + bots) compete through a "Show" of 3–5 randomly selected rounds — races, survivals, team games, logic games and a final — until one player wins the Crown. It must feel like a premium console party game: bouncy, chaotic, readable, hilarious, colorful, responsive at 60 FPS on a mid-range laptop and playable on modern phones. The product owner wants it **entirely super advanced** — premium polish, rich detail, long full playable levels.
 
 **Non-negotiables**
 
@@ -138,7 +138,7 @@ Each round definition contains id, name, type, theme, player range, qualificatio
 - Remote players interpolated ~100 ms behind, hermite with velocity, brief extrapolation.
 - Lag compensation for grab/dive hits (≤150 ms rewind), built as a server hit assist: after each authoritative step a fresh grab/dive is checked against the other players rewound to that client's view time, and the server can only add a hit the client saw. Bodies are never moved back (`apps/game-server/src/hitAssist.ts`, `lagcomp.ts`). Finish order by server tick with sub-tick interpolation.
 - Anti-cheat: never trust client results; token-bucket rate limits on inputs, chat and acks; input sequence sanity. Speed/teleport checks run on the server's own bodies and only count anomaly metrics; they never kick or correct a player (`anomaly.ts`).
-- Reconnect within 30 s with resume token. Region ping probes. Tick budget < 12 ms at 40 players.
+- Reconnect within 30 s with resume token. Region ping probes. Tick budget < 16 ms p95 at 100 players (measured 9.0 ms, see README).
 
 ## 11. Bots
 
@@ -179,11 +179,11 @@ Legend: ✅ verified · 🟡 partial (what is and isn't verified is listed) · �
 
 - **P0 Foundations** — ✅ test scene renders on both backends (`e2e/phase0.spec.ts`); Rapier identical client/server after 600 steps.
 - **P1 Tumbler feels amazing** — ✅ run/jump/dive/grab/ledge-climb/ride moving & rotating platforms; stun + ragdoll. "Feels good" still needs human playtesting.
-- **P2 Netcode slice** — ✅ 150 ms + 2% loss: local movement instant, remotes smooth, no rubber-banding (`apps/client/test/prediction.test.ts`). Tick time at 40 players is measured with `tools/bot-swarm` on a dev machine, not in CI.
+- **P2 Netcode slice** — ✅ 150 ms + 2% loss: local movement instant, remotes smooth, no rubber-banding (`apps/client/test/prediction.test.ts`). Tick time at 100 players is measured in process (`apps/game-server/test/tickBudget.test.ts`, `TUMBLE_PERF=1`) or with `tools/bot-swarm`, not in CI.
 - **P3 First Show** — ✅ full show, 40 entities, end-to-end in the browser (`e2e/game.spec.ts`).
 - **P4 Meta & accounts** — ✅ account → customize → party queue → show → XP & unlock persisted.
 - **P5 Content MVP** — 🟡 Verified: 20 rounds rotating, a Low preset (no shadows, bloom or outline, FXAA, 0.8 render scale), touch controls. Not verified: phones 30+ FPS on Low; no phone has been measured.
-- **P6 Ranked/store/pass/social** — ✅ 40-player rating update unit-tested; idempotent purchases; private show codes; friends, chat, report/block/mute.
+- **P6 Ranked/store/pass/social** — ✅ rating update unit-tested (40 entrants); idempotent purchases; private show codes; friends, chat, report/block/mute.
 - **P7 Launch hardening** — 🟡 Built: rate limits, bans, reconnect, a results outbox, matchmaker region fallback, tick/RTT/anomaly metrics on `GET /metrics`, whole-round soak tests in Vitest, a load tester that prints the server's p95 tick. Not verified: 24 h soak without memory growth, p95 tick < 16 ms under real load, crash-free > 99.5% (nothing reports crashes, so it cannot be measured).
 - **P8 Post-launch** — 🟡 round replays are built (`docs/design/REPLAYS.md`). Not built: more rounds, a creator editor, events, ghosts, WebTransport.
 
@@ -193,4 +193,4 @@ Sim headless. Every obstacle and round has a unit test + bot smoke test. Fixed t
 
 ## 19. Definition of done
 
-A new player opens a link on laptop or phone, is playing a 40-player show within 60 seconds, laughs in the first round, understands every round from its intro card, can party up via a link, earns visible progress every show, can climb a ranked ladder, and wants to hit **Play Again**.
+A new player opens a link on laptop or phone, is playing a 100-player show within 60 seconds, laughs in the first round, understands every round from its intro card, can party up via a link, earns visible progress every show, can climb a ranked ladder, and wants to hit **Play Again**.

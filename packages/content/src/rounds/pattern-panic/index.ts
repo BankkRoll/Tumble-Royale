@@ -116,12 +116,12 @@ export default defineRound({
     'The big screen shows the symbol you need. Get on it before the timer ends!',
     'Later rounds have tricks: two targets, and "NOT" rounds.',
   ],
-  players: { min: 6, max: 40, ideal: 24 },
+  players: { min: 6, max: 100, ideal: 60 },
   qualification: { mode: 'logicSurvive', ratio: 0.6 },
   duration: { seconds: 150, overtimeSeconds: 0 },
   killY: -10,
   bounds: { min: v(-30, -15, -30), max: v(30, 40, 30) },
-  spawn: { origin: v(0, 0.1, -10.5), yaw: 0, cols: 8, spacing: 1.4 },
+  spawn: { origin: v(0, 0.1, -8.5), yaw: 0, cols: 14, spacing: 1.3 },
   geometry: studio(),
   obstacles: [
     {

@@ -1,5 +1,5 @@
 /**
- * One show instance: up to 40 players (humans + bots), one MatchSim at a time.
+ * One show instance: up to `MAX_PLAYERS` (100) players, humans + bots, one MatchSim at a time.
  *
  * Responsibilities:
  * - roster: human joins, bot fill after a wait, resume tokens, idle-while-disconnected;
@@ -19,6 +19,7 @@ import {
   InputJitterBuffer,
   KickReason,
   LOADING_STATUS_MAX_WAITING,
+  MAX_ENTITIES,
   MsgType,
   ObstacleTable,
   PROTOCOL_VERSION,
@@ -193,7 +194,8 @@ export interface RoomInfo {
   epoch: number;
 }
 
-const SPECTATOR_ID_BASE = 64;
+/** Spectator ids sit above every possible player entity id, so they never collide with snapshot entities. */
+const SPECTATOR_ID_BASE = MAX_ENTITIES;
 /** `loadingStatus` is broadcast at most this often (2 Hz)… */
 const LOADING_STATUS_INTERVAL_MS = 500;
 /** …and at least this often while a round loads, even when nothing changed. */
@@ -419,7 +421,7 @@ export class Room {
 
   /** True when the room can take a spectator. */
   canAcceptSpectator(): boolean {
-    return this.state === 'show' && this.slots.size < 255 - SPECTATOR_ID_BASE;
+    return this.state === 'show' && this.allocateId(true) >= 0;
   }
 
   /** Room summary. */
@@ -470,8 +472,9 @@ export class Room {
 
   /**
    * Adds a new human (player in the lobby, spectator during a show).
+   * Nothing changes when every id of that kind is taken.
    *
-   * @returns The assigned player id.
+   * @returns The assigned player id, or -1 when the room is full.
    */
   join(session: ClientSession, hello: HelloMsg, now: number, ticket: JoinTicketClaims | null = null): number {
     // Ticketed names come from the account (`name#tag`); the tag stays off the nameplate.
@@ -491,6 +494,7 @@ export class Room {
     }
     const spectator = this.state !== 'lobby' || ticket?.role === 'spectator';
     const id = this.allocateId(spectator);
+    if (id < 0) return -1;
     const slot = newSlot({
       id,
       name,

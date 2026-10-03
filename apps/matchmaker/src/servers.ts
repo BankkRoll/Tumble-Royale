@@ -8,6 +8,8 @@ export interface GameServer {
   id: string;
   /** WebSocket URL clients connect to, e.g. `wss://eu-1.example.com`. */
   url: string;
+  /** HTTP base for signed control calls (host kicks); derived from `url` when absent. */
+  controlUrl?: string;
   region: string;
   /** Maximum concurrent players. */
   capacity: number;

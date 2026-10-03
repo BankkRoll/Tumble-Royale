@@ -16,6 +16,8 @@ import { formatNumber, ordinal } from '../../components/hooks.ts';
 import { Icon, type IconName } from '../../components/icons/index.tsx';
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
 import { ui, useUI } from '../../store/uiStore.ts';
+import { PlayerActionRow } from '../overlays/PlayerActions.tsx';
+import type { PlayerRef } from '../../store/social.ts';
 import type {
   MatchHistoryEntry,
   ProfileBanner,
@@ -517,9 +519,19 @@ export function ProfileTab(): JSX.Element {
   );
 }
 
+const ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Local cards (bots, offline players) have no account id, so only mute applies to them. */
+function inspectRef(p: ProfileData): PlayerRef {
+  return ACCOUNT_ID.test(p.id)
+    ? { userId: p.id, name: p.name, tag: p.tag, key: p.id }
+    : { name: p.name, key: `name:${p.name}`, isBot: true };
+}
+
 /** Another player's profile card (opened from Ranks / results via `inspectPlayer`). */
 export function ProfileOverlay(): JSX.Element | null {
   const p = useUI((s) => s.inspectedProfile);
+  const selfId = useUI((s) => s.profile?.id);
   if (!p) return null;
   const close = (): void => {
     playCue('ui.back');
@@ -539,6 +551,7 @@ export function ProfileOverlay(): JSX.Element | null {
           <ProfileCard p={p} self={false} />
           {p.stats.shows > 0 && <Stats p={p} />}
         </div>
+        {p.id !== selfId && <PlayerActionRow p={inspectRef(p)} compact />}
         <Button
           variant="secondary"
           data-nav-back=""

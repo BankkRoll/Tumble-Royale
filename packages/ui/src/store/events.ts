@@ -16,6 +16,7 @@ import type {
   PlayMode,
   PatternId,
   PlayerWallEvent,
+  ReportReason,
   ScreenId,
   Settings,
   SettingsSection,
@@ -94,6 +95,27 @@ export interface UIIntents {
   copyInvite: { code: string };
   kickPartyMember: { memberId: string };
   leaveParty: undefined;
+  /** Friend request by account id (search results, recent players, profiles, chat). */
+  requestFriend: { userId: string; name?: string };
+  /** Answer or withdraw a pending friend request. */
+  friendRequestAction: { userId: string; action: 'accept' | 'decline' | 'cancel' };
+  /** Player search in the friends sheet (debounced by the UI). */
+  searchPlayers: { query: string };
+  removeFriend: { userId: string };
+  blockPlayer: { userId: string; name: string };
+  unblockPlayer: { userId: string };
+  /** Local, persisted per-player mute. `key` is the account id, or `name:<name>` for bots. */
+  mutePlayer: { key: string; name: string; muted: boolean };
+  reportPlayer: { userId: string; reason: ReportReason; details?: string };
+  /** Join a friend's party (or their shared private show) from their row. */
+  joinFriend: { userId: string };
+  /** Answer a party invite from the notifications panel. */
+  partyInviteAction: { userId: string; code: string; action: 'join' | 'decline' };
+  /** In-show text chat (online shows only). */
+  sendChat: { text: string };
+  sendPartyChat: { text: string };
+  /** The in-show chat input opened or closed (the game frees the mouse and held keys). */
+  chatInput: { open: boolean };
   /** Rewards / victory / winner-cam "Continue". */
   continue: { from: ScreenId };
   skipPlayerWall: undefined;

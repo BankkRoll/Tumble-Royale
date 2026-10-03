@@ -80,6 +80,7 @@ export const DEFAULT_SETTINGS: Settings = {
     showPing: true,
     autoSpectate: true,
     chatFilter: true,
+    showChat: true,
     region: 'auto',
   },
 };

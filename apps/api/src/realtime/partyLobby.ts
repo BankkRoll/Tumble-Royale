@@ -12,6 +12,9 @@
  *   saved loadout, and at most once per `lookMinIntervalMs`;
  * - keep the shared ball state from the leader only, and a grab only when it
  *   names another current member;
+ * - keep a lobby mini-game snapshot from the leader only and only when every
+ *   player in it is a current member; keep a game claim from members only,
+ *   and a tag claim only when it names another current member;
  * - deliver to the other current members only, never the sender.
  *
  * Nothing is persisted. Membership is read from the party store on every
@@ -84,6 +87,19 @@ export class PartyLobbyRelay {
     // The leader's client simulates the shared ball; anyone else claiming it would fight them.
     if (frame.ball && party.leaderId !== userId) delete frame.ball;
     if (frame.grab && !others.includes(frame.grab)) delete frame.grab;
+    const memberIds = party.members.map((m) => m.userId);
+    // The leader runs every lobby game; a stale player list (someone just left) would show ghosts.
+    if (
+      frame.game &&
+      (party.leaderId !== userId || !frame.game.players.every((id) => memberIds.includes(id)))
+    )
+      delete frame.game;
+    // Claims are for the leader to judge; the leader judges its own locally and never sends one.
+    if (frame.claim) {
+      const c = frame.claim;
+      if (party.leaderId === userId || (c.k === 'tag' && (!c.target || !others.includes(c.target))))
+        delete frame.claim;
+    }
     if (frame.look) {
       const ok =
         now - bucket.lookAt >= PARTY_LOBBY_LIMITS.lookMinIntervalMs &&

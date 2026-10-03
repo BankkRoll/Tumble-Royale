@@ -17,13 +17,20 @@
  *   and a ring under the local Tumbler so you always know which one is you;
  * - queries the menu needs for toys and roughhousing: who is in reach for
  *   a grab, who is holding us, whose dive hit us, the leader's ball;
- * - picking a member's Tumbler for the profile card.
+ * - picking a member's Tumbler for the profile card;
+ * - the lobby mini-game link: the leader's game snapshot and members'
+ *   claims ride on frames (the leader sends at least every
+ *   `LOBBY_GAME_LIMITS.sendMs` while a game runs), and game chips (team,
+ *   IT, OUT) replace the status chip on nameplates.
  *
  * Allocation-free per frame; spawns allocate once per member.
  */
 import {
+  LOBBY_GAME_LIMITS,
   encodeLobbyFrame,
   sanitizeLobbyFrame,
+  type LobbyGameClaim,
+  type LobbyGameWire,
   type LobbyExtras,
   type LobbyLook,
   type LobbyStatus,
@@ -97,6 +104,10 @@ export interface PartyLobbyViewOptions {
   onLeaderStatus?(status: LobbyStatus): void;
   /** Leader only: a member knocked the shared ball to this velocity. */
   onBump?(vx: number, vy: number, vz: number): void;
+  /** Members: a frame from the leader arrived, with its game snapshot or null. */
+  onLeaderGame?(game: LobbyGameWire | null): void;
+  /** Leader only: a member's game claim. */
+  onClaim?(userId: string, claim: LobbyGameClaim): void;
 }
 
 const DROP_HEIGHT = 3.2;
@@ -194,6 +205,11 @@ export class PartyLobbyView {
   private readonly ballIn: BallState = [0, 0, 0, 0, 0, 0];
   private ballInAt = -Infinity;
   private pendingBump: [number, number, number] | null = null;
+  private gameSource: (() => LobbyGameWire | null) | null = null;
+  private lastGameAt = -Infinity;
+  private pendingClaim: LobbyGameClaim | null = null;
+  private ballEager = false;
+  private readonly chips = new Map<string, string>();
   private readonly plateText: string[] = LOBBY_SLOT_POSITIONS.map(() => '');
   private readonly fx = new Float32Array(LOBBY_SLOT_POSITIONS.length);
   private readonly fz = new Float32Array(LOBBY_SLOT_POSITIONS.length);
@@ -316,6 +332,109 @@ export class PartyLobbyView {
   /** Leader: the shared ball's state this frame (read by reference when sending). */
   setBallOut(state: BallState | null): void {
     this.ballOut = state;
+  }
+
+  /**
+   * Leader: where the game snapshot for each outgoing frame comes from, or
+   * null when no game runs. Called only when a frame is actually sent, so
+   * the snapshot's op (`event` vs `state`) describes what went on the wire.
+   */
+  setGameSource(source: (() => LobbyGameWire | null) | null): void {
+    if (source && !this.gameSource) this.sender.poke();
+    this.gameSource = source;
+  }
+
+  /** Non-leader: a game claim for the leader to judge (rides on the next frame). */
+  claim(c: LobbyGameClaim): void {
+    if (!this.self.live || this.isLeader) return;
+    this.pendingClaim = c;
+    this.sender.poke();
+  }
+
+  /** Leader: keep the ball state flowing even while it rests (a game moved it). */
+  setBallEager(on: boolean): void {
+    this.ballEager = on;
+  }
+
+  /**
+   * Game chips over members' Tumblers (`PINK`, `IT`, `OUT`); a member
+   * without one shows their status chip. Null clears every chip.
+   */
+  setGameChips(chips: ReadonlyMap<string, string> | null): void {
+    let same = (chips?.size ?? 0) === this.chips.size;
+    if (same && chips) for (const [k, v] of chips) if (this.chips.get(k) !== v) same = false;
+    if (same) return;
+    this.chips.clear();
+    if (chips) for (const [k, v] of chips) this.chips.set(k, v);
+    this.drawPlates();
+  }
+
+  /** Party members in slot order (the local player included); empty when not live. */
+  memberIds(): string[] {
+    const r = this.roster;
+    if (!this.self.live || !r) return [];
+    return assignLobbySlots(r.members, r.leaderId).map((s) => s.userId);
+  }
+
+  /** The local account id while live, else null. */
+  get selfId(): string | null {
+    return this.self.live ? (this.roster?.selfId ?? null) : null;
+  }
+
+  /** The party leader's id while live, else null. */
+  get leaderId(): string | null {
+    return this.self.live ? (this.roster?.leaderId ?? null) : null;
+  }
+
+  /** A member's display name ('' when unknown). */
+  memberName(userId: string): string {
+    return this.roster?.members.find((m) => m.userId === userId)?.name ?? '';
+  }
+
+  /** A member's main colour (their look), or null when unknown. */
+  memberColor(userId: string): string | null {
+    if (userId === this.roster?.selfId) return this.selfLook?.colors[0] ?? null;
+    return this.looks.get(userId)?.colors[0] ?? null;
+  }
+
+  /** A remote member's menu status (`menu` when unknown or local). */
+  memberStatus(userId: string): LobbyStatus {
+    const r = this.remotes.get(userId);
+    return r && r.despawnT < 0 ? r.status : 'menu';
+  }
+
+  /**
+   * Where a remote member's feet are drawn.
+   *
+   * @returns False when they are not on the platform.
+   */
+  memberFeet(userId: string, out: { x: number; y: number; z: number }): boolean {
+    const r = this.remotes.get(userId);
+    if (!r || r.despawnT >= 0) return false;
+    out.x = r.holder.position.x;
+    out.y = r.holder.position.y;
+    out.z = r.holder.position.z;
+    return true;
+  }
+
+  /**
+   * The nearest member within `reach` of a point, ignoring facing (a dive
+   * that reaches someone tags them whichever way they face).
+   *
+   * @param skip - Optional filter: members it returns true for are ignored.
+   */
+  memberNear(x: number, z: number, reach: number, skip?: (userId: string) => boolean): string | null {
+    let best: string | null = null;
+    let bestD = reach;
+    for (let i = 0; i < this.list.length; i++) {
+      const r = this.list[i]!;
+      if (r.despawnT >= 0 || skip?.(r.userId)) continue;
+      const d = Math.hypot(r.holder.position.x - x, r.holder.position.z - z);
+      if (d > bestD) continue;
+      best = r.userId;
+      bestD = d;
+    }
+    return best;
   }
 
   /** Non-leader: the local Tumbler knocked the ball; the leader applies the new velocity. */
@@ -515,8 +634,14 @@ export class PartyLobbyView {
       this.ring.position.set(f.x, Math.max(0, f.y) + 0.04, f.z);
       const link = this.opts.link;
       const ball = this.isLeader ? this.ballOut : null;
-      if (ball && now - this.lastBallAt >= BALL_SEND_MS && Math.hypot(ball[3], ball[4], ball[5]) > 0.05)
+      if (
+        ball &&
+        now - this.lastBallAt >= BALL_SEND_MS &&
+        (this.ballEager || Math.hypot(ball[3], ball[4], ball[5]) > 0.05)
+      )
         this.sender.poke();
+      const gameSource = this.isLeader ? this.gameSource : null;
+      if (gameSource && now - this.lastGameAt >= LOBBY_GAME_LIMITS.sendMs) this.sender.poke();
       if (link && this.sender.due(now, local.pose)) {
         const { seq, look } = this.sender.take(now, local.pose);
         const x = this.extras;
@@ -529,6 +654,14 @@ export class PartyLobbyView {
         if (this.pendingBump) x.bump = this.pendingBump;
         else delete x.bump;
         this.pendingBump = null;
+        const game = gameSource?.() ?? null;
+        if (game) {
+          x.game = game;
+          this.lastGameAt = now;
+        } else delete x.game;
+        if (this.pendingClaim) x.claim = this.pendingClaim;
+        else delete x.claim;
+        this.pendingClaim = null;
         link.send(encodeLobbyFrame(local.pose, seq, look, x));
       }
     }
@@ -572,6 +705,8 @@ export class PartyLobbyView {
       this.ballInAt = now;
     }
     if (frame.bump && this.isLeader) this.opts.onBump?.(frame.bump[0], frame.bump[1], frame.bump[2]);
+    if (userId === leaderId && !this.isLeader) this.opts.onLeaderGame?.(frame.game ?? null);
+    if (frame.claim && this.isLeader) this.opts.onClaim?.(userId, frame.claim);
   }
 
   private applyLook(userId: string, look: TumblerLoadout): void {
@@ -723,7 +858,7 @@ export class PartyLobbyView {
         const look = self ? this.selfLook : this.looks.get(m.userId);
         const status = self ? this.selfStatus : (this.remotes.get(m.userId)?.status ?? 'menu');
         const label = `${s.leader ? '👑 ' : ''}${m.name}${m.tag ? `#${m.tag}` : ''}`;
-        const chip = statusChip(status, s.leader, m.ready);
+        const chip = this.chips.get(m.userId) ?? statusChip(status, s.leader, m.ready);
         const accent = look?.colors[0] ?? '#ff6fb5';
         const key = `${label}|${chip}|${accent}`;
         used.add(s.slot);

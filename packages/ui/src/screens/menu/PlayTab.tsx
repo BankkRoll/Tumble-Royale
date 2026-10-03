@@ -3,6 +3,8 @@
  *
  * - left: info cards only (Season Pass progress → Pass, today's challenges →
  *   Challenges, the latest news post → News reader);
+ * - bottom-left: the lobby emote and lobby games buttons; top-centre over
+ *   the 3D platform: the running lobby game's score HUD;
  * - bottom-right: everything that starts a game, in one card — how to play
  *   (Play Online / Vs Bots / Private), the playlist, the party, Join with code
  *   and the big PLAY button. While queueing the same card becomes the
@@ -23,6 +25,7 @@ import { social } from '../../store/social.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { OnlineStatus, PassReward, PlayMode, Playlist, SeasonPassData } from '../../store/types.ts';
 import { LobbyEmotes } from './LobbyEmotes.tsx';
+import { LobbyGameHudSlot, LobbyGamesButton } from './LobbyGames.tsx';
 import { openNewsPost } from './NewsTab.tsx';
 import { openJoinCode, openPrivateShow } from '../overlays/PrivateShow.tsx';
 
@@ -627,9 +630,11 @@ export function PlayTab({ matchmaking = false }: { matchmaking?: boolean }): JSX
         <ChallengesCard />
         <NewsCard />
       </aside>
+      <LobbyGameHudSlot />
       {!matchmaking && (
         <div className="tr-play-emotes">
           <LobbyEmotes />
+          <LobbyGamesButton />
         </div>
       )}
       <StartCluster matchmaking={matchmaking} />

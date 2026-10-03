@@ -11,10 +11,18 @@
  * - {@link sanitizeLobbyLook}: structural check of a cosmetic loadout (the
  *   API additionally checks catalog slots and ownership);
  * - the hangout extras riding on frames: menu status, who the sender is
- *   grabbing, the leader's ball state and a member's ball bump.
+ *   grabbing, the leader's ball state and a member's ball bump;
+ * - the lobby mini-game extras: the leader's game snapshot and a member's
+ *   claim (see `lobbyGame.ts`).
  *
  * Nothing here is persisted; frames are fire-and-forget.
  */
+import {
+  sanitizeLobbyClaim,
+  sanitizeLobbyGame,
+  type LobbyGameClaim,
+  type LobbyGameWire,
+} from './lobbyGame.ts';
 
 /** Message `type` on the wire, both directions. */
 export const PARTY_LOBBY_TYPE = 'party_lobby';
@@ -115,6 +123,10 @@ export interface LobbyExtras {
   ball?: [number, number, number, number, number, number];
   /** A member knocked the ball: its new velocity `[vx, vy, vz]` for the leader to apply. */
   bump?: [number, number, number];
+  /** Leader only: the running lobby mini-game. */
+  game?: LobbyGameWire;
+  /** A member's mini-game claim (tag, target hit) for the leader to validate. */
+  claim?: LobbyGameClaim;
 }
 
 /** A sanitised frame (client → server body, and the relayed payload). */
@@ -160,7 +172,7 @@ function wrapAngle(a: number): number {
  * @param pose - Local Tumbler pose.
  * @param seq - Sender sequence number.
  * @param look - Equipped loadout, only when it should be (re)announced.
- * @param extras - Status, grab, ball state or bump to include.
+ * @param extras - Status, grab, ball state, bump, game snapshot or claim to include.
  * @returns The `party_lobby` message to send.
  * @example
  * socket.send(encodeLobbyFrame(pose, ++seq));
@@ -192,6 +204,8 @@ export function encodeLobbyFrame(
     msg.ball = [round2(b[0]), round2(b[1]), round2(b[2]), round2(b[3]), round2(b[4]), round2(b[5])];
   }
   if (extras?.bump) msg.bump = [round2(extras.bump[0]), round2(extras.bump[1]), round2(extras.bump[2])];
+  if (extras?.game) msg.game = extras.game;
+  if (extras?.claim) msg.claim = extras.claim;
   return msg;
 }
 
@@ -267,7 +281,8 @@ export function sanitizeLobbyLook(raw: unknown): LobbyLook | null {
  *   state to their ranges; yaw wrapped.
  * - An emote that `isEmote` does not recognise (and that is not one of
  *   {@link LOBBY_CLIP_IDS}) is cleared (the pose still relays).
- * - A malformed `look`, status, grab, ball or bump is stripped (the pose still relays).
+ * - A malformed `look`, status, grab, ball, bump, game or claim is stripped
+ *   (the pose still relays).
  *
  * @param raw - Parsed JSON from the socket.
  * @param isEmote - Recognises emote item ids (the API uses the catalog).
@@ -320,6 +335,14 @@ export function sanitizeLobbyFrame(raw: unknown, isEmote: (id: string) => boolea
   if (ball) frame.ball = ball;
   const bump = sanitizeBump(r.bump);
   if (bump) frame.bump = bump;
+  if (r.game !== undefined) {
+    const game = sanitizeLobbyGame(r.game);
+    if (game) frame.game = game;
+  }
+  if (r.claim !== undefined) {
+    const claim = sanitizeLobbyClaim(r.claim);
+    if (claim) frame.claim = claim;
+  }
   return frame;
 }
 

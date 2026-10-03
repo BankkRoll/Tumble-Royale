@@ -19,8 +19,11 @@
  * - Party hangout ({@link PartyHangout}): grabs, dive knocks, the shared
  *   beach ball, sitting down when idle, waving at joiners and cheering when
  *   the leader hits Play; the camera keeps the whole party in frame.
+ * - Lobby mini-games ({@link LobbyGameController}): Goal Rush, Hot Potato
+ *   and Target Hop, started from the Games picker or the in-world sign,
+ *   synced across the party with the leader as the authority.
  */
-import { Vector3 } from 'three/webgpu';
+import { Raycaster, Vector2, Vector3 } from 'three/webgpu';
 import { getTheme } from '@tumble/content/themes';
 import type { QualityPreset } from '@tumble/render/quality';
 import {
@@ -31,12 +34,13 @@ import {
 } from '@tumble/render/scenes';
 import type { Rapier } from '@tumble/sim';
 import { CharacterState, emptyInput } from '@tumble/sim/character';
-import type { LobbyPose } from '@tumble/shared';
+import type { LobbyGameKind, LobbyPose } from '@tumble/shared';
 import type { GameAudio } from '@tumble/audio';
 import { ui } from '@tumble/ui';
 import type { InputSystem } from '../../input/index.ts';
 import { sceneOptions } from './common.ts';
 import { IdlePlay } from './idlePlay.ts';
+import { LobbyGameController } from './lobbyGameController.ts';
 import { LOBBY_WALL_RADIUS, LobbyStage } from './lobbyStage.ts';
 import { PartyHangout } from './partyHangout.ts';
 import { lobbyFraming, menuStatus, type LobbyMember, type PartyRoster } from './partyLobby.ts';
@@ -74,6 +78,8 @@ export interface LobbyDebugState {
   partySize: number;
   /** Other party members as drawn on this screen. */
   remotes: { userId: string; slot: number; x: number; z: number }[];
+  /** The lobby mini-game showing, if any. */
+  lobbyGame: { kind: LobbyGameKind; phase: string; score: number[] } | null;
 }
 
 /** Seconds without input before idle play eases back to the lobby framing. */
@@ -130,6 +136,11 @@ export class MenuView implements GameView {
   private readonly framing = lobbyFraming(1);
   private readonly frameGoal = lobbyFraming(1);
   private readonly hangout: PartyHangout;
+  private readonly games: LobbyGameController;
+  /** Seconds of visual slow motion left (goal celebration). */
+  private slowMoT = 0;
+  private readonly raycaster = new Raycaster();
+  private readonly ndc = new Vector2();
 
   constructor(private readonly opts: MenuViewOptions) {
     this.loadout = opts.loadout;
@@ -153,6 +164,8 @@ export class MenuView implements GameView {
         if (status === 'queue') this.emote('cheer');
       },
       onBump: (vx, vy, vz) => this.lobby.kickBall(vx, vy, vz),
+      onLeaderGame: (game) => this.games.onLeaderGame(game),
+      onClaim: (userId, claim) => this.games.onClaim(userId, claim),
     });
     this.hangout = new PartyHangout({
       idle: this.idle,
@@ -160,6 +173,24 @@ export class MenuView implements GameView {
       lobby: this.lobby,
       party: this.partyLobby,
       input: opts.input,
+    });
+    this.games = new LobbyGameController({
+      R: opts.R,
+      scene: this.stage.scene,
+      idle: this.idle,
+      stage: this.stage,
+      lobby: this.lobby,
+      party: this.partyLobby,
+      audio: opts.audio,
+      play: () => {
+        if (this.canIdlePlay()) this.setIdlePlay(true);
+        return this.playing;
+      },
+      playing: () => this.playing,
+      cheer: () => this.emote('cheer'),
+      slowMo: (s) => {
+        this.slowMoT = Math.max(this.slowMoT, s);
+      },
     });
     this.partyLobby.setEquippedLook(opts.loadout);
     this.setPartyRoster(opts.roster ?? null, false);
@@ -223,6 +254,7 @@ export class MenuView implements GameView {
     const before = this.partyLobby.selfHome();
     const wasLive = this.partyLobby.live;
     this.partyLobby.setRoster(roster);
+    this.games.onRoster();
     const home = this.partyLobby.selfHome();
     this.idle.setSpawn(home.x, home.z);
     // The invisible controller would otherwise keep shoving props around the old slot.
@@ -255,6 +287,33 @@ export class MenuView implements GameView {
     this.lobbyClip(id);
     if (this.dressing) return;
     this.celebrate(id);
+  }
+
+  /**
+   * Starts a lobby mini-game (solo player or party leader).
+   *
+   * @returns False when the local player may not start it here.
+   */
+  startLobbyGame(kind: LobbyGameKind): boolean {
+    if (this.dressing) return false;
+    return this.games.start(kind);
+  }
+
+  /** Ends the running lobby mini-game (solo player or party leader). */
+  stopLobbyGame(): void {
+    this.games.stop();
+  }
+
+  /**
+   * True when a screen point is on the Games sign.
+   *
+   * @param ndcX - Normalised device X (-1..1).
+   * @param ndcY - Normalised device Y (-1..1, up).
+   */
+  signAt(ndcX: number, ndcY: number): boolean {
+    if (this.dressing) return false;
+    this.raycaster.setFromCamera(this.ndc.set(ndcX, ndcY), this.camera);
+    return this.lobby.signHit(this.raycaster);
   }
 
   /** Plays a clip on the local Tumbler without the confetti (join wave). */
@@ -309,6 +368,7 @@ export class MenuView implements GameView {
 
   /** Tumbler state, feet position and camera pitch (automation hook). */
   debugState(): LobbyDebugState {
+    const g = this.games.debugGame();
     const cam = this.camera;
     cam.getWorldDirection(this.camDir);
     const pitch = (-Math.asin(Math.max(-1, Math.min(1, this.camDir.y))) * 180) / Math.PI;
@@ -323,6 +383,7 @@ export class MenuView implements GameView {
         partySlot: this.partyLobby.selfSlot,
         partySize: this.partyLobby.memberCount,
         remotes: this.partyLobby.debugRemotes(),
+        lobbyGame: g,
       };
     }
     const p = this.stage.playerObject.position;
@@ -334,6 +395,7 @@ export class MenuView implements GameView {
       partySlot: this.partyLobby.selfSlot,
       partySize: this.partyLobby.memberCount,
       remotes: this.partyLobby.debugRemotes(),
+      lobbyGame: g,
     };
   }
 
@@ -347,7 +409,8 @@ export class MenuView implements GameView {
 
     const now = performance.now();
     const ui$ = ui.getState();
-    this.partyLobby.setStatus(menuStatus(ui$.screen, ui$.menuTab, ui$.overlay));
+    const status = menuStatus(ui$.screen, ui$.menuTab, ui$.overlay);
+    this.partyLobby.setStatus(status);
     const live = this.partyLobby.live;
     // The shared ball keeps rolling for everyone, so a live party always steps the little world.
     if (this.hangout.updateHeld(realDt, this.playing)) this.idle.advance(realDt);
@@ -378,11 +441,15 @@ export class MenuView implements GameView {
         this.playing,
         this.dressing || (this.playing && this.stillTime === 0),
       );
+    this.games.update(realDt, now, status);
     this.updatePartyJoin();
-    this.stage.update(dt);
+    // Goal celebration: animation and effects run slow for a beat; physics and the network never do.
+    this.slowMoT = Math.max(0, this.slowMoT - realDt);
+    const slow = this.slowMoT > 0 && !ui$.settings.accessibility.reduceMotion ? 0.35 : 1;
+    this.stage.update(dt * slow);
     this.frameCamera(realDt);
     this.partyLobby.update(realDt, now, this.sampleLocal());
-    this.lobby.update(realDt, this.camera);
+    this.lobby.update(realDt * slow, this.camera);
   }
 
   /** The local Tumbler as party mates should see it (standing on its slot while dressing). */
@@ -638,6 +705,7 @@ export class MenuView implements GameView {
 
   dispose(): void {
     this.opts.input.setMouseActions(true);
+    this.games.dispose();
     this.partyLobby.dispose();
     this.lobby.dispose();
     this.idle.dispose();

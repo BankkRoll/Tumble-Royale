@@ -12,8 +12,10 @@
   pointer-events: none;
   z-index: 6;
 }
+/* The menu's round emote button owns the corner; chat starts just right of it. */
 [data-screen='menu'] .tr-chat-wrap {
   bottom: calc(var(--safe-b) + 1em);
+  left: calc(var(--safe-l) + 5.6em);
 }
 .tr-chat {
   display: grid;

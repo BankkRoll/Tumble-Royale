@@ -34,6 +34,28 @@ export interface NameplateOptions {
 }
 
 /**
+ * Shortens a name with an ellipsis until it fits `maxW`, keeping a trailing
+ * `#tag` whole: the tag is what friends type, the name is just decoration.
+ *
+ * @param g - Context with the final font already set.
+ * @param text - Name, optionally `Name#1234`.
+ * @param maxW - Available width in canvas pixels.
+ * @returns The text to draw.
+ */
+export function fitName(
+  g: { measureText(t: string): { width: number } },
+  text: string,
+  maxW: number,
+): string {
+  if (g.measureText(text).width <= maxW) return text;
+  const hash = text.lastIndexOf('#');
+  const tag = hash > 0 ? text.slice(hash) : '';
+  let base = hash > 0 ? text.slice(0, hash) : text;
+  while (base.length > 1 && g.measureText(`${base}…${tag}`).width > maxW) base = base.slice(0, -1);
+  return `${base}…${tag}`;
+}
+
+/**
  * A batch of camera-facing nameplates.
  *
  * @example
@@ -155,7 +177,7 @@ export class NameplateSet {
       size -= 2;
       g.font = `800 ${size}px 'Trebuchet MS', system-ui, sans-serif`;
     }
-    g.fillText(name, textX, cy + CELL_H / 2 + 1);
+    g.fillText(fitName(g, name, maxW), textX, cy + CELL_H / 2 + 1);
     this.cell[i * 3] = i % this.cols;
     this.cell[i * 3 + 1] = Math.floor(i / this.cols);
     if (this.cell[i * 3 + 2] === 0) this.cell[i * 3 + 2] = 1;

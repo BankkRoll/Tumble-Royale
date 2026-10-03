@@ -44,6 +44,8 @@ import type {
   PreShowInfo,
   ProfileData,
   QueueState,
+  ReplayRoundEntry,
+  ReplayViewerState,
   RewardsSummary,
   RoundCatalogEntry,
   RoundIntroInfo,
@@ -158,6 +160,14 @@ export interface UIState {
   /** Announcer caption (shown when captions are enabled). */
   caption: string | null;
 
+  // --- replays ------------------------------------------------------------
+  /** Recorded rounds of the current (or just finished) show. */
+  replays: ReplayRoundEntry[];
+  /** The round in progress is being recorded and can be watched now (after elimination). */
+  replayLive: boolean;
+  /** The open replay viewer (null = closed). While open it covers the screen and HUD. */
+  replay: ReplayViewerState | null;
+
   // --- actions: screens ----------------------------------------------------
   /** Changes screen, with the screen's default transition unless overridden. */
   setScreen: (screen: ScreenId, opts?: SetScreenOptions) => void;
@@ -235,6 +245,14 @@ export interface UIState {
   /** Loads the end-of-show wall; call before `setScreen('playerWall')`. */
   setPlayerWall: (summary: ShowSummary | null, opts?: Partial<PlayerWallOptions>) => void;
   setRewards: (rewards: RewardsSummary | null) => void;
+
+  // --- actions: replays ----------------------------------------------------
+  setReplays: (replays: ReplayRoundEntry[]) => void;
+  setReplayLive: (live: boolean) => void;
+  /** Opens (state) or closes (null) the replay viewer. */
+  setReplay: (replay: ReplayViewerState | null) => void;
+  /** Merges viewer fields (playhead updates at ~15 Hz). */
+  patchReplay: (patch: Partial<ReplayViewerState>) => void;
 
   // --- internal (TumbleWipe component) -------------------------------------
   /** @internal Cover animation finished. */
@@ -321,6 +339,9 @@ export const ui = createStore<UIState>()((set, get) => ({
   playerWallSeq: 0,
   rewards: null,
   caption: null,
+  replays: [],
+  replayLive: false,
+  replay: null,
 
   setScreen: (screen, opts = {}) => {
     const s = get();
@@ -488,6 +509,21 @@ export const ui = createStore<UIState>()((set, get) => ({
       playerWallSeq: get().playerWallSeq + 1,
     }),
   setRewards: (rewards) => set({ rewards }),
+  setReplays: (replays) => set({ replays }),
+  setReplayLive: (replayLive) => {
+    if (get().replayLive !== replayLive) set({ replayLive });
+  },
+  setReplay: (replay) => set({ replay }),
+  patchReplay: (patch) => {
+    const r = get().replay;
+    if (!r) return;
+    for (const k in patch) {
+      if (r[k as keyof ReplayViewerState] !== patch[k as keyof ReplayViewerState]) {
+        set({ replay: { ...r, ...patch } });
+        return;
+      }
+    }
+  },
 }));
 
 function applyScreen(screen: ScreenId, transition: TransitionKind): void {

@@ -69,6 +69,7 @@ export function InGameMenu(): JSX.Element {
     })),
   );
   const binds = useUI((s) => s.settings.controls.keybinds);
+  const replayLive = useUI((s) => s.replayLive);
   const status = STATUS[hud.status];
   return (
     <div
@@ -125,6 +126,19 @@ export function InGameMenu(): JSX.Element {
           <Button variant="go" size="lg" block autoFocusNav cue="ui.confirm" data-nav-back="" onClick={close}>
             Resume
           </Button>
+          {replayLive && (hud.status === 'eliminated' || hud.status === 'spectating') && (
+            <Button
+              variant="secondary"
+              block
+              data-testid="igm-replay"
+              onClick={() => {
+                ui.getState().setOverlay('none');
+                uiEvents.emit('replayOpenLive');
+              }}
+            >
+              <Icon name="film" size="1.1em" /> Watch replay
+            </Button>
+          )}
           <Button
             variant="secondary"
             block

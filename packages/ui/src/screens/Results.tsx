@@ -15,6 +15,7 @@ import type { ResultsEntry } from '../store/types.ts';
 import { confettiSets } from '../theme/tokens.ts';
 import { Icon } from '../components/icons/index.tsx';
 import { fireConfetti, fireFireworks } from '../transitions/Confetti.tsx';
+import { WatchReplayButton } from './Replay.tsx';
 
 const FLIP_START = 900;
 const FLIP_SPREAD = 1600;
@@ -56,6 +57,8 @@ export function RoundResultsScreen(): JSX.Element | null {
   }, [results, ordered.localDelay]);
 
   const step = useSequence([FLIP_START + FLIP_SPREAD + 600], results);
+  // The 3D wall drops the eliminated players first; offer the replay once that has played.
+  const replayReady = useSequence([results?.render3D ? 2800 : FLIP_START + FLIP_SPREAD + 900], results) >= 1;
   if (!results) return null;
   const q = results.entries.filter((e) => e.qualified).length;
   const out = results.entries.length - q;
@@ -116,6 +119,11 @@ export function RoundResultsScreen(): JSX.Element | null {
           <span className="tr-chip tr-chip--bad">
             <Icon name="close" size="0.9em" /> {out} eliminated
           </span>
+        </div>
+      )}
+      {replayReady && (
+        <div className="tr-results-replay tr-interactive tr-enter" data-nav-scope="1">
+          <WatchReplayButton roundIndex={results.roundIndex} />
         </div>
       )}
     </div>

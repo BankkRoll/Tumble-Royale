@@ -18,6 +18,7 @@ import { confettiSets, rarityLabels } from '../theme/tokens.ts';
 import { fireConfetti } from '../transitions/Confetti.tsx';
 import { Icon } from '../components/icons/index.tsx';
 import { RankEmblem } from './menu/ProfileTab.tsx';
+import { ReplayPicker } from './Replay.tsx';
 
 const LINE_GAP = 350;
 const LINE_COUNT = 400;
@@ -336,6 +337,7 @@ export function RewardsScreen(): JSX.Element | null {
       </div>
 
       <div className="tr-rewards-actions tr-interactive" data-nav-scope="1">
+        <ReplayPicker />
         {!done && <span className="tr-small tr-muted">Press any key to skip</span>}
         <Button
           variant="secondary"

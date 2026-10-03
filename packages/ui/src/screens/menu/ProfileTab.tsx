@@ -25,6 +25,7 @@ import type {
   RankTier,
 } from '../../store/types.ts';
 import { rarityLabels } from '../../theme/tokens.ts';
+import { OpenReplayButton } from '../Replay.tsx';
 
 /** Ranked ladder tiers, lowest first, with display colours. */
 export const RANK_TIERS: { tier: RankTier; label: string; color: string; dark: string }[] = [
@@ -509,6 +510,7 @@ export function ProfileTab(): JSX.Element {
           <div className="tr-panel-head">
             <h2 className="tr-title tr-h3 tr-grow">Match history</h2>
             <small className="tr-muted">Last {Math.min(20, history.length)} shows</small>
+            <OpenReplayButton />
           </div>
           <HistoryList entries={history} />
         </div>

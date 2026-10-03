@@ -6,6 +6,7 @@ import { TypeBadge, Panel } from '../components/bits.tsx';
 import { Button } from '../components/controls.tsx';
 import { Icon } from '../components/icons/index.tsx';
 import { ui, useUI } from '../store/uiStore.ts';
+import { OpenReplayButton } from './Replay.tsx';
 
 /** Last 20 shows. */
 export function MatchHistoryScreen(): JSX.Element {
@@ -23,7 +24,8 @@ export function MatchHistoryScreen(): JSX.Element {
         >
           <Icon name="chevron-left" size="0.9em" /> Back
         </Button>
-        <h1 className="tr-title tr-h2">Match history</h1>
+        <h1 className="tr-title tr-h2 tr-grow">Match history</h1>
+        <OpenReplayButton />
       </div>
       <Panel className="tr-history-list tr-scroll">
         {history.length === 0 && <div className="tr-empty">No shows yet. Go make some history!</div>}

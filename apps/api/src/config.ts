@@ -23,6 +23,7 @@ const EnvSchema = z.object({
   DATABASE_URL: optionalString,
   PGLITE_DIR: z.string().default('./.data/pglite'),
   REDIS_URL: optionalString,
+  ALLOW_MEMORY_STORE: optionalString,
   JWT_SECRET: z.string().min(32).default(DEV_JWT_SECRET),
   INTERNAL_HMAC_SECRET: z.string().min(16).default(DEV_INTERNAL_SECRET),
   ADMIN_TOKEN: optionalString,
@@ -35,6 +36,8 @@ const EnvSchema = z.object({
   GOOGLE_CLIENT_SECRET: optionalString,
   STRIPE_SECRET_KEY: optionalString,
   STRIPE_WEBHOOK_SECRET: optionalString,
+  SMTP_URL: optionalString,
+  SMTP_FROM: optionalString,
   NAME_CHANGE_COOLDOWN_DAYS: z.coerce.number().int().min(0).default(30),
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(300),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
@@ -58,6 +61,12 @@ export interface ApiConfig {
   pgliteDir: string;
   /** Redis connection string; absent → in-process KV. */
   redisUrl: string | undefined;
+  /**
+   * True when production runs on the in-process KV because `ALLOW_MEMORY_STORE=1`
+   * was set explicitly; parties, presence and leaderboards are then lost on
+   * restart and not shared between instances.
+   */
+  memoryStoreInProduction: boolean;
   /** HS256 secret for access tokens. Shared with the matchmaker, which verifies them. */
   jwtSecret: string;
   /** HMAC secret shared with game servers for `/internal/*` calls. */
@@ -73,6 +82,8 @@ export interface ApiConfig {
   discord: OAuthClientConfig | undefined;
   google: OAuthClientConfig | undefined;
   stripe: { secretKey: string; webhookSecret: string | undefined } | undefined;
+  /** SMTP relay for sign-in emails; absent → console (dev) or email sign-in disabled (production). */
+  smtp: { url: string; from: string } | undefined;
   nameChangeCooldownDays: number;
   /** Requests per minute per client for the global rate limiter. */
   rateLimitMax: number;
@@ -88,7 +99,8 @@ function pair(id: string | undefined, secret: string | undefined): OAuthClientCo
  *
  * @param env - Usually `process.env`; tests pass a literal map.
  * @returns The validated configuration.
- * @throws If a variable is malformed, or production runs with development secrets.
+ * @throws If a variable is malformed, or production runs with development
+ *   secrets, or without `REDIS_URL` unless `ALLOW_MEMORY_STORE=1`.
  */
 export function loadConfig(env: Record<string, string | undefined> = process.env): ApiConfig {
   const e = EnvSchema.parse(env);
@@ -96,6 +108,13 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     if (e.JWT_SECRET === DEV_JWT_SECRET) throw new Error('JWT_SECRET must be set in production');
     if (e.INTERNAL_HMAC_SECRET === DEV_INTERNAL_SECRET) {
       throw new Error('INTERNAL_HMAC_SECRET must be set in production');
+    }
+    if (!e.REDIS_URL && e.ALLOW_MEMORY_STORE !== '1') {
+      throw new Error(
+        'REDIS_URL must be set in production: parties, presence, leaderboards and nonces would live in ' +
+          'process memory, vanish on restart and not be shared between instances. ' +
+          'Set ALLOW_MEMORY_STORE=1 to run a single instance on memory anyway.',
+      );
     }
   }
   const corsOrigins: string[] | true = e.CORS_ORIGINS
@@ -112,6 +131,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     databaseUrl: e.DATABASE_URL,
     pgliteDir: e.NODE_ENV === 'test' ? 'memory://' : e.PGLITE_DIR,
     redisUrl: e.REDIS_URL,
+    memoryStoreInProduction: e.NODE_ENV === 'production' && !e.REDIS_URL,
     jwtSecret: e.JWT_SECRET,
     internalHmacSecret: e.INTERNAL_HMAC_SECRET,
     adminToken: e.ADMIN_TOKEN,
@@ -122,6 +142,12 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     google: pair(e.GOOGLE_CLIENT_ID, e.GOOGLE_CLIENT_SECRET),
     stripe: e.STRIPE_SECRET_KEY
       ? { secretKey: e.STRIPE_SECRET_KEY, webhookSecret: e.STRIPE_WEBHOOK_SECRET }
+      : undefined,
+    smtp: e.SMTP_URL
+      ? {
+          url: e.SMTP_URL,
+          from: e.SMTP_FROM ?? `Tumble Royale <no-reply@${new URL(e.PUBLIC_WEB_URL).hostname}>`,
+        }
       : undefined,
     nameChangeCooldownDays: e.NAME_CHANGE_COOLDOWN_DAYS,
     rateLimitMax: e.RATE_LIMIT_MAX,

@@ -9,12 +9,16 @@ import { authIdentities, inventoryItems, loadouts, profiles, users } from '../db
 import { requireUser } from '../http/auth.ts';
 import { conflict, notFound, parse } from '../http/errors.ts';
 import { LOADOUT_COUNT, LoadoutItemsSchema, validateLoadout } from '../inventory/loadout.ts';
-import { changeDisplayName, getProfileCard, REGIONS } from './accounts.ts';
+import { moveLeaderboardRegion } from '../leaderboards/service.ts';
+import { accountRegion, changeDisplayName, getProfileCard, RegionSchema } from './accounts.ts';
+import { deleteAccount } from './erase.ts';
 
 const PatchMe = z.object({
   displayName: z.string().max(32).optional(),
-  region: z.enum(REGIONS).optional(),
+  region: RegionSchema.optional(),
 });
+/** Deleting an account cannot be undone, so the client must echo an explicit confirmation. */
+const DeleteMe = z.object({ confirm: z.literal('DELETE') });
 const IdParam = z.object({ id: z.string().uuid() });
 const IndexParam = z.object({
   index: z.coerce
@@ -64,6 +68,12 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: AppContext): vo
       },
       activeLoadout: extra?.p.activeLoadout ?? 0,
       nameChangedAt: extra?.p.nameChangedAt?.toISOString() ?? null,
+      // Null means a rename is allowed now: the first one is free of the cooldown.
+      nameChangeAvailableAt: extra?.p.nameChangedAt
+        ? new Date(
+            extra.p.nameChangedAt.getTime() + ctx.config.nameChangeCooldownDays * 86_400_000,
+          ).toISOString()
+        : null,
       linkedProviders: [...new Set(linked.map((l) => l.provider))],
     };
   });
@@ -71,7 +81,8 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: AppContext): vo
   app.patch('/me', async (req) => {
     const auth = await requireUser(ctx, req);
     const body = parse(PatchMe, req.body);
-    return ctx.db.transaction(async (tx) => {
+    const previousRegion = body.region ? await accountRegion(ctx.db, auth.userId) : null;
+    const result = await ctx.db.transaction(async (tx) => {
       let name: { displayName: string; tag: string } | undefined;
       if (body.displayName !== undefined) {
         name = await changeDisplayName(
@@ -85,6 +96,18 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: AppContext): vo
       if (body.region) await tx.update(users).set({ region: body.region }).where(eq(users.id, auth.userId));
       return { ...(name ?? {}), ...(body.region ? { region: body.region } : {}) };
     });
+    if (body.region && previousRegion && previousRegion !== body.region) {
+      await moveLeaderboardRegion(ctx, auth.userId, previousRegion, body.region);
+    }
+    return result;
+  });
+
+  app.delete('/me', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (req, reply) => {
+    const auth = await requireUser(ctx, req);
+    parse(DeleteMe, req.body);
+    await deleteAccount(ctx, auth.userId, { ip: req.ip, userAgent: req.headers['user-agent'] });
+    req.log.info({ userId: auth.userId }, 'account deleted');
+    return reply.code(204).send();
   });
 
   app.get('/profile/:id', async (req) => {

@@ -19,6 +19,7 @@ const UP = new Vector3(0, 1, 0);
  */
 export class SceneDirector {
   private current: GameView | null = null;
+  private overlay: GameView | null = null;
   private readonly afterSwap: (() => void)[] = [];
   private width = 1;
   private height = 1;
@@ -36,7 +37,41 @@ export class SceneDirector {
 
   /** Kind of the live view (`none` before the first). */
   get kind(): string {
-    return this.current?.kind ?? 'none';
+    return this.overlay?.kind ?? this.current?.kind ?? 'none';
+  }
+
+  /** The view drawn over the live one (replay viewer), or null. */
+  get overlayView(): GameView | null {
+    return this.overlay;
+  }
+
+  /**
+   * Draws `view` instead of the live view until {@link clearOverlay}. The live
+   * view is kept (and keeps being swapped by the show) but is neither updated
+   * nor rendered meanwhile.
+   *
+   * @param view - The overlay (ownership transfers to the director).
+   */
+  showOverlay(view: GameView): void {
+    if (this.overlay && this.overlay !== view) this.overlay.dispose();
+    this.overlay = view;
+    view.resize(this.width, this.height);
+    this.post.setView(view.scene, view.camera);
+    this.post.setGrade(view.grade);
+  }
+
+  /** Disposes the overlay and returns the screen to the live view. */
+  clearOverlay(): void {
+    const o = this.overlay;
+    if (!o) return;
+    this.overlay = null;
+    const v = this.current;
+    if (v) {
+      v.resize(this.width, this.height);
+      this.post.setView(v.scene, v.camera);
+      this.post.setGrade(v.grade);
+    }
+    o.dispose();
   }
 
   /**
@@ -48,8 +83,10 @@ export class SceneDirector {
     const prev = this.current;
     this.current = view;
     view.resize(this.width, this.height);
-    this.post.setView(view.scene, view.camera);
-    this.post.setGrade(view.grade);
+    if (!this.overlay) {
+      this.post.setView(view.scene, view.camera);
+      this.post.setGrade(view.grade);
+    }
     if (prev && prev !== view) prev.dispose();
     const pending = this.afterSwap.splice(0);
     for (const fn of pending) fn();
@@ -67,11 +104,13 @@ export class SceneDirector {
 
   /** Re-applies the grade of the active view (theme or weather changed). */
   refreshGrade(): void {
-    if (this.current) this.post.setGrade(this.current.grade);
+    const v = this.overlay ?? this.current;
+    if (v) this.post.setGrade(v.grade);
   }
 
   /** Disposes the active view (show teardown). */
   clear(): void {
+    this.clearOverlay();
     this.current?.dispose();
     this.current = null;
   }
@@ -81,6 +120,7 @@ export class SceneDirector {
     this.width = width;
     this.height = height;
     this.current?.resize(width, height);
+    this.overlay?.resize(width, height);
   }
 
   /**
@@ -90,7 +130,7 @@ export class SceneDirector {
    * @param realDt - Unscaled delta (s).
    */
   update(dt: number, realDt: number): void {
-    const v = this.current;
+    const v = this.overlay ?? this.current;
     if (!v) return;
     v.update(dt, realDt);
     const cam = v.camera;

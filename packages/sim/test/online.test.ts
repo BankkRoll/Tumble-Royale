@@ -22,7 +22,6 @@ import {
   assignBotSkills,
   assignShowParties,
   lobbySpawnPoint,
-  scaleRoundDuration,
   type RoundStartInfo,
   type ShowEvent,
 } from '../src/show/index.ts';
@@ -111,9 +110,7 @@ describe('director online options', () => {
     qualification: { mode: 'lastStanding', ratio: 0, teamsEliminated: 0, teams: 0 },
   });
 
-  it('scales round time limits and forwards party ids to match players', () => {
-    expect(scaleRoundDuration(round, 1)).toBe(round);
-    expect(scaleRoundDuration(round, 1.5).duration.seconds).toBeCloseTo(round.duration.seconds * 1.5);
+  it('forwards the round time scale and party ids to match players', () => {
     const starts: RoundStartInfo[] = [];
     const director = new ShowDirector({
       seed: 3,
@@ -152,9 +149,7 @@ describe('director online options', () => {
     expect(starts).toHaveLength(1);
     expect(events.some((e) => e.type === 'showPhase' && e.phase === ShowPhase.InRound)).toBe(true);
     const info = starts[0]!;
-    expect(info.round.duration.seconds).toBeCloseTo(
-      (info.round.id === 'r1' ? round : final).duration.seconds * 2,
-    );
+    expect(info.roundTimeScale).toBe(2);
     expect(info.players.map((p) => p.partyId)).toEqual([0, 0, 1, 1]);
   });
 });

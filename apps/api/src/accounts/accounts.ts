@@ -3,6 +3,7 @@
  * display name changes and the public profile card.
  */
 import { and, eq, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import { starterItems, type Catalog } from '../catalog.ts';
 import type { DbOrTx } from '../db/client.ts';
 import {
@@ -24,6 +25,24 @@ export type IdentityProvider = 'device' | 'discord' | 'google' | 'email';
 export const REGIONS = ['na', 'eu', 'asia', 'sa', 'oce'] as const;
 /** A region id. */
 export type Region = (typeof REGIONS)[number];
+
+/** A region from untrusted input: trimmed, case-insensitive, one of {@link REGIONS}. */
+export const RegionSchema = z.preprocess(
+  (v) => (typeof v === 'string' ? v.trim().toLowerCase() : v),
+  z.enum(REGIONS),
+);
+
+/**
+ * The account's current region. Access tokens carry the region they were
+ * minted with, which goes stale after `PATCH /me` until the next refresh.
+ *
+ * @throws {ApiError} 404 when the user does not exist.
+ */
+export async function accountRegion(db: DbOrTx, userId: string): Promise<Region> {
+  const [row] = await db.select({ region: users.region }).from(users).where(eq(users.id, userId));
+  if (!row) throw notFound('User');
+  return row.region as Region;
+}
 
 /** Minimal account identity used to mint tokens. */
 export interface AccountRef {

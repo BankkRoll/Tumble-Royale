@@ -101,6 +101,8 @@ interface PlayerSlot {
   lastYaw: number;
   /** Account id from the join ticket (null for bots and unticketed dev joins). */
   userId: string | null;
+  /** Chat-suspended (join ticket `mute`): chat from this slot is dropped. */
+  muted?: boolean;
   /** Action counters for challenge progress. */
   stats: PlayerStatsCounters;
   /** Who this human queued with: matchmaker team, else party id (null for solos and bots). */
@@ -443,6 +445,7 @@ export class Room {
       held.name = name;
       held.userId = ticket!.sub;
       held.loadout = hello.loadout.slice(0, 255);
+      held.muted = ticket!.mute === true;
       held.session = session;
       this.enterLobby(held);
       this.attach(session, held, false);
@@ -462,6 +465,7 @@ export class Room {
       spectator,
     });
     slot.partyKey = partyKeyOf(ticket);
+    slot.muted = ticket?.mute === true;
     this.slots.set(id, slot);
     if (this.firstJoinAt < 0) this.firstJoinAt = now;
     if (!spectator) this.enterLobby(slot);
@@ -691,6 +695,8 @@ export class Room {
       (this.state === 'lobby' && this.slots.size === 0 && this.serverTick > SERVER_TICK_HZ * 60)
     ) {
       this.log(`[room ${this.id}] closing (${over ? 'show over' : 'empty'})`);
+      // Every human left mid-show: report the rounds they played, or their rewards would be lost with the room.
+      if (this.state === 'show' && !this.rewardsDone) this.reportResults([]);
       this.dispose();
     }
   }
@@ -1015,6 +1021,7 @@ export class Room {
   private onLowFreq(session: ClientSession, slot: PlayerSlot, msg: LowFreqMessage, now: number): void {
     switch (msg.t) {
       case 'chat': {
+        if (slot.muted) return;
         const text = sanitizeChat(msg.text);
         if (!text || !session.guard.admitChat(now)) return;
         this.broadcast({ t: 'chat', from: slot.id, text });
@@ -1091,6 +1098,8 @@ export class Room {
       mode: 'authority',
       ...(plan.qualifyTarget !== undefined ? { qualifyTarget: plan.qualifyTarget } : {}),
       ...(plan.variationId !== undefined ? { variationId: plan.variationId } : {}),
+      ...(plan.mutatorId ? { mutatorId: plan.mutatorId } : {}),
+      ...(plan.roundTimeScale !== undefined ? { roundTimeScale: plan.roundTimeScale } : {}),
     });
     this.currentPlan = plan;
     this.roundIndex = plan.index ?? this.roundIndex + 1;
@@ -1267,9 +1276,8 @@ export class Room {
       isFinal: plan?.isFinal ?? this.round.type === 'final',
       qualifyTarget: plan?.qualifyTarget ?? this.sim.getStatus().qualifyTarget,
       variationId: this.sim.variationId ?? null,
-      ...(plan?.durationScale !== undefined && plan.durationScale !== 1
-        ? { durationScale: plan.durationScale }
-        : {}),
+      mutatorId: plan?.mutatorId ?? null,
+      roundTimeScale: plan?.roundTimeScale ?? 1,
     });
   }
 

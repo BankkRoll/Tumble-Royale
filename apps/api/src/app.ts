@@ -2,7 +2,8 @@
  * Composition root for the API.
  *
  * Responsibilities:
- * - Open the database (Postgres or PGlite), run migrations, sync the content catalog.
+ * - Open the database (Postgres or PGlite), run migrations, sync the content catalog,
+ *   soft-reset ranked ratings when the active season is new.
  * - Pick the KV (Redis or memory), payment provider (Stripe or fake) and mailer.
  * - Configure Fastify: CORS, rate limits, raw-body JSON parsing, error mapping.
  * - Register every route module and the realtime gateway.
@@ -11,8 +12,9 @@ import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import { sql } from 'drizzle-orm';
 import Fastify, { type FastifyInstance } from 'fastify';
+import { registerIdentityRoutes } from './accounts/identities.ts';
 import { registerAccountRoutes } from './accounts/routes.ts';
-import { ConsoleMailer, type Mailer } from './auth/mailer.ts';
+import { createMailer, type Mailer } from './auth/mailer.ts';
 import { registerAuthRoutes } from './auth/routes.ts';
 import { cosmeticIndex, loadCatalog, type Catalog } from './catalog.ts';
 import type { ApiConfig } from './config.ts';
@@ -27,10 +29,13 @@ import {
 } from './economy/payments.ts';
 import { registerEconomyRoutes } from './economy/routes.ts';
 import { ApiError } from './http/errors.ts';
+import { rateLimitKey } from './http/rate-limit.ts';
 import { createKV, type KV } from './kv/index.ts';
 import { registerMatchRoutes } from './matches/routes.ts';
 import { registerModerationRoutes } from './moderation/routes.ts';
 import { registerProgressionRoutes } from './progression/routes.ts';
+import { registerTutorialRoutes } from './progression/tutorial.ts';
+import { ensureRankedSeason } from './ranked/season.ts';
 import { attachGateway, type Gateway } from './realtime/gateway.ts';
 import { Notifier } from './realtime/notifier.ts';
 import { registerFriendRoutes } from './social/friends.ts';
@@ -126,12 +131,13 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     catalog,
     cosmetics: cosmeticIndex(catalog),
     now,
-    mailer: opts.mailer ?? new ConsoleMailer(),
+    mailer: opts.mailer ?? createMailer(config),
     payments,
     fetch: opts.fetch ?? fetch,
     notifier: new Notifier(kv),
   };
   await syncCatalog(ctx);
+  await ensureRankedSeason(ctx);
 
   const app = Fastify({
     logger: opts.logger === false ? false : { level: config.logLevel },
@@ -161,11 +167,7 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     global: true,
     max: config.rateLimitMax,
     timeWindow: '1 minute',
-    keyGenerator: (req) => {
-      const auth = req.headers.authorization;
-      // Per-token buckets for signed-in calls so players behind one NAT do not share a limit.
-      return auth?.startsWith('Bearer ') ? `t:${auth.slice(-24)}` : `ip:${req.ip}`;
-    },
+    keyGenerator: (req) => rateLimitKey(config.jwtSecret, req, now),
     errorResponseBuilder: (_req, c) => ({
       statusCode: 429,
       error: 'rate_limited',
@@ -209,8 +211,10 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
 
   registerAuthRoutes(app, ctx);
   registerAccountRoutes(app, ctx);
+  registerIdentityRoutes(app, ctx);
   registerEconomyRoutes(app, ctx);
   registerProgressionRoutes(app, ctx);
+  registerTutorialRoutes(app, ctx);
   registerMatchRoutes(app, ctx);
   registerFriendRoutes(app, ctx);
   registerPartyRoutes(app, ctx);

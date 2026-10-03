@@ -58,8 +58,10 @@ export interface ShowRoundPlan {
    * the room falls back to its roster with `team: -1` when absent.
    */
   players?: readonly MatchPlayerInfo[];
-  /** Private-show timer multiplier already applied to `round`'s time limit. */
-  durationScale?: number;
+  /** Show mutator id (`@tumble/sim/mutators`); forwarded to the sim and to clients in `joinRound`. */
+  mutatorId?: string | null;
+  /** Round timer multiplier (0.5–2); forwarded to the sim and to clients in `joinRound`. */
+  roundTimeScale?: number;
 }
 
 /** Things the show director asks the room to do, drained once per tick. */

@@ -13,6 +13,7 @@ export {
   type UIIntentListener,
   type UIHandlers,
 } from './events.ts';
+export * from './account.ts';
 export {
   playerWallTimeline,
   type PlayerWallTimeline,

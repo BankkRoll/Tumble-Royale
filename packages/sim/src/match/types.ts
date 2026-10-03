@@ -88,6 +88,17 @@ export interface MatchSimOptions {
    * always respawn) and players may join/leave via `addPlayer`/`removePlayer`.
    */
   lobby?: boolean;
+  /**
+   * Show mutator id (`@tumble/sim/mutators`), e.g. `moon-bounce`. Every peer
+   * simulating the round (server, predicting clients, offline) must pass the
+   * same id. Unknown ids are ignored with a warning.
+   */
+  mutatorId?: string | null;
+  /**
+   * Multiplier on the round timer and overtime, clamped to 0.5–2 (see
+   * `clampRoundTimeScale`). Must match on every peer. Defaults to 1.
+   */
+  roundTimeScale?: number;
 }
 
 /**
@@ -107,6 +118,8 @@ export interface MatchSim {
   readonly phase?: RoundPhaseId;
   /** Seeded variation applied to this round, or null when the round has none. */
   readonly variationId?: string | null;
+  /** Show mutator applied to this round, or null. */
+  readonly mutatorId?: string | null;
 
   /** Feed the input to use for `playerId` on the next `step()`. Bots generate their own. */
   setInput(playerId: number, input: CharacterInput): void;

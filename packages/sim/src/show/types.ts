@@ -57,6 +57,16 @@ export interface RoundStartInfo {
   /** Explicit target from the playlist curve; undefined lets the round decide. */
   qualifyTarget?: number;
   isFinal: boolean;
+  /**
+   * The show's mutator (`@tumble/sim/mutators` id), or null. Hosts pass it to
+   * `createMatchSim` as `mutatorId` and must ship it to predicting clients.
+   */
+  mutatorId: string | null;
+  /**
+   * Round timer multiplier (0.5–2, already clamped). Hosts pass it to
+   * `createMatchSim` as `roundTimeScale` and must ship it to predicting clients.
+   */
+  roundTimeScale: number;
 }
 
 /**
@@ -133,12 +143,21 @@ export interface ShowState {
   /** Eliminated and departed players watching. */
   spectators: readonly number[];
   qualifyTarget: number | null;
+  /** The show's mutator id, or null. Fixed for the whole show. */
+  mutatorId: string | null;
 }
 
 /** Notifications from the director. */
 export type ShowEvent =
   | { type: 'showPhase'; phase: ShowPhaseId }
-  | { type: 'roundSelected'; roundIndex: number; roundId: string; isFinal: boolean }
+  | {
+      type: 'roundSelected';
+      roundIndex: number;
+      roundId: string;
+      isFinal: boolean;
+      /** The show's mutator id, or null. */
+      mutatorId: string | null;
+    }
   | { type: 'roundPhase'; phase: RoundPhaseId; roundIndex: number; roundId: string }
   | { type: 'roundResult'; outcome: RoundOutcome }
   | { type: 'ended'; summary: ShowSummary };

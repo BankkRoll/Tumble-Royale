@@ -50,6 +50,8 @@ export interface JoinTicketClaims {
   bots: number;
   teamSize: number;
   custom?: TicketCustomSettings;
+  /** Chat-suspended account: its chat is never relayed. */
+  mute?: boolean;
 }
 
 function b64url(buf: Buffer): string {
@@ -119,6 +121,7 @@ export function verifyJoinTicket(secret: string, token: string, nowMs: number): 
     bots: isInt(c.bots) ? c.bots : Math.max(0, c.size - c.humans),
     teamSize: isInt(c.teamSize) ? c.teamSize : 1,
     ...(c.custom && typeof c.custom === 'object' ? { custom: c.custom as TicketCustomSettings } : {}),
+    ...(c.mute === true ? { mute: true } : {}),
   };
 }
 

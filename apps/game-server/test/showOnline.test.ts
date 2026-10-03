@@ -280,10 +280,10 @@ describe('private show options', () => {
     h.advance(30 * 3, [a]);
     const round = h.sims.find((s) => !s.opts.lobby)!;
     expect(round).toBeDefined();
-    const base = round.round.type === 'final' ? FINAL : RACE;
-    expect(round.round.duration.seconds).toBeCloseTo(base.duration.seconds * 1.5);
+    // The sim scales its own timer from this (one mechanism on every peer).
+    expect(round.opts.roundTimeScale).toBe(1.5);
     const join = (a.lowFreq('joinRound') as Msg<'joinRound'>[]).find((j) => !j.lobby);
-    expect(join?.durationScale).toBe(1.5);
+    expect(join?.roundTimeScale).toBe(1.5);
   });
 });
 

@@ -24,7 +24,9 @@ import {
   type ShowPhaseId,
   RoundDefinitionSchema,
 } from '@tumble/shared';
+import { clampRoundTimeScale, scaleRoundTimer } from '../match/round-time.ts';
 import { PlayerRoundStatus, type MatchPlayerInfo } from '../match/types.ts';
+import { getMutator, pickMutator } from '../mutators/index.ts';
 import { assignTeams } from '../rounds/team-score.ts';
 import { ShowPlaylistSchema, type ShowPlaylist, type ShowPlaylistInput } from './schema/index.ts';
 import { selectRound } from './selector.ts';
@@ -56,11 +58,18 @@ export interface ShowDirectorOptions {
   /** Humans who have not acked LOADING in time are eliminated (spec default: true). */
   lateLoadersEliminated?: boolean;
   /**
-   * Multiplies every round's time limit and overtime (private-show option,
-   * 0.5–2). Applied to the round handed to the host, so the match sim's timer
-   * and the director's safety cut-off agree.
+   * Multiplier on every round's timer and overtime (private shows' "timer"
+   * option, matchmaker tickets). Clamped to 0.5–2; defaults to 1. The director
+   * uses it for its own PLAYING cut-off and forwards it in
+   * {@link RoundStartInfo.roundTimeScale}.
    */
   roundTimeScale?: number;
+  /**
+   * Forces the show mutator: an id from `@tumble/sim/mutators`, or null for
+   * none. When omitted, the director picks one from `playlist.mutators` with
+   * the show seed.
+   */
+  mutatorId?: string | null;
 }
 
 interface CurrentRound {
@@ -82,11 +91,14 @@ export class ShowDirector {
   readonly seed: number;
   readonly playlist: ShowPlaylist;
   readonly participants: readonly ShowParticipant[];
+  /** The show's mutator id (fixed for the whole show), or null. */
+  readonly mutatorId: string | null;
+  /** Round timer multiplier in use (clamped). */
+  readonly roundTimeScale: number;
   private readonly catalog: Map<string, RoundDefinition>;
   private readonly host: ShowRoundHost;
   private readonly timings: ShowTimings;
   private readonly lateLoadersEliminated: boolean;
-  private readonly roundTimeScale: number;
   private readonly rng: Rng;
   private readonly listeners: ShowListener[] = [];
   private readonly byId = new Map<number, ShowParticipant>();
@@ -124,9 +136,12 @@ export class ShowDirector {
     this.host = opts.host;
     this.timings = { ...DEFAULT_SHOW_TIMINGS, ...opts.timings };
     this.lateLoadersEliminated = opts.lateLoadersEliminated ?? true;
-    const scale = opts.roundTimeScale ?? 1;
-    this.roundTimeScale = Number.isFinite(scale) && scale > 0 ? Math.min(4, Math.max(0.25, scale)) : 1;
     this.rng = new Rng((this.seed ^ SELECT_SALT) >>> 0);
+    this.roundTimeScale = clampRoundTimeScale(opts.roundTimeScale);
+    this.mutatorId =
+      opts.mutatorId !== undefined
+        ? (getMutator(opts.mutatorId)?.id ?? null)
+        : pickMutator(this.seed, this.playlist.mutators);
     this.alive = this.participants.map((p) => p.id);
     this.duration = this.timings.preShow;
   }
@@ -297,7 +312,7 @@ export class ShowDirector {
     this.elapsed -= this.duration;
     const cur = this.live as CurrentRound;
     if (next === RoundPhase.Playing) {
-      const d = cur.round.duration;
+      const d = scaleRoundTimer(cur.round, this.roundTimeScale).duration;
       cur.playingLimit = d.seconds > 0 ? d.seconds + d.overtimeSeconds + this.timings.safetyGrace : Infinity;
     }
     this.setRoundPhase(next, nextDuration, matchTime);
@@ -314,13 +329,12 @@ export class ShowDirector {
     const index = this.roundIndex + 1;
     const p = this.playlist;
     const isFinal = n <= 2 || index >= p.maxRounds - 1 || (n <= p.finalAtOrBelow && index >= p.minRounds - 1);
-    const picked = selectRound(
+    const round = selectRound(
       p,
       this.catalog,
       { roundIndex: index, players: n, isFinal, previousType: this.previousType, used: this.used },
       this.rng,
     );
-    const round = picked ? scaleRoundDuration(picked, this.roundTimeScale) : null;
     if (!round) {
       this.finishShow();
       return;
@@ -338,6 +352,8 @@ export class ShowDirector {
       players,
       qualifyTarget: qualifyTarget ?? undefined,
       isFinal,
+      mutatorId: this.mutatorId,
+      roundTimeScale: this.roundTimeScale,
     });
     this.live = {
       round,
@@ -351,7 +367,13 @@ export class ShowDirector {
     };
     for (const id of this.left) if (this.live.entrants.includes(id)) driver.forfeit?.(id);
     this.setShowPhase(ShowPhase.InRound, -1);
-    this.emit({ type: 'roundSelected', roundIndex: index, roundId: round.id, isFinal });
+    this.emit({
+      type: 'roundSelected',
+      roundIndex: index,
+      roundId: round.id,
+      isFinal,
+      mutatorId: this.mutatorId,
+    });
     this.setRoundPhase(RoundPhase.Loading, this.timings.loadingMax);
   }
 
@@ -579,34 +601,13 @@ export class ShowDirector {
       alive: [...this.alive],
       spectators: this.participants.filter((p) => !aliveSet.has(p.id)).map((p) => p.id),
       qualifyTarget: cur?.qualifyTarget ?? null,
+      mutatorId: this.mutatorId,
     };
   }
 
   private emit(e: ShowEvent): void {
     for (const l of this.listeners) l(e);
   }
-}
-
-/**
- * A round with its time limit and overtime multiplied by `scale` (private-show
- * timer option). Returns the same object when `scale` is 1 so catalogue
- * identity checks keep working.
- *
- * @param round - Validated round.
- * @param scale - Multiplier; untimed rounds (`seconds <= 0`) stay untimed.
- * @returns The scaled round.
- * @example
- * const slow = scaleRoundDuration(getRound('tile-panic')!, 1.5);
- */
-export function scaleRoundDuration(round: RoundDefinition, scale: number): RoundDefinition {
-  if (scale === 1 || !(scale > 0) || round.duration.seconds <= 0) return round;
-  return {
-    ...round,
-    duration: {
-      seconds: Math.round(round.duration.seconds * scale * 10) / 10,
-      overtimeSeconds: Math.round(round.duration.overtimeSeconds * scale * 10) / 10,
-    },
-  };
 }
 
 /** Seed helper: a per-show seed from a room id and creation counter. */

@@ -16,11 +16,13 @@ import type {
   PlayMode,
   PatternId,
   PlayerWallEvent,
+  ReplayCommand,
   ScreenId,
   Settings,
   SettingsSection,
   TumblerColors,
 } from './types.ts';
+import type { AuthProviderId } from './account.ts';
 
 /** Every intent the UI can emit, keyed by name with its payload. */
 export interface UIIntents {
@@ -72,8 +74,19 @@ export interface UIIntents {
   newsRead: { ids: string[] };
   requestMatchHistory: undefined;
   settingsChange: { settings: Settings; section: SettingsSection };
+  /**
+   * Account management. `link-*` adds a sign-in method to this Tumbler,
+   * `signIn-*` signs this device in to an existing Tumbler, `unlink-*` removes
+   * one. `value` is the address for the email actions and the new name for `rename`.
+   */
   accountAction: {
-    action: 'link-discord' | 'link-google' | 'link-email' | 'signOut' | 'deleteAccount' | 'rename';
+    action:
+      | `link-${AuthProviderId}`
+      | `signIn-${AuthProviderId}`
+      | `unlink-${AuthProviderId}`
+      | 'signOut'
+      | 'deleteAccount'
+      | 'rename';
     value?: string;
   };
   spectate: undefined;
@@ -112,6 +125,14 @@ export interface UIIntents {
   navUnhandled: { dir: NavDirection };
   /** Colour preview while the welcome screen is open. */
   previewColors: { colors: TumblerColors; pattern: PatternId };
+  /** Watch a recorded round of this show (`ReplayRoundEntry.key`). */
+  replayOpen: { key: string };
+  /** Watch the round in progress from the start (after being knocked out). */
+  replayOpenLive: undefined;
+  /** Load a saved replay file and play it. */
+  replayOpenFile: { name: string; bytes: ArrayBuffer };
+  /** Replay viewer control. */
+  replayCommand: ReplayCommand;
 }
 
 /** Intent name. */

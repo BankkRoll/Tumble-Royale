@@ -31,8 +31,10 @@ export interface ShowDirectorControllerOptions {
   rounds: ShowDirectorOptions['rounds'];
   timings?: ShowDirectorOptions['timings'];
   lateLoadersEliminated?: boolean;
-  /** Private-show round timer multiplier (0.5–2). */
+  /** Round timer multiplier (e.g. a private-show ticket's timer option); clamped to 0.5–2 by the director. */
   roundTimeScale?: number;
+  /** Forces the show mutator; omit to let the director pick from the playlist. */
+  mutatorId?: string | null;
 }
 
 const EMPTY_PLAYERS: RoundStatus['players'] = new Map();
@@ -91,6 +93,7 @@ export class ShowDirectorController implements ShowController {
         ? { lateLoadersEliminated: this.opts.lateLoadersEliminated }
         : {}),
       ...(this.opts.roundTimeScale !== undefined ? { roundTimeScale: this.opts.roundTimeScale } : {}),
+      ...(this.opts.mutatorId !== undefined ? { mutatorId: this.opts.mutatorId } : {}),
     });
     this.director.on((e) => this.onDirectorEvent(e));
   }
@@ -131,10 +134,9 @@ export class ShowDirectorController implements ShowController {
       seed: info.seed,
       playerIds: info.players.map((p) => p.id),
       players: info.players,
-      ...(this.opts.roundTimeScale !== undefined && this.opts.roundTimeScale !== 1
-        ? { durationScale: this.opts.roundTimeScale }
-        : {}),
       ...(info.qualifyTarget !== undefined ? { qualifyTarget: info.qualifyTarget } : {}),
+      mutatorId: info.mutatorId,
+      roundTimeScale: info.roundTimeScale,
     };
     this.events.push({ type: 'roundStart', plan: this.plan });
     return {

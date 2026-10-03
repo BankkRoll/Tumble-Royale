@@ -166,9 +166,11 @@ larger message is sent alone). Payloads:
   v3 additions: `playerList[].partyId` (duos/squads), `joinRound.lobby` (the
   live pre-show platform: a rule-less lobby sim players join and leave while
   snapshots stream; joiners appear as snapshot entities, leavers as removals),
-  `joinRound.durationScale` (private-show timer multiplier already applied to
-  the round time limit), `roundResults[].carried` (eliminated but carried by
-  a qualifying teammate) and `showPhase.startsInMs` (pre-show countdown).
+  `joinRound.mutatorId` (show mutator every peer passes to its sim),
+  `joinRound.roundTimeScale` (round timer multiplier, 0.5–2; peers pass it as
+  `MatchSimOptions.roundTimeScale`, which is the only place a timer is scaled),
+  `roundResults[].carried` (eliminated but carried by a qualifying teammate)
+  and `showPhase.startsInMs` (pre-show countdown).
 
 ## Clock sync (Ping/Pong)
 

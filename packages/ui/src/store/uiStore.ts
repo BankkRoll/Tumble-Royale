@@ -44,6 +44,8 @@ import type {
   PreShowInfo,
   ProfileData,
   QueueState,
+  ReplayRoundEntry,
+  ReplayViewerState,
   RewardsSummary,
   RoundCatalogEntry,
   RoundIntroInfo,
@@ -54,6 +56,7 @@ import type {
   Settings,
   SettingsSection,
   ShowIntroInfo,
+  ShowSeat,
   ShowSummary,
   SpectateInfo,
   StampEntry,
@@ -63,6 +66,7 @@ import type {
   ToastInput,
   TransitionKind,
   VictoryInfo,
+  WatchChoice,
   WipePhase,
 } from './types.ts';
 
@@ -144,6 +148,10 @@ export interface UIState {
   countdown: number | null;
   stamps: StampEntry[];
   eliminatedSheet: boolean;
+  /** "Keep watching / Leave show" offer while knocked out (null = nothing pending). */
+  watchChoice: WatchChoice | null;
+  /** The local seat in the running show (null outside shows). */
+  showSeat: ShowSeat | null;
   spectate: SpectateInfo | null;
   emoteWheelOpen: boolean;
   results: RoundResults | null;
@@ -157,6 +165,14 @@ export interface UIState {
   rewards: RewardsSummary | null;
   /** Announcer caption (shown when captions are enabled). */
   caption: string | null;
+
+  // --- replays ------------------------------------------------------------
+  /** Recorded rounds of the current (or just finished) show. */
+  replays: ReplayRoundEntry[];
+  /** The round in progress is being recorded and can be watched now (after elimination). */
+  replayLive: boolean;
+  /** The open replay viewer (null = closed). While open it covers the screen and HUD. */
+  replay: ReplayViewerState | null;
 
   // --- actions: screens ----------------------------------------------------
   /** Changes screen, with the screen's default transition unless overridden. */
@@ -226,6 +242,8 @@ export interface UIState {
   dismissStamp: (id: number) => void;
   clearStamps: () => void;
   setEliminatedSheet: (open: boolean) => void;
+  setWatchChoice: (choice: WatchChoice | null) => void;
+  setShowSeat: (seat: ShowSeat | null) => void;
   setSpectate: (info: SpectateInfo | null) => void;
   setEmoteWheel: (open: boolean) => void;
   setResults: (results: RoundResults | null) => void;
@@ -235,6 +253,14 @@ export interface UIState {
   /** Loads the end-of-show wall; call before `setScreen('playerWall')`. */
   setPlayerWall: (summary: ShowSummary | null, opts?: Partial<PlayerWallOptions>) => void;
   setRewards: (rewards: RewardsSummary | null) => void;
+
+  // --- actions: replays ----------------------------------------------------
+  setReplays: (replays: ReplayRoundEntry[]) => void;
+  setReplayLive: (live: boolean) => void;
+  /** Opens (state) or closes (null) the replay viewer. */
+  setReplay: (replay: ReplayViewerState | null) => void;
+  /** Merges viewer fields (playhead updates at ~15 Hz). */
+  patchReplay: (patch: Partial<ReplayViewerState>) => void;
 
   // --- internal (TumbleWipe component) -------------------------------------
   /** @internal Cover animation finished. */
@@ -310,6 +336,8 @@ export const ui = createStore<UIState>()((set, get) => ({
   countdown: null,
   stamps: [],
   eliminatedSheet: false,
+  watchChoice: null,
+  showSeat: null,
   spectate: null,
   emoteWheelOpen: false,
   results: null,
@@ -321,6 +349,9 @@ export const ui = createStore<UIState>()((set, get) => ({
   playerWallSeq: 0,
   rewards: null,
   caption: null,
+  replays: [],
+  replayLive: false,
+  replay: null,
 
   setScreen: (screen, opts = {}) => {
     const s = get();
@@ -475,6 +506,8 @@ export const ui = createStore<UIState>()((set, get) => ({
   dismissStamp: (id) => set({ stamps: get().stamps.filter((s) => s.id !== id) }),
   clearStamps: () => set({ stamps: [] }),
   setEliminatedSheet: (eliminatedSheet) => set({ eliminatedSheet }),
+  setWatchChoice: (watchChoice) => set({ watchChoice }),
+  setShowSeat: (showSeat) => set({ showSeat }),
   setSpectate: (spectate) => set({ spectate }),
   setEmoteWheel: (emoteWheelOpen) => set({ emoteWheelOpen }),
   setResults: (results) => set({ results }),
@@ -488,6 +521,21 @@ export const ui = createStore<UIState>()((set, get) => ({
       playerWallSeq: get().playerWallSeq + 1,
     }),
   setRewards: (rewards) => set({ rewards }),
+  setReplays: (replays) => set({ replays }),
+  setReplayLive: (replayLive) => {
+    if (get().replayLive !== replayLive) set({ replayLive });
+  },
+  setReplay: (replay) => set({ replay }),
+  patchReplay: (patch) => {
+    const r = get().replay;
+    if (!r) return;
+    for (const k in patch) {
+      if (r[k as keyof ReplayViewerState] !== patch[k as keyof ReplayViewerState]) {
+        set({ replay: { ...r, ...patch } });
+        return;
+      }
+    }
+  },
 }));
 
 function applyScreen(screen: ScreenId, transition: TransitionKind): void {

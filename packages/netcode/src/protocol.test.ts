@@ -71,7 +71,7 @@ describe('protocol v3', () => {
         qualifyTarget: 0,
         variationId: null,
         lobby: true,
-        durationScale: 1.5,
+        roundTimeScale: 1.5,
       },
       { t: 'roundResults', roundId: 'r', results: [{ id: 3, status: 1, place: 9, score: 0, carried: true }] },
       { t: 'showPhase', phase: 0, startsInMs: 9000 },

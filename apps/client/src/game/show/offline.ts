@@ -64,11 +64,13 @@ export class OfflineShowSession extends ShowSession {
    * @param ctx - App services.
    * @param playlist - Validated playlist.
    * @param seed - Show seed.
+   * @param roundTimeScale - Private-show timer multiplier (clamped to 0.5–2 by the director).
    */
   constructor(
     ctx: GameContext,
     private readonly playlist: ShowPlaylist,
     private readonly seed: number,
+    roundTimeScale?: number,
   ) {
     super(ctx);
     this.rounds = showRoundCatalog();
@@ -81,6 +83,7 @@ export class OfflineShowSession extends ShowSession {
       humanName: ctx.playerName(),
       ...(ctx.cfg.players ? { players: Math.max(2, Math.min(60, Math.round(ctx.cfg.players))) } : {}),
       timings: TIMINGS,
+      ...(roundTimeScale !== undefined ? { roundTimeScale } : {}),
     });
     this.localId = this.show.humanId;
     this.showName = playlist.name;
@@ -189,7 +192,9 @@ export class OfflineShowSession extends ShowSession {
         this.onRoundSelected({
           index: e.roundIndex,
           isFinal: e.isFinal,
-          round,
+          // The sim's copy carries the private show's timer scale.
+          round: m.round.id === round.id ? m.round : round,
+          mutatorId: e.mutatorId,
           players,
           seed: this.show.director.seed,
           stage: Math.max(0, e.roundIndex + this.playlist.stageOffset),

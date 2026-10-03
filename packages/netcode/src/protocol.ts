@@ -218,8 +218,13 @@ export interface JoinRoundMsg {
    * Players join and leave it live; it never produces results.
    */
   lobby?: boolean;
-  /** v3: private-show timer multiplier already applied to the round's time limit (default 1). */
-  durationScale?: number;
+  /**
+   * Show mutator (`@tumble/sim/mutators` id) the server applies; predicting
+   * clients must pass it to their sim. Absent or null: none.
+   */
+  mutatorId?: string | null;
+  /** Round timer multiplier the server applies (0.5–2). Absent: 1. */
+  roundTimeScale?: number;
 }
 
 /** Show context, sent once per connection right after Welcome. */

@@ -1,4 +1,4 @@
-import { Rng, type RoundDefinition, type RoundDefinitionInput } from '@tumble/shared';
+import { MAX_PLAYERS, Rng, type RoundDefinition, type RoundDefinitionInput } from '@tumble/shared';
 import { generateBotNames } from '../bots/names.ts';
 import { pickSkill } from '../bots/skill.ts';
 import type { CharacterInput } from '../character/types.ts';
@@ -101,7 +101,7 @@ export function minimumShowSeats(
  */
 export function createOfflineShow(opts: OfflineShowOptions): OfflineShow {
   const playlist = ShowPlaylistSchema.parse(opts.playlist);
-  const requested = Math.max(2, Math.min(60, opts.players ?? playlist.maxPlayers));
+  const requested = Math.max(2, Math.min(MAX_PLAYERS, opts.players ?? playlist.maxPlayers));
   const seats =
     playlist.botsAllowed || opts.humanName === null
       ? requested

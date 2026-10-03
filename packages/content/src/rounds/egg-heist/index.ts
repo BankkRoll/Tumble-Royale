@@ -414,7 +414,7 @@ export default defineRound({
     'Golden eggs appear at 60 s and are worth 5.',
     'Guard your nest — or raid someone else’s.',
   ],
-  players: { min: 9, max: 45, ideal: 30 },
+  players: { min: 9, max: 100, ideal: 75 },
   qualification: { mode: 'teamScore', teams: 3, teamsEliminated: 1, ratio: 0.67 },
   duration: { seconds: 120, overtimeSeconds: 0 },
   killY: -8,
@@ -422,10 +422,10 @@ export default defineRound({
   spawn: {
     origin: v(0, 0, 0),
     yaw: 180,
-    cols: 5,
-    spacing: 1.4,
+    cols: 16,
+    spacing: 1.3,
     teamOrigins: TEAMS.map((k) => {
-      const p = rotPoint(v(0, 0.7, 22), teamRot(k));
+      const p = rotPoint(v(0, 0.7, 17.6), teamRot(k));
       return v(p.x, 0.7, p.z);
     }),
   },

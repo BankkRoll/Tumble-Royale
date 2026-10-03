@@ -3,6 +3,7 @@
  * director skips ids that are not (yet) in the round registry, so playlists
  * can reference the full launch set before every level exists.
  */
+import { DEFAULT_SHOW_PLAYERS } from '@tumble/shared';
 import { MUTATOR_IDS } from '@tumble/sim/mutators';
 import { ShowPlaylistSchema, type ShowPlaylist, type ShowPlaylistInput } from '@tumble/sim/show/schema';
 
@@ -60,16 +61,16 @@ function pool(ids: readonly string[], scale: Readonly<Record<string, number>> = 
   }));
 }
 
-/** The default 40-player solo show. */
+/** The default solo show: a full 100-player lobby (100 → 60 → 30 → 12 → final). */
 export const MAIN_SHOW: ShowPlaylistInput = {
   id: 'main-show',
   name: 'Main Show',
-  description: 'The classic: 40 Tumblers, every kind of round, one Crown.',
-  maxPlayers: 40,
+  description: 'The classic: 100 Tumblers, every kind of round, one Crown.',
+  maxPlayers: DEFAULT_SHOW_PLAYERS,
   minRounds: 3,
   maxRounds: 5,
-  finalAtOrBelow: 10,
-  qualifyCurve: [0.65, 0.55, 0.5, 0.5],
+  finalAtOrBelow: 12,
+  qualifyCurve: [0.6, 0.5, 0.4, 0.5],
   pool: pool(PLANNED_ROUND_IDS),
 };
 
@@ -79,11 +80,11 @@ export const DUOS: ShowPlaylistInput = {
   name: 'Duos',
   description: 'Team up with a buddy. If one of you makes it, you both do.',
   partySize: 2,
-  maxPlayers: 40,
+  maxPlayers: DEFAULT_SHOW_PLAYERS,
   minRounds: 3,
   maxRounds: 5,
-  finalAtOrBelow: 10,
-  qualifyCurve: [0.6, 0.5, 0.45, 0.45],
+  finalAtOrBelow: 12,
+  qualifyCurve: [0.55, 0.5, 0.4, 0.45],
   typeWeights: { team: 1.5, hunt: 1.2 },
   pool: pool(PLANNED_ROUND_IDS),
 };
@@ -94,11 +95,11 @@ export const SQUADS: ShowPlaylistInput = {
   name: 'Squads',
   description: 'Four-player squads. Carry your crew to the Crown.',
   partySize: 4,
-  maxPlayers: 40,
+  maxPlayers: DEFAULT_SHOW_PLAYERS,
   minRounds: 3,
   maxRounds: 5,
   finalAtOrBelow: 12,
-  qualifyCurve: [0.55, 0.45, 0.4, 0.4],
+  qualifyCurve: [0.5, 0.45, 0.4, 0.4],
   typeWeights: { team: 2, hunt: 1.2, logic: 0.6 },
   pool: pool(PLANNED_ROUND_IDS),
 };
@@ -117,11 +118,11 @@ export const CHAOS_MODE: ShowPlaylistInput = {
   id: 'chaos-mode',
   name: 'Chaos Mode',
   description: 'Everything spins faster, the cuts are brutal and every show has a twist. Good luck.',
-  maxPlayers: 40,
+  maxPlayers: DEFAULT_SHOW_PLAYERS,
   minRounds: 3,
   maxRounds: 5,
-  finalAtOrBelow: 8,
-  qualifyCurve: [0.55, 0.45, 0.45, 0.4],
+  finalAtOrBelow: 10,
+  qualifyCurve: [0.5, 0.45, 0.4, 0.4],
   stageOffset: 2,
   typeWeights: { survival: 1.6, logic: 0.6 },
   botSkillMix: { clumsy: 0, average: 2, sharp: 3 },
@@ -138,25 +139,31 @@ export const CHAOS_MODE: ShowPlaylistInput = {
  * Rated shows: humans only, individual skill (SHOWS.md §4.5). Team rounds are
  * out because a teammate's play would move your rating; hunts stay but are
  * down-weighted. If the lobby is not full after the queue timeout it starts
- * with at least 24 humans.
+ * with at least 24 humans. Full rated lobbies are 100 like every other show,
+ * so a placement means the same thing in Ranked and Main Show; the 24-human
+ * floor keeps queues short while the population is small.
  */
 export const RANKED: ShowPlaylistInput = {
   id: 'ranked',
   name: 'Ranked',
   description: 'Climb the ladder. Every placement counts.',
-  maxPlayers: 40,
+  maxPlayers: DEFAULT_SHOW_PLAYERS,
   minPlayers: 24,
   minRounds: 4,
   maxRounds: 5,
-  finalAtOrBelow: 10,
-  qualifyCurve: [0.65, 0.55, 0.5, 0.5],
+  finalAtOrBelow: 12,
+  qualifyCurve: [0.6, 0.5, 0.4, 0.5],
   ranked: true,
   botsAllowed: false,
   typeWeights: { hunt: 0.5 },
   pool: pool(PLANNED_ROUND_IDS.filter((id) => !(PLANNED_ROUNDS.team as readonly string[]).includes(id))),
 };
 
-/** A new player's first shows: friendly rounds, generous cuts, mostly clumsy bots. */
+/**
+ * A new player's first shows: friendly rounds, generous cuts, mostly clumsy
+ * bots. Deliberately 40 seats, not 100: a debut is easier to read with fewer
+ * Tumblers on screen, and newcomers often play on the weakest devices.
+ */
 export const FIRST_SHOW: ShowPlaylistInput = {
   id: 'first-show',
   name: 'First Show',

@@ -16,7 +16,7 @@ export default defineRound({
   theme: 'candy',
   objective: 'Race to the finish line!',
   tips: ['Jump the gaps', 'Hop over the spinning sweeper', 'Bounce pads launch you high'],
-  players: { min: 1, max: 60, ideal: 40 },
+  players: { min: 1, max: 100, ideal: 100 },
   qualification: { mode: 'finish', ratio: 0.65 },
   duration: { seconds: 120, overtimeSeconds: 0 },
   killY: -12,

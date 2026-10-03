@@ -8,6 +8,7 @@
 import type { Collider, Ray, RigidBody, World } from '@dimforge/rapier3d-compat';
 import {
   InteractionGroups,
+  MAX_PLAYERS,
   RoundDefinitionSchema,
   quatFromYaw,
   quatIdentity,
@@ -493,7 +494,7 @@ export function createTestArenaRound(overrides: Partial<RoundDefinition> = {}): 
     type: 'race',
     theme: 'candy',
     objective: 'Reach the finish!',
-    players: { min: 1, max: 60, ideal: 40 },
+    players: { min: 1, max: MAX_PLAYERS, ideal: MAX_PLAYERS },
     qualification: { mode: 'finish', ratio: 0.65 },
     duration: { seconds: 90 },
     killY: -10,

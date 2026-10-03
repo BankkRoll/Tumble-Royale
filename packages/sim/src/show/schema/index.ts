@@ -1,7 +1,8 @@
 /**
- * Show playlist schema. Dependency-free (zod only) so data packages and UI can
+ * Show playlist schema. Zod plus shared constants only, so data packages and UI can
  * import it as `@tumble/sim/show/schema` without pulling in the simulation.
  */
+import { DEFAULT_SHOW_PLAYERS, MAX_PLAYERS } from '@tumble/shared';
 import { z } from 'zod';
 
 /** One round in a playlist's pool. */
@@ -41,7 +42,7 @@ export const ShowPlaylistSchema = z.object({
   /** 1 = solos, 2 = duos, 4 = squads. Party members share fates and the Crown. */
   partySize: z.number().int().min(1).max(4).default(1),
   /** Lobby size the matchmaker fills to (bots top up). */
-  maxPlayers: z.number().int().min(2).max(60).default(40),
+  maxPlayers: z.number().int().min(2).max(MAX_PLAYERS).default(DEFAULT_SHOW_PLAYERS),
   /** Fewest players a show may start with. */
   minPlayers: z.number().int().min(1).default(2),
   /** Rounds before the final is allowed (including round 1). */

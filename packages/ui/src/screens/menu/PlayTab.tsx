@@ -454,7 +454,7 @@ function PartyRow(): JSX.Element {
         {members.length <= 1
           ? 'Solo · invite up to 3'
           : notReady > 0
-            ? `${notReady} not ready`
+            ? `Waiting for ${notReady} to ready up`
             : `Party of ${members.length} · all ready`}
       </span>
       <button

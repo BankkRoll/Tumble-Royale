@@ -1325,6 +1325,7 @@ export class OnlineAccount {
       members: members.map((m) => ({
         id: m.userId,
         name: m.displayName,
+        ...(m.tag ? { tag: m.tag } : {}),
         colors: m.userId === me.userId ? this.loadout.colors : this.colorsOf(m.userId),
         ready: m.userId === leaderId || m.ready,
         isLeader: m.userId === leaderId,

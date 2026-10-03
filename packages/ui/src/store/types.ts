@@ -682,6 +682,8 @@ export interface Friend {
 export interface PartyMember {
   id: string;
   name: string;
+  /** Four-digit tag (Name#1234); friend requests need it. */
+  tag?: string;
   colors: TumblerColors;
   ready: boolean;
   isLeader: boolean;

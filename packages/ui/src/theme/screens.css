@@ -3767,3 +3767,19 @@
   display: grid;
   gap: 0.5em;
 }
+
+/* Your Name#tag at the top of the Friends sheet: what friends type to find you. */
+.tr-my-tag {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  padding: 0.6em 0.8em;
+  border-radius: 1em;
+  background: #fff;
+  border: 0.13em solid var(--ink);
+}
+.tr-my-tag-num {
+  margin-left: 0.15em;
+  color: var(--grape);
+  letter-spacing: 0.05em;
+}

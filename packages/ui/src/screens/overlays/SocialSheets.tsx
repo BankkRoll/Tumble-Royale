@@ -434,6 +434,36 @@ export function PartyChat(): JSX.Element {
 }
 
 /** Friends sheet body when the account servers are unreachable. */
+/** Your Name#tag with a copy button: friends need the tag to find you. */
+function MyTag({ masked }: { masked: boolean }): JSX.Element | null {
+  const profile = useUI((s) => s.profile);
+  const [copied, setCopied] = useState(false);
+  if (!profile?.tag) return null;
+  const full = `${profile.name}#${profile.tag}`;
+  return (
+    <div className="tr-my-tag" data-testid="my-tag">
+      <span className="tr-col tr-grow" style={{ gap: 0, minWidth: 0 }}>
+        <span className="tr-label">Your name</span>
+        <b className="tr-ellipsis">
+          {profile.name}
+          <span className="tr-my-tag-num">#{masked ? '••••' : profile.tag}</span>
+        </b>
+      </span>
+      <Button
+        size="sm"
+        variant={copied ? 'mint' : 'secondary'}
+        onClick={() => {
+          void navigator.clipboard?.writeText(full);
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1600);
+        }}
+      >
+        {copied ? 'Copied!' : 'Copy'}
+      </Button>
+    </div>
+  );
+}
+
 function OfflineFriends(): JSX.Element {
   const connecting = useSocial((s) => s.availability === 'connecting');
   return (
@@ -520,6 +550,7 @@ export function FriendsSheet(): JSX.Element {
             <OfflineFriends />
           ) : (
             <>
+              <MyTag masked={streamer && !reveal} />
               <Button variant="sky" block onClick={openJoinCode}>
                 <Icon name="key" size="1em" /> Join a show with a code
               </Button>
@@ -568,17 +599,27 @@ export function FriendsSheet(): JSX.Element {
                       <b className="tr-grow tr-ellipsis">
                         {m.isLeader ? <Icon name="crown" size="0.9em" /> : null}
                         {m.name}
+                        {m.tag && <small className="tr-muted">#{streamer && !reveal ? '••••' : m.tag}</small>}
                         {m.isSelf ? ' (you)' : ''}
                       </b>
-                      <span className={`tr-chip ${m.ready ? 'tr-chip--good' : ''}`}>
-                        {m.ready ? (
-                          <>
-                            <Icon name="check" size="0.85em" /> Ready
-                          </>
-                        ) : (
-                          'Not ready'
-                        )}
-                      </span>
+                      {m.isLeader ? (
+                        <span
+                          className="tr-chip tr-chip--lemon"
+                          title="The leader readies up by pressing Play"
+                        >
+                          Leader
+                        </span>
+                      ) : (
+                        <span className={`tr-chip ${m.ready ? 'tr-chip--good' : ''}`}>
+                          {m.ready ? (
+                            <>
+                              <Icon name="check" size="0.85em" /> Ready
+                            </>
+                          ) : (
+                            'Not ready'
+                          )}
+                        </span>
+                      )}
                       {self?.isLeader && !m.isSelf && kickArmed !== m.id && (
                         <>
                           <Button

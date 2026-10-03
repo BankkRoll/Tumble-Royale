@@ -48,16 +48,20 @@ export const LOBBY_TEAMS = [
 /**
  * Goal Rush geometry: goal 0 at `-lineX` (defended by team 0), goal 1 at
  * `+lineX`. The beach ball is 0.7 m in radius, so the mouth is wide and the
- * line sits far enough in from the 5.7 m rim wall for the ball to cross it.
+ * net is deep enough for the ball's centre to get well past the line. The
+ * back net stops short of the platform's rim post at (-5.58, 0), which would
+ * otherwise sit inside goal 0.
  */
 export const GOAL = {
-  lineX: 4.3,
+  lineX: 3.9,
+  /** Back of the net (m from the centre). */
+  back: 5.1,
   /** Half the mouth width along z (m). */
   halfWidth: 1.3,
   /** Crossbar height (m). */
   height: 1.9,
   /** Ball centre past the line that counts as in (m). */
-  inside: 0.25,
+  inside: 0.3,
   /** First team to this many goals wins. */
   toWin: 3,
   /** Pause after a goal before the ball goes back to the centre (s). */
@@ -105,11 +109,14 @@ export const TARGETS = {
 // Targets travel in centimetres; rounding here keeps the leader's copy identical to everyone else's.
 const round2 = (v: number): number => Math.round(v * 100) / 100 || 0;
 
-/** Fixed things on the platform targets must not spawn on (x, z, clearance). */
+/** The Games sign's post (feet), at the back of the stage between the cannon and the rim. */
+export const LOBBY_SIGN = { x: -0.2, z: -4.95 } as const;
+
+/** Fixed things on the platform targets must not spawn on (x, z, clearance): pad, cannon, sign. */
 const TARGET_KEEP_OUT: readonly (readonly [number, number, number])[] = [
   [3.2, -2.6, 1.2],
   [-1.9, -4.3, 1.1],
-  [0, -5, 1.0],
+  [LOBBY_SIGN.x, LOBBY_SIGN.z, 1.0],
 ];
 
 // -----------------------------------------------------------------------------
@@ -220,6 +227,45 @@ export function winnersOf(g: LobbyGameWire): number {
     }
   }
   return count > 1 && count === active ? 0 : mask;
+}
+
+/**
+ * Where a player lines up when a game starts: Goal Rush teams on their own
+ * half facing the other goal, Hot Potato in a ring around the centre.
+ * Target Hop has no line-up (everyone starts where they stand).
+ *
+ * @param g - The new game.
+ * @param i - Player index.
+ * @param out - Receives feet `{ x, z }` and the `yaw` to face.
+ * @returns False when the game has no line-up.
+ */
+export function lineUpSpot(
+  g: Readonly<LobbyGameWire>,
+  i: number,
+  out: { x: number; z: number; yaw: number },
+): boolean {
+  if (g.kind === 'targets' || i < 0 || i >= g.players.length) return false;
+  if (g.kind === 'goal') {
+    const team = g.teams[i]!;
+    let k = 0;
+    let count = 0;
+    for (let j = 0; j < g.players.length; j++) {
+      if (g.teams[j] !== team) continue;
+      if (j < i) k++;
+      count++;
+    }
+    const side = team === 0 ? -1 : 1;
+    out.x = side * 2.2;
+    out.z = (k - (count - 1) / 2) * 1.8;
+    // Face the goal you attack: team 0 runs toward +x.
+    out.yaw = side < 0 ? Math.PI / 2 : -Math.PI / 2;
+    return true;
+  }
+  const a = (i / g.players.length) * Math.PI * 2 + Math.PI / 2;
+  out.x = Math.cos(a) * 2.4;
+  out.z = Math.sin(a) * 2.4;
+  out.yaw = Math.atan2(-out.x, -out.z);
+  return true;
 }
 
 /** Players not knocked out or spectating. */

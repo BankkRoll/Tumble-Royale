@@ -16,5 +16,6 @@ export * from './props.ts';
 export * from './mainMenuStage.ts';
 export * from './preShowArena.ts';
 export * from './playerWall.ts';
+export * from './playerWallLayout.ts';
 export * from './victoryPodium.ts';
 export * from './resultsBackdrop.ts';

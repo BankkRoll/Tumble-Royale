@@ -18,6 +18,7 @@
  * {@link Tumbler}; the crowd only replaces how its meshes reach the GPU, so
  * the look is identical.
  */
+import { MAX_PLAYERS } from '@tumble/shared';
 import {
   BufferAttribute,
   BufferGeometry,
@@ -76,7 +77,7 @@ interface Slot {
 
 /** Options for {@link TumblerCrowd}. */
 export interface TumblerCrowdOptions {
-  /** Max members (texture rows). Extra Tumblers are rejected and keep drawing themselves. Default 64. */
+  /** Max members (texture rows). Extra Tumblers are rejected and keep drawing themselves. Default `MAX_PLAYERS`. */
   capacity?: number;
   /** Cast shadows. Default true. */
   castShadow?: boolean;
@@ -115,7 +116,7 @@ export class TumblerCrowd {
   private failed = false;
 
   constructor(opts: TumblerCrowdOptions = {}) {
-    this.capacity = opts.capacity ?? 64;
+    this.capacity = opts.capacity ?? MAX_PLAYERS;
     this.object.name = 'TumblerCrowd';
     // Debug/automation handle (A/B checks against individually drawn Tumblers). A registered
     // symbol, not userData: Object3D.copy deep-clones userData through JSON.

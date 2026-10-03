@@ -4,7 +4,7 @@
  * Responsibilities:
  * - One shared toon material for every Tumbler: per-object uniforms (colours,
  *   pattern, face expression) are read from `object.userData.tumbler` at draw
- *   time, so 40 Tumblers share one pipeline and one material.
+ *   time, so a whole show of Tumblers shares one pipeline and one material.
  * - 16 procedural body patterns in rest space, so they stick to the skinned body.
  * - A fully procedural face plate (eyes, pupils, lids, brows, mouth shapes,
  *   blush, freckles, visor gloss) driven by uniforms — no textures.

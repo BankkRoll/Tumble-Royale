@@ -1,3 +1,4 @@
+import { MAX_PLAYERS } from '@tumble/shared';
 import type { BufferGeometry } from 'three/webgpu';
 import {
   BufferAttribute,
@@ -16,6 +17,7 @@ import {
   type Node,
 } from 'three/webgpu';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { WALL_CELL_H, WALL_CELL_W, WALL_FRAME, WALL_HEADER, playerWallGrid } from './playerWallLayout.ts';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { float, fract, instanceIndex, smoothstep, uniform, vec3 } from 'three/tsl';
 import type { TumblerLoadout } from '../character/types.ts';
@@ -105,7 +107,7 @@ export type PlayerWallBeat =
 
 /** Options for {@link createPlayerWallScene}. */
 export interface PlayerWallOptions extends SceneCommonOptions {
-  /** Cubby capacity; the grid is sized for it. Default 40 (8 × 5). */
+  /** Cubby capacity; the grid is sized for it ({@link playerWallGrid}). Default `MAX_PLAYERS`. */
   capacity?: number;
   /** Crown resting height above a Tumbler's feet. Default: measured from the winner's bounds. */
   crownHeight?: number;
@@ -139,11 +141,11 @@ export interface PlayerWallScene extends MenuScene {
   readonly vfx: VfxSystem;
 }
 
-const CW = 2.3;
-const CH = 2.7;
+const CW = WALL_CELL_W;
+const CH = WALL_CELL_H;
 const CD = 1.9;
 const FLOOR_T = 0.24;
-const FRAME = 0.9;
+const FRAME = WALL_FRAME;
 const BASE_Y = 0;
 const GRAVITY = -22;
 const TILT = 0.55;
@@ -216,9 +218,8 @@ function box(
  * wall.playRecap(summary, { onRoundStart: (i, r) => ui.showRound(r.name), onDone: () => ui.next() });
  */
 export function createPlayerWallScene(opts: PlayerWallOptions): PlayerWallScene {
-  const capacity = Math.max(1, opts.capacity ?? 40);
-  const cols = capacity <= 40 ? 8 : 10;
-  const rows = Math.ceil(capacity / cols);
+  const capacity = Math.max(1, opts.capacity ?? MAX_PLAYERS);
+  const { cols, rows } = playerWallGrid(capacity);
   const innerW = cols * CW;
   const innerH = rows * CH;
   const wallW = innerW + FRAME * 2;
@@ -461,7 +462,7 @@ export function createPlayerWallScene(opts: PlayerWallOptions): PlayerWallScene 
   const wideDistance = (): number => {
     const vfov = (camera.fov * Math.PI) / 180;
     const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
-    const totalH = wallH + 4.5;
+    const totalH = wallH + WALL_HEADER;
     return Math.max(wallW / 2 / Math.tan(hfov / 2), totalH / 2 / Math.tan(vfov / 2)) * 1.08;
   };
 

@@ -1171,7 +1171,10 @@ export class GameApp {
       onNavUnhandled: ({ dir }) => {
         if (dir === 'back' && s().screen === 'menu' && s().overlay === 'none') s().setOverlay('settings');
       },
-      onRetryConnection: () => s().setConnection({ status: 'connecting' }),
+      onRetryConnection: () => {
+        if (this.session) this.session.retryConnection();
+        else s().setConnection({ status: 'online' });
+      },
     });
 
     const canvas = this.renderer.domElement;

@@ -37,7 +37,13 @@ import {
 import { CourseMetric } from '@tumble/sim/rounds';
 import { ShowPlaylistSchema } from '@tumble/sim/show';
 import { bindUI, ui, type RewardsSummary } from '@tumble/ui';
-import { NetClient, NetGameSession, defaultServerUrl, type ConnectionState } from '../../net/index.ts';
+import {
+  NetClient,
+  NetGameSession,
+  defaultServerUrl,
+  type ConnectionState,
+  type ReconnectAttempt,
+} from '../../net/index.ts';
 import { botLoadout, decodeLoadout, encodeLoadout } from '../cosmetics.ts';
 import type { ShowResultForProfile } from '../profile.ts';
 import type { HudInput, HudPlayerStatus } from '../round/hud.ts';
@@ -200,6 +206,7 @@ export class OnlineShowSession extends ShowSession {
     const net = this.net;
     this.unsub.push(
       net.on('state', (st) => this.onConnection(st)),
+      net.on('reconnect', (a) => this.onReconnectAttempt(a)),
       net.on('welcome', (w) => {
         // A fresh (non-resumed) Welcome mid-show means the server lost the room (restart): the show is gone.
         if (this.welcomed && !w.resumed && (this.preShowEntered || this.roundIndex >= 0)) {
@@ -272,16 +279,37 @@ export class OnlineShowSession extends ShowSession {
   private onConnection(st: ConnectionState): void {
     const s = ui.getState();
     if (this.summary) return;
-    if (st === 'reconnecting')
-      s.setConnection({
-        status: 'reconnecting',
-        attempt: 1,
-        maxAttempts: 5,
-        message: 'Hold tight, wobbling back in…',
-      });
-    else if (st === 'connected') s.setConnection({ status: 'online' });
+    // Reconnect attempts arrive through `reconnect` with their real numbers.
+    if (st === 'connected') s.setConnection({ status: 'online' });
     else if (st === 'connecting') s.setConnection({ status: 'connecting' });
-    else if (st === 'failed') this.fail('Connection lost');
+    else if (st === 'failed') this.connectionLost();
+  }
+
+  private onReconnectAttempt(a: ReconnectAttempt): void {
+    if (this.summary || this.failed) return;
+    ui.getState().setConnection({
+      status: 'reconnecting',
+      attempt: a.attempt,
+      maxAttempts: a.maxAttempts,
+      nextAttemptAt: Date.now() + a.delayMs,
+      message: 'Hold tight, wobbling back in…',
+    });
+  }
+
+  /** Every attempt failed: the curtain offers Try again and Leave (kicks and lost rooms use {@link fail}). */
+  private connectionLost(): void {
+    if (this.failed || this.summary) return;
+    const prev = ui.getState().connection;
+    ui.getState().setConnection({
+      status: 'lost',
+      message: "We couldn't get your Tumbler back into the show.",
+      ...(prev.maxAttempts !== undefined ? { maxAttempts: prev.maxAttempts } : {}),
+    });
+  }
+
+  override retryConnection(): void {
+    if (this.failed || this.summary) return;
+    if (!this.net.retry()) this.fail('Connection lost');
   }
 
   private failed = false;

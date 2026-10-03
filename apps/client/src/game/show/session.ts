@@ -319,6 +319,9 @@ export abstract class ShowSession {
   /** Extra teardown in subclasses. */
   protected onDispose(): void {}
 
+  /** Connection-lost curtain's Try again (online sessions reconnect; nothing to do offline). */
+  retryConnection(): void {}
+
   /** Debug: force-ends the current round (offline). */
   skipRound(): void {}
 

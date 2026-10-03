@@ -156,9 +156,13 @@ export interface BootState {
 
 /** Network status. `reconnecting` shows the curtain overlay. */
 export interface ConnectionState {
-  status: 'online' | 'connecting' | 'reconnecting' | 'offline';
+  /** `lost`: every reconnect attempt failed; the curtain offers Try again and Leave. */
+  status: 'online' | 'connecting' | 'reconnecting' | 'lost' | 'offline';
+  /** Current reconnect attempt (1-based). */
   attempt?: number;
   maxAttempts?: number;
+  /** Epoch ms of the next reconnect attempt (curtain countdown). */
+  nextAttemptAt?: number;
   message?: string;
 }
 

@@ -7,6 +7,8 @@ interface ImportMetaEnv {
   readonly VITE_MATCHMAKER_URL?: string;
   /** Game server WebSocket URL (`wss://…/ws`) for this deployment. */
   readonly VITE_GAME_SERVER_URL?: string;
+  /** Sentry-compatible DSN for client crash reports; `config.json`'s `sentryDsn` wins. */
+  readonly VITE_SENTRY_DSN?: string;
 }
 
 interface ImportMeta {

@@ -1,31 +1,79 @@
 /*
- * Tumble Royale UI — chat feed and input, party chat, friend rows, requests,
- * player action menu and report dialog.
+ * Tumble Royale UI — global chat widget, clickable players, friend rows,
+ * requests, the player card and the report dialog.
  */
 
-/* In-show chat (bottom-left, above touch controls) */
+/* Global chat widget (bottom-left on the menu and every show screen) */
 .tr-chat-wrap {
   position: absolute;
   left: calc(var(--safe-l) + 1em);
   bottom: calc(var(--safe-b) + 7em);
-  width: min(24em, 70vw);
-  display: grid;
-  justify-items: start;
-  gap: 0.35em;
+  width: min(26em, 72vw);
   pointer-events: none;
   z-index: 6;
+}
+[data-screen='menu'] .tr-chat-wrap {
+  bottom: calc(var(--safe-b) + 1em);
 }
 .tr-chat {
   display: grid;
   gap: 0.35em;
   width: 100%;
+  justify-items: start;
 }
 .tr-chat.is-open {
   pointer-events: auto;
+  padding: 0.5em;
+  border-radius: 1em;
+  background: rgba(31, 18, 51, 0.72);
+  box-shadow: 0 0.3em 1.2em rgba(0, 0, 0, 0.25);
+}
+.tr-chat-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25em;
+}
+.tr-chat-tab {
+  position: relative;
+  padding: 0.15em 0.65em;
+  border-radius: 999px;
+  border: 0.1em solid rgba(255, 255, 255, 0.35);
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: 0.8em;
+  font-weight: 800;
+  cursor: pointer;
+}
+.tr-chat-tab.is-active {
+  background: var(--lemon);
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.tr-chat-unread {
+  margin-left: 0.35em;
+  padding: 0 0.4em;
+  border-radius: 999px;
+  background: var(--bubblegum, #ff4f9a);
+  color: #fff;
+  font-size: 0.85em;
 }
 .tr-chat-lines {
   display: grid;
+  align-content: end;
   gap: 0.2em;
+  width: 100%;
+}
+.tr-chat.is-open .tr-chat-lines {
+  max-height: 14em;
+  min-height: 4em;
+  overflow-y: auto;
+}
+.tr-chat-fade {
+  transition: opacity 1.5s;
+}
+.tr-chat-fade.is-faded {
+  opacity: 0;
 }
 .tr-chat-line {
   display: flex;
@@ -33,20 +81,40 @@
   align-items: baseline;
   padding: 0.18em 0.6em;
   border-radius: 0.7em;
-  background: rgba(31, 18, 51, 0.62);
+  background: rgba(31, 18, 51, 0.5);
   color: #fff;
   font-size: 0.9em;
   line-height: 1.25;
   overflow-wrap: anywhere;
-  transition: opacity 1.5s;
   animation: tr-fade-in 200ms ease-out;
+}
+.tr-chat.is-open .tr-chat-line {
+  background: transparent;
+  padding: 0.1em 0.2em;
 }
 .tr-chat-line.is-ping {
   background: rgba(255, 210, 63, 0.92);
   color: var(--ink);
 }
-.tr-chat-line.is-faded {
-  opacity: 0;
+.tr-chat-line.is-party .tr-chat-name {
+  color: #8cf3c7;
+}
+.tr-chat-line.is-whisper {
+  font-style: italic;
+}
+.tr-chat-line.is-whisper .tr-chat-name {
+  color: #ffb3ea;
+}
+.tr-chat-line.is-system {
+  color: #d9d2ff;
+  font-size: 0.85em;
+}
+.tr-chat-tag {
+  flex: none;
+  font-size: 0.75em;
+  font-weight: 800;
+  opacity: 0.75;
+  text-transform: uppercase;
 }
 .tr-chat-name {
   flex: none;
@@ -65,13 +133,21 @@
   width: 100%;
   pointer-events: auto;
 }
+.tr-chat-empty {
+  color: #d9d2ff;
+}
+.tr-chat-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35em;
+}
 .tr-chat-hint {
-  font-size: 0.78em;
-  padding: 0.15em 0.6em;
+  font-size: 0.75em;
+  padding: 0.12em 0.6em;
   border-radius: 999px;
-  background: rgba(31, 18, 51, 0.55);
+  background: rgba(31, 18, 51, 0.45);
   color: #fff;
-  opacity: 0.8;
+  opacity: 0.65;
 }
 button.tr-chat-hint {
   border: 0.12em solid var(--ink);
@@ -89,25 +165,37 @@ button.tr-chat-hint {
   background: rgba(255, 255, 255, 0.2);
 }
 
-/* Party chat inside the friends sheet */
-.tr-party-chat {
-  display: grid;
-  gap: 0.35em;
-  padding: 0.6em;
-  border-radius: 1em;
-  border: 0.14em solid var(--ink);
-  background: #fff;
+/* Clickable players (open the player card) */
+.tr-player-link {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  flex: 1 1 auto;
+  min-width: 0;
+  border-radius: 0.7em;
+  cursor: pointer;
 }
-.tr-party-chat-lines {
-  display: grid;
-  align-content: start;
-  gap: 0.2em;
-  max-height: 11em;
-  min-height: 3em;
+.tr-player-link.is-static {
+  cursor: default;
 }
-.tr-party-chat .tr-chat-line {
-  background: #f1ecfb;
-  color: var(--ink);
+.tr-player-link:not(.is-static):hover b,
+.tr-player-link:focus-visible b {
+  text-decoration: underline;
+}
+.tr-player-link:focus-visible,
+.tr-party-slot-who:focus-visible {
+  outline: 0.15em solid var(--grape);
+  outline-offset: 0.1em;
+}
+.tr-party-slot-who {
+  all: unset;
+  cursor: pointer;
+  border-radius: 50%;
+}
+.tr-player-head {
+  gap: 0.7em;
+  width: 100%;
 }
 
 /* Friend rows, requests, blocked */
@@ -196,7 +284,8 @@ button.tr-chat-hint {
   margin-bottom: 0.4em;
 }
 
-[data-reduce-motion='true'] .tr-chat-line {
+[data-reduce-motion='true'] .tr-chat-line,
+[data-reduce-motion='true'] .tr-chat-fade {
   animation: none;
   transition: none;
 }

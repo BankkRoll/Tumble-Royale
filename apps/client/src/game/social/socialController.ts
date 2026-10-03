@@ -21,6 +21,7 @@ import {
 } from '@tumble/ui';
 import { ApiError, type ApiClient, type ApiParty } from '../api.ts';
 import type { TypedMessage } from '../online/jsonSocket.ts';
+import { setChannel, setChatRoute, setWhisperRoute, systemNotice } from './chatRouter.ts';
 import {
   EMPTY_FRIENDS,
   friendsFromApi,
@@ -58,6 +59,9 @@ export function socialErrorText(err: unknown): string {
   }
   return err instanceof Error ? err.message : 'Something went wrong.';
 }
+
+/** Chat refusals from the gateway, shown as System notices. */
+const CHAT_ERRORS = new Set(['chat_rate', 'chat_banned', 'empty_message', 'not_friends', 'self_whisper']);
 
 const REALTIME_EVENTS = [
   'presence',
@@ -111,19 +115,57 @@ export class SocialController {
           icon: '💌',
         });
       }),
-      this.rt.on('party_update', (m) => {
-        const party = m.party as ApiParty | null;
-        if (!party || party.id !== this.lastPartyId) social.getState().clearPartyChat();
-        this.lastPartyId = party?.id ?? null;
-      }),
+      this.rt.on('whisper', (m) => this.onWhisper(m)),
       this.rt.on('error', (m) => {
-        if (m.code === 'chat_rate' || m.code === 'chat_banned' || m.code === 'empty_message')
-          ui.getState().pushToast({ kind: 'warning', title: String(m.message ?? 'Message not sent') });
+        if (typeof m.code === 'string' && CHAT_ERRORS.has(m.code))
+          systemNotice(String(m.message ?? 'Message not sent'));
       }),
     );
+    setChannel('whisper', true);
+    setWhisperRoute((to, text) => this.whisper(to.userId, text));
   }
 
-  private lastPartyId: string | null = null;
+  /**
+   * Keeps the Party tab and System notices in step with the party. Called by
+   * the account for every party change (realtime or HTTP).
+   *
+   * @param party - Current party, or null.
+   */
+  onParty(party: ApiParty | null): void {
+    const me = this.host.userId();
+    const prev = this.lastParty;
+    this.lastParty = party;
+    const others = party?.members.filter((m) => m.userId !== me) ?? [];
+    if (!party || party.id !== prev?.id) setChannel('party', false);
+    if (others.length > 0) {
+      setChannel('party', true);
+      setChatRoute('party', (text) => this.sendPartyChat(text));
+    } else {
+      setChannel('party', false);
+      setChatRoute('party', null);
+    }
+    if (!party || !prev || party.id !== prev.id) {
+      // A switch between two parties is a join; the first load after sign-in is not.
+      if (party && prev && others.length > 0) systemNotice('You joined the party');
+      return;
+    }
+    const before = new Map(prev.members.map((m) => [m.userId, m]));
+    const after = new Map(party.members.map((m) => [m.userId, m]));
+    for (const m of party.members)
+      if (!before.has(m.userId) && m.userId !== me) systemNotice(`${m.displayName} joined the party`);
+    for (const m of prev.members)
+      if (!after.has(m.userId) && m.userId !== me) systemNotice(`${m.displayName} left the party`);
+    if (prev.leaderId !== party.leaderId) {
+      const leader = after.get(party.leaderId);
+      systemNotice(
+        leader?.userId === me
+          ? 'You lead the party now'
+          : `${leader?.displayName ?? 'Someone'} leads the party now`,
+      );
+    }
+  }
+
+  private lastParty: ApiParty | null = null;
 
   /** Applies one event and republishes. */
   apply(e: FriendsEvent): void {
@@ -304,12 +346,42 @@ export class SocialController {
     void this.api.declinePartyInvite(userId).catch(() => undefined);
   }
 
+  /**
+   * Whispers a friend (gateway when connected, else HTTP).
+   *
+   * @param userId - Friend's account id.
+   * @param text - Message.
+   */
+  whisper(userId: string, text: string): void {
+    const t = text.trim();
+    if (!t) return;
+    if (this.rt.connected) this.rt.send({ type: 'whisper', to: userId, text: t });
+    else void this.api.whisper(userId, t).catch((err) => systemNotice(socialErrorText(err)));
+  }
+
+  private onWhisper(m: TypedMessage): void {
+    const from = m.from as SocialRef | undefined;
+    const to = m.to as SocialRef | undefined;
+    if (!from || !to || typeof m.text !== 'string') return;
+    const self = from.userId === this.host.userId();
+    social.getState().pushChat({
+      id: String(m.id ?? `w${Date.now()}`),
+      channel: 'whisper',
+      from: { userId: from.userId, name: from.name, tag: from.tag, key: from.userId },
+      to: { userId: to.userId, name: to.name, tag: to.tag, key: to.userId },
+      text: m.text,
+      ...(typeof m.masked === 'string' ? { masked: m.masked } : {}),
+      ...(self ? { self: true } : {}),
+      at: typeof m.at === 'number' ? m.at : Date.now(),
+    });
+  }
+
   /** Sends a party chat line (gateway when connected, else HTTP). */
   sendPartyChat(text: string): void {
     const t = text.trim();
     if (!t || !this.host.partyId()) return;
     if (this.rt.connected) this.rt.send({ type: 'party_chat', text: t });
-    else void this.api.partyChat(t).catch((err) => this.fail('Message not sent', err));
+    else void this.api.partyChat(t).catch((err) => systemNotice(socialErrorText(err)));
   }
 
   private onPartyChat(m: TypedMessage): void {
@@ -318,18 +390,23 @@ export class SocialController {
     const self = from.userId === this.host.userId();
     const line: ChatLine = {
       id: String(m.id ?? `p${Date.now()}`),
+      channel: 'party',
       from: { userId: from.userId, name: from.name, tag: from.tag, key: from.userId },
       text: m.text,
       ...(typeof m.masked === 'string' ? { masked: m.masked } : {}),
       ...(self ? { self: true } : {}),
       at: typeof m.at === 'number' ? m.at : Date.now(),
     };
-    social.getState().pushPartyChat(line);
+    social.getState().pushChat(line);
   }
 
   /** Removes listeners. */
   dispose(): void {
     for (const off of this.offs) off();
     this.offs.length = 0;
+    setWhisperRoute(null);
+    setChatRoute('party', null);
+    setChannel('whisper', false);
+    setChannel('party', false);
   }
 }

@@ -10,12 +10,14 @@
  *   answer (cosmetic only; the sim never sees it);
  * - pushes lines to the HUD feed and speech bubbles over Tumblers, hiding
  *   anything the viewer muted, blocked or switched off;
- * - frees the mouse and held keys while the chat input is open.
+ * - owns the widget's Show tab while the show runs (typing only online with
+ *   other humans).
  */
 import type { ChatMsg } from '@tumble/netcode';
 import { quickChat, Rng, sanitizeChatText } from '@tumble/shared';
 import { bindUI, social, ui, visibleChat, type ChatLine } from '@tumble/ui';
 import { bubbleText, muteKey, planBotReplies, quickChatId } from './chatLogic.ts';
+import { setChannel, setChatRoute } from './chatRouter.ts';
 
 /** A participant as the chat needs it. */
 export interface ChatPlayer {
@@ -34,8 +36,6 @@ export interface ShowChatHost {
   botIds(): number[];
   /** Speech bubble over a Tumbler, when that Tumbler is on screen. */
   bubble(id: number, text: string): void;
-  /** Drops held keys when focus moves to the chat input. */
-  releaseKeys(): void;
 }
 
 /** Minimum gap between rounds of bot replies, so spamming pings doesn't spam bots. */
@@ -63,19 +63,11 @@ export class ShowChat {
   ) {
     // Its own stream: bot chatter must never shift the sim's randomness.
     this.rng = new Rng((seed ^ 0x5c4a7) >>> 0);
-    social.getState().clearShowChat();
-    social.getState().setChatEnabled(false);
-    this.offs.push(
-      bindUI({
-        onQuickPing: ({ kind }) => this.quick(kind),
-        onSendChat: ({ text }) => this.sendText(text),
-        onChatInput: ({ open }) => {
-          if (!open) return;
-          if (document.pointerLockElement) document.exitPointerLock();
-          this.host.releaseKeys();
-        },
-      }),
-    );
+    // Offline (until a transport arrives) the Show tab carries pings only.
+    setChannel('show', false);
+    setChannel('show', true, false);
+    setChatRoute('show', (text) => this.sendText(text));
+    this.offs.push(bindUI({ onQuickPing: ({ kind }) => this.quick(kind) }));
   }
 
   /**
@@ -96,9 +88,9 @@ export class ShowChat {
     this.send = send;
   }
 
-  /** Enables the text input (online shows with other humans). */
+  /** Lets players type in the Show tab (online shows with other humans). */
   setTextEnabled(on: boolean): void {
-    if (social.getState().chatEnabled !== on) social.getState().setChatEnabled(on && this.send !== null);
+    setChannel('show', true, on && this.send !== null);
   }
 
   /**
@@ -124,7 +116,7 @@ export class ShowChat {
    * @param text - Raw input.
    */
   sendText(text: string): void {
-    if (!this.send || !social.getState().chatEnabled) return;
+    if (!this.send || !social.getState().chat.writable.show) return;
     const clean = sanitizeChatText(text);
     if (clean) this.send({ t: 'chat', from: -1, text: clean });
   }
@@ -160,7 +152,7 @@ export class ShowChat {
       at: Date.now(),
       ...(p?.color ? { color: p.color } : {}),
     };
-    social.getState().pushShowChat(line);
+    social.getState().pushChat(line);
     const s = social.getState();
     const [shown] = visibleChat([line], {
       showChat: ui.getState().settings.gameplay.showChat,
@@ -193,7 +185,7 @@ export class ShowChat {
     this.timers.clear();
     for (const off of this.offs) off();
     this.offs.length = 0;
-    social.getState().clearShowChat();
-    social.getState().setChatEnabled(false);
+    setChatRoute('show', null);
+    setChannel('show', false);
   }
 }

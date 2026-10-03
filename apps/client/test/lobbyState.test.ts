@@ -1,3 +1,4 @@
+import { MAX_PLAYERS } from '@tumble/shared';
 import { describe, expect, it } from 'vitest';
 import {
   KICKED_TITLE,
@@ -134,7 +135,7 @@ describe('optionsToSettings', () => {
     expect(
       optionsToSettings({
         timerScale: 3,
-        maxPlayers: 99,
+        maxPlayers: MAX_PLAYERS + 1,
         countdownSec: 500,
         minPlayers: 0,
         spectatorSlots: 20,
@@ -142,7 +143,7 @@ describe('optionsToSettings', () => {
       }),
     ).toEqual({
       roundTimeScale: 2,
-      maxPlayers: 60,
+      maxPlayers: MAX_PLAYERS,
       lobbyCountdownSec: 120,
       minPlayers: 1,
       spectatorSlots: 10,

@@ -6,7 +6,7 @@
  * and RTT per client plus the server's own tick profile from `/metrics`.
  *
  * Usage:
- *   pnpm --filter @tumble/bot-swarm start -- --clients 40 --url ws://localhost:7350/ws --duration 60
+ *   pnpm --filter @tumble/bot-swarm start -- --clients 100 --url ws://localhost:7350/ws --duration 60
  *   … --clients 2000 --procs 8      (fan out across child processes)
  *   … --ramp 20                     (ms between connection opens)
  *   … --lag 150 --jitter 20 --loss 0.02   (simulated round-trip latency, jitter, per-direction loss)
@@ -14,6 +14,7 @@
 import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { conditionerFromParams, type ConditionerOptions } from '@tumble/netcode';
+import { DEFAULT_SHOW_PLAYERS } from '@tumble/shared';
 import { SwarmClient, type ClientStats } from './client.ts';
 
 interface Args {
@@ -36,7 +37,7 @@ function parseArgs(argv: readonly string[]): Args {
     return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1]! : def;
   };
   return {
-    clients: Math.max(1, Math.min(5000, Number(get('clients', '40')))),
+    clients: Math.max(1, Math.min(5000, Number(get('clients', String(DEFAULT_SHOW_PLAYERS))))),
     url: get('url', 'ws://localhost:7350/ws'),
     duration: Math.max(1, Number(get('duration', '60'))),
     procs: Math.max(1, Math.min(64, Number(get('procs', '1')))),

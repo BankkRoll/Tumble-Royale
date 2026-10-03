@@ -27,7 +27,13 @@ import {
   type ShowInfoMsg,
 } from '@tumble/netcode';
 import { CharacterState } from '@tumble/sim';
-import { RoundPhase, ShowPhase, type RoundDefinition, type RoundPhaseId } from '@tumble/shared';
+import {
+  DEFAULT_SHOW_PLAYERS,
+  RoundPhase,
+  ShowPhase,
+  type RoundDefinition,
+  type RoundPhaseId,
+} from '@tumble/shared';
 import { emptyInput, type SimEvent } from '@tumble/sim';
 import {
   PlayerRoundStatus,
@@ -517,7 +523,7 @@ export class OnlineShowSession extends ShowSession {
     if (this.preShowEntered) return;
     this.preShowEntered = true;
     const s = ui.getState();
-    s.setQueue({ status: 'found', playersFound: this.order.length || 40 });
+    s.setQueue({ status: 'found', playersFound: this.order.length || DEFAULT_SHOW_PLAYERS });
     s.setScreen('matchFound');
     this.after(this.lobbyLive ? 0.8 : 1.5, () => {
       if (this.roundIndex < 0)

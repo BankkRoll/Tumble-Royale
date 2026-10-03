@@ -1,5 +1,6 @@
 import { roundCatalog } from '@tumble/content/rounds';
 import { minimumShowSeats } from '@tumble/sim/show';
+import { MAX_PLAYERS } from '@tumble/shared';
 import { describe, expect, it } from 'vitest';
 import {
   FIRST_SHOW_COUNT,
@@ -51,12 +52,12 @@ describe('private show options', () => {
     expect(show.playlist.maxPlayers).toBe(24);
     expect(show.playlist.botsAllowed).toBe(true);
     expect(show.playlist.pool.map((p) => p.roundId)).toEqual(['gumdrop-gauntlet', 'crown-climb']);
-    expect(privateShow({ rounds: ['crown-climb'], bots: true, maxPlayers: 99, timerScale: 9 })).toMatchObject(
-      {
-        roundTimeScale: 2,
-        playlist: { maxPlayers: 60 },
-      },
-    );
+    expect(
+      privateShow({ rounds: ['crown-climb'], bots: true, maxPlayers: MAX_PLAYERS + 1, timerScale: 9 }),
+    ).toMatchObject({
+      roundTimeScale: 2,
+      playlist: { maxPlayers: MAX_PLAYERS },
+    });
     expect(
       privateShow({ rounds: ['crown-climb'], bots: true, maxPlayers: 8, timerScale: 0.1 }).roundTimeScale,
     ).toBe(0.5);

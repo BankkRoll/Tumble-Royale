@@ -3,6 +3,7 @@
  * the servers actually report are shown: `GET /stats` gives queued players and
  * humans in rooms; an older matchmaker only reports its queue on `/health`.
  */
+import { DEFAULT_SHOW_PLAYERS } from '@tumble/shared';
 import type { OnlineStatus } from '@tumble/ui';
 
 /** `GET /stats` body (mirrors `MatchmakerStats` in apps/matchmaker). */
@@ -26,7 +27,7 @@ export function parseMatchmakerStats(body: unknown): MatchmakerStatsBody | null 
 }
 
 /** Show size when the playlist is unknown (the main show). */
-export const DEFAULT_SHOW_SIZE = 40;
+export const DEFAULT_SHOW_SIZE = DEFAULT_SHOW_PLAYERS;
 
 /**
  * Players a queued show fills to (the queue screen's "found / needed").

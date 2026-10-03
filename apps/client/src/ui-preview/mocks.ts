@@ -1,11 +1,11 @@
 /**
- * Mock data generators for the UI preview harness: 40 funny Tumblers, a full
+ * Mock data generators for the UI preview harness: a full show of funny Tumblers, a full
  * show (rounds, results, wall recap), meta (profile, locker, store, pass,
  * challenges, leaderboards, history, news, social) and rewards.
  *
  * Everything is seeded so a deep link always shows the same content.
  */
-import { Rng, type RoundType, type ThemeId } from '@tumble/shared';
+import { MAX_PLAYERS, Rng, type RoundType, type ThemeId } from '@tumble/shared';
 import {
   randomTumblerName,
   tumblerSwatches,
@@ -71,8 +71,8 @@ export const LOCAL_COLORS: TumblerColors = { primary: '#ff4f9a', secondary: '#ff
 /** The local player's name. */
 export const LOCAL_NAME = 'Sprinkles';
 
-/** 40 participants; index 0 is the local player, 1–2 are party mates. */
-export function makePlayers(n = 40, seed = 7): ShowPlayer[] {
+/** A full show of participants; index 0 is the local player, 1–2 are party mates. */
+export function makePlayers(n = MAX_PLAYERS, seed = 7): ShowPlayer[] {
   const rng = new Rng(seed);
   const rand = seeded(seed + 1);
   const used = new Set<string>([LOCAL_NAME]);
@@ -119,7 +119,7 @@ export const ROUNDS: {
     rules: [
       { icon: '🚪', text: 'Bust through the real doors' },
       { icon: '🔨', text: 'Dodge the swinging hammers' },
-      { icon: '🏁', text: 'First 26 qualify' },
+      { icon: '🏁', text: 'First 60 qualify' },
     ],
     tips: [
       'Fake doors don’t budge — follow the crowd… or don’t.',
@@ -135,7 +135,7 @@ export const ROUNDS: {
     rules: [
       { icon: '↔️', text: 'Belts reverse — watch the arrows' },
       { icon: '🥊', text: 'Punch walls pack a wallop' },
-      { icon: '🏁', text: 'First 14 qualify' },
+      { icon: '🏁', text: 'First 30 qualify' },
     ],
     tips: ['Jump right as a belt flips to keep your momentum.'],
   },
@@ -174,7 +174,7 @@ export const ROUNDS: {
     rules: [
       { icon: '⚖️', text: 'Platforms tilt under weight' },
       { icon: '🕳️', text: 'Don’t fall in the void' },
-      { icon: '🏁', text: 'First 7 qualify' },
+      { icon: '🏁', text: 'First 12 qualify' },
     ],
     tips: ['Spread out — crowds tip platforms!'],
   },
@@ -263,10 +263,10 @@ export const ROUND_CATALOG: RoundCatalogEntry[] = ROUNDS.map((r) => ({
   type: r.type,
 }));
 
-/** The mock show: R1 race, R2 race, R3 survival, Final (40 → 26 → 14 → 7 → 1). */
+/** The mock show: R1 race, R2 race, R3 survival, Final (100 → 60 → 30 → 12 → 1). */
 export const SHOW_ROUNDS = ['gumdrop-gauntlet', 'conveyor-chaos', 'spin-cycle', 'crown-climb'] as const;
 /** Players entering each round, then the lone winner. */
-export const SHOW_COUNTS = [40, 26, 14, 7, 1] as const;
+export const SHOW_COUNTS = [MAX_PLAYERS, 60, 30, 12, 1] as const;
 /** Show name. */
 export const SHOW_NAME = 'Main Show';
 
@@ -275,7 +275,7 @@ function roundDef(id: string): (typeof ROUNDS)[number] {
 }
 
 /** Intro info for show round `index`. */
-export function roundIntro(index: number, playerCount = SHOW_COUNTS[index] ?? 40): RoundIntroInfo {
+export function roundIntro(index: number, playerCount = SHOW_COUNTS[index] ?? MAX_PLAYERS): RoundIntroInfo {
   const d = roundDef(SHOW_ROUNDS[index] ?? 'gumdrop-gauntlet');
   const isFinal = d.type === 'final';
   return {
@@ -348,7 +348,7 @@ export function makeResults(summary: ShowSummary, index: number): RoundResults {
 export function makeBetween(index: number): BetweenRoundsInfo {
   const next = roundDef(SHOW_ROUNDS[index + 1] ?? 'crown-climb');
   return {
-    remainingBefore: SHOW_COUNTS[index] ?? 40,
+    remainingBefore: SHOW_COUNTS[index] ?? MAX_PLAYERS,
     remaining: SHOW_COUNTS[index + 1] ?? 1,
     roundIndex: index,
     roundCount: SHOW_ROUNDS.length,
@@ -686,8 +686,8 @@ export const PLAYLISTS: Playlist[] = [
   {
     id: 'main',
     name: 'Main Show',
-    description: 'The classic: races, survivals, team games and a final. 40 Tumblers, one Crown.',
-    players: 40,
+    description: `The classic: races, survivals, team games and a final. ${MAX_PLAYERS} Tumblers, one Crown.`,
+    players: MAX_PLAYERS,
     teamSize: 1,
     art: ['#ff6fae', '#ffd23f'],
     icon: '🎪',
@@ -696,7 +696,7 @@ export const PLAYLISTS: Playlist[] = [
     id: 'duos',
     name: 'Duos',
     description: 'Pair up — if your buddy qualifies, so do you.',
-    players: 40,
+    players: MAX_PLAYERS,
     teamSize: 2,
     art: ['#5aa9ff', '#3ee6b4'],
     icon: '👯',
@@ -705,7 +705,7 @@ export const PLAYLISTS: Playlist[] = [
     id: 'squads',
     name: 'Squads',
     description: 'Four-Tumbler teams. Pure, beautiful chaos.',
-    players: 40,
+    players: MAX_PLAYERS,
     teamSize: 4,
     art: ['#8a5cff', '#ff9ad5'],
     icon: '🐙',
@@ -714,7 +714,7 @@ export const PLAYLISTS: Playlist[] = [
     id: 'chaos',
     name: 'Chaos Mode',
     description: 'Every obstacle at double speed. Good luck!',
-    players: 40,
+    players: MAX_PLAYERS,
     teamSize: 1,
     art: ['#ff8a3d', '#ff4f9a'],
     icon: '🌪️',
@@ -724,7 +724,7 @@ export const PLAYLISTS: Playlist[] = [
     id: 'ranked',
     name: 'Ranked Show',
     description: 'Climb from Bronze to the Crown League.',
-    players: 40,
+    players: MAX_PLAYERS,
     teamSize: 1,
     art: ['#ffd23f', '#ffb021'],
     icon: '🏅',

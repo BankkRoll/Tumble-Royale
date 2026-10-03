@@ -5,6 +5,7 @@
  * countdown, live HUD, stamps, results, between rounds) → final → victory /
  * winner cam → player wall → rewards.
  */
+import { MAX_PLAYERS } from '@tumble/shared';
 import {
   ui,
   uiEvents,
@@ -304,16 +305,16 @@ export async function runShow(opts: Partial<AutoplayOptions> = {}): Promise<void
       status: 'searching',
       startedAt: Date.now(),
       playersFound: 3,
-      playersNeeded: 40,
+      playersNeeded: MAX_PLAYERS,
       etaSec: 20,
       region: 'EU West',
     });
     s.setScreen('matchmaking');
-    for (let found = 3; found < 40; found += 3 + Math.floor(Math.random() * 4)) {
-      s.setQueue({ playersFound: found, etaSec: Math.max(0, Math.round((40 - found) / 2)) });
+    for (let found = 3; found < MAX_PLAYERS; found += 6 + Math.floor(Math.random() * 8)) {
+      s.setQueue({ playersFound: found, etaSec: Math.max(0, Math.round((MAX_PLAYERS - found) / 5)) });
       await sleep(380, signal, k);
     }
-    s.setQueue({ status: 'found', playersFound: 40 });
+    s.setQueue({ status: 'found', playersFound: MAX_PLAYERS });
     s.setScreen('matchFound');
     await sleep(1500, signal, k);
 
@@ -322,12 +323,12 @@ export async function runShow(opts: Partial<AutoplayOptions> = {}): Promise<void
       showName: SHOW_NAME,
       roundCount: SHOW_ROUNDS.length,
       playersJoined: 12,
-      maxPlayers: 40,
+      maxPlayers: MAX_PLAYERS,
       startsAt: Date.now() + 7000 * k,
       joinFeed: joinNames.slice(0, 12),
     });
     s.setScreen('preShow', { transition: 'wipe' });
-    for (let n = 12; n <= 40; n += 2) {
+    for (let n = 12; n <= MAX_PLAYERS; n += 4) {
       await sleep(220, signal, k);
       const info = ui.getState().preShow;
       if (info) s.setPreShow({ ...info, playersJoined: n, joinFeed: joinNames.slice(0, n) });

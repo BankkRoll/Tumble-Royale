@@ -3,7 +3,7 @@
  * adaptive music player (tracks, intensity, final-30, stingers, crossfades),
  * the announcer with live captions, a draggable 2D spatial demo with looping
  * emitters, bus faders, cue tester, sim-event / round-phase simulators and a
- * 40-player voice-stealing stress test.
+ * full-show (MAX_PLAYERS) voice-stealing stress test.
  */
 
 import {
@@ -23,7 +23,7 @@ import {
   stemLevels,
 } from '@tumble/audio';
 import type { AudioSimEvent, BusName, LoopEmitter, MusicTrackId } from '@tumble/audio';
-import { RoundPhase, ShowPhase } from '@tumble/shared';
+import { MAX_PLAYERS, RoundPhase, ShowPhase } from '@tumble/shared';
 import type { RoundPhaseId, RoundType, ThemeId, Vec3 } from '@tumble/shared';
 
 // -----------------------------------------------------------------------------
@@ -585,13 +585,13 @@ const near = (): Vec3 => ({ x: (Math.random() - 0.5) * 20, y: 0, z: (Math.random
 
   const stress = el('div', { class: 'row' });
   stress.append(
-    button('40-player storm (5 s)', () => {
+    button(`${MAX_PLAYERS}-player storm (5 s)`, () => {
       const end = performance.now() + 5000;
       const kinds = ['jump', 'land', 'dive', 'stun', 'bounce'] as const;
       const tick = (): void => {
         for (let i = 0; i < 12; i++) {
           const k = kinds[Math.floor(Math.random() * kinds.length)] as (typeof kinds)[number];
-          const player = Math.floor(Math.random() * 40);
+          const player = Math.floor(Math.random() * MAX_PLAYERS);
           const pos = { x: (Math.random() - 0.5) * 60, y: 0, z: (Math.random() - 0.5) * 60 };
           if (k === 'land') ev({ type: 'land', player, pos, impact: Math.random() });
           else if (k === 'stun') ev({ type: 'stun', player, pos, strength: Math.random() });

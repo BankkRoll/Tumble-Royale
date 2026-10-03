@@ -4,13 +4,13 @@
  * Responsibilities: theme/weather switching over a hand-made course that uses
  * every static piece shape/surface/pattern, VFX buttons for every effect, post
  * and quality presets with the silent benchmark and adaptive resolution, and
- * launchers for every menu/ceremony scene including a full 40-player wall recap.
+ * launchers for every menu/ceremony scene including a full-show (MAX_PLAYERS) wall recap.
  */
 import GUI from 'lil-gui';
 import type { Camera, Scene } from 'three/webgpu';
 import { createRenderer, type BackendPreference } from '@tumble/render';
 import { THEME_IDS, type Weather } from '@tumble/content/themes';
-import type { ThemeId } from '@tumble/shared';
+import { MAX_PLAYERS, type ThemeId } from '@tumble/shared';
 import { createPostPipeline, PHOTO_FILTERS, type PhotoFilter } from '@tumble/render/post';
 import {
   AdaptiveResolution,
@@ -205,7 +205,11 @@ async function boot(): Promise<void> {
     );
   actions['scene:preshow'] = () =>
     launch(() =>
-      createPreShowArena({ ...sceneOpts(), players: createMockShow(40).players, localPlayerId: 'p0' }),
+      createPreShowArena({
+        ...sceneOpts(),
+        players: createMockShow(MAX_PLAYERS).players,
+        localPlayerId: 'p0',
+      }),
     );
   actions['scene:wall'] = () =>
     launch(
@@ -213,7 +217,7 @@ async function boot(): Promise<void> {
       (sc) => {
         const wall = sc as ReturnType<typeof createPlayerWallScene>;
         wall.attachPost(post);
-        wall.playRecap(createMockShow(40), {
+        wall.playRecap(createMockShow(MAX_PLAYERS), {
           onRoundStart: (i, r) => showToast('Round ' + (i + 1) + ': ' + r.name),
           onWinner: () => showToast('WINNER!'),
           onDone: () => showToast('Recap done'),
@@ -227,7 +231,7 @@ async function boot(): Promise<void> {
   actions['scene:podium'] = () =>
     launch(
       () => {
-        const show = createMockShow(40);
+        const show = createMockShow(MAX_PLAYERS);
         return createVictoryPodium({
           ...sceneOpts(),
           winner: { name: 'SprinkleBop', loadout: show.players[0]!.loadout },
@@ -246,8 +250,8 @@ async function boot(): Promise<void> {
     'scene:level': '← back to level',
     'scene:menu': 'Main menu stage',
     'scene:menuPlayable': 'Main menu (idle play)',
-    'scene:preshow': 'Pre-show arena (40)',
-    'scene:wall': 'PLAYER WALL recap (40 × 4 rounds)',
+    'scene:preshow': `Pre-show arena (${MAX_PLAYERS})`,
+    'scene:wall': `PLAYER WALL recap (${MAX_PLAYERS} × 4 rounds)`,
     'scene:wallSkip': '  ↳ skip recap',
     'scene:podium': 'Victory podium',
     'scene:podiumPose': '  ↳ cycle pose',

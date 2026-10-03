@@ -99,3 +99,28 @@ export function validateDisplayName(name: string): string | null {
   if (!/^[A-Za-z0-9 _-]+$/.test(n)) return 'Letters, numbers and spaces only — keep it friendly!';
   return null;
 }
+
+/** Who a name belongs to, for {@link streamerSafeName}. */
+export interface NamedPlayer {
+  /** Show player id (the masked name is `Tumbler <id + 1>`). */
+  id: number;
+  name: string;
+  isLocal?: boolean;
+  isBot?: boolean;
+  isParty?: boolean;
+}
+
+/**
+ * The name to show on screen. Streamer Mode turns other real players into
+ * "Tumbler N"; you, your party and bots (generated names, not personal data)
+ * keep theirs. The game uses this for everything it draws itself (3D wall,
+ * pre-show plates, podium banner, toasts) so both layers mask identically.
+ *
+ * @param p - The player.
+ * @param streamer - Settings → Streamer mode.
+ * @example
+ * streamerSafeName({ id: 4, name: 'xXSniperXx' }, true); // 'Tumbler 5'
+ */
+export function streamerSafeName(p: NamedPlayer, streamer: boolean): string {
+  return streamer && !p.isLocal && !p.isBot && !p.isParty ? `Tumbler ${p.id + 1}` : p.name;
+}

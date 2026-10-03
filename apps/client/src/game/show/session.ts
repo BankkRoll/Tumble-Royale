@@ -27,6 +27,7 @@ import { PlayerRoundStatus } from '@tumble/sim/match';
 import type { ShowPlaylist } from '@tumble/sim/show';
 import {
   bindUI,
+  streamerSafeName,
   ui,
   type HudGrab,
   type PlayerWallEvent,
@@ -333,7 +334,7 @@ export abstract class ShowSession {
     let name = '';
     let meter = 0;
     if (st?.ext?.grabKind === GrabKind.Player) {
-      name = this.players.get(st.grabTarget)?.name ?? '';
+      name = this.players.has(st.grabTarget) ? this.publicName(st.grabTarget) : '';
       if (st.state === CharacterState.Grabbed) {
         mode = 'held';
         meter = Math.min(1, st.ext.breakFree / DEFAULT_TUNING.breakFreeMashes);
@@ -514,12 +515,29 @@ export abstract class ShowSession {
     return showPlayer(id, p.name, p.loadout, {
       isBot: p.isBot,
       isLocal: id === this.localId,
-      ...(p.partyId !== undefined &&
-      id !== this.localId &&
-      p.partyId === this.players.get(this.localId)?.partyId
-        ? { isParty: true }
-        : {}),
+      ...(this.isPartyMate(id) ? { isParty: true } : {}),
     });
+  }
+
+  private isPartyMate(id: number): boolean {
+    const p = this.players.get(id);
+    return (
+      p?.partyId !== undefined && id !== this.localId && p.partyId === this.players.get(this.localId)?.partyId
+    );
+  }
+
+  /**
+   * A player's name as this screen may show it: Streamer Mode hides other
+   * real players everywhere the game draws names itself (3D wall, pre-show
+   * plates, podium, toasts, HUD), matching the UI's own masking.
+   */
+  protected publicName(id: number): string {
+    const p = this.players.get(id);
+    if (!p) return `Tumbler ${id + 1}`;
+    return streamerSafeName(
+      { id, name: p.name, isBot: p.isBot, isLocal: id === this.localId, isParty: this.isPartyMate(id) },
+      this.ctx.settings().gameplay.streamerMode,
+    );
   }
 
   private toast(title: string, icon: string, id: number): void {
@@ -542,7 +560,7 @@ export abstract class ShowSession {
   protected enterPreShow(seconds: number, playlist: ShowPlaylist | null): void {
     const s = ui.getState();
     if (playlist) this.roundCount = estimateRoundCount(playlist, this.order.length);
-    const names = this.order.map((id) => this.players.get(id)?.name ?? '');
+    const names = this.order.map((id) => (this.players.has(id) ? this.publicName(id) : ''));
     const first = Math.min(names.length, 8);
     s.setPreShow({
       showName: this.showName,
@@ -555,7 +573,7 @@ export abstract class ShowSession {
     this.swapUnder('preShow', { transition: 'wipe' }, () => {
       const arenaPlayers = this.order.map((id) => {
         const p = this.players.get(id) as SessionPlayer;
-        return { id: String(id), name: p.name, loadout: p.loadout };
+        return { id: String(id), name: this.publicName(id), loadout: p.loadout };
       });
       // Autoplay keeps the pre-show hands-off; a human can roam the platform until the show starts.
       const control = this.ctx.cfg.autoplay
@@ -726,7 +744,15 @@ export abstract class ShowSession {
       r.inRound ? this.localId : -1,
       (id) => {
         const p = this.players.get(id);
-        return p ? { name: p.name, color: p.loadout.colors[0] } : null;
+        return p
+          ? {
+              name: this.publicName(id),
+              color: p.loadout.colors[0],
+              isBot: p.isBot,
+              isLocal: id === this.localId,
+              isParty: this.isPartyMate(id),
+            }
+          : null;
       },
       this.ctx.audio.game,
       r.start.isFinal,
@@ -893,7 +919,7 @@ export abstract class ShowSession {
     const wallPlayers = rs.players
       .map((p) => this.players.get(p.id))
       .filter((p): p is SessionPlayer => !!p)
-      .map((p) => ({ id: String(p.id), name: p.name, loadout: p.loadout }));
+      .map((p) => ({ id: String(p.id), name: this.publicName(p.id), loadout: p.loadout }));
     const eliminated = o.eliminated.filter((id) => entrants.has(id)).map(String);
     this.swapUnder('roundResults', { transition: 'wipe' }, () => {
       this.ctx.director.show(
@@ -987,12 +1013,12 @@ export abstract class ShowSession {
         case 'qualified':
           if (mine) this.localQualified();
           else if (r && r.start.round.type === 'race')
-            this.toast(`${this.players.get(e.player)?.name ?? 'Someone'} qualified!`, '🏁', e.player);
+            this.toast(`${this.publicName(e.player)} qualified!`, '🏁', e.player);
           break;
         case 'eliminated':
           if (mine) this.localEliminated();
           else if (r && r.start.round.type !== 'race')
-            this.toast(`${this.players.get(e.player)?.name ?? 'Someone'} is out!`, '💨', e.player);
+            this.toast(`${this.publicName(e.player)} is out!`, '💨', e.player);
           break;
         case 'checkpoint':
           if (mine) {
@@ -1306,14 +1332,14 @@ export abstract class ShowSession {
       .slice(0, 2)
       .map((id) => this.players.get(id))
       .filter((p): p is SessionPlayer => !!p)
-      .map((p) => ({ name: p.name, loadout: p.loadout }));
+      .map((p) => ({ name: this.publicName(p.id), loadout: p.loadout }));
     this.swapUnder(localWon ? 'victory' : 'winnerCam', { transition: 'wipe' }, () => {
       this.ctx.director.show(
         createPodiumView(
           finalTheme,
           this.ctx.quality.preset,
           this.ctx.tumblers.create,
-          { name: winner.name, loadout: winner.loadout },
+          { name: this.publicName(winner.id), loadout: winner.loadout },
           runnersUp,
           this.ctx.post,
         ),
@@ -1338,7 +1364,7 @@ export abstract class ShowSession {
       const wall3d = {
         players: this.order.map((id) => {
           const p = this.players.get(id) as SessionPlayer;
-          return { id: String(id), name: p.name, loadout: p.loadout };
+          return { id: String(id), name: this.publicName(id), loadout: p.loadout };
         }),
         rounds: uiSummary.rounds.map((r) => ({ name: r.name, eliminatedIds: r.eliminatedIds.map(String) })),
         winnerId: summary.winnerId !== null ? String(summary.winnerId) : null,

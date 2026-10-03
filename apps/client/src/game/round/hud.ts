@@ -63,7 +63,9 @@ export class HudMapper {
     private readonly round: RoundDefinition,
     private readonly entrants: number,
     private readonly localId: number,
-    private readonly info: (id: number) => { name: string; color: string } | null,
+    private readonly info: (
+      id: number,
+    ) => { name: string; color: string; isBot?: boolean; isLocal?: boolean; isParty?: boolean } | null,
     private readonly audio: GameAudio | null,
     private readonly isFinal: boolean,
   ) {
@@ -164,6 +166,9 @@ export class HudMapper {
           id,
           name: who.name,
           color: who.color,
+          ...(who.isBot ? { isBot: true } : {}),
+          ...(who.isLocal ? { isLocal: true } : {}),
+          ...(who.isParty ? { isParty: true } : {}),
           progress: Math.max(0, Math.min(1, p.progress)),
         });
       }

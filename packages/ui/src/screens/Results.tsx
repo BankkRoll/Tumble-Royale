@@ -211,6 +211,7 @@ export function FinalHypeScreen(): JSX.Element | null {
 /** You won: crown drop, crown counter, fireworks, photo mode. */
 export function VictoryScreen(): JSX.Element | null {
   const v = useUI((s) => s.victory);
+  const name = useDisplayName();
   const noFlash = useReducedFlashing();
   const step = useSequence([300, 1100, 1800]);
   useEffect(() => {
@@ -253,7 +254,7 @@ export function VictoryScreen(): JSX.Element | null {
         </div>
         {step >= 2 && (
           <div className="tr-title tr-h1 tr-title--lemon tr-slam">
-            {v.isLocalWinner ? 'You won the Crown!' : `${v.winner.name} wins!`}
+            {v.isLocalWinner ? 'You won the Crown!' : `${name(v.winner)} wins!`}
           </div>
         )}
         {step >= 3 && (

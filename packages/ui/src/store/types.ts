@@ -737,6 +737,10 @@ export interface ProgressMarker {
   color: string;
   /** 0..1 along the course. */
   progress: number;
+  /** Bot, local or party marker: Streamer Mode keeps the name. Omitted = another real player. */
+  isBot?: boolean;
+  isLocal?: boolean;
+  isParty?: boolean;
 }
 
 /** Team score pill. */

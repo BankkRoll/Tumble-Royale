@@ -119,7 +119,7 @@ export const RaceProgress = memo(function RaceProgress(): JSX.Element | null {
             key={l.id}
             className="tr-hud-race-leader"
             style={{ left: `${l.progress * 100}%`, background: l.color }}
-            title={name({ id: l.id, name: l.name, isBot: true })}
+            title={name(l)}
           >
             {i === 0 ? <Icon name="crown" size="0.9em" /> : i + 1}
           </span>

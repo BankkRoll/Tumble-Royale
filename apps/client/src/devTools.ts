@@ -20,14 +20,32 @@ export function devParam(params: URLSearchParams, key: string): string | null {
   return DEV_TOOLS ? params.get(key) : null;
 }
 
+/** Where the client finds its services. */
+export interface Endpoints {
+  /** Account API base URL (absolute, no trailing slash). */
+  api: string;
+  /** Matchmaker base URL (absolute, no trailing slash). */
+  matchmaker: string;
+  /** Game server WebSocket URL; null means `/gs/ws` on this origin. */
+  gameServer: string | null;
+}
+
+const sameOrigin = (path: string): string =>
+  typeof location === 'undefined' ? path : `${location.origin}${path}`;
+
 /**
- * Service endpoints, set per deployment with `VITE_API_URL`,
- * `VITE_MATCHMAKER_URL` and `VITE_GAME_SERVER_URL` at build time. The
- * defaults match the local dev stack.
+ * Service endpoints. Resolution order:
+ *
+ * 1. `/config.json` served next to the page, applied at boot by
+ *    `loadRuntimeConfig` (one build runs on any domain).
+ * 2. `VITE_API_URL`, `VITE_MATCHMAKER_URL`, `VITE_GAME_SERVER_URL` baked in
+ *    at build time.
+ * 3. Production builds: same-origin `/api`, `/mm` and `/gs/ws` (the reverse
+ *    proxy layout in `deploy/`). Dev and sandbox builds: the local dev stack.
  */
-export const ENDPOINTS = {
-  api: import.meta.env.VITE_API_URL ?? 'http://localhost:7360',
-  matchmaker: import.meta.env.VITE_MATCHMAKER_URL ?? 'http://localhost:7370',
-  /** Game server WebSocket URL; unset means `/gs/ws` on this origin (Vite proxy or a reverse proxy). */
-  gameServer: import.meta.env.VITE_GAME_SERVER_URL ?? null,
-} as const;
+export const ENDPOINTS: Endpoints = {
+  api: import.meta.env.VITE_API_URL || (DEV_TOOLS ? 'http://localhost:7360' : sameOrigin('/api')),
+  matchmaker:
+    import.meta.env.VITE_MATCHMAKER_URL || (DEV_TOOLS ? 'http://localhost:7370' : sameOrigin('/mm')),
+  gameServer: import.meta.env.VITE_GAME_SERVER_URL || null,
+};

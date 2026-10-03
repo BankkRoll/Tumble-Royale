@@ -10,7 +10,6 @@
  */
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
-import { sql } from 'drizzle-orm';
 import { trustFunction } from '@tumble/shared/proxy';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { registerIdentityRoutes } from './accounts/identities.ts';
@@ -34,8 +33,10 @@ import { rateLimitKey } from './http/rate-limit.ts';
 import { kvRateLimitStore } from './http/rate-limit-store.ts';
 import { createKV, type KV } from './kv/index.ts';
 import { registerMatchRoutes } from './matches/routes.ts';
+import { registerAdminRoutes } from './moderation/admin.ts';
 import { registerModerationRoutes } from './moderation/routes.ts';
 import { registerNewsRoutes } from './news/routes.ts';
+import { registerOps, requestIdOptions, type Ops } from './ops/index.ts';
 import { registerProgressionRoutes } from './progression/routes.ts';
 import { ensureSeason, onSeasonChanged, type SeasonChangeListener } from './progression/seasons.ts';
 import { registerTutorialRoutes } from './progression/tutorial.ts';
@@ -72,6 +73,8 @@ export interface BuiltApp {
   ctx: AppContext;
   database: Database;
   gateway: Gateway;
+  /** Readiness, metrics and the retention job. */
+  ops: Ops;
   close(): Promise<void>;
 }
 
@@ -115,23 +118,6 @@ export async function syncCatalog(ctx: AppContext): Promise<void> {
   }
 }
 
-const HEALTH_PROBE_MS = 2000;
-
-/** Runs a dependency check with a deadline; false on failure or timeout. */
-async function probe(check: () => Promise<unknown>): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<false>((resolve) => {
-    timer = setTimeout(() => resolve(false), HEALTH_PROBE_MS);
-  });
-  try {
-    return await Promise.race([check().then(() => true), timeout]);
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 /**
  * Builds the API.
  *
@@ -139,9 +125,18 @@ async function probe(check: () => Promise<unknown>): Promise<boolean> {
  * @param opts - Overrides for tests.
  */
 export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Promise<BuiltApp> {
+  // The pool can report errors before Fastify's logger exists.
+  const logRef: { current?: Pick<FastifyInstance['log'], 'error'> } = {};
   const database =
-    opts.database ?? (await openDatabase({ databaseUrl: config.databaseUrl, pgliteDir: config.pgliteDir }));
-  await database.migrate();
+    opts.database ??
+    (await openDatabase({
+      databaseUrl: config.databaseUrl,
+      pgliteDir: config.pgliteDir,
+      poolMax: config.ops.dbPoolMax,
+      onPoolError: (err) => (logRef.current ?? console).error({ err }, 'postgres idle connection error'),
+      onLockWait: () => console.warn('[api] another instance is migrating; waiting for its lock'),
+    }));
+  if (config.ops.migrateOnBoot) await database.migrate();
   const now = opts.now ?? (() => new Date());
   const kv = opts.kv ?? createKV(config.redisUrl, () => now().getTime());
   const catalog = clockedCatalog(opts.catalog ?? loadCatalog(), now);
@@ -184,7 +179,9 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     // SECURITY: X-Forwarded-For is believed only from the proxies TRUST_PROXY names.
     trustProxy: trustFunction(config.trustProxy) || false,
     bodyLimit: 256 * 1024,
+    ...requestIdOptions,
   });
+  logRef.current = app.log;
 
   // Signature checks (internal HMAC, Stripe) need the exact bytes that were signed.
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
@@ -253,24 +250,16 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     }
   });
 
-  // Load balancers route on this: an instance that lost Redis cannot fan out
-  // realtime events, keep presence or share rate limits, so it reports 503.
-  app.get('/health', { config: { rateLimit: false } }, async (_req, reply) => {
-    const [db, store] = await Promise.all([
-      probe(() => ctx.db.execute(sql`select 1`)),
-      probe(() => kv.ping()),
-    ]);
-    const ok = db && store;
-    return reply.code(ok ? 200 : 503).send({
-      ok,
-      db: database.driver,
-      dbOk: db,
-      kv: config.redisUrl ? 'redis' : 'memory',
-      kvOk: store,
-      payments: payments.id,
-      season: catalog.season.id,
-    });
-  });
+  // Liveness only: an instance that lost the database or Redis answers 503 on
+  // /ready (load balancers route on that), but orchestrators must not restart
+  // a process that is merely waiting for a dependency to come back.
+  app.get('/health', { config: { rateLimit: false }, logLevel: 'warn' }, async () => ({
+    ok: true,
+    db: database.driver,
+    kv: config.redisUrl ? 'redis' : 'memory',
+    payments: payments.id,
+    season: catalog.season.id,
+  }));
 
   registerAuthRoutes(app, ctx);
   registerAccountRoutes(app, ctx);
@@ -284,15 +273,19 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
   registerPartyRoutes(app, ctx);
   registerModerationRoutes(app, ctx);
   registerNewsRoutes(app, ctx);
+  registerAdminRoutes(app, ctx);
   const gateway = attachGateway(app, ctx);
+  const ops = registerOps(app, ctx, { database, gateway });
 
   return {
     app,
     ctx,
     database,
     gateway,
+    ops,
     close: async () => {
       clearInterval(seasonTimer);
+      ops.close();
       await gateway.close();
       await app.close();
       await kv.close();

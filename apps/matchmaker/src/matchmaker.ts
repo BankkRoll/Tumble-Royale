@@ -217,9 +217,22 @@ export const DEFAULT_CUSTOM: CustomSettings = {
   minPlayers: 1,
 };
 
+/** Receives placement events (metrics). */
+export interface MatchmakerObserver {
+  /**
+   * A match was placed on a server.
+   *
+   * @param record - The placed match.
+   * @param waitedMs - Queue time of each human placed from the queue (empty for custom lobbies).
+   */
+  placed(record: MatchRecord, waitedMs: readonly number[]): void;
+}
+
 /** The matchmaking service. */
 export class Matchmaker {
   readonly engine: EngineConfig;
+  /** Optional placement observer (set by the app for metrics). */
+  observer: MatchmakerObserver | undefined;
 
   private readonly control: GameControl;
 
@@ -545,6 +558,10 @@ export class Matchmaker {
       createdAt: this.now(),
     };
     await this.publishMatch(record, server, lobby.size);
+    this.observer?.placed(
+      record,
+      lobby.entries.flatMap((e) => e.members.map(() => record.createdAt - e.enqueuedAt)),
+    );
     return record;
   }
 
@@ -1246,6 +1263,7 @@ export class Matchmaker {
     });
     for (const p of rules.members(lobby)) await this.store.del(`lobby-user:${p.userId}`);
     await this.publishMatch(record, server, seats);
+    this.observer?.placed(record, []);
     return record;
   }
 }

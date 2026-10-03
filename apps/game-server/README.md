@@ -6,7 +6,7 @@ tick) and streams delta snapshots to its clients over WebSocket.
 
 ```sh
 pnpm --filter @tumble/game-server dev     # watch mode on :7350
-pnpm --filter @tumble/game-server start
+pnpm --filter @tumble/game-server build && pnpm --filter @tumble/game-server start   # production bundle
 ```
 
 ## Endpoints
@@ -50,7 +50,7 @@ The shared secrets and URLs come from the root [`.env`](../../.env.example); run
 ## Load testing
 
 ```sh
-FILL_WAIT_MS=3000 pnpm --filter @tumble/game-server start
+FILL_WAIT_MS=3000 pnpm --filter @tumble/game-server dev
 pnpm --filter @tumble/bot-swarm start -- --clients 100 --url ws://localhost:7350/ws --duration 60
 ```
 

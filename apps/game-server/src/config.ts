@@ -102,6 +102,42 @@ export interface GameServerConfig {
   /** Enables the signed `POST /internal/kick` endpoint (`GAME_SERVER_SECRET`). */
   controlSecret: string | undefined;
   exposure: ExposureConfig;
+  /** Logging, crash reporting and shutdown. */
+  ops: OpsConfig;
+}
+
+/** Logging, crash reporting and graceful-drain settings. */
+export interface OpsConfig {
+  /** pino level (`LOG_LEVEL`, info). */
+  logLevel: string;
+  /** Sentry-compatible DSN for crash reports (`SENTRY_DSN`). */
+  sentryDsn: string | undefined;
+  /**
+   * On SIGTERM, how long running shows may continue before the server closes
+   * anyway (`DRAIN_TIMEOUT_MS`, 15 min). Orchestrator grace periods must be longer.
+   */
+  drainTimeoutMs: number;
+  /**
+   * After deregistering, how long to wait for players of matches placed just
+   * before it to arrive and open their rooms (`DRAIN_SETTLE_MS`, 15 s).
+   */
+  drainSettleMs: number;
+  /** How long to keep retrying undelivered results before exiting (`OUTBOX_FLUSH_MS`, 15 s). */
+  outboxFlushMs: number;
+}
+
+const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'];
+
+function ops(issues: EnvIssues): OpsConfig {
+  const logLevel = issues.optional('LOG_LEVEL') ?? 'info';
+  if (!LOG_LEVELS.includes(logLevel)) issues.add('LOG_LEVEL', `must be one of ${LOG_LEVELS.join(', ')}`);
+  return {
+    logLevel,
+    sentryDsn: issues.url('SENTRY_DSN', HTTP),
+    drainTimeoutMs: issues.int('DRAIN_TIMEOUT_MS', 15 * 60_000, { min: 0 }),
+    drainSettleMs: issues.int('DRAIN_SETTLE_MS', 15_000, { min: 0 }),
+    outboxFlushMs: issues.int('OUTBOX_FLUSH_MS', 15_000, { min: 0 }),
+  };
 }
 
 function exposure(issues: EnvIssues, env: NodeEnv, port: number): ExposureConfig {
@@ -217,6 +253,7 @@ export function loadConfig(env: Env = process.env): GameServerConfig {
     results: results(issues, nodeEnv),
     link: link(issues, port, controlSecret),
     controlSecret,
+    ops: ops(issues),
     exposure: exposure(issues, nodeEnv, port),
   };
   issues.throwIfAny('game-server');

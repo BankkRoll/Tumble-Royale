@@ -6,16 +6,22 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "start": "tsx src/main.ts",
+    "build": "node ../../scripts/build-server.mjs",
+    "start": "node --enable-source-maps dist/main.js",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "0.21.0",
+    "@fastify/proxy-addr": "5.1.1",
     "@tumble/content": "workspace:*",
     "@tumble/netcode": "workspace:*",
     "@tumble/shared": "workspace:*",
     "@tumble/sim": "workspace:*",
-    "ws": "8.22.0"
+    "msgpackr": "^1.11.0",
+    "pino": "10.4.0",
+    "ws": "8.22.0",
+    "zod": "^4.1.0"
   },
   "devDependencies": {
     "@types/ws": "8.18.2",

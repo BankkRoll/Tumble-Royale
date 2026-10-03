@@ -30,6 +30,8 @@ export interface MatchmakerLinkOptions {
   report: () => CapacityReport;
   /** Humans connected to rooms (the matchmaker's public "online" count). */
   humans?: () => number;
+  /** Show results not yet delivered to the API (reported for monitoring). */
+  outbox?: () => number;
   /** Drains ticketed joins since the last call, so the matchmaker stops replaying their `match_found`. */
   joined?: () => { matchId: string; userId: string }[];
   log?: (msg: string) => void;
@@ -100,6 +102,7 @@ export function startMatchmakerLink(opts: MatchmakerLinkOptions): MatchmakerLink
         rooms: r.rooms,
         matches: r.matches,
         ...(opts.humans ? { humans: opts.humans() } : {}),
+        ...(opts.outbox ? { outbox: opts.outbox() } : {}),
         ...(joined.length ? { joined } : {}),
       }))
     ) {

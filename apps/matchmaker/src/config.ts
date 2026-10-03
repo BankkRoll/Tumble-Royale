@@ -12,6 +12,7 @@
  */
 import { DEFAULT_SHOW_PLAYERS, MAX_PLAYERS } from '@tumble/shared';
 import { EnvIssues, type Env } from '@tumble/shared/env';
+import { readMetricsExposure, type MetricsExposure } from '@tumble/shared/metrics';
 import type { TrustProxy } from '@tumble/shared/proxy';
 import { z } from 'zod';
 
@@ -44,6 +45,7 @@ const EnvSchema = z.object({
   USER_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(30),
   TICK_MS: z.coerce.number().int().min(50).default(500),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  SENTRY_DSN: optional,
 });
 
 /** Resolved matchmaker configuration. */
@@ -95,6 +97,10 @@ export interface MatchmakerConfig {
   /** Matchmaking tick interval; 0 in tests (ticks are driven manually). */
   tickMs: number;
   logLevel: string;
+  /** `/metrics` exposure: `METRICS_TOKEN`, `INTERNAL_PORT`, `INTERNAL_HOST`. */
+  metrics: MetricsExposure;
+  /** Sentry-compatible DSN for crash reports. */
+  sentryDsn: string | undefined;
 }
 
 const splitList = (v: string): string[] =>
@@ -133,6 +139,7 @@ export function loadConfig(env: Env = process.env): MatchmakerConfig {
         'Set ALLOW_MEMORY_STORE=1 to run a single instance on memory anyway.',
     );
   }
+  const metrics = readMetricsExposure(issues, e.PORT);
   issues.throwIfAny('matchmaker');
   return {
     env: e.NODE_ENV,
@@ -162,5 +169,7 @@ export function loadConfig(env: Env = process.env): MatchmakerConfig {
     userRateLimitMax: e.USER_RATE_LIMIT_MAX,
     tickMs: e.NODE_ENV === 'test' ? 0 : e.TICK_MS,
     logLevel: e.LOG_LEVEL,
+    metrics,
+    sentryDsn: e.SENTRY_DSN,
   };
 }

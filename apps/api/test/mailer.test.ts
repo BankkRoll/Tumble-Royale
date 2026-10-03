@@ -14,6 +14,7 @@ const PROD = testEnv({
   NODE_ENV: 'production',
   PUBLIC_WEB_URL: 'https://play.example.com',
   ALLOW_MEMORY_STORE: '1',
+  ALLOW_EMBEDDED_DB: '1',
 });
 
 function fakeTransport(): MailTransport & { sent: Parameters<MailTransport['sendMail']>[0][] } {

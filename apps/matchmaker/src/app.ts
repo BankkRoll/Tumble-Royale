@@ -19,6 +19,7 @@ import { ApiBanLookup, NO_BANS, type BanLookup } from './bans.ts';
 import type { MatchmakerConfig } from './config.ts';
 import type { GameControl } from './gameControl.ts';
 import { DEFAULT_CUSTOM, Matchmaker, MMError, userChannel } from './matchmaker.ts';
+import { registerOps, requestIdOptions, type MatchmakerOps } from './ops.ts';
 import { SharedRateLimiter } from './rateLimit.ts';
 import { createStore, type MMStore } from './store.ts';
 import { verifyAccess, verifyQueueTicket, type Player } from './tickets.ts';
@@ -39,6 +40,8 @@ export interface MatchmakerApp {
   app: FastifyInstance;
   mm: Matchmaker;
   store: MMStore;
+  /** Readiness and metrics. */
+  ops: MatchmakerOps;
   close(): Promise<void>;
 }
 
@@ -66,6 +69,8 @@ const HeartbeatBody = z.object({
     .array(z.object({ matchId: z.string().min(1).max(64), userId: z.string().min(1).max(64) }))
     .max(10_000)
     .optional(),
+  /** Show results the server has not delivered to the API yet. */
+  outbox: z.number().int().min(0).optional(),
 });
 const RejoinBody = z.object({ matchId: z.string().min(1).max(64) });
 const SettingsSchema = z
@@ -143,7 +148,9 @@ export async function buildMatchmaker(
     logger: opts.logger === false ? false : { level: cfg.logLevel },
     // SECURITY: X-Forwarded-For is believed only from the proxies TRUST_PROXY names.
     trustProxy: trust === false ? false : trust,
+    ...requestIdOptions,
   });
+  const ops = registerOps(app, { cfg, mm, store, wsConnections: () => wss.clients.size, now });
 
   const limiterError = (err: unknown) => app.log.warn({ err }, 'shared rate limit store failed');
   const ipLimiter = new SharedRateLimiter(store, 'rl:ip', cfg.rateLimitMax, 60_000, now, limiterError);
@@ -176,7 +183,14 @@ export async function buildMatchmaker(
     if (req.method === 'OPTIONS') return reply.code(204).send();
     // Game servers authenticate with their shared secret and may sit behind one NAT; they are not throttled per IP.
     const path = req.url.split('?')[0] ?? '';
-    if (path === '/health' || path.startsWith('/servers') || path.startsWith('/matches/')) return;
+    if (
+      path === '/health' ||
+      path === '/ready' ||
+      path === '/metrics' ||
+      path.startsWith('/servers') ||
+      path.startsWith('/matches/')
+    )
+      return;
     const r = await ipLimiter.hit(`ip:${req.ip}`);
     if (!r.allowed) {
       reply.header('retry-after', String(Math.ceil(r.retryAfterMs / 1000)));
@@ -294,6 +308,7 @@ export async function buildMatchmaker(
   app.post('/servers/heartbeat', async (req) => {
     gameServer(req);
     const b = parse(HeartbeatBody, req.body);
+    if (b.outbox !== undefined) ops.outboxReported(b.serverId, b.outbox);
     return mm.heartbeat(b.serverId, {
       load: b.load,
       ...(b.humans !== undefined ? { humans: b.humans } : {}),
@@ -305,7 +320,9 @@ export async function buildMatchmaker(
 
   app.delete('/servers/:id', async (req, reply) => {
     gameServer(req);
-    await mm.removeServer(parse(z.object({ id: z.string().min(1).max(64) }), req.params).id);
+    const { id } = parse(z.object({ id: z.string().min(1).max(64) }), req.params);
+    await mm.removeServer(id);
+    ops.serverRemoved(id);
     return reply.code(204).send();
   });
 
@@ -510,12 +527,15 @@ export async function buildMatchmaker(
     app,
     mm,
     store,
+    ops,
     close: async () => {
+      ops.setDraining();
       for (const t of timers) clearInterval(t);
       app.server.off('upgrade', onUpgrade);
       for (const ws of wss.clients) ws.close(1001, 'shutting down');
       await new Promise<void>((r) => wss.close(() => r()));
       await app.close();
+      ops.close();
       await store.close();
     },
   };

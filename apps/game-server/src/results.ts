@@ -13,6 +13,7 @@
  * server never posts anything.
  */
 import { createHmac, randomBytes } from 'node:crypto';
+import { matchRequestId, REQUEST_ID_HEADER } from '@tumble/shared/request-id';
 import type { RoundType } from '@tumble/shared';
 
 /** Per-show action counters for challenges. */
@@ -195,7 +196,12 @@ export async function sendResultsOnce(
   try {
     const res = await (opts.fetch ?? fetch)(url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', ...signInternal(opts.secret, body, Date.now()) },
+      headers: {
+        'content-type': 'application/json',
+        // The API logs this as the request id, tying its ingest lines to this show.
+        [REQUEST_ID_HEADER]: matchRequestId(payload.matchId),
+        ...signInternal(opts.secret, body, Date.now()),
+      },
       body,
       signal: AbortSignal.timeout(8000),
     });

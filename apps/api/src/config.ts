@@ -11,6 +11,7 @@
  *   explicitly allowed.
  */
 import { EnvIssues, type Env } from '@tumble/shared/env';
+import { readMetricsExposure, type MetricsExposure } from '@tumble/shared/metrics';
 import type { TrustProxy } from '@tumble/shared/proxy';
 import { z } from 'zod';
 
@@ -18,6 +19,24 @@ const optionalString = z
   .string()
   .optional()
   .transform((v) => (v === undefined || v.trim() === '' ? undefined : v.trim()));
+
+// An empty value (`ALLOW_EMBEDDED_DB=` in a .env or compose file) means unset.
+const flag = z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+  z.enum(['0', '1']).optional(),
+);
+
+/** Self-hosting and operations knobs (pool, migrations, retention, metrics). */
+const OpsEnvSchema = z.object({
+  DB_POOL_MAX: z.coerce.number().int().min(1).max(500).default(10),
+  ALLOW_EMBEDDED_DB: flag,
+  MIGRATE_ON_BOOT: flag,
+  SENTRY_DSN: optionalString,
+  RETENTION_INTERVAL_MINUTES: z.coerce.number().int().min(0).default(360),
+  RETENTION_SESSION_GRACE_DAYS: z.coerce.number().int().min(1).default(7),
+  RETENTION_EVENTS_DAYS: z.coerce.number().int().min(0).default(90),
+  RETENTION_GUEST_DAYS: z.coerce.number().int().min(0).default(0),
+});
 
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -43,6 +62,7 @@ const EnvSchema = z.object({
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(300),
   PRESENCE_GRACE_MS: z.coerce.number().int().min(0).max(120_000).default(8_000),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  ...OpsEnvSchema.shape,
 });
 
 /** OAuth client credentials for one provider. */
@@ -102,6 +122,33 @@ export interface ApiConfig {
   /** How long a user stays "online" after their last realtime connection closes. */
   presenceGraceMs: number;
   logLevel: string;
+  /** Self-hosting and operations settings. */
+  ops: ApiOpsConfig;
+}
+
+/** Data-retention policy; a 0 day count keeps that data forever. */
+export interface RetentionConfig {
+  /** How often the job runs (`RETENTION_INTERVAL_MINUTES`, 0 = never). */
+  intervalMs: number;
+  /** Delete sessions this long after they expired (`RETENTION_SESSION_GRACE_DAYS`, 7). */
+  sessionGraceDays: number;
+  /** Delete non-audit analytics events older than this (`RETENTION_EVENTS_DAYS`, 90). */
+  eventsDays: number;
+  /** Delete guest accounts unseen for this long (`RETENTION_GUEST_DAYS`, 0 = off). */
+  guestDays: number;
+}
+
+/** Operations settings of the API. */
+export interface ApiOpsConfig {
+  /** Postgres pool size per instance (`DB_POOL_MAX`, 10). */
+  dbPoolMax: number;
+  /** Apply migrations at boot (`MIGRATE_ON_BOOT`, default on). Off when a separate `migrate` step runs them. */
+  migrateOnBoot: boolean;
+  /** `/metrics` exposure: `METRICS_TOKEN`, `INTERNAL_PORT`, `INTERNAL_HOST`. */
+  metrics: MetricsExposure;
+  /** Sentry-compatible DSN for crash reports. */
+  sentryDsn: string | undefined;
+  retention: RetentionConfig;
 }
 
 function pair(id: string | undefined, secret: string | undefined): OAuthClientConfig | undefined {
@@ -134,6 +181,13 @@ export function loadConfig(env: Env = process.env): ApiConfig {
         'Set ALLOW_MEMORY_STORE=1 to run a single instance on memory anyway.',
     );
   }
+  if (e.NODE_ENV === 'production' && !e.DATABASE_URL && e.ALLOW_EMBEDDED_DB !== '1') {
+    issues.add(
+      'DATABASE_URL',
+      'is required in production: the embedded PGlite database is single-process, has no backups ' +
+        'tooling and cannot be shared between API instances. Set ALLOW_EMBEDDED_DB=1 to run on it anyway.',
+    );
+  }
   // WARNING: a live Stripe key without a webhook secret takes real money but
   // never hears about completions, refunds or chargebacks: paid Gems would
   // never arrive and refunded Gems would never be revoked.
@@ -145,6 +199,7 @@ export function loadConfig(env: Env = process.env): ApiConfig {
     );
   }
   const trustProxy = issues.trustProxy();
+  const metrics = readMetricsExposure(issues, e.PORT);
   issues.throwIfAny('api');
   const corsOrigins: string[] | true = e.CORS_ORIGINS
     ? e.CORS_ORIGINS.split(',')
@@ -184,5 +239,17 @@ export function loadConfig(env: Env = process.env): ApiConfig {
     rateLimitMax: e.RATE_LIMIT_MAX,
     presenceGraceMs: e.PRESENCE_GRACE_MS,
     logLevel: e.LOG_LEVEL,
+    ops: {
+      dbPoolMax: e.DB_POOL_MAX,
+      migrateOnBoot: e.MIGRATE_ON_BOOT !== '0',
+      metrics,
+      sentryDsn: e.SENTRY_DSN,
+      retention: {
+        intervalMs: e.NODE_ENV === 'test' ? 0 : e.RETENTION_INTERVAL_MINUTES * 60_000,
+        sessionGraceDays: e.RETENTION_SESSION_GRACE_DAYS,
+        eventsDays: e.RETENTION_EVENTS_DAYS,
+        guestDays: e.RETENTION_GUEST_DAYS,
+      },
+    },
   };
 }

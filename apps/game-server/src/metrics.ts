@@ -85,6 +85,10 @@ export class ServerMetrics {
   inputMissed = 0;
   inputLate = 0;
   roomCrashes = 0;
+  /** Show results waiting in the outbox for the API. */
+  outboxBacklog = 0;
+  /** 1 while the server drains for shutdown. */
+  draining = 0;
   /** Sanity-check anomalies by kind (telemetry only; nobody is kicked for these). */
   readonly anomalies: AnomalyCounts = createAnomalyCounts();
   /** Grabs the server granted from a lag-compensated view. */
@@ -164,6 +168,8 @@ export class ServerMetrics {
     gauge('tumble_snapshot_bytes_p95', 'p95 snapshot size in bytes.', this.snapshotBytes.percentile(0.95));
     gauge('tumble_rtt_ms_avg', 'Mean client RTT (ms).', this.rtt.mean());
     gauge('tumble_rtt_ms_p95', 'p95 client RTT (ms).', this.rtt.percentile(0.95));
+    gauge('tumble_outbox_backlog', 'Show results waiting for delivery to the API.', this.outboxBacklog);
+    gauge('tumble_draining', '1 while the server drains for shutdown.', this.draining);
     counter('tumble_snapshots_sent_total', 'Snapshots sent.', this.snapshotsSent);
     counter(
       'tumble_snapshots_dropped_total',

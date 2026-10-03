@@ -5,6 +5,7 @@
  *
  * Public port:
  * - `GET /health` — liveness + Rapier version (CORS for allowed origins: the client probes it)
+ * - `GET /ready` — 503 while draining for shutdown
  * - `GET /debug/determinism?steps=N` — physics determinism probe; development only, N ≤ 1200
  * - `GET /metrics`, `GET /rooms` — only with `Authorization: Bearer <METRICS_TOKEN>`, or
  *   openly when neither a token nor an internal port is configured outside production
@@ -14,9 +15,9 @@
  * Internal port (`INTERNAL_PORT`, optional): `/health`, `/metrics`, `/rooms`
  * without a token, for scrapers on a private network.
  */
-import { timingSafeEqual } from 'node:crypto';
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { metricsAccess } from '@tumble/shared/metrics';
 import type { TrustFn } from '@tumble/shared/proxy';
 import { runDeterminismScenario } from '@tumble/sim';
 import { handleControl, NonceCache, type ControlOptions } from './control.ts';
@@ -65,6 +66,8 @@ export interface GameServerOptions extends RoomManagerOptions {
   deps: RoomDeps;
   /** Enables the signed matchmaker control endpoint (`POST /internal/kick`). */
   control?: ControlOptions;
+  /** Readiness for `/ready`; false while draining (default: always ready). */
+  ready?: () => boolean;
   /** Exposure policy; {@link DEV_HTTP_POLICY} when absent. */
   http?: HttpPolicy;
 }
@@ -86,13 +89,6 @@ const json = (res: ServerResponse, status: number, body: unknown, headers: Recor
   res.writeHead(status, { 'content-type': 'application/json', ...headers });
   res.end(JSON.stringify(body));
 };
-
-function bearerMatches(req: IncomingMessage, token: string): boolean {
-  const h = req.headers.authorization;
-  const got = Buffer.from(h?.startsWith('Bearer ') ? h.slice(7).trim() : '');
-  const want = Buffer.from(token);
-  return got.length === want.length && timingSafeEqual(got, want);
-}
 
 function listen(server: Server, port: number, host: string | undefined): Promise<number> {
   return new Promise<number>((resolve, reject) => {
@@ -166,6 +162,12 @@ export async function startGameServer(opts: GameServerOptions): Promise<GameServ
       case '/health':
         json(res, 200, health(), cors);
         return;
+      case '/ready': {
+        const ok = opts.ready?.() ?? true;
+        res.writeHead(ok ? 200 : 503, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(ok ? { ok } : { ok, reason: 'draining' }));
+        return;
+      }
       case '/debug/determinism': {
         if (!policy.debug) break;
         const requested = Math.trunc(Number(url.searchParams.get('steps') ?? 600));
@@ -177,17 +179,19 @@ export async function startGameServer(opts: GameServerOptions): Promise<GameServ
         return;
       }
       case '/metrics':
-      case '/rooms':
+      case '/rooms': {
         // SECURITY: room lists and metrics reveal load and match ids; public only with the token.
-        if (policy.openMetrics || (policy.metricsToken && bearerMatches(req, policy.metricsToken))) {
+        const access = metricsAccess(policy.metricsToken, req.headers.authorization, !policy.openMetrics);
+        if (access === 'ok') {
           serveMonitoring(url.pathname, res);
           return;
         }
-        if (policy.metricsToken) {
+        if (access === 'unauthorized') {
           json(res, 401, { error: 'unauthorized' }, { 'www-authenticate': 'Bearer' });
           return;
         }
         break;
+      }
     }
     res.writeHead(404).end();
   });

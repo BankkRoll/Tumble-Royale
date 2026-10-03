@@ -36,7 +36,8 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'pnpm --filter @tumble/game-server start',
+      // Runs from source so specs never test a stale dist/ bundle.
+      command: 'pnpm --filter @tumble/game-server exec tsx src/main.ts',
       url: 'http://localhost:7350/health',
       reuseExistingServer: true,
       cwd: '../..',

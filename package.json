@@ -31,6 +31,7 @@
   },
   "scripts": {
     "setup:env": "node scripts/setup-env.mjs",
+    "admin": "node scripts/admin.mjs",
     "predev": "node scripts/setup-env.mjs --if-missing",
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
@@ -43,6 +44,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.15.0",
+    "esbuild": "^0.28.2",
     "eslint": "^10.12.0",
     "globals": "^17.13.0",
     "prettier": "^3.9.9",

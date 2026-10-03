@@ -77,8 +77,8 @@ describe('shared rate limits', () => {
   });
 });
 
-describe('/health', () => {
-  it('reports 503 when the KV does not answer', async () => {
+describe('/ready', () => {
+  it('reports 503 when the KV does not answer, while /health stays live', async () => {
     let down = false;
     class FlakyKV extends MemoryKV {
       override async ping(): Promise<void> {
@@ -86,13 +86,14 @@ describe('/health', () => {
       }
     }
     const a = await api(undefined, {}, { kv: new FlakyKV() });
-    const ok = await a.req('GET', '/health');
+    const ok = await a.req('GET', '/ready');
     expect(ok.statusCode).toBe(200);
     expect(ok.json()).toMatchObject({ ok: true, dbOk: true, kvOk: true });
     down = true;
-    const bad = await a.req('GET', '/health');
+    const bad = await a.req('GET', '/ready');
     expect(bad.statusCode).toBe(503);
     expect(bad.json()).toMatchObject({ ok: false, dbOk: true, kvOk: false });
+    expect((await a.req('GET', '/health')).statusCode).toBe(200);
   });
 });
 

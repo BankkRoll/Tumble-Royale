@@ -2,6 +2,7 @@
  * Fan-out of realtime events to users via KV pub/sub. Any API instance can
  * publish; whichever instance holds the user's WebSocket delivers it.
  */
+import type { PartyLobbyEvent } from '@tumble/shared';
 import type { KV } from '../kv/index.ts';
 
 /** Presence states shown in friends lists. */
@@ -54,6 +55,8 @@ export type RealtimeEvent =
   | { type: 'friend_request_removed'; userId: string }
   | { type: 'party_invite_declined'; by: SocialRef }
   | ({ type: 'party_chat' } & PartyChatLine)
+  /** A fellow party member's main-menu Tumbler (see `realtime/partyLobby.ts`). */
+  | PartyLobbyEvent
   | { type: 'party_update'; party: unknown }
   | {
       type: 'party_invite';

@@ -6,7 +6,8 @@
  * channel (see `Notifier`) and maintains presence.
  *
  * Client → server: `{type:'ping'}`, `{type:'presence', status, playlistId?,
- * lobbyCode?}` and `{type:'party_chat', text}`. Server → client:
+ * lobbyCode?}`, `{type:'party_chat', text}` and `{type:'party_lobby', …}`
+ * (relayed to fellow party members, see `partyLobby.ts`). Server → client:
  * `RealtimeEvent`s plus `{type:'hello'}`, `{type:'pong'}` and
  * `{type:'error', code, message}` for refused client messages.
  *
@@ -35,6 +36,7 @@ import { sendPartyChat } from '../social/partyChat.ts';
 import { PartyService } from '../social/party.ts';
 import { PRESENCE_TTL_MS, presenceViews, setPresence } from '../social/presence.ts';
 import { REPORTABLE_PRESENCE, userChannel, type PresenceStatus } from './notifier.ts';
+import { PartyLobbyRelay } from './partyLobby.ts';
 
 const ClientMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ping') }),
@@ -85,6 +87,7 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
   const byUser = new Map<string, Map<WebSocket, TabState>>();
   const offlineTimers = new Map<string, NodeJS.Timeout>();
   const parties = new PartyService(ctx);
+  const lobby = new PartyLobbyRelay(ctx, parties);
   /** Last presence each user's friends were told about (skips duplicate broadcasts). */
   const lastBroadcast = new Map<string, string>();
 
@@ -165,9 +168,13 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
 
     ws.on('pong', () => alive.set(ws, true));
     ws.on('message', (data) => {
+      const text = String(data);
       let parsed: z.infer<typeof ClientMessage>;
       try {
-        parsed = ClientMessage.parse(JSON.parse(String(data)));
+        const json: unknown = JSON.parse(text);
+        if (PartyLobbyRelay.matches(json))
+          return void lobby.handle(userId, json, text.length).catch(() => undefined);
+        parsed = ClientMessage.parse(json);
       } catch {
         return;
       }
@@ -198,6 +205,7 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
           return;
         }
         byUser.delete(userId);
+        lobby.forget(userId);
         const grace = ctx.config.presenceGraceMs;
         if (grace <= 0) return void (await goOffline(userId));
         const t = setTimeout(() => void goOffline(userId).catch(() => undefined), grace);

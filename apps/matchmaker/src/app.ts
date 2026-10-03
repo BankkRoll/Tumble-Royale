@@ -59,7 +59,13 @@ const HeartbeatBody = z.object({
   humans: z.number().int().min(0).optional(),
   rooms: z.number().int().min(0).optional(),
   matches: z.array(z.string().min(1).max(64)).max(10_000).optional(),
+  /** Ticketed players who reached a room since the last heartbeat (older servers omit it). */
+  joined: z
+    .array(z.object({ matchId: z.string().min(1).max(64), userId: z.string().min(1).max(64) }))
+    .max(10_000)
+    .optional(),
 });
+const RejoinBody = z.object({ matchId: z.string().min(1).max(64) });
 const SettingsSchema = z
   .object({
     playlistId: z.string().min(1).max(64),
@@ -232,9 +238,25 @@ export async function buildMatchmaker(
     return reply.code(204).send();
   });
 
+  // `match` is the match_found still waiting for this player: a client whose
+  // stream was down when the match was placed picks it up here.
   app.get('/queue/status', async (req) => {
     const p = await player(req);
-    return { status: await mm.status(p.userId) };
+    return { status: await mm.status(p.userId), match: await mm.pendingMatch(p.userId) };
+  });
+
+  // The player declined or left the match before reaching it: stop replaying it.
+  app.delete('/queue/match', async (req, reply) => {
+    const p = await player(req);
+    await mm.clearPendingMatch(p.userId);
+    return reply.code(204).send();
+  });
+
+  // A reload mid-show outlived the join ticket and the resume window: a fresh
+  // ticket for a match the player belongs to that is still running.
+  app.post('/queue/rejoin', async (req) => {
+    const p = await player(req);
+    return { match: await mm.rejoinMatch(p.userId, parse(RejoinBody, req.body).matchId) };
   });
 
   // --- Game servers ------------------------------------------------------------
@@ -262,6 +284,7 @@ export async function buildMatchmaker(
       ...(b.humans !== undefined ? { humans: b.humans } : {}),
       ...(b.rooms !== undefined ? { rooms: b.rooms } : {}),
       ...(b.matches ? { matches: b.matches } : {}),
+      ...(b.joined ? { joined: b.joined } : {}),
     });
   });
 
@@ -434,6 +457,9 @@ export async function buildMatchmaker(
           });
           const status = await mm.status(p.userId);
           ws.send(JSON.stringify(status ? { type: 'status', ...status } : { type: 'idle' }));
+          // Replays a match placed while this player's stream was down (reconnect, reload).
+          const pending = await mm.pendingMatch(p.userId);
+          if (pending && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(pending));
           // A reload lands here: hand the member their lobby back without a separate fetch.
           const lobby = (await mm.setLobbyPresence(p.userId, true)) ?? null;
           if (lobby && lobby.status === 'open' && ws.readyState === WebSocket.OPEN)

@@ -55,6 +55,8 @@ export interface TicketPolicy {
   allowDefaultSid?: boolean;
 }
 
+const MAX_PENDING_JOINS = 10_000;
+
 /** Load summary sent to the matchmaker on every heartbeat. */
 export interface CapacityReport {
   /** Seats in use, humans and bots (matchmade rooms count their full planned size). */
@@ -81,6 +83,7 @@ export class RoomManager {
   private readonly bannedFromMatch = new Map<string, Set<string>>();
   private readonly tickets: TicketPolicy | null;
   private readonly pending = new Set<ClientSession>();
+  private readonly joined: { matchId: string; userId: string }[] = [];
   private readonly limits: ConnectionLimits;
   private readonly helloTimeoutMs: number;
   private readonly profileLogMs: number;
@@ -292,11 +295,14 @@ export class RoomManager {
     let room = existingId ? this.rooms.get(existingId) : undefined;
     if (room && room.state === 'closed') room = undefined;
     if (room) {
-      if (room.rejoinUser(session, claims.sub)) return room;
+      if (room.rejoinUser(session, claims.sub)) return this.noteJoined(claims, room);
       if (room.state === 'ended') return null;
       room.join(session, hello, now, claims);
-      return room;
+      return this.noteJoined(claims, room);
     }
+    // A rejoin ticket returns to a running show; without its room (this
+    // process restarted, the show ended and closed) there is nothing to return to.
+    if (claims.rejoin) return null;
     if (this.rooms.size >= this.maxRooms) return null;
     const id = `r${this.nextRoomId++}`;
     const createdAtTick = this.scheduler.tick;
@@ -324,7 +330,21 @@ export class RoomManager {
       `[rooms] created ${id} for match ${claims.mid} (${claims.playlistId}, ${match.humans} humans + ${match.bots} bots)`,
     );
     room.join(session, hello, now, claims);
+    return this.noteJoined(claims, room);
+  }
+
+  private noteJoined(claims: JoinTicketClaims, room: Room): Room {
+    // Bounded so a matchmaker outage (no heartbeats drain it) cannot grow it forever.
+    if (this.joined.length < MAX_PENDING_JOINS) this.joined.push({ matchId: claims.mid, userId: claims.sub });
     return room;
+  }
+
+  /**
+   * Ticketed joins since the last call, for the matchmaker heartbeat (it stops
+   * replaying `match_found` to players who arrived). Drains the list.
+   */
+  takeJoined(): { matchId: string; userId: string }[] {
+    return this.joined.splice(0, this.joined.length);
   }
 
   private reject(conn: Connection, reason: KickReasonId, detail: string): void {

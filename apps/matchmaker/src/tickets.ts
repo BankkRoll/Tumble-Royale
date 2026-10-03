@@ -145,6 +145,12 @@ export interface JoinTicketClaims {
   custom?: CustomSettings;
   /** True when the player is chat-suspended: the game server must not relay their chat. */
   mute?: boolean;
+  /**
+   * Re-issued for a player returning to a running match: the game server
+   * must only attach it to an existing room, never open one (a restarted
+   * server would otherwise start a phantom show for a single player).
+   */
+  rejoin?: boolean;
 }
 
 /**

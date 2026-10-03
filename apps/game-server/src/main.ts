@@ -73,6 +73,7 @@ const link: MatchmakerLink | null = config.link
       maxRooms,
       report: () => server.rooms.capacityReport(),
       humans: () => server.rooms.list().reduce((n, r) => n + r.humans, 0),
+      joined: () => server.rooms.takeJoined(),
       log,
     })
   : null;

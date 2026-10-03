@@ -142,6 +142,31 @@ describe('ticketed rooms', () => {
     expect(texts(muted)).toEqual(['hello from a normal player']);
   });
 
+  it('never opens a room for a rejoin ticket (the show is gone after a restart or close)', () => {
+    const { connect, manager } = setup(false, null);
+    const c = connect(signJoinTicket(SECRET, claims('u1', { rejoin: true }), WALL));
+    expect(c.kicked).toBe(true);
+    expect(c.welcome).toBeNull();
+    expect(manager.list()).toHaveLength(0);
+    expect(manager.takeJoined()).toEqual([]);
+  });
+
+  it('attaches a rejoin ticket to its running room and reports ticketed joins once', () => {
+    const { connect, manager } = setup(false, null);
+    const first = connect(signJoinTicket(SECRET, claims('u1'), WALL));
+    expect(first.welcome).not.toBeNull();
+    first.conn.close();
+    const back = connect(signJoinTicket(SECRET, claims('u1', { rejoin: true }), WALL));
+    expect(back.kicked).toBe(false);
+    expect(back.welcome?.playerId).toBe(first.welcome?.playerId);
+    expect(manager.list()).toHaveLength(1);
+    expect(manager.takeJoined()).toEqual([
+      { matchId: 'm_test_match_1', userId: 'u1' },
+      { matchId: 'm_test_match_1', userId: 'u1' },
+    ]);
+    expect(manager.takeJoined()).toEqual([]);
+  });
+
   it('rejects unticketed joins when tickets are required', () => {
     const { connect } = setup(false, null);
     const c = connect('');

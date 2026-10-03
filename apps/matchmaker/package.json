@@ -1,0 +1,24 @@
+{
+  "name": "@tumble/matchmaker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@tumble/shared": "workspace:*",
+    "fastify": "5.12.5",
+    "ioredis": "6.0.0",
+    "jose": "6.2.12",
+    "ws": "8.22.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.2",
+    "tsx": "^4.23.15"
+  }
+}

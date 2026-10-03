@@ -1,0 +1,27 @@
+/**
+ * API entry point: `pnpm --filter @tumble/api dev` (port 7360 by default).
+ */
+import { buildApp } from './app.ts';
+import { loadConfig } from './config.ts';
+
+const config = loadConfig();
+const built = await buildApp(config);
+const { app } = built;
+
+if (!config.discord) app.log.info('Discord sign-in disabled (DISCORD_CLIENT_ID/SECRET unset)');
+if (!config.google) app.log.info('Google sign-in disabled (GOOGLE_CLIENT_ID/SECRET unset)');
+if (!config.stripe) app.log.info('Stripe disabled: Gem checkouts complete instantly via the fake provider');
+
+await app.listen({ host: config.host, port: config.port });
+app.log.info(`[api] ${built.database.driver} | ${config.redisUrl ? 'redis' : 'memory kv'} | listening on :${config.port}`);
+
+let closing = false;
+const shutdown = async (signal: string) => {
+  if (closing) return;
+  closing = true;
+  app.log.info(`[api] ${signal} received, shutting down`);
+  await built.close();
+  process.exit(0);
+};
+process.on('SIGINT', () => void shutdown('SIGINT'));
+process.on('SIGTERM', () => void shutdown('SIGTERM'));

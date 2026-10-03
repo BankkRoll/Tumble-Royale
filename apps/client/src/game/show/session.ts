@@ -1118,7 +1118,11 @@ export abstract class ShowSession {
       if (binds.spectatePrev.includes(e.code)) this.cycleSpectate(-1);
       else if (binds.spectateNext.includes(e.code)) this.cycleSpectate(1);
     }
-    if (e.code === 'Escape' && ui.getState().screen === 'round') {
+    // NOTE: Escape always works too: browsers spend it on releasing pointer
+    // lock, so a player who rebinds Menu still expects Esc to reach the menu.
+    const menuKey = e.code === 'Escape' || this.ctx.input.isBound('menu', e.code);
+    // Menu navigation already used this key (e.g. Esc pressed Resume, which closed the menu).
+    if (menuKey && !e.defaultPrevented && ui.getState().screen === 'round') {
       const overlay = ui.getState().overlay;
       if (overlay === 'none') ui.getState().setOverlay('inGameMenu');
       else if (overlay === 'inGameMenu') ui.getState().setOverlay('none');

@@ -116,6 +116,10 @@ export function InGameMenu(): JSX.Element {
               {BIND_ACTION_LABELS[a]}
             </span>
           ))}
+          <span className="tr-hud-hint-item" data-testid="igm-menu-key">
+            <kbd>{keyLabel(binds.pause[0] || 'Escape')}</kbd>
+            {BIND_ACTION_LABELS.pause}
+          </span>
           <span className="tr-hud-hint-item">
             <kbd>Esc</kbd>
             Free the mouse

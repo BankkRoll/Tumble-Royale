@@ -87,6 +87,7 @@ const BIND_TO_INPUT: Partial<Record<BindAction, InputAction>> = {
   emote2: 'emote2',
   emote3: 'emote3',
   emote4: 'emote4',
+  pause: 'menu',
 };
 
 /** Merges saved settings over defaults so new fields always exist. */

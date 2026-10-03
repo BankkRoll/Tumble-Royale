@@ -222,6 +222,17 @@ export class InputSystem {
   }
 
   /**
+   * Whether a key/mouse code is bound to an action (actions handled outside
+   * the sim, like the in-round menu, check events against the live keymap).
+   *
+   * @example
+   * if (input.isBound('menu', e.code)) openMenu();
+   */
+  isBound(action: InputAction, code: string): boolean {
+    return this.codeToActions.get(code)?.includes(action) ?? false;
+  }
+
+  /**
    * Rebinds an action. Keys currently held for the old binding are released.
    *
    * @example

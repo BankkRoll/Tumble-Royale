@@ -18,7 +18,9 @@ export type InputAction =
   | 'emote2'
   | 'emote3'
   | 'emote4'
-  | 'emoteWheel';
+  | 'emoteWheel'
+  /** Opens and closes the in-round menu; never reaches the sim. */
+  | 'menu';
 
 /** Every action with its bound codes. */
 export type Keymap = Record<InputAction, string[]>;
@@ -37,6 +39,7 @@ export const INPUT_ACTIONS: readonly InputAction[] = [
   'emote3',
   'emote4',
   'emoteWheel',
+  'menu',
 ];
 
 /**
@@ -59,6 +62,7 @@ export const DEFAULT_KEYMAP: Readonly<Keymap> = Object.freeze({
   emote3: ['Digit3'],
   emote4: ['Digit4'],
   emoteWheel: ['KeyE'],
+  menu: ['Escape'],
 });
 
 /** @returns A deep, mutable copy of `base` with `overrides` applied per action. */

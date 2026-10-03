@@ -13,6 +13,7 @@ import { ui, useUI } from '../store/uiStore.ts';
 import { squash } from '../theme/motion.ts';
 import { Icon } from '../components/icons/index.tsx';
 import { roundTypeStyle } from '../theme/tokens.ts';
+import { keyLabel } from '../screens/overlays/SettingsSheet.tsx';
 
 /** Round timer pill; turns tangerine < 30 s and bubblegum + pulsing < 10 s. */
 export const HudTimer = memo(function HudTimer(): JSX.Element | null {
@@ -237,9 +238,15 @@ export const GrabStatus = memo(function GrabStatus(): JSX.Element | null {
   );
 });
 
-/** Prompt to lock the mouse to the camera while it is free; Esc reminder once locked. */
+/** Prompt to lock the mouse to the camera while it is free; Esc and Menu key reminder once locked. */
 export const CameraLockHint = memo(function CameraLockHint(): JSX.Element | null {
-  const { lock, device } = useUI(useShallow((s) => ({ lock: s.cameraLock, device: s.hud.device })));
+  const { lock, device, menuKey } = useUI(
+    useShallow((s) => ({
+      lock: s.cameraLock,
+      device: s.hud.device,
+      menuKey: s.settings.controls.keybinds.pause[0] || 'Escape',
+    })),
+  );
   if (lock === 'off' || device !== 'keyboard') return null;
   return (
     <div className={`tr-hud-camlock is-${lock}`} role="status" data-testid="camera-lock-hint">
@@ -249,7 +256,7 @@ export const CameraLockHint = memo(function CameraLockHint(): JSX.Element | null
         </>
       ) : (
         <>
-          <kbd>Esc</kbd> frees the mouse
+          <kbd>Esc</kbd> frees the mouse · <kbd>{keyLabel(menuKey)}</kbd> menu
         </>
       )}
     </div>

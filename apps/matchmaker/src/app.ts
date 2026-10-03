@@ -12,12 +12,13 @@ import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { WebSocket, WebSocketServer } from 'ws';
+import { clientIp, trustFunction } from '@tumble/shared/proxy';
 import { z } from 'zod';
 import { ApiBanLookup, NO_BANS, type BanLookup } from './bans.ts';
 import type { MatchmakerConfig } from './config.ts';
 import type { GameControl } from './gameControl.ts';
 import { DEFAULT_CUSTOM, Matchmaker, MMError, userChannel } from './matchmaker.ts';
-import { RateLimiter } from './rateLimit.ts';
+import { SharedRateLimiter } from './rateLimit.ts';
 import { createStore, type MMStore } from './store.ts';
 import { verifyAccess, verifyQueueTicket, type Player } from './tickets.ts';
 
@@ -136,10 +137,23 @@ export async function buildMatchmaker(
         })
       : NO_BANS);
   const mm = new Matchmaker(cfg, store, now, bans, opts.control);
-  const app = Fastify({ logger: opts.logger === false ? false : { level: cfg.logLevel }, trustProxy: true });
+  const trust = trustFunction(cfg.trustProxy);
+  const app = Fastify({
+    logger: opts.logger === false ? false : { level: cfg.logLevel },
+    // SECURITY: X-Forwarded-For is believed only from the proxies TRUST_PROXY names.
+    trustProxy: trust === false ? false : trust,
+  });
 
-  const ipLimiter = new RateLimiter(cfg.rateLimitMax, 60_000, now);
-  const userLimiter = new RateLimiter(cfg.userRateLimitMax, 60_000, now);
+  const limiterError = (err: unknown) => app.log.warn({ err }, 'shared rate limit store failed');
+  const ipLimiter = new SharedRateLimiter(store, 'rl:ip', cfg.rateLimitMax, 60_000, now, limiterError);
+  const userLimiter = new SharedRateLimiter(
+    store,
+    'rl:user',
+    cfg.userRateLimitMax,
+    60_000,
+    now,
+    limiterError,
+  );
   const originAllowed = (origin: string): boolean =>
     cfg.allowedOrigins === true || cfg.allowedOrigins.includes(origin);
   const rateLimited = (retryAfterMs: number): MMError =>
@@ -162,7 +176,7 @@ export async function buildMatchmaker(
     // Game servers authenticate with their shared secret and may sit behind one NAT; they are not throttled per IP.
     const path = req.url.split('?')[0] ?? '';
     if (path === '/health' || path.startsWith('/servers') || path.startsWith('/matches/')) return;
-    const r = ipLimiter.hit(`ip:${req.ip}`);
+    const r = await ipLimiter.hit(`ip:${req.ip}`);
     if (!r.allowed) {
       reply.header('retry-after', String(Math.ceil(r.retryAfterMs / 1000)));
       throw rateLimited(r.retryAfterMs);
@@ -184,7 +198,7 @@ export async function buildMatchmaker(
     if (!p) throw new MMError(401, 'unauthorized', 'Valid API access token required');
     // Reads are cheap and polled; only queue and lobby mutations count against the per-player budget.
     if (req.method !== 'GET') {
-      const r = userLimiter.hit(`u:${p.userId}`);
+      const r = await userLimiter.hit(`u:${p.userId}`);
       if (!r.allowed) throw rateLimited(r.retryAfterMs);
     }
     return p;
@@ -406,18 +420,20 @@ export async function buildMatchmaker(
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (url.pathname !== '/ws') return;
     const origin = req.headers.origin;
-    // Same trust model as Fastify's `trustProxy: true`: the left-most forwarded address is the client.
-    const forwarded = req.headers['x-forwarded-for'];
-    const ip =
-      (typeof forwarded === 'string' ? forwarded.split(',')[0]?.trim() : undefined) ||
-      (req.socket.remoteAddress ?? 'unknown');
+    // SECURITY: the same TRUST_PROXY rules as Fastify's request.ip, so the socket limit cannot be dodged with a forged header.
+    const ip = clientIp(req, trust);
     // SECURITY: browsers send Origin on WebSocket handshakes but CORS does not apply, so check it here.
-    if ((origin && !originAllowed(origin)) || !ipLimiter.hit(`ip:${ip}`).allowed) {
+    if (origin && !originAllowed(origin)) {
       socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
       socket.destroy();
       return;
     }
     void (async () => {
+      if (!(await ipLimiter.hit(`ip:${ip}`)).allowed) {
+        socket.write('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n');
+        socket.destroy();
+        return;
+      }
       const p = await verifyAccess(cfg.jwtSecret, url.searchParams.get('token') ?? '', new Date(now()));
       const suspended = p ? await mm.isSuspended(p.userId) : false;
       if (!p || suspended) {

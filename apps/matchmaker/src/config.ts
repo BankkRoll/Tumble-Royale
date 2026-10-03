@@ -11,6 +11,7 @@
  *   production on the in-process store unless that is explicitly allowed.
  */
 import { EnvIssues, type Env } from '@tumble/shared/env';
+import type { TrustProxy } from '@tumble/shared/proxy';
 import { z } from 'zod';
 
 const optional = z
@@ -75,7 +76,13 @@ export interface MatchmakerConfig {
   hotThreshold: number;
   /** How long a released lobby waits for a server in its own region before trying others. */
   regionFallbackMs: number;
-  /** Requests per minute per IP address. */
+  /**
+   * Reverse proxies allowed to set X-Forwarded-For (`TRUST_PROXY`): false
+   * (default, the socket address is the client), a hop count or proxy
+   * addresses/CIDRs.
+   */
+  trustProxy: TrustProxy;
+  /** Requests per minute per IP address, across all instances sharing the store. */
   rateLimitMax: number;
   /** Queue and lobby requests per minute per signed-in player. */
   userRateLimitMax: number;
@@ -109,6 +116,7 @@ export function loadConfig(env: Env = process.env): MatchmakerConfig {
   // report alongside the schema issues.
   const e = parsed.success ? parsed.data : EnvSchema.parse({});
   const production = e.NODE_ENV === 'production';
+  const trustProxy = issues.trustProxy();
   const apiUrl = e.API_URL ?? (e.NODE_ENV === 'development' ? 'http://localhost:7360' : undefined);
   const internalHmacSecret = apiUrl ? issues.secret('INTERNAL_HMAC_SECRET', 16) : undefined;
   if (production && !e.REDIS_URL && e.ALLOW_MEMORY_STORE !== '1') {
@@ -143,6 +151,7 @@ export function loadConfig(env: Env = process.env): MatchmakerConfig {
     hotMaxWaitMs: e.HOT_MAX_WAIT_MS,
     hotThreshold: e.HOT_THRESHOLD,
     regionFallbackMs: e.REGION_FALLBACK_MS,
+    trustProxy,
     rateLimitMax: e.RATE_LIMIT_MAX,
     userRateLimitMax: e.USER_RATE_LIMIT_MAX,
     tickMs: e.NODE_ENV === 'test' ? 0 : e.TICK_MS,

@@ -19,7 +19,7 @@ import {
   type QueueEntry,
   type QueueStatus,
 } from './engine.ts';
-import { RateLimiter } from './rateLimit.ts';
+import { SharedRateLimiter } from './rateLimit.ts';
 import { candidateRegions, humansInRooms, pickServer, SERVER_TTL_MS, type GameServer } from './servers.ts';
 import type { MMStore } from './store.ts';
 import {
@@ -238,7 +238,7 @@ export class Matchmaker {
     control?: GameControl,
   ) {
     this.control = control ?? httpGameControl(cfg.gameServerSecret, now);
-    this.chatLimiter = new RateLimiter(LOBBY_CHAT_MAX, LOBBY_CHAT_WINDOW_MS, now);
+    this.chatLimiter = new SharedRateLimiter(store, 'rl:chat', LOBBY_CHAT_MAX, LOBBY_CHAT_WINDOW_MS, now);
     this.engine = {
       ...DEFAULT_ENGINE,
       maxWaitMs: cfg.maxWaitMs,
@@ -247,8 +247,7 @@ export class Matchmaker {
     };
   }
 
-  // NOTE: per instance, like the HTTP limiter: roughly right is enough for chat.
-  private readonly chatLimiter: RateLimiter;
+  private readonly chatLimiter: SharedRateLimiter;
 
   private async emit(userId: string, event: MMEvent): Promise<void> {
     await this.store.publish(userChannel(userId), JSON.stringify(event));
@@ -941,7 +940,8 @@ export class Matchmaker {
       throw new MMError(403, 'chat_banned', 'Chat is disabled on this account');
     const filtered = filterChat(raw);
     if (!filtered) throw new MMError(400, 'empty_message', 'Say something first');
-    if (!this.chatLimiter.hit(userId).allowed) throw new MMError(429, 'chat_rate', 'Slow down a little');
+    if (!(await this.chatLimiter.hit(userId)).allowed)
+      throw new MMError(429, 'chat_rate', 'Slow down a little');
     const line: LobbyChatLine = {
       id: randomUUID(),
       code: lobby.code,

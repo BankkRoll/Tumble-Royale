@@ -26,6 +26,13 @@ export interface MMStore {
    * @returns True when the caller still owns the key.
    */
   expireIfEquals(key: string, value: string, ttlMs: number): Promise<boolean>;
+  /**
+   * Increments a fixed-window counter, starting the window (TTL `windowMs`)
+   * on the first hit.
+   *
+   * @returns The count after this hit and the milliseconds left in the window.
+   */
+  hitWindow(key: string, windowMs: number): Promise<{ count: number; ttlMs: number }>;
   del(key: string): Promise<void>;
   hset(hash: string, field: string, value: string): Promise<void>;
   /**
@@ -82,6 +89,17 @@ export class MemoryStore implements MMStore {
     return true;
   }
 
+  async hitWindow(key: string, windowMs: number): Promise<{ count: number; ttlMs: number }> {
+    const now = this.now();
+    const e = this.kv.get(key);
+    if (!e || e.exp <= now) {
+      this.kv.set(key, { v: '1', exp: now + windowMs });
+      return { count: 1, ttlMs: windowMs };
+    }
+    e.v = String(Number(e.v) + 1);
+    return { count: Number(e.v), ttlMs: e.exp - now };
+  }
+
   async del(key: string): Promise<void> {
     this.kv.delete(key);
   }
@@ -129,6 +147,10 @@ export class MemoryStore implements MMStore {
 const DEL_IF_EQUALS = `if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end`;
 const EXPIRE_IF_EQUALS = `if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('pexpire', KEYS[1], ARGV[2]) else return 0 end`;
 
+// INCR and PEXPIRE in one step: a crash between them would leave a counter
+// without a TTL that blocks the key forever.
+const HIT_WINDOW = `local n = redis.call('incr', KEYS[1]) local t = redis.call('pttl', KEYS[1]) if t < 0 then redis.call('pexpire', KEYS[1], ARGV[1]) t = tonumber(ARGV[1]) end return {n, t}`;
+
 /** Redis-backed store. */
 export class RedisStore implements MMStore {
   private readonly cmd: Redis;
@@ -162,6 +184,11 @@ export class RedisStore implements MMStore {
 
   async expireIfEquals(key: string, value: string, ttlMs: number): Promise<boolean> {
     return (await this.cmd.eval(EXPIRE_IF_EQUALS, 1, key, value, String(ttlMs))) === 1;
+  }
+
+  async hitWindow(key: string, windowMs: number): Promise<{ count: number; ttlMs: number }> {
+    const [count, ttl] = (await this.cmd.eval(HIT_WINDOW, 1, key, String(windowMs))) as [number, number];
+    return { count, ttlMs: ttl > 0 ? ttl : windowMs };
   }
 
   async del(key: string): Promise<void> {

@@ -1,20 +1,30 @@
 /**
- * Fixed-window request limiter.
+ * Fixed-window request limiters.
  *
- * In-process on purpose: limits only need to be roughly right, and keeping
- * them out of the shared store means a flood never adds load to Redis. With
- * several matchmaker instances behind a load balancer each enforces its own
- * window, so the effective limit is at most `max × instances`.
+ * {@link RateLimiter} counts in process. {@link SharedRateLimiter} counts in
+ * the {@link MMStore}, so with Redis every matchmaker instance enforces one
+ * window per key: behind a load balancer a client could otherwise get
+ * `max × instances` by spreading requests. It keeps a local window in front
+ * of the store: once a key is over the limit on this instance it is refused
+ * without a store round trip, so a flood from one client costs Redis at most
+ * `max` increments per window per instance.
  */
+import type { MMStore } from './store.ts';
 
-/** Outcome of one {@link RateLimiter.hit}. */
+/** Outcome of one hit. */
 export interface RateLimitResult {
   allowed: boolean;
   /** Milliseconds until the current window resets. */
   retryAfterMs: number;
 }
 
-/** Counts hits per key in fixed windows. */
+/** Anything that can count hits per key. */
+export interface Limiter {
+  /** Records one hit for `key` and says whether it is within the limit. */
+  hit(key: string): Promise<RateLimitResult>;
+}
+
+/** Counts hits per key in fixed windows, in process. */
 export class RateLimiter {
   private readonly windows = new Map<string, { start: number; count: number }>();
   private lastSweep = 0;
@@ -48,5 +58,42 @@ export class RateLimiter {
     if (t - this.lastSweep < this.windowMs) return;
     this.lastSweep = t;
     for (const [k, w] of this.windows) if (t - w.start >= this.windowMs) this.windows.delete(k);
+  }
+}
+
+/** Fixed windows shared by every instance through the store. */
+export class SharedRateLimiter implements Limiter {
+  private readonly local: RateLimiter;
+
+  /**
+   * @param store - Shared store (Redis in production).
+   * @param prefix - Key namespace, e.g. `rl:ip`.
+   * @param max - Hits allowed per key per window, across all instances.
+   * @param windowMs - Window length.
+   * @param now - Clock (ms).
+   * @param onError - Called when the store fails; the hit is then judged by the local window alone.
+   */
+  constructor(
+    private readonly store: MMStore,
+    private readonly prefix: string,
+    private readonly max: number,
+    private readonly windowMs: number,
+    now: () => number = Date.now,
+    private readonly onError: (err: unknown) => void = () => undefined,
+  ) {
+    this.local = new RateLimiter(max, windowMs, now);
+  }
+
+  async hit(key: string): Promise<RateLimitResult> {
+    const local = this.local.hit(key);
+    if (!local.allowed) return local;
+    try {
+      const { count, ttlMs } = await this.store.hitWindow(`${this.prefix}:${key}`, this.windowMs);
+      return { allowed: count <= this.max, retryAfterMs: ttlMs };
+    } catch (err) {
+      // NOTE: fail open to the per-instance window: a Redis blip must not lock every player out.
+      this.onError(err);
+      return local;
+    }
   }
 }

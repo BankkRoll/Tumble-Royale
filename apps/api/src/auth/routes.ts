@@ -141,7 +141,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
   app.get('/auth/providers', async () => ({
     discord: Boolean(ctx.config.discord),
     google: Boolean(ctx.config.google),
-    email: true,
+    email: ctx.mailer.id !== 'disabled',
     guest: true,
   }));
 
@@ -196,6 +196,13 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
 
   app.post('/auth/email/start', { config: AUTH_RATE }, async (req, reply) => {
     const { email } = parse(EmailStartBody, req.body);
+    if (ctx.mailer.id === 'disabled') {
+      throw new ApiError(
+        503,
+        'provider_disabled',
+        'Email sign-in is not configured on this server (set SMTP_URL)',
+      );
+    }
     const auth = await optionalUser(ctx, req);
     const sends = await ctx.kv.incr(`email-rate:${email}`, 60 * 60_000);
     if (sends > 5) throw new ApiError(429, 'too_many_emails', 'Too many sign-in emails; try again later');
@@ -206,11 +213,17 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
       MAGIC_LINK_TTL_MS,
     );
     const link = `${ctx.config.publicWebUrl}/auth/email?token=${token}`;
-    await ctx.mailer.send({
-      to: email,
-      subject: 'Your Tumble Royale sign-in link',
-      text: `Tap to sign in to Tumble Royale:\n\n${link}\n\nThis link expires in 15 minutes. If you did not ask for it, ignore this email.`,
-    });
+    try {
+      await ctx.mailer.send({
+        to: email,
+        subject: 'Your Tumble Royale sign-in link',
+        text: `Tap to sign in to Tumble Royale:\n\n${link}\n\nThis link expires in 15 minutes. If you did not ask for it, ignore this email.`,
+      });
+    } catch (err) {
+      req.log.error({ err }, 'sign-in email failed');
+      await ctx.kv.del(`magic:${sha256(token)}`);
+      throw new ApiError(502, 'email_failed', "We couldn't send the email right now; try again in a minute");
+    }
     return reply.code(202).send({ sent: true });
   });
 

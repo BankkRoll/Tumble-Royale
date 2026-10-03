@@ -35,6 +35,8 @@ const EnvSchema = z.object({
   GOOGLE_CLIENT_SECRET: optionalString,
   STRIPE_SECRET_KEY: optionalString,
   STRIPE_WEBHOOK_SECRET: optionalString,
+  SMTP_URL: optionalString,
+  SMTP_FROM: optionalString,
   NAME_CHANGE_COOLDOWN_DAYS: z.coerce.number().int().min(0).default(30),
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(300),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
@@ -73,6 +75,8 @@ export interface ApiConfig {
   discord: OAuthClientConfig | undefined;
   google: OAuthClientConfig | undefined;
   stripe: { secretKey: string; webhookSecret: string | undefined } | undefined;
+  /** SMTP relay for sign-in emails; absent → console (dev) or email sign-in disabled (production). */
+  smtp: { url: string; from: string } | undefined;
   nameChangeCooldownDays: number;
   /** Requests per minute per client for the global rate limiter. */
   rateLimitMax: number;
@@ -122,6 +126,12 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     google: pair(e.GOOGLE_CLIENT_ID, e.GOOGLE_CLIENT_SECRET),
     stripe: e.STRIPE_SECRET_KEY
       ? { secretKey: e.STRIPE_SECRET_KEY, webhookSecret: e.STRIPE_WEBHOOK_SECRET }
+      : undefined,
+    smtp: e.SMTP_URL
+      ? {
+          url: e.SMTP_URL,
+          from: e.SMTP_FROM ?? `Tumble Royale <no-reply@${new URL(e.PUBLIC_WEB_URL).hostname}>`,
+        }
       : undefined,
     nameChangeCooldownDays: e.NAME_CHANGE_COOLDOWN_DAYS,
     rateLimitMax: e.RATE_LIMIT_MAX,

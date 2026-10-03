@@ -12,5 +12,12 @@ export {
   type ShowPlaylistInput,
 } from './schema/index.ts';
 export { selectRound, playerFit, type RoundSelectContext } from './selector.ts';
-export { ShowDirector, showSeed, type ShowDirectorOptions } from './director.ts';
+export { ShowDirector, scaleRoundDuration, showSeed, type ShowDirectorOptions } from './director.ts';
+export { assignBotSkills, assignShowParties, type RosterSeat } from './roster.ts';
+export {
+  LOBBY_PLATFORM_RADIUS,
+  PRE_SHOW_LOBBY_ROUND,
+  PRE_SHOW_LOBBY_ROUND_ID,
+  lobbySpawnPoint,
+} from './lobby.ts';
 export { createOfflineShow, type OfflineShow, type OfflineShowOptions } from './offline.ts';

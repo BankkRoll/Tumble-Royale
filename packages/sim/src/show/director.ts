@@ -55,6 +55,12 @@ export interface ShowDirectorOptions {
   timings?: Partial<ShowTimings>;
   /** Humans who have not acked LOADING in time are eliminated (spec default: true). */
   lateLoadersEliminated?: boolean;
+  /**
+   * Multiplies every round's time limit and overtime (private-show option,
+   * 0.5–2). Applied to the round handed to the host, so the match sim's timer
+   * and the director's safety cut-off agree.
+   */
+  roundTimeScale?: number;
 }
 
 interface CurrentRound {
@@ -80,6 +86,7 @@ export class ShowDirector {
   private readonly host: ShowRoundHost;
   private readonly timings: ShowTimings;
   private readonly lateLoadersEliminated: boolean;
+  private readonly roundTimeScale: number;
   private readonly rng: Rng;
   private readonly listeners: ShowListener[] = [];
   private readonly byId = new Map<number, ShowParticipant>();
@@ -117,6 +124,8 @@ export class ShowDirector {
     this.host = opts.host;
     this.timings = { ...DEFAULT_SHOW_TIMINGS, ...opts.timings };
     this.lateLoadersEliminated = opts.lateLoadersEliminated ?? true;
+    const scale = opts.roundTimeScale ?? 1;
+    this.roundTimeScale = Number.isFinite(scale) && scale > 0 ? Math.min(4, Math.max(0.25, scale)) : 1;
     this.rng = new Rng((this.seed ^ SELECT_SALT) >>> 0);
     this.alive = this.participants.map((p) => p.id);
     this.duration = this.timings.preShow;
@@ -305,12 +314,13 @@ export class ShowDirector {
     const index = this.roundIndex + 1;
     const p = this.playlist;
     const isFinal = n <= 2 || index >= p.maxRounds - 1 || (n <= p.finalAtOrBelow && index >= p.minRounds - 1);
-    const round = selectRound(
+    const picked = selectRound(
       p,
       this.catalog,
       { roundIndex: index, players: n, isFinal, previousType: this.previousType, used: this.used },
       this.rng,
     );
+    const round = picked ? scaleRoundDuration(picked, this.roundTimeScale) : null;
     if (!round) {
       this.finishShow();
       return;
@@ -400,7 +410,14 @@ export class ShowDirector {
     }
     return ids.map((id, i) => {
       const p = this.byId.get(id) as ShowParticipant;
-      return { id, name: p.name, isBot: p.isBot, team: teams[i] as number, botSkill: p.botSkill };
+      return {
+        id,
+        name: p.name,
+        isBot: p.isBot,
+        team: teams[i] as number,
+        botSkill: p.botSkill,
+        ...(p.partyId !== undefined ? { partyId: p.partyId } : {}),
+      };
     });
   }
 
@@ -568,6 +585,28 @@ export class ShowDirector {
   private emit(e: ShowEvent): void {
     for (const l of this.listeners) l(e);
   }
+}
+
+/**
+ * A round with its time limit and overtime multiplied by `scale` (private-show
+ * timer option). Returns the same object when `scale` is 1 so catalogue
+ * identity checks keep working.
+ *
+ * @param round - Validated round.
+ * @param scale - Multiplier; untimed rounds (`seconds <= 0`) stay untimed.
+ * @returns The scaled round.
+ * @example
+ * const slow = scaleRoundDuration(getRound('tile-panic')!, 1.5);
+ */
+export function scaleRoundDuration(round: RoundDefinition, scale: number): RoundDefinition {
+  if (scale === 1 || !(scale > 0) || round.duration.seconds <= 0) return round;
+  return {
+    ...round,
+    duration: {
+      seconds: Math.round(round.duration.seconds * scale * 10) / 10,
+      overtimeSeconds: Math.round(round.duration.overtimeSeconds * scale * 10) / 10,
+    },
+  };
 }
 
 /** Seed helper: a per-show seed from a room id and creation counter. */

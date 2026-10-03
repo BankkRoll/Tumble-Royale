@@ -118,6 +118,10 @@ export interface MatchSimHandle extends MatchSim {
   forfeit(playerId: number): void;
   /** Predict mode: mirror a fate decided by the server. */
   setPlayerFate(playerId: number, status: PlayerRoundStatusId, place: number): void;
+  addPlayer(info: MatchPlayerInfo, feet: Vec3, yaw?: number): boolean;
+  removePlayer(playerId: number): boolean;
+  assistGrab(grabberId: number, targetId: number): boolean;
+  assistTackle(diverId: number, victimId: number, strength: number): boolean;
 }
 
 // -----------------------------------------------------------------------------
@@ -189,6 +193,8 @@ interface Slot {
   readonly prevPos: Vec3;
   /** Simulated this step (not eliminated). */
   active: boolean;
+  /** Left the match ({@link MatchSimHandle.removePlayer}); the controller is disposed. */
+  removed: boolean;
   falling: boolean;
   respawnTick: number;
   respawnCount: number;
@@ -247,6 +253,9 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
 
   private readonly R: Rapier;
   private readonly mode: MatchSimOptions['mode'];
+  private readonly deps: MatchDeps;
+  private readonly roundSeed: number;
+  private readonly localPlayerId: number | undefined;
   private readonly dt = SIM_DT;
   private readonly slots: Slot[] = [];
   private readonly slotById = new Map<number, Slot>();
@@ -355,85 +364,11 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
       );
     const spawns = spawnSlots(round, opts.seed, teams);
     this.entrants = opts.players.length;
-    const brainFactory = deps.createBotBrain ?? createBotBrain;
-    const simulateAll = opts.mode !== 'predict';
+    this.deps = deps;
+    this.roundSeed = roundSeed;
+    this.localPlayerId = opts.localPlayerId;
     opts.players.forEach((info, index) => {
-      const spawn = spawns[index] as SpawnSlot;
-      const pos = { x: spawn.pos.x, y: spawn.pos.y + SPAWN_LIFT, z: spawn.pos.z };
-      const isLocal = simulateAll || info.id === opts.localPlayerId;
-      const proxy = isLocal ? null : new RemoteProxy(R, this.world, info.id, pos);
-      const ctrl =
-        proxy ??
-        deps.createController({
-          R,
-          world: this.world,
-          id: info.id,
-          position: pos,
-          yaw: spawn.yaw,
-          tuning: deps.controllerTuning,
-        });
-      if (!proxy)
-        ctrl.collider.setActiveEvents(ctrl.collider.activeEvents() | R.ActiveEvents.COLLISION_EVENTS);
-      const rp: RulesPlayer = {
-        id: info.id,
-        team: teams[index] as number,
-        isBot: info.isBot,
-        status: PlayerRoundStatus.Playing,
-        score: 0,
-        progress: 0,
-        place: 0,
-        finishTick: -1,
-        finishSubTick: 0,
-        hasItem: false,
-        scoreTick: 0,
-        checkpoint: 0,
-        pos: { ...pos },
-        forfeited: false,
-      };
-      const input = emptyInput();
-      input.yaw = spawn.yaw;
-      const brain =
-        info.isBot && simulateAll
-          ? brainFactory({
-              id: info.id,
-              skill: info.botSkill ?? 'average',
-              seed: (roundSeed ^ Math.imul(info.id + 1, 0x9e3779b1)) >>> 0,
-              round,
-            })
-          : null;
-      const slot: Slot = {
-        index,
-        info,
-        ctrl,
-        proxy,
-        actor: new ControllerActor(ctrl, rp),
-        rp,
-        spawn,
-        input,
-        brain,
-        self: {
-          pos: vec3(),
-          vel: vec3(),
-          grounded: false,
-          state: CharacterState.Idle,
-          facing: spawn.yaw,
-          status: PlayerRoundStatus.Playing,
-          team: teams[index] as number,
-          hasItem: false,
-          checkpoint: 0,
-        },
-        prevPos: { ...pos },
-        active: true,
-        falling: false,
-        respawnTick: 0,
-        respawnCount: 0,
-        checkpointTrigger: -1,
-      };
-      this.slots.push(slot);
-      this.players.push(rp);
-      this.slotById.set(info.id, slot);
-      this.slotByCollider.set(ctrl.collider.handle, slot);
-      if (!proxy) ctrl.setFrozen(true);
+      this.createSlot(info, spawns[index] as SpawnSlot, teams[index] as number, true);
     });
 
     this.course = new CourseMetric(round, round.spawn.origin);
@@ -474,7 +409,8 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
       });
     }
 
-    if (simulateAll) {
+    const simulateAll = opts.mode !== 'predict';
+    if (simulateAll && !opts.lobby) {
       this.rules = createRoundRules(round, this.entrants, {
         ...opts.rules,
         qualifyTarget: opts.qualifyTarget ?? opts.rules?.qualifyTarget,
@@ -486,6 +422,181 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
       this.rules = null;
     }
     this.status.qualifyTarget = this.rules?.qualifyTarget ?? 0;
+  }
+
+  /**
+   * Builds one player's controller (or remote proxy in predict mode), rules
+   * record and bot brain, and registers it.
+   *
+   * @param frozen - Start frozen (round spawn); runtime joiners take the current phase's freeze.
+   */
+  private createSlot(info: MatchPlayerInfo, spawn: SpawnSlot, team: number, frozen: boolean): Slot {
+    const R = this.R;
+    const deps = this.deps;
+    const pos = { x: spawn.pos.x, y: spawn.pos.y + SPAWN_LIFT, z: spawn.pos.z };
+    const simulateAll = this.mode !== 'predict';
+    const isLocal = simulateAll || info.id === this.localPlayerId;
+    const proxy = isLocal ? null : new RemoteProxy(R, this.world, info.id, pos);
+    const ctrl =
+      proxy ??
+      deps.createController({
+        R,
+        world: this.world,
+        id: info.id,
+        position: pos,
+        yaw: spawn.yaw,
+        tuning: deps.controllerTuning,
+      });
+    if (!proxy) ctrl.collider.setActiveEvents(ctrl.collider.activeEvents() | R.ActiveEvents.COLLISION_EVENTS);
+    const rp: RulesPlayer = {
+      id: info.id,
+      team,
+      isBot: info.isBot,
+      status: PlayerRoundStatus.Playing,
+      score: 0,
+      progress: 0,
+      place: 0,
+      finishTick: -1,
+      finishSubTick: 0,
+      hasItem: false,
+      scoreTick: 0,
+      checkpoint: 0,
+      pos: { ...pos },
+      forfeited: false,
+    };
+    const input = emptyInput();
+    input.yaw = spawn.yaw;
+    const brainFactory = deps.createBotBrain ?? createBotBrain;
+    const brain =
+      info.isBot && simulateAll
+        ? brainFactory({
+            id: info.id,
+            skill: info.botSkill ?? 'average',
+            seed: (this.roundSeed ^ Math.imul(info.id + 1, 0x9e3779b1)) >>> 0,
+            round: this.round,
+          })
+        : null;
+    const slot: Slot = {
+      index: this.slots.length,
+      info,
+      ctrl,
+      proxy,
+      actor: new ControllerActor(ctrl, rp),
+      rp,
+      spawn,
+      input,
+      brain,
+      self: {
+        pos: vec3(),
+        vel: vec3(),
+        grounded: false,
+        state: CharacterState.Idle,
+        facing: spawn.yaw,
+        status: PlayerRoundStatus.Playing,
+        team,
+        hasItem: false,
+        checkpoint: 0,
+      },
+      prevPos: { ...pos },
+      active: true,
+      removed: false,
+      falling: false,
+      respawnTick: 0,
+      respawnCount: 0,
+      checkpointTrigger: -1,
+    };
+    this.slots.push(slot);
+    this.players.push(rp);
+    this.slotById.set(info.id, slot);
+    this.slotByCollider.set(ctrl.collider.handle, slot);
+    if (!proxy) ctrl.setFrozen(frozen);
+    this.actorsDirty = true;
+    return slot;
+  }
+
+  /**
+   * Adds a player mid-match (the pre-show lobby, where people join and leave
+   * live). Meant for rule-less lobby sims: round rules never learn about the
+   * newcomer. Every peer must add the same player at the same tick.
+   *
+   * @param info - The player.
+   * @param feet - Spawn feet position (e.g. above the platform for a drop-in).
+   * @param yaw - Facing.
+   * @returns False when the id is already present.
+   */
+  addPlayer(info: MatchPlayerInfo, feet: Vec3, yaw = 0): boolean {
+    if (this.disposed || this.slotById.has(info.id)) return false;
+    const spawn: SpawnSlot = { pos: { x: feet.x, y: feet.y, z: feet.z }, yaw };
+    const frozen = this.phase < RoundPhase.Playing || this.phase >= RoundPhase.Results;
+    const slot = this.createSlot(info, spawn, -1, frozen);
+    this.status.players.set(info.id, {
+      status: 0,
+      score: 0,
+      progress: 0,
+      place: 0,
+      team: slot.rp.team,
+      hasItem: false,
+    });
+    return true;
+  }
+
+  /**
+   * Removes a player's body from the match (lobby leave). Grabs involving them
+   * end on the partner's next step, exactly like a broken grab.
+   *
+   * @returns False when the player was not present.
+   */
+  removePlayer(playerId: number): boolean {
+    const s = this.slotById.get(playerId);
+    if (!s || s.removed) return false;
+    s.removed = true;
+    s.active = false;
+    s.falling = false;
+    for (let i = this.contactCount - 1; i >= 0; i--) if (this.cSlot[i] === s.index) this.removeContactAt(i);
+    this.slotById.delete(playerId);
+    this.slotByCollider.delete(s.ctrl.collider.handle);
+    const k = this.players.indexOf(s.rp);
+    if (k >= 0) this.players.splice(k, 1);
+    this.status.players.delete(playerId);
+    s.ctrl.dispose();
+    this.actorsDirty = true;
+    return true;
+  }
+
+  /**
+   * Server lag-compensation assist: `grabberId` grabs `targetId` now, with the
+   * same eligibility rules as a grab found by the controller's own query.
+   *
+   * @returns True when the grab started.
+   */
+  assistGrab(grabberId: number, targetId: number): boolean {
+    const a = this.slotById.get(grabberId);
+    const b = this.slotById.get(targetId);
+    if (!a || !b || a === b || !a.active || !b.active || a.proxy || b.proxy) return false;
+    return a.ctrl.assistGrab?.(b.ctrl, this.cctx) ?? false;
+  }
+
+  /**
+   * Server lag-compensation assist: `diverId`'s dive tackles `victimId`,
+   * pushing them directly away from the diver.
+   *
+   * @returns True when the victim was stunned.
+   */
+  assistTackle(diverId: number, victimId: number, strength: number): boolean {
+    const a = this.slotById.get(diverId);
+    const b = this.slotById.get(victimId);
+    if (!a || !b || a === b || !a.active || !b.active || a.proxy || b.proxy) return false;
+    const pa = a.ctrl.body.translation(this.scratchVec);
+    const ax = pa.x;
+    const az = pa.z;
+    const pb = b.ctrl.body.translation(this.scratchVec);
+    let dx = pb.x - ax;
+    let dz = pb.z - az;
+    const l = Math.hypot(dx, dz);
+    if (l < 1e-4) return false;
+    dx /= l;
+    dz /= l;
+    return b.ctrl.applyTackle?.(dx, dz, strength) ?? false;
   }
 
   get qualifyTarget(): number {
@@ -640,6 +751,7 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
     st.teamScores = this.rules ? (this.rules.teamScores as number[]) : st.teamScores;
     st.finished = this.rules?.finished ?? false;
     for (const s of this.slots) {
+      if (s.removed) continue;
       const e = st.players.get(s.info.id);
       if (!e) continue;
       e.status = s.rp.status;
@@ -655,7 +767,8 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
   /** Returns a shared array, rewritten on every call. */
   getStandings(): number[] {
     const list = this.standingScratch;
-    if (list.length !== this.players.length) list.splice(0, list.length, ...this.players);
+    // Always resync: lobby joins/leaves can swap players without changing the count.
+    list.splice(0, list.length, ...this.players);
     list.sort(standingOrder);
     this.standings.length = 0;
     for (const p of list) this.standings.push(p.id);
@@ -666,7 +779,7 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
     if (this.disposed) return;
     this.disposed = true;
     for (const o of this.obstacleRuntimes) o.dispose();
-    for (const s of this.slots) s.ctrl.dispose();
+    for (const s of this.slots) if (!s.removed) s.ctrl.dispose();
     this.eventQueue.free();
     this.world.free();
   }

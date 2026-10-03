@@ -14,6 +14,8 @@ export interface MatchPlayerInfo {
   team: number;
   /** Bot skill tier when `isBot`. */
   botSkill?: 'clumsy' | 'average' | 'sharp';
+  /** Duos/squads party (members share fates and the Crown); absent in solo shows. */
+  partyId?: number;
 }
 
 /** Per-player round status. */
@@ -81,6 +83,11 @@ export interface MatchSimOptions {
   variationId?: string;
   /** Rule variants not expressed in the round definition. */
   rules?: RoundRulesOptions;
+  /**
+   * Pre-show lobby: no round rules (nobody qualifies or is eliminated, falls
+   * always respawn) and players may join/leave via `addPlayer`/`removePlayer`.
+   */
+  lobby?: boolean;
 }
 
 /**
@@ -122,6 +129,15 @@ export interface MatchSim {
   getStatus(): RoundStatus;
   /** Player ids in current race order / score order, for HUD and spectating. */
   getStandings(): number[];
+
+  /** Lobby sims: a player joins mid-match at `feet` (all peers at the same tick). */
+  addPlayer?(info: MatchPlayerInfo, feet: Vec3, yaw?: number): boolean;
+  /** Lobby sims: a player leaves; grabs involving them break. */
+  removePlayer?(playerId: number): boolean;
+  /** Server lag-compensation assist: start a grab the client saw in reach. */
+  assistGrab?(grabberId: number, targetId: number): boolean;
+  /** Server lag-compensation assist: apply a dive tackle the client saw land. */
+  assistTackle?(diverId: number, victimId: number, strength: number): boolean;
 
   dispose(): void;
 }

@@ -105,6 +105,13 @@ export interface MatchSimHandle extends MatchSim {
   readonly phase: RoundPhaseId;
   readonly variationId: string | null;
   readonly mutatorId: string | null;
+  /**
+   * Obstacle speed multiplier every runtime was built with: the stage's
+   * `speedScaleByStage` entry plus the mutator's `speedScaleBonus`. Visuals
+   * that mirror `pose(t)` must use this exact value or they drift off their
+   * colliders.
+   */
+  readonly speedScale: number;
   /** Players expected to qualify. */
   readonly qualifyTarget: number;
   /** Non-fatal load problems (unknown obstacle types, bad params). */
@@ -246,6 +253,7 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
   readonly warnings: string[] = [];
   readonly variationId: string | null;
   readonly mutatorId: string | null;
+  readonly speedScale: number;
   readonly rules: RoundRules | null;
   readonly rng: Rng;
   readonly entrants: number;
@@ -349,6 +357,7 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
       (stageScales.length > 0
         ? (stageScales[Math.max(0, Math.min(opts.stage, stageScales.length - 1))] ?? 1)
         : 1) + (mutator?.speedScaleBonus ?? 0);
+    this.speedScale = speedScale;
     for (const inst of resolveObstacles(round, variation)) {
       const mod = deps.obstacles.get(inst.type);
       if (!mod) {

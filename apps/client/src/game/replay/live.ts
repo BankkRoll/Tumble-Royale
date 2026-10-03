@@ -114,6 +114,7 @@ export class LiveRecording implements ReplayHooks {
       seed: info.seed >>> 0,
       stage: info.stage,
       variationId: source.sim.variationId ?? null,
+      ...(source.sim.mutatorId ? { mutatorId: source.sim.mutatorId } : {}),
       qualifyTarget: info.qualifyTarget,
       localId: info.localId,
       players: info.players,

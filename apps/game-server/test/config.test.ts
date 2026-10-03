@@ -105,4 +105,45 @@ describe('game server config', () => {
       'PUBLIC_WS_URL',
     ]);
   });
+
+  it('locks HTTP exposure down in production', () => {
+    expect(loadConfig(testEnv()).exposure).toEqual({
+      debug: true,
+      allowedOrigins: true,
+      metricsToken: undefined,
+      internalPort: undefined,
+      internalHost: undefined,
+      trustProxy: false,
+      helloTimeoutMs: 5000,
+      maxPendingPerIp: 8,
+    });
+    const prod = loadConfig(
+      testEnv({ NODE_ENV: 'production', PUBLIC_WEB_URL: 'https://play.example/', ALLOW_UNTICKETED: '0' }),
+    ).exposure;
+    expect(prod).toMatchObject({ debug: false, allowedOrigins: ['https://play.example'] });
+    const custom = loadConfig(
+      testEnv({
+        ALLOWED_ORIGINS: 'https://a.example/, https://b.example',
+        METRICS_TOKEN: 'metrics-token-0123456789',
+        INTERNAL_PORT: '9350',
+        INTERNAL_HOST: '10.0.0.4',
+        TRUST_PROXY: '10.0.0.0/8',
+      }),
+    ).exposure;
+    expect(custom).toMatchObject({
+      allowedOrigins: ['https://a.example', 'https://b.example'],
+      metricsToken: 'metrics-token-0123456789',
+      internalPort: 9350,
+      internalHost: '10.0.0.4',
+      trustProxy: ['10.0.0.0/8'],
+    });
+  });
+
+  it('refuses unsafe exposure settings', () => {
+    expect(issueNames(testEnv({ INTERNAL_PORT: '7350' }))).toEqual(['INTERNAL_PORT']);
+    expect(issueNames(testEnv({ METRICS_TOKEN: 'short' }))).toEqual(['METRICS_TOKEN']);
+    expect(issueNames(testEnv({ METRICS_TOKEN: 'change-me-please-0123' }))).toEqual(['METRICS_TOKEN']);
+    expect(issueNames(testEnv({ TRUST_PROXY: 'true' }))).toEqual(['TRUST_PROXY']);
+    expect(issueNames(testEnv({ HELLO_TIMEOUT_MS: '100' }))).toEqual(['HELLO_TIMEOUT_MS']);
+  });
 });

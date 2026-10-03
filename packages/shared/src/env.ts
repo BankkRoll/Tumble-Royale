@@ -9,6 +9,7 @@
  */
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { parseTrustProxy, type TrustProxy } from './proxy.ts';
 
 /** A process environment map (`process.env` or a literal in tests). */
 export type Env = Record<string, string | undefined>;
@@ -162,6 +163,19 @@ export class EnvIssues {
     }
     this.add(name, `must be a ${protocols.map((p) => p.replace(':', '')).join('/')} URL (got "${raw}")`);
     return undefined;
+  }
+
+  /**
+   * Reads which reverse proxies may set `X-Forwarded-For` (see
+   * {@link parseTrustProxy}); unset means none.
+   *
+   * @param name - Variable name, `TRUST_PROXY` by default.
+   */
+  trustProxy(name = 'TRUST_PROXY'): TrustProxy {
+    const r = parseTrustProxy(this.optional(name));
+    if ('value' in r) return r.value;
+    this.add(name, r.error);
+    return false;
   }
 
   /**

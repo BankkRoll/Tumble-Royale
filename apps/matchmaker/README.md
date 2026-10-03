@@ -52,6 +52,30 @@ when it mints tokens and queue tickets) and the outage is logged.
 4. Connect to `server.url` and present `ticket`. `DELETE /queue` cancels for
    the whole party.
 
+`match_found` is also kept per player (`user-match:<userId>`) for the
+ticket's 90 s: `GET /queue/status` returns it as `match` and the stream
+replays it on connect, so a player whose socket was reconnecting when the
+match was placed still gets it (clients dedupe by `matchId`). It is cleared
+when the game server reports the player joined (heartbeat `joined`), when
+they queue again, on `DELETE /queue/match` (declined or left), on a host
+kick, or when the ticket expires.
+
+`POST /queue/rejoin { matchId }` re-issues a ticket for a running match after
+a reload outlived both the ticket and the game server's 30 s resume window.
+Only roster members get one, only while the hosting server is alive and
+still reports the match (or still holds its reservation), never for players
+the host removed or who are suspended (`404 match_not_found`,
+`403 not_in_match` / `removed_by_host` / `banned`, `410 match_over`). The
+ticket carries `rejoin: true`: the game server attaches it to the existing
+room and never opens a new one for it.
+
+Ticks are serialised across instances by `tick-lock`, which carries a random
+token per tick, is renewed while the tick runs and is released by
+compare-and-delete; entries are claimed with an atomic `HDEL` before a lobby
+is placed, so a cancel racing the tick either wins (no `match_found`) or loses
+(the match stands), never both. A re-queue while a claim is in flight gets
+`409 match_forming`.
+
 Custom lobbies: `POST /lobbies { settings? }` → `{ lobby.code }`;
 `POST /lobbies/:code/join { spectator? }`, `PATCH /lobbies/:code` (host
 settings: `playlistId`, `rounds[]`, `maxPlayers`, `bots`, `roundTimeScale`,
@@ -72,17 +96,24 @@ closed are marked away and dropped after 90 s (`lobby_kicked { reason: 'away' }`
 
 Kicks after a start reach the game server as `POST {controlUrl}/internal/kick
 { matchId, userId }`, HMAC-SHA256 signed with `GAME_SERVER_SECRET` over
-`<ts>.<body>` (`x-tumble-ts`, `x-tumble-sig`). `controlUrl` comes from the
-server's registration, else is derived from its public WebSocket URL.
+`<ts>.<nonce>.<body>` (`x-tumble-ts`, `x-tumble-nonce`, `x-tumble-sig`); the
+game server refuses timestamps older than 30 s and any nonce it already saw.
+`controlUrl` is the game server's `CONTROL_URL` from its registration (set it
+whenever the public URL does not route plain HTTP to the server); without it
+the base is derived from the public WebSocket URL by dropping only the
+trailing `/ws`, so a proxy prefix survives: `wss://play.example/gs/ws` →
+`https://play.example/gs` (the game server serves the kick at both
+`/internal/kick` and `/gs/internal/kick`).
 
 ## Game servers
 
 - `POST /servers/register { serverId, url, region, capacity, load?, maxRooms?, rooms? }`
-  and `POST /servers/heartbeat { serverId, load, rooms?, matches? }` every ≤ 5 s
+  and `POST /servers/heartbeat { serverId, load, rooms?, matches?, joined? }` every ≤ 5 s
   (dead after 15 s), `DELETE /servers/:id` on shutdown. Bearer
   `GAME_SERVER_SECRET`. `capacity` and `load` count **seats, humans and bots**
   (bots cost the server as much simulation as players); `maxRooms`/`rooms`
-  cap concurrent rooms; `matches` lists the match ids the server hosts.
+  cap concurrent rooms; `matches` lists the match ids the server hosts;
+  `joined` lists `{ matchId, userId }` ticketed arrivals since the last beat.
 - Placing a match reserves its seats (and one room) on the server until a
   heartbeat lists the match id, or for 120 s (join tickets last 90 s), so a
   heartbeat sent before the players arrive cannot hand the same seats out

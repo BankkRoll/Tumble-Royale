@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { KickReason, type LowFreqMessage } from '@tumble/netcode';
-import { signControl, verifyControl } from '../src/control.ts';
+import { NonceCache, signControl, verifyControl } from '../src/control.ts';
 import { ServerMetrics } from '../src/metrics.ts';
 import { RoomManager } from '../src/room/RoomManager.ts';
 import { startGameServer } from '../src/server.ts';
@@ -113,17 +113,34 @@ describe('host kicks on the game server', () => {
 });
 
 describe('control endpoint', () => {
-  it('verifies signatures and timestamps', () => {
+  const NONCE = 'nonce-0123456789abcdef';
+
+  it('verifies signatures, nonces and timestamps', () => {
     const body = '{"matchId":"m","userId":"u"}';
-    const sig = signControl(CONTROL, WALL, body);
-    expect(verifyControl(CONTROL, String(WALL), sig, body, WALL + 1000)).toBe(true);
-    expect(verifyControl(CONTROL, String(WALL), sig, body, WALL + 60_000)).toBe(false);
-    expect(verifyControl('other-secret-0123456789', String(WALL), sig, body, WALL)).toBe(false);
-    expect(verifyControl(CONTROL, String(WALL), sig, body.replace('u', 'v'), WALL)).toBe(false);
-    expect(verifyControl(CONTROL, undefined, sig, body, WALL)).toBe(false);
+    const sig = signControl(CONTROL, WALL, NONCE, body);
+    expect(verifyControl(CONTROL, String(WALL), NONCE, sig, body, WALL + 1000)).toBe(WALL);
+    expect(verifyControl(CONTROL, String(WALL), NONCE, sig, body, WALL + 60_000)).toBeNull();
+    expect(verifyControl(CONTROL, String(WALL), NONCE, sig, body, WALL - 60_000)).toBeNull();
+    expect(verifyControl('other-secret-0123456789', String(WALL), NONCE, sig, body, WALL)).toBeNull();
+    expect(verifyControl(CONTROL, String(WALL), NONCE, sig, body.replace('u', 'v'), WALL)).toBeNull();
+    expect(verifyControl(CONTROL, undefined, NONCE, sig, body, WALL)).toBeNull();
+    // The nonce is signed: swapping it breaks the signature, dropping it is refused.
+    expect(verifyControl(CONTROL, String(WALL), `${NONCE}x`, sig, body, WALL)).toBeNull();
+    expect(verifyControl(CONTROL, String(WALL), undefined, sig, body, WALL)).toBeNull();
+    const unsignedNonce = signControl(CONTROL, WALL, '', body);
+    expect(verifyControl(CONTROL, String(WALL), '', unsignedNonce, body, WALL)).toBeNull();
   });
 
-  it('serves POST /internal/kick only with a valid signature', async () => {
+  it('remembers nonces for the freshness window only', () => {
+    const cache = new NonceCache();
+    expect(cache.use('a'.repeat(16), WALL, WALL)).toBe(true);
+    expect(cache.use('a'.repeat(16), WALL, WALL + 1000)).toBe(false);
+    expect(cache.use('b'.repeat(16), WALL + 40_000, WALL + 40_000)).toBe(true);
+    // A request carrying the first nonce would be stale by now, so it may be forgotten.
+    expect(cache.use('a'.repeat(16), WALL + 40_000, WALL + 40_000)).toBe(true);
+  });
+
+  it('serves POST /internal/kick only with a valid, unused signature, also under /gs', async () => {
     const sims: FakeMatchSim[] = [];
     const deps = { ...testDeps({ now: 0 }, sims), now: () => performance.now() };
     const server = await startGameServer({
@@ -133,20 +150,39 @@ describe('control endpoint', () => {
       profileLogMs: 0,
       control: { secret: CONTROL },
     });
-    const post = (body: string, ts: number, sig: string) =>
-      fetch(`http://127.0.0.1:${server.port}/internal/kick`, {
+    let n = 0;
+    const post = (body: string, o: { ts?: number; nonce?: string; sig?: string; path?: string } = {}) => {
+      const ts = o.ts ?? Date.now();
+      const nonce = o.nonce ?? `nonce-${String(++n).padStart(16, '0')}`;
+      return fetch(`http://127.0.0.1:${server.port}${o.path ?? '/internal/kick'}`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-tumble-ts': String(ts), 'x-tumble-sig': sig },
+        headers: {
+          'content-type': 'application/json',
+          'x-tumble-ts': String(ts),
+          'x-tumble-nonce': nonce,
+          'x-tumble-sig': o.sig ?? signControl(CONTROL, ts, nonce, body),
+        },
         body,
       });
+    };
     try {
       const body = JSON.stringify({ matchId: 'm_none', userId: 'u1' });
-      const now = Date.now();
-      expect((await post(body, now, 'bad')).status).toBe(401);
+      expect((await post(body, { sig: 'bad' })).status).toBe(401);
       // Unknown match: authorised, but nothing is hosted here.
-      expect((await post(body, now, signControl(CONTROL, now, body))).status).toBe(404);
+      expect((await post(body)).status).toBe(404);
+      expect((await post(body, { path: '/gs/internal/kick' })).status).toBe(404);
       const bad = '{"matchId":1}';
-      expect((await post(bad, now, signControl(CONTROL, now, bad))).status).toBe(400);
+      expect((await post(bad)).status).toBe(400);
+
+      // An exact replay inside the window is refused.
+      const ts = Date.now();
+      const replay = { ts, nonce: NONCE, sig: signControl(CONTROL, ts, NONCE, body) };
+      expect((await post(body, replay)).status).toBe(404);
+      expect((await post(body, replay)).status).toBe(409);
+      // A forged request cannot burn a nonce the matchmaker is about to use.
+      const fresh = 'fresh-nonce-0123456789';
+      expect((await post(body, { ts, nonce: fresh, sig: 'f'.repeat(64) })).status).toBe(401);
+      expect((await post(body, { ts, nonce: fresh })).status).toBe(404);
     } finally {
       await server.close();
     }

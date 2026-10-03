@@ -51,6 +51,8 @@ export interface JoinTicketClaims {
   custom?: TicketCustomSettings;
   /** Chat-suspended account: its chat is never relayed. */
   mute?: boolean;
+  /** Re-issued to return to a running match: attaches to an existing room only, never opens one. */
+  rejoin?: boolean;
 }
 
 function b64url(buf: Buffer): string {
@@ -121,6 +123,7 @@ export function verifyJoinTicket(secret: string, token: string, nowMs: number): 
     teamSize: isInt(c.teamSize) ? c.teamSize : 1,
     ...(c.custom && typeof c.custom === 'object' ? { custom: c.custom as TicketCustomSettings } : {}),
     ...(c.mute === true ? { mute: true } : {}),
+    ...(c.rejoin === true ? { rejoin: true } : {}),
   };
 }
 

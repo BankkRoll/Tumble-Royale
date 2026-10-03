@@ -19,7 +19,7 @@ import {
   type QueueEntry,
   type QueueStatus,
 } from './engine.ts';
-import { RateLimiter } from './rateLimit.ts';
+import { SharedRateLimiter } from './rateLimit.ts';
 import { candidateRegions, humansInRooms, pickServer, SERVER_TTL_MS, type GameServer } from './servers.ts';
 import type { MMStore } from './store.ts';
 import {
@@ -59,6 +59,29 @@ export interface MatchRecord {
   createdAt: number;
 }
 
+/** A placed match and the join ticket for one player. */
+export interface MatchFoundEvent {
+  type: 'match_found';
+  matchId: string;
+  server: { id: string; url: string; region: string };
+  /** Signed join ticket for the game server. */
+  ticket: string;
+  /** Seconds the ticket stays valid from when this event was produced. */
+  expiresIn: number;
+  playlistId: string;
+  queue: string;
+  team: number | null;
+  role: 'player' | 'spectator';
+}
+
+/** A `match_found` kept until the player reaches the game server (`user-match:<userId>`). */
+interface PendingMatch extends MatchFoundEvent {
+  /** Ticket expiry, epoch ms. */
+  expiresAt: number;
+}
+
+const userMatchKey = (userId: string): string => `user-match:${userId}`;
+
 /** Events pushed to a user's WebSocket. */
 export type MMEvent =
   | { type: 'queued'; entryId: string; playlistId: string; queue: string }
@@ -71,17 +94,7 @@ export type MMEvent =
       otherRegions: boolean;
     }
   | { type: 'queue_cancelled'; reason: string }
-  | {
-      type: 'match_found';
-      matchId: string;
-      server: { id: string; url: string; region: string };
-      ticket: string;
-      expiresIn: number;
-      playlistId: string;
-      queue: string;
-      team: number | null;
-      role: 'player' | 'spectator';
-    }
+  | MatchFoundEvent
   | { type: 'lobby_update'; lobby: CustomLobby }
   | { type: 'lobby_closed'; code: string }
   | { type: 'lobby_kicked'; code: string; reason: 'kicked' | 'away' }
@@ -167,6 +180,8 @@ export interface ServerReport {
   matches?: readonly string[];
   /** Humans connected to its rooms (the public "online" count). */
   humans?: number;
+  /** Ticketed players who reached a room since the last report; their pending `match_found` is cleared. */
+  joined?: readonly { matchId: string; userId: string }[];
 }
 
 const ENTRIES = 'entries';
@@ -184,6 +199,10 @@ const LOBBY_TTL_MS = 2 * 3_600_000;
 /** Hash of live lobby codes, walked by the away sweep. */
 const LOBBY_INDEX = 'lobby-index';
 const LOBBY_LOCK_TTL_MS = 5000;
+const TICK_LOCK = 'tick-lock';
+/** Tick lock lifetime; renewed every {@link TICK_LOCK_RENEW_MS} while a tick runs. */
+export const TICK_LOCK_TTL_MS = 5000;
+const TICK_LOCK_RENEW_MS = 1500;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 /** Default custom lobby settings. */
@@ -219,7 +238,7 @@ export class Matchmaker {
     control?: GameControl,
   ) {
     this.control = control ?? httpGameControl(cfg.gameServerSecret, now);
-    this.chatLimiter = new RateLimiter(LOBBY_CHAT_MAX, LOBBY_CHAT_WINDOW_MS, now);
+    this.chatLimiter = new SharedRateLimiter(store, 'rl:chat', LOBBY_CHAT_MAX, LOBBY_CHAT_WINDOW_MS, now);
     this.engine = {
       ...DEFAULT_ENGINE,
       maxWaitMs: cfg.maxWaitMs,
@@ -228,8 +247,7 @@ export class Matchmaker {
     };
   }
 
-  // NOTE: per instance, like the HTTP limiter: roughly right is enough for chat.
-  private readonly chatLimiter: RateLimiter;
+  private readonly chatLimiter: SharedRateLimiter;
 
   private async emit(userId: string, event: MMEvent): Promise<void> {
     await this.store.publish(userChannel(userId), JSON.stringify(event));
@@ -287,14 +305,22 @@ export class Matchmaker {
     return all[id] ? (JSON.parse(all[id]) as QueueEntry) : null;
   }
 
-  private async removeEntry(e: QueueEntry): Promise<void> {
-    await this.store.hdel(ENTRIES, e.id);
+  /**
+   * Removes an entry from the queue.
+   *
+   * @returns False when it was already gone (a concurrent tick claimed it for
+   *   a match, or another request removed it first).
+   */
+  private async removeEntry(e: QueueEntry): Promise<boolean> {
+    const removed = await this.store.hdel(ENTRIES, e.id);
+    await this.clearEntryKeys(e);
+    return removed;
+  }
+
+  private async clearEntryKeys(e: QueueEntry): Promise<void> {
     await this.store.del(`server-wait:${e.id}`);
     await this.store.del(`server-fallback:${e.id}`);
-    for (const m of e.members) {
-      if ((await this.store.get(`user-entry:${m.userId}`)) === e.id)
-        await this.store.del(`user-entry:${m.userId}`);
-    }
+    for (const m of e.members) await this.store.delIfEquals(`user-entry:${m.userId}`, e.id);
   }
 
   /**
@@ -316,6 +342,8 @@ export class Matchmaker {
         throw new MMError(409, 'in_lobby', 'Leave the custom lobby before queueing');
       const prev = await this.entryFor(m.userId);
       if (prev) await this.removeEntry(prev);
+      else if (await this.store.get(`user-entry:${m.userId}`))
+        throw new MMError(409, 'match_forming', 'A match is being formed for you; try again in a moment');
     }
     const entry: QueueEntry = {
       id: randomUUID(),
@@ -339,6 +367,8 @@ export class Matchmaker {
     await this.store.hset(ENTRIES, entry.id, JSON.stringify(entry));
     for (const m of entry.members) {
       await this.store.set(`user-entry:${m.userId}`, entry.id);
+      // Queueing again abandons an unclaimed match; a reconnect must not replay it.
+      await this.clearPendingMatch(m.userId);
       await this.emit(m.userId, {
         type: 'queued',
         entryId: entry.id,
@@ -352,8 +382,15 @@ export class Matchmaker {
   /** Cancels the queue entry containing `userId` (the whole party leaves). */
   async cancel(userId: string, reason = 'cancelled'): Promise<boolean> {
     const e = await this.entryFor(userId);
-    if (!e) return false;
-    await this.removeEntry(e);
+    if (!e) {
+      // The pointer without its entry means a tick holds the entry right now.
+      // Dropping the pointer stops the tick from putting it back if its lobby
+      // falls through; if the lobby is placed, the match stands.
+      const id = await this.store.get(`user-entry:${userId}`);
+      if (id) await this.store.delIfEquals(`user-entry:${userId}`, id);
+      return false;
+    }
+    if (!(await this.removeEntry(e))) return false;
     for (const m of e.members) await this.emit(m.userId, { type: 'queue_cancelled', reason });
     return true;
   }
@@ -386,11 +423,26 @@ export class Matchmaker {
    * @returns The matches created this tick.
    */
   async tick(): Promise<MatchRecord[]> {
-    if (!(await this.store.setNX('tick-lock', '1', 5000))) return [];
+    const token = randomUUID();
+    if (!(await this.store.setNX(TICK_LOCK, token, TICK_LOCK_TTL_MS))) return [];
+    let owned = true;
+    // A slow tick (Redis latency, many lobbies) must not let the lock lapse and
+    // a second instance start placing the same entries; renew while working.
+    const renew = setInterval(() => {
+      void this.store
+        .expireIfEquals(TICK_LOCK, token, TICK_LOCK_TTL_MS)
+        .then((ok) => {
+          if (!ok) owned = false;
+        })
+        .catch(() => undefined);
+    }, TICK_LOCK_RENEW_MS);
+    renew.unref?.();
     try {
       const lobbies = formLobbies(await this.entries(), this.now(), this.engine);
       const created: MatchRecord[] = [];
       for (const lobby of lobbies) {
+        // Lost the lock (expired during a stall): stop; the new holder re-forms from the store.
+        if (!owned || !(await this.store.expireIfEquals(TICK_LOCK, token, TICK_LOCK_TTL_MS))) break;
         const fallback = await this.serverWait(lobby);
         const server = await this.allocateServer(lobby.region, lobby.size, fallback.otherRegions);
         if (!server) {
@@ -404,13 +456,48 @@ export class Matchmaker {
           }
           continue;
         }
-        for (const e of lobby.entries) await this.removeEntry(e);
+        if (!(await this.claimEntries(lobby.entries))) continue;
         created.push(await this.placeMatch(lobby, server));
       }
       return created;
     } finally {
-      await this.store.del('tick-lock');
+      clearInterval(renew);
+      await this.store.delIfEquals(TICK_LOCK, token);
     }
+  }
+
+  /**
+   * Takes a formed lobby's entries out of the queue atomically. The lobby was
+   * formed from a snapshot; a cancel or re-queue may have removed an entry
+   * since, and placing it anyway would send `match_found` to someone who left.
+   * Each entry is claimed with an atomic `hdel`; if any is gone the claimed
+   * ones go back (unless a member re-queued meanwhile) and the lobby waits for
+   * the next tick.
+   *
+   * @returns True when every entry was claimed.
+   */
+  private async claimEntries(entries: readonly QueueEntry[]): Promise<boolean> {
+    const claimed: QueueEntry[] = [];
+    for (const e of entries) if (await this.store.hdel(ENTRIES, e.id)) claimed.push(e);
+    if (claimed.length === entries.length) {
+      for (const e of claimed) await this.clearEntryKeys(e);
+      return true;
+    }
+    for (const e of claimed) {
+      if (await this.entryIsCurrent(e)) {
+        await this.store.hset(ENTRIES, e.id, JSON.stringify(e));
+        // A cancel that ran between the check and the put-back left this
+        // entry without its pointers; take it out again so it is never placed.
+        if (!(await this.entryIsCurrent(e)) && (await this.store.hdel(ENTRIES, e.id)))
+          await this.clearEntryKeys(e);
+      } else await this.clearEntryKeys(e);
+    }
+    return false;
+  }
+
+  private async entryIsCurrent(e: QueueEntry): Promise<boolean> {
+    for (const m of e.members) if ((await this.store.get(`user-entry:${m.userId}`)) !== e.id) return false;
+    return true;
   }
 
   /**
@@ -461,43 +548,142 @@ export class Matchmaker {
     return record;
   }
 
-  /** Reserves the seats, stores the match, signs join tickets and notifies every participant. */
+  /**
+   * Reserves the seats, stores the match, signs join tickets and notifies
+   * every participant. Each `match_found` is also kept per user for the
+   * ticket's lifetime: pub/sub is fire-and-forget, so a player whose socket
+   * was reconnecting at this moment would otherwise lose the match.
+   */
   private async publishMatch(record: MatchRecord, server: GameServer, seats: number): Promise<void> {
     await this.reserve(record.matchId, server, seats);
     await this.store.set(`match:${record.matchId}`, JSON.stringify(record), MATCH_TTL_MS);
-    const now = new Date(this.now());
     for (const r of record.roster) {
-      const claims: JoinTicketClaims = {
-        sub: r.userId,
-        name: r.name,
-        mid: record.matchId,
-        sid: server.id,
-        pid: r.partyId,
-        team: r.team,
-        role: r.role,
-        playlistId: record.playlistId,
-        queue: record.queue,
-        region: record.region,
-        size: record.size,
-        humans: record.humans,
-        bots: record.botFill,
-        teamSize: record.teamSize,
-        ...(record.custom ? { custom: record.custom } : {}),
-        ...(r.muted ? { mute: true } : {}),
-      };
-      const ticket = await signJoinTicket(this.cfg.gameTicketSecret, claims, now);
-      await this.emit(r.userId, {
-        type: 'match_found',
-        matchId: record.matchId,
-        server: { id: server.id, url: server.url, region: server.region },
-        ticket,
-        expiresIn: JOIN_TICKET_TTL_SEC,
-        playlistId: record.playlistId,
-        queue: record.queue,
-        team: r.team,
-        role: r.role,
-      });
+      const event = await this.matchFoundFor(record, server, r);
+      const pending: PendingMatch = { ...event, expiresAt: this.now() + JOIN_TICKET_TTL_SEC * 1000 };
+      await this.store.set(userMatchKey(r.userId), JSON.stringify(pending), JOIN_TICKET_TTL_SEC * 1000);
+      await this.emit(r.userId, event);
     }
+  }
+
+  /** Signs a join ticket for one roster member and wraps it in a `match_found` event. */
+  private async matchFoundFor(
+    record: MatchRecord,
+    server: Pick<GameServer, 'id' | 'url' | 'region'>,
+    r: MatchRecord['roster'][number],
+    rejoin = false,
+  ): Promise<MatchFoundEvent> {
+    const claims: JoinTicketClaims = {
+      sub: r.userId,
+      name: r.name,
+      mid: record.matchId,
+      sid: server.id,
+      pid: r.partyId,
+      team: r.team,
+      role: r.role,
+      playlistId: record.playlistId,
+      queue: record.queue,
+      region: record.region,
+      size: record.size,
+      humans: record.humans,
+      bots: record.botFill,
+      teamSize: record.teamSize,
+      ...(record.custom ? { custom: record.custom } : {}),
+      ...(r.muted ? { mute: true } : {}),
+      ...(rejoin ? { rejoin: true } : {}),
+    };
+    const ticket = await signJoinTicket(this.cfg.gameTicketSecret, claims, new Date(this.now()));
+    return {
+      type: 'match_found',
+      matchId: record.matchId,
+      server: { id: server.id, url: server.url, region: server.region },
+      ticket,
+      expiresIn: JOIN_TICKET_TTL_SEC,
+      playlistId: record.playlistId,
+      queue: record.queue,
+      team: r.team,
+      role: r.role,
+    };
+  }
+
+  /**
+   * The `match_found` still waiting for this user, with `expiresIn` counted
+   * down to now; null once they joined the game server, declined it, or the
+   * ticket expired.
+   */
+  async pendingMatch(userId: string): Promise<MatchFoundEvent | null> {
+    const raw = await this.store.get(userMatchKey(userId));
+    if (!raw) return null;
+    const { expiresAt, ...event } = JSON.parse(raw) as PendingMatch;
+    const expiresIn = Math.floor((expiresAt - this.now()) / 1000);
+    if (expiresIn <= 0) {
+      await this.store.del(userMatchKey(userId));
+      return null;
+    }
+    return { ...event, expiresIn };
+  }
+
+  /**
+   * Forgets a user's pending match (they joined it, declined it or queued
+   * again).
+   *
+   * @param matchId - Only clear when the pending match is this one, so a stale
+   *   report cannot drop a newer match.
+   */
+  async clearPendingMatch(userId: string, matchId?: string): Promise<void> {
+    if (matchId !== undefined) {
+      const raw = await this.store.get(userMatchKey(userId));
+      if (!raw || (JSON.parse(raw) as PendingMatch).matchId !== matchId) return;
+    }
+    await this.store.del(userMatchKey(userId));
+  }
+
+  /**
+   * Signs a fresh join ticket for a match the caller belongs to (a reload
+   * mid-show outlived both the 90 s ticket and the game server's resume
+   * window).
+   *
+   * SECURITY: only roster members of a match their game server still hosts,
+   * still in good standing and not removed by a private show's host; the game
+   * server re-checks the ticket and its own removal list.
+   *
+   * @throws {MMError} 404 `match_not_found`, 403 `not_in_match` / `removed_by_host` /
+   *   `banned`, 410 `match_over` when no live server hosts it any more.
+   */
+  async rejoinMatch(userId: string, matchId: string): Promise<MatchFoundEvent> {
+    const record = await this.getMatch(matchId);
+    if (!record) throw new MMError(404, 'match_not_found', 'That show is over');
+    const seat = record.roster.find((r) => r.userId === userId);
+    if (!seat) throw new MMError(403, 'not_in_match', 'You are not part of that show');
+    if (await this.store.get(`match-kicked:${matchId}:${userId}`))
+      throw new MMError(403, 'removed_by_host', 'The host removed you from that show');
+    const muted = await this.checkStanding([userId], record.queue === 'ranked');
+    const server = await this.liveServerFor(record);
+    if (!server) throw new MMError(410, 'match_over', 'That show is no longer running');
+    const { muted: _muted, ...rest } = seat;
+    return this.matchFoundFor(
+      record,
+      server,
+      { ...rest, ...(muted.has(userId) ? { muted: true } : {}) },
+      true,
+    );
+  }
+
+  /**
+   * The server still hosting a match: it reported the match on a recent
+   * heartbeat, or holds an unexpired reservation for it (no player has
+   * connected yet). Null when the server is gone or dropped the room.
+   */
+  private async liveServerFor(
+    record: MatchRecord,
+  ): Promise<Pick<GameServer, 'id' | 'url' | 'region'> | null> {
+    if (record.serverId === 'default') return { id: 'default', url: record.serverUrl, region: record.region };
+    const server = (await this.servers()).find((s) => s.id === record.serverId);
+    if (!server) return null;
+    if ((await this.store.get(`match-live:${record.matchId}`)) === server.id) return server;
+    const reservation = (await this.store.hgetall(RESERVATIONS))[record.matchId];
+    if (reservation && this.now() - (JSON.parse(reservation) as Reservation).at <= RESERVATION_TTL_MS)
+      return server;
+    return null;
   }
 
   /** A placed match, for game servers. */
@@ -537,8 +723,11 @@ export class Matchmaker {
       lastSeen: this.now(),
     };
     await this.store.hset(SERVERS, id, JSON.stringify(server));
+    for (const j of r.joined ?? []) await this.clearPendingMatch(j.userId, j.matchId);
     if (r.matches?.length) {
       const hosted = new Set(r.matches);
+      // Rejoin tickets are only issued while the hosting server keeps reporting the match.
+      for (const matchId of hosted) await this.store.set(`match-live:${matchId}`, id, SERVER_TTL_MS);
       for (const [matchId, v] of Object.entries(await this.store.hgetall(RESERVATIONS))) {
         if (hosted.has(matchId) && (JSON.parse(v) as Reservation).serverId === id)
           await this.store.hdel(RESERVATIONS, matchId);
@@ -668,14 +857,15 @@ export class Matchmaker {
    */
   private async withLobby<T>(code: string, fn: (lobby: CustomLobby) => Promise<T>): Promise<T> {
     const key = `lobby-lock:${code}`;
-    for (let i = 0; !(await this.store.setNX(key, '1', LOBBY_LOCK_TTL_MS)); i++) {
+    const token = randomUUID();
+    for (let i = 0; !(await this.store.setNX(key, token, LOBBY_LOCK_TTL_MS)); i++) {
       if (i >= 100) throw new MMError(503, 'lobby_busy', 'The lobby is busy, try again');
       await new Promise((r) => setTimeout(r, 20));
     }
     try {
       return await fn(await this.loadLobby(code));
     } finally {
-      await this.store.del(key);
+      await this.store.delIfEquals(key, token);
     }
   }
 
@@ -750,7 +940,8 @@ export class Matchmaker {
       throw new MMError(403, 'chat_banned', 'Chat is disabled on this account');
     const filtered = filterChat(raw);
     if (!filtered) throw new MMError(400, 'empty_message', 'Say something first');
-    if (!this.chatLimiter.hit(userId).allowed) throw new MMError(429, 'chat_rate', 'Slow down a little');
+    if (!(await this.chatLimiter.hit(userId)).allowed)
+      throw new MMError(429, 'chat_rate', 'Slow down a little');
     const line: LobbyChatLine = {
       id: randomUUID(),
       code: lobby.code,
@@ -875,6 +1066,10 @@ export class Matchmaker {
       return lobby;
     });
     await this.emit(userId, { type: 'lobby_kicked', code: lobby.code, reason: 'kicked' });
+    if (lobby.status === 'started' && lobby.matchId) {
+      await this.store.set(`match-kicked:${lobby.matchId}:${userId}`, '1', MATCH_TTL_MS);
+      await this.clearPendingMatch(userId, lobby.matchId);
+    }
     const removedFromMatch =
       lobby.status === 'started' && lobby.matchId ? await this.kickFromMatch(lobby.matchId, userId) : null;
     return { lobby, removedFromMatch };

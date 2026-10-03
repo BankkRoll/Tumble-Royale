@@ -13,9 +13,35 @@ export interface MMStore {
   get(key: string): Promise<string | null>;
   set(key: string, value: string, ttlMs?: number): Promise<void>;
   setNX(key: string, value: string, ttlMs: number): Promise<boolean>;
+  /**
+   * Deletes `key` only while it still holds `value`: releases a lock this
+   * caller owns, never one another holder took after it expired.
+   *
+   * @returns True when the key was deleted.
+   */
+  delIfEquals(key: string, value: string): Promise<boolean>;
+  /**
+   * Resets the TTL of `key` only while it still holds `value` (lock renewal).
+   *
+   * @returns True when the caller still owns the key.
+   */
+  expireIfEquals(key: string, value: string, ttlMs: number): Promise<boolean>;
+  /**
+   * Increments a fixed-window counter, starting the window (TTL `windowMs`)
+   * on the first hit.
+   *
+   * @returns The count after this hit and the milliseconds left in the window.
+   */
+  hitWindow(key: string, windowMs: number): Promise<{ count: number; ttlMs: number }>;
   del(key: string): Promise<void>;
   hset(hash: string, field: string, value: string): Promise<void>;
-  hdel(hash: string, field: string): Promise<void>;
+  /**
+   * Removes one hash field.
+   *
+   * @returns True when this call removed it. Of two concurrent callers exactly
+   *   one sees true, so it doubles as an atomic claim.
+   */
+  hdel(hash: string, field: string): Promise<boolean>;
   hgetall(hash: string): Promise<Record<string, string>>;
   publish(channel: string, message: string): Promise<void>;
   subscribe(channel: string, handler: Handler): Promise<() => Promise<void>>;
@@ -51,6 +77,29 @@ export class MemoryStore implements MMStore {
     return true;
   }
 
+  async delIfEquals(key: string, value: string): Promise<boolean> {
+    if ((await this.get(key)) !== value) return false;
+    this.kv.delete(key);
+    return true;
+  }
+
+  async expireIfEquals(key: string, value: string, ttlMs: number): Promise<boolean> {
+    if ((await this.get(key)) !== value) return false;
+    await this.set(key, value, ttlMs);
+    return true;
+  }
+
+  async hitWindow(key: string, windowMs: number): Promise<{ count: number; ttlMs: number }> {
+    const now = this.now();
+    const e = this.kv.get(key);
+    if (!e || e.exp <= now) {
+      this.kv.set(key, { v: '1', exp: now + windowMs });
+      return { count: 1, ttlMs: windowMs };
+    }
+    e.v = String(Number(e.v) + 1);
+    return { count: Number(e.v), ttlMs: e.exp - now };
+  }
+
   async del(key: string): Promise<void> {
     this.kv.delete(key);
   }
@@ -64,8 +113,8 @@ export class MemoryStore implements MMStore {
     h.set(field, value);
   }
 
-  async hdel(hash: string, field: string): Promise<void> {
-    this.hashes.get(hash)?.delete(field);
+  async hdel(hash: string, field: string): Promise<boolean> {
+    return this.hashes.get(hash)?.delete(field) ?? false;
   }
 
   async hgetall(hash: string): Promise<Record<string, string>> {
@@ -92,6 +141,15 @@ export class MemoryStore implements MMStore {
     this.channels.clear();
   }
 }
+
+// Compare-and-delete / compare-and-expire must run as one server-side step: a
+// GET followed by a DEL from Node could delete a lock another instance took in between.
+const DEL_IF_EQUALS = `if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end`;
+const EXPIRE_IF_EQUALS = `if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('pexpire', KEYS[1], ARGV[2]) else return 0 end`;
+
+// INCR and PEXPIRE in one step: a crash between them would leave a counter
+// without a TTL that blocks the key forever.
+const HIT_WINDOW = `local n = redis.call('incr', KEYS[1]) local t = redis.call('pttl', KEYS[1]) if t < 0 then redis.call('pexpire', KEYS[1], ARGV[1]) t = tonumber(ARGV[1]) end return {n, t}`;
 
 /** Redis-backed store. */
 export class RedisStore implements MMStore {
@@ -120,6 +178,19 @@ export class RedisStore implements MMStore {
     return (await this.cmd.set(key, value, 'PX', ttlMs, 'NX')) === 'OK';
   }
 
+  async delIfEquals(key: string, value: string): Promise<boolean> {
+    return (await this.cmd.eval(DEL_IF_EQUALS, 1, key, value)) === 1;
+  }
+
+  async expireIfEquals(key: string, value: string, ttlMs: number): Promise<boolean> {
+    return (await this.cmd.eval(EXPIRE_IF_EQUALS, 1, key, value, String(ttlMs))) === 1;
+  }
+
+  async hitWindow(key: string, windowMs: number): Promise<{ count: number; ttlMs: number }> {
+    const [count, ttl] = (await this.cmd.eval(HIT_WINDOW, 1, key, String(windowMs))) as [number, number];
+    return { count, ttlMs: ttl > 0 ? ttl : windowMs };
+  }
+
   async del(key: string): Promise<void> {
     await this.cmd.del(key);
   }
@@ -128,8 +199,8 @@ export class RedisStore implements MMStore {
     await this.cmd.hset(hash, field, value);
   }
 
-  async hdel(hash: string, field: string): Promise<void> {
-    await this.cmd.hdel(hash, field);
+  async hdel(hash: string, field: string): Promise<boolean> {
+    return (await this.cmd.hdel(hash, field)) > 0;
   }
 
   async hgetall(hash: string): Promise<Record<string, string>> {

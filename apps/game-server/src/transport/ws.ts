@@ -5,6 +5,7 @@
  */
 import type { IncomingMessage, Server } from 'node:http';
 import type { Duplex } from 'node:stream';
+import { clientIp, type TrustFn } from '@tumble/shared/proxy';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import type { Connection, Transport } from './types.ts';
 
@@ -18,6 +19,12 @@ export interface WsTransportOptions {
   softBufferLimit?: number;
   /** The connection is closed above this many queued bytes (client not reading). */
   hardBufferLimit?: number;
+  /** Which proxies may set X-Forwarded-For; false (default) uses the socket address. */
+  trust?: TrustFn | false;
+  /** Refuses an upgrade by its `Origin` header (undefined when absent) with 403. */
+  admitOrigin?: (origin: string | undefined) => boolean;
+  /** Refuses an upgrade from this client address with 429 (too many unhandshaken sockets). */
+  admitAddress?: (ip: string) => boolean;
 }
 
 let nextConnectionId = 1;
@@ -76,6 +83,11 @@ class WsConnection implements Connection {
   }
 }
 
+function refuse(socket: Duplex, status: string): void {
+  socket.write(`HTTP/1.1 ${status}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+  socket.destroy();
+}
+
 function toUint8(data: RawData): Uint8Array {
   if (Array.isArray(data)) return new Uint8Array(Buffer.concat(data));
   if (data instanceof ArrayBuffer) return new Uint8Array(data);
@@ -105,7 +117,7 @@ export class WsTransport implements Transport {
    */
   constructor(
     private readonly server: Server,
-    opts: WsTransportOptions = {},
+    private readonly opts: WsTransportOptions = {},
   ) {
     this.paths = new Set(opts.paths ?? ['/ws', '/gs/ws']);
     this.softLimit = opts.softBufferLimit ?? 64 * 1024;
@@ -149,13 +161,15 @@ export class WsTransport implements Transport {
       socket.destroy();
       return;
     }
+    const origin = req.headers.origin;
+    if (this.opts.admitOrigin && !this.opts.admitOrigin(origin)) return refuse(socket, '403 Forbidden');
+    // SECURITY: only TRUST_PROXY hops may vouch for the client address; the left-most entry is client-written.
+    const addr = clientIp(req, this.opts.trust ?? false);
+    if (this.opts.admitAddress && !this.opts.admitAddress(addr))
+      return refuse(socket, '429 Too Many Requests');
     this.wss.handleUpgrade(req, socket, head, (ws) => {
       const raw = (req.socket as { setNoDelay?: (v: boolean) => void }).setNoDelay;
       raw?.call(req.socket, true);
-      const addr =
-        (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ??
-        req.socket.remoteAddress ??
-        '?';
       const conn = new WsConnection(ws, addr, this, this.softLimit, this.hardLimit);
       this.onConnection?.(conn);
     });

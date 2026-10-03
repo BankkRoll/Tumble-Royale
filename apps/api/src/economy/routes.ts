@@ -1,5 +1,7 @@
 /**
- * Store, purchases, wallet, Gem checkout, the Crown Shard shop and the Stripe webhook.
+ * Store, purchases, wallet, Gem checkout, the Crown Shard shop, the Stripe
+ * webhook and the admin Gem-debt write-off. Refund and chargeback handling
+ * lives in `reversals.ts`.
  *
  * Purchases are idempotent per `(user, Idempotency-Key)`: the purchase row is
  * inserted first inside the transaction, so a concurrent retry with the same
@@ -12,10 +14,19 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.ts';
 import type { DbOrTx } from '../db/client.ts';
-import { currenciesLedger, inventoryItems, purchases } from '../db/schema.ts';
-import { optionalUser, requireUser } from '../http/auth.ts';
-import { ApiError, badRequest, conflict, isUniqueViolation, notFound, parse } from '../http/errors.ts';
-import { applyLedger, type Wallet } from './ledger.ts';
+import { currenciesLedger, inventoryItems, purchases, users } from '../db/schema.ts';
+import { optionalUser, requireAdmin, requireUser } from '../http/auth.ts';
+import {
+  ApiError,
+  badRequest,
+  conflict,
+  forbidden,
+  isUniqueViolation,
+  notFound,
+  parse,
+} from '../http/errors.ts';
+import { applyLedger, readGemDebt, type Wallet } from './ledger.ts';
+import { applyPaymentEvent, creditGemPurchase, forgiveGemDebt, notifyWallets } from './reversals.ts';
 import { registerShardShopRoutes } from './shards.ts';
 import { grantCosmetic, readWallet } from './wallet.ts';
 import { bundleQuotes, currentRotation, priceOffer, storeCatalog } from './store.ts';
@@ -143,7 +154,8 @@ export async function purchaseOffer(
 }
 
 /**
- * Credits a Gem pack purchase exactly once (webhook or fake provider).
+ * Credits a Gem pack purchase exactly once (fake provider; Stripe goes
+ * through {@link applyPaymentEvent}).
  *
  * @returns True when Gems were granted by this call.
  */
@@ -152,28 +164,36 @@ export async function completeGemPurchase(
   purchaseId: string,
   providerRef: string | null,
 ): Promise<boolean> {
-  const granted = await ctx.db.transaction(async (tx) => {
-    const [row] = await tx.select().from(purchases).where(eq(purchases.id, purchaseId)).for('update');
-    if (!row || row.kind !== 'gem_pack') return null;
-    if (row.status === 'completed') return null;
-    const pack = ctx.catalog.gemPacks.find((p) => p.id === row.itemId);
-    if (!pack) throw new Error(`gem pack ${row.itemId} vanished from the catalog`);
-    await applyLedger(tx, {
-      userId: row.userId,
-      currency: 'gems',
-      delta: pack.gems,
-      reason: 'gem_pack',
-      ref: purchaseId,
-    });
-    await tx
-      .update(purchases)
-      .set({ status: 'completed', completedAt: ctx.now(), ...(providerRef ? { providerRef } : {}) })
-      .where(eq(purchases.id, purchaseId));
-    return { userId: row.userId, wallet: await readWallet(tx, row.userId) };
-  });
-  if (!granted) return false;
-  await ctx.notifier.notifyUser(granted.userId, { type: 'wallet', ...granted.wallet });
+  const userId = await ctx.db.transaction((tx) => creditGemPurchase(tx, ctx, purchaseId, providerRef, null));
+  if (!userId) return false;
+  await notifyWallets(ctx, [userId]);
   return true;
+}
+
+/**
+ * Refuses Gem checkout for accounts that may not buy right now.
+ *
+ * @throws {ApiError} 403 `account_required` for guests, 402 `payment_debt`
+ *   while a refund or chargeback left Gem debt.
+ */
+async function assertMayBuyGems(ctx: AppContext, userId: string): Promise<void> {
+  const [user] = await ctx.db.select({ isGuest: users.isGuest }).from(users).where(eq(users.id, userId));
+  // SECURITY: read from the database, not the access token, whose guest claim
+  // is stale for up to 15 minutes after linking (or unlinking) an account.
+  // A guest lives only in one browser's storage: a purchase there could be
+  // lost with the device and could never be recovered or refunded to anyone.
+  if (!user || user.isGuest) {
+    throw forbidden('account_required', 'Link an account before buying Gems so they cannot be lost');
+  }
+  const debt = await readGemDebt(ctx.db, userId);
+  if (debt > 0) {
+    throw new ApiError(
+      402,
+      'payment_debt',
+      'A refunded or disputed payment left your account owing Gems; Gem purchases are paused until it is repaid',
+      { gemDebt: debt },
+    );
+  }
 }
 
 /**
@@ -243,6 +263,8 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
       .limit(50);
     return {
       wallet: await readWallet(ctx.db, auth.userId),
+      /** Gems owed after a refund or chargeback; Gem checkout is paused while positive. */
+      gemDebt: await readGemDebt(ctx.db, auth.userId),
       recent: recent.map((r) => ({
         currency: r.currency,
         delta: r.delta,
@@ -292,6 +314,7 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
       }
       return { ...(existing.response as object), status: existing.status, replayed: true };
     }
+    await assertMayBuyGems(ctx, auth.userId);
 
     const purchaseId = randomUUID();
     try {
@@ -339,22 +362,17 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
   app.post('/webhooks/stripe', { config: { rateLimit: false } }, async (req) => {
     const sig = req.headers['stripe-signature'];
     const event = ctx.payments.parseWebhook(req.rawBody ?? '', typeof sig === 'string' ? sig : undefined);
-    if (event.type === 'checkout_completed') {
-      let purchaseId = event.purchaseId;
-      if (!purchaseId && event.providerRef) {
-        const [row] = await ctx.db
-          .select({ id: purchases.id })
-          .from(purchases)
-          .where(eq(purchases.providerRef, event.providerRef));
-        purchaseId = row?.id ?? null;
-      }
-      if (purchaseId) await completeGemPurchase(ctx, purchaseId, event.providerRef);
-    } else if (event.type === 'checkout_expired' && event.purchaseId) {
-      await ctx.db
-        .update(purchases)
-        .set({ status: 'expired' })
-        .where(and(eq(purchases.id, event.purchaseId), eq(purchases.status, 'pending')));
-    }
-    return { received: true };
+    // Unknown sessions and charges are acknowledged too: a non-2xx would make
+    // Stripe retry an event that can never apply for days.
+    const { duplicate, walletsChanged } = await applyPaymentEvent(ctx, event);
+    await notifyWallets(ctx, walletsChanged);
+    return { received: true, duplicate };
+  });
+
+  app.post('/internal/payments/debt/:userId/forgive', async (req) => {
+    requireAdmin(ctx, req);
+    const { userId } = parse(z.object({ userId: z.string().uuid() }), req.params);
+    const forgiven = await forgiveGemDebt(ctx, userId, `admin:${randomUUID()}`);
+    return { userId, forgiven, gemDebt: await readGemDebt(ctx.db, userId) };
   });
 }

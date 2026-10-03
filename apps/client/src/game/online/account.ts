@@ -76,7 +76,7 @@ import {
 import { loadoutWithItem, profileDressing, randomizedLoadout } from '../profile.ts';
 import { SocialController } from '../social/socialController.ts';
 import { onlineStoreShelves } from '../storeOffers.ts';
-import { gemCheckoutMode, type GemCheckoutMode } from './gemCheckout.ts';
+import { explainGemCheckoutRefusal, gemCheckoutMode, type GemCheckoutMode } from './gemCheckout.ts';
 import type { PartyLobbyLink } from '../views/partyLobbyView.ts';
 import { JsonSocket, type TypedMessage } from './jsonSocket.ts';
 import { partyLobbyLink } from './partyLobbyLink.ts';
@@ -785,6 +785,7 @@ export class OnlineAccount {
         window.location.assign(r.checkoutUrl);
       }
     } catch (err) {
+      if (err instanceof ApiError && explainGemCheckoutRefusal(err.code, err.details)) return;
       const soon = err instanceof ApiError && err.code === 'payments_unavailable';
       s.showDialog({
         id: 'gems-failed',

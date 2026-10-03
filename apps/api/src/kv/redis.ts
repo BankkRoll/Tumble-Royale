@@ -5,6 +5,8 @@
 import { Redis } from 'ioredis';
 import type { KV, MessageHandler, ScoredMember } from './types.ts';
 
+const INCR_WITH_TTL = `local n = redis.call('incr', KEYS[1]) if redis.call('pttl', KEYS[1]) < 0 then redis.call('pexpire', KEYS[1], ARGV[1]) end return n`;
+
 /** ioredis implementation of {@link KV}. */
 export class RedisKV implements KV {
   private readonly cmd: Redis;
@@ -45,9 +47,15 @@ export class RedisKV implements KV {
   }
 
   async incr(key: string, ttlMs?: number): Promise<number> {
-    const n = await this.cmd.incr(key);
-    if (n === 1 && ttlMs) await this.cmd.pexpire(key, ttlMs);
-    return n;
+    if (!ttlMs) return this.cmd.incr(key);
+    // One step: a failure between INCR and PEXPIRE would leave a counter that never
+    // expires, which for a rate-limit bucket means a client blocked for good.
+    return Number(await this.cmd.eval(INCR_WITH_TTL, 1, key, String(ttlMs)));
+  }
+
+  /** Round trip to Redis (health checks); rejects when it does not answer. */
+  async ping(): Promise<void> {
+    await this.cmd.ping();
   }
 
   async zadd(key: string, score: number, member: string): Promise<void> {

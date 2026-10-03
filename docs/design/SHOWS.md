@@ -24,23 +24,23 @@ Player Wall → rewards. Phases mirror `ShowPhase` / `RoundPhase` in
 
 ### 1.1 Phase durations (defaults; all configurable per playlist)
 
-| Phase                      | Duration                                 | Notes                                                                                                                                   |
-| -------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Matchmaking                | until lobby target or **25 s** max wait  | Then bot-fill (§5)                                                                                                                      |
-| PreShow (waiting platform) | 8 s after the lobby locks                | Free movement, emotes; show name + "4 ROUNDS" banner; countdown ring                                                                    |
-| Show intro card            | 5 s                                      | Show title, playlist badge, player count (e.g. "40 TUMBLERS"); announcer `ann_show_intro_*`                                             |
-| **Per round:** LOADING     | ≤ 12 s (humans ack or timeout)           | Round chunk download; late loaders are spectators for that round (flag `lateLoaderEliminated`, default false in casual, true in ranked) |
-| INTRO_FLYOVER              | the round's `flyover.duration` (4–10 s)  | Title card + type badge                                                                                                                 |
-| RULES_CARD                 | 4 s                                      | Objective + 3 tips carousel (≥ 1.3 s per tip)                                                                                           |
-| COUNTDOWN                  | 3.5 s (3-2-1-GO)                         | Players frozen on start gates; jump/emote allowed                                                                                       |
-| PLAYING                    | per round (see LEVELS §10)               | HUD: timer, "QUALIFIED 12 / 26"                                                                                                         |
-| OVERTIME                   | per round (`overtimeSeconds`)            | Only T2 and F1 at launch                                                                                                                |
-| ROUND_END                  | 1.5 s slow-mo + 1.5 s "ROUND OVER" stamp |                                                                                                                                         |
-| RESULTS                    | 6 s                                      | Qualified/eliminated grid, portraits                                                                                                    |
-| TRANSITION                 | 3 s                                      | "PLAYERS REMAINING: 26" + next-round tease (silhouette of the next round's thumbnail)                                                   |
-| Final VICTORY              | 8 s                                      | Winner cam, slow-mo crown grab, fireworks, `mus_victory_crowned`                                                                        |
-| Player Wall                | 12 s (scales: 1.5 s per round + 4 s)     | Every player's cell; eliminated cells drop out round by round                                                                           |
-| Rewards                    | 10–15 s (skippable after 3 s)            | XP bar, level-ups, pass progress, unlocks, Gumballs, RP                                                                                 |
+| Phase                      | Duration                                  | Notes                                                                                                                                                         |
+| -------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Matchmaking                | until lobby target or **25 s** max wait   | Then bot-fill (§5)                                                                                                                                            |
+| PreShow (waiting platform) | 8 s after the lobby locks                 | Free movement, emotes; show name + "4 ROUNDS" banner; countdown ring                                                                                          |
+| Show intro card            | 5 s                                       | Show title, playlist badge, player count (e.g. "40 TUMBLERS"); announcer `ann_show_intro_*`                                                                   |
+| **Per round:** LOADING     | until every connected human acked; ≤ 60 s | Round build + shader compile; slow clients are waited for while they report progress (stall 15 s); late loaders are eliminated (flag `lateLoadersEliminated`) |
+| INTRO_FLYOVER              | the round's `flyover.duration` (4–10 s)   | Title card + type badge                                                                                                                                       |
+| RULES_CARD                 | 4 s                                       | Objective + 3 tips carousel (≥ 1.3 s per tip)                                                                                                                 |
+| COUNTDOWN                  | 3.5 s (3-2-1-GO)                          | Players frozen on start gates; jump/emote allowed                                                                                                             |
+| PLAYING                    | per round (see LEVELS §10)                | HUD: timer, "QUALIFIED 12 / 26"                                                                                                                               |
+| OVERTIME                   | per round (`overtimeSeconds`)             | Only T2 and F1 at launch                                                                                                                                      |
+| ROUND_END                  | 1.5 s slow-mo + 1.5 s "ROUND OVER" stamp  |                                                                                                                                                               |
+| RESULTS                    | 6 s                                       | Qualified/eliminated grid, portraits                                                                                                                          |
+| TRANSITION                 | 3 s                                       | "PLAYERS REMAINING: 26" + next-round tease (silhouette of the next round's thumbnail)                                                                         |
+| Final VICTORY              | 8 s                                       | Winner cam, slow-mo crown grab, fireworks, `mus_victory_crowned`                                                                                              |
+| Player Wall                | 12 s (scales: 1.5 s per round + 4 s)      | Every player's cell; eliminated cells drop out round by round                                                                                                 |
+| Rewards                    | 10–15 s (skippable after 3 s)             | XP bar, level-ups, pass progress, unlocks, Gumballs, RP                                                                                                       |
 
 ### 1.2 Typical show length (40 players, Main Show)
 

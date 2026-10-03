@@ -9,11 +9,12 @@ import { authIdentities, inventoryItems, loadouts, profiles, users } from '../db
 import { requireUser } from '../http/auth.ts';
 import { conflict, notFound, parse } from '../http/errors.ts';
 import { LOADOUT_COUNT, LoadoutItemsSchema, validateLoadout } from '../inventory/loadout.ts';
-import { changeDisplayName, getProfileCard, REGIONS } from './accounts.ts';
+import { moveLeaderboardRegion } from '../leaderboards/service.ts';
+import { accountRegion, changeDisplayName, getProfileCard, RegionSchema } from './accounts.ts';
 
 const PatchMe = z.object({
   displayName: z.string().max(32).optional(),
-  region: z.enum(REGIONS).optional(),
+  region: RegionSchema.optional(),
 });
 const IdParam = z.object({ id: z.string().uuid() });
 const IndexParam = z.object({
@@ -71,7 +72,8 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: AppContext): vo
   app.patch('/me', async (req) => {
     const auth = await requireUser(ctx, req);
     const body = parse(PatchMe, req.body);
-    return ctx.db.transaction(async (tx) => {
+    const previousRegion = body.region ? await accountRegion(ctx.db, auth.userId) : null;
+    const result = await ctx.db.transaction(async (tx) => {
       let name: { displayName: string; tag: string } | undefined;
       if (body.displayName !== undefined) {
         name = await changeDisplayName(
@@ -85,6 +87,10 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: AppContext): vo
       if (body.region) await tx.update(users).set({ region: body.region }).where(eq(users.id, auth.userId));
       return { ...(name ?? {}), ...(body.region ? { region: body.region } : {}) };
     });
+    if (body.region && previousRegion && previousRegion !== body.region) {
+      await moveLeaderboardRegion(ctx, auth.userId, previousRegion, body.region);
+    }
+    return result;
   });
 
   app.get('/profile/:id', async (req) => {

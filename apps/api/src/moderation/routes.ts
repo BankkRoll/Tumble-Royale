@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { and, asc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { accountRegion, RegionSchema } from '../accounts/accounts.ts';
 import type { AppContext } from '../context.ts';
 import { bans, events, featureFlags, reports, users } from '../db/schema.ts';
 import { verifyLedger } from '../economy/ledger.ts';
@@ -41,7 +42,7 @@ const EventsBody = z.object({
 const BoardParams = z.object({ type: z.enum(BOARD_TYPES) });
 const BoardQuery = z.object({
   scope: z.enum(['global', 'regional', 'friends']).default('global'),
-  region: z.string().min(2).max(8).optional(),
+  region: RegionSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).max(10_000).default(0),
 });
@@ -128,7 +129,7 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
     return readLeaderboard(ctx, {
       type,
       scope: q.scope,
-      region: q.region ?? auth.region,
+      region: q.region ?? (q.scope === 'regional' ? await accountRegion(ctx.db, auth.userId) : auth.region),
       userId: auth.userId,
       friendIds: q.scope === 'friends' ? await friendIds(ctx.db, auth.userId) : [],
       limit: q.limit,

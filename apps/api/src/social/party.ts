@@ -11,6 +11,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { accountRegion, RegionSchema } from '../accounts/accounts.ts';
 import { signServiceToken } from '../auth/tokens.ts';
 import type { AppContext } from '../context.ts';
 import { profiles, ratings } from '../db/schema.ts';
@@ -80,7 +81,7 @@ const UserBody = z.object({ userId: z.string().uuid() });
 const ReadyBody = z.object({ ready: z.boolean() });
 const PlaylistBody = z.object({ playlistId: z.string().min(1).max(64) });
 const TicketBody = z
-  .object({ playlistId: z.string().min(1).max(64).optional(), region: z.string().min(2).max(8).optional() })
+  .object({ playlistId: z.string().min(1).max(64).optional(), region: RegionSchema.optional() })
   .optional();
 
 function newCode(): string {
@@ -328,7 +329,7 @@ export async function issueQueueTicket(
     maxPlayers: playlist.maxPlayers,
     minPlayers: playlist.minPlayers,
     botsAllowed: playlist.botsAllowed,
-    region: opts.region ?? auth.region,
+    region: opts.region ?? (await accountRegion(ctx.db, auth.userId)),
     members: memberIds.map((id) => {
       const n = names.find((x) => x.id === id);
       const r = rated.find((x) => x.id === id) ?? DEFAULT_RATING;

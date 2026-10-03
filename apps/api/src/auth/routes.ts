@@ -4,7 +4,13 @@
  */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { createAccount, findIdentity, linkIdentity, type IdentityProvider } from '../accounts/accounts.ts';
+import {
+  createAccount,
+  findIdentity,
+  linkIdentity,
+  RegionSchema,
+  type IdentityProvider,
+} from '../accounts/accounts.ts';
 import type { AppContext } from '../context.ts';
 import type { DbOrTx } from '../db/client.ts';
 import { users } from '../db/schema.ts';
@@ -28,7 +34,8 @@ const MAGIC_LINK_TTL_MS = 15 * 60_000;
 const GuestBody = z.object({
   deviceToken: z.string().min(20).max(200).optional(),
   displayName: z.string().max(32).optional(),
-  region: z.string().max(8).optional(),
+  /** Only used when a new guest is created; existing accounts keep their region. */
+  region: RegionSchema.optional(),
 });
 const RefreshBody = z.object({ refreshToken: z.string().min(20).max(200) });
 const LogoutBody = z.object({ refreshToken: z.string().min(20).max(200).optional() }).optional();

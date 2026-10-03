@@ -2109,6 +2109,15 @@
   align-items: center;
   gap: 0.8em;
 }
+/* Over the 3D wall the wall banner names the round; the overlay only adds the tallies along the bottom. */
+.tr-results--3d {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  background: none;
+  padding-bottom: calc(var(--safe-b) + 1.4em);
+}
 .tr-results-grid {
   display: grid;
   grid-template-columns: repeat(8, minmax(0, 1fr));

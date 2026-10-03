@@ -100,7 +100,10 @@ export function createPreShowView(
         anim.verticalSpeed = vel.y;
         anim.facing = c.facing;
         anim.grounded = c.grounded;
-        anim.emote = c.state === CharacterState.Emote && c.emote > 0 ? (local.loadout.emotes[c.emote - 1] ?? null) : null;
+        anim.emote =
+          c.state === CharacterState.Emote && c.emote > 0
+            ? (local.loadout.emotes[c.emote - 1] ?? null)
+            : null;
       }
       // Slow orbit like the arena's crane, but centred on the player and close enough to see them.
       const a = t * 0.05 + 0.6;
@@ -146,7 +149,11 @@ export function createResultsView(
   bouncers: readonly TumblerLoadout[],
   mood: ResultsMood,
 ): GameView {
-  const scene = createResultsBackdrop({ ...sceneOptions(theme, preset, createTumbler), bouncers: bouncers.slice(0, 5), mood });
+  const scene = createResultsBackdrop({
+    ...sceneOptions(theme, preset, createTumbler),
+    bouncers: bouncers.slice(0, 5),
+    mood,
+  });
   return wrapScene('results', scene);
 }
 
@@ -177,7 +184,11 @@ export function createPodiumView(
   runnersUp: readonly PodiumPlayer[],
   post: CeremonyPost,
 ): PodiumView {
-  const podium = createVictoryPodium({ ...sceneOptions(theme, preset, createTumbler), winner, runnersUp: runnersUp.slice(0, 2) });
+  const podium = createVictoryPodium({
+    ...sceneOptions(theme, preset, createTumbler),
+    winner,
+    runnersUp: runnersUp.slice(0, 2),
+  });
   podium.attachPost(post);
   let burst = 1.2;
   const view = wrapScene('podium', podium, {
@@ -302,6 +313,98 @@ export class WallView implements GameView {
         this.wall.beat({ type: 'intro' });
       }
     }
+    this.wall.update(realDt);
+  }
+
+  resize(width: number, height: number): void {
+    this.wall.resize(width, height);
+  }
+
+  dispose(): void {
+    this.wall.attachPost(null);
+    this.wall.dispose();
+  }
+}
+
+/**
+ * Round results on the 3D wall: everyone who played the round stands in a
+ * cubby and the round's eliminated players drop out one after another. It
+ * schedules its own beats so the whole recap fits the results phase.
+ */
+export class RoundWallView implements GameView {
+  readonly kind = 'roundWall';
+  readonly wall: PlayerWallScene;
+  private clock = 0;
+  private readonly beats: { at: number; run: () => void }[] = [];
+  private next = 0;
+
+  /**
+   * @param theme - Wall theme.
+   * @param preset - Quality preset.
+   * @param createTumbler - Tumbler factory.
+   * @param roundNumber - 1-based round number for the header.
+   * @param round - Players in the round and those eliminated, in drop order.
+   * @param post - Post effects.
+   */
+  constructor(
+    theme: ThemeDefinition,
+    preset: QualityPreset,
+    createTumbler: CreateTumblerVisual,
+    roundNumber: number,
+    round: { name: string; players: PlayerWallSummary['players']; eliminatedIds: readonly string[] },
+    post: CeremonyPost,
+  ) {
+    this.wall = createPlayerWallScene({
+      ...sceneOptions(theme, preset, createTumbler),
+      capacity: Math.max(20, round.players.length),
+      title: `ROUND ${roundNumber}`,
+    });
+    this.wall.attachPost(post);
+    this.wall.startDrivenRecap({
+      players: round.players,
+      // Earlier rounds are blank placeholders so the wall banner numbers this round correctly.
+      rounds: [
+        ...Array.from({ length: roundNumber - 1 }, () => ({ name: '', eliminatedIds: [] as string[] })),
+        { name: round.name, eliminatedIds: round.eliminatedIds },
+      ],
+      winnerId: null,
+    });
+    const out = round.eliminatedIds;
+    const ri = roundNumber - 1;
+    // Drops spread over at most ~2.4 s so even a 14-player cut ends inside the 6 s results phase.
+    const gap = out.length > 0 ? Math.min(0.32, 2.4 / out.length) : 0;
+    this.beats.push({ at: 0.3, run: () => this.wall.beat({ type: 'round', roundIndex: ri }) });
+    if (out.length > 0) {
+      this.beats.push({ at: 1.3, run: () => this.wall.beat({ type: 'flash', roundIndex: ri, ids: out }) });
+      out.forEach((id, i) => {
+        this.beats.push({
+          at: 1.9 + i * gap,
+          run: () => this.wall.beat({ type: 'drop', roundIndex: ri, id, order: i }),
+        });
+      });
+    }
+    this.beats.push({
+      at: 2.3 + out.length * gap,
+      run: () => this.wall.beat({ type: 'roundEnd', roundIndex: ri }),
+    });
+  }
+
+  get scene(): GameView['scene'] {
+    return this.wall.scene;
+  }
+
+  get camera(): GameView['camera'] {
+    return this.wall.camera;
+  }
+
+  get grade(): GameView['grade'] {
+    return this.wall.grade;
+  }
+
+  update(_dt: number, realDt: number): void {
+    this.clock += realDt;
+    while (this.next < this.beats.length && this.beats[this.next]!.at <= this.clock)
+      this.beats[this.next++]!.run();
     this.wall.update(realDt);
   }
 

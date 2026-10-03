@@ -829,6 +829,8 @@ export interface RoundResults {
   roundType: RoundType;
   roundIndex: number;
   entries: ResultsEntry[];
+  /** The 3D wall behind the overlay shows the players; the overlay keeps only its title and tallies. */
+  render3D?: boolean;
 }
 
 /** Between-rounds tease. */

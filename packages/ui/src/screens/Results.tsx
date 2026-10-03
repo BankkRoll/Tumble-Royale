@@ -61,53 +61,61 @@ export function RoundResultsScreen(): JSX.Element | null {
   const out = results.entries.length - q;
 
   return (
-    <div className="tr-screen tr-results">
-      <div className="tr-results-head tr-enter-drop">
-        <TypeBadge type={results.roundType} />
-        <h1 className="tr-title tr-h2">{results.roundName} — results</h1>
-      </div>
-      <div
-        className="tr-results-grid"
-        style={{
-          ['--n' as string]: String(results.entries.length),
-          ['--rows' as string]: String(Math.ceil(results.entries.length / 8)),
-          ['--rows-m' as string]: String(Math.ceil(results.entries.length / 5)),
-        }}
-      >
-        {ordered.cells.map((e, i) => (
-          <div
-            key={e.player.id}
-            className={`tr-res-card${e.qualified ? ' is-q' : ' is-out'}${e.player.isLocal ? ' is-local' : ''}`}
-            style={{
-              ['--enter' as string]: `${Math.min(i * 18, 600)}ms`,
-              ['--flip' as string]: `${ordered.flipDelay.get(e.player.id) ?? FLIP_START}ms`,
-            }}
-          >
-            <div className="tr-res-inner">
-              <div className="tr-res-front">
-                <TumblerAvatar
-                  colors={e.player.colors}
-                  hat={e.player.hat}
-                  expression={e.qualified ? 'grin' : 'sad'}
-                  size="56%"
-                  blink={false}
-                  noShadow
-                />
-                <span className="tr-res-name tr-ellipsis">{name(e.player)}</span>
-                <span className="tr-res-mark" aria-label={e.qualified ? 'Qualified' : 'Eliminated'}>
-                  {e.qualified ? <Icon name="check" size="0.8em" /> : <Icon name="close" size="0.8em" />}
-                </span>
-                {e.player.isLocal && <span className="tr-res-you">YOU</span>}
+    <div className={`tr-screen tr-results${results.render3D ? ' tr-results--3d' : ''}`}>
+      {!results.render3D && (
+        <div className="tr-results-head tr-enter-drop">
+          <TypeBadge type={results.roundType} />
+          <h1 className="tr-title tr-h2">{results.roundName} — results</h1>
+        </div>
+      )}
+      {!results.render3D && (
+        <div
+          className="tr-results-grid"
+          style={{
+            ['--n' as string]: String(results.entries.length),
+            ['--rows' as string]: String(Math.ceil(results.entries.length / 8)),
+            ['--rows-m' as string]: String(Math.ceil(results.entries.length / 5)),
+          }}
+        >
+          {ordered.cells.map((e, i) => (
+            <div
+              key={e.player.id}
+              className={`tr-res-card${e.qualified ? ' is-q' : ' is-out'}${e.player.isLocal ? ' is-local' : ''}`}
+              style={{
+                ['--enter' as string]: `${Math.min(i * 18, 600)}ms`,
+                ['--flip' as string]: `${ordered.flipDelay.get(e.player.id) ?? FLIP_START}ms`,
+              }}
+            >
+              <div className="tr-res-inner">
+                <div className="tr-res-front">
+                  <TumblerAvatar
+                    colors={e.player.colors}
+                    hat={e.player.hat}
+                    expression={e.qualified ? 'grin' : 'sad'}
+                    size="56%"
+                    blink={false}
+                    noShadow
+                  />
+                  <span className="tr-res-name tr-ellipsis">{name(e.player)}</span>
+                  <span className="tr-res-mark" aria-label={e.qualified ? 'Qualified' : 'Eliminated'}>
+                    {e.qualified ? <Icon name="check" size="0.8em" /> : <Icon name="close" size="0.8em" />}
+                  </span>
+                  {e.player.isLocal && <span className="tr-res-you">YOU</span>}
+                </div>
+                <div className="tr-res-back" aria-hidden />
               </div>
-              <div className="tr-res-back" aria-hidden />
             </div>
-          </div>
-        ))}
-      </div>
-      {step >= 1 && (
+          ))}
+        </div>
+      )}
+      {(step >= 1 || results.render3D) && (
         <div className="tr-results-summary tr-enter">
-          <span className="tr-chip tr-chip--good"><Icon name="check" size="0.9em" /> {q} qualified</span>
-          <span className="tr-chip tr-chip--bad"><Icon name="close" size="0.9em" /> {out} eliminated</span>
+          <span className="tr-chip tr-chip--good">
+            <Icon name="check" size="0.9em" /> {q} qualified
+          </span>
+          <span className="tr-chip tr-chip--bad">
+            <Icon name="close" size="0.9em" /> {out} eliminated
+          </span>
         </div>
       )}
     </div>
@@ -149,7 +157,9 @@ export function BetweenRoundsScreen(): JSX.Element | null {
               <div className="tr-title tr-h2 tr-between-mystery">???</div>
             )}
             {info.next.isFinal && step >= 3 && (
-              <span className="tr-chip tr-chip--lemon"><Icon name="crown" size="1em" /> It's the final!</span>
+              <span className="tr-chip tr-chip--lemon">
+                <Icon name="crown" size="1em" /> It's the final!
+              </span>
             )}
           </div>
         )}
@@ -286,7 +296,9 @@ export function WinnerCamScreen(): JSX.Element | null {
           <TumblerAvatar colors={v.winner.colors} hat="crown" expression="cheer" size="4em" />
           <div className="tr-title tr-h2">{name(v.winner)}</div>
         </div>
-        <span className="tr-chip tr-chip--lemon"><Icon name="crown" size="1em" /> Took the Crown in {v.showName}</span>
+        <span className="tr-chip tr-chip--lemon">
+          <Icon name="crown" size="1em" /> Took the Crown in {v.showName}
+        </span>
       </div>
       <div className="tr-winnercam-actions tr-interactive" data-nav-scope="1">
         {['GG!', 'Wow!', 'Next time…'].map((t) => (

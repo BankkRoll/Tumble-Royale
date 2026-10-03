@@ -42,7 +42,13 @@ import { HudMapper, type HudInput } from '../round/hud.ts';
 import { TumblerPool } from '../round/playerVisuals.ts';
 import { RoundView } from '../round/roundView.ts';
 import type { RoundSource } from '../round/source.ts';
-import { createPodiumView, createPreShowView, createResultsView, WallView, type PreShowView } from '../views/ceremonies.ts';
+import {
+  createPodiumView,
+  createPreShowView,
+  RoundWallView,
+  WallView,
+  type PreShowView,
+} from '../views/ceremonies.ts';
 import type { GameContext, RoundOutcomeInfo, RoundStart, SessionPlayer, SessionSummary } from './context.ts';
 
 /** Local player's fate in the current round. */
@@ -90,21 +96,55 @@ export function estimateRoundCount(p: ShowPlaylist, players: number): number {
 }
 
 /** Rules card pictograms per round type. */
-function rulesFor(type: RoundType, isFinal: boolean, target: number, seconds: number): { icon: string; text: string }[] {
-  if (isFinal) return [{ icon: '👑', text: 'Only one Tumbler wins' }, { icon: '🏁', text: type === 'race' ? 'First to the finish!' : 'Be the last one standing' }, { icon: '🏆', text: 'Win the Crown!' }];
+function rulesFor(
+  type: RoundType,
+  isFinal: boolean,
+  target: number,
+  seconds: number,
+): { icon: string; text: string }[] {
+  if (isFinal)
+    return [
+      { icon: '👑', text: 'Only one Tumbler wins' },
+      { icon: '🏁', text: type === 'race' ? 'First to the finish!' : 'Be the last one standing' },
+      { icon: '🏆', text: 'Win the Crown!' },
+    ];
   switch (type) {
     case 'race':
-      return [{ icon: '🏁', text: 'Reach the finish line' }, { icon: '⚠️', text: 'Dodge the obstacles' }, { icon: '✅', text: `First ${target} qualify` }];
+      return [
+        { icon: '🏁', text: 'Reach the finish line' },
+        { icon: '⚠️', text: 'Dodge the obstacles' },
+        { icon: '✅', text: `First ${target} qualify` },
+      ];
     case 'survival':
-      return [{ icon: '⏳', text: `Survive ${Math.round(seconds)} seconds` }, { icon: '🌀', text: "Don't fall off!" }, { icon: '✅', text: 'Survivors qualify' }];
+      return [
+        { icon: '⏳', text: `Survive ${Math.round(seconds)} seconds` },
+        { icon: '🌀', text: "Don't fall off!" },
+        { icon: '✅', text: 'Survivors qualify' },
+      ];
     case 'team':
-      return [{ icon: '🤝', text: 'Work with your team' }, { icon: '🎯', text: 'Score the most points' }, { icon: '📉', text: 'Lowest team is out' }];
+      return [
+        { icon: '🤝', text: 'Work with your team' },
+        { icon: '🎯', text: 'Score the most points' },
+        { icon: '📉', text: 'Lowest team is out' },
+      ];
     case 'hunt':
-      return [{ icon: '🎀', text: 'Grab a tail' }, { icon: '✊', text: 'Hold on to it' }, { icon: '⏰', text: 'Have one when time runs out' }];
+      return [
+        { icon: '🎀', text: 'Grab a tail' },
+        { icon: '✊', text: 'Hold on to it' },
+        { icon: '⏰', text: 'Have one when time runs out' },
+      ];
     case 'logic':
-      return [{ icon: '🧠', text: 'Watch the pattern' }, { icon: '🟩', text: 'Stand on the right tile' }, { icon: '⬇️', text: 'Wrong tiles drop away' }];
+      return [
+        { icon: '🧠', text: 'Watch the pattern' },
+        { icon: '🟩', text: 'Stand on the right tile' },
+        { icon: '⬇️', text: 'Wrong tiles drop away' },
+      ];
     default:
-      return [{ icon: '👑', text: 'Only one Tumbler wins' }, { icon: '🏁', text: 'Reach the top first' }, { icon: '🏆', text: 'Win the Crown!' }];
+      return [
+        { icon: '👑', text: 'Only one Tumbler wins' },
+        { icon: '🏁', text: 'Reach the top first' },
+        { icon: '🏆', text: 'Win the Crown!' },
+      ];
   }
 }
 
@@ -415,8 +455,22 @@ export abstract class ShowSession {
   /** UI participant for a player id. */
   protected uiPlayer(id: number): ShowPlayer {
     const p = this.players.get(id);
-    if (!p) return { id, name: `Tumbler ${id}`, colors: { primary: '#ff6fb5', secondary: '#ffd23f', pattern: 'plain' }, isBot: true };
-    return showPlayer(id, p.name, p.loadout, { isBot: p.isBot, isLocal: id === this.localId, ...(p.partyId !== undefined && id !== this.localId && p.partyId === this.players.get(this.localId)?.partyId ? { isParty: true } : {}) });
+    if (!p)
+      return {
+        id,
+        name: `Tumbler ${id}`,
+        colors: { primary: '#ff6fb5', secondary: '#ffd23f', pattern: 'plain' },
+        isBot: true,
+      };
+    return showPlayer(id, p.name, p.loadout, {
+      isBot: p.isBot,
+      isLocal: id === this.localId,
+      ...(p.partyId !== undefined &&
+      id !== this.localId &&
+      p.partyId === this.players.get(this.localId)?.partyId
+        ? { isParty: true }
+        : {}),
+    });
   }
 
   private toast(title: string, icon: string, id: number): void {
@@ -455,8 +509,17 @@ export abstract class ShowSession {
         return { id: String(id), name: p.name, loadout: p.loadout };
       });
       // Autoplay keeps the pre-show hands-off; a human can roam the platform until the show starts.
-      const control = this.ctx.cfg.autoplay ? undefined : { R: this.ctx.R, input: this.ctx.input, audio: this.ctx.audio.game };
-      this.preShow = createPreShowView(getTheme('candy'), this.ctx.quality.preset, this.ctx.tumblers.create, arenaPlayers, this.localId >= 0 ? String(this.localId) : undefined, control);
+      const control = this.ctx.cfg.autoplay
+        ? undefined
+        : { R: this.ctx.R, input: this.ctx.input, audio: this.ctx.audio.game };
+      this.preShow = createPreShowView(
+        getTheme('candy'),
+        this.ctx.quality.preset,
+        this.ctx.tumblers.create,
+        arenaPlayers,
+        this.localId >= 0 ? String(this.localId) : undefined,
+        control,
+      );
       this.preShow.arena.setBanner(this.showName.toUpperCase(), `${this.roundCount} ROUNDS · starting soon`);
       this.ctx.director.show(this.preShow);
     });
@@ -466,7 +529,8 @@ export abstract class ShowSession {
       if (this.ended || joined >= names.length) return;
       joined = Math.min(names.length, joined + 2);
       const info = ui.getState().preShow;
-      if (info) ui.getState().setPreShow({ ...info, playersJoined: joined, joinFeed: names.slice(0, joined) });
+      if (info)
+        ui.getState().setPreShow({ ...info, playersJoined: joined, joinFeed: names.slice(0, joined) });
       this.after(0.18, feed);
     };
     this.after(0.6, feed);
@@ -530,7 +594,10 @@ export abstract class ShowSession {
     }
     if (rs.isFinal) {
       this.after(wait, () => {
-        ui.getState().setFinalHype({ roundName: rs.round.name, finalists: rs.players.map((p) => this.uiPlayer(p.id)) });
+        ui.getState().setFinalHype({
+          roundName: rs.round.name,
+          finalists: rs.players.map((p) => this.uiPlayer(p.id)),
+        });
         ui.getState().setScreen('finalHype', { transition: 'wipe' });
       });
       wait += 3.6;
@@ -617,7 +684,12 @@ export abstract class ShowSession {
     );
     this.ctx.audio.game.setLocalPlayer(r.inRound ? this.localId : null);
     if (this.ctx.cfg.autoplay && r.inRound) {
-      this.pilot = createBotBrain({ id: this.localId, skill: 'sharp', seed: (r.start.seed ^ 0x51ab) >>> 0, round: r.start.round });
+      this.pilot = createBotBrain({
+        id: this.localId,
+        skill: 'sharp',
+        seed: (r.start.seed ^ 0x51ab) >>> 0,
+        round: r.start.round,
+      });
       this.pilotSelf.checkpoint = 0;
     } else this.pilot = null;
     this.maybeShowIntro();
@@ -632,7 +704,12 @@ export abstract class ShowSession {
     ui.getState().releaseWipe();
     r.view.playFlyover();
     const rs = r.start;
-    this.ctx.audio.game.onRoundPhase(RoundPhase.IntroFlyover, rs.round.type, { roundNumber: rs.index + 1, roundName: rs.round.name, theme: rs.round.theme, isFinal: rs.isFinal });
+    this.ctx.audio.game.onRoundPhase(RoundPhase.IntroFlyover, rs.round.type, {
+      roundNumber: rs.index + 1,
+      roundName: rs.round.name,
+      theme: rs.round.theme,
+      isFinal: rs.isFinal,
+    });
     this.release();
     // A late intro (online, slow load) catches up with phases that already passed.
     if (this.phase >= RoundPhase.RulesCard) this.applyPhase(this.phase);
@@ -660,7 +737,12 @@ export abstract class ShowSession {
     if (!r) return;
     const s = ui.getState();
     const rs = r.start;
-    const audioInfo = { roundNumber: rs.index + 1, roundName: rs.round.name, theme: rs.round.theme, isFinal: rs.isFinal };
+    const audioInfo = {
+      roundNumber: rs.index + 1,
+      roundName: rs.round.name,
+      theme: rs.round.theme,
+      isFinal: rs.isFinal,
+    };
     switch (phase) {
       case RoundPhase.RulesCard:
         s.setScreen('rules', { transition: 'fade' });
@@ -668,7 +750,12 @@ export abstract class ShowSession {
         break;
       case RoundPhase.Countdown: {
         const set = this.ctx.settings();
-        r.hud?.begin(emoteSlots(this.players.get(this.localId)?.loadout.emotes ?? []), !r.inRound, this.ctx.input.lastDevice, rs.qualifyTarget);
+        r.hud?.begin(
+          emoteSlots(this.players.get(this.localId)?.loadout.emotes ?? []),
+          !r.inRound,
+          this.ctx.input.lastDevice,
+          rs.qualifyTarget,
+        );
         if (!r.inRound) {
           r.fate = 'spectating';
           this.spectateLeader();
@@ -737,23 +824,48 @@ export abstract class ShowSession {
     for (const p of rs.players) if (!ordered.includes(p.id)) ordered.push(p.id);
     const entries = ordered
       .filter((id) => entrants.has(id))
-      .map((id) => ({ player: this.uiPlayer(id), qualified: qualified.has(id), place: qualified.has(id) ? place++ : 0 }));
+      .map((id) => ({
+        player: this.uiPlayer(id),
+        qualified: qualified.has(id),
+        place: qualified.has(id) ? place++ : 0,
+      }));
     const s = ui.getState();
     s.clearStamps();
     s.setSpectate(null);
     s.setEliminatedSheet(false);
-    s.setResults({ roundName: rs.round.name, roundType: rs.isFinal ? 'final' : rs.round.type, roundIndex: rs.index, entries });
+    s.setResults({
+      roundName: rs.round.name,
+      roundType: rs.isFinal ? 'final' : rs.round.type,
+      roundIndex: rs.index,
+      entries,
+      render3D: true,
+    });
     if (r.inRound) this.recordLocalRound(qualified.has(this.localId));
-    const mood = !r.inRound ? 'neutral' : qualified.has(this.localId) ? 'qualified' : 'eliminated';
-    const bouncers = o.qualified.slice(0, 5).map((id) => this.players.get(id)?.loadout).filter((l): l is TumblerLoadout => !!l);
+    const wallPlayers = rs.players
+      .map((p) => this.players.get(p.id))
+      .filter((p): p is SessionPlayer => !!p)
+      .map((p) => ({ id: String(p.id), name: p.name, loadout: p.loadout }));
+    const eliminated = o.eliminated.filter((id) => entrants.has(id)).map(String);
     this.swapUnder('roundResults', { transition: 'wipe' }, () => {
-      this.ctx.director.show(createResultsView(getTheme(rs.round.theme), this.ctx.quality.preset, this.ctx.tumblers.create, bouncers, mood));
+      this.ctx.director.show(
+        new RoundWallView(
+          getTheme('candy'),
+          this.ctx.quality.preset,
+          this.ctx.tumblers.create,
+          rs.index + 1,
+          { name: rs.round.name, players: wallPlayers, eliminatedIds: eliminated },
+          this.ctx.post,
+        ),
+      );
       if (this.round === r) {
         r.view = null;
         r.source = null;
       }
     });
-    this.ctx.audio.game.onRoundPhase(RoundPhase.Results, rs.round.type, { playersRemaining: o.qualified.length, theme: rs.round.theme });
+    this.ctx.audio.game.onRoundPhase(RoundPhase.Results, rs.round.type, {
+      playersRemaining: o.qualified.length,
+      theme: rs.round.theme,
+    });
     this.ctx.audio.game.onShowPhase(ShowPhase.BetweenRounds);
   }
 
@@ -771,7 +883,9 @@ export abstract class ShowSession {
       roundId: rs.round.id,
       of: rs.players.length,
       ...(idx >= 0 ? { place: idx + 1 } : {}),
-      ...(qualified && rs.round.type === 'race' && r.qualifiedAfter !== undefined ? { timeSec: Math.round(r.qualifiedAfter * 10) / 10 } : {}),
+      ...(qualified && rs.round.type === 'race' && r.qualifiedAfter !== undefined
+        ? { timeSec: Math.round(r.qualifiedAfter * 10) / 10 }
+        : {}),
     });
   }
 
@@ -783,7 +897,13 @@ export abstract class ShowSession {
       .map((id) => {
         const p = this.uiPlayer(id);
         const place = placements?.get(id) ?? this.order.length;
-        return { name: p.name, colors: p.colors, isBot: p.isBot, place, crowned: this.summary?.winnerId === id };
+        return {
+          name: p.name,
+          colors: p.colors,
+          isBot: p.isBot,
+          place,
+          crowned: this.summary?.winnerId === id,
+        };
       });
   }
 
@@ -813,11 +933,13 @@ export abstract class ShowSession {
       switch (e.type) {
         case 'qualified':
           if (mine) this.localQualified();
-          else if (r && r.start.round.type === 'race') this.toast(`${this.players.get(e.player)?.name ?? 'Someone'} qualified!`, '🏁', e.player);
+          else if (r && r.start.round.type === 'race')
+            this.toast(`${this.players.get(e.player)?.name ?? 'Someone'} qualified!`, '🏁', e.player);
           break;
         case 'eliminated':
           if (mine) this.localEliminated();
-          else if (r && r.start.round.type !== 'race') this.toast(`${this.players.get(e.player)?.name ?? 'Someone'} is out!`, '💨', e.player);
+          else if (r && r.start.round.type !== 'race')
+            this.toast(`${this.players.get(e.player)?.name ?? 'Someone'} is out!`, '💨', e.player);
           break;
         case 'checkpoint':
           if (mine) {
@@ -928,7 +1050,11 @@ export abstract class ShowSession {
     r.view?.spectate(id);
     const st = this.liveStatus()?.players?.get(id);
     const qualified = st?.status === PlayerRoundStatus.Qualified;
-    const detail = qualified ? 'Qualified!' : index === 0 ? 'In the lead' : `${index + 1}${['st', 'nd', 'rd'][index] ?? 'th'} place`;
+    const detail = qualified
+      ? 'Qualified!'
+      : index === 0
+        ? 'In the lead'
+        : `${index + 1}${['st', 'nd', 'rd'][index] ?? 'th'} place`;
     ui.getState().setSpectate({ player: this.uiPlayer(id), detail, qualified, index, count });
   }
 
@@ -941,7 +1067,8 @@ export abstract class ShowSession {
       if (binds.spectatePrev.includes(e.code)) this.cycleSpectate(-1);
       else if (binds.spectateNext.includes(e.code)) this.cycleSpectate(1);
     }
-    if (e.code === 'Escape' && ui.getState().screen === 'round' && ui.getState().overlay === 'none') ui.getState().setOverlay('settings');
+    if (e.code === 'Escape' && ui.getState().screen === 'round' && ui.getState().overlay === 'none')
+      ui.getState().setOverlay('settings');
   }
 
   // ---------------------------------------------------------------------------
@@ -1009,7 +1136,8 @@ export abstract class ShowSession {
     const view = r?.view ?? null;
     const active = this.controlsActive;
     const spectating = r?.fate === 'spectating' || r?.fate === 'qualified';
-    input.settings.pointerLock = !!view && (active || spectating) && !this.ctx.cfg.autoplay && ui.getState().screen === 'round';
+    input.settings.pointerLock =
+      !!view && (active || spectating) && !this.ctx.cfg.autoplay && ui.getState().screen === 'round';
     const look = input.readLook(realDt);
     if (!view || !r) return;
     if (active || spectating) view.rig.addLook(look.yaw, look.pitch);
@@ -1033,7 +1161,8 @@ export abstract class ShowSession {
       }
     }
     const p = this.phase ?? 0;
-    if (st && r.hud && p >= RoundPhase.Countdown && p <= RoundPhase.RoundEnd) r.hud.update(realDt, st, this.ctx.fps(), this.ping());
+    if (st && r.hud && p >= RoundPhase.Countdown && p <= RoundPhase.RoundEnd)
+      r.hud.update(realDt, st, this.ctx.fps(), this.ping());
 
     if (r.fate === 'spectating' && r.spectateId >= 0 && (this.phase ?? 0) < RoundPhase.RoundEnd) {
       const ps = st?.players?.get(r.spectateId);
@@ -1059,7 +1188,12 @@ export abstract class ShowSession {
     s.setEliminatedSheet(false);
     const rounds = summary.rounds.map((o) => {
       const carried = new Set(o.qualified);
-      return { roundId: o.roundId, name: o.name, type: o.isFinal ? ('final' as const) : o.type, eliminatedIds: o.eliminated.filter((id) => !carried.has(id) && id !== summary.winnerId) };
+      return {
+        roundId: o.roundId,
+        name: o.name,
+        type: o.isFinal ? ('final' as const) : o.type,
+        eliminatedIds: o.eliminated.filter((id) => !carried.has(id) && id !== summary.winnerId),
+      };
     });
     this.uiSummary = {
       showName: this.showName,
@@ -1071,13 +1205,22 @@ export abstract class ShowSession {
     const winnerId = summary.winnerId;
     const localWon = winnerId !== null && winnerId === this.localId;
     const winner = winnerId !== null ? this.players.get(winnerId) : undefined;
-    this.ctx.audio.game.onShowPhase(ShowPhase.Victory, { localWon, ...(winner ? { winnerName: winner.name } : {}) });
+    this.ctx.audio.game.onShowPhase(ShowPhase.Victory, {
+      localWon,
+      ...(winner ? { winnerName: winner.name } : {}),
+    });
     if (!winner || winnerId === null) {
       this.after(1.2, () => this.goWall());
       return;
     }
     const crowns = this.ctx.crowns();
-    s.setVictory({ winner: this.uiPlayer(winnerId), isLocalWinner: localWon, crownsBefore: crowns, crownsAfter: crowns + (localWon ? 1 : 0), showName: this.showName });
+    s.setVictory({
+      winner: this.uiPlayer(winnerId),
+      isLocalWinner: localWon,
+      crownsBefore: crowns,
+      crownsAfter: crowns + (localWon ? 1 : 0),
+      showName: this.showName,
+    });
     const finalTheme = getTheme(this.round?.start.round.theme ?? 'candy');
     const ranked = [...summary.placements.entries()].sort((a, b) => a[1] - b[1]).map(([id]) => id);
     const runnersUp = ranked
@@ -1087,7 +1230,16 @@ export abstract class ShowSession {
       .filter((p): p is SessionPlayer => !!p)
       .map((p) => ({ name: p.name, loadout: p.loadout }));
     this.swapUnder(localWon ? 'victory' : 'winnerCam', { transition: 'wipe' }, () => {
-      this.ctx.director.show(createPodiumView(finalTheme, this.ctx.quality.preset, this.ctx.tumblers.create, { name: winner.name, loadout: winner.loadout }, runnersUp, this.ctx.post));
+      this.ctx.director.show(
+        createPodiumView(
+          finalTheme,
+          this.ctx.quality.preset,
+          this.ctx.tumblers.create,
+          { name: winner.name, loadout: winner.loadout },
+          runnersUp,
+          this.ctx.post,
+        ),
+      );
       if (this.round) {
         this.round.view = null;
         this.round.source = null;
@@ -1113,7 +1265,13 @@ export abstract class ShowSession {
         rounds: uiSummary.rounds.map((r) => ({ name: r.name, eliminatedIds: r.eliminatedIds.map(String) })),
         winnerId: summary.winnerId !== null ? String(summary.winnerId) : null,
       };
-      this.wall = new WallView(getTheme('candy'), this.ctx.quality.preset, this.ctx.tumblers.create, wall3d, this.ctx.post);
+      this.wall = new WallView(
+        getTheme('candy'),
+        this.ctx.quality.preset,
+        this.ctx.tumblers.create,
+        wall3d,
+        this.ctx.post,
+      );
       this.ctx.director.show(this.wall);
     });
   }
@@ -1150,7 +1308,9 @@ export abstract class ShowSession {
     const summary = this.summary;
     const rounds = this.localRounds();
     const finalOutcome = summary.rounds[summary.rounds.length - 1];
-    const reachedFinal = !!finalOutcome?.isFinal && (finalOutcome.qualified.includes(this.localId) || finalOutcome.eliminated.includes(this.localId));
+    const reachedFinal =
+      !!finalOutcome?.isFinal &&
+      (finalOutcome.qualified.includes(this.localId) || finalOutcome.eliminated.includes(this.localId));
     const rewards = this.computeRewards({
       playlistName: this.showName,
       rounds,

@@ -25,7 +25,8 @@ import {
   Vector3,
 } from 'three/webgpu';
 import { abs, color, float, fract, max, mix, smoothstep, uniform, uv, vec2 } from 'three/tsl';
-import { TEAM_COLORS, hash01 } from '@tumble/shared';
+import { hash01 } from '@tumble/shared';
+import { teamColor } from '../teamPalette.ts';
 import type { ObstacleRuntime } from '@tumble/sim';
 import { GoalZoneSchema, type GoalZoneParams, type GoalZoneView } from '@tumble/sim/obstacles';
 import {
@@ -72,7 +73,7 @@ class GoalZoneVisual {
     const p = (this.p = parseParams(GoalZoneSchema, instance));
     applyInstanceTransform(this.object, instance);
     this.object.name = `obstacle:${instance.id}`;
-    this.teamColor = new Color(TEAM_COLORS[p.team % TEAM_COLORS.length]!);
+    this.teamColor = new Color(teamColor(p.team));
     this.seeds = new Float32Array(CONFETTI * 3);
     for (let i = 0; i < this.seeds.length; i++) this.seeds[i] = hash01(i * 13 + p.team * 101);
     if (p.mode === 'goal') this.buildGoal();
@@ -132,7 +133,7 @@ class GoalZoneVisual {
     const tex = labelTexture(d, 'GOAL!', {
       fill: '#ffffff',
       stroke: PAL.ink,
-      background: TEAM_COLORS[p.team % 4]!,
+      background: teamColor(p.team),
     });
     if (tex) {
       const signMat = d.track(

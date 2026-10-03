@@ -4,7 +4,8 @@
  * and feeds the same numbers to adaptive music.
  */
 import type { GameAudio } from '@tumble/audio';
-import { TEAM_COLORS, type RoundDefinition, type RoundType } from '@tumble/shared';
+import { teamColor, teamShape } from '@tumble/render';
+import type { RoundDefinition, RoundType } from '@tumble/shared';
 import { ui, type EmoteSlot, type HudState, type ProgressMarker, type TeamScore } from '@tumble/ui';
 
 /** Seconds between HUD pushes (12 Hz, inside the store's 10–15 Hz budget). */
@@ -64,7 +65,9 @@ export class HudMapper {
     private readonly round: RoundDefinition,
     private readonly entrants: number,
     private readonly localId: number,
-    private readonly info: (id: number) => { name: string; color: string } | null,
+    private readonly info: (
+      id: number,
+    ) => { name: string; color: string; isBot?: boolean; isLocal?: boolean; isParty?: boolean } | null,
     private readonly audio: GameAudio | null,
     private readonly isFinal: boolean,
     private readonly mutator: { name: string; icon: string } | null = null,
@@ -170,6 +173,9 @@ export class HudMapper {
           id,
           name: who.name,
           color: who.color,
+          ...(who.isBot ? { isBot: true } : {}),
+          ...(who.isLocal ? { isLocal: true } : {}),
+          ...(who.isParty ? { isParty: true } : {}),
           progress: Math.max(0, Math.min(1, p.progress)),
         });
       }
@@ -183,7 +189,8 @@ export class HudMapper {
         this.lastTeamKey = key;
         this.teams = s.teamScores.map((score, i) => ({
           name: TEAM_NAMES[i] ?? `Team ${i + 1}`,
-          color: TEAM_COLORS[i % TEAM_COLORS.length] ?? '#ffffff',
+          color: teamColor(i),
+          shape: teamShape(i),
           score,
           isMine: i === myTeam,
         }));

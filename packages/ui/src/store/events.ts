@@ -96,7 +96,12 @@ export interface UIIntents {
   backToLobby: undefined;
   emote: { slot: number; id: string };
   quickPing: { kind: string };
+  /** Enter photo mode (victory / winner cam / in-round menu while out of play). */
   photoMode: undefined;
+  /** Photo mode: save the current frame as a PNG. */
+  photoCapture: undefined;
+  /** Photo mode: back to the game. */
+  photoExit: undefined;
   /** Leave the current show (pause menu / reconnect curtain). */
   leaveShow: undefined;
   createCustom: { options: CustomLobbyOptions };
@@ -159,8 +164,15 @@ export interface UIIntents {
   dialogResult: { dialogId: string; buttonId: string };
   toastAction: { toastId: number; actionId: string };
   retryConnection: undefined;
-  /** Mobile touch controls. `move` is a unit-disc vector, y = forward. */
+  /** Settings → Region is on screen: re-measure region pings. */
+  probeRegions: undefined;
+  /**
+   * Mobile touch controls, emitted synchronously on every change so a tap is
+   * never coalesced away. `move` is a unit-disc vector, y = forward.
+   */
   touchInput: { move: { x: number; y: number }; jump: boolean; dive: boolean; grab: boolean };
+  /** Camera drag on the touch HUD, in CSS pixels since the last emit. */
+  touchLook: { dx: number; dy: number };
   /** A menu navigation the UI didn't consume (e.g. Back on the root menu). */
   navUnhandled: { dir: NavDirection };
   /** Colour preview while the welcome screen is open. */

@@ -3,7 +3,9 @@
  *
  * Responsibilities:
  * - Keyboard + mouse (pointer lock), standard-mapping gamepads and touch, merged
- *   into one `CharacterInput` per fixed simulation step.
+ *   into one `CharacterInput` per fixed simulation step. Touch arrives from
+ *   the HUD's on-screen controls through {@link InputSystem.applyTouch} and
+ *   {@link InputSystem.addTouchLook}; this module owns no touch DOM.
  * - Edge-safe buttons: presses are latched between steps so taps are never lost.
  * - Camera look deltas per rendered frame (mouse, right stick, touch drag) with
  *   sensitivity and invert-Y.
@@ -15,7 +17,9 @@
 import { Button, type CharacterInput } from '@tumble/sim/character';
 import { ButtonLatch } from './latch.ts';
 import { createKeymap, mouseCode, INPUT_ACTIONS, type InputAction, type Keymap } from './keymap.ts';
-import { TouchControls } from './touchControls.ts';
+import { TouchState, type TouchSnapshot } from './touchState.ts';
+import { firstStandardPad } from './gamepadNav.ts';
+import { playHaptic, type RumblePattern } from './haptics.ts';
 
 /** Input tuning. Mutate in place; read every frame. */
 export interface InputSettings {
@@ -33,6 +37,8 @@ export interface InputSettings {
   stickDeadzone: number;
   /** Lock the pointer on click (desktop). */
   pointerLock: boolean;
+  /** Grab is press-to-toggle instead of hold (Settings → Toggle grab), on every device. */
+  toggleGrab: boolean;
 }
 
 /** Defaults tuned for a 1080p mouse at ~800 DPI and a standard controller. */
@@ -44,6 +50,7 @@ export const DEFAULT_INPUT_SETTINGS: Readonly<InputSettings> = Object.freeze({
   touchRadPerPixel: 0.006,
   stickDeadzone: 0.18,
   pointerLock: true,
+  toggleGrab: false,
 });
 
 /** Keys that mean "I'm playing now" and may grab the mouse for the camera. */
@@ -102,10 +109,10 @@ export class InputSystem {
   readonly settings: InputSettings;
   /** Live keymap; prefer {@link setBinding} so held keys are released cleanly. */
   readonly keymap: Keymap;
-  /** Touch overlay (created lazily on the first touch-capable pointer). */
-  readonly touch: TouchControls | null;
+  /** Latched state of the HUD's touch controls. */
+  readonly touch = new TouchState();
   /** Device of the last meaningful input. */
-  lastDevice: InputDevice = 'keyboard';
+  lastDevice: InputDevice = prefersTouch() ? 'touch' : 'keyboard';
 
   private readonly element: HTMLElement;
   private readonly kb = new Map<InputAction, ButtonLatch>();
@@ -121,21 +128,16 @@ export class InputSystem {
   private readonly look: LookDelta = { yaw: 0, pitch: 0 };
   private readonly unlisten: (() => void)[] = [];
   private mouseActions = true;
+  private padGameplay = true;
+  private grabToggled = false;
+  private grabWasHeld = false;
 
   /**
    * @param opts.element - Focus/pointer-lock target, usually the game canvas.
-   * @param opts.touchParent - Where touch controls are mounted.
    * @param opts.keymap - Binding overrides.
    * @param opts.settings - Setting overrides.
-   * @param opts.enableTouch - Create touch controls (default: when the device reports touch support).
    */
-  constructor(opts: {
-    element: HTMLElement;
-    touchParent?: HTMLElement;
-    keymap?: Partial<Keymap>;
-    settings?: Partial<InputSettings>;
-    enableTouch?: boolean;
-  }) {
+  constructor(opts: { element: HTMLElement; keymap?: Partial<Keymap>; settings?: Partial<InputSettings> }) {
     this.element = opts.element;
     this.settings = { ...DEFAULT_INPUT_SETTINGS, ...opts.settings };
     this.keymap = createKeymap(opts.keymap);
@@ -144,10 +146,6 @@ export class InputSystem {
       this.pad.set(a, new ButtonLatch());
     }
     this.rebuildCodeIndex();
-
-    const touchCapable =
-      opts.enableTouch ?? (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0);
-    this.touch = touchCapable ? new TouchControls(this.element, opts.touchParent) : null;
 
     this.listen(window, 'keydown', (e) => this.onKey(e as KeyboardEvent, true));
     this.listen(window, 'keyup', (e) => this.onKey(e as KeyboardEvent, false));
@@ -159,6 +157,13 @@ export class InputSystem {
     this.listen(window, 'mousedown', (e) => this.onWindowMouseDown(e as MouseEvent));
     this.listen(window, 'mouseup', (e) => this.onMouseButton(e as MouseEvent, false));
     this.listen(window, 'mousemove', (e) => this.onMouseMove(e as MouseEvent));
+    // NOTE: the touch HUD shows only while touch is the last device, so a
+    // touchscreen laptop flips between touch and mouse+keyboard on the fly.
+    this.listen(window, 'pointerdown', (e) => {
+      const type = (e as PointerEvent).pointerType;
+      if (type === 'touch' || type === 'pen') this.lastDevice = 'touch';
+      else if (type === 'mouse') this.lastDevice = 'keyboard';
+    });
     this.listen(this.element, 'contextmenu', (e) => e.preventDefault());
     this.listen(document, 'pointerlockchange', () => {
       if (document.pointerLockElement !== this.element) this.releaseMouseButtons();
@@ -195,6 +200,23 @@ export class InputSystem {
   }
 
   /**
+   * Gamepad gameplay switch. While a menu owns the pad (in-round menu,
+   * dialogs, main menu) its buttons and sticks press nothing in the game, so
+   * A to confirm is not also a jump. Buttons held across the switch never
+   * produce a press on the other side.
+   *
+   * @param enabled - False while menu navigation reads the pad.
+   */
+  setGamepadGameplay(enabled: boolean): void {
+    if (enabled === this.padGameplay) return;
+    this.padGameplay = enabled;
+    if (enabled) return;
+    for (const l of this.pad.values()) l.reset();
+    this.padStick.x = this.padStick.y = 0;
+    this.padLook.x = this.padLook.y = 0;
+  }
+
+  /**
    * Whether a movement key is held right now (WASD/arrows as bound).
    *
    * @param ignoreArrows - Skip arrow keys (menus use them for focus navigation).
@@ -215,8 +237,33 @@ export class InputSystem {
     return (
       (this.kb.get('emoteWheel')?.down ?? false) ||
       (this.pad.get('emoteWheel')?.down ?? false) ||
-      (this.touch?.buttons.emote.down ?? false)
+      this.touch.buttons.emote.down
     );
+  }
+
+  /**
+   * Plays a haptic effect on the device in use: the active gamepad's
+   * dual-rumble motors, or the phone's vibration motor. Keyboard and mouse
+   * players feel nothing.
+   *
+   * @param pattern - Effect to play.
+   * @returns True when an effect started.
+   */
+  rumble(pattern: RumblePattern): boolean {
+    if (this.lastDevice === 'touch') return playHaptic(pattern, 'touch');
+    if (this.lastDevice !== 'gamepad' || typeof navigator.getGamepads !== 'function') return false;
+    return playHaptic(pattern, firstStandardPad(navigator.getGamepads()));
+  }
+
+  /**
+   * Whether a key/mouse code is bound to an action (actions handled outside
+   * the sim, like the in-round menu, check events against the live keymap).
+   *
+   * @example
+   * if (input.isBound('menu', e.code)) openMenu();
+   */
+  isBound(action: InputAction, code: string): boolean {
+    return this.codeToActions.get(code)?.includes(action) ?? false;
   }
 
   /**
@@ -229,6 +276,41 @@ export class InputSystem {
     this.keymap[action] = [...codes];
     this.releaseAll();
     this.rebuildCodeIndex();
+  }
+
+  /**
+   * Applies a snapshot from the HUD's touch controls (`touchInput` intent).
+   *
+   * @param snapshot - Joystick vector and held buttons.
+   * @example
+   * uiEvents.on('touchInput', (s) => input.applyTouch(s));
+   */
+  applyTouch(snapshot: TouchSnapshot): void {
+    if (this.touch.apply(snapshot)) this.lastDevice = 'touch';
+  }
+
+  /**
+   * Adds a camera drag from the touch HUD (`touchLook` intent).
+   *
+   * @param dx - CSS pixels right.
+   * @param dy - CSS pixels down.
+   */
+  addTouchLook(dx: number, dy: number): void {
+    this.touch.addLook(dx, dy);
+    this.lastDevice = 'touch';
+  }
+
+  /** True while toggle grab is latched on (the player tapped Grab and has not tapped again). */
+  get grabToggleActive(): boolean {
+    return this.grabToggled;
+  }
+
+  /**
+   * Lets go of a toggled grab: the grab ended in the sim (broken free, out of
+   * stamina, fell out) or controls went inactive. No-op in hold mode.
+   */
+  endGrabToggle(): void {
+    this.grabToggled = false;
   }
 
   /**
@@ -257,7 +339,7 @@ export class InputSystem {
       mz = this.padStick.y;
     }
     const t = this.touch;
-    if (t && Math.hypot(t.stick.x, t.stick.y) > Math.hypot(mx, mz)) {
+    if (Math.hypot(t.stick.x, t.stick.y) > Math.hypot(mx, mz)) {
       mx = t.stick.x;
       mz = t.stick.y;
       this.lastDevice = 'touch';
@@ -268,13 +350,13 @@ export class InputSystem {
 
     let b = 0;
     // Every latch is sampled every step (no short-circuit) so none keeps stale edges.
-    const jump = [kb('jump').sample(), pad('jump').sample(), t?.buttons.jump.sample() ?? false];
-    const dive = [kb('dive').sample(), pad('dive').sample(), t?.buttons.dive.sample() ?? false];
-    const grab = [kb('grab').sample(), pad('grab').sample(), t?.buttons.grab.sample() ?? false];
-    const wheel = [kb('emoteWheel').sample(), pad('emoteWheel').sample(), t?.buttons.emote.sample() ?? false];
+    const jump = [kb('jump').sample(), pad('jump').sample(), t.buttons.jump.sample()];
+    const dive = [kb('dive').sample(), pad('dive').sample(), t.buttons.dive.sample()];
+    const grab = [kb('grab').sample(), pad('grab').sample(), t.buttons.grab.sample()];
+    const wheel = [kb('emoteWheel').sample(), pad('emoteWheel').sample(), t.buttons.emote.sample()];
     if (jump.includes(true)) b |= Button.Jump;
     if (dive.includes(true)) b |= Button.Dive;
-    if (grab.includes(true)) b |= Button.Grab;
+    if (this.resolveGrab(grab.includes(true))) b |= Button.Grab;
     if (wheel.includes(true)) b |= Button.Emote;
     out.buttons = b;
 
@@ -311,12 +393,10 @@ export class InputSystem {
     yaw += Math.sign(lx) * lx * lx * s.gamepadLookSpeed * dt;
     pitch += Math.sign(ly) * ly * ly * s.gamepadLookSpeed * 0.7 * dt;
     const t = this.touch;
-    if (t) {
-      yaw += t.lookDx * s.touchRadPerPixel;
-      pitch += t.lookDy * s.touchRadPerPixel;
-      t.lookDx = 0;
-      t.lookDy = 0;
-    }
+    yaw += t.lookDx * s.touchRadPerPixel;
+    pitch += t.lookDy * s.touchRadPerPixel;
+    t.lookDx = 0;
+    t.lookDy = 0;
     this.look.yaw = yaw * s.sensitivity;
     this.look.pitch = pitch * s.sensitivity * inv;
     return this.look;
@@ -338,12 +418,27 @@ export class InputSystem {
     req?.catch?.(() => undefined);
   }
 
-  /** Removes all listeners and touch DOM. */
+  /** Removes all listeners. */
   dispose(): void {
     for (const u of this.unlisten) u();
     this.unlisten.length = 0;
-    this.touch?.dispose();
     if (this.pointerLocked) document.exitPointerLock();
+  }
+
+  /**
+   * Grab output for this step. Hold mode passes the merged button through;
+   * toggle mode flips on each rising edge from any device, so a tap starts
+   * holding and the next tap lets go.
+   */
+  private resolveGrab(held: boolean): boolean {
+    const edge = held && !this.grabWasHeld;
+    this.grabWasHeld = held;
+    if (!this.settings.toggleGrab) {
+      this.grabToggled = false;
+      return held;
+    }
+    if (edge) this.grabToggled = !this.grabToggled;
+    return this.grabToggled;
   }
 
   // ---------------------------------------------------------------------------
@@ -444,12 +539,20 @@ export class InputSystem {
     if (Math.hypot(this.padStick.x, this.padStick.y) > 0 || Math.hypot(this.padLook.x, this.padLook.y) > 0) {
       this.lastDevice = 'gamepad';
     }
+    if (!this.padGameplay) {
+      this.padStick.x = this.padStick.y = 0;
+      this.padLook.x = this.padLook.y = 0;
+    }
   }
 
   private padButton(index: number, down: boolean, action: InputAction): void {
     const prev = this.padPrev[index] ?? false;
     if (down === prev) return;
     this.padPrev[index] = down;
+    if (!this.padGameplay) {
+      if (down) this.lastDevice = 'gamepad';
+      return;
+    }
     const latch = this.pad.get(action)!;
     if (down) {
       latch.press();
@@ -470,7 +573,7 @@ export class InputSystem {
   private releaseAll(): void {
     this.downCodes.clear();
     for (const l of this.kb.values()) l.reset();
-    this.touch?.reset();
+    this.touch.reset();
   }
 
   private rebuildCodeIndex(): void {
@@ -489,6 +592,11 @@ export class InputSystem {
     target.addEventListener(type, fn);
     this.unlisten.push(() => target.removeEventListener(type, fn));
   }
+}
+
+/** True on phones and tablets, where the first input will be a touch. */
+function prefersTouch(): boolean {
+  return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 }
 
 /**

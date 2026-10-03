@@ -717,6 +717,10 @@ export class ApiClient {
     this.request('POST', '/party/playlist', { playlistId });
   inviteToParty = (userId: string): Promise<{ party: ApiParty }> =>
     this.request('POST', '/party/invite', { userId });
-  queueTicket = (playlistId: string): Promise<{ ticket: string; expiresIn: number }> =>
-    this.request('POST', '/party/queue-ticket', { playlistId });
+  /**
+   * Party queue ticket. `region` is the client's measured pick (Settings →
+   * Region); the API also reads it from the account after `PATCH /me`.
+   */
+  queueTicket = (playlistId: string, region?: string): Promise<{ ticket: string; expiresIn: number }> =>
+    this.request('POST', '/party/queue-ticket', region ? { playlistId, region } : { playlistId });
 }

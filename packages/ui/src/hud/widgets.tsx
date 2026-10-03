@@ -16,6 +16,8 @@ import { useUI } from '../store/uiStore.ts';
 import { squash } from '../theme/motion.ts';
 import { Icon } from '../components/icons/index.tsx';
 import { roundTypeStyle } from '../theme/tokens.ts';
+import type { BindAction, TeamScore } from '../store/types.ts';
+import { PAD_GLYPHS, controlGlyph } from './glyphs.ts';
 
 /** Round timer pill; turns tangerine < 30 s and bubblegum + pulsing < 10 s. */
 export const HudTimer = memo(function HudTimer(): JSX.Element | null {
@@ -119,7 +121,7 @@ export const RaceProgress = memo(function RaceProgress(): JSX.Element | null {
             key={l.id}
             className="tr-hud-race-leader"
             style={{ left: `${l.progress * 100}%`, background: l.color }}
-            title={name({ id: l.id, name: l.name, isBot: true })}
+            title={name(l)}
           >
             {i === 0 ? <Icon name="crown" size="0.9em" /> : i + 1}
           </span>
@@ -139,6 +141,39 @@ export const RaceProgress = memo(function RaceProgress(): JSX.Element | null {
   );
 });
 
+const SHAPE_PATHS: Record<NonNullable<TeamScore['shape']>, JSX.Element> = {
+  circle: <circle cx="8" cy="8" r="6" />,
+  square: <rect x="2.5" y="2.5" width="11" height="11" />,
+  triangle: <path d="M8 1.5 15 14H1z" />,
+  diamond: <path d="M8 1 15 8 8 15 1 8z" />,
+};
+
+/** A team's shape cue in its colour (same shape as the team dot on 3D nameplates). */
+export function TeamShapeIcon({
+  shape,
+  color,
+}: {
+  shape: NonNullable<TeamScore['shape']>;
+  color: string;
+}): JSX.Element {
+  return (
+    <svg
+      className="tr-team-shape"
+      data-shape={shape}
+      viewBox="0 0 16 16"
+      width="0.95em"
+      height="0.95em"
+      aria-hidden
+      fill={color}
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+    >
+      {SHAPE_PATHS[shape]}
+    </svg>
+  );
+}
+
 /** Team score pills. */
 export const TeamScores = memo(function TeamScores(): JSX.Element | null {
   const teams = useUI((s) => s.hud.teams);
@@ -157,6 +192,7 @@ export const TeamScores = memo(function TeamScores(): JSX.Element | null {
               <Icon name="crown" size="1em" />
             </span>
           )}
+          {t.shape && <TeamShapeIcon shape={t.shape} color={t.color} />}
           <span className="tr-hud-team-name">{t.name}</span>
           <span key={t.score} className="tr-hud-team-score">
             {t.score}
@@ -184,33 +220,27 @@ export const NetStats = memo(function NetStats(): JSX.Element | null {
   );
 });
 
-const HINTS: Record<'keyboard' | 'gamepad' | 'touch', [string, string][]> = {
-  keyboard: [
-    ['WASD', 'Move'],
-    ['Space', 'Jump'],
-    ['Ctrl', 'Dive'],
-    ['Shift', 'Grab'],
-    ['E', 'Emote'],
-  ],
-  gamepad: [
-    ['Ⓛ', 'Move'],
-    ['Ⓐ', 'Jump'],
-    ['Ⓧ', 'Dive'],
-    ['RT', 'Grab'],
-    ['✚', 'Emote'],
-  ],
-  touch: [],
-};
+const HINT_ACTIONS: [BindAction, string][] = [
+  ['jump', 'Jump'],
+  ['dive', 'Dive'],
+  ['grab', 'Grab'],
+  ['emoteWheel', 'Emote'],
+];
 
-/** Bottom-left controls hint. */
+/** Bottom-left controls hint: bound keys on keyboard, pad buttons once a controller is used. */
 export const ControlsHint = memo(function ControlsHint(): JSX.Element | null {
   const { show, device } = useUI(useShallow((s) => ({ show: s.hud.controlsHint, device: s.hud.device })));
+  const binds = useUI((s) => s.settings.controls.keybinds);
   if (!show || device === 'touch') return null;
   return (
-    <div className="tr-hud-hint">
-      {HINTS[device].map(([k, label]) => (
+    <div className="tr-hud-hint" data-testid="controls-hint">
+      <span className="tr-hud-hint-item">
+        <kbd>{device === 'gamepad' ? PAD_GLYPHS.moveForward : 'WASD'}</kbd>
+        Move
+      </span>
+      {HINT_ACTIONS.map(([action, label]) => (
         <span key={label} className="tr-hud-hint-item">
-          <kbd>{k}</kbd>
+          <kbd>{controlGlyph(action, device, binds)}</kbd>
           {label}
         </span>
       ))}
@@ -240,9 +270,15 @@ export const GrabStatus = memo(function GrabStatus(): JSX.Element | null {
   );
 });
 
-/** Prompt to lock the mouse to the camera while it is free; Esc reminder once locked. */
+/** Prompt to lock the mouse to the camera while it is free; Esc and Menu key reminder once locked. */
 export const CameraLockHint = memo(function CameraLockHint(): JSX.Element | null {
-  const { lock, device } = useUI(useShallow((s) => ({ lock: s.cameraLock, device: s.hud.device })));
+  const { lock, device, menuKey } = useUI(
+    useShallow((s) => ({
+      lock: s.cameraLock,
+      device: s.hud.device,
+      menuKey: s.settings.controls.keybinds.pause[0] || 'Escape',
+    })),
+  );
   if (lock === 'off' || device !== 'keyboard') return null;
   return (
     <div className={`tr-hud-camlock is-${lock}`} role="status" data-testid="camera-lock-hint">
@@ -252,7 +288,7 @@ export const CameraLockHint = memo(function CameraLockHint(): JSX.Element | null
         </>
       ) : (
         <>
-          <kbd>Esc</kbd> frees the mouse
+          <kbd>Esc</kbd> frees the mouse · <kbd>{keyLabel(menuKey)}</kbd> menu
         </>
       )}
     </div>

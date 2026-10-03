@@ -5,7 +5,7 @@
  * server messages, API responses or mocks. The UI never imports runtime code
  * from `@tumble/sim` or three.js; only `@tumble/shared` types.
  */
-import type { RoundType, ThemeId } from '@tumble/shared';
+import type { RoundType, TeamShape, ThemeId } from '@tumble/shared';
 
 export type { RoundType, ThemeId };
 
@@ -838,12 +838,18 @@ export interface ProgressMarker {
   color: string;
   /** 0..1 along the course. */
   progress: number;
+  /** Bot, local or party marker: Streamer Mode keeps the name. Omitted = another real player. */
+  isBot?: boolean;
+  isLocal?: boolean;
+  isParty?: boolean;
 }
 
 /** Team score pill. */
 export interface TeamScore {
   name: string;
   color: string;
+  /** Shape cue drawn on the pill (matches the 3D nameplate dot), so colour is never the only cue. */
+  shape?: TeamShape;
   score: number;
   isMine: boolean;
 }
@@ -1158,6 +1164,29 @@ export interface Settings {
     showChat: boolean;
     region: string;
   };
+}
+
+/** Photo mode look filters. */
+export type PhotoFilter = 'none' | 'warm' | 'mono' | 'vivid';
+
+/** Photo mode: the game hides the UI and frees the camera while `active`. */
+export interface PhotoModeState {
+  active: boolean;
+  /** Vertical field of view (degrees); the slider and pad bumpers both change it. */
+  fov: number;
+  filter: PhotoFilter;
+  /** Stamp the game logo on saved photos. */
+  watermark: boolean;
+}
+
+/** Region probe results shown in Settings → Gameplay → Region. */
+export interface RegionStatus {
+  /** Measured round trip (ms) per region id; missing = not measurable. */
+  pings: Record<string, number>;
+  /** What Auto resolves to, null before the first probe. */
+  auto: string | null;
+  /** A probe is running. */
+  probing: boolean;
 }
 
 /** Settings section ids. */

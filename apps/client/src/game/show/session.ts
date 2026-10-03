@@ -29,6 +29,7 @@ import type { ShowPlaylist } from '@tumble/sim/show';
 import {
   bindUI,
   social,
+  streamerSafeName,
   ui,
   type HudGrab,
   type PlayerWallEvent,
@@ -39,6 +40,7 @@ import {
   type RewardsSummary,
   type ShowSummary as UiShowSummary,
 } from '@tumble/ui';
+import { HapticMapper, HapticThrottle } from '../../input/haptics.ts';
 import { emoteSlots, showPlayer } from '../cosmetics.ts';
 import type { ShowResultForProfile } from '../profile.ts';
 import type { LiveRoundInfo } from '../replay/live.ts';
@@ -225,6 +227,8 @@ export abstract class ShowSession {
   private wheelOpen = false;
   private pendingEmote = 0;
   private toastTokens = 4;
+  private readonly haptics = new HapticMapper();
+  private readonly hapticGate = new HapticThrottle();
   private uiSummary: UiShowSummary | null = null;
   private pilot: BotBrainLike | null = null;
   private readonly pilotSelf: BotSelfView = {
@@ -406,7 +410,7 @@ export abstract class ShowSession {
     let name = '';
     let meter = 0;
     if (st?.ext?.grabKind === GrabKind.Player) {
-      name = this.players.get(st.grabTarget)?.name ?? '';
+      name = this.players.has(st.grabTarget) ? this.publicName(st.grabTarget) : '';
       if (st.state === CharacterState.Grabbed) {
         mode = 'held';
         meter = Math.min(1, st.ext.breakFree / DEFAULT_TUNING.breakFreeMashes);
@@ -611,12 +615,29 @@ export abstract class ShowSession {
     return showPlayer(id, p.name, p.loadout, {
       isBot: p.isBot,
       isLocal: id === this.localId,
-      ...(p.partyId !== undefined &&
-      id !== this.localId &&
-      p.partyId === this.players.get(this.localId)?.partyId
-        ? { isParty: true }
-        : {}),
+      ...(this.isPartyMate(id) ? { isParty: true } : {}),
     });
+  }
+
+  private isPartyMate(id: number): boolean {
+    const p = this.players.get(id);
+    return (
+      p?.partyId !== undefined && id !== this.localId && p.partyId === this.players.get(this.localId)?.partyId
+    );
+  }
+
+  /**
+   * A player's name as this screen may show it: Streamer Mode hides other
+   * real players everywhere the game draws names itself (3D wall, pre-show
+   * plates, podium, toasts, HUD), matching the UI's own masking.
+   */
+  protected publicName(id: number): string {
+    const p = this.players.get(id);
+    if (!p) return `Tumbler ${id + 1}`;
+    return streamerSafeName(
+      { id, name: p.name, isBot: p.isBot, isLocal: id === this.localId, isParty: this.isPartyMate(id) },
+      this.ctx.settings().gameplay.streamerMode,
+    );
   }
 
   private toast(title: string, icon: string, id: number): void {
@@ -639,7 +660,7 @@ export abstract class ShowSession {
   protected enterPreShow(seconds: number, playlist: ShowPlaylist | null): void {
     const s = ui.getState();
     if (playlist) this.roundCount = estimateRoundCount(playlist, this.order.length);
-    const names = this.order.map((id) => this.players.get(id)?.name ?? '');
+    const names = this.order.map((id) => (this.players.has(id) ? this.publicName(id) : ''));
     const first = Math.min(names.length, 8);
     s.setPreShow({
       showName: this.showName,
@@ -652,7 +673,7 @@ export abstract class ShowSession {
     this.swapUnder('preShow', { transition: 'wipe' }, () => {
       const arenaPlayers = this.order.map((id) => {
         const p = this.players.get(id) as SessionPlayer;
-        return { id: String(id), name: p.name, loadout: p.loadout };
+        return { id: String(id), name: this.publicName(id), loadout: p.loadout };
       });
       // Autoplay keeps the pre-show hands-off; a human can roam the platform until the show starts.
       const control = this.ctx.cfg.autoplay
@@ -853,7 +874,15 @@ export abstract class ShowSession {
       r.inRound ? this.localId : -1,
       (id) => {
         const p = this.players.get(id);
-        return p ? { name: p.name, color: p.loadout.colors[0] } : null;
+        return p
+          ? {
+              name: this.publicName(id),
+              color: p.loadout.colors[0],
+              isBot: p.isBot,
+              isLocal: id === this.localId,
+              isParty: this.isPartyMate(id),
+            }
+          : null;
       },
       this.ctx.audio.game,
       r.start.isFinal,
@@ -1027,7 +1056,12 @@ export abstract class ShowSession {
     const wallPlayers = rs.players
       .map((p) => this.players.get(p.id))
       .filter((p): p is SessionPlayer => !!p)
-      .map((p) => ({ id: String(p.id), name: p.name, loadout: p.loadout, isBot: p.isBot && botTags }));
+      .map((p) => ({
+        id: String(p.id),
+        name: this.publicName(p.id),
+        loadout: p.loadout,
+        isBot: p.isBot && botTags,
+      }));
     const eliminated = o.eliminated.filter((id) => entrants.has(id)).map(String);
     this.swapUnder('roundResults', { transition: 'wipe' }, () => {
       this.ctx.director.show(
@@ -1194,21 +1228,25 @@ export abstract class ShowSession {
     const r = this.round;
     const view = r?.view ?? null;
     const lp = this.ctx.director.listenerPos;
+    const rumble = this.ctx.settings().controls.vibration && !this.ctx.cfg.autoplay;
+    const now = performance.now();
     for (const e of events) {
       view?.handleEvent(e);
       this.ctx.replays?.event(e);
       if (audio) this.ctx.audio.game.handleSimEvent(e, lp);
+      const cue = this.haptics.map(e, this.localId);
+      if (cue && rumble && this.hapticGate.allow(cue.kind, now)) this.ctx.input.rumble(cue.pattern);
       const mine = 'player' in e && e.player === this.localId;
       switch (e.type) {
         case 'qualified':
           if (mine) this.localQualified();
           else if (r && r.start.round.type === 'race')
-            this.toast(`${this.players.get(e.player)?.name ?? 'Someone'} qualified!`, '🏁', e.player);
+            this.toast(`${this.publicName(e.player)} qualified!`, '🏁', e.player);
           break;
         case 'eliminated':
           if (mine) this.localEliminated();
           else if (r && r.start.round.type !== 'race')
-            this.toast(`${this.players.get(e.player)?.name ?? 'Someone'} is out!`, '💨', e.player);
+            this.toast(`${this.publicName(e.player)} is out!`, '💨', e.player);
           break;
         case 'checkpoint':
           if (mine) {
@@ -1227,6 +1265,11 @@ export abstract class ShowSession {
           break;
         case 'grabStart':
           if (mine) this.counters.grabs = (this.counters.grabs ?? 0) + 1;
+          break;
+        case 'grabEnd':
+        case 'fellOut':
+          // A toggled grab ends with the grab itself, or it would re-grab on the next step.
+          if (mine) this.ctx.input.endGrabToggle();
           break;
         case 'bounce':
           if (mine) this.counters.bounces = (this.counters.bounces ?? 0) + 1;
@@ -1395,7 +1438,11 @@ export abstract class ShowSession {
       if (binds.spectatePrev.includes(e.code)) this.cycleSpectate(-1);
       else if (binds.spectateNext.includes(e.code)) this.cycleSpectate(1);
     }
-    if (e.code === 'Escape' && ui.getState().screen === 'round') {
+    // NOTE: Escape always works too: browsers spend it on releasing pointer
+    // lock, so a player who rebinds Menu still expects Esc to reach the menu.
+    const menuKey = e.code === 'Escape' || this.ctx.input.isBound('menu', e.code);
+    // Menu navigation already used this key (e.g. Esc pressed Resume, which closed the menu).
+    if (menuKey && !e.defaultPrevented && ui.getState().screen === 'round') {
       const overlay = ui.getState().overlay;
       if (overlay === 'none') ui.getState().setOverlay('inGameMenu');
       else if (overlay === 'inGameMenu') ui.getState().setOverlay('none');
@@ -1450,6 +1497,7 @@ export abstract class ShowSession {
     }
     this.ctx.input.sample(yaw, out);
     if (!this.controlsActive) {
+      this.ctx.input.endGrabToggle();
       out.moveX = 0;
       out.moveZ = 0;
       out.buttons = 0;
@@ -1476,8 +1524,13 @@ export abstract class ShowSession {
       us.screen === 'round' &&
       us.overlay === 'none' &&
       !us.replay &&
-      !social.getState().chatOpen;
-    if (!input.settings.pointerLock && us.overlay !== 'none' && document.pointerLockElement)
+      !social.getState().chatOpen &&
+      !us.photo.active;
+    if (
+      !input.settings.pointerLock &&
+      (us.overlay !== 'none' || us.photo.active) &&
+      document.pointerLockElement
+    )
       document.exitPointerLock();
     const lock =
       input.settings.pointerLock && !us.isTouch ? (input.pointerLocked ? 'locked' : 'unlocked') : 'off';
@@ -1514,7 +1567,14 @@ export abstract class ShowSession {
       const ps = st?.players?.get(r.spectateId);
       if (ps && ps.status === PlayerRoundStatus.Eliminated) this.cycleSpectate(1);
     }
-    if (spectating && us.screen === 'round' && us.overlay === 'none' && !us.eliminatedSheet)
+    // Photo mode uses the shoulders for field of view.
+    if (
+      spectating &&
+      us.screen === 'round' &&
+      us.overlay === 'none' &&
+      !us.eliminatedSheet &&
+      !us.photo.active
+    )
       this.pollSpectatePad();
     else this.padCycler.reset(true, true);
     this.refreshSpectateBanner(realDt);
@@ -1578,14 +1638,14 @@ export abstract class ShowSession {
       .slice(0, 2)
       .map((id) => this.players.get(id))
       .filter((p): p is SessionPlayer => !!p)
-      .map((p) => ({ name: p.name, loadout: p.loadout }));
+      .map((p) => ({ name: this.publicName(p.id), loadout: p.loadout }));
     this.swapUnder(localWon ? 'victory' : 'winnerCam', { transition: 'wipe' }, () => {
       this.ctx.director.show(
         createPodiumView(
           finalTheme,
           this.ctx.quality.preset,
           this.ctx.tumblers.create,
-          { name: winner.name, loadout: winner.loadout },
+          { name: this.publicName(winner.id), loadout: winner.loadout },
           runnersUp,
           this.ctx.post,
         ),
@@ -1611,7 +1671,7 @@ export abstract class ShowSession {
       const wall3d = {
         players: this.order.map((id) => {
           const p = this.players.get(id) as SessionPlayer;
-          return { id: String(id), name: p.name, loadout: p.loadout, isBot: p.isBot && botTags };
+          return { id: String(id), name: this.publicName(id), loadout: p.loadout, isBot: p.isBot && botTags };
         }),
         rounds: uiSummary.rounds.map((r) => ({ name: r.name, eliminatedIds: r.eliminatedIds.map(String) })),
         winnerId: summary.winnerId !== null ? String(summary.winnerId) : null,

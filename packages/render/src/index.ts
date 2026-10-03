@@ -6,3 +6,4 @@ export * from './renderer.ts';
 export * from './materials/toon.ts';
 export * from './materials/outline.ts';
 export * from './sky.ts';
+export * from './teamPalette.ts';

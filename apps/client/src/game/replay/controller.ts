@@ -19,6 +19,7 @@ import type { Rapier } from '@tumble/sim';
 import type { MatchDeps } from '@tumble/sim/match';
 import {
   bindUI,
+  streamerSafeName,
   ui,
   type OverlayId,
   type ReplayCommand,
@@ -302,7 +303,10 @@ export class ReplayController {
 
   private viewerState(view: ReplayView, data: ReplayData, origin: 'show' | 'file'): ReplayViewerState {
     const h = data.header;
-    const name = (id: number): string => h.players.find((p) => p.id === id)?.name ?? `Tumbler ${id}`;
+    const name = (id: number): string => {
+      const p = h.players.find((q) => q.id === id);
+      return p ? publicName(h, p) : `Tumbler ${id + 1}`;
+    };
     const markers: ReplayMarkerInfo[] = view.timeline.markers.map((m: ReplayMarker) => ({
       t: m.t,
       kind: m.kind,
@@ -340,7 +344,12 @@ export class ReplayController {
     const p = h.players[i] as ReplayHeader['players'][number];
     const colors = (p.loadout as { colors?: unknown } | null)?.colors;
     const color = Array.isArray(colors) && typeof colors[0] === 'string' ? colors[0] : '#ff6fb5';
-    return { name: id === h.localId ? `${p.name} (you)` : p.name, color, index: i, count: h.players.length };
+    return {
+      name: id === h.localId ? `${p.name} (you)` : publicName(h, p),
+      color,
+      index: i,
+      count: h.players.length,
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -568,4 +577,12 @@ export class ReplayController {
     for (const off of this.offs) off();
     this.offs.length = 0;
   }
+}
+
+/** A recorded player's name as Streamer Mode allows it on screen (party mates are unknown here, so masked). */
+function publicName(h: ReplayHeader, p: ReplayHeader['players'][number]): string {
+  return streamerSafeName(
+    { id: p.id, name: p.name, isBot: p.isBot, isLocal: p.id === h.localId },
+    ui.getState().settings.gameplay.streamerMode,
+  );
 }

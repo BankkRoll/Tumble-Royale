@@ -18,7 +18,9 @@ export type StorageKey =
   /** Local (offline) notification inbox with read flags. */
   | 'notifications'
   /** Players muted on this device. */
-  | 'mutes';
+  | 'mutes'
+  /** Matchmaking region picked by the player or by ping. */
+  | 'region';
 
 /**
  * The raw `localStorage` key behind a {@link StorageKey}, for matching

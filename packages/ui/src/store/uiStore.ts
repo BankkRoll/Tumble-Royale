@@ -44,6 +44,8 @@ import type {
   PreShowInfo,
   ProfileData,
   QueueState,
+  RegionStatus,
+  PhotoModeState,
   ReplayRoundEntry,
   ReplayViewerState,
   RewardsSummary,
@@ -140,6 +142,10 @@ export interface UIState {
 
   // --- show ----------------------------------------------------------------
   queue: QueueState;
+  /** Region pings and the Auto pick (Settings → Region). */
+  regionStatus: RegionStatus;
+  /** Photo mode controls (the game owns the camera). */
+  photo: PhotoModeState;
   preShow: PreShowInfo | null;
   showIntro: ShowIntroInfo | null;
   roundIntro: RoundIntroInfo | null;
@@ -230,6 +236,8 @@ export interface UIState {
 
   // --- actions: show -------------------------------------------------------
   setQueue: (queue: Partial<QueueState>) => void;
+  setRegionStatus: (patch: Partial<RegionStatus>) => void;
+  setPhoto: (patch: Partial<PhotoModeState>) => void;
   setPreShow: (info: PreShowInfo | null) => void;
   setShowIntro: (info: ShowIntroInfo | null) => void;
   setRoundIntro: (info: RoundIntroInfo | null) => void;
@@ -329,6 +337,8 @@ export const ui = createStore<UIState>()((set, get) => ({
   lockerSlot: null,
 
   queue: { status: 'idle', startedAt: 0, playersFound: 0, playersNeeded: 40, etaSec: -1, region: 'auto' },
+  regionStatus: { pings: {}, auto: null, probing: false },
+  photo: { active: false, fov: 50, filter: 'none', watermark: true },
   preShow: null,
   showIntro: null,
   roundIntro: null,
@@ -477,6 +487,8 @@ export const ui = createStore<UIState>()((set, get) => ({
   },
 
   setQueue: (queue) => set({ queue: { ...get().queue, ...queue } }),
+  setRegionStatus: (patch) => set({ regionStatus: { ...get().regionStatus, ...patch } }),
+  setPhoto: (patch) => set({ photo: { ...get().photo, ...patch } }),
   setPreShow: (preShow) => set({ preShow }),
   setShowIntro: (showIntro) => set({ showIntro }),
   setRoundIntro: (roundIntro) => set({ roundIntro }),

@@ -62,7 +62,7 @@ export interface VfxSpawnOptions {
   intensity?: number;
   /** Direction (world, need not be normalised) for speed lines, wind, splashes. */
   direction?: VfxVec3;
-  /** Team index 0–3 for team smoke (uses `TEAM_COLORS`). */
+  /** Team index 0–3 for team smoke (the active team palette). */
   team?: number;
   /** Seconds to wait before the effect starts (GPU-side, no timers). */
   delay?: number;

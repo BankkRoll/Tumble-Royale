@@ -10,6 +10,7 @@ import { Hud } from './hud/Hud.tsx';
 import { SettingsSheet } from './screens/overlays/SettingsSheet.tsx';
 import { InGameMenu } from './screens/overlays/InGameMenu.tsx';
 import { SocialLayer } from './screens/overlays/PlayerActions.tsx';
+import { PhotoModeBar } from './screens/overlays/PhotoMode.tsx';
 import { JoinCodeDialog, PrivateShowDialog } from './screens/overlays/PrivateShow.tsx';
 import { FriendsSheet, NotificationsPanel } from './screens/overlays/SocialSheets.tsx';
 import { WatchChoiceLayer } from './screens/overlays/WatchChoice.tsx';
@@ -51,6 +52,7 @@ export function App(): JSX.Element {
   const a = useUI((s) => s.settings.accessibility);
   const streamer = useUI((s) => s.settings.gameplay.streamerMode);
   const screen = useUI((s) => s.screen);
+  const photo = useUI((s) => s.photo.active);
   const replay = useUI((s) => s.replay !== null);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -73,21 +75,25 @@ export function App(): JSX.Element {
       data-reduce-shake={String(a.reduceShake)}
       data-streamer={String(streamer)}
       data-screen={screen}
+      data-photo={String(photo)}
       data-replay={replay ? 'true' : undefined}
       style={{ ['--ui-scale' as string]: String(a.uiScale) }}
     >
-      <div className="tr-stage">
-        <ScreenLayer />
-        <HudLayer />
-        <ShowChatLayer />
-        <StampLayer />
+      {/* Photo mode hides the UI without unmounting it, so screens don't replay their entrances. */}
+      <div className="tr-photo-hidable" aria-hidden={photo || undefined}>
+        <div className="tr-stage">
+          <ScreenLayer />
+          <HudLayer />
+          <ShowChatLayer />
+          <StampLayer />
+        </div>
+        <ConfettiLayer />
       </div>
-      <ConfettiLayer />
-      <WatchChoiceLayer />
+      {!photo && <WatchChoiceLayer />}
       <ToastLayer />
       <ReplayLayer />
-      <OverlayLayer />
-      <SocialLayer />
+      {photo ? <PhotoModeBar /> : <OverlayLayer />}
+      {!photo && <SocialLayer />}
       <DialogLayer />
       <ConnectionLayer />
       <TumbleWipe />

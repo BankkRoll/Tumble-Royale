@@ -13,6 +13,7 @@ import { BIND_ACTION_LABELS } from '../../store/defaults.ts';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { BindAction, LocalStatus, ShowSeat } from '../../store/types.ts';
+import { PAD_GLYPHS, controlGlyph } from '../../hud/glyphs.ts';
 import { keyLabel } from './SettingsSheet.tsx';
 import { ShowHostTools } from './ShowHostTools.tsx';
 
@@ -95,6 +96,7 @@ export function InGameMenu(): JSX.Element {
     })),
   );
   const binds = useUI((s) => s.settings.controls.keybinds);
+  const device = useUI((s) => s.hud.device);
   const outOfShow = useUI((s) => s.showSeat?.outOfShow ?? false);
   const replayLive = useUI((s) => s.replayLive);
   const status = outOfShow ? OUT_OF_SHOW : STATUS[hud.status];
@@ -137,18 +139,26 @@ export function InGameMenu(): JSX.Element {
           <i className="tr-status-dot is-online" aria-hidden /> The show keeps running while this menu is
           open.
         </p>
-        <div className="tr-igm-keys" aria-label="Controls">
-          {(hud.status === 'spectating' || outOfShow ? SPECTATE_ROWS : CONTROL_ROWS).map((a) => (
-            <span key={a} className="tr-hud-hint-item">
-              <kbd>{keyLabel(binds[a][0] ?? '')}</kbd>
-              {BIND_ACTION_LABELS[a]}
+        {device !== 'touch' && (
+          <div className="tr-igm-keys" aria-label="Controls">
+            {(hud.status === 'spectating' || outOfShow ? SPECTATE_ROWS : CONTROL_ROWS).map((a) => (
+              <span key={a} className="tr-hud-hint-item">
+                <kbd>{controlGlyph(a, device, binds)}</kbd>
+                {BIND_ACTION_LABELS[a]}
+              </span>
+            ))}
+            <span className="tr-hud-hint-item" data-testid="igm-menu-key">
+              <kbd>{device === 'gamepad' ? PAD_GLYPHS.pause : keyLabel(binds.pause[0] || 'Escape')}</kbd>
+              {BIND_ACTION_LABELS.pause}
             </span>
-          ))}
-          <span className="tr-hud-hint-item">
-            <kbd>Esc</kbd>
-            Free the mouse
-          </span>
-        </div>
+            {device === 'keyboard' && (
+              <span className="tr-hud-hint-item">
+                <kbd>Esc</kbd>
+                Free the mouse
+              </span>
+            )}
+          </div>
+        )}
         <ShowHostTools />
         <div className="tr-igm-actions">
           <Button variant="go" size="lg" block autoFocusNav cue="ui.confirm" data-nav-back="" onClick={close}>
@@ -176,6 +186,19 @@ export function InGameMenu(): JSX.Element {
           >
             <Icon name="gear" size="1.1em" /> Settings
           </Button>
+          {hud.status !== 'playing' && (
+            <Button
+              variant="secondary"
+              block
+              data-testid="igm-photo"
+              onClick={() => {
+                ui.getState().setOverlay('none');
+                uiEvents.emit('photoMode');
+              }}
+            >
+              <Icon name="camera" size="1.1em" /> Photo mode
+            </Button>
+          )}
           <Button variant="danger" block data-testid="igm-leave" onClick={confirmLeave}>
             Leave show
           </Button>

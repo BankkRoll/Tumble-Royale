@@ -29,7 +29,7 @@ import {
   type Settings,
 } from '@tumble/ui';
 import { loadMutes, publishSocialAvailability, socialIntents } from './social/intents.ts';
-import { createRenderer } from '@tumble/render';
+import { createRenderer, setTeamColorMode } from '@tumble/render';
 import { createPostPipeline, type PostPipeline } from '@tumble/render/post';
 import type { TumblerLoadout } from '@tumble/render/scenes';
 import { loadRapier, type Rapier } from '@tumble/sim';
@@ -39,6 +39,7 @@ import type { MatchDeps } from '@tumble/sim/match';
 import type { ShowPlaylist } from '@tumble/sim/show';
 import { PerspectiveCamera, Scene, type WebGPURenderer } from 'three/webgpu';
 import { InputSystem, type InputAction } from '../input/index.ts';
+import { GamepadNavigator, firstStandardPad } from '../input/gamepadNav.ts';
 import { StatsOverlay } from '../debug/stats.ts';
 import { checkDeterminism } from '../debug/determinism.ts';
 import { ApiClient, ApiError } from './api.ts';
@@ -60,6 +61,7 @@ import {
 } from './meta.ts';
 import { playlistIdForPlay, privateShow, resolvePlaylist } from './playlists.ts';
 import { OnlineAccount } from './online/account.ts';
+import { PhotoMode } from './photo/photoMode.ts';
 import { AccountAuth } from './online/auth.ts';
 import { finishCheckoutReturn } from './online/checkout.ts';
 import {
@@ -70,6 +72,13 @@ import {
 } from './online/lobbyState.ts';
 import { onlineCounts, queueTarget } from './online/playerCounts.ts';
 import { MatchmakerClient, gameSocketUrl, type Lobby, type MatchFound } from './online/matchmaker.ts';
+import {
+  chooseRegion,
+  deviceTimezoneRegion,
+  probeRegions,
+  type Region,
+  type RegionProbe,
+} from './online/region.ts';
 import { ProfileStore } from './profile.ts';
 import { QualityManager } from './quality.ts';
 import { ReplayController } from './replay/controller.ts';
@@ -99,6 +108,7 @@ const BIND_TO_INPUT: Partial<Record<BindAction, InputAction>> = {
   emote2: 'emote2',
   emote3: 'emote3',
   emote4: 'emote4',
+  pause: 'menu',
 };
 
 /** Merges saved settings over defaults so new fields always exist. */
@@ -157,6 +167,11 @@ export class GameApp {
   /** The private show the local player hosts after it moved to the game server (in-show kicks). */
   private startedLobby: Lobby | null = null;
   private readonly thumbs: ThumbnailRenderer;
+  private readonly padNav = new GamepadNavigator();
+  private readonly photo: PhotoMode;
+  private regionProbe: RegionProbe = { pings: {}, available: [], matchmakerMs: null };
+  private regionProbing: Promise<void> | null = null;
+  private regionProbedAt = -Infinity;
   private readonly auth: AccountAuth;
   private readonly replays: ReplayController;
 
@@ -177,6 +192,7 @@ export class GameApp {
   ) {
     this.timeScale = { value: cfg.timeScale };
     this.thumbs = new ThumbnailRenderer(renderer, tumblers.create);
+    this.photo = new PhotoMode(renderer.domElement as HTMLCanvasElement, post, director);
     this.account = cfg.api
       ? new OnlineAccount(api, {
           onLookChanged: () => this.menu?.setLoadout(this.look()),
@@ -446,6 +462,7 @@ export class GameApp {
     if (welcome && fresh) await account.adoptWelcomeColors(welcome.colors);
     account.startRealtime();
     publishSocialAvailability(true);
+    void this.probeRegions();
     if (this.mm) {
       void this.mm.probe().then((up) => {
         if (up) this.mm?.socket.start();
@@ -501,6 +518,10 @@ export class GameApp {
     const dt = realDt * this.timeScale.value;
     if (realDt > 0) this.fpsSmooth += (1 / realDt - this.fpsSmooth) * 0.05;
 
+    this.pollPadNav(now);
+    const device = this.input.lastDevice;
+    if (ui.getState().hud.device !== device) ui.getState().setHud({ device });
+
     // An offline show is only this player: it waits while they watch a replay. Online shows run on.
     const held = this.replays.active && this.session instanceof OfflineShowSession;
     try {
@@ -511,11 +532,13 @@ export class GameApp {
     this.replays.frame(realDt);
     const warp = this.session?.timeWarp ?? 1;
     this.director.update(dt * warp, realDt);
+    this.photo.update(realDt);
     const d = this.director;
     this.audio.setListener(d.listenerPos, d.listenerFwd, d.listenerUp);
     this.audio.update();
     this.post.update(realDt);
     this.post.render();
+    this.photo.afterRender();
     // Thumbnails only render in the menus, one per frame, so shows never hitch.
     if (!this.session) this.thumbs.pump(realDt * 1000);
     this.quality.sample(realDt * 1000);
@@ -523,6 +546,64 @@ export class GameApp {
     this.stats.update(realDt, this.renderer);
     this.hooks.frames++;
     this.trackMemory();
+  }
+
+  /**
+   * Gamepad menu navigation (SCREENS.md §1.1). Whenever a menu owns the pad
+   * (menu screens, overlays, dialogs, the eliminated sheet) the D-pad/stick,
+   * A, B, LB and RB drive `navigate` and gameplay ignores the pad; Start
+   * toggles the in-round menu or Settings. Spectate cycling on LB/RB lives in
+   * the show session; the replay viewer reads the pad itself while it is open.
+   */
+  private pollPadNav(now: number): void {
+    const s = ui.getState();
+    const idle = this.menu?.idlePlaying ?? false;
+    const photo = s.photo.active;
+    const replay = s.replay !== null;
+    const menuOwnsPad =
+      photo ||
+      replay ||
+      (!idle && (s.inputMode === 'menu' || s.dialog !== null || s.overlay !== 'none' || s.eliminatedSheet));
+    this.input.setGamepadGameplay(!menuOwnsPad);
+    const pad =
+      typeof navigator.getGamepads === 'function' ? firstStandardPad(navigator.getGamepads()) : null;
+    // Edges are tracked even during a replay so its buttons never fire here afterwards.
+    const actions = this.padNav.update(pad, now, true);
+    if (replay) return;
+    for (const a of actions) {
+      this.input.lastDevice = 'gamepad';
+      if (a === 'start') this.onPadStart();
+      // Photo mode flies the camera with the sticks and bumpers; only A (Take photo) and B (Exit) navigate.
+      else if (photo) {
+        if (a === 'accept' || a === 'back') ui.getState().navigate(a);
+      } else if (menuOwnsPad) ui.getState().navigate(a);
+    }
+  }
+
+  /** Start: the in-round menu during rounds, Settings elsewhere; leaves idle play first. */
+  private onPadStart(): void {
+    const s = ui.getState();
+    if (s.dialog) return;
+    if (s.photo.active) {
+      this.photo.exit();
+      return;
+    }
+    if (this.menu?.idlePlaying) {
+      this.menu.setIdlePlay(false);
+      return;
+    }
+    if (s.screen === 'round') {
+      s.setOverlay(s.overlay === 'none' ? 'inGameMenu' : 'none');
+      return;
+    }
+    if (s.overlay === 'settings') s.setOverlay('none');
+    else if (
+      s.overlay === 'none' &&
+      s.inputMode === 'menu' &&
+      s.screen !== 'splash' &&
+      s.screen !== 'welcome'
+    )
+      s.setOverlay('settings');
   }
 
   /** Logs GPU memory once per round, after the previous round's view was disposed. */
@@ -711,7 +792,7 @@ export class GameApp {
     }
     this.showSearching(account.party?.members.length ?? 1, playlistId);
     try {
-      const { ticket } = await this.api.queueTicket(playlistId);
+      const { ticket } = await this.api.queueTicket(playlistId, this.region());
       await mm.queue(ticket);
       this.queued = true;
       account.setPresence('in_queue', { playlistId });
@@ -738,7 +819,7 @@ export class GameApp {
       playersFound: partySize,
       playersNeeded: queueTarget(s.playlists, playlistId ?? s.selectedPlaylist),
       etaSec: -1,
-      region: (this.account?.me?.region ?? 'na').toUpperCase(),
+      region: this.region().toUpperCase(),
     });
     if (s.screen !== 'matchmaking') s.setScreen('matchmaking');
   }
@@ -1138,10 +1219,12 @@ export class GameApp {
         if (a) void a.history();
         else s().setMatchHistory(this.profile.uiHistory());
       },
-      onSettingsChange: ({ settings }) => {
+      onSettingsChange: ({ settings, section }) => {
         saveJson('settings', settings);
         this.applySettings(settings);
+        if (section === 'gameplay') this.publishRegion();
       },
+      onProbeRegions: () => void this.probeRegions(),
       onAccountAction: ({ action, value }) => {
         if (action === 'signOut') void this.signOut();
         else if (action === 'deleteAccount') void this.auth.deleteAccount(() => this.signOut());
@@ -1181,16 +1264,15 @@ export class GameApp {
       onEmote: ({ id }) => {
         if (!this.session) this.menu?.emote(id);
       },
-      onPhotoMode: () =>
-        s().pushToast({
-          kind: 'info',
-          title: 'Say cheese!',
-          body: 'Press F12 for a screenshot — photo mode controls are coming soon.',
-          icon: '📸',
-        }),
+      onPhotoMode: () => {
+        if (!this.photo.enter())
+          s().pushToast({ kind: 'info', title: 'Nothing to photograph right now', icon: '📸' });
+      },
+      onPhotoCapture: () => this.photo.capture(),
+      onPhotoExit: () => this.photo.exit(),
       onCreateCustom: ({ options }) => {
         if (this.customUnavailable() || !this.mm) return;
-        void this.mm.createLobby(optionsToSettings(options)).then(
+        void this.mm.createLobby(optionsToSettings(options), this.region()).then(
           ({ lobby }) => this.applyLobby(lobby),
           (err) =>
             s().showDialog({
@@ -1283,6 +1365,8 @@ export class GameApp {
         if (this.session) this.session.retryConnection();
         else s().setConnection({ status: 'online' });
       },
+      onTouchInput: (snapshot) => this.input.applyTouch(snapshot),
+      onTouchLook: ({ dx, dy }) => this.input.addTouchLook(dx, dy),
     });
 
     const canvas = this.renderer.domElement;
@@ -1323,14 +1407,69 @@ export class GameApp {
   }
 
   // ---------------------------------------------------------------------------
+  // Region
+  // ---------------------------------------------------------------------------
+
+  /** The region to matchmake in: the manual pick, or what Auto chose. */
+  private region(): Region {
+    return chooseRegion(ui.getState().settings.gameplay.region, this.regionProbe, deviceTimezoneRegion());
+  }
+
+  /**
+   * Measures region pings against the matchmaker (at most once a minute;
+   * concurrent callers share one probe), then publishes the result.
+   */
+  private probeRegions(): Promise<void> {
+    if (this.regionProbing) return this.regionProbing;
+    if (!this.mm || performance.now() - this.regionProbedAt < 60_000) {
+      this.publishRegion();
+      return Promise.resolve();
+    }
+    ui.getState().setRegionStatus({ probing: true });
+    this.regionProbing = probeRegions(this.cfg.mmUrl, {
+      fetch: (url, init) => fetch(url, init),
+      now: () => performance.now(),
+    })
+      .then((probe) => {
+        this.regionProbe = probe;
+        this.regionProbedAt = performance.now();
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        this.regionProbing = null;
+        ui.getState().setRegionStatus({ probing: false });
+        this.publishRegion();
+      });
+    return this.regionProbing;
+  }
+
+  /** Shows pings and the Auto pick, remembers the region and tells the account API when it changed. */
+  private publishRegion(): void {
+    const region = this.region();
+    ui.getState().setRegionStatus({
+      pings: { ...this.regionProbe.pings },
+      auto: chooseRegion('auto', this.regionProbe, deviceTimezoneRegion()),
+    });
+    saveJson('region', region);
+    const me = this.account?.active ? this.account.me : null;
+    if (me && me.region !== region) {
+      me.region = region;
+      void this.api.patchMe({ region }).catch(() => undefined);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Settings
   // ---------------------------------------------------------------------------
 
   private applySettings(st: Settings): void {
     this.quality.applySettings(st.graphics);
     this.audio.applySettings(st);
+    // 3D team colours are read when a round is built, so this applies from the next round.
+    setTeamColorMode(st.accessibility.colorBlind);
     this.input.settings.sensitivity = st.controls.mouseSensitivity;
     this.input.settings.invertY = st.controls.invertY;
+    this.input.settings.toggleGrab = st.controls.toggleGrab;
     for (const [bind, action] of Object.entries(BIND_TO_INPUT) as [BindAction, InputAction][]) {
       const codes = st.controls.keybinds[bind];
       const defaults = DEFAULT_KEYBINDS[bind];

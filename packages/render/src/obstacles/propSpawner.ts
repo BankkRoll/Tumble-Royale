@@ -39,7 +39,7 @@ import {
   vec3,
 } from 'three/tsl';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { TEAM_COLORS } from '@tumble/shared';
+import { teamColor } from '../teamPalette.ts';
 import type { ObstacleRuntime, PoseSample } from '@tumble/sim';
 import {
   PROP_SPECS,
@@ -117,7 +117,7 @@ function kindMaterial(d: Disposer, p: PropSpawnerParams): MeshToonNodeMaterial {
   const L = positionLocal;
   switch (p.kind) {
     case 'egg': {
-      const base = p.team >= 0 ? TEAM_COLORS[p.team]! : PAL.cream;
+      const base = p.team >= 0 ? teamColor(p.team) : PAL.cream;
       const mat = toon(d, { color: '#ffffff', rimStrength: 0.7, rimColor: '#ffffff' });
       const cell = floor(L.mul(6.5));
       const speck = step(float(0.78), hash(cell.x.add(cell.y.mul(31)).add(cell.z.mul(97))));

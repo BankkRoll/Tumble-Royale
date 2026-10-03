@@ -19,7 +19,7 @@ export const ROUNDS: RoundDefinitionInput[] = [
 ];
 
 /** Engineering fixtures that must not appear in real shows while real rounds exist. */
-export const DEV_ROUND_IDS: ReadonlySet<string> = new Set(['test-arena']);
+export const DEV_ROUND_IDS: ReadonlySet<string> = new Set(['test-arena', 'practice-island']);
 
 let parsed: Map<string, RoundDefinition> | null = null;
 

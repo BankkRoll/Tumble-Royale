@@ -44,8 +44,15 @@ const RegisterBody = z.object({
   region: z.string().min(2).max(8),
   capacity: z.number().int().min(1).max(100_000),
   load: z.number().int().min(0).default(0),
+  maxRooms: z.number().int().min(1).max(10_000).optional(),
+  rooms: z.number().int().min(0).optional(),
 });
-const HeartbeatBody = z.object({ serverId: z.string().min(1).max(64), load: z.number().int().min(0) });
+const HeartbeatBody = z.object({
+  serverId: z.string().min(1).max(64),
+  load: z.number().int().min(0),
+  rooms: z.number().int().min(0).optional(),
+  matches: z.array(z.string().min(1).max(64)).max(10_000).optional(),
+});
 const SettingsSchema = z
   .object({
     playlistId: z.string().min(1).max(64),
@@ -214,13 +221,19 @@ export async function buildMatchmaker(
       region: b.region,
       capacity: b.capacity,
       load: b.load,
+      ...(b.maxRooms !== undefined ? { maxRooms: b.maxRooms } : {}),
+      ...(b.rooms !== undefined ? { rooms: b.rooms } : {}),
     });
   });
 
   app.post('/servers/heartbeat', async (req) => {
     gameServer(req);
     const b = parse(HeartbeatBody, req.body);
-    return mm.heartbeat(b.serverId, b.load);
+    return mm.heartbeat(b.serverId, {
+      load: b.load,
+      ...(b.rooms !== undefined ? { rooms: b.rooms } : {}),
+      ...(b.matches ? { matches: b.matches } : {}),
+    });
   });
 
   app.delete('/servers/:id', async (req, reply) => {

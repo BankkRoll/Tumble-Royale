@@ -31,6 +31,7 @@ Redis is optional in development (`REDIS_URL`); without it state is in-process.
 | `TARGET_SIZE`                                       | `40`                                | Lobby size when a ticket omits `maxPlayers`                                                                           |
 | `MAX_WAIT_MS` / `HOT_MAX_WAIT_MS` / `HOT_THRESHOLD` | `25000` / `12000` / `80`            | Release with bots after the wait; the shorter wait applies once a region has `HOT_THRESHOLD` players searching        |
 | `TICK_MS`                                           | `500`                               | Release tick                                                                                                          |
+| `REGION_FALLBACK_MS`                                | `10000`                             | How long a ready lobby waits for a server in its own region before nearby regions are tried                           |
 | `ALLOW_MEMORY_STORE`                                | –                                   | `1` lets production boot without `REDIS_URL` (single instance, state lost on restart)                                 |
 | `ALLOWED_ORIGINS`                                   | any (dev) / `PUBLIC_WEB_URL` (prod) | Comma-separated browser origins allowed by CORS and on the `/ws` handshake                                            |
 | `PUBLIC_WEB_URL`                                    | `http://localhost:5173`             | Web client origin; the production CORS default                                                                        |
@@ -55,7 +56,10 @@ when it mints tokens and queue tickets) and the outage is logged.
 1. Party leader: `POST {api}/party/queue-ticket { playlistId }` → `ticket`.
 2. Leader: `POST /queue { ticket }` with `Authorization: Bearer <accessToken>`.
 3. Every member: open `GET /ws?token=<accessToken>` and receive `queued`,
-   `status { searching, waitedSec, etaSec, band }` (1 Hz), `waiting_for_server`,
+   `status { searching, waitedSec, etaSec, band }` (1 Hz),
+   `waiting_for_server { region, otherRegions }` (sent once when the lobby is
+   ready but no server has room, and once more with `otherRegions: true` when
+   other regions are being tried: "Finding a server in another region"),
    `queue_cancelled`, and finally
    `match_found { matchId, server: { url }, ticket, team, role }`.
 4. Connect to `server.url` and present `ticket`. `DELETE /queue` cancels for
@@ -70,9 +74,21 @@ arrive on the same WebSocket as `lobby_update`.
 
 ## Game servers
 
-- `POST /servers/register { serverId, url, region, capacity, load? }` and
-  `POST /servers/heartbeat { serverId, load }` every ≤ 5 s (dead after 15 s),
-  `DELETE /servers/:id` on shutdown. Bearer `GAME_SERVER_SECRET`.
+- `POST /servers/register { serverId, url, region, capacity, load?, maxRooms?, rooms? }`
+  and `POST /servers/heartbeat { serverId, load, rooms?, matches? }` every ≤ 5 s
+  (dead after 15 s), `DELETE /servers/:id` on shutdown. Bearer
+  `GAME_SERVER_SECRET`. `capacity` and `load` count **seats, humans and bots**
+  (bots cost the server as much simulation as players); `maxRooms`/`rooms`
+  cap concurrent rooms; `matches` lists the match ids the server hosts.
+- Placing a match reserves its seats (and one room) on the server until a
+  heartbeat lists the match id, or for 120 s (join tickets last 90 s), so a
+  heartbeat sent before the players arrive cannot hand the same seats out
+  twice.
+- A lobby goes to the least-loaded server in its region. If none has room
+  for `REGION_FALLBACK_MS` (default 10 s), the nearest regions with room are
+  tried (`na → sa, eu, oce, asia`; `eu → na, asia, sa, oce`;
+  `asia → oce, eu, na, sa`; `oce → asia, na, eu, sa`; `sa → na, eu, oce, asia`),
+  then any region. Custom lobbies try other regions immediately on start.
 - Join ticket: HS256 JWT signed with `GAME_TICKET_SECRET`, `iss`
   `tumble-matchmaker`, `aud` `tumble-game-server`, 90 s expiry. Claims
   (`JoinTicketClaims` in `src/tickets.ts`): `sub` (user id), `name`, `mid`

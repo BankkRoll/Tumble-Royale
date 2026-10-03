@@ -1,6 +1,10 @@
 /**
  * Game-server registry: servers register and heartbeat with capacity and
- * load; lobbies go to the least-loaded live server in their region.
+ * load; lobbies go to the least-loaded live server in their region, or, after
+ * a wait, in the nearest region that has room.
+ *
+ * Capacity is counted in seats (humans and bots: bots cost the server as much
+ * simulation as players) and, when a server reports it, in rooms.
  */
 
 /** A registered game server. */
@@ -9,10 +13,14 @@ export interface GameServer {
   /** WebSocket URL clients connect to, e.g. `wss://eu-1.example.com`. */
   url: string;
   region: string;
-  /** Maximum concurrent players. */
+  /** Maximum concurrent seats (humans and bots). */
   capacity: number;
-  /** Players currently hosted or reserved. */
+  /** Seats in use, as last reported (plus pending reservations when picking). */
   load: number;
+  /** Maximum concurrent rooms; absent when the server does not report one. */
+  maxRooms?: number;
+  /** Rooms open, as last reported (plus pending reservations when picking). */
+  rooms?: number;
   /** Epoch ms of the last heartbeat. */
   lastSeen: number;
 }
@@ -21,30 +29,66 @@ export interface GameServer {
 export const SERVER_TTL_MS = 15_000;
 
 /**
- * Picks the least-loaded live server in a region with room for `seats`.
+ * Regions ordered by rough network distance from each region (nearest first,
+ * excluding itself). Regions not listed fall back to any region with room.
+ */
+export const REGION_PROXIMITY: Readonly<Record<string, readonly string[]>> = {
+  na: ['sa', 'eu', 'oce', 'asia'],
+  sa: ['na', 'eu', 'oce', 'asia'],
+  eu: ['na', 'asia', 'sa', 'oce'],
+  asia: ['oce', 'eu', 'na', 'sa'],
+  oce: ['asia', 'na', 'eu', 'sa'],
+};
+
+/**
+ * Candidate regions for a lobby: its own, then (when `fallback`) the nearest
+ * ones, then any other region a live server is in.
  *
- * @param servers - Registry snapshot.
- * @param region - Lobby region.
- * @param seats - Players to place (humans + bots).
+ * @param region - The lobby's region.
+ * @param fallback - Whether other regions may be used yet.
+ * @param known - Regions of the live servers.
+ */
+export function candidateRegions(region: string, fallback: boolean, known: Iterable<string> = []): string[] {
+  if (!fallback) return [region];
+  const out = [region, ...(REGION_PROXIMITY[region] ?? [])];
+  for (const r of [...new Set(known)].sort()) if (!out.includes(r)) out.push(r);
+  return out;
+}
+
+/** True when a live server has room for `seats` more seats and one more room. */
+export function hasRoom(s: GameServer, seats: number, now: number): boolean {
+  if (now - s.lastSeen > SERVER_TTL_MS) return false;
+  if (s.capacity - s.load < seats) return false;
+  return s.maxRooms === undefined || (s.rooms ?? 0) < s.maxRooms;
+}
+
+/**
+ * Picks the least-loaded live server with room for `seats`, trying regions in order.
+ *
+ * @param servers - Registry snapshot (load and rooms should include reservations).
+ * @param regions - Regions to try, best first (see {@link candidateRegions}).
+ * @param seats - Seats to place (humans + bots).
  * @param now - Current time (epoch ms).
  * @returns The chosen server, or null when none fits.
  */
 export function pickServer(
   servers: readonly GameServer[],
-  region: string,
+  regions: string | readonly string[],
   seats: number,
   now: number,
 ): GameServer | null {
-  let best: GameServer | null = null;
-  let bestRatio = Number.POSITIVE_INFINITY;
-  for (const s of servers) {
-    if (s.region !== region || now - s.lastSeen > SERVER_TTL_MS) continue;
-    if (s.capacity - s.load < seats) continue;
-    const ratio = s.load / s.capacity;
-    if (ratio < bestRatio || (ratio === bestRatio && best && s.id < best.id)) {
-      best = s;
-      bestRatio = ratio;
+  for (const region of typeof regions === 'string' ? [regions] : regions) {
+    let best: GameServer | null = null;
+    let bestRatio = Number.POSITIVE_INFINITY;
+    for (const s of servers) {
+      if (s.region !== region || !hasRoom(s, seats, now)) continue;
+      const ratio = s.load / s.capacity;
+      if (ratio < bestRatio || (ratio === bestRatio && best && s.id < best.id)) {
+        best = s;
+        bestRatio = ratio;
+      }
     }
+    if (best) return best;
   }
-  return best;
+  return null;
 }

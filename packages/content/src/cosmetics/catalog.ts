@@ -5,36 +5,22 @@
  * - Declares every launch item, validated once at module load.
  * - Provides id lookup and per-slot listings.
  *
- * Prices follow one curve per rarity so the store stays coherent; premium
- * (Gems) pricing is reserved for Legendary/Mythic store items.
+ * Prices follow one curve per rarity (pricing.ts); the themed store sets live
+ * in catalog-store.ts.
  */
+import { itemMeta, type ItemPrice } from './pricing.ts';
+import { STORE_COLLECTION } from './catalog-store.ts';
 import {
   CosmeticItemSchema,
   type CosmeticItem,
   type CosmeticItemInput,
   type CosmeticSlot,
-  type Currency,
   type Rarity,
 } from './schema.ts';
 
-type Price = { currency: Currency; amount: number } | null;
-
-/** Store price per rarity. */
-const STORE_PRICE: Readonly<Record<Rarity, Price>> = {
-  common: { currency: 'gumballs', amount: 400 },
-  uncommon: { currency: 'gumballs', amount: 800 },
-  rare: { currency: 'gumballs', amount: 1500 },
-  epic: { currency: 'gumballs', amount: 3000 },
-  legendary: { currency: 'gems', amount: 800 },
-  mythic: { currency: 'gems', amount: 1600 },
-};
-
 type Src = 'default' | 'store' | 'pass' | 'challenge' | 'event' | 'shards';
-const meta = (rarity: Rarity, source: Src): { rarity: Rarity; source: Src; price: Price } => ({
-  rarity,
-  source,
-  price: source === 'store' ? STORE_PRICE[rarity] : null,
-});
+const meta = (rarity: Rarity, source: Src): { rarity: Rarity; source: Src; price: ItemPrice } =>
+  itemMeta(rarity, source);
 
 // -----------------------------------------------------------------------------
 // Colours
@@ -1000,7 +986,7 @@ const footsteps: CosmeticItemInput[] = [
 // Season 1: Sugar Rush pass
 // -----------------------------------------------------------------------------
 
-const pass = (rarity: Rarity): { rarity: Rarity; source: Src; price: Price } => meta(rarity, 'pass');
+const pass = (rarity: Rarity): { rarity: Rarity; source: Src; price: ItemPrice } => meta(rarity, 'pass');
 
 const sugarRushColors: CosmeticItemInput[] = [
   {
@@ -2023,7 +2009,8 @@ const sugarRushVfx: CosmeticItemInput[] = [
 // Crown Shard shop exclusives (royal set)
 // -----------------------------------------------------------------------------
 
-const shardItem = (rarity: Rarity): { rarity: Rarity; source: Src; price: Price } => meta(rarity, 'shards');
+const shardItem = (rarity: Rarity): { rarity: Rarity; source: Src; price: ItemPrice } =>
+  meta(rarity, 'shards');
 
 /** Only obtainable from the weekly Crown Shard shop rotation (`progression/shard-shop.ts`). */
 const shardExclusives: CosmeticItemInput[] = [
@@ -2187,6 +2174,7 @@ export const COSMETICS: readonly CosmeticItem[] = [
   ...sugarRushProfile,
   ...sugarRushVfx,
   ...shardExclusives,
+  ...STORE_COLLECTION,
 ].map((item) => CosmeticItemSchema.parse(item));
 
 const byId = new Map<string, CosmeticItem>();

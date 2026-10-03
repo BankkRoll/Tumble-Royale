@@ -1,0 +1,22 @@
+{
+  "name": "@tumble/bot-swarm",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Headless WebSocket load tester for the game server.",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@tumble/netcode": "workspace:*",
+    "@tumble/shared": "workspace:*",
+    "@tumble/sim": "workspace:*",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.2",
+    "tsx": "^4.23.15"
+  }
+}

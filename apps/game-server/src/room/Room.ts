@@ -1,0 +1,809 @@
+/**
+ * One show instance: up to 40 players (humans + bots), one MatchSim at a time.
+ *
+ * Responsibilities:
+ * - roster: human joins, bot fill after a wait, resume tokens, idle-while-disconnected;
+ * - the authoritative tick: per sim step, feed each player's buffered input
+ *   (humans via jitter buffers, bots via injected brains), step the sim, route
+ *   SimEvents to the reliable channel and fates to the show controller;
+ * - per-client snapshots (delta + interest) at SNAPSHOT_HZ;
+ * - delegating show flow to a {@link ShowController} and applying its events;
+ * - lag-compensation history ({@link LagCompensator}).
+ */
+import { randomBytes } from 'node:crypto';
+import {
+  BitReader,
+  BitWriter,
+  EntityTable,
+  INPUT_REDUNDANCY,
+  InputJitterBuffer,
+  KickReason,
+  MsgType,
+  ObstacleTable,
+  PROTOCOL_VERSION,
+  PositionQuantizer,
+  createCharacterFullState,
+  createNetRoundStatus,
+  decodeReliableMessage,
+  encodeReliableMessage,
+  readInputBatch,
+  readPing,
+  simTickOf,
+  writeKick,
+  writePong,
+  writeWelcome,
+  type HelloMsg,
+  type InputBatchHeader,
+  type KickReasonId,
+  type LowFreqMessage,
+  type MatchPlayerInfo,
+  type MatchSim,
+  type NetPlayerInfo,
+  type NetRoundStatus,
+  type RoundStatus,
+  type SnapshotFrame,
+} from '@tumble/netcode';
+import type { CharacterInput, SimEvent } from '@tumble/sim';
+import { MAX_PLAYERS, SERVER_TICK_HZ, SIM_STEPS_PER_TICK, type RoundDefinition } from '@tumble/shared';
+import { InputSequenceGuard, sanitizeChat, sanitizeName } from '../antiCheat.ts';
+import { LagCompensator } from '../lagcomp.ts';
+import type { ServerMetrics } from '../metrics.ts';
+import type { ClientSession } from './session.ts';
+import type { RoomConfig, RoomDeps, ServerBotBrain, ShowController, ShowEvent, ShowRoundPlan } from './types.ts';
+
+
+/** Lifecycle of a room. */
+export type RoomState = 'lobby' | 'show' | 'ended' | 'closed';
+
+/** A player in the room, human or bot. Survives reconnects. */
+interface PlayerSlot {
+  id: number;
+  name: string;
+  isBot: boolean;
+  loadout: string;
+  token: string;
+  session: ClientSession | null;
+  disconnectedAt: number;
+  /** Left for good (resume window expired); kept for results. */
+  left: boolean;
+  /** Joined after the show started: watches only. */
+  spectator: boolean;
+  jitter: InputJitterBuffer;
+  seqGuard: InputSequenceGuard;
+  brain: ServerBotBrain | null;
+  lastYaw: number;
+}
+
+/** Summary for `/rooms`. */
+export interface RoomInfo {
+  id: string;
+  state: RoomState;
+  humans: number;
+  connected: number;
+  bots: number;
+  serverTick: number;
+  round: string | null;
+  epoch: number;
+}
+
+const SPECTATOR_ID_BASE = 64;
+const BOT_NAMES_A = ['Bouncy', 'Wobbly', 'Zippy', 'Fizzy', 'Jelly', 'Sprinkle', 'Bubbly', 'Gummy', 'Snappy', 'Dizzy', 'Puffy', 'Squishy'];
+const BOT_NAMES_B = ['Tumbler', 'Noodle', 'Pebble', 'Muffin', 'Biscuit', 'Comet', 'Pickle', 'Waffle', 'Sprout', 'Button', 'Marble', 'Turnip'];
+
+/**
+ * Authoritative room.
+ *
+ * @example
+ * const room = new Room('r1', deps, config, metrics, () => scheduler.dueTime(0));
+ * room.join(session, hello);   // from RoomManager on Hello
+ * room.tick(now);              // 30 Hz from the shared scheduler
+ */
+export class Room {
+  state: RoomState = 'lobby';
+  /** Network ticks since the room was created. */
+  serverTick = 0;
+  /** Lag-compensation history (global sim ticks, see {@link simTickNow}). */
+  readonly lagComp = new LagCompensator();
+
+  private readonly slots = new Map<number, PlayerSlot>();
+  private readonly sessions = new Set<ClientSession>();
+  private readonly show: ShowController;
+  private sim: MatchSim | null = null;
+  private round: RoundDefinition | null = null;
+  private quantizer: PositionQuantizer | null = null;
+  private obstacles = new ObstacleTable([]);
+  private roundPlayers: number[] = [];
+  private epoch = 0;
+  private snapshotId = 0;
+  private firstJoinAt = -1;
+  private endedAt = -1;
+  private emptySince = -1;
+  private lastLobbyBroadcast = 0;
+  private status: RoundStatus | null = null;
+
+  private readonly entities = new EntityTable();
+  private readonly netStatus: NetRoundStatus = createNetRoundStatus();
+  private readonly leaders = new Int32Array(3).fill(-1);
+  private readonly frame: SnapshotFrame;
+  private readonly writer = new BitWriter(4096);
+  private readonly reader = new BitReader();
+  private readonly scratchState = createCharacterFullState();
+  private readonly scratchInput: CharacterInput = { moveX: 0, moveZ: 0, yaw: 0, buttons: 0, emote: 0 };
+  private readonly batchInputs: CharacterInput[] = Array.from({ length: INPUT_REDUNDANCY }, () => ({
+    moveX: 0,
+    moveZ: 0,
+    yaw: 0,
+    buttons: 0,
+    emote: 0,
+  }));
+  private readonly batchHeader: InputBatchHeader = { newestSeq: 0, clientTick: 0, ackSnapshotId: -1, count: 0 };
+  private readonly presentPlayers = new Set<number>();
+  private readonly log: (msg: string) => void;
+
+  /**
+   * @param id - Room id.
+   * @param deps - Injected collaborators.
+   * @param config - Tuning.
+   * @param metrics - Process metrics.
+   * @param tickEpochMs - Server clock (ms) at which this room's tick 0 was due.
+   */
+  constructor(
+    readonly id: string,
+    private readonly deps: RoomDeps,
+    private readonly config: RoomConfig,
+    private readonly metrics: ServerMetrics,
+    private readonly tickEpochMs: () => number,
+  ) {
+    this.show = deps.createShowController({ roomId: id });
+    this.log = deps.log ?? (() => {});
+    this.frame = {
+      snapshotId: 0,
+      serverTick: 0,
+      epoch: 0,
+      matchTime: 0,
+      entities: this.entities,
+      obstacles: this.obstacles,
+      status: this.netStatus,
+      leaders: this.leaders,
+      quantizer: new PositionQuantizer({ min: { x: -1, y: -1, z: -1 }, max: { x: 1, y: 1, z: 1 } }),
+    };
+  }
+
+  /** Global sim tick of the room's current state (lag-compensation timeline). */
+  get simTickNow(): number {
+    return simTickOf(this.serverTick);
+  }
+
+  /** The running sim, if any (tests, tools, lag-comp consumers). */
+  get matchSim(): MatchSim | null {
+    return this.sim;
+  }
+
+  /** Connected human sessions. */
+  get connectedCount(): number {
+    return this.sessions.size;
+  }
+
+  /** Humans in the roster (connected or resumable). */
+  get humanCount(): number {
+    let n = 0;
+    for (const s of this.slots.values()) if (!s.isBot && !s.left && !s.spectator) n++;
+    return n;
+  }
+
+  /** True when a new human can join as a player. */
+  canAcceptPlayer(): boolean {
+    return this.state === 'lobby' && this.humanCount < this.config.capacity;
+  }
+
+  /** True when the room can take a spectator. */
+  canAcceptSpectator(): boolean {
+    return this.state === 'show' && this.slots.size < 255 - SPECTATOR_ID_BASE;
+  }
+
+  /** Room summary. */
+  info(): RoomInfo {
+    let bots = 0;
+    for (const s of this.slots.values()) if (s.isBot) bots++;
+    return {
+      id: this.id,
+      state: this.state,
+      humans: this.humanCount,
+      connected: this.sessions.size,
+      bots,
+      serverTick: this.serverTick,
+      round: this.round?.id ?? null,
+      epoch: this.epoch,
+    };
+  }
+
+  /** RTT estimates of connected sessions (ms), for metrics. */
+  sessionRtts(): number[] {
+    const out: number[] = [];
+    for (const s of this.sessions) out.push(s.rttMs);
+    return out;
+  }
+
+  /** Sums and resets the jitter-buffer miss/late counters of all human slots. */
+  takeInputStats(): { missed: number; late: number } {
+    let missed = 0;
+    let late = 0;
+    for (const s of this.slots.values()) {
+      missed += s.jitter.missed;
+      late += s.jitter.late;
+      s.jitter.missed = 0;
+      s.jitter.late = 0;
+    }
+    return { missed, late };
+  }
+
+  /** Finds a resumable slot by token. */
+  hasToken(token: string): boolean {
+    for (const s of this.slots.values()) if (s.token === token && !s.left) return true;
+    return false;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sessions
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Adds a new human (player in the lobby, spectator during a show).
+   *
+   * @returns The assigned player id.
+   */
+  join(session: ClientSession, hello: HelloMsg, now: number): number {
+    const spectator = this.state !== 'lobby';
+    const id = this.allocateId(spectator);
+    const slot: PlayerSlot = {
+      id,
+      name: sanitizeName(hello.name),
+      isBot: false,
+      loadout: hello.loadout.slice(0, 255),
+      token: randomBytes(18).toString('base64url'),
+      session,
+      disconnectedAt: -1,
+      left: false,
+      spectator,
+      jitter: new InputJitterBuffer(),
+      seqGuard: new InputSequenceGuard(),
+      brain: null,
+      lastYaw: 0,
+    };
+    this.slots.set(id, slot);
+    if (this.firstJoinAt < 0) this.firstJoinAt = now;
+    this.attach(session, slot, false);
+    this.log(`[room ${this.id}] ${slot.name} joined as ${spectator ? 'spectator' : 'player'} ${id}`);
+    return id;
+  }
+
+  /**
+   * Reattaches a reconnecting client to its slot.
+   *
+   * @returns False if the token is unknown or expired.
+   */
+  resume(session: ClientSession, token: string): boolean {
+    for (const slot of this.slots.values()) {
+      if (slot.token !== token || slot.left) continue;
+      if (slot.session && slot.session !== session) this.detach(slot.session, 'replaced');
+      slot.jitter.reset();
+      slot.seqGuard.reset();
+      slot.disconnectedAt = -1;
+      this.attach(session, slot, true);
+      this.log(`[room ${this.id}] ${slot.name} resumed player ${slot.id}`);
+      return true;
+    }
+    return false;
+  }
+
+  /** Routes one inbound message from a joined session. */
+  onMessage(session: ClientSession, data: Uint8Array, now: number): void {
+    if (!session.guard.admit(now, data.length)) {
+      this.metrics.rateLimited++;
+      if (session.guard.violation(now)) this.kick(session, KickReason.RateLimited, 'rate limited');
+      return;
+    }
+    const slot = this.slots.get(session.playerId);
+    if (!slot || slot.session !== session) return;
+    const r = this.reader.reset(data);
+    const type = r.readBits(8);
+    switch (type) {
+      case MsgType.InputBatch:
+        this.onInputBatch(session, slot, r, now);
+        return;
+      case MsgType.Reliable:
+        if (!session.reliable.receive(r, (p) => this.onReliable(session, slot, p, now))) this.violation(session, now);
+        return;
+      case MsgType.Ping: {
+        const t0 = readPing(r);
+        if (r.overflow) return this.violation(session, now);
+        const w = this.writer.reset();
+        writePong(w, t0, now, now);
+        session.conn.send(w.finish().slice());
+        return;
+      }
+      case MsgType.Hello:
+        // Our Welcome was lost (conditioned link) or the client retried: answer again.
+        this.sendWelcome(session, slot, false);
+        return;
+      default:
+        this.violation(session, now);
+    }
+  }
+
+  /** Called when a session's connection closes. */
+  onClose(session: ClientSession, now: number): void {
+    this.sessions.delete(session);
+    const slot = this.slots.get(session.playerId);
+    if (!slot || slot.session !== session) return;
+    slot.session = null;
+    if (slot.spectator) {
+      this.slots.delete(slot.id);
+      return;
+    }
+    slot.disconnectedAt = now;
+    slot.jitter.reset();
+    slot.jitter.setIdle(slot.lastYaw);
+    this.log(`[room ${this.id}] player ${slot.id} disconnected (resumable for ${this.config.resumeWindowMs / 1000}s)`);
+    this.broadcastPlayerList();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tick
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Runs one 30 Hz network tick.
+   *
+   * @param now - Current server time (ms).
+   */
+  tick(now: number): void {
+    if (this.state === 'closed') return;
+    const t0 = performance.now();
+    this.serverTick++;
+    this.updateRoster(now);
+
+    let simMs = 0;
+    if (this.sim) {
+      const ts = performance.now();
+      for (let s = 0; s < SIM_STEPS_PER_TICK; s++) {
+        this.applyInputs(this.sim);
+        this.sim.step();
+        this.routeSimEvents(this.sim, simTickOf(this.serverTick - 1) + s + 1);
+      }
+      simMs = performance.now() - ts;
+      this.status = this.sim.getStatus();
+    } else {
+      this.status = null;
+    }
+
+    this.presentPlayers.clear();
+    for (const s of this.slots.values()) if (!s.left && !s.spectator) this.presentPlayers.add(s.id);
+    this.show.onTick(1 / SERVER_TICK_HZ, { status: this.status, presentPlayers: this.presentPlayers });
+    this.applyShowEvents(this.show.drainEvents(), now);
+
+    const tSnap = performance.now();
+    if (this.sim && this.serverTick % this.config.snapshotEvery === 0) this.sendSnapshots(this.sim, now);
+    const tSend = performance.now();
+    this.flushReliable(now);
+    const tEnd = performance.now();
+
+    if (this.sim || this.sessions.size > 0) {
+      this.metrics.tick.sim.add(simMs);
+      this.metrics.tick.snapshot.add(tSend - tSnap);
+      this.metrics.tick.send.add(tEnd - tSend);
+      this.metrics.tick.total.add(tEnd - t0);
+    }
+  }
+
+  /** Closes every session and disposes the sim. */
+  dispose(): void {
+    for (const s of [...this.sessions]) this.kick(s, KickReason.Shutdown, 'room closed');
+    this.sim?.dispose();
+    this.sim = null;
+    this.state = 'closed';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Roster
+  // ---------------------------------------------------------------------------
+
+  private updateRoster(now: number): void {
+    for (const slot of this.slots.values()) {
+      if (slot.isBot || slot.left || slot.session || slot.disconnectedAt < 0) continue;
+      if (now - slot.disconnectedAt < this.config.resumeWindowMs) continue;
+      if (this.state === 'lobby') {
+        this.slots.delete(slot.id);
+      } else {
+        slot.left = true;
+        // The real sim eliminates forfeiting players at once; the contract makes it optional.
+        (this.sim as { forfeit?: (id: number) => void } | null)?.forfeit?.(slot.id);
+        this.show.onPlayerLeft(slot.id);
+      }
+      this.log(`[room ${this.id}] player ${slot.id} resume window expired`);
+      this.broadcastPlayerList();
+    }
+
+    if (this.state === 'lobby') {
+      const humans = this.humanCount;
+      if (humans === 0) {
+        this.firstJoinAt = -1;
+      } else if (now - this.firstJoinAt >= this.config.fillWaitMs || humans >= Math.min(this.config.startAtHumans, this.config.capacity)) {
+        this.startShow();
+      } else if (now - this.lastLobbyBroadcast >= 1000) {
+        this.lastLobbyBroadcast = now;
+        this.broadcast({
+          t: 'lobby',
+          humans,
+          capacity: this.config.capacity,
+          startsInMs: Math.max(0, this.config.fillWaitMs - (now - this.firstJoinAt)),
+        });
+      }
+    }
+
+    let anyHuman = this.sessions.size > 0;
+    if (!anyHuman) for (const s of this.slots.values()) if (!s.isBot && !s.left && s.disconnectedAt >= 0) anyHuman = true;
+    if (anyHuman) this.emptySince = -1;
+    else if (this.emptySince < 0) this.emptySince = now;
+    const idle = this.state !== 'lobby' && this.emptySince >= 0 && now - this.emptySince > this.config.idleCloseMs;
+    const over = this.state === 'ended' && now - this.endedAt > this.config.idleCloseMs;
+    if (idle || over || (this.state === 'lobby' && this.slots.size === 0 && this.serverTick > SERVER_TICK_HZ * 60)) {
+      this.log(`[room ${this.id}] closing (${over ? 'show over' : 'empty'})`);
+      this.dispose();
+    }
+  }
+
+  private startShow(): void {
+    this.state = 'show';
+    let botIndex = 0;
+    const seed = this.deps.randomSeed();
+    while (this.humanCount + botIndex < this.config.capacity) {
+      const id = this.allocateId(false);
+      if (id < 0) break;
+      const name = `${BOT_NAMES_A[(seed + botIndex * 7) % BOT_NAMES_A.length]} ${BOT_NAMES_B[(seed >>> 3) % BOT_NAMES_B.length]!.slice(0, 1)}${botIndex}`;
+      const slot: PlayerSlot = {
+        id,
+        name,
+        isBot: true,
+        loadout: '',
+        token: '',
+        session: null,
+        disconnectedAt: -1,
+        left: false,
+        spectator: false,
+        jitter: new InputJitterBuffer(),
+        seqGuard: new InputSequenceGuard(),
+        brain: null,
+        lastYaw: 0,
+      };
+      this.slots.set(id, slot);
+      botIndex++;
+    }
+    const roster = this.roster();
+    for (const info of roster) {
+      const slot = this.slots.get(info.id)!;
+      if (slot.isBot && this.deps.createBot) slot.brain = this.deps.createBot(info, seed);
+    }
+    this.log(`[room ${this.id}] show starting: ${this.humanCount} humans + ${botIndex} bots`);
+    this.broadcastPlayerList();
+    this.show.start(roster, seed);
+  }
+
+  private roster(): MatchPlayerInfo[] {
+    const out: MatchPlayerInfo[] = [];
+    for (const s of this.slots.values()) {
+      if (s.spectator) continue;
+      out.push(s.isBot ? { id: s.id, name: s.name, isBot: true, team: -1, botSkill: 'average' } : { id: s.id, name: s.name, isBot: false, team: -1 });
+    }
+    return out.sort((a, b) => a.id - b.id);
+  }
+
+  private allocateId(spectator: boolean): number {
+    const lo = spectator ? SPECTATOR_ID_BASE : 0;
+    const hi = spectator ? 255 : Math.min(MAX_PLAYERS, SPECTATOR_ID_BASE);
+    for (let id = lo; id < hi; id++) if (!this.slots.has(id)) return id;
+    return -1;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Inputs & events
+  // ---------------------------------------------------------------------------
+
+  private applyInputs(sim: MatchSim): void {
+    const input = this.scratchInput;
+    for (const id of this.roundPlayers) {
+      const slot = this.slots.get(id);
+      if (!slot) continue;
+      if (slot.isBot) {
+        if (slot.brain) {
+          slot.brain.think(sim, id, input);
+          sim.setInput(id, input);
+        }
+        continue;
+      }
+      const seq = slot.jitter.next(input);
+      if (seq >= 0) slot.lastYaw = input.yaw;
+      sim.setInput(id, input);
+    }
+  }
+
+  private routeSimEvents(sim: MatchSim, simTick: number): void {
+    const events = sim.events.drain();
+    for (const e of events) {
+      if (e.type === 'qualified') this.show.onPlayerFate(e.player, 1, e.place);
+      else if (e.type === 'eliminated') this.show.onPlayerFate(e.player, 2, e.place);
+      this.broadcastEvent(e, simTick);
+    }
+  }
+
+  private broadcastEvent(event: SimEvent, simTick: number): void {
+    if (this.sessions.size === 0) return;
+    const payload = encodeReliableMessage({ kind: 'sim', tick: simTick, event });
+    for (const s of this.sessions) s.reliable.send(payload);
+  }
+
+  private onInputBatch(session: ClientSession, slot: PlayerSlot, r: BitReader, now: number): void {
+    const h = readInputBatch(r, this.batchInputs, this.batchHeader);
+    if (r.overflow) return this.violation(session, now);
+    session.onSnapshotAck(h.ackSnapshotId, now);
+    if (h.count === 0 || slot.spectator) return;
+    if (!slot.seqGuard.check(h.newestSeq, now)) {
+      this.metrics.rateLimited++;
+      return this.violation(session, now);
+    }
+    // Oldest first, so arrival-time jitter tracking sees sequences in order.
+    for (let i = h.count - 1; i >= 0; i--) {
+      const input = this.batchInputs[i]!;
+      if (input.emote > 4) input.emote = 0;
+      slot.jitter.push(h.newestSeq - i, input, now);
+    }
+  }
+
+  private onReliable(session: ClientSession, slot: PlayerSlot, payload: Uint8Array, now: number): void {
+    const m = decodeReliableMessage(payload);
+    // Clients may only send low-frequency messages; SimEvents are server-authored.
+    if (!m || m.kind !== 'msg') return this.violation(session, now);
+    this.onLowFreq(session, slot, m.msg, now);
+  }
+
+  private onLowFreq(session: ClientSession, slot: PlayerSlot, msg: LowFreqMessage, now: number): void {
+    switch (msg.t) {
+      case 'chat': {
+        const text = sanitizeChat(msg.text);
+        if (!text || !session.guard.admitChat(now)) return;
+        this.broadcast({ t: 'chat', from: slot.id, text });
+        return;
+      }
+      case 'spectate':
+        session.spectateTarget = typeof msg.target === 'number' && this.roundPlayers.includes(msg.target) ? msg.target : -1;
+        return;
+      case 'loaded':
+        if (this.round && msg.roundId === this.round.id) this.show.onPlayerLoaded?.(slot.id);
+        return;
+      default:
+        this.violation(session, now);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Show flow
+  // ---------------------------------------------------------------------------
+
+  private applyShowEvents(events: ShowEvent[], now: number): void {
+    for (const e of events) {
+      switch (e.type) {
+        case 'showPhase':
+          this.broadcast({ t: 'showPhase', phase: e.phase });
+          break;
+        case 'roundStart':
+          this.startRound(e.plan);
+          break;
+        case 'roundPhase':
+          if (this.sim) {
+            this.sim.setPhase(e.phase, e.time);
+            this.broadcast({ t: 'roundPhase', phase: e.phase, time: e.time ?? this.sim.time });
+          }
+          break;
+        case 'roundEnd':
+          this.broadcast({ t: 'roundResults', roundId: e.roundId, results: e.results });
+          break;
+        case 'showEnd':
+          this.broadcast({ t: 'showSummary', winners: e.winners, rounds: e.rounds });
+          this.state = 'ended';
+          this.endedAt = now;
+          break;
+      }
+    }
+  }
+
+  private startRound(plan: ShowRoundPlan): void {
+    this.sim?.dispose();
+    this.sim = null;
+    const round = plan.round ?? this.deps.loadRound(plan.roundId);
+    const players: MatchPlayerInfo[] = [];
+    const roster = this.roster();
+    for (const id of plan.playerIds) {
+      const info = roster.find((p) => p.id === id);
+      if (info) players.push(info);
+    }
+    const sim = this.deps.createMatchSim({
+      R: this.deps.R,
+      round,
+      seed: plan.seed,
+      stage: plan.stage,
+      players,
+      mode: 'authority',
+      ...(plan.qualifyTarget !== undefined ? { qualifyTarget: plan.qualifyTarget } : {}),
+      ...(plan.variationId !== undefined ? { variationId: plan.variationId } : {}),
+    });
+    this.sim = sim;
+    this.round = round;
+    this.roundPlayers = players.map((p) => p.id);
+    this.quantizer = new PositionQuantizer(round.bounds);
+    const ids = new Set<string>(round.obstacles.map((o) => o.id));
+    for (const k of sim.getObstacleNetStates().keys()) ids.add(k);
+    this.obstacles = new ObstacleTable([...ids]);
+    this.epoch = (this.epoch + 1) & 0xff;
+    this.lagComp.reset();
+    this.frame.obstacles = this.obstacles;
+    this.frame.quantizer = this.quantizer;
+    this.frame.epoch = this.epoch;
+    for (const s of this.sessions) this.sendJoinRound(s);
+    this.log(`[room ${this.id}] round ${round.id} (stage ${plan.stage}) with ${players.length} players, epoch ${this.epoch}`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Snapshots
+  // ---------------------------------------------------------------------------
+
+  private sendSnapshots(sim: MatchSim, now: number): void {
+    const q = this.quantizer!;
+    const simTick = simTickOf(this.serverTick);
+    const st = this.scratchState;
+    this.entities.clear();
+    this.lagComp.begin(simTick);
+    for (const id of this.roundPlayers) {
+      if (!sim.getPlayerState(id, st)) continue;
+      this.entities.set(id, st, q, simTick);
+      this.lagComp.add(id, st.pos, st.rot);
+    }
+    this.obstacles.update(sim.getObstacleNetStates());
+    this.fillStatus(this.status);
+    const standings = sim.getStandings();
+    for (let i = 0; i < this.leaders.length; i++) this.leaders[i] = standings[i] ?? -1;
+
+    const f = this.frame;
+    f.snapshotId = this.snapshotId;
+    this.snapshotId = (this.snapshotId + 1) & 0xffff;
+    f.serverTick = this.serverTick;
+    f.matchTime = sim.time;
+
+    const viewer = { playerId: -1, spectateTarget: -1, ackedInputSeq: -1 };
+    for (const s of this.sessions) {
+      const slot = this.slots.get(s.playerId);
+      if (!slot) continue;
+      viewer.playerId = slot.spectator ? -1 : slot.id;
+      viewer.spectateTarget = s.spectateTarget;
+      viewer.ackedInputSeq = slot.spectator ? -1 : slot.jitter.lastConsumedSeq;
+      const w = this.writer.reset();
+      const stats = s.encoder.encode(w, f, viewer);
+      // ws may hold the buffer until the socket drains, so each send gets its own copy.
+      if (s.conn.send(w.finish().slice(), true)) {
+        s.noteSnapshotSent(f.snapshotId, now);
+        this.metrics.snapshotsSent++;
+        this.metrics.snapshotBytes.add(stats.bytes);
+      } else {
+        this.metrics.snapshotsDropped++;
+      }
+    }
+  }
+
+  private fillStatus(status: RoundStatus | null): void {
+    const n = this.netStatus;
+    if (!status) return;
+    n.phase = status.phase;
+    n.timeLeft = status.timeLeft;
+    n.qualifiedCount = status.qualifiedCount;
+    n.qualifyTarget = status.qualifyTarget;
+    n.eliminatedCount = status.eliminatedCount;
+    n.finished = status.finished;
+    n.teamCount = Math.min(status.teamScores.length, n.teamScores.length);
+    for (let i = 0; i < n.teamCount; i++) n.teamScores[i] = status.teamScores[i]!;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Messaging helpers
+  // ---------------------------------------------------------------------------
+
+  private attach(session: ClientSession, slot: PlayerSlot, resumed: boolean): void {
+    session.playerId = slot.id;
+    session.resetSnapshots();
+    session.reliable.reset();
+    slot.session = session;
+    this.sessions.add(session);
+    this.sendWelcome(session, slot, resumed);
+    if (this.sim) this.sendJoinRound(session);
+    this.broadcastPlayerList();
+    if (this.sim && this.status) session.sendLowFreq({ t: 'roundPhase', phase: this.status.phase, time: this.sim.time });
+    this.flushSession(session, performance.now());
+  }
+
+  private detach(session: ClientSession, reason: string): void {
+    this.sessions.delete(session);
+    session.conn.close(4000, reason);
+  }
+
+  private sendWelcome(session: ClientSession, slot: PlayerSlot, resumed: boolean): void {
+    const w = this.writer.reset();
+    writeWelcome(w, {
+      version: PROTOCOL_VERSION,
+      playerId: slot.id,
+      resumeToken: slot.token,
+      roomId: this.id,
+      serverTick: this.serverTick,
+      tickEpochMs: this.tickEpochMs(),
+      tickMs: 1000 / SERVER_TICK_HZ,
+      resumed,
+    });
+    session.conn.send(w.finish().slice());
+  }
+
+  private sendJoinRound(session: ClientSession): void {
+    if (!this.sim || !this.round) return;
+    const roster = this.roster();
+    session.sendLowFreq({
+      t: 'joinRound',
+      roundId: this.round.id,
+      seed: this.show.currentRound()?.seed ?? 0,
+      stage: this.show.currentRound()?.stage ?? 0,
+      players: roster.filter((p) => this.roundPlayers.includes(p.id)),
+      obstacleIds: [...this.obstacles.ids],
+      bounds: this.round.bounds,
+      epoch: this.epoch,
+      startTick: this.serverTick,
+    });
+  }
+
+  private broadcastPlayerList(): void {
+    const players: NetPlayerInfo[] = [];
+    for (const s of this.slots.values()) {
+      if (s.spectator) continue;
+      players.push({ id: s.id, name: s.name, isBot: s.isBot, loadout: s.loadout, connected: s.isBot || s.session !== null });
+    }
+    this.broadcast({ t: 'playerList', players });
+  }
+
+  private broadcast(msg: LowFreqMessage): void {
+    if (this.sessions.size === 0) return;
+    const payload = encodeReliableMessage({ kind: 'msg', msg });
+    for (const s of this.sessions) s.reliable.send(payload);
+  }
+
+  private flushReliable(now: number): void {
+    for (const s of this.sessions) this.flushSession(s, now);
+  }
+
+  private flushSession(s: ClientSession, now: number): void {
+    // Several packets per tick only when a backlog built up (e.g. a resume burst).
+    for (let i = 0; i < 4; i++) {
+      const w = this.writer.reset();
+      if (!s.reliable.flush(now, s.rttMs, w)) break;
+      s.conn.send(w.finish().slice());
+      if (!s.reliable.wantsFlush(now, s.rttMs)) break;
+    }
+    if (s.reliable.overflowed) this.kick(s, KickReason.BadMessage, 'reliable backlog');
+  }
+
+  private violation(session: ClientSession, now: number): void {
+    if (session.guard.violation(now)) this.kick(session, KickReason.BadMessage, 'protocol violations');
+  }
+
+  private kick(session: ClientSession, reason: KickReasonId, detail: string): void {
+    const w = this.writer.reset();
+    writeKick(w, reason, detail);
+    session.conn.send(w.finish().slice());
+    session.conn.close(4000 + reason, detail);
+    this.metrics.kicks++;
+    this.sessions.delete(session);
+  }
+}

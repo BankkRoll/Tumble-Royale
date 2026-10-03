@@ -1,0 +1,221 @@
+/**
+ * Many rooms per process: accepts connections, runs the Hello handshake,
+ * places clients into rooms (or resumes them), and drives every room from one
+ * shared drift-free 30 Hz scheduler. Also owns periodic profiling output.
+ */
+import {
+  BitReader,
+  BitWriter,
+  KickReason,
+  MsgType,
+  PROTOCOL_VERSION,
+  readHello,
+  writeKick,
+  type KickReasonId,
+} from '@tumble/netcode';
+import { SERVER_TICK_HZ } from '@tumble/shared';
+import { DEFAULT_LIMITS, type ConnectionLimits } from '../antiCheat.ts';
+import type { ServerMetrics } from '../metrics.ts';
+import { TickScheduler } from '../scheduler.ts';
+import type { Connection, Transport } from '../transport/types.ts';
+import { Room, type RoomInfo } from './Room.ts';
+import { ClientSession } from './session.ts';
+import { DEFAULT_ROOM_CONFIG, type RoomConfig, type RoomDeps } from './types.ts';
+
+/** Options for {@link RoomManager}. */
+export interface RoomManagerOptions {
+  config?: Partial<RoomConfig>;
+  limits?: ConnectionLimits;
+  /** Hello must arrive within this long or the connection is dropped. */
+  helloTimeoutMs?: number;
+  /** Profiling log interval; 0 disables. */
+  profileLogMs?: number;
+  /** Cap on concurrent rooms. */
+  maxRooms?: number;
+}
+
+/**
+ * Routes connections to rooms and ticks them.
+ *
+ * @example
+ * const rooms = new RoomManager(deps, metrics, transport, { config: { fillWaitMs: 5000 } });
+ * rooms.start();
+ */
+export class RoomManager {
+  readonly config: RoomConfig;
+  readonly scheduler: TickScheduler;
+  private readonly rooms = new Map<string, Room>();
+  private readonly pending = new Set<ClientSession>();
+  private readonly limits: ConnectionLimits;
+  private readonly helloTimeoutMs: number;
+  private readonly profileLogMs: number;
+  private readonly maxRooms: number;
+  private readonly writer = new BitWriter(512);
+  private readonly reader = new BitReader();
+  private nextRoomId = 1;
+  private lastProfileLog = 0;
+  private lastRateUpdate = 0;
+
+  /**
+   * @param deps - Collaborators for every room.
+   * @param metrics - Process metrics.
+   * @param transport - Connection source (its `onConnection` is taken over).
+   * @param opts - Options.
+   */
+  constructor(
+    private readonly deps: RoomDeps,
+    private readonly metrics: ServerMetrics,
+    private readonly transport: Transport | null,
+    opts: RoomManagerOptions = {},
+  ) {
+    this.config = { ...DEFAULT_ROOM_CONFIG, ...opts.config };
+    this.limits = opts.limits ?? DEFAULT_LIMITS;
+    this.helloTimeoutMs = opts.helloTimeoutMs ?? 10_000;
+    this.profileLogMs = opts.profileLogMs ?? 5000;
+    this.maxRooms = opts.maxRooms ?? 64;
+    this.scheduler = new TickScheduler({ hz: SERVER_TICK_HZ, now: deps.now }, () => this.tick());
+    if (transport) transport.onConnection = (conn) => this.accept(conn);
+  }
+
+  /** Starts the tick loop. */
+  start(): void {
+    this.scheduler.start();
+  }
+
+  /** Stops ticking and closes every room. */
+  stop(): void {
+    this.scheduler.stop();
+    for (const r of this.rooms.values()) r.dispose();
+    this.rooms.clear();
+  }
+
+  /** Summaries for `/rooms`. */
+  list(): RoomInfo[] {
+    return [...this.rooms.values()].map((r) => r.info());
+  }
+
+  /** Looks up a room (tests, tools). */
+  room(id: string): Room | undefined {
+    return this.rooms.get(id);
+  }
+
+  /** Takes ownership of a new connection and waits for its Hello. */
+  accept(conn: Connection): void {
+    const now = this.deps.now();
+    const session = new ClientSession(conn, now, this.config.snapshotByteBudget, this.limits);
+    this.pending.add(session);
+    const timer = setTimeout(() => {
+      if (this.pending.delete(session)) conn.close(4000, 'hello timeout');
+    }, this.helloTimeoutMs);
+    conn.onClose = () => {
+      clearTimeout(timer);
+      this.pending.delete(session);
+    };
+    conn.onMessage = (data) => {
+      const t = this.deps.now();
+      if (!session.guard.admit(t, data.length)) return;
+      if (data[0] !== MsgType.Hello) return;
+      this.reader.reset(data).readBits(8);
+      const hello = readHello(this.reader);
+      if (this.reader.overflow) return this.reject(conn, KickReason.BadMessage, 'bad hello');
+      if (hello.version !== PROTOCOL_VERSION) {
+        return this.reject(conn, KickReason.VersionMismatch, `server speaks protocol ${PROTOCOL_VERSION}`);
+      }
+      clearTimeout(timer);
+      this.pending.delete(session);
+      const room = this.place(session, hello.resumeToken, hello, t);
+      if (!room) return this.reject(conn, hello.resumeToken ? KickReason.ResumeExpired : KickReason.ServerFull, 'no room');
+      conn.onMessage = (d) => room.onMessage(session, d, this.deps.now());
+      conn.onClose = () => room.onClose(session, this.deps.now());
+    };
+  }
+
+  private place(session: ClientSession, token: string, hello: Parameters<Room['join']>[1], now: number): Room | null {
+    if (token) {
+      for (const room of this.rooms.values()) {
+        if (room.state !== 'closed' && room.hasToken(token) && room.resume(session, token)) return room;
+      }
+      // An expired token falls through to a fresh join rather than failing the player.
+    }
+    let target: Room | null = null;
+    for (const room of this.rooms.values()) {
+      if (room.canAcceptPlayer()) {
+        target = room;
+        break;
+      }
+    }
+    if (!target) {
+      if (this.rooms.size >= this.maxRooms) return null;
+      const id = `r${this.nextRoomId++}`;
+      const createdAtTick = this.scheduler.tick;
+      target = new Room(id, this.deps, this.config, this.metrics, () => this.scheduler.dueTime(createdAtTick));
+      this.rooms.set(id, target);
+      this.deps.log?.(`[rooms] created ${id}`);
+    }
+    target.join(session, hello, now);
+    return target;
+  }
+
+  private reject(conn: Connection, reason: KickReasonId, detail: string): void {
+    const w = this.writer.reset();
+    writeKick(w, reason, detail);
+    conn.send(w.finish().slice());
+    conn.close(4000 + reason, detail);
+    this.metrics.kicks++;
+  }
+
+  /** One scheduler tick: every room, then metrics. */
+  tick(): void {
+    const now = this.deps.now();
+    for (const [id, room] of this.rooms) {
+      try {
+        room.tick(now);
+      } catch (err) {
+        // One broken round (bad content, sim bug) must not take every other room in the process down with it.
+        this.deps.log?.(`[rooms] ${id} crashed and was closed: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
+        this.metrics.roomCrashes++;
+        try {
+          room.dispose();
+        } catch {
+          room.state = 'closed';
+        }
+      }
+      if (room.state === 'closed') {
+        this.rooms.delete(id);
+        this.deps.log?.(`[rooms] removed ${id}`);
+      }
+    }
+    this.updateMetrics(now);
+  }
+
+  private updateMetrics(now: number): void {
+    const m = this.metrics;
+    m.rooms = this.rooms.size;
+    let humans = 0;
+    let players = 0;
+    let bots = 0;
+    for (const r of this.rooms.values()) {
+      const info = r.info();
+      humans += info.connected;
+      bots += info.bots;
+      players += info.humans + info.bots;
+    }
+    m.humans = humans;
+    m.bots = bots;
+    m.players = players;
+    if (now - this.lastRateUpdate >= 1000) {
+      this.lastRateUpdate = now;
+      m.updateRates(now, this.transport?.bytesOut ?? 0, this.transport?.bytesIn ?? 0);
+      for (const r of this.rooms.values()) {
+        for (const rtt of r.sessionRtts()) m.rtt.add(rtt);
+        const inputs = r.takeInputStats();
+        m.inputMissed += inputs.missed;
+        m.inputLate += inputs.late;
+      }
+    }
+    if (this.profileLogMs > 0 && now - this.lastProfileLog >= this.profileLogMs) {
+      this.lastProfileLog = now;
+      if (this.rooms.size > 0) this.deps.log?.(`[tick] ${m.summary()}`);
+    }
+  }
+}

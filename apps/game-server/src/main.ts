@@ -1,38 +1,49 @@
 /**
  * Game server entry point.
  *
- * Responsibilities (Phase 0): boot Rapier in Node, expose health and a
- * determinism probe so clients can confirm their physics build matches ours.
+ * Boots Rapier, builds the room dependencies and starts HTTP + WebSocket on
+ * one port. Configuration (env):
+ * - `PORT` (7350)
+ * - `ROOM_CAPACITY` (40) — show size including bots
+ * - `FILL_WAIT_MS` (25000) — wait after the first human before bot fill
+ * - `START_AT_HUMANS` (= capacity) — start early once this many humans joined
+ * - `PLAY_SECONDS` (120) — dev show loop round length
+ *
+ * Integration: `createDevRoomDeps` is the standalone wiring (capsule sim,
+ * dev arena, single-round loop, random-walk bots). The real game swaps in
+ * `createMatchSim` from `@tumble/sim/match`, rounds from `@tumble/content`
+ * and the ShowDirector through `ShowDirectorController`:
+ *   createMatchSim: (o) => createMatchSim(o, matchDeps), loadRound: getRound,
+ *   createShowController: () => new ShowDirectorController({ playlist, rounds }), createBot: null
  */
-import { createServer } from 'node:http';
-import { loadRapier, runDeterminismScenario } from '@tumble/sim';
+import { loadRapier } from '@tumble/sim';
+import { createDevRoomDeps } from './devDeps.ts';
+import { startGameServer } from './server.ts';
 
-const PORT = Number(process.env.PORT ?? 7350);
+const env = (k: string, d: number): number => {
+  const v = Number(process.env[k]);
+  return Number.isFinite(v) && process.env[k] !== undefined && process.env[k] !== '' ? v : d;
+};
 
 const R = await loadRapier();
+const capacity = env('ROOM_CAPACITY', 40);
+const deps = createDevRoomDeps(R, { playSeconds: env('PLAY_SECONDS', 120), log: (m) => console.log(m) });
 
-const server = createServer((req, res) => {
-  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-  // NOTE: the client dev server runs on a different port, so the debug probe needs CORS.
-  res.setHeader('Access-Control-Allow-Origin', '*');
-
-  if (url.pathname === '/health') {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, rapier: R.version() }));
-    return;
-  }
-
-  if (url.pathname === '/debug/determinism') {
-    const steps = Math.min(Math.max(Number(url.searchParams.get('steps') ?? 600), 1), 10_000);
-    const result = runDeterminismScenario(R, steps);
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(result));
-    return;
-  }
-
-  res.writeHead(404).end();
+const server = await startGameServer({
+  port: env('PORT', 7350),
+  deps,
+  config: {
+    capacity,
+    fillWaitMs: env('FILL_WAIT_MS', 25_000),
+    startAtHumans: env('START_AT_HUMANS', capacity),
+  },
 });
 
-server.listen(PORT, () => {
-  console.log(`[game-server] listening on :${PORT} (rapier ${R.version()})`);
-});
+console.log(`[game-server] listening on :${server.port} (rapier ${R.version()}) ws=/ws metrics=/metrics`);
+
+const shutdown = (): void => {
+  console.log('[game-server] shutting down');
+  void server.close().then(() => process.exit(0));
+};
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

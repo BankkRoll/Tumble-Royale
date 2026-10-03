@@ -519,6 +519,8 @@ export class ApiClient {
   leaveParty = (): Promise<void> => this.request('POST', '/party/leave');
   kickFromParty = (userId: string): Promise<{ party: ApiParty }> =>
     this.request('POST', '/party/kick', { userId });
+  promotePartyMember = (userId: string): Promise<{ party: ApiParty }> =>
+    this.request('POST', '/party/promote', { userId });
   setReady = (ready: boolean): Promise<{ party: ApiParty }> =>
     this.request('POST', '/party/ready', { ready });
   setPartyPlaylist = (playlistId: string): Promise<{ party: ApiParty }> =>

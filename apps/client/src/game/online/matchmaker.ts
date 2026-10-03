@@ -36,6 +36,18 @@ export interface LobbySettings {
   roundTimeScale: number;
   lobbyCountdownSec: number;
   spectatorSlots: number;
+  /** Players needed before the host can start (absent on older matchmakers). */
+  minPlayers?: number;
+}
+
+/** A member's seat (matchmaker `LobbySeat`; newer fields are optional for older matchmakers). */
+export interface LobbySeat {
+  userId: string;
+  name: string;
+  joinedAt?: number;
+  ready?: boolean;
+  /** When their last socket closed, or null while connected. */
+  awaySince?: number | null;
 }
 
 /** A custom lobby (matchmaker `CustomLobby`). */
@@ -44,10 +56,12 @@ export interface Lobby {
   hostId: string;
   region: string;
   settings: LobbySettings;
-  players: { userId: string; name: string }[];
-  spectators: { userId: string; name: string }[];
+  players: LobbySeat[];
+  spectators: LobbySeat[];
   status: 'open' | 'started';
   matchId: string | null;
+  locked?: boolean;
+  banned?: { userId: string; name: string }[];
 }
 
 const PROBE_TIMEOUT_MS = 900;
@@ -133,8 +147,30 @@ export class MatchmakerClient {
   updateLobby = (code: string, settings: Partial<LobbySettings>): Promise<{ lobby: Lobby }> =>
     this.call('PATCH', `/lobbies/${code}`, settings);
   leaveLobby = (code: string): Promise<void> => this.call('POST', `/lobbies/${code}/leave`, {});
-  startLobby = (code: string): Promise<{ matchId: string }> =>
-    this.call('POST', `/lobbies/${code}/start`, {});
+  /** Host start; `force` skips the ready check (the minimum player count still applies). */
+  startLobby = (code: string, force = false): Promise<{ matchId: string }> =>
+    this.call('POST', `/lobbies/${code}/start`, { force });
+  /** The lobby the caller is still a member of (restores it after a reload). */
+  myLobby = (): Promise<{ lobby: Lobby | null }> => this.call('GET', '/lobbies/mine');
+  /** Host: removes and bans a member; forwarded to the game server once the show started. */
+  kickFromLobby = (
+    code: string,
+    userId: string,
+  ): Promise<{ lobby: Lobby; removedFromMatch: boolean | null }> =>
+    this.call('POST', `/lobbies/${code}/kick`, { userId });
+  unbanFromLobby = (code: string, userId: string): Promise<{ lobby: Lobby }> =>
+    this.call('POST', `/lobbies/${code}/unban`, { userId });
+  transferLobbyHost = (code: string, userId: string): Promise<{ lobby: Lobby }> =>
+    this.call('POST', `/lobbies/${code}/host`, { userId });
+  lockLobby = (code: string, locked: boolean): Promise<{ lobby: Lobby }> =>
+    this.call('POST', `/lobbies/${code}/lock`, { locked });
+  /** Host: retires the invite code for a new one. */
+  newLobbyCode = (code: string): Promise<{ lobby: Lobby }> => this.call('POST', `/lobbies/${code}/code`, {});
+  readyInLobby = (code: string, ready: boolean): Promise<{ lobby: Lobby }> =>
+    this.call('POST', `/lobbies/${code}/ready`, { ready });
+  /** Switches between playing and spectating. */
+  setLobbyRole = (code: string, spectator: boolean): Promise<{ lobby: Lobby }> =>
+    this.call('POST', `/lobbies/${code}/role`, { spectator });
 }
 
 /**

@@ -180,8 +180,19 @@ export function installMockGame(): () => void {
       s().setCustomLobby({
         code: 'TUMB' + rng.int(10, 99),
         isHost: true,
-        players: world.players.slice(0, 1).map((p) => ({ id: String(p.id), name: p.name, colors: p.colors })),
+        players: world.players.slice(0, 1).map((p) => ({
+          id: String(p.id),
+          name: p.name,
+          colors: p.colors,
+          isHost: true,
+          isSelf: true,
+          ready: true,
+          away: false,
+        })),
+        spectators: [],
         options,
+        locked: false,
+        banned: [],
       }),
     onJoinCode: ({ code }) => {
       if (code.startsWith('X')) {
@@ -197,8 +208,19 @@ export function installMockGame(): () => void {
       s().setCustomLobby({
         code,
         isHost: false,
-        players: world.players.slice(0, 7).map((p) => ({ id: String(p.id), name: p.name, colors: p.colors })),
+        players: world.players.slice(0, 7).map((p, i) => ({
+          id: String(p.id),
+          name: p.name,
+          colors: p.colors,
+          isHost: i === 0,
+          isSelf: i === 6,
+          ready: i % 2 === 0,
+          away: false,
+        })),
+        spectators: [],
         options: { rounds: [], bots: true, maxPlayers: 40, timerScale: 1, spectators: true, isPrivate: true },
+        locked: false,
+        banned: [],
       });
     },
     onStartCustom: () => void runShow({ win: true }),

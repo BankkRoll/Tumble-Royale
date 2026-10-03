@@ -1023,7 +1023,18 @@ export class OnlineAccount {
         void this.refreshFriends();
       }),
       rt.on('friend_request', (m) => this.onFriendRequest(m)),
-      rt.on('party_update', (m) => this.applyParty((m.party as ApiParty | null) ?? null)),
+      rt.on('party_update', (m) => {
+        const next = (m.party as ApiParty | null) ?? null;
+        const promoted =
+          !!this.party && this.party.leaderId !== this.userId && next?.leaderId === this.userId;
+        this.applyParty(next);
+        if (promoted)
+          ui.getState().pushToast({
+            kind: 'social',
+            title: 'You lead the party now',
+            body: 'Pick the show and hit Play when everyone is ready.',
+          });
+      }),
       rt.on('party_kicked', () => {
         ui.getState().pushToast({ kind: 'warning', title: 'You were removed from the party', icon: '👋' });
         this.applyParty(null);
@@ -1337,6 +1348,15 @@ export class OnlineAccount {
       this.applyParty((await this.api.kickFromParty(userId)).party);
     } catch (err) {
       ui.getState().pushToast({ kind: 'error', title: "Couldn't kick", body: describe(err) });
+    }
+  }
+
+  /** Hands party leadership to a member (leader); everyone else follows via `party_update`. */
+  async promote(userId: string): Promise<void> {
+    try {
+      this.applyParty((await this.api.promotePartyMember(userId)).party);
+    } catch (err) {
+      ui.getState().pushToast({ kind: 'error', title: "Couldn't hand over leadership", body: describe(err) });
     }
   }
 

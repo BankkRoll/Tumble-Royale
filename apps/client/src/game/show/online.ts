@@ -16,13 +16,14 @@
  */
 import { MAIN_SHOW, getPlaylist } from '@tumble/content/shows';
 import { getRound } from '@tumble/content/rounds';
-import type {
-  DecodedSnapshot,
-  JoinRoundMsg,
-  NetPlayerInfo,
-  PlayerRewardMsg,
-  RoundResultEntry,
-  ShowInfoMsg,
+import {
+  KickReason,
+  type DecodedSnapshot,
+  type JoinRoundMsg,
+  type NetPlayerInfo,
+  type PlayerRewardMsg,
+  type RoundResultEntry,
+  type ShowInfoMsg,
 } from '@tumble/netcode';
 import { CharacterState } from '@tumble/sim';
 import { RoundPhase, ShowPhase, type RoundDefinition, type RoundPhaseId } from '@tumble/shared';
@@ -37,6 +38,7 @@ import {
 import { CourseMetric } from '@tumble/sim/rounds';
 import { ShowPlaylistSchema } from '@tumble/sim/show';
 import { bindUI, ui, type RewardsSummary } from '@tumble/ui';
+import { KICKED_TITLE } from '../online/lobbyState.ts';
 import { NetClient, NetGameSession, defaultServerUrl, type ConnectionState } from '../../net/index.ts';
 import { botLoadout, decodeLoadout, encodeLoadout } from '../cosmetics.ts';
 import type { ShowResultForProfile } from '../profile.ts';
@@ -233,9 +235,13 @@ export class OnlineShowSession extends ShowSession {
       net.on('showSummary', (m) => this.onSummary(m.winners, m.rounds)),
       net.on('snapshot', (snap) => this.onSnapshot(snap)),
       net.on('kicked', ({ reason, detail }) =>
-        this.fail(
-          reason === 7 ? 'Your match ticket expired — queue again.' : detail || 'Removed from the show',
-        ),
+        reason === KickReason.RemovedByHost
+          ? this.fail('The host of this private show removed you.', KICKED_TITLE)
+          : this.fail(
+              reason === KickReason.BadTicket
+                ? 'Your match ticket expired — queue again.'
+                : detail || 'Removed from the show',
+            ),
       ),
       bindUI({
         onDialogResult: ({ dialogId }) => {
@@ -286,7 +292,7 @@ export class OnlineShowSession extends ShowSession {
 
   private failed = false;
 
-  private fail(message: string): void {
+  private fail(message: string, title = 'Connection lost'): void {
     // After the show summary the server winds the room down; the wall and rewards don't need the socket.
     if (this.failed || this.summary) return;
     this.failed = true;
@@ -295,7 +301,7 @@ export class OnlineShowSession extends ShowSession {
     s.showDialog({
       id: 'net-failed',
       kind: 'error',
-      title: 'Connection lost',
+      title,
       body: message,
       code: 'E-NET-04',
       buttons: [{ id: 'menu', label: 'Back to menu', autofocus: true }],

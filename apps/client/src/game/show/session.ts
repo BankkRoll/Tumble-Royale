@@ -37,6 +37,7 @@ import {
   type RewardsSummary,
   type ShowSummary as UiShowSummary,
 } from '@tumble/ui';
+import { HapticMapper, HapticThrottle } from '../../input/haptics.ts';
 import { emoteSlots, showPlayer } from '../cosmetics.ts';
 import type { ShowResultForProfile } from '../profile.ts';
 import { HudMapper, type HudInput } from '../round/hud.ts';
@@ -191,6 +192,8 @@ export abstract class ShowSession {
   private wheelOpen = false;
   private pendingEmote = 0;
   private toastTokens = 4;
+  private readonly haptics = new HapticMapper();
+  private readonly hapticGate = new HapticThrottle();
   private uiSummary: UiShowSummary | null = null;
   private pilot: BotBrainLike | null = null;
   private readonly pilotSelf: BotSelfView = {
@@ -972,9 +975,13 @@ export abstract class ShowSession {
     const r = this.round;
     const view = r?.view ?? null;
     const lp = this.ctx.director.listenerPos;
+    const rumble = this.ctx.settings().controls.vibration && !this.ctx.cfg.autoplay;
+    const now = performance.now();
     for (const e of events) {
       view?.handleEvent(e);
       if (audio) this.ctx.audio.game.handleSimEvent(e, lp);
+      const cue = this.haptics.map(e, this.localId);
+      if (cue && rumble && this.hapticGate.allow(cue.kind, now)) this.ctx.input.rumble(cue.pattern);
       const mine = 'player' in e && e.player === this.localId;
       switch (e.type) {
         case 'qualified':

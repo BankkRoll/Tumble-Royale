@@ -18,6 +18,8 @@ import { Button, type CharacterInput } from '@tumble/sim/character';
 import { ButtonLatch } from './latch.ts';
 import { createKeymap, mouseCode, INPUT_ACTIONS, type InputAction, type Keymap } from './keymap.ts';
 import { TouchState, type TouchSnapshot } from './touchState.ts';
+import { firstStandardPad } from './gamepadNav.ts';
+import { playHaptic, type RumblePattern } from './haptics.ts';
 
 /** Input tuning. Mutate in place; read every frame. */
 export interface InputSettings {
@@ -237,6 +239,20 @@ export class InputSystem {
       (this.pad.get('emoteWheel')?.down ?? false) ||
       this.touch.buttons.emote.down
     );
+  }
+
+  /**
+   * Plays a haptic effect on the device in use: the active gamepad's
+   * dual-rumble motors, or the phone's vibration motor. Keyboard and mouse
+   * players feel nothing.
+   *
+   * @param pattern - Effect to play.
+   * @returns True when an effect started.
+   */
+  rumble(pattern: RumblePattern): boolean {
+    if (this.lastDevice === 'touch') return playHaptic(pattern, 'touch');
+    if (this.lastDevice !== 'gamepad' || typeof navigator.getGamepads !== 'function') return false;
+    return playHaptic(pattern, firstStandardPad(navigator.getGamepads()));
   }
 
   /**

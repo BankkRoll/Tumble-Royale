@@ -46,13 +46,16 @@ export interface BotWorldView {
   /**
    * Distance from `point` to obstacle `obstacleId`'s solid geometry `ahead`
    * seconds from now, predicted from the module's `pose(t)` when possible.
+   * Present-time queries (`ahead <= 0`) also include the obstacle's fixed
+   * parts (frames, hubs, posts); predictions cover moving parts and hazard
+   * sensors only, since fixed parts never open.
    *
    * @returns Infinity when the obstacle is unknown or has no solid geometry.
    */
   obstacleClearance(obstacleId: string, point: Vec3, ahead: number): number;
   /**
-   * Distance from `point` to the nearest moving obstacle or hazard collider
-   * `ahead` seconds from now (searching within `maxDist`).
+   * Distance from `point` to the nearest moving obstacle collider or hazard
+   * sensor (lasers, goo) `ahead` seconds from now (searching within `maxDist`).
    *
    * @param outClosest - Receives the closest point on that geometry (current pose).
    * @returns Infinity when nothing is within `maxDist`.
@@ -61,7 +64,10 @@ export interface BotWorldView {
   /** @returns True if a walkable surface lies within `depth` below `point`. */
   groundBelow(point: Vec3, depth: number): boolean;
   /**
-   * Asks obstacles that know a safe spot (pattern tiles, rising goo exits).
+   * Asks obstacles that know a safe spot (pattern tiles, intact falling
+   * tiles, behind a jump-rope beam). On entry `out` holds the bot's hint
+   * point (its position nudged toward where it would like to go); when
+   * several obstacles answer, the spot nearest the hint wins.
    *
    * @returns True and writes `out` when some obstacle offered one.
    */

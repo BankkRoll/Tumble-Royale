@@ -94,9 +94,14 @@ export const WaypointSchema = z.object({
   /** Acceptable arrival radius. */
   radius: z.number().default(1.5),
   next: z.array(z.number().int()).default([]),
-  /** What to do when moving FROM this waypoint to the next. */
-  action: z.enum(['run', 'jump', 'dive', 'jumpDive', 'waitForGap', 'grab', 'climb']).default('run'),
-  /** Obstacle to time against for waitForGap. */
+  /**
+   * What to do when moving FROM this waypoint to the next. `waitForPlatform`
+   * holds here until the `timeAgainst` obstacle (lift, moving platform) will
+   * be under the whole leg, then boards (also used to ride it: put the next
+   * leg's waitForPlatform on the boarding waypoint's successor).
+   */
+  action: z.enum(['run', 'jump', 'dive', 'jumpDive', 'waitForGap', 'grab', 'climb', 'waitForPlatform']).default('run'),
+  /** Obstacle to time against for waitForGap / waitForPlatform. */
   timeAgainst: z.string().optional(),
 });
 

@@ -12,6 +12,14 @@
  * Pose samples are matched to bodies by comparing `frame ∘ pose(t)` with the
  * bodies' current transforms; bodies that cannot be matched (dynamic tilt
  * platforms, modules without `pose`) fall back to their current distance.
+ *
+ * What counts as obstacle geometry:
+ * - Solid colliders on kinematic bodies (moving parts).
+ * - Hazard sensors (membership in `CollisionGroup.Hazard`: lasers, goo
+ *   surfaces): they never block, but touching them stuns or eliminates.
+ * - Solid colliders on fixed bodies (door frames, hubs, posts), for
+ *   present-time queries only: they never open, so in timing predictions they
+ *   would only mask the moving parts.
  */
 import type { Collider, Ray, RigidBody, World } from '@dimforge/rapier3d-compat';
 import {
@@ -33,9 +41,18 @@ import type { AnyObstacleModule } from './deps.ts';
 const DEG = Math.PI / 180;
 const MATCH_POS_EPS = 0.05;
 const MATCH_ROT_DOT = 0.999;
+/** Vertical offsets weigh this much more than horizontal ones when ranking safe spots. */
+const SAFE_SPOT_Y_WEIGHT = 2;
 
 /** Optional runtime extension: obstacles that know where it is safe to stand. */
 export interface BotSafeSpotProvider {
+  /**
+   * @param t - Match time.
+   * @param out - On entry, the asking bot's hint point (its position nudged
+   *   toward where it would like to go; location-aware providers read it).
+   *   Receives the safe spot.
+   * @returns True when a spot was written.
+   */
   botSafeSpot(t: number, out: Vec3): boolean;
 }
 
@@ -43,8 +60,18 @@ function hasSafeSpot(r: ObstacleRuntime): r is ObstacleRuntime & BotSafeSpotProv
   return typeof (r as Partial<BotSafeSpotProvider>).botSafeSpot === 'function';
 }
 
+/** @returns True for sensors that stun or eliminate on touch (lasers, goo). */
+function isHazardSensor(c: Collider): boolean {
+  return c.isSensor() && ((c.collisionGroups() >>> 16) & CollisionGroup.Hazard) !== 0;
+}
+
+/** Colliders bots treat as obstacle geometry: anything solid, plus hazard sensors. */
+const isBotRelevant = (c: Collider): boolean => !c.isSensor() || isHazardSensor(c);
+
 interface TrackedBody {
   body: RigidBody;
+  /** Fixed parts never move, so timing predictions (`ahead > 0`) skip them. */
+  fixed: boolean;
   /** Pose sample index driving this body, -1 if unmatched, -2 if not yet attempted. */
   sample: number;
 }
@@ -73,7 +100,7 @@ export class ObstacleOracle {
   private readonly props: RigidBody[] = [];
   private readonly ray: Ray;
   private predicateBody = -1;
-  private readonly onlyBody = (c: Collider): boolean => c.parent()?.handle === this.predicateBody;
+  private readonly onlyBody = (c: Collider): boolean => c.parent()?.handle === this.predicateBody && isBotRelevant(c);
   private readonly hazardGroups = groups(0xffff, CollisionGroup.KinematicObstacle | CollisionGroup.Hazard);
   /** Match time the bodies' current transforms correspond to. */
   poseTime = 0;
@@ -81,6 +108,8 @@ export class ObstacleOracle {
   // Scratch, reused by every query.
   private readonly p = vec3();
   private readonly q = vec3();
+  private readonly hint = vec3();
+  private readonly cand = vec3();
   private readonly bodyPos = vec3();
   private readonly bodyRot = quatIdentity();
   private readonly futPos = vec3();
@@ -133,32 +162,42 @@ export class ObstacleOracle {
         if (!c.isSensor() && !this.props.includes(b)) this.props.push(b);
         continue;
       }
-      if (!b.isKinematic() || c.isSensor() || seen.has(b.handle)) continue;
+      if (!isBotRelevant(c) || seen.has(b.handle)) continue;
+      const fixed = !b.isKinematic();
+      // Static hazard volumes (void triggers) sit under whole courses; as geometry they would drown everything else.
+      if (fixed && c.isSensor()) continue;
       seen.add(b.handle);
-      t.bodies.push({ body: b, sample: -2 });
-      this.byBodyHandle.set(b.handle, t);
+      t.bodies.push({ body: b, fixed, sample: fixed ? -1 : -2 });
+      if (!fixed) this.byBodyHandle.set(b.handle, t);
     }
   }
 
-  /** See `BotWorldView.obstacleClearance`. */
+  /**
+   * See `BotWorldView.obstacleClearance`. Present-time queries (`ahead <= 0`)
+   * include the obstacle's fixed parts; predictions cover moving parts only.
+   */
   obstacleClearance(obstacleId: string, point: Vec3, ahead: number): number {
     const t = this.byId.get(obstacleId);
     if (!t) return Infinity;
     let best = Infinity;
     for (const b of t.bodies) {
+      if (b.fixed && ahead > 0) continue;
       const d = this.bodyDistance(t, b, point, ahead);
       if (d < best) best = d;
     }
     return best;
   }
 
-  /** See `BotWorldView.hazardDistance`. */
+  /** See `BotWorldView.hazardDistance`. Covers hazard sensors (lasers) as well as moving solids. */
   hazardDistance(point: Vec3, maxDist: number, ahead: number, outClosest?: Vec3): number {
     const hit = this.world.projectPoint(
       point,
       true,
-      this.R.QueryFilterFlags.EXCLUDE_FIXED | this.R.QueryFilterFlags.EXCLUDE_SENSORS,
+      this.R.QueryFilterFlags.EXCLUDE_FIXED,
       this.hazardGroups,
+      undefined,
+      undefined,
+      isBotRelevant,
     );
     if (!hit) return Infinity;
     const now = Math.hypot(hit.point.x - point.x, hit.point.y - point.y, hit.point.z - point.z);
@@ -174,6 +213,7 @@ export class ObstacleOracle {
     if (!t || !body) return now;
     let best = now;
     for (const b of t.bodies) {
+      if (b.fixed) continue;
       const d = this.bodyDistance(t, b, point, ahead);
       if (d < best) best = d;
     }
@@ -195,10 +235,35 @@ export class ObstacleOracle {
     return hit !== null;
   }
 
-  /** See `BotWorldView.safeSpot`. */
+  /**
+   * See `BotWorldView.safeSpot`. `out` carries the bot's hint in; when several
+   * obstacles offer a spot (tile fields split into rows), the one nearest the
+   * hint wins.
+   */
   safeSpot(time: number, out: Vec3): boolean {
-    for (const t of this.tracked) if (hasSafeSpot(t.runtime) && t.runtime.botSafeSpot(time, out)) return true;
-    return false;
+    const hint = this.hint;
+    hint.x = out.x;
+    hint.y = out.y;
+    hint.z = out.z;
+    const hinted = Number.isFinite(hint.x) && Number.isFinite(hint.y) && Number.isFinite(hint.z);
+    const c = this.cand;
+    let best = Infinity;
+    for (const t of this.tracked) {
+      if (!hasSafeSpot(t.runtime)) continue;
+      c.x = hint.x;
+      c.y = hint.y;
+      c.z = hint.z;
+      if (!t.runtime.botSafeSpot(time, c)) continue;
+      const d = hinted ? (c.x - hint.x) ** 2 + ((c.y - hint.y) * SAFE_SPOT_Y_WEIGHT) ** 2 + (c.z - hint.z) ** 2 : 0;
+      if (d < best) {
+        best = d;
+        out.x = c.x;
+        out.y = c.y;
+        out.z = c.z;
+        if (!hinted) break;
+      }
+    }
+    return best < Infinity;
   }
 
   /** Number of loose props. */
@@ -225,7 +290,7 @@ export class ObstacleOracle {
     P.x = point.x;
     P.y = point.y;
     P.z = point.z;
-    if (ahead > 0 && t.module.pose) {
+    if (ahead > 0 && !b.fixed && t.module.pose) {
       // Matching can fail before the first step positions the bodies, so retry a few times.
       if (!t.matched && t.matchAttempts < 4 && this.poseTime - t.lastMatchTime > 0.25) this.matchSamples(t);
       if (b.sample >= 0) {
@@ -260,15 +325,7 @@ export class ObstacleOracle {
       }
     }
     this.predicateBody = b.body.handle;
-    const hit = this.world.projectPoint(
-      P,
-      true,
-      this.R.QueryFilterFlags.EXCLUDE_SENSORS,
-      undefined,
-      undefined,
-      undefined,
-      this.onlyBody,
-    );
+    const hit = this.world.projectPoint(P, true, undefined, undefined, undefined, undefined, this.onlyBody);
     if (!hit) return Infinity;
     return Math.hypot(hit.point.x - P.x, hit.point.y - P.y, hit.point.z - P.z);
   }
@@ -285,6 +342,7 @@ export class ObstacleOracle {
     pose(this.poseTime, t.params, t.samples, t.speedScale);
     const claimed = new Set<number>();
     for (const b of t.bodies) {
+      if (b.fixed) continue;
       b.sample = -1;
       const bp = b.body.translation(this.curPos);
       const br = b.body.rotation(this.curRot);

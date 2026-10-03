@@ -4,16 +4,31 @@
  *
  * Structure:
  * - A *strategy* per round style picks a movement target: course following
- *   (races, crown climbs, towers), wandering on safe ground (survival, paint),
- *   team objectives (eggs → nest, ball → goal, zones), hunt chase/flee, and
- *   logic (move to the obstacle-provided safe spot, with skill-based memory).
+ *   (races, crown climbs, towers), survival roaming (seek intact ground away
+ *   from crowds and edges), wandering, team objectives (eggs → nest, ball →
+ *   goal, zones), hunt chase/flee, and logic (move to the obstacle-provided
+ *   safe spot, with skill-based memory).
+ * - Course legs: run legs ease into their waypoint; action legs (jump,
+ *   jump-dive, dive) run through the take-off at full speed and fire when the
+ *   bot crosses the take-off line or reaches a lip, checked every step. Timed
+ *   legs wait for a sweeping obstacle to clear (`waitForGap`) or for a lift /
+ *   moving platform to bridge the leg (`waitForPlatform`).
  * - *Reflexes* layered on top: jumping incoming low beams / diving under high
- *   ones (predicted via obstacle poses), stuck recovery, silly moments, emotes.
+ *   ones (predicted via obstacle poses, lasers included), hopping low lips,
+ *   silly moments, emotes.
+ * - *Stuck recovery* measures route progress against a fixed baseline over
+ *   a time window and escalates through a plan picked by what is ahead:
+ *   walls get sidesteps, back-offs and re-paths to a sibling branch; lips
+ *   get hops, lunges and run-ups; open ground gets hops and lunges. Moves
+ *   that leave the line check for floor first. Hanging bots haul themselves
+ *   up ledges.
  * - *Skill* (clumsy/average/sharp) shapes everything: reaction delay, aim
- *   wobble, action timing error and outright mistakes.
+ *   wobble, action timing error, outright mistakes, bonks and dizzy spells
+ *   for clumsy bots, corner-cutting and jump-dives for sharp ones.
  *
- * Heavy queries run on a staggered decision tick (~10 Hz); every other step
- * replays the last decision, so the step loop stays allocation-free.
+ * Heavy queries run on a staggered decision tick (~10 Hz); other steps replay
+ * the last decision (plus the cheap per-step take-off check), so the step
+ * loop stays allocation-free. All randomness comes from the bot's seeded Rng.
  */
 import { Rng, RoundPhase, vec3, type RoundDefinition, type TriggerDef, type Vec3, type Waypoint } from '@tumble/shared';
 import { Button, CharacterState, type CharacterInput } from '../character/types.ts';
@@ -22,6 +37,10 @@ import { navGraphFor, type NavGraph } from './nav.ts';
 import { BOT_SKILLS, type BotSkillProfile } from './skill.ts';
 import type { BotBrainLike, BotBrainOptions, BotSelfView, BotSkill, BotWorldView } from './types.ts';
 
+// -----------------------------------------------------------------------------
+// Tuning
+// -----------------------------------------------------------------------------
+
 /** Steps between decisions (60 Hz sim → 10 Hz thinking). */
 const DECISION_TICKS = 6;
 /** Steps the jump button is held for a full-height jump. */
@@ -29,8 +48,24 @@ const JUMP_HOLD_TICKS = 14;
 const DIVE_HOLD_TICKS = 3;
 /** Give up waiting for a gap after this long; better a comic splat than a statue. */
 const MAX_GAP_WAIT_SECONDS = 6;
+/** Lifts run long cycles; walking into the void is never the fallback, re-pathing is. */
+const MAX_PLATFORM_WAIT_SECONDS = 24;
+/** Route metres that count as "getting somewhere" within one stuck window. */
+const STUCK_PROGRESS = 1;
+/** A branch abandoned by the stuck routine is avoided for this long. */
+const BAN_SECONDS = 12;
+/** Run speed (m/s) at full stick, for arrival-time estimates. */
+const RUN_SPEED = 7.4;
+/** Capsule centre above the feet (radius + half height). */
+const CENTRE_HEIGHT = 0.9;
+/** Distance ahead of the capsule centre probed for walls and lips. */
+const PROBE_AHEAD = 0.75;
+/** Ground deeper than this below the feet just ahead counts as a lip. */
+const LIP_DROP = 0.7;
+/** Horizontal take-off legs at least this long may become jump-dives for bold bots. */
+const LONG_JUMP = 3.8;
 
-type Strategy = 'course' | 'wander' | 'team' | 'hunt' | 'logic';
+type Strategy = 'course' | 'survive' | 'wander' | 'team' | 'hunt' | 'logic';
 
 /** One scheduled button action. */
 const enum Act {
@@ -40,7 +75,45 @@ const enum Act {
   JumpDive = 3,
 }
 
-function strategyFor(round: RoundDefinition): Strategy {
+/** Steering overrides used by stuck recovery. */
+const enum Recover {
+  None = 0,
+  Sidestep = 1,
+  BackOff = 2,
+}
+
+/** Stuck-recovery steps, in escalation order. */
+const enum Unstick {
+  Jump = 0,
+  Sidestep = 1,
+  JumpDive = 2,
+  BackOff = 3,
+  Repath = 4,
+  SidestepFlip = 5,
+}
+
+/**
+ * Escalation plans, chosen by what the probes see ahead at each step. Steps
+ * cycle; the index keeps counting across plans so a bot never retries the
+ * same fix forever.
+ * - Open ground (a counter-belt, a crowd, a missed lip below): keep pushing
+ *   with hops and lunges, re-path only now and then. Sidestepping or backing
+ *   off here only loses ground.
+ * - Knee-high lip: hop, lunge, take a run-up, then try elsewhere.
+ * - Wall: slide along it (solid doors), take a run-up, go around.
+ */
+const PLAN_OPEN: readonly Unstick[] = [Unstick.Jump, Unstick.Jump, Unstick.JumpDive, Unstick.Jump, Unstick.Repath, Unstick.JumpDive];
+const PLAN_LIP: readonly Unstick[] = [Unstick.Jump, Unstick.JumpDive, Unstick.BackOff, Unstick.Jump, Unstick.Repath, Unstick.JumpDive];
+const PLAN_WALL: readonly Unstick[] = [
+  Unstick.Sidestep,
+  Unstick.Sidestep,
+  Unstick.BackOff,
+  Unstick.SidestepFlip,
+  Unstick.Repath,
+  Unstick.SidestepFlip,
+];
+
+function strategyFor(round: RoundDefinition, nav: NavGraph): Strategy {
   switch (round.qualification.mode) {
     case 'finish':
     case 'crownGrab':
@@ -51,10 +124,23 @@ function strategyFor(round: RoundDefinition): Strategy {
       return 'hunt';
     case 'logicSurvive':
       return 'logic';
+    case 'survive':
+    case 'lastStanding':
+      // Towers and peaks have a summit to climb to; authored patrol loops are run as laid out; open arenas and roam grids are roamed.
+      if (nav.hasGoal) return 'course';
+      return nav.hasEdges && nav.meanOutDegree < 1.5 ? 'course' : 'survive';
     default:
-      return round.botNav.some((w) => w.next.length > 0) ? 'course' : 'wander';
+      return nav.hasEdges ? 'course' : 'wander';
   }
 }
+
+function isTakeoff(a: Waypoint['action']): boolean {
+  return a === 'jump' || a === 'jumpDive' || a === 'dive';
+}
+
+// -----------------------------------------------------------------------------
+// Brain
+// -----------------------------------------------------------------------------
 
 /**
  * Default bot brain. See the module docs for the behaviour model.
@@ -74,6 +160,8 @@ export class DefaultBotBrain implements BotBrainLike {
   private readonly target = vec3();
   private hasTarget = false;
   private speed = 1;
+  /** Run straight through the target (take-off approaches, flights). */
+  private fullSpeed = false;
   private noise = 0;
   private noiseVel = 0;
   private yaw = 0;
@@ -81,12 +169,24 @@ export class DefaultBotBrain implements BotBrainLike {
   // Course following.
   private cur = -1;
   private prev = -1;
-  private minRank = -1;
+  /** Successor chosen for `cur`, so the take-off line is known on approach. */
+  private succ = -1;
+  /** `cur` is a take-off with a usable take-off line, checked every step. */
+  private lineValid = false;
+  /** The take-off line was checked against the ground (gap jumps only). */
+  private lineChecked = true;
+  private lineX = 0;
+  private lineZ = 0;
+  private shortcutTried = false;
   private atGoal = false;
   private readonly offset = vec3();
   private waitObstacle: string | null = null;
+  private waitPlatform = false;
   private waitSince = 0;
   private holdGrab = false;
+  private banned = -1;
+  private bannedUntil = 0;
+  private finishDived = false;
 
   // Scheduled actions.
   private actAt = -1;
@@ -95,22 +195,39 @@ export class DefaultBotBrain implements BotBrainLike {
   private jumpUntil = -1;
   private diveUntil = -1;
 
-  // Stuck detection.
-  private bestDist = Infinity;
-  private lastProgressTick = 0;
+  // Stuck detection: progress against a baseline fixed for a whole window.
+  private stuckRef = 0;
+  private readonly stuckRefPos = vec3();
+  private stuckRefTick = -1;
   private stuckLevel = 0;
-  private readonly lastPos = vec3();
+  private stuckStep = 0;
+  private lastEscalateTick = -1e9;
+  private recover: Recover = Recover.None;
+  private recoverUntil = 0;
+  private sideDir = 1;
 
-  // Wander / team / logic.
+  // Wander / survive / team / logic.
   private nextRetarget = 0;
   private wanderValid = false;
+  private roamAngle = 0;
+  private useHints = true;
+  private readonly layerAnchor = vec3();
+  private layerAnchorY = Number.NaN;
   private logicKnown = false;
   private readonly logicSpot = vec3(Number.NaN, 0, 0);
   private emoteCooldown = 0;
 
+  // Flavour.
+  private wasQualified = false;
+  private wasStunned = false;
+  private dizzyUntil = -1;
+  private hangSince = -1;
+  private hangWait = 0;
+
   // Scratch.
   private readonly s1 = vec3();
   private readonly s2 = vec3();
+  private readonly s3 = vec3();
 
   constructor(opts: BotBrainOptions) {
     this.id = opts.id;
@@ -118,7 +235,7 @@ export class DefaultBotBrain implements BotBrainLike {
     this.rng = new Rng(opts.seed);
     this.p = BOT_SKILLS[opts.skill];
     this.nav = navGraphFor(opts.round);
-    this.strategy = strategyFor(opts.round);
+    this.strategy = strategyFor(opts.round, this.nav);
     this.decisionPhase = ((opts.id % DECISION_TICKS) + DECISION_TICKS) % DECISION_TICKS;
     this.goalTrigger =
       opts.round.triggers.find((t) => t.kind === 'crown') ?? opts.round.triggers.find((t) => t.kind === 'finish') ?? null;
@@ -137,21 +254,38 @@ export class DefaultBotBrain implements BotBrainLike {
       this.anchor.z = z / this.nav.size;
     }
     this.speed = this.p.speed;
+    this.sideDir = this.rng.chance(0.5) ? 1 : -1;
+    this.roamAngle = this.rng.range(0, Math.PI * 2);
+  }
+
+  /** Current stuck-escalation level (0 = making progress). For tests and debug overlays. */
+  get stuckLevelNow(): number {
+    return this.stuckLevel;
+  }
+
+  /** Id of the waypoint currently headed for, or -1. For tests and debug overlays. */
+  get currentWaypointId(): number {
+    return this.cur >= 0 ? (this.nav.nodes[this.cur] as Waypoint).id : -1;
   }
 
   onRespawn(): void {
     this.cur = -1;
     this.prev = -1;
+    this.succ = -1;
+    this.lineValid = false;
     this.atGoal = false;
     this.waitObstacle = null;
     this.act = Act.None;
     this.actAt = -1;
     this.diveAt = -1;
     this.holdGrab = false;
-    this.bestDist = Infinity;
+    this.stuckRefTick = -1;
     this.stuckLevel = 0;
+    this.stuckStep = 0;
+    this.recover = Recover.None;
     this.nextRetarget = 0;
     this.wanderValid = false;
+    this.layerAnchorY = Number.NaN;
   }
 
   think(view: BotWorldView, self: BotSelfView, out: CharacterInput): void {
@@ -169,11 +303,15 @@ export class DefaultBotBrain implements BotBrainLike {
 
     if (decide) {
       this.hasTarget = false;
+      this.fullSpeed = false;
       this.speed = this.p.speed;
       this.holdGrab = false;
       switch (this.strategy) {
         case 'course':
           this.decideCourse(view, self);
+          break;
+        case 'survive':
+          this.decideSurvive(view, self);
           break;
         case 'wander':
           this.decideWander(view, self, 4.5);
@@ -188,9 +326,13 @@ export class DefaultBotBrain implements BotBrainLike {
           this.decideLogic(view, self);
           break;
       }
+      this.trackStun(view, self);
+      this.ledgeReflex(view, self);
       this.reflexes(view, self);
       this.checkStuck(view, self);
       this.silly(view);
+    } else if (this.lineValid && this.lineChecked && this.waitObstacle === null && !this.atGoal) {
+      this.stepTakeoff(view, self);
     }
 
     this.steer(view, self, out);
@@ -199,93 +341,300 @@ export class DefaultBotBrain implements BotBrainLike {
   }
 
   // ---------------------------------------------------------------------------
-  // Strategies
+  // Course following
   // ---------------------------------------------------------------------------
 
   private decideCourse(view: BotWorldView, self: BotSelfView): void {
     const nav = this.nav;
     if (nav.size === 0) {
-      this.seekGoal(self);
+      this.seekGoal(view, self);
       return;
+    }
+    if (this.cur >= 0 && !this.atGoal && self.grounded) {
+      // Knocked or fallen to a lower level: the leg is out of reach, rejoin from here. Both ends must be
+      // well above us, or a long uphill leg (ramps, bowls) would count as a fall.
+      const w = (nav.nodes[this.cur] as Waypoint).position;
+      const feet = self.pos.y - CENTRE_HEIGHT;
+      const fromY = this.prev >= 0 ? (nav.nodes[this.prev] as Waypoint).position.y : -Infinity;
+      if (feet < w.y - 3.5 && feet < fromY - 3.5) this.cur = -1;
     }
     if (this.cur < 0) {
-      this.cur = nav.nearest(self.pos, this.minRank - 1);
       this.prev = -1;
       this.atGoal = false;
-      this.pickOffset();
+      this.setCur(nav.resume(self.pos, view.time < this.bannedUntil ? this.banned : -1));
     }
     if (this.atGoal) {
-      this.seekGoal(self);
+      this.seekGoal(view, self);
       return;
     }
-    let wp = nav.nodes[this.cur] as Waypoint;
-    const dx = wp.position.x - self.pos.x;
-    const dz = wp.position.z - self.pos.z;
-    const dy = wp.position.y - self.pos.y;
-    if (dx * dx + dz * dz < wp.radius * wp.radius && dy < 2.2 && dy > -3.5) {
-      this.arrive(view);
+    this.classifyTakeoff(view);
+    const wp = nav.nodes[this.cur] as Waypoint;
+    if (this.arrivedAt(view, self, wp)) {
+      this.arrive(view, self);
       if (this.atGoal) {
-        this.seekGoal(self);
+        this.seekGoal(view, self);
         return;
       }
-      wp = nav.nodes[this.cur] as Waypoint;
+    } else if (this.trySharpShortcut(view, self, wp)) {
+      this.arrive(view, self);
+      if (this.atGoal) {
+        this.seekGoal(view, self);
+        return;
+      }
     }
     if (this.waitObstacle !== null && this.prev >= 0) {
-      if (this.gapIsOpen(view, self)) {
+      if (this.legIsClear(view, self)) {
         this.waitObstacle = null;
       } else {
         // Hold position on the from-waypoint, facing the danger, fidgeting a little.
         const from = nav.nodes[this.prev] as Waypoint;
         this.setTarget(from.position.x, from.position.y, from.position.z);
         this.speed = 0;
-        this.faceTowards(self.pos, wp.position);
+        this.faceTowards(self.pos, (nav.nodes[this.cur] as Waypoint).position);
         return;
       }
     }
-    this.setTarget(wp.position.x + this.offset.x, wp.position.y, wp.position.z + this.offset.z);
-    if (this.holdGrabOnLeg()) this.holdGrab = true;
+    this.aimAtCur(self);
+    this.finishDive(view, self);
   }
 
-  private arrive(view: BotWorldView): void {
+  /** Sets the steering target for the current waypoint. */
+  private aimAtCur(self: BotSelfView): void {
+    const wp = this.nav.nodes[this.cur] as Waypoint;
+    if (this.lineValid) {
+      // Aim through the take-off along the jump direction so the launch heads for the landing.
+      this.setTarget(wp.position.x + this.offset.x + this.lineX * 2.5, wp.position.y, wp.position.z + this.offset.z + this.lineZ * 2.5);
+      this.fullSpeed = true;
+    } else {
+      this.setTarget(wp.position.x + this.offset.x, wp.position.y, wp.position.z + this.offset.z);
+    }
+    if (this.prev >= 0) {
+      const a = (this.nav.nodes[this.prev] as Waypoint).action;
+      if (a === 'grab' || a === 'climb') this.holdGrab = true;
+      // Mid-flight toward the landing: easing off would drop us short.
+      if (isTakeoff(a) && !self.grounded) this.fullSpeed = true;
+    }
+  }
+
+  /** Makes `i` the current waypoint and pre-picks its successor and take-off line. */
+  private setCur(i: number): void {
+    const nav = this.nav;
+    this.cur = i;
+    this.lineValid = false;
+    this.shortcutTried = false;
+    if (i < 0) {
+      this.succ = -1;
+      return;
+    }
+    const banned = this.bannedUntil > 0 ? this.banned : -1;
+    this.succ = nav.chooseNext(i, this.rng, this.p.branchGreed, banned);
+    const w = nav.nodes[i] as Waypoint;
+    if (isTakeoff(w.action)) {
+      const from = this.succ >= 0 ? w.position : this.prev >= 0 ? (nav.nodes[this.prev] as Waypoint).position : null;
+      const to = this.succ >= 0 ? (nav.nodes[this.succ] as Waypoint).position : w.position;
+      if (from) {
+        const dx = to.x - from.x;
+        const dz = to.z - from.z;
+        const l = Math.hypot(dx, dz);
+        // Climb chains stack waypoints on one spot: no line there, the radius test handles them.
+        // Jump-ups onto ledges (climb risers) launch from a run-up, which the radius test gives; the line is for gaps.
+        if (l > 0.5 && to.y - from.y < 0.8) {
+          this.lineValid = true;
+          this.lineX = dx / l;
+          this.lineZ = dz / l;
+          this.lineChecked = false;
+        }
+      }
+    }
+    this.pickOffset();
+  }
+
+  /**
+   * The take-off line is for jumps across gaps. When the floor runs on
+   * between the take-off and the landing (hops over beams, onto stones,
+   * anchor to anchor), the authored radius decides instead, as it always has.
+   */
+  private classifyTakeoff(view: BotWorldView): void {
+    if (this.lineChecked || !this.lineValid || this.succ < 0) {
+      this.lineChecked = true;
+      return;
+    }
+    this.lineChecked = true;
+    const a = (this.nav.nodes[this.cur] as Waypoint).position;
+    const b = (this.nav.nodes[this.succ] as Waypoint).position;
+    const P = this.s3;
+    for (let k = 1; k <= 4; k++) {
+      const f = k / 5;
+      P.x = a.x + (b.x - a.x) * f;
+      P.y = a.y + (b.y - a.y) * f + 0.5;
+      P.z = a.z + (b.z - a.z) * f;
+      if (!view.groundBelow(P, 2)) return;
+    }
+    this.lineValid = false;
+    this.pickOffset();
+  }
+
+  /** Arrival test used on decision ticks. */
+  private arrivedAt(view: BotWorldView, self: BotSelfView, wp: Waypoint): boolean {
+    if (this.lineValid) return this.takeoffReached(view, self, wp);
+    const dx = wp.position.x - self.pos.x;
+    const dz = wp.position.z - self.pos.z;
+    const dy = wp.position.y - self.pos.y;
+    return dx * dx + dz * dz < wp.radius * wp.radius && dy < 2.2 && dy > -3.5;
+  }
+
+  /** Per-step take-off check between decisions, so jumps leave from the lip and not 0.1 s late. */
+  private stepTakeoff(view: BotWorldView, self: BotSelfView): void {
+    if (this.cur < 0) return;
+    const wp = this.nav.nodes[this.cur] as Waypoint;
+    if (!this.takeoffReached(view, self, wp)) return;
+    this.arrive(view, self);
+    if (this.atGoal) {
+      this.seekGoal(view, self);
+      return;
+    }
+    if (this.waitObstacle === null) this.aimAtCur(self);
+  }
+
+  /**
+   * Take-off trigger: crossing the take-off line (a plane through the
+   * waypoint, normal to the jump direction, anticipated by a speed-scaled
+   * lead), reaching a lip on the approach, or being stalled against a riser
+   * near the waypoint. Jumps need ground (or coyote time) under them, so a
+   * bot still in the air waits for touchdown.
+   */
+  private takeoffReached(view: BotWorldView, self: BotSelfView, wp: Waypoint): boolean {
+    const rx = self.pos.x - wp.position.x;
+    const rz = self.pos.z - wp.position.z;
+    const dy = wp.position.y - self.pos.y;
+    if (!(dy < 2.2 && dy > -3.5)) return false;
+    const along = rx * this.lineX + rz * this.lineZ;
+    const lateral = Math.abs(rx * this.lineZ - rz * this.lineX);
+    const needsGround = wp.action !== 'dive';
+    if (needsGround && !self.grounded) return false;
+    const hs = Math.hypot(self.vel.x, self.vel.z);
+    const lead = Math.min(0.6, Math.max(0.15, hs * 0.08));
+    const near = lateral < wp.radius + 1;
+    if (along >= -lead && near) return true;
+    if (along > -2.5 && rx * rx + rz * rz < 16) {
+      const probe = this.s3;
+      probe.x = self.pos.x + this.lineX * (PROBE_AHEAD - 0.15);
+      probe.y = self.pos.y;
+      probe.z = self.pos.z + this.lineZ * (PROBE_AHEAD - 0.15);
+      if (!view.groundBelow(probe, CENTRE_HEIGHT + LIP_DROP)) return true;
+    }
+    const r = Math.min(wp.radius, 0.75);
+    return rx * rx + rz * rz < r * r || (hs < 1.2 && rx * rx + rz * rz < wp.radius * wp.radius);
+  }
+
+  private arrive(view: BotWorldView, self: BotSelfView): void {
     const nav = this.nav;
     this.prev = this.cur;
     const from = nav.nodes[this.prev] as Waypoint;
-    this.minRank = Math.max(this.minRank, nav.rank[this.prev] as number);
-    const next = nav.chooseNext(this.prev, this.rng, this.p.branchGreed);
-    this.bestDist = Infinity;
-    this.lastProgressTick = view.tick;
+    let next = this.succ;
+    if (next < 0 && (nav.nextIdx[this.prev] as number[]).length > 0) next = nav.chooseNext(this.prev, this.rng, this.p.branchGreed);
+    this.waitObstacle = null;
     if (next < 0) {
       this.atGoal = true;
+      this.lineValid = false;
       return;
     }
-    this.cur = next;
-    this.pickOffset();
+    this.setCur(next);
     switch (from.action) {
       case 'jump':
-        this.schedule(view, Act.Jump, 0.02);
+        this.schedule(view, this.boldJump(view, self, from, next) ? Act.JumpDive : Act.Jump, 0);
         break;
       case 'dive':
-        this.schedule(view, Act.Dive, 0.08);
+        this.schedule(view, Act.Dive, 0.05);
         break;
       case 'jumpDive':
-        this.schedule(view, Act.JumpDive, 0.02);
+        this.schedule(view, Act.JumpDive, 0);
         break;
       case 'waitForGap':
-        if (from.timeAgainst && !this.rng.chance(this.p.recklessChance)) {
-          this.waitObstacle = from.timeAgainst;
-          this.waitSince = view.time;
+      case 'waitForPlatform':
+        if (from.timeAgainst) {
+          const platform = from.action === 'waitForPlatform';
+          // Being reckless at a lift means stepping into the void: nobody is that clumsy.
+          if (platform || !this.rng.chance(this.p.recklessChance)) {
+            this.waitObstacle = from.timeAgainst;
+            this.waitPlatform = platform;
+            this.waitSince = view.time;
+          }
         }
         break;
       default:
         break;
     }
+    if (this.waitObstacle !== null && this.legIsClear(view, self)) this.waitObstacle = null;
   }
 
-  /** Grab/climb legs: hold grab the whole way so ledges catch us. */
-  private holdGrabOnLeg(): boolean {
-    if (this.prev < 0) return false;
-    const a = (this.nav.nodes[this.prev] as Waypoint).action;
-    return a === 'grab' || a === 'climb';
+  /**
+   * Bold bots stretch a jump into a jump-dive when the far side of the gap is
+   * beyond a plain jump's reach (≈ 4.2 m on the flat) but the landing is low
+   * and roomy. The gap is measured with ground probes along the leg.
+   */
+  private boldJump(view: BotWorldView, self: BotSelfView, from: Waypoint, landing: number): boolean {
+    if (this.p.jumpDiveChance <= 0) return false;
+    const to = this.nav.nodes[landing] as Waypoint;
+    if (to.action !== 'run' || to.radius < 1.2 || to.position.y > from.position.y + 0.3) return false;
+    const dx = to.position.x - self.pos.x;
+    const dz = to.position.z - self.pos.z;
+    const len = Math.hypot(dx, dz);
+    if (len < LONG_JUMP) return false;
+    const P = this.s3;
+    let gapAt = -1;
+    for (let k = 1; k <= 7; k++) {
+      P.x = self.pos.x + (dx / len) * k * 0.75;
+      P.y = self.pos.y;
+      P.z = self.pos.z + (dz / len) * k * 0.75;
+      const ground = view.groundBelow(P, CENTRE_HEIGHT + LIP_DROP);
+      if (!ground && gapAt < 0) gapAt = k;
+      else if (ground && gapAt >= 0) return k * 0.75 > LONG_JUMP && this.rng.chance(this.p.jumpDiveChance);
+    }
+    return false;
+  }
+
+  /**
+   * Corner cutting: near a plain run waypoint, a skilled bot heads straight
+   * for the one after when the floor between is continuous and level.
+   */
+  private trySharpShortcut(view: BotWorldView, self: BotSelfView, wp: Waypoint): boolean {
+    if (this.shortcutTried || this.p.shortcutChance <= 0 || this.succ < 0 || this.prev < 0) return false;
+    if (wp.action !== 'run' || (this.nav.nodes[this.prev] as Waypoint).action !== 'run') return false;
+    // Line-up waypoints before take-offs and timed legs are there for the approach angle.
+    if ((this.nav.nodes[this.succ] as Waypoint).action !== 'run') return false;
+    const dx = wp.position.x - self.pos.x;
+    const dz = wp.position.z - self.pos.z;
+    const reach = wp.radius * 2 + 1.5;
+    if (dx * dx + dz * dz > reach * reach) return false;
+    this.shortcutTried = true;
+    if (!self.grounded || !this.rng.chance(this.p.shortcutChance)) return false;
+    const to = (this.nav.nodes[this.succ] as Waypoint).position;
+    if (Math.abs(to.y - wp.position.y) > 0.4 || Math.abs(wp.position.y - (self.pos.y - CENTRE_HEIGHT)) > 0.6) return false;
+    const P = this.s3;
+    for (let k = 1; k <= 3; k++) {
+      const f = k / 4;
+      P.x = self.pos.x + (to.x - self.pos.x) * f;
+      P.y = self.pos.y + 0.3;
+      P.z = self.pos.z + (to.z - self.pos.z) * f;
+      if (!view.groundBelow(P, CENTRE_HEIGHT + 0.9)) return false;
+    }
+    return true;
+  }
+
+  /** Whether the timed leg prev → cur may be taken now. */
+  private legIsClear(view: BotWorldView, self: BotSelfView): boolean {
+    const waited = view.time - this.waitSince;
+    if (this.waitPlatform) {
+      if (this.platformBridges(view, self)) return true;
+      if (waited > MAX_PLATFORM_WAIT_SECONDS) {
+        this.giveUpBranch(view, self);
+        return this.waitObstacle === null;
+      }
+      return false;
+    }
+    if (waited > MAX_GAP_WAIT_SECONDS) return true;
+    return this.gapIsOpen(view, self);
   }
 
   /**
@@ -294,7 +643,6 @@ export class DefaultBotBrain implements BotBrainLike {
    */
   private gapIsOpen(view: BotWorldView, self: BotSelfView): boolean {
     const id = this.waitObstacle as string;
-    if (view.time - this.waitSince > MAX_GAP_WAIT_SECONDS) return true;
     const from = (this.nav.nodes[this.prev] as Waypoint).position;
     const to = (this.nav.nodes[this.cur] as Waypoint).position;
     // Only the stretch of the crossing near the obstacle matters; far ends are always clear.
@@ -306,7 +654,8 @@ export class DefaultBotBrain implements BotBrainLike {
     const runSpeed = 6.5 * this.p.speed;
     const reaction = this.reactionDelay();
     const need = 0.9 + this.p.gapMargin;
-    const samples = this.skill === 'sharp' ? 6 : this.skill === 'average' ? 4 : 2;
+    // Clumsy bots glance; everyone else checks the whole crossing (coarse sampling misses narrow hammer heads).
+    const samples = this.skill === 'clumsy' ? 3 : 6;
     const P = this.s1;
     for (let k = 0; k < samples; k++) {
       const off = -3 + (6 * k) / (samples - 1);
@@ -322,23 +671,168 @@ export class DefaultBotBrain implements BotBrainLike {
     return true;
   }
 
-  private seekGoal(self: BotSelfView): void {
+  /**
+   * Boarding test for lifts and moving platforms: every sample along the leg
+   * from here to the target must have something to stand on when we would
+   * reach it — the platform (predicted from its pose) or, where the platform
+   * is not around, static ground. The last sample is also checked a moment
+   * after arrival so we don't step on just as it leaves.
+   */
+  private platformBridges(view: BotWorldView, self: BotSelfView): boolean {
+    const id = this.waitObstacle as string;
+    const to = (this.nav.nodes[this.cur] as Waypoint).position;
+    const feetY = self.pos.y - CENTRE_HEIGHT;
+    const runSpeed = RUN_SPEED * this.p.speed;
+    const reaction = this.p.reactionMax;
+    const P = this.s1;
+    const n = 4;
+    for (let k = 1; k <= n; k++) {
+      const f = k / n;
+      P.x = self.pos.x + (to.x - self.pos.x) * f;
+      P.z = self.pos.z + (to.z - self.pos.z) * f;
+      P.y = feetY + (to.y - feetY) * f + 0.3;
+      const ahead = reaction + Math.hypot(P.x - self.pos.x, P.z - self.pos.z) / runSpeed;
+      const onPlatform = view.obstacleClearance(id, P, ahead) < 0.55;
+      // Boarding: the landing must still be there a moment after we arrive.
+      if (onPlatform && (k < n || view.obstacleClearance(id, P, ahead + 0.6) < 0.55)) continue;
+      // Static ground only counts where the platform is not now (the ray would see the platform too).
+      if (view.obstacleClearance(id, P, 0) < 1.5 || !view.groundBelow(P, 1.2)) return false;
+    }
+    return true;
+  }
+
+  private seekGoal(view: BotWorldView, self: BotSelfView): void {
     const g = this.goalTrigger;
     if (!g) {
-      this.decideWanderNoQuery(self, 2);
+      // Summits of survival towers: hold the top without wandering off it.
+      this.decideSurvive(view, self);
       return;
     }
     this.setTarget(g.position.x, g.position.y, g.position.z);
+    this.fullSpeed = g.kind === 'finish';
     const dx = g.position.x - self.pos.x;
     const dz = g.position.z - self.pos.z;
     if (g.kind === 'crown' && dx * dx + dz * dz < 9) {
       this.holdGrab = true;
       if (self.grounded && this.act === Act.None) this.act = Act.Jump;
     }
+    this.finishDive(view, self);
   }
+
+  /** Diving across the line: showboating that occasionally pays off. */
+  private finishDive(view: BotWorldView, self: BotSelfView): void {
+    const g = this.goalTrigger;
+    if (this.finishDived || !g || g.kind !== 'finish' || !self.grounded || this.act !== Act.None) return;
+    if (this.cur >= 0 && this.succ >= 0) return;
+    const dx = g.position.x - self.pos.x;
+    const dz = g.position.z - self.pos.z;
+    const range = this.skill === 'clumsy' ? 6 : 4;
+    if (dx * dx + dz * dz > range * range || Math.abs(g.position.y - self.pos.y) > g.size.y) return;
+    this.finishDived = true;
+    if (this.rng.chance(this.p.finishDiveChance)) this.schedule(view, Act.Dive, 0);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Survival roaming
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Survival: pick a spot a couple of metres away, biased toward the middle
+   * of the current level, away from nearby players and in a slowly turning
+   * roam direction; obstacles that know safe ground (intact tiles, behind a
+   * rope's sweep) refine it. Never steps where no floor is seen ahead.
+   */
+  private decideSurvive(view: BotWorldView, self: BotSelfView): void {
+    this.updateLayerAnchor(self);
+    if (view.time >= this.nextRetarget) {
+      this.nextRetarget = view.time + this.rng.range(1.5, 3.5);
+      this.roamAngle += this.rng.range(-1.6, 1.6);
+      // Reading the obstacles is a skill: clumsy bots often just wander.
+      this.useHints = this.rng.chance(this.p.hazardAwareness * this.p.hazardAwareness);
+    }
+    let cx = this.layerAnchor.x - self.pos.x;
+    let cz = this.layerAnchor.z - self.pos.z;
+    const cd = Math.hypot(cx, cz);
+    const pull = Math.min(1.6, cd / 5);
+    if (cd > 1e-3) {
+      cx = (cx / cd) * pull;
+      cz = (cz / cd) * pull;
+    }
+    let ax = 0;
+    let az = 0;
+    for (const peer of view.peers) {
+      if (peer.id === this.id || peer.status !== PlayerRoundStatus.Playing) continue;
+      const dx = self.pos.x - peer.pos.x;
+      const dz = self.pos.z - peer.pos.z;
+      if (Math.abs(self.pos.y - peer.pos.y) > 2) continue;
+      const d2 = dx * dx + dz * dz;
+      if (d2 > 12 || d2 < 1e-4) continue;
+      ax += dx / d2;
+      az += dz / d2;
+    }
+    let hx = cx + ax * 1.5 + Math.cos(this.roamAngle) * 0.7;
+    let hz = cz + az * 1.5 + Math.sin(this.roamAngle) * 0.7;
+    const hl = Math.hypot(hx, hz) || 1;
+    hx /= hl;
+    hz /= hl;
+    const spot = this.s2;
+    spot.x = self.pos.x + hx * 2.5;
+    spot.y = self.pos.y;
+    spot.z = self.pos.z + hz * 2.5;
+    const hintX = spot.x;
+    const hintZ = spot.z;
+    if (this.useHints && view.safeSpot(spot) && Math.abs(spot.y - (self.pos.y - CENTRE_HEIGHT)) < 3) {
+      this.setTarget(spot.x, spot.y, spot.z);
+    } else {
+      this.setTarget(hintX, self.pos.y, hintZ);
+    }
+    this.speed = this.p.speed * 0.8;
+    // Don't step into holes or off the edge; turn the roam direction instead.
+    const dir = this.dirTo(self.pos, this.target, this.s1);
+    const ahead = this.s3;
+    ahead.x = self.pos.x + dir.x * 1.2;
+    ahead.y = self.pos.y + 0.3;
+    ahead.z = self.pos.z + dir.z * 1.2;
+    if (!view.groundBelow(ahead, CENTRE_HEIGHT + 1.5)) {
+      this.speed = 0;
+      this.roamAngle += Math.PI * this.rng.range(0.5, 1);
+      this.nextRetarget = view.time + this.rng.range(0.8, 1.6);
+    }
+  }
+
+  /** Centroid of the waypoints on the bot's current level (recomputed when it changes level). */
+  private updateLayerAnchor(self: BotSelfView): void {
+    const feet = self.pos.y - CENTRE_HEIGHT;
+    if (Math.abs(feet - this.layerAnchorY) < 1.5) return;
+    this.layerAnchorY = feet;
+    let x = 0;
+    let z = 0;
+    let n = 0;
+    for (const w of this.nav.nodes) {
+      if (Math.abs(w.position.y - feet) > 2.5) continue;
+      x += w.position.x;
+      z += w.position.z;
+      n++;
+    }
+    if (n > 0) {
+      this.layerAnchor.x = x / n;
+      this.layerAnchor.z = z / n;
+    } else {
+      this.layerAnchor.x = this.anchor.x;
+      this.layerAnchor.z = this.anchor.z;
+    }
+    this.layerAnchor.y = feet;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Other strategies
+  // ---------------------------------------------------------------------------
 
   private decideWander(view: BotWorldView, self: BotSelfView, radius: number): void {
     const spot = this.s2;
+    spot.x = self.pos.x;
+    spot.y = self.pos.y;
+    spot.z = self.pos.z;
     if (view.safeSpot(spot)) {
       this.setTarget(spot.x, spot.y, spot.z);
       return;
@@ -371,12 +865,6 @@ export class DefaultBotBrain implements BotBrainLike {
       this.nextRetarget = 0;
       this.speed = 0;
     }
-  }
-
-  private decideWanderNoQuery(self: BotSelfView, radius: number): void {
-    const a = this.rng.range(0, Math.PI * 2);
-    this.setTarget(self.pos.x + Math.cos(a) * radius, self.pos.y, self.pos.z + Math.sin(a) * radius);
-    this.speed = 0.4;
   }
 
   private decideTeam(view: BotWorldView, self: BotSelfView): void {
@@ -487,7 +975,6 @@ export class DefaultBotBrain implements BotBrainLike {
       if (dist < 2.2 && this.act === Act.None && this.rng.chance(0.5)) this.schedule(view, Act.Jump, 0);
       return;
     }
-    // Lead the target a little; sharp bots lead more accurately.
     this.setTarget(bx, by, bz);
     if (dist < 1.8) this.holdGrab = true;
     else if (dist < 4 && this.act === Act.None && this.rng.chance(0.15 * (1 - this.p.mistakeChance))) {
@@ -497,6 +984,9 @@ export class DefaultBotBrain implements BotBrainLike {
 
   private decideLogic(view: BotWorldView, self: BotSelfView): void {
     const spot = this.s2;
+    spot.x = self.pos.x;
+    spot.y = self.pos.y;
+    spot.z = self.pos.z;
     if (view.safeSpot(spot)) {
       const changed = !(Math.abs(spot.x - this.logicSpot.x) < 0.01 && Math.abs(spot.z - this.logicSpot.z) < 0.01);
       if (changed) {
@@ -524,6 +1014,27 @@ export class DefaultBotBrain implements BotBrainLike {
   // Reflexes
   // ---------------------------------------------------------------------------
 
+  /**
+   * Hanging from a ledge: haul up (jump) once the reaction delay has passed
+   * when the route goes up or onward; let go (dive) when it leads back down.
+   */
+  private ledgeReflex(view: BotWorldView, self: BotSelfView): void {
+    if (self.state !== CharacterState.LedgeHang) {
+      this.hangSince = -1;
+      return;
+    }
+    if (this.hangSince < 0) {
+      this.hangSince = view.time;
+      this.hangWait = this.reactionDelay() + (this.skill === 'clumsy' ? this.rng.range(0, 0.6) : 0);
+    }
+    if (view.time - this.hangSince < this.hangWait || this.act !== Act.None || view.tick < this.jumpUntil) return;
+    const below = this.hasTarget && this.target.y < self.pos.y - CENTRE_HEIGHT - 2.5;
+    this.act = below ? Act.Dive : Act.Jump;
+    this.actAt = view.tick;
+    this.hangSince = view.time;
+    this.hangWait = 0.6;
+  }
+
   private reflexes(view: BotWorldView, self: BotSelfView): void {
     if (!self.grounded || this.act !== Act.None) return;
     const lead = this.reactionDelay() + 0.25;
@@ -547,51 +1058,220 @@ export class DefaultBotBrain implements BotBrainLike {
       const soon = view.hazardDistance(head, 5, lead);
       if (soon < 0.5 && soon < nowHead - 0.15 && this.rng.chance(this.p.hazardAwareness * 0.7)) {
         this.schedule(view, Act.Dive, Math.max(0, lead - 0.35));
+        return;
+      }
+    }
+    // A knee-high lip or step we're pushing against: hop it (clumsy bots may bonk first).
+    if (this.hasTarget && this.speed > 0 && this.recover === Recover.None && this.strategy === 'course') {
+      if (Math.hypot(self.vel.x, self.vel.z) < 2.5 && this.blockedAhead(view, self) === 1 && !this.rng.chance(this.p.bonkChance)) {
+        this.schedule(view, Act.Jump, this.reactionDelay() * 0.5);
       }
     }
   }
 
+  /**
+   * Probes the space just ahead toward the target with downward rays (which
+   * see level geometry and every fixed or moving obstacle part).
+   *
+   * @returns 0 clear, 1 a low blocker worth hopping, 2 a wall too tall to hop.
+   */
+  private blockedAhead(view: BotWorldView, self: BotSelfView): number {
+    if (!this.hasTarget) return 0;
+    const dx = this.target.x - self.pos.x;
+    const dz = this.target.z - self.pos.z;
+    const l = Math.hypot(dx, dz);
+    if (l < 0.3) return 0;
+    const P = this.s3;
+    P.x = self.pos.x + (dx / l) * PROBE_AHEAD;
+    P.z = self.pos.z + (dz / l) * PROBE_AHEAD;
+    // From head height down to half a metre above the feet (above step height).
+    P.y = self.pos.y + 0.95;
+    if (!view.groundBelow(P, 1.35)) return 0;
+    // Anything in the top 0.45 m means the obstacle reaches above a full jump.
+    return view.groundBelow(P, 0.45) ? 2 : 1;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Stuck recovery
+  // ---------------------------------------------------------------------------
+
+  /** Route progress metric: remaining path length when the course has a goal, else distance to target. */
+  private routeMetric(self: BotSelfView): number {
+    const tx = this.target.x - self.pos.x;
+    const ty = (this.target.y - (self.pos.y - CENTRE_HEIGHT)) * 0.5;
+    const tz = this.target.z - self.pos.z;
+    const d = Math.hypot(tx, ty, tz);
+    if (this.cur < 0) return d;
+    const g = this.nav.goalDist[this.cur] as number;
+    return g < Number.MAX_VALUE ? g + d : d;
+  }
+
+  /**
+   * Escalating stuck recovery. Progress is measured against a baseline that
+   * stays fixed for a whole window (`stuckSeconds`), so the recovery moves
+   * themselves don't count as progress; the level only decays after a full
+   * window of real progress with no escalation, so recovering bots don't
+   * flip-flop between fixes.
+   */
   private checkStuck(view: BotWorldView, self: BotSelfView): void {
-    if (this.speed === 0 || !this.hasTarget) {
-      this.lastProgressTick = view.tick;
-      this.bestDist = Infinity;
+    const tick = view.tick;
+    if (this.recover !== Recover.None && tick < this.recoverUntil) {
+      // Sliding sideways or backing off must not walk us off a narrow bridge.
+      const hs = Math.hypot(self.vel.x, self.vel.z);
+      if (hs > 0.5) {
+        const P = this.s3;
+        P.x = self.pos.x + (self.vel.x / hs) * 1.0;
+        P.y = self.pos.y;
+        P.z = self.pos.z + (self.vel.z / hs) * 1.0;
+        if (!view.groundBelow(P, CENTRE_HEIGHT + 1.5)) {
+          this.recover = Recover.None;
+          this.sideDir = -this.sideDir;
+        }
+      }
+    }
+    const course = this.strategy === 'course' && !this.atGoal && this.cur >= 0;
+    if (this.speed === 0 || !this.hasTarget || self.state === CharacterState.LedgeClimb) {
+      // Intentional waits (gaps, lifts, logic) and ledge hangs pause the clock.
+      this.stuckRefTick = -1;
       return;
     }
-    const metric =
-      this.strategy === 'course' && !this.atGoal
-        ? Math.hypot(this.target.x - self.pos.x, (this.target.y - self.pos.y) * 0.5, this.target.z - self.pos.z)
-        : -Math.hypot(self.pos.x - this.lastPos.x, self.pos.z - this.lastPos.z);
-    if (this.strategy !== 'course' || this.atGoal) {
-      // Displacement-based: reset the reference whenever we've moved a metre.
-      if (-metric > 1) {
-        this.lastPos.x = self.pos.x;
-        this.lastPos.z = self.pos.z;
-        this.lastProgressTick = view.tick;
-        this.stuckLevel = 0;
-      }
-    } else if (metric < this.bestDist - 0.4) {
-      this.bestDist = metric;
-      this.lastProgressTick = view.tick;
-      this.stuckLevel = 0;
+    const metric = course ? this.routeMetric(self) : 0;
+    if (this.stuckRefTick < 0) {
+      this.resetStuckWindow(tick, metric, self);
+      return;
     }
-    if ((view.tick - this.lastProgressTick) * view.dt < this.p.stuckSeconds) return;
-    this.lastProgressTick = view.tick;
-    this.bestDist = Infinity;
+    const gained = course
+      ? this.stuckRef - metric
+      : Math.hypot(self.pos.x - this.stuckRefPos.x, self.pos.y - this.stuckRefPos.y, self.pos.z - this.stuckRefPos.z);
+    const windowTicks = Math.round(this.p.stuckSeconds / view.dt);
+    if (gained >= STUCK_PROGRESS * (course ? 1 : 1.5)) {
+      this.resetStuckWindow(tick, metric, self);
+      if (tick - this.lastEscalateTick > windowTicks * 2) {
+        this.stuckLevel = 0;
+        this.stuckStep = 0;
+      }
+      return;
+    }
+    if (tick - this.stuckRefTick < windowTicks) return;
+    this.resetStuckWindow(tick, metric, self);
+    this.lastEscalateTick = tick;
     this.stuckLevel++;
-    if (this.stuckLevel === 1) this.schedule(view, Act.Jump, 0);
-    else if (this.stuckLevel === 2) this.schedule(view, Act.JumpDive, 0);
-    else {
-      this.stuckLevel = 0;
-      this.cur = -1;
-      this.waitObstacle = null;
-      this.nextRetarget = 0;
+    const blocked = this.blockedAhead(view, self);
+    const plan = blocked === 2 ? PLAN_WALL : blocked === 1 ? PLAN_LIP : PLAN_OPEN;
+    const step = plan[this.stuckStep % plan.length] as Unstick;
+    this.stuckStep++;
+    this.unstick(view, self, step);
+  }
+
+  private resetStuckWindow(tick: number, metric: number, self: BotSelfView): void {
+    this.stuckRefTick = tick;
+    this.stuckRef = metric;
+    this.stuckRefPos.x = self.pos.x;
+    this.stuckRefPos.y = self.pos.y;
+    this.stuckRefPos.z = self.pos.z;
+  }
+
+  /**
+   * Performs one recovery step. Every move that leaves the line toward the
+   * target first checks for floor where it would take the bot; a recovery
+   * that walks a stuck bot off a narrow bridge is worse than staying stuck,
+   * so unsafe moves degrade to a plain hop.
+   */
+  private unstick(view: BotWorldView, self: BotSelfView, step: Unstick): void {
+    const tick = view.tick;
+    const fx = this.target.x - self.pos.x;
+    const fz = this.target.z - self.pos.z;
+    const fl = Math.hypot(fx, fz) || 1;
+    const ux = fx / fl;
+    const uz = fz / fl;
+    switch (step) {
+      case Unstick.Jump:
+        this.schedule(view, Act.Jump, 0);
+        break;
+      case Unstick.Sidestep:
+      case Unstick.SidestepFlip: {
+        if (step === Unstick.SidestepFlip) this.sideDir = -this.sideDir;
+        // Strafe right (+moveX) is (cos yaw, −sin yaw) = (uz, −ux) for forward (ux, uz).
+        if (!this.floorAt(view, self, uz * this.sideDir * 1.5, -ux * this.sideDir * 1.5)) this.sideDir = -this.sideDir;
+        if (!this.floorAt(view, self, uz * this.sideDir * 1.5, -ux * this.sideDir * 1.5)) {
+          this.schedule(view, Act.Jump, 0);
+          break;
+        }
+        this.recover = Recover.Sidestep;
+        this.recoverUntil = tick + Math.round(this.rng.range(0.7, 1.1) / view.dt);
+        if (this.blockedAhead(view, self) !== 2) this.schedule(view, Act.Jump, 0.15);
+        break;
+      }
+      case Unstick.JumpDive:
+        // A lunge covers ~4 m: only with floor (or the far lip) to land on.
+        this.schedule(view, this.floorAt(view, self, ux * 3.5, uz * 3.5) ? Act.JumpDive : Act.Jump, 0);
+        break;
+      case Unstick.BackOff:
+        if (!this.floorAt(view, self, -ux * 1.5, -uz * 1.5)) {
+          this.schedule(view, Act.Jump, 0);
+          break;
+        }
+        this.recover = Recover.BackOff;
+        this.recoverUntil = tick + Math.round(this.rng.range(0.5, 0.8) / view.dt);
+        break;
+      case Unstick.Repath:
+        this.giveUpBranch(view, self);
+        break;
     }
   }
+
+  /** @returns True when there is floor at most 1.5 m below the feet at offset (dx, dz). */
+  private floorAt(view: BotWorldView, self: BotSelfView, dx: number, dz: number): boolean {
+    const P = this.s3;
+    P.x = self.pos.x + dx;
+    P.y = self.pos.y + 0.3;
+    P.z = self.pos.z + dz;
+    return view.groundBelow(P, CENTRE_HEIGHT + 1.8);
+  }
+
+  /** Abandons the current branch: a sibling from the last waypoint, else rejoin the graph elsewhere. */
+  private giveUpBranch(view: BotWorldView, self: BotSelfView): void {
+    this.waitObstacle = null;
+    this.nextRetarget = 0;
+    this.wanderValid = false;
+    this.roamAngle += Math.PI;
+    if (this.strategy !== 'course' || this.atGoal) return;
+    const stuckOn = this.cur;
+    this.banned = stuckOn;
+    this.bannedUntil = view.time + BAN_SECONDS;
+    const sib = this.prev >= 0 ? this.nav.sibling(this.prev, stuckOn, this.rng) : -1;
+    if (sib >= 0) {
+      this.setCur(sib);
+      return;
+    }
+    this.prev = -1;
+    this.setCur(this.nav.resume(self.pos, stuckOn));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Flavour
+  // ---------------------------------------------------------------------------
 
   private silly(view: BotWorldView): void {
     if (this.act !== Act.None) return;
     if (this.rng.chance(this.p.sillyPerSecond * DECISION_TICKS * view.dt)) {
       this.schedule(view, this.rng.chance(0.5) ? Act.Dive : Act.Jump, 0);
+    }
+  }
+
+  /** Clumsy bots stagger about for a moment after getting back up from a stun. */
+  private trackStun(view: BotWorldView, self: BotSelfView): void {
+    const stunned = self.state === CharacterState.Stunned || self.state === CharacterState.GetUp;
+    if (this.wasStunned && !stunned && this.rng.chance(this.p.dizzyChance)) {
+      this.dizzyUntil = view.tick + Math.round(this.rng.range(0.4, 0.9) / view.dt);
+    }
+    this.wasStunned = stunned;
+    // Staggering is for open ground: never sway a bot off a ledge.
+    if (view.tick < this.dizzyUntil && this.hasTarget) {
+      const dx = this.target.x - self.pos.x;
+      const dz = this.target.z - self.pos.z;
+      const l = Math.hypot(dx, dz) || 1;
+      if (!this.floorAt(view, self, (dz / l) * 1.5, (-dx / l) * 1.5) || !this.floorAt(view, self, (-dz / l) * 1.5, (dx / l) * 1.5)) this.dizzyUntil = -1;
     }
   }
 
@@ -607,6 +1287,17 @@ export class DefaultBotBrain implements BotBrainLike {
     }
     this.emoteCooldown -= DECISION_TICKS * view.dt;
     const celebrating = self.status === PlayerRoundStatus.Qualified;
+    if (celebrating && !this.wasQualified) {
+      this.wasQualified = true;
+      if (this.rng.chance(this.p.celebrateChance)) {
+        out.emote = this.rng.int(1, 4);
+        out.buttons |= Button.Emote;
+        this.emoteCooldown = 2;
+        if (this.act === Act.None) this.schedule(view, Act.Jump, 0.3);
+        this.applyActions(view, out);
+        return;
+      }
+    }
     const rate = celebrating ? this.p.emotePerSecond * 6 : this.p.emotePerSecond;
     if (this.emoteCooldown <= 0 && this.rng.chance(rate * DECISION_TICKS * view.dt)) {
       out.emote = this.rng.int(1, 4);
@@ -636,24 +1327,47 @@ export class DefaultBotBrain implements BotBrainLike {
     const d = Math.hypot(dx, dz);
     if (d > 0.05) this.yaw = Math.atan2(dx, dz);
     out.yaw = this.yaw + this.noise;
-    // Ease off when arriving so we don't overshoot narrow platforms.
-    const arrive = d < 1.2 ? Math.max(0.35, d / 1.2) : 1;
+    // Ease off when arriving so we don't overshoot narrow platforms (never on take-off runs).
+    const arrive = this.fullSpeed || d >= 1.2 ? 1 : Math.max(0.35, d / 1.2);
     out.moveZ = this.speed * arrive;
     out.moveX = 0;
     if (this.speed === 0) {
       out.moveZ = 0;
       // Fidget while waiting so the crowd at a gate looks alive.
       if (this.rng.chance(0.02)) out.moveX = this.rng.range(-0.4, 0.4);
+      return;
+    }
+    const tick = view.tick;
+    if (this.recover !== Recover.None) {
+      if (tick >= this.recoverUntil) this.recover = Recover.None;
+      else if (this.recover === Recover.Sidestep) {
+        out.moveX = this.sideDir;
+        out.moveZ = 0.45 * this.speed;
+      } else {
+        out.moveZ = -0.8;
+        out.moveX = this.sideDir * 0.3;
+      }
+    }
+    if (tick < this.dizzyUntil) {
+      // Seeing stars: the stick sways side to side.
+      out.yaw += Math.sin(tick * 0.35) * 1.1;
+      out.moveZ *= 0.6;
     }
   }
 
   private applyActions(view: BotWorldView, out: CharacterInput): void {
     const t = view.tick;
     if (this.act !== Act.None && t >= this.actAt) {
-      if (this.act === Act.Jump || this.act === Act.JumpDive) this.jumpUntil = t + JUMP_HOLD_TICKS;
-      if (this.act === Act.Dive) this.diveUntil = t + DIVE_HOLD_TICKS;
-      if (this.act === Act.JumpDive) this.diveAt = t + Math.round(0.28 / view.dt);
-      this.act = Act.None;
+      if ((this.act === Act.Jump || this.act === Act.JumpDive) && t < this.jumpUntil) {
+        // Still holding the last jump: release for a tick so the new press registers.
+        this.jumpUntil = t;
+        this.actAt = t + 1;
+      } else {
+        if (this.act === Act.Jump || this.act === Act.JumpDive) this.jumpUntil = t + JUMP_HOLD_TICKS;
+        if (this.act === Act.Dive) this.diveUntil = t + DIVE_HOLD_TICKS;
+        if (this.act === Act.JumpDive) this.diveAt = t + Math.round(0.28 / view.dt);
+        this.act = Act.None;
+      }
     }
     if (this.diveAt >= 0 && t >= this.diveAt) {
       this.diveUntil = t + DIVE_HOLD_TICKS;
@@ -665,11 +1379,12 @@ export class DefaultBotBrain implements BotBrainLike {
 
   /**
    * Queues an action `delay` seconds from now, applying the skill's timing
-   * error and, sometimes, a comic mistake.
+   * error (centred slightly late, as human presses are)
+   * and, sometimes, a comic mistake.
    */
   private schedule(view: BotWorldView, act: Act, delay: number): void {
     let a = act;
-    let d = delay + this.gauss() * this.p.jumpTimingError;
+    let d = delay + 0.02 + this.gauss() * this.p.jumpTimingError;
     if (this.rng.chance(this.p.mistakeChance)) {
       const r = this.rng.next();
       if (r < 0.35) return;
@@ -705,6 +1420,12 @@ export class DefaultBotBrain implements BotBrainLike {
     const a = this.rng.range(0, Math.PI * 2);
     this.offset.x = Math.cos(a) * r;
     this.offset.z = Math.sin(a) * r;
+    if (this.lineValid) {
+      // Take-offs spread bots across the lip only, at most half the radius.
+      const across = (this.offset.x * this.lineZ - this.offset.z * this.lineX) * 0.5;
+      this.offset.x = across * this.lineZ;
+      this.offset.z = -across * this.lineX;
+    }
   }
 
   private reactionDelay(): number {

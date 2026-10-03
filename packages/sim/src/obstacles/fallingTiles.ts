@@ -8,7 +8,7 @@
 import { z } from 'zod';
 import type { Collider } from '@dimforge/rapier3d-compat';
 import { SIM_DT, vec3, type Vec3 } from '@tumble/shared';
-import { ObstacleGroups, RuntimeBase, actorLocal } from './helpers-a.ts';
+import { ObstacleGroups, RuntimeBase, actorLocal, toLocalPoint, toWorldPoint } from './helpers-a.ts';
 import type {
   ObstacleActor,
   ObstacleBuildContext,
@@ -221,6 +221,41 @@ export class FallingTilesRuntime extends RuntimeBase implements FallingTilesView
     const l = actorLocal(this.frame, actor, this.local);
     // Side bumps don't count — only standing on top.
     if (l.y > -0.3) this.warn(i, ctx);
+  }
+
+  /**
+   * Bot hint: the nearest intact, not-shaking tile to the bot's hint point.
+   * On entry `out` holds the asking bot's hint (usually its position nudged
+   * toward where it would like to go); tiles that still ignore players
+   * (`startTime` not reached) count as closer so the crowd drifts onto them.
+   *
+   * @returns False when the hint is not on this field's layer or no tile is intact.
+   */
+  botSafeSpot(t: number, out: Vec3): boolean {
+    const p = this.p;
+    const l = toLocalPoint(this.frame, out, this.local);
+    if (!(l.y > -1.5 && l.y < p.standHeight + 2)) return false;
+    const lx = l.x;
+    const lz = l.z;
+    const dormant = t < p.startTime;
+    const pitch = pitchX(p);
+    let best = -1;
+    let bestD = Infinity;
+    for (let i = 0; i < this.tileCount; i++) {
+      if (this.tileState[i] !== TileState.Idle) continue;
+      fallingTileCenter(i, p, this.local);
+      let d = (this.local.x - lx) ** 2 + (this.local.z - lz) ** 2;
+      if (dormant) d *= 0.5;
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    // Ten tiles away is another part of the arena, not a safe spot near the bot.
+    if (best < 0 || bestD > (10 * pitch) ** 2) return false;
+    fallingTileCenter(best, p, this.local);
+    toWorldPoint(this.frame, this.local, out);
+    return true;
   }
 
   /** One int per tile: `state | ticksSinceChange << 2` (saturating). */

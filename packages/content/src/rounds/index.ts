@@ -4,9 +4,19 @@
  */
 import { RoundDefinitionSchema, type RoundDefinition, type RoundDefinitionInput } from '@tumble/shared';
 import testArena from './_test-arena/index.ts';
+import { ROUNDS_GROUP_1 } from './group-1.ts';
+import { ROUNDS_GROUP_2 } from './group-2.ts';
+import { ROUNDS_GROUP_3 } from './group-3.ts';
+import { ROUNDS_GROUP_4 } from './group-4.ts';
 
 /** Every authored round, as written. */
-export const ROUNDS: RoundDefinitionInput[] = [testArena];
+export const ROUNDS: RoundDefinitionInput[] = [
+  testArena,
+  ...ROUNDS_GROUP_1,
+  ...ROUNDS_GROUP_2,
+  ...ROUNDS_GROUP_3,
+  ...ROUNDS_GROUP_4,
+];
 
 /** Engineering fixtures that must not appear in real shows while real rounds exist. */
 export const DEV_ROUND_IDS: ReadonlySet<string> = new Set(['test-arena']);

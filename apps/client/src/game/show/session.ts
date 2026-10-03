@@ -1005,6 +1005,11 @@ export abstract class ShowSession {
         case 'grabStart':
           if (mine) this.counters.grabs = (this.counters.grabs ?? 0) + 1;
           break;
+        case 'grabEnd':
+        case 'fellOut':
+          // A toggled grab ends with the grab itself, or it would re-grab on the next step.
+          if (mine) this.ctx.input.endGrabToggle();
+          break;
         case 'bounce':
           if (mine) this.counters.bounces = (this.counters.bounces ?? 0) + 1;
           break;
@@ -1168,6 +1173,7 @@ export abstract class ShowSession {
     }
     this.ctx.input.sample(yaw, out);
     if (!this.controlsActive) {
+      this.ctx.input.endGrabToggle();
       out.moveX = 0;
       out.moveZ = 0;
       out.buttons = 0;

@@ -1201,6 +1201,7 @@ export class GameApp {
     this.audio.applySettings(st);
     this.input.settings.sensitivity = st.controls.mouseSensitivity;
     this.input.settings.invertY = st.controls.invertY;
+    this.input.settings.toggleGrab = st.controls.toggleGrab;
     for (const [bind, action] of Object.entries(BIND_TO_INPUT) as [BindAction, InputAction][]) {
       const codes = st.controls.keybinds[bind];
       const defaults = DEFAULT_KEYBINDS[bind];

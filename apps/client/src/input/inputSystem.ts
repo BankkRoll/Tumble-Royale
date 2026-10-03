@@ -35,6 +35,8 @@ export interface InputSettings {
   stickDeadzone: number;
   /** Lock the pointer on click (desktop). */
   pointerLock: boolean;
+  /** Grab is press-to-toggle instead of hold (Settings → Toggle grab), on every device. */
+  toggleGrab: boolean;
 }
 
 /** Defaults tuned for a 1080p mouse at ~800 DPI and a standard controller. */
@@ -46,6 +48,7 @@ export const DEFAULT_INPUT_SETTINGS: Readonly<InputSettings> = Object.freeze({
   touchRadPerPixel: 0.006,
   stickDeadzone: 0.18,
   pointerLock: true,
+  toggleGrab: false,
 });
 
 /** Keys that mean "I'm playing now" and may grab the mouse for the camera. */
@@ -123,6 +126,8 @@ export class InputSystem {
   private readonly look: LookDelta = { yaw: 0, pitch: 0 };
   private readonly unlisten: (() => void)[] = [];
   private mouseActions = true;
+  private grabToggled = false;
+  private grabWasHeld = false;
 
   /**
    * @param opts.element - Focus/pointer-lock target, usually the game canvas.
@@ -250,6 +255,19 @@ export class InputSystem {
     this.lastDevice = 'touch';
   }
 
+  /** True while toggle grab is latched on (the player tapped Grab and has not tapped again). */
+  get grabToggleActive(): boolean {
+    return this.grabToggled;
+  }
+
+  /**
+   * Lets go of a toggled grab: the grab ended in the sim (broken free, out of
+   * stamina, fell out) or controls went inactive. No-op in hold mode.
+   */
+  endGrabToggle(): void {
+    this.grabToggled = false;
+  }
+
   /**
    * Fills `out` for one fixed simulation step. Call exactly once per step.
    *
@@ -293,7 +311,7 @@ export class InputSystem {
     const wheel = [kb('emoteWheel').sample(), pad('emoteWheel').sample(), t.buttons.emote.sample()];
     if (jump.includes(true)) b |= Button.Jump;
     if (dive.includes(true)) b |= Button.Dive;
-    if (grab.includes(true)) b |= Button.Grab;
+    if (this.resolveGrab(grab.includes(true))) b |= Button.Grab;
     if (wheel.includes(true)) b |= Button.Emote;
     out.buttons = b;
 
@@ -352,6 +370,22 @@ export class InputSystem {
     for (const u of this.unlisten) u();
     this.unlisten.length = 0;
     if (this.pointerLocked) document.exitPointerLock();
+  }
+
+  /**
+   * Grab output for this step. Hold mode passes the merged button through;
+   * toggle mode flips on each rising edge from any device, so a tap starts
+   * holding and the next tap lets go.
+   */
+  private resolveGrab(held: boolean): boolean {
+    const edge = held && !this.grabWasHeld;
+    this.grabWasHeld = held;
+    if (!this.settings.toggleGrab) {
+      this.grabToggled = false;
+      return held;
+    }
+    if (edge) this.grabToggled = !this.grabToggled;
+    return this.grabToggled;
   }
 
   // ---------------------------------------------------------------------------

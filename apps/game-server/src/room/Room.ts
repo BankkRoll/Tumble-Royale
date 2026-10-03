@@ -577,6 +577,8 @@ export class Room {
       (this.state === 'lobby' && this.slots.size === 0 && this.serverTick > SERVER_TICK_HZ * 60)
     ) {
       this.log(`[room ${this.id}] closing (${over ? 'show over' : 'empty'})`);
+      // Every human left mid-show: report the rounds they played, or their rewards would be lost with the room.
+      if (this.state === 'show' && !this.rewardsDone) this.reportResults([]);
       this.dispose();
     }
   }

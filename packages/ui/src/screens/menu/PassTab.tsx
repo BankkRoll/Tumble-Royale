@@ -20,30 +20,21 @@ import { formatNumber, formatRemaining, useNow } from '../../components/hooks.ts
 import { Icon } from '../../components/icons/index.tsx';
 import { uiEvents } from '../../store/events.ts';
 import { useUI } from '../../store/uiStore.ts';
-import type { CosmeticSlot, PassReward, PassTier, SeasonPassData } from '../../store/types.ts';
+import {
+  SLOT_NAMES,
+  type CosmeticSlot,
+  type PassReward,
+  type PassTier,
+  type SeasonPassData,
+} from '../../store/types.ts';
+
+/** Re-exported for screens that imported slot names from here. */
+export { SLOT_NAMES };
 import { rarityLabels } from '../../theme/tokens.ts';
 import { DressingRoom, isEquipped, useActiveLoadout } from './DressingRoom.tsx';
 import { nextMarquee } from './PlayTab.tsx';
 
 type Track = 'free' | 'premium';
-
-/** Display names for cosmetic slots. */
-export const SLOT_NAMES: Record<CosmeticSlot, string> = {
-  colors: 'Colours',
-  pattern: 'Pattern',
-  face: 'Face',
-  upper: 'Upper body',
-  lower: 'Lower body',
-  headwear: 'Headwear',
-  back: 'Back',
-  emote: 'Emote',
-  celebration: 'Celebration',
-  victory: 'Victory pose',
-  nameplate: 'Nameplate',
-  banner: 'Banner',
-  trail: 'Trail',
-  footsteps: 'Footsteps',
-};
 
 /** Whether a tier is a big milestone card. */
 const isMilestone = (tier: number): boolean => tier % 10 === 0;

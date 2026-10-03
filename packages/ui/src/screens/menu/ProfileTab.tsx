@@ -182,7 +182,7 @@ function Stat({
 }
 
 function pct(n: number, d: number): string {
-  return d > 0 ? `${Math.round((n / d) * 100)}%` : '—';
+  return d > 0 ? `${Math.round(Math.min(1, n / d) * 100)}%` : '—';
 }
 
 function formatTime(sec: number): string {
@@ -513,8 +513,10 @@ export function ProfileOverlay(): JSX.Element | null {
     >
       <div className="tr-dim" onClick={close} />
       <div className="tr-inspect tr-enter-pop" data-testid="inspect-profile">
-        <ProfileCard p={p} self={false} />
-        {p.stats.shows > 0 && <Stats p={p} />}
+        <div className="tr-inspect-body">
+          <ProfileCard p={p} self={false} />
+          {p.stats.shows > 0 && <Stats p={p} />}
+        </div>
         <Button
           variant="secondary"
           data-nav-back=""

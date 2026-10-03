@@ -274,6 +274,24 @@ export const COSMETIC_SLOTS: readonly CosmeticSlot[] = [
   'footsteps',
 ];
 
+/** What kind of locker item a cosmetic is, as shown on store, pass and locker cards. */
+export const SLOT_NAMES: Readonly<Record<CosmeticSlot, string>> = {
+  colors: 'Skin colours',
+  pattern: 'Skin pattern',
+  face: 'Face',
+  upper: 'Top',
+  lower: 'Bottoms',
+  headwear: 'Hat',
+  back: 'Back item',
+  emote: 'Emote',
+  celebration: 'Celebration',
+  victory: 'Victory pose',
+  nameplate: 'Nameplate',
+  banner: 'Banner',
+  trail: 'Trail',
+  footsteps: 'Footsteps',
+};
+
 /** A cosmetic item from the catalog. */
 export interface CosmeticItem {
   id: string;

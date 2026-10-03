@@ -5,7 +5,7 @@
 import { useEffect, type CSSProperties, type JSX, type ReactNode } from 'react';
 import { uiEvents } from '../store/events.ts';
 import { useUI } from '../store/uiStore.ts';
-import type { CosmeticItem, Currency, Rarity, RoundType } from '../store/types.ts';
+import { SLOT_NAMES, type CosmeticItem, type Currency, type Rarity, type RoundType } from '../store/types.ts';
 import { rarityColors, rarityLabels, roundTypeStyle } from '../theme/tokens.ts';
 import { formatNumber, useCountUp } from './hooks.ts';
 import { Icon } from './icons/index.tsx';
@@ -294,7 +294,9 @@ export function ItemCard({
         <ItemArt item={item} />
       </span>
       <span className="tr-item-name tr-ellipsis">{item.name}</span>
-      <span className="tr-item-rarity">{rarityLabels[item.rarity]}</span>
+      <span className="tr-item-rarity">
+        {rarityLabels[item.rarity]} · {SLOT_NAMES[item.slot]}
+      </span>
       {equipped && (
         <span className="tr-item-equipped" aria-label="Equipped">
           <Icon name="check" size="0.8em" />

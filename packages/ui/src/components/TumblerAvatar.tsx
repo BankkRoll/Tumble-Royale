@@ -269,7 +269,8 @@ export const TumblerAvatar = memo(function TumblerAvatar({
   const top = colors.pattern === 'gradient' ? colors.secondary : shade(colors.primary, 0.28);
   const bottom = colors.pattern === 'galaxy' ? shade(colors.primary, -0.45) : shade(colors.primary, -0.12);
   const hasPattern = colors.pattern !== 'plain' && colors.pattern !== 'gradient';
-  const face = colors.tertiary ?? '#fff7ea';
+  // The 3D Tumbler's face plate is always cream; the tertiary body colour is for patterns.
+  const face = '#fff7ec';
   const limb = shade(colors.primary, -0.18);
 
   return (

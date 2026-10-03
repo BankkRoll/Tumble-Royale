@@ -1769,14 +1769,35 @@
 .tr-history-q.is-out {
   background: #ffd6e8;
 }
+/* Only the body scrolls, so the card frame and Close button never sit under a scrollbar. */
 .tr-inspect {
   position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.7em;
-  width: min(28em, 94vw);
-  max-height: 92%;
+  width: min(34em, calc(100vw - 2em));
+  max-height: calc(100% - 2em);
+  min-height: 0;
+  overflow: hidden;
+}
+.tr-inspect-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7em;
+  min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-soft) transparent;
+}
+.tr-inspect-body > * {
+  min-width: 0;
+  max-width: 100%;
+  flex-shrink: 0;
+}
+.tr-inspect > .tr-btn {
+  flex-shrink: 0;
+  align-self: center;
 }
 
 /* -----------------------------------------------------------------------------

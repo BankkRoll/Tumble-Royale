@@ -14,6 +14,7 @@ import { ui, useUI } from '../../store/uiStore.ts';
 import {
   COSMETIC_SLOTS,
   RARITIES,
+  SLOT_NAMES,
   type CosmeticItem,
   type CosmeticSlot,
   type PatternId,
@@ -22,23 +23,6 @@ import {
 } from '../../store/types.ts';
 import { rarityLabels, tumblerSwatches } from '../../theme/tokens.ts';
 import { DressingRoom, ItemDetail, isEquipped } from './DressingRoom.tsx';
-
-const SLOT_LABEL: Record<CosmeticSlot, string> = {
-  colors: 'Colours',
-  pattern: 'Pattern',
-  face: 'Face',
-  upper: 'Upper',
-  lower: 'Lower',
-  headwear: 'Headwear',
-  back: 'Back',
-  emote: 'Emotes',
-  celebration: 'Celebration',
-  victory: 'Victory',
-  nameplate: 'Nameplate',
-  banner: 'Banner',
-  trail: 'Trail',
-  footsteps: 'Footsteps',
-};
 
 const PATTERN_IDS: PatternId[] = [
   'plain',
@@ -162,12 +146,12 @@ export function LockerTab(): JSX.Element {
                 uiEvents.emit('tryOn', { slot: s, itemId: null });
               }}
             >
-              {SLOT_LABEL[s]}
+              {SLOT_NAMES[s]}
             </button>
           ))}
         </div>
         <div className="tr-panel-head">
-          <h2 className="tr-title tr-h3 tr-grow">{SLOT_LABEL[slot]}</h2>
+          <h2 className="tr-title tr-h3 tr-grow">{SLOT_NAMES[slot]}</h2>
           {inv && (
             <div className="tr-row tr-loadouts" aria-label="Loadouts">
               {inv.loadouts.map((l, i) => (

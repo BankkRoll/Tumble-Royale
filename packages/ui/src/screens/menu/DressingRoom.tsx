@@ -14,7 +14,7 @@ import { Button } from '../../components/controls.tsx';
 import { ItemArt, Price } from '../../components/bits.tsx';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
-import type { CosmeticItem, Currency, Loadout } from '../../store/types.ts';
+import { SLOT_NAMES, type CosmeticItem, type Currency, type Loadout } from '../../store/types.ts';
 import { rarityLabels } from '../../theme/tokens.ts';
 import { Icon } from '../../components/icons/index.tsx';
 
@@ -204,6 +204,7 @@ export function ItemDetail({
       </div>
       <div className="tr-col tr-grow" style={{ gap: '0.3em', minWidth: 0 }}>
         <span className={`tr-rarity-band tr-rarity-band--${item.rarity}`}>{rarityLabels[item.rarity]}</span>
+        <span className="tr-chip">{SLOT_NAMES[item.slot]}</span>
         <b className="tr-title tr-h3 tr-ellipsis">{item.name}</b>
         {item.description && <span className="tr-small tr-muted tr-clamp-2">{item.description}</span>}
         {ANIMATED.has(item.slot) && <span className="tr-small">Playing on your Tumbler</span>}

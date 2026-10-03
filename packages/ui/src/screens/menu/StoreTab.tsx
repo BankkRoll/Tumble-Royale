@@ -11,7 +11,7 @@ import { Button } from '../../components/controls.tsx';
 import { formatNumber, formatRemaining, useNow } from '../../components/hooks.ts';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
-import type { StoreOffer } from '../../store/types.ts';
+import { SLOT_NAMES, type StoreOffer } from '../../store/types.ts';
 import { rarityLabels } from '../../theme/tokens.ts';
 import { DressingRoom, ItemDetail, isEquipped, useActiveLoadout } from './DressingRoom.tsx';
 
@@ -48,7 +48,9 @@ function FeaturedCard({
         <b className="tr-clamp-2" style={{ maxWidth: '100%', lineHeight: 1.1 }}>
           {item.name}
         </b>
-        <span className={`tr-rarity-band tr-rarity-band--${item.rarity}`}>{rarityLabels[item.rarity]}</span>
+        <span className={`tr-rarity-band tr-rarity-band--${item.rarity}`}>
+          {rarityLabels[item.rarity]} · {SLOT_NAMES[item.slot]}
+        </span>
         {item.owned ? (
           <span className="tr-chip tr-chip--mint">Owned</span>
         ) : (

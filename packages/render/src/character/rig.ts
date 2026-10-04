@@ -198,6 +198,9 @@ export function createRig(parent: Object3D): TumblerRig {
   const rest = activeRest;
   const bones: ThreeBone[] = [];
   const inverses: Matrix4[] = [];
+  // PERF: root bones are hidden. Bones never draw and world matrices update regardless of
+  // visibility, but the renderer's list build walks every visible node once per pass (main +
+  // three shadow cascades): 41 bones × 100 Tumblers was ~16k node visits a frame.
   for (let i = 0; i < CORE_BONE_COUNT; i++) {
     const b = new ThreeBone();
     b.name = BONE_NAMES[i] ?? `bone${i}`;
@@ -207,6 +210,7 @@ export function createRig(parent: Object3D): TumblerRig {
     const pz = p >= 0 ? (rest[p * 3 + 2] ?? 0) : 0;
     b.position.set((rest[i * 3] ?? 0) - px, (rest[i * 3 + 1] ?? 0) - py, (rest[i * 3 + 2] ?? 0) - pz);
     const parentBone = p >= 0 ? bones[p] : undefined;
+    if (!parentBone) b.visible = false;
     (parentBone ?? parent).add(b);
     bones.push(b);
     inverses.push(
@@ -216,6 +220,7 @@ export function createRig(parent: Object3D): TumblerRig {
   for (let i = 0; i < POOL_BONE_COUNT; i++) {
     const b = new ThreeBone();
     b.name = `pool${i}`;
+    b.visible = false;
     parent.add(b);
     bones.push(b);
     inverses.push(new Matrix4());

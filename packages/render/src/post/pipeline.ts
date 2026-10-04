@@ -401,8 +401,19 @@ export function createPostPipeline(
         u.near.value = cam.near;
         u.far.value = cam.far;
       }
-      if (current.enabled) pipeline.render();
-      else renderer.render(view.scene, view.camera);
+      // PERF: three updates the whole scene graph at the start of every render() call, and each
+      // shadow map (three per CSM light) is its own render() — 4+ full matrix passes a frame.
+      // A 100-player round has ~5,400 nodes; updating once saved ~4 ms a frame on Ultra.
+      const scene = view.scene;
+      const auto = scene.matrixWorldAutoUpdate;
+      if (auto) scene.updateMatrixWorld();
+      scene.matrixWorldAutoUpdate = false;
+      try {
+        if (current.enabled) pipeline.render();
+        else renderer.render(scene, view.camera);
+      } finally {
+        scene.matrixWorldAutoUpdate = auto;
+      }
     },
     setView(s: Scene, cam: Camera): void {
       // Rebuilding the graph would drop the scene pass a precompile just targeted.

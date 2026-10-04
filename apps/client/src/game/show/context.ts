@@ -92,7 +92,10 @@ export interface RoundOutcomeInfo {
 
 /** End-of-show recap (normalised). */
 export interface SessionSummary {
+  /** The Tumbler who took the Crown (the podium headline). */
   winnerId: number | null;
+  /** Everyone who shares the Crown: the winner's whole party in duos/squads. */
+  winnerIds: readonly number[];
   rounds: RoundOutcomeInfo[];
   /** Final place per player (1 = Crown). */
   placements: ReadonlyMap<number, number>;

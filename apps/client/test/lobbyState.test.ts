@@ -2,6 +2,8 @@ import { MAX_PLAYERS } from '@tumble/shared';
 import { describe, expect, it } from 'vitest';
 import {
   KICKED_TITLE,
+  liveStartedLobby,
+  lobbyOptions,
   optionsToSettings,
   reduceLobbyEvent,
   toCustomLobbyState,
@@ -38,6 +40,44 @@ function lobby(over: Partial<Lobby> = {}): Lobby {
     ...over,
   };
 }
+
+describe('host tools in a running private show', () => {
+  const started = lobby({ status: 'started', matchId: 'm_1' });
+
+  it('lists only members the game server still has in the show, and always the host', () => {
+    const live = liveStartedLobby(started, new Set(['me']));
+    expect(live.players.map((p) => p.userId)).toEqual(['host', 'me']);
+    expect(live.spectators).toEqual([]);
+    expect(started.players).toHaveLength(3);
+  });
+
+  it('keeps the frozen roster until the server sent its first one', () => {
+    expect(liveStartedLobby(started, null)).toBe(started);
+  });
+
+  it('keeps spectators who are still watching', () => {
+    expect(liveStartedLobby(started, new Set(['sam'])).spectators.map((s) => s.userId)).toEqual(['sam']);
+  });
+});
+
+describe('lobbyOptions', () => {
+  it('turns lobby settings into Play again options without sharing the round list', () => {
+    const l = lobby();
+    const o = lobbyOptions(l.settings);
+    expect(o).toEqual({
+      rounds: ['r1', 'r2'],
+      bots: true,
+      maxPlayers: 12,
+      timerScale: 1.5,
+      spectators: true,
+      spectatorSlots: 2,
+      countdownSec: 20,
+      minPlayers: 3,
+      isPrivate: true,
+    });
+    expect(o.rounds).not.toBe(l.settings.rounds);
+  });
+});
 
 describe('toCustomLobbyState', () => {
   it('maps members, roles, readiness, presence and host tools state', () => {

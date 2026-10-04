@@ -19,6 +19,8 @@ import type { Rapier } from '@tumble/sim';
 import type { MatchDeps } from '@tumble/sim/match';
 import {
   bindUI,
+  isTypingTarget,
+  seatName,
   streamerSafeName,
   ui,
   type OverlayId,
@@ -305,7 +307,7 @@ export class ReplayController {
     const h = data.header;
     const name = (id: number): string => {
       const p = h.players.find((q) => q.id === id);
-      return p ? publicName(h, p) : `Tumbler ${id + 1}`;
+      return p ? publicName(h, p) : seatName(id);
     };
     const markers: ReplayMarkerInfo[] = view.timeline.markers.map((m: ReplayMarker) => ({
       t: m.t,
@@ -515,13 +517,7 @@ export class ReplayController {
   private handleKeyDown(e: KeyboardEvent): void {
     const s = ui.getState();
     if (!this.view || s.dialog || s.overlay !== 'none') return;
-    const target = e.target as HTMLElement | null;
-    if (
-      target &&
-      /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) &&
-      (target as HTMLInputElement).type !== 'range'
-    )
-      return;
+    if (isTypingTarget(e.target)) return;
     if (moveKey(e.code) || e.code === 'KeyR' || e.code === 'KeyF') {
       this.held.add(e.code);
       e.preventDefault();

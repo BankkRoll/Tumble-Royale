@@ -460,6 +460,8 @@
   left: 50%;
   bottom: calc(var(--safe-b) + 5.5em);
   transform: translateX(-50%);
+  /* Above every screen, under the stamps: captions run over intros, results and the wall too. */
+  z-index: 27;
   max-width: 80vw;
   padding: 0.4em 1em;
   border-radius: 0.8em;
@@ -668,6 +670,40 @@
 .tr-touch-btn--emote > svg {
   width: 1.2em;
 }
+/* Menu idle play: Done hands the screen back to the menu. */
+.tr-touch-done {
+  position: absolute;
+  top: calc(var(--safe-t) + 1em);
+  right: calc(var(--safe-r) + 1em);
+  min-width: 5.5em;
+  min-height: 2.75em;
+  padding: 0.5em 1.2em;
+  border-radius: 999px;
+  border: 0.15em solid var(--ink) !important;
+  background: var(--cream) !important;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 1.05em;
+  box-shadow: 0 0.18em 0 var(--ink);
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.tr-touch-done:active {
+  transform: translateY(0.1em);
+  box-shadow: 0 0.08em 0 var(--ink);
+}
+/*
+ * While a touch player runs around the menu platform the menu chrome steps
+ * aside (it would sit under the joystick and buttons); a running lobby game
+ * keeps its score. `visibility` also stops the hidden chrome taking taps.
+ */
+.tr-root[data-touch-play='menu'] .tr-menu {
+  visibility: hidden;
+}
+.tr-root[data-touch-play='menu'] .tr-menu .tr-play-lgame {
+  visibility: visible;
+}
 /* Left-handed layout mirrors the cluster so Jump stays nearest the screen edge. */
 .tr-touch.is-left .tr-touch-btn--jump {
   right: auto;
@@ -844,4 +880,37 @@
     flex: 1 1 12em;
     min-width: 0;
   }
+}
+
+/* "Menu" pill on show screens without a HUD (pre-show, loading, between rounds). */
+.tr-show-menu-btn {
+  position: absolute;
+  top: calc(var(--safe-t) + 0.8em);
+  right: calc(var(--safe-r) + 1em);
+  z-index: 26;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.35em 0.9em;
+  border-radius: 999px;
+  border: 0.14em solid var(--ink);
+  background: var(--cloud);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 800;
+  box-shadow: 0 0.14em 0 var(--ink);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.tr-show-menu-btn:hover {
+  transform: scale(1.04);
+}
+
+/*
+ * The in-game menu, and the Leave confirm it opens, sit above the Tumble Wipe:
+ * Leave show must stay reachable while a wipe or a loading card covers the screen.
+ */
+.tr-igm-wrap,
+.tr-root[data-overlay='inGameMenu'] .tr-dialog-wrap {
+  z-index: 110;
 }

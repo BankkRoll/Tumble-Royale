@@ -9,11 +9,12 @@
  */
 import { useEffect, useState, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
+import { Button } from '../../components/controls.tsx';
 import { formatNumber } from '../../components/hooks.ts';
 import { Icon } from '../../components/icons/index.tsx';
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
 import { uiEvents } from '../../store/events.ts';
-import { useUI } from '../../store/uiStore.ts';
+import { ui, useUI } from '../../store/uiStore.ts';
 import type { LeaderboardId, LeaderboardRow, LeaderboardScope, RankInfo } from '../../store/types.ts';
 import { RANK_TIERS, RankGem } from './ProfileTab.tsx';
 
@@ -30,6 +31,21 @@ const SCOPES: { id: LeaderboardScope; label: string }[] = [
   { id: 'regional', label: 'Region' },
   { id: 'friends', label: 'Friends' },
 ];
+
+/**
+ * What an empty board says: never a placeholder row, just the honest reason.
+ *
+ * @param board - The board shown.
+ * @param scope - Its scope, or `local` for the offline Hall of Fame.
+ */
+export function emptyBoardText(board: LeaderboardId, scope: LeaderboardScope | 'local'): string {
+  if (scope === 'local')
+    return board === 'ranked'
+      ? 'Ranked boards need the online servers.'
+      : 'Play a show to start your Hall of Fame.';
+  if (scope === 'friends') return 'None of your friends are on this board yet.';
+  return 'Nobody here yet — be the first!';
+}
 
 function Row({ row, unit, pinned }: { row: LeaderboardRow; unit: string; pinned?: boolean }): JSX.Element {
   const streamer = useUI((s) => s.settings.gameplay.streamerMode);
@@ -171,9 +187,11 @@ export function LeaderboardsTab(): JSX.Element {
   const rows = useUI((s) => s.leaderboards[board]);
   const info = useUI((s) => s.leaderboardInfo[board]);
   const rank = useUI((s) => s.profile?.rank);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
+    ui.getState().setLeaderboardError(board, scope, null);
     uiEvents.emit('leaderboardQuery', { board, scope });
-  }, [board, scope]);
+  }, [board, scope, attempt]);
   const meta = BOARDS.find((b) => b.id === board) ?? BOARDS[0]!;
   const local = info?.source === 'local';
   const top = rows?.slice(0, 50) ?? [];
@@ -225,21 +243,29 @@ export function LeaderboardsTab(): JSX.Element {
             this device: you and the Tumblers you actually faced.
           </p>
         )}
-        {!rows ? (
+        {info?.error ? (
+          <div className="tr-empty" role="alert" data-testid="lb-error">
+            <Icon name="ranks" size="3em" />
+            <p>Couldn't load this board.</p>
+            <p className="tr-small tr-muted">{info.error}</p>
+            <Button
+              variant="primary"
+              cue="ui.click"
+              data-testid="lb-retry"
+              onClick={() => setAttempt((n) => n + 1)}
+            >
+              <Icon name="refresh" size="1em" /> Retry
+            </Button>
+          </div>
+        ) : !rows ? (
           <div className="tr-empty">
             <span className="tr-gumball-spinner" />
             <p>Counting crowns…</p>
           </div>
         ) : rows.length === 0 ? (
-          <div className="tr-empty">
+          <div className="tr-empty" data-testid="lb-empty">
             <Icon name="ranks" size="3em" />
-            <p>
-              {board === 'ranked' && local
-                ? 'Ranked boards need the online servers.'
-                : local
-                  ? 'Play a show to start your Hall of Fame.'
-                  : 'Nobody here yet — be the first!'}
-            </p>
+            <p>{emptyBoardText(board, local ? 'local' : scope)}</p>
           </div>
         ) : (
           <>

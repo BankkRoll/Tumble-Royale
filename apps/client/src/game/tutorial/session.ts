@@ -45,7 +45,7 @@ import {
 import { generateBotNames } from '@tumble/sim/bots';
 import { createCharacterFullState } from '@tumble/sim/character';
 import { createMatchSim, type MatchPlayerInfo, type MatchSimHandle } from '@tumble/sim/match';
-import { playCue, ui, type RoundIntroInfo } from '@tumble/ui';
+import { keyboardBusy, playCue, ui, type RoundIntroInfo } from '@tumble/ui';
 import {
   mountTutorialOverlay,
   setCoachAnchor,
@@ -63,6 +63,7 @@ import { HudMapper, type HudInput, type HudPlayerStatus } from '../round/hud.ts'
 import { FOOT_OFFSET, OfflineRoundSource, type RoundSource } from '../round/source.ts';
 import type { GameContext, RoundStart, SessionEnd } from '../show/context.ts';
 import { ShowSession } from '../show/session.ts';
+import { padMenuButtons } from '../bindings.ts';
 import { promptKeys, type PromptAction } from './bindings.ts';
 import { RouteFollower, routeBetween, steerTo } from './driver.ts';
 import { grantTutorialReward } from './reward.ts';
@@ -329,7 +330,8 @@ export class TutorialSession extends ShowSession {
 
   private installInput(): void {
     const onKey = (e: KeyboardEvent): void => {
-      if (this.stage === 'loading' || this.stage === 'done') return;
+      // Capture phase runs before the chat field's own handler: its Enter and Esc are not ours.
+      if (this.stage === 'loading' || this.stage === 'done' || keyboardBusy(e)) return;
       const s = tutorialUi.getState();
       const pause = ui.getState().settings.controls.keybinds.pause;
       if (e.code === 'Escape' || pause.includes(e.code)) {
@@ -364,15 +366,16 @@ export class TutorialSession extends ShowSession {
     );
   }
 
-  /** Gamepad: Start toggles skip, Ⓐ confirms / skips the intro, Ⓑ backs out. */
+  /** Gamepad: the Menu button (Start unless remapped) toggles skip, Ⓐ confirms / skips the intro, Ⓑ backs out. */
   private pollGamepad(): void {
     const pads = typeof navigator.getGamepads === 'function' ? navigator.getGamepads() : [];
+    const menu = padMenuButtons(ui.getState().settings.controls.padBinds);
     let bits = 0;
     for (const p of pads) {
       if (!p) continue;
       if (p.buttons[0]?.pressed) bits |= 1;
       if (p.buttons[1]?.pressed) bits |= 2;
-      if (p.buttons[9]?.pressed) bits |= 4;
+      if (menu.some((i) => p.buttons[i]?.pressed)) bits |= 4;
     }
     const pressed = bits & ~this.padPrev;
     this.padPrev = bits;
@@ -387,6 +390,11 @@ export class TutorialSession extends ShowSession {
       if (s.ready) tutorialEvents.emit('readyChoice', { next: 'menu' });
       else if (s.skipConfirm) tutorialUi.setState({ skipConfirm: false });
     }
+  }
+
+  /** Start and Esc drive the skip prompt here, never the show's in-game menu. */
+  override get ownsMenuKey(): boolean {
+    return true;
   }
 
   protected override get controlsActive(): boolean {
@@ -693,7 +701,8 @@ export class TutorialSession extends ShowSession {
   }
 
   private keys(action: PromptAction): string[] {
-    return promptKeys(action, this.device, ui.getState().settings.controls.keybinds);
+    const { keybinds, padBinds } = ui.getState().settings.controls;
+    return promptKeys(action, this.device, keybinds, padBinds);
   }
 
   private beginStation(i: number): void {

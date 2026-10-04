@@ -6,9 +6,13 @@
  * - bottom-left: the lobby emote and lobby games buttons; top-centre over
  *   the 3D platform: the running lobby game's score HUD;
  * - bottom-right: everything that starts a game, in one card — how to play
- *   (Play Online / Vs Bots / Private), the playlist, the party, Join with code
- *   and the big PLAY button. While queueing the same card becomes the
- *   matchmaking status. docs/design/SCREENS.md §6.
+ *   (Play Online / Vs Bots / Private), the playlist, the party, Join with code,
+ *   Practice Island and the big PLAY button. While queueing the same card
+ *   becomes the matchmaking status. docs/design/SCREENS.md §6.
+ *
+ * In a party only the online queue is the leader's: a member's PLAY is Ready
+ * up online, but Vs Bots and Practice Island stay theirs to start (the game
+ * confirms that they will play solo).
  */
 import { useRef, useState, type JSX } from 'react';
 import { useShallow } from 'zustand/react/shallow';
@@ -23,7 +27,14 @@ import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
 import { uiEvents } from '../../store/events.ts';
 import { social } from '../../store/social.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
-import type { OnlineStatus, PassReward, PlayMode, Playlist, SeasonPassData } from '../../store/types.ts';
+import type {
+  OnlineStatus,
+  PartyMember,
+  PassReward,
+  PlayMode,
+  Playlist,
+  SeasonPassData,
+} from '../../store/types.ts';
 import { LobbyEmotes } from './LobbyEmotes.tsx';
 import { LobbyGameHudSlot, LobbyGamesButton } from './LobbyGames.tsx';
 import { openNewsPost } from './NewsTab.tsx';
@@ -241,7 +252,7 @@ export function onlineTileSub(status: OnlineStatus): string {
   return parts.length > 0 ? parts.join(' · ') : 'Real players + bot fill';
 }
 
-function ModeTiles({ disabled }: { disabled: boolean }): JSX.Element {
+function ModeTiles(): JSX.Element {
   const mode = useUI((s) => s.playMode);
   const status = useUI((s) => s.onlineStatus);
   const online = status.state === 'online';
@@ -263,7 +274,6 @@ function ModeTiles({ disabled }: { disabled: boolean }): JSX.Element {
             className={`tr-mode-tile tr-mode-tile--${m.id}${selected ? ' is-on' : ''}${unavailable ? ' is-unavailable' : ''}`}
             data-nav=""
             data-testid={`mode-${m.id}`}
-            disabled={disabled}
             onClick={() => {
               if (m.id === 'custom') {
                 openPrivateShow();
@@ -305,13 +315,7 @@ export function playlistIcon(p: Playlist): IconName {
   return 'crown';
 }
 
-function PlaylistPicker({
-  disabled,
-  playlists,
-}: {
-  disabled: boolean;
-  playlists: Playlist[];
-}): JSX.Element | null {
+function PlaylistPicker({ playlists }: { playlists: Playlist[] }): JSX.Element | null {
   const selected = useUI((s) => s.selectedPlaylist);
   const now = useNow(1000);
   const idx = Math.max(
@@ -333,7 +337,7 @@ function PlaylistPicker({
         type="button"
         className="tr-playlist-arrow"
         data-nav=""
-        disabled={disabled || playlists.length < 2}
+        disabled={playlists.length < 2}
         aria-label="Previous playlist"
         onClick={() => cycle(-1)}
       >
@@ -361,7 +365,7 @@ function PlaylistPicker({
         type="button"
         className="tr-playlist-arrow"
         data-nav=""
-        disabled={disabled || playlists.length < 2}
+        disabled={playlists.length < 2}
         aria-label="Next playlist"
         onClick={() => cycle(1)}
       >
@@ -390,6 +394,7 @@ function PartyRow(): JSX.Element {
       : []);
   const max = party?.maxSize ?? 4;
   const notReady = members.filter((m) => !m.ready && !m.isLeader).length;
+  const status = partyStatusText(members);
   const leading = members.some((m) => m.isSelf && m.isLeader) && members.length > 1;
   const [armed, setArmed] = useState<string | null>(null);
   return (
@@ -475,24 +480,52 @@ function PartyRow(): JSX.Element {
           );
         })}
       </div>
-      <span className="tr-party-status tr-small">
-        {members.length <= 1
-          ? 'Solo · invite up to 3'
-          : notReady > 0
-            ? `Waiting for ${notReady} to ready up`
-            : `Party of ${members.length} · all ready`}
+      <span className="tr-party-status tr-small" data-testid="party-status">
+        {status ??
+          (members.length <= 1
+            ? 'Solo · invite up to 3'
+            : notReady > 0
+              ? `Waiting for ${notReady} to ready up`
+              : `Party of ${members.length} · all ready`)}
       </span>
-      <button
-        type="button"
-        className="tr-link-btn tr-join-code-btn"
-        data-nav=""
-        data-testid="join-code"
-        onClick={openJoinCode}
-      >
-        <Icon name="key" size="1em" /> Join with code
-      </button>
+      <span className="tr-row tr-wrap" style={{ gap: '0.6em' }}>
+        <button
+          type="button"
+          className="tr-link-btn tr-join-code-btn"
+          data-nav=""
+          data-testid="join-code"
+          onClick={openJoinCode}
+        >
+          <Icon name="key" size="1em" /> Join with code
+        </button>
+        <button
+          type="button"
+          className="tr-link-btn"
+          data-nav=""
+          data-testid="practice-island"
+          onClick={() => {
+            playCue('ui.click');
+            uiEvents.emit('startPractice');
+          }}
+        >
+          <Icon name="bot" size="1em" /> Practice Island
+        </button>
+      </span>
     </div>
   );
+}
+
+/**
+ * Who in the party is away playing on their own, for the party line.
+ *
+ * @returns The line, or null when everyone is in the menu.
+ */
+export function partyStatusText(members: readonly PartyMember[]): string | null {
+  const away = members.filter((m) => m.playingSolo && !m.isSelf);
+  if (away.length === 0) return null;
+  const leader = away.find((m) => m.isLeader);
+  if (leader) return 'Leader is playing solo';
+  return away.length === 1 ? `${away[0]!.name} is playing solo` : `${away.length} members are playing solo`;
 }
 
 function PlayButton({ mode, playlist }: { mode: PlayMode; playlist: Playlist | undefined }): JSX.Element {
@@ -500,8 +533,8 @@ function PlayButton({ mode, playlist }: { mode: PlayMode; playlist: Playlist | u
     useShallow((s) => ({ party: s.party, ready: s.localReady, selected: s.selectedPlaylist })),
   );
   const self = party?.members.find((m) => m.isSelf);
-  const isMember = party && self && !self.isLeader;
-  if (isMember) {
+  const isMember = !!party && !!self && !self.isLeader && party.members.length > 1;
+  if (isMember && mode === 'online') {
     return (
       <Button
         variant={ready ? 'mint' : 'go'}
@@ -509,7 +542,6 @@ function PlayButton({ mode, playlist }: { mode: PlayMode; playlist: Playlist | u
         className="tr-play-btn"
         autoFocusNav
         cue="ui.confirm"
-        hint="Y"
         data-testid="play"
         onClick={() => {
           ui.getState().setLocalReady(!ready);
@@ -533,7 +565,11 @@ function PlayButton({ mode, playlist }: { mode: PlayMode; playlist: Playlist | u
     >
       <span className="tr-play-label">Play</span>
       <small className="tr-play-sub">
-        {mode === 'online' ? 'Online' : 'Vs bots'} · {playlist?.name ?? 'Main Show'}
+        {mode === 'online'
+          ? `Online · ${playlist?.name ?? 'Main Show'}`
+          : isMember
+            ? 'Solo vs bots · you stay in the party'
+            : `Vs bots · ${playlist?.name ?? 'Main Show'}`}
       </small>
     </Button>
   );
@@ -605,8 +641,8 @@ export function StartCluster({ matchmaking = false }: { matchmaking?: boolean })
         <MatchmakingCard />
       ) : (
         <>
-          <ModeTiles disabled={false} />
-          <PlaylistPicker disabled={false} playlists={offered} />
+          <ModeTiles />
+          <PlaylistPicker playlists={offered} />
           <div className="tr-start-foot">
             <PartyRow />
             <PlayButton mode={eff} playlist={playlist} />

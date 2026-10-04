@@ -611,6 +611,8 @@ export interface LeaderboardInfo {
   source: 'api' | 'local';
   /** Epoch ms of the fetch. */
   updatedAt: number;
+  /** Why the last load failed; the board shows it with a Retry instead of spinning. */
+  error?: string;
 }
 
 /** One past show for match history. */
@@ -721,6 +723,8 @@ export interface PartyMember {
   ready: boolean;
   isLeader: boolean;
   isSelf: boolean;
+  /** Playing Vs Bots or Practice Island on their own; still in the party. */
+  playingSolo?: boolean;
 }
 
 /** Party state (max 4). */
@@ -1043,6 +1047,8 @@ export interface ShowSeat {
   online: boolean;
   /** Knocked out of the show: watching the remaining rounds as a spectator. */
   outOfShow: boolean;
+  /** Joined as a spectator (a private show's spectator seat): watching, never knocked out. */
+  spectator?: boolean;
 }
 
 /**
@@ -1205,6 +1211,26 @@ export type BindAction =
 /** `KeyboardEvent.code` (or `Mouse0`…`Mouse4`) per action: [primary, secondary]. */
 export type Keybinds = Record<BindAction, [string, string]>;
 
+/** Controller actions the player can remap (movement and camera stay on the sticks). */
+export type PadBindAction =
+  | 'jump'
+  | 'dive'
+  | 'grab'
+  | 'emoteWheel'
+  | 'emote1'
+  | 'emote2'
+  | 'emote3'
+  | 'emote4'
+  | 'pause'
+  | 'spectatePrev'
+  | 'spectateNext';
+
+/**
+ * Standard-mapping gamepad button index per action: [primary, secondary],
+ * `-1` when a slot is empty.
+ */
+export type PadBinds = Record<PadBindAction, [number, number]>;
+
 /** Colour-blind palettes. */
 export type ColorBlindMode = 'off' | 'protanopia' | 'deuteranopia' | 'tritanopia';
 
@@ -1232,6 +1258,8 @@ export interface Settings {
     touchLayout: 'right' | 'left';
     touchButtonScale: number;
     keybinds: Keybinds;
+    /** Controller button mapping (Settings → Controls → Controller). */
+    padBinds: PadBinds;
   };
   audio: {
     master: number;

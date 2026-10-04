@@ -7,6 +7,7 @@ import {
   BitReader,
   BitWriter,
   KickReason,
+  LEAVE_CLOSE_REASON,
   MsgType,
   PROTOCOL_VERSION,
   readHello,
@@ -262,7 +263,8 @@ export class RoomManager {
       }
       const room = placed;
       conn.onMessage = (d) => room.onMessage(session, d, this.deps.now());
-      conn.onClose = () => room.onClose(session, this.deps.now());
+      conn.onClose = (code, reason) =>
+        room.onClose(session, this.deps.now(), code === 1000 && reason === LEAVE_CLOSE_REASON);
     };
   }
 

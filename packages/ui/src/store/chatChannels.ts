@@ -64,6 +64,8 @@ export interface ChatLine {
   at: number;
   /** Accent colour (the sender's Tumbler). */
   color?: string;
+  /** The sender's show seat (show chat only): Streamer Mode masks them as that seat's "Tumbler N". */
+  seat?: number;
 }
 
 /** A player you can whisper. */

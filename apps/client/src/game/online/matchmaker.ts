@@ -187,6 +187,16 @@ export class MatchmakerClient {
   newLobbyCode = (code: string): Promise<{ lobby: Lobby }> => this.call('POST', `/lobbies/${code}/code`, {});
   readyInLobby = (code: string, ready: boolean): Promise<{ lobby: Lobby }> =>
     this.call('POST', `/lobbies/${code}/ready`, { ready });
+  /** Host, after the show: opens the same lobby (code, settings, bans) for the next one. */
+  reopenLobby = (code: string): Promise<{ lobby: Lobby }> => this.call('POST', `/lobbies/${code}/reopen`, {});
+  /** The `match_found` still waiting for this player, if any. */
+  pendingMatch = async (): Promise<MatchFound | null> =>
+    (await this.call<{ match: MatchFound | null }>('GET', '/queue/status')).match ?? null;
+  /** The player left a match before reaching its server: stop replaying its `match_found`. */
+  declineMatch = (): Promise<void> => this.call('DELETE', '/queue/match');
+  /** A fresh join ticket for a running match the player belongs to (after the resume window). */
+  rejoinMatch = async (matchId: string): Promise<MatchFound> =>
+    (await this.call<{ match: MatchFound }>('POST', '/queue/rejoin', { matchId })).match;
   /** Switches between playing and spectating. */
   setLobbyRole = (code: string, spectator: boolean): Promise<{ lobby: Lobby }> =>
     this.call('POST', `/lobbies/${code}/role`, { spectator });

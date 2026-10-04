@@ -7,6 +7,8 @@ import type {
   EmoteSlot,
   HudState,
   Keybinds,
+  PadBindAction,
+  PadBinds,
   ScreenId,
   Settings,
   TransitionKind,
@@ -50,6 +52,41 @@ export const BIND_ACTION_LABELS: Record<BindAction, string> = {
   pause: 'Menu',
 };
 
+/**
+ * Default controller mapping (standard layout): A jump, X/B dive, RT/RB grab,
+ * Y emote wheel, D-pad emotes, Start menu, LB/RB spectate. RB sits on both
+ * grab and spectate next because spectating only starts once the Tumbler is
+ * out of the round.
+ */
+export const DEFAULT_PAD_BINDS: PadBinds = {
+  jump: [0, -1],
+  dive: [2, 1],
+  grab: [7, 5],
+  emoteWheel: [3, -1],
+  emote1: [12, -1],
+  emote2: [15, -1],
+  emote3: [13, -1],
+  emote4: [14, -1],
+  pause: [9, -1],
+  spectatePrev: [4, -1],
+  spectateNext: [5, -1],
+};
+
+/** Human labels for remappable controller actions, in settings display order. */
+export const PAD_BIND_ACTION_LABELS: Record<PadBindAction, string> = {
+  jump: 'Jump',
+  dive: 'Dive',
+  grab: 'Grab',
+  emoteWheel: 'Emote wheel',
+  emote1: 'Emote 1',
+  emote2: 'Emote 2',
+  emote3: 'Emote 3',
+  emote4: 'Emote 4',
+  pause: 'Menu',
+  spectatePrev: 'Spectate previous',
+  spectateNext: 'Spectate next',
+};
+
 /** Default settings. */
 export const DEFAULT_SETTINGS: Settings = {
   graphics: { quality: 'auto', resolutionScale: 1, fpsCap: 60, shadows: true, postFx: true, showFps: false },
@@ -62,6 +99,7 @@ export const DEFAULT_SETTINGS: Settings = {
     touchLayout: 'right',
     touchButtonScale: 1,
     keybinds: DEFAULT_KEYBINDS,
+    padBinds: DEFAULT_PAD_BINDS,
   },
   audio: { master: 0.9, music: 0.7, sfx: 0.9, ui: 0.8, announcer: 0.9, muteUnfocused: true },
   accessibility: {

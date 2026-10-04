@@ -4,6 +4,7 @@
  * the end), spectate target cycling, and an offline show that keeps running
  * with bots after the human is eliminated.
  */
+import { MAX_ENTITIES } from '@tumble/netcode';
 import { ShowPhase } from '@tumble/shared';
 import { loadRapier } from '@tumble/sim';
 import { createSimpleController, createTestArenaRound, testObstacleModules } from '@tumble/sim/match';
@@ -17,11 +18,21 @@ import {
   autoKeepWatchingAfter,
   cycleSpectateIndex,
   isOutOfShow,
+  isSpectatorId,
   planAfterEliminated,
   spectateCandidates,
   spectateDetail,
   type SpectateStatus,
 } from '../src/game/show/spectator.ts';
+
+describe('spectator seats', () => {
+  it('are the ids above the player range', () => {
+    expect(isSpectatorId(0)).toBe(false);
+    expect(isSpectatorId(MAX_ENTITIES - 1)).toBe(false);
+    expect(isSpectatorId(MAX_ENTITIES)).toBe(true);
+    expect(isSpectatorId(254)).toBe(true);
+  });
+});
 
 const AUTO = { autoSpectate: true, autoplay: false };
 const MANUAL = { autoSpectate: false, autoplay: false };

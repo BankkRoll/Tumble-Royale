@@ -8,6 +8,7 @@ import { playCue } from '../audio-cues.ts';
 import { BotTag } from '../components/bits.tsx';
 import { TumblerAvatar } from '../components/TumblerAvatar.tsx';
 import { Button } from '../components/controls.tsx';
+import { spectatingLabel } from '../screens/overlays/InGameMenu.tsx';
 import { WatchChoicePanel } from '../screens/overlays/WatchChoice.tsx';
 import { keyLabel } from '../screens/overlays/SettingsSheet.tsx';
 import { formatClock, useDisplayName } from '../components/hooks.ts';
@@ -18,7 +19,7 @@ import { squash } from '../theme/motion.ts';
 import { Icon } from '../components/icons/index.tsx';
 import { roundTypeStyle } from '../theme/tokens.ts';
 import type { BindAction, TeamScore } from '../store/types.ts';
-import { PAD_GLYPHS, controlGlyph } from './glyphs.ts';
+import { controlGlyph, movementGlyph, padGlyph } from './glyphs.ts';
 
 /** Round timer pill; turns tangerine < 30 s and bubblegum + pulsing < 10 s. */
 export const HudTimer = memo(function HudTimer(): JSX.Element | null {
@@ -232,16 +233,17 @@ const HINT_ACTIONS: [BindAction, string][] = [
 export const ControlsHint = memo(function ControlsHint(): JSX.Element | null {
   const { show, device } = useUI(useShallow((s) => ({ show: s.hud.controlsHint, device: s.hud.device })));
   const binds = useUI((s) => s.settings.controls.keybinds);
+  const padBinds = useUI((s) => s.settings.controls.padBinds);
   if (!show || device === 'touch') return null;
   return (
     <div className="tr-hud-hint" data-testid="controls-hint">
       <span className="tr-hud-hint-item">
-        <kbd>{device === 'gamepad' ? PAD_GLYPHS.moveForward : 'WASD'}</kbd>
+        <kbd>{movementGlyph(device, binds)}</kbd>
         Move
       </span>
       {HINT_ACTIONS.map(([action, label]) => (
         <span key={label} className="tr-hud-hint-item">
-          <kbd>{controlGlyph(action, device, binds)}</kbd>
+          <kbd>{controlGlyph(action, device, binds, padBinds)}</kbd>
           {label}
         </span>
       ))}
@@ -253,8 +255,11 @@ export const ControlsHint = memo(function ControlsHint(): JSX.Element | null {
 export const GrabStatus = memo(function GrabStatus(): JSX.Element | null {
   const grab = useUI((s) => s.hud.grab);
   const device = useUI((s) => s.hud.device);
+  const jumpKey = useUI((s) =>
+    controlGlyph('jump', s.hud.device, s.settings.controls.keybinds, s.settings.controls.padBinds),
+  );
   if (grab.mode === 'none') return null;
-  const mash = device === 'gamepad' ? 'Ⓐ' : device === 'touch' ? 'Jump' : 'Space';
+  const mash = device === 'touch' ? 'Jump' : jumpKey;
   const text =
     grab.mode === 'held'
       ? `Grabbed${grab.name ? ` by ${grab.name}` : ''}! Mash ${mash} to break free`
@@ -312,20 +317,21 @@ export const CountdownNumerals = memo(function CountdownNumerals(): JSX.Element 
   );
 });
 
-/** Prev/next hints per device: the rebindable keys, the pad's shoulder buttons, nothing on touch. */
+/** Prev/next hints per device: the rebindable keys, the remappable pad buttons, nothing on touch. */
 function useSpectateHints(): [string | undefined, string | undefined] {
   const device = useUI((s) => s.hud.device);
   const prev = useUI((s) => s.settings.controls.keybinds.spectatePrev[0]);
   const next = useUI((s) => s.settings.controls.keybinds.spectateNext[0]);
+  const padBinds = useUI((s) => s.settings.controls.padBinds);
   if (device === 'touch') return [undefined, undefined];
-  if (device === 'gamepad') return ['LB', 'RB'];
+  if (device === 'gamepad') return [padGlyph('spectatePrev', padBinds), padGlyph('spectateNext', padBinds)];
   return [prev ? keyLabel(prev) : undefined, next ? keyLabel(next) : undefined];
 }
 
 /** Bottom spectating bar: who you're watching, prev/next (keys, pad shoulders, tap) and who is left. */
 export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null {
   const spec = useUI((s) => s.spectate);
-  const out = useUI((s) => s.showSeat?.outOfShow ?? false);
+  const label = useUI((s) => spectatingLabel(s.showSeat));
   const name = useDisplayName();
   const [prevHint, nextHint] = useSpectateHints();
   if (!spec) return null;
@@ -341,7 +347,7 @@ export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null
         <Icon name="chevron-left" size="1em" />
       </Button>
       <div key={spec.player.id} className="tr-spectate-card">
-        <span className="tr-label tr-spectate-label">{out ? 'Eliminated · Spectating' : 'Spectating'}</span>
+        <span className="tr-label tr-spectate-label">{label}</span>
         <TumblerAvatar colors={spec.player.colors} hat={spec.player.hat} size="2.6em" blink={false} />
         <span className="tr-col" style={{ gap: '0.1em', minWidth: 0 }}>
           <span className="tr-row" style={{ gap: '0.4em', minWidth: 0 }}>
@@ -353,7 +359,8 @@ export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null
                 onClick={() =>
                   social.getState().openPlayerMenu({
                     userId: spec.player.userId!,
-                    name: spec.player.name,
+                    // The card must not unmask a name Streamer Mode hides on the banner.
+                    name: name(spec.player),
                     key: spec.player.userId!,
                   })
                 }

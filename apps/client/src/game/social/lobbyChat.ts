@@ -3,7 +3,7 @@
  * lobby, the widget's All tab talks to the lobby members over the matchmaker
  * WebSocket (`lobby_chat`), with System notices when members come and go.
  */
-import { social } from '@tumble/ui';
+import { social, streamerSafeKeyedName, ui } from '@tumble/ui';
 import type { Lobby, MatchmakerClient } from '../online/matchmaker.ts';
 import type { TypedMessage } from '../online/jsonSocket.ts';
 import { chatHint, setChatRoom, setChatRoute, systemNotice } from './chatRouter.ts';
@@ -12,6 +12,20 @@ import { chatHint, setChatRoom, setChatRoute, systemNotice } from './chatRouter.
 const LOBBY_CHAT_ERRORS = new Set(['chat_rate', 'chat_banned', 'empty_message', 'no_lobby']);
 
 const shortName = (name: string): string => name.replace(/#\d+$/, '');
+
+/**
+ * A member's name for a System notice. Notices are plain text, so Streamer
+ * Mode has to mask strangers here, when the line is written.
+ */
+function noticeName(userId: string, name: string): string {
+  const s = ui.getState();
+  const known =
+    s.friends.some((f) => !f.recent && f.id === userId) || !!s.party?.members.some((m) => m.id === userId);
+  return streamerSafeKeyedName(
+    { key: userId, name: shortName(name), known },
+    s.settings.gameplay.streamerMode,
+  );
+}
 
 /**
  * Updates the lobby room and notices for a lobby change.
@@ -40,13 +54,15 @@ export function syncLobbyChat(
   const before = seats(prev);
   const after = seats(next);
   for (const [id, p] of after)
-    if (!before.has(id) && id !== me) systemNotice(`${shortName(p.name)} joined the lobby`);
+    if (!before.has(id) && id !== me) systemNotice(`${noticeName(id, p.name)} joined the lobby`);
   for (const [id, p] of before)
-    if (!after.has(id) && id !== me) systemNotice(`${shortName(p.name)} left the lobby`);
+    if (!after.has(id) && id !== me) systemNotice(`${noticeName(id, p.name)} left the lobby`);
   if (prev.hostId !== next.hostId) {
     const host = after.get(next.hostId);
     systemNotice(
-      next.hostId === me ? 'You are the host now' : `${shortName(host?.name ?? 'Someone')} is the host now`,
+      next.hostId === me
+        ? 'You are the host now'
+        : `${host ? noticeName(next.hostId, host.name) : 'Someone'} is the host now`,
     );
   }
 }

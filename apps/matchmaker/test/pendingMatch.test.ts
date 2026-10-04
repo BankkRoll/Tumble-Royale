@@ -161,6 +161,19 @@ describe('pending match_found', () => {
     expect((await status('bob')).match).toBeNull();
   });
 
+  it('never replays a match the player left before reaching the server', async () => {
+    const matchId = await placeMatch();
+    await call('DELETE', '/queue/match', await access('alice'));
+    const { ws, messages } = await openStream('alice');
+    expect(messages.some((m) => m.type === 'match_found')).toBe(false);
+    ws.close();
+    // Leaving the pending match is not leaving the show: a rejoin still works while it runs.
+    await heartbeat({ matches: [matchId] });
+    expect((await call('POST', '/queue/rejoin', await access('alice'), { matchId })).statusCode).toBe(200);
+    // Bob never declined, so his copy is untouched.
+    expect((await status('bob')).match?.matchId).toBe(matchId);
+  });
+
   it('never stores a match for a player who cancelled before placement', async () => {
     await registerServer();
     await call('POST', '/queue', await access('alice'), { ticket: await queueTicket('alice', ['alice']) });

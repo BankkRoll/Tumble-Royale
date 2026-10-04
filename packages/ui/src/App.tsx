@@ -9,6 +9,8 @@
 import { useEffect, useRef, type JSX } from 'react';
 import { ConnectionLayer, DialogLayer, ToastLayer } from './components/system.tsx';
 import { ChatWidgetLayer } from './hud/ChatWidget.tsx';
+import { ShowMenuButton } from './hud/ShowMenuButton.tsx';
+import { CaptionChip } from './hud/widgets.tsx';
 import { Hud } from './hud/Hud.tsx';
 import { TouchControls } from './hud/TouchControls.tsx';
 import { touchMode } from './hud/touchMode.ts';
@@ -57,6 +59,7 @@ export function App(): JSX.Element {
   const a = useUI((s) => s.settings.accessibility);
   const streamer = useUI((s) => s.settings.gameplay.streamerMode);
   const screen = useUI((s) => s.screen);
+  const overlay = useUI((s) => s.overlay);
   const photo = useUI((s) => s.photo.active);
   const replay = useUI((s) => s.replay !== null);
   const touchContext = useUI((s) => touchMode(s)?.context);
@@ -81,6 +84,7 @@ export function App(): JSX.Element {
       data-reduce-shake={String(a.reduceShake)}
       data-streamer={String(streamer)}
       data-screen={screen}
+      data-overlay={overlay}
       data-photo={String(photo)}
       data-replay={replay ? 'true' : undefined}
       data-touch-play={touchContext}
@@ -93,7 +97,10 @@ export function App(): JSX.Element {
           {/* Before the HUD, so every HUD control paints above the touch camera-drag surface. */}
           <TouchControls />
           <HudLayer />
+          <ShowMenuButton />
           <ChatWidgetLayer />
+          {/* App-level, not in the HUD: the announcer also talks over intros, results and the wall. */}
+          <CaptionChip />
           <StampLayer />
         </div>
         <ConfettiLayer />

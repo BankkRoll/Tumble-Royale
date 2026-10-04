@@ -111,6 +111,14 @@ describe('ChatWidget', () => {
     [...html.matchAll(/role="tab"[^>]*>(.*?)<\/button>/g)].map((m) => m[1]!.replace(/<[^>]+>/g, ''));
   const online = () => social.getState().dispatchChat({ type: 'room', room: 'global', access: 'write' });
 
+  it('restores a half-typed draft when the input mounts again', () => {
+    online();
+    social.setState({ chatDraft: 'half a thou' });
+    social.getState().dispatchChat({ type: 'open' });
+    expect(renderToStaticMarkup(<ChatLayer />)).toContain('value="half a thou"');
+    social.setState({ chatDraft: '' });
+  });
+
   it('renders masked lines with the filter on and raw ones with it off', () => {
     social.getState().pushChat(line({ text: 'what the fuck', masked: 'what the ****' }));
     expect(renderToStaticMarkup(<ChatLayer />)).toContain('what the ****');

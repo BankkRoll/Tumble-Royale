@@ -5,7 +5,12 @@
  * snapshot + reliable-event pipeline.
  */
 import { describe, expect, it } from 'vitest';
-import type { DecodedSnapshot, LowFreqMessage, NetEntityState } from '@tumble/netcode';
+import {
+  LEAVE_CLOSE_REASON,
+  type DecodedSnapshot,
+  type LowFreqMessage,
+  type NetEntityState,
+} from '@tumble/netcode';
 import { Button, CharacterState, loadRapier, type CharacterInput } from '@tumble/sim';
 import { createTumblerController } from '@tumble/sim/character';
 import { createMatchSim, createTestArenaRound, testObstacleModules } from '@tumble/sim/match';
@@ -204,6 +209,36 @@ describe('live pre-show platform', () => {
     expect(latest(a, ic)).toBeNull();
     const after = (a.lowFreq('playerList').at(-1) as Msg<'playerList'>).players;
     expect(after.map((p) => p.id)).not.toContain(ic);
+  });
+
+  it('frees a deliberate leaver at once instead of holding the seat for a resume', () => {
+    const room = lobbyRoom();
+    const a = room.connect('Alice');
+    const c = room.connect('Carol');
+    const ic = c.welcome!.playerId;
+    const token = c.welcome!.resumeToken;
+    room.advance(20);
+    const mark = a.snapshots.length;
+    c.conn.close(1000, LEAVE_CLOSE_REASON);
+    room.advance(2);
+    expect(removedIn(a.snapshots.slice(mark), ic)).toBe(true);
+    const list = (a.lowFreq('playerList').at(-1) as Msg<'playerList'>).players;
+    expect(list.map((p) => p.id)).not.toContain(ic);
+    // The seat is gone: the old resume token no longer finds it.
+    const back = room.connect('Carol', token);
+    expect(back.welcome?.resumed).not.toBe(true);
+  });
+
+  it('holds the seat when the connection drops with any other close', () => {
+    const room = lobbyRoom();
+    const a = room.connect('Alice');
+    const c = room.connect('Carol');
+    const ic = c.welcome!.playerId;
+    room.advance(20);
+    c.conn.close(1001, 'going away');
+    room.advance(2);
+    const list = (a.lowFreq('playerList').at(-1) as Msg<'playerList'>).players;
+    expect(list.map((p) => p.id)).toContain(ic);
   });
 
   it('adds bots to the platform when the show starts and moves everyone to round 1 together', () => {

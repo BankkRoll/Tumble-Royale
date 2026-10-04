@@ -6,10 +6,10 @@ import { memo, type JSX } from 'react';
 import { Icon } from '../components/icons/index.tsx';
 import { openInGameMenu } from '../screens/overlays/InGameMenu.tsx';
 import { useUI } from '../store/uiStore.ts';
+import { tutorialUi, useTutorialUI } from '../tutorial/store.ts';
 import { EmoteWheel } from './EmoteWheel.tsx';
 import {
   CameraLockHint,
-  CaptionChip,
   ControlsHint,
   CountdownNumerals,
   GrabStatus,
@@ -23,10 +23,20 @@ import {
   TeamScores,
 } from './widgets.tsx';
 
+/**
+ * The HUD gear during Practice Island: its Skip prompt, the same thing Esc and
+ * pad Start do there (the show's in-game menu has nothing to offer it).
+ */
+export function openTutorialSkip(): void {
+  if (tutorialUi.getState().ready) return;
+  tutorialUi.setState({ skipConfirm: true });
+}
+
 /** The HUD layer for the `round` screen. */
 export const Hud = memo(function Hud(): JSX.Element {
   const counting = useUI((s) => s.countdown !== null && s.countdown > 0);
   const highContrast = useUI((s) => s.settings.accessibility.highContrastHud);
+  const tutorial = useTutorialUI((t) => (t.phase === 'hidden' ? 'off' : t.ready ? 'ready' : 'on'));
   return (
     <div className={`tr-hud${counting ? ' is-countdown' : ''}${highContrast ? ' is-contrast' : ''}`}>
       <div className="tr-hud-top">
@@ -39,15 +49,18 @@ export const Hud = memo(function Hud(): JSX.Element {
           <RaceProgress />
         </div>
         <div className="tr-hud-tr">
-          <button
-            type="button"
-            className="tr-hud-menu-btn tr-interactive"
-            aria-label="Show menu"
-            data-testid="hud-menu"
-            onClick={openInGameMenu}
-          >
-            <Icon name="gear" size="1.3em" />
-          </button>
+          {/* The ready card already offers the way out of Practice Island. */}
+          {tutorial !== 'ready' && (
+            <button
+              type="button"
+              className="tr-hud-menu-btn tr-interactive"
+              aria-label={tutorial === 'on' ? 'Skip tutorial' : 'Show menu'}
+              data-testid="hud-menu"
+              onClick={tutorial === 'on' ? openTutorialSkip : openInGameMenu}
+            >
+              <Icon name="gear" size="1.3em" />
+            </button>
+          )}
           <NetStats />
           <TeamScores />
         </div>
@@ -56,7 +69,6 @@ export const Hud = memo(function Hud(): JSX.Element {
       <CameraLockHint />
       <GrabStatus />
       <SpectateBanner />
-      <CaptionChip />
       <EmoteWheel />
       <CountdownNumerals />
       <EliminatedSheet />

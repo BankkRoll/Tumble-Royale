@@ -491,7 +491,7 @@ export function FriendsSheet(): JSX.Element {
             <>
               <MyTag masked={streamer && !reveal} />
               <Button variant="sky" block onClick={openJoinCode}>
-                <Icon name="key" size="1em" /> Join a show with a code
+                <Icon name="key" size="1em" /> Join a party or show with a code
               </Button>
               {code && (
                 <div className="tr-invite-box">

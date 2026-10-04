@@ -24,8 +24,16 @@ const STATUS: Record<LocalStatus, { label: string; tone: string }> = {
   spectating: { label: 'Spectating', tone: 'is-out' },
 };
 
-/** Knocked out of the show and watching the rest of it. */
-const OUT_OF_SHOW = { label: 'Eliminated · Spectating', tone: 'is-out' };
+/**
+ * What the local player is doing while they watch: knocked-out players are
+ * "Eliminated · Spectating"; spectator seats (and anyone still in the show
+ * between their own rounds) are just "Spectating".
+ *
+ * @param seat - The local show seat.
+ */
+export function spectatingLabel(seat: ShowSeat | null): string {
+  return seat?.outOfShow && !seat.spectator ? 'Eliminated · Spectating' : 'Spectating';
+}
 
 const CONTROL_ROWS: BindAction[] = ['jump', 'dive', 'grab', 'emoteWheel'];
 const SPECTATE_ROWS: BindAction[] = ['spectatePrev', 'spectateNext'];
@@ -56,8 +64,17 @@ export function leaveShowBody(seat: ShowSeat | null): string {
   return `You'll be out of this show and back in the menu. ${rounds} Show and placement bonuses need you to stay until the end.`;
 }
 
-function confirmLeave(): void {
+let pendingLeave: (() => void) | null = null;
+
+/**
+ * Asks "Leave the show?" and emits `leaveShow` only on an explicit confirm.
+ * Every Leave button in a show goes through here, so no single key press
+ * (Esc, pad B) can drop a player out of the show.
+ */
+export function confirmLeaveShow(): void {
   const seat = ui.getState().showSeat;
+  // NOTE: a second open (double click, menu then watch choice) must not stack listeners and emit twice.
+  pendingLeave?.();
   ui.getState().showDialog({
     id: 'leaveShow',
     kind: 'confirm',
@@ -66,7 +83,7 @@ function confirmLeave(): void {
     buttons: [
       {
         id: 'cancel',
-        label: seat?.outOfShow ? 'Keep watching' : 'Keep playing',
+        label: seat?.outOfShow || seat?.spectator ? 'Keep watching' : 'Keep playing',
         variant: 'secondary',
         autofocus: true,
       },
@@ -76,11 +93,13 @@ function confirmLeave(): void {
   const off = uiEvents.on('dialogResult', ({ dialogId, buttonId }) => {
     if (dialogId !== 'leaveShow') return;
     off();
+    pendingLeave = null;
     if (buttonId === 'confirm') {
       ui.getState().setOverlay('none');
       uiEvents.emit('leaveShow');
     }
   });
+  pendingLeave = off;
 }
 
 /** The in-round menu overlay. */
@@ -99,11 +118,12 @@ export function InGameMenu(): JSX.Element {
   const padBinds = useUI((s) => s.settings.controls.padBinds);
   const device = useUI((s) => s.hud.device);
   const outOfShow = useUI((s) => s.showSeat?.outOfShow ?? false);
+  const watchingLabel = useUI((s) => spectatingLabel(s.showSeat));
   const replayLive = useUI((s) => s.replayLive);
-  const status = outOfShow ? OUT_OF_SHOW : STATUS[hud.status];
+  const status = outOfShow ? { label: watchingLabel, tone: 'is-out' } : STATUS[hud.status];
   return (
     <div
-      className="tr-dialog-wrap tr-interactive"
+      className="tr-dialog-wrap tr-igm-wrap tr-interactive"
       data-nav-scope="13"
       role="dialog"
       aria-modal="true"
@@ -115,7 +135,7 @@ export function InGameMenu(): JSX.Element {
         <div className="tr-igm-head">
           <div className="tr-col tr-grow" style={{ gap: '0.15em', minWidth: 0 }}>
             <span className="tr-label">{showName}</span>
-            <h2 className="tr-title tr-h2 tr-ellipsis">{intro?.name ?? 'Round'}</h2>
+            <h2 className="tr-title tr-h2 tr-ellipsis">{intro?.name ?? 'Getting ready'}</h2>
           </div>
           <button type="button" className="tr-close" data-nav="" aria-label="Close" onClick={close}>
             <Icon name="close" size="1em" />
@@ -202,7 +222,7 @@ export function InGameMenu(): JSX.Element {
               <Icon name="camera" size="1.1em" /> Photo mode
             </Button>
           )}
-          <Button variant="danger" block data-testid="igm-leave" onClick={confirmLeave}>
+          <Button variant="danger" block data-testid="igm-leave" onClick={confirmLeaveShow}>
             Leave show
           </Button>
         </div>

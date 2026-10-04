@@ -152,6 +152,7 @@ export class ShowChat {
       ...(self ? { self: true } : {}),
       at: Date.now(),
       ...(p?.color ? { color: p.color } : {}),
+      ...(p ? { seat: id } : {}),
     };
     social.getState().pushChat(line);
     const s = social.getState();

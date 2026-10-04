@@ -7,6 +7,12 @@
  * party so concurrent joins cannot overfill it, then pushes `party_update` to
  * all members through the realtime gateway. Membership changes also re-push
  * each member's presence to their friends, since "joinable" depends on size.
+ *
+ * Queueing is a two-step handshake: the leader asks for a ticket (refused
+ * while anyone is unready or still in a show) and, once the matchmaker took
+ * it, confirms with `/party/queued`, which is when the ready votes are spent.
+ * A member playing alone (Vs Bots, Practice) tells the others through
+ * `/party/solo`.
  */
 import { randomInt, randomUUID } from 'node:crypto';
 import { and, eq, inArray } from 'drizzle-orm';
@@ -23,7 +29,7 @@ import { RANKED_QUEUE } from '../leaderboards/service.ts';
 import { DEFAULT_RATING, skillOrdinal } from '../ranked/rating.ts';
 import { broadcastPresence, friendIds, socialRef } from './friends.ts';
 import { sendPartyChat } from './partyChat.ts';
-import { getPresence } from './presence.ts';
+import { getPresence, getPresenceMany } from './presence.ts';
 
 /** Maximum party size. */
 export const MAX_PARTY_SIZE = 4;
@@ -84,6 +90,7 @@ const UserBody = z.object({ userId: z.string().uuid() });
 const ChatBody = z.object({ text: z.string().max(500) });
 const ReadyBody = z.object({ ready: z.boolean() });
 const PlaylistBody = z.object({ playlistId: z.string().min(1).max(64) });
+const SoloBody = z.object({ playing: z.boolean() });
 const TicketBody = z
   .object({ playlistId: z.string().min(1).max(64).optional(), region: RegionSchema.optional() })
   .optional();
@@ -286,12 +293,50 @@ export class PartyService {
 
   /**
    * Clears every member's ready flag except the leader's (whose ready is
-   * pressing Play). Called once the party's queue ticket is issued.
+   * pressing Play). Called once the matchmaker accepted the party's ticket,
+   * never before: a refused enqueue must leave the votes standing.
+   *
+   * @throws {ApiError} 404 without a party, 403 `not_leader`.
    */
-  async resetReady(userId: string): Promise<void> {
-    await this.mutate(userId, (party) => {
+  async resetReady(leaderId: string): Promise<Party> {
+    return this.mutate(leaderId, (party) => {
+      if (party.leaderId !== leaderId)
+        throw forbidden('not_leader', 'Only the party leader starts matchmaking');
       for (const m of party.members) m.ready = m.userId === party.leaderId;
     });
+  }
+
+  /**
+   * A member started (or finished) a show on their own: Vs Bots or Practice
+   * Island. They stay in the party; a member's ready vote is withdrawn since
+   * they cannot queue from inside that show. Everyone else is told so the
+   * menu can say who is away.
+   *
+   * @returns The party, or null when the caller is solo.
+   */
+  async playingSolo(userId: string, playing: boolean): Promise<Party | null> {
+    const cur = await this.current(userId);
+    if (!cur) return null;
+    const p =
+      playing && cur.leaderId !== userId
+        ? await this.mutate(userId, (party) => {
+            const m = party.members.find((x) => x.userId === userId);
+            if (m) m.ready = false;
+          })
+        : cur;
+    const me = p.members.find((m) => m.userId === userId);
+    await this.ctx.notifier.notifyMany(
+      p.members.filter((m) => m.userId !== userId).map((m) => m.userId),
+      {
+        type: 'party_solo',
+        partyId: p.id,
+        userId,
+        name: me?.displayName ?? 'A member',
+        leader: p.leaderId === userId,
+        playing,
+      },
+    );
+    return p;
   }
 
   /**
@@ -344,6 +389,25 @@ export async function issueQueueTicket(
     }
     if (playlist.queue === 'ranked' && memberBans.some((b) => b.scope === 'ranked')) {
       throw forbidden('ranked_banned', 'A party member is suspended from ranked play');
+    }
+  }
+  if (party) {
+    // A member still in a show would never see `match_found` and be left behind.
+    const presence = await getPresenceMany(
+      ctx.kv,
+      party.members.filter((m) => m.userId !== auth.userId).map((m) => m.userId),
+    );
+    const busy = party.members.filter((m) => {
+      const status = presence.get(m.userId)?.status;
+      return status === 'in_match' || status === 'in_queue';
+    });
+    if (busy.length > 0) {
+      const names = busy.map((m) => m.displayName);
+      throw conflict(
+        'member_busy',
+        `${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} still in a show`,
+        { busy: busy.map((m) => ({ userId: m.userId, name: m.displayName })) },
+      );
     }
   }
   // After the ban checks: a suspended member can never ready up, so "not ready" would hide the real reason.
@@ -557,9 +621,21 @@ export function registerPartyRoutes(app: FastifyInstance, ctx: AppContext): void
   app.post('/party/queue-ticket', async (req) => {
     const auth = await requireUser(ctx, req);
     const body = parse(TicketBody, req.body) ?? {};
-    const ticket = await issueQueueTicket(ctx, parties, auth, body);
-    // Ready is a vote for one show: members confirm again before the next queue.
-    if (!ticket.claims.pid.startsWith('solo:')) await parties.resetReady(auth.userId);
-    return ticket;
+    return issueQueueTicket(ctx, parties, auth, body);
+  });
+
+  // The matchmaker accepted the leader's ticket. Ready is a vote for one show:
+  // members confirm again before the next queue, but only once this one is real.
+  app.post('/party/queued', async (req) => {
+    const auth = await requireUser(ctx, req);
+    if (!(await parties.current(auth.userId))) return { party: null };
+    return { party: parties.view(await parties.resetReady(auth.userId)) };
+  });
+
+  app.post('/party/solo', async (req) => {
+    const auth = await requireUser(ctx, req);
+    const { playing } = parse(SoloBody, req.body);
+    const p = await parties.playingSolo(auth.userId, playing);
+    return { party: p ? parties.view(p) : null };
   });
 }

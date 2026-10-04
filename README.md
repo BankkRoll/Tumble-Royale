@@ -355,6 +355,22 @@ the offline 100-player Main Show (`?autoplay=1&ts=2&playlist=main-show&seed=5`)
 reaches rewards; round 1 (Tilt Town, 100 Tumblers, ultra tier, sim at 2× speed)
 ran at 20 fps median (14 fps p10) with 270 draw calls median (355 max).
 
+Updating the scene graph once per frame (instead of once per shadow cascade
+and again for the main pass) and skipping bone subtrees in render-list builds
+cut main-thread frame work by about a third. Measured on the same desktop with
+round 1 of `?autoplay=1&ts=1&playlist=main-show&seed=5` (Tilt Town, 100
+Tumblers, WebGPU, headless Edge, frame cap off and vsync off, 15 s of
+PLAYING, 1280×720), one run each on a shared machine:
+
+| Tier  | Before: fps median / p10 | After: fps median / p10 | Frame work p50 before → after | Draw calls |
+| ----- | ------------------------ | ----------------------- | ----------------------------- | ---------- |
+| High  | 48.5 / 35.7              | 69.4 / 32.6             | 19.2 → 14.0 ms                | ~330       |
+| Ultra | 39.7 / 23.0              | 53.8 / 31.3             | 24.6 → 16.7 ms                | ~340       |
+
+Draw calls are unchanged: about 145 render objects in the main pass and 175
+across the three shadow cascades. The sim (about 5 ms a frame with 100 bots)
+is the next largest cost.
+
 Production runs the client and services with Postgres and Redis; the
 [self-hosting guide](docs/SELF_HOSTING.md) sets all of it up with Docker
 Compose. (Without `DATABASE_URL` the API uses an embedded PGlite file, and

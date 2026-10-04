@@ -457,10 +457,16 @@ export interface SeasonPassData {
   tiers: PassTier[];
 }
 
-/** A daily/weekly challenge. */
+/**
+ * How long a challenge lives: rotating daily/weekly, the current season, or
+ * a permanent milestone.
+ */
+export type ChallengeCadence = 'daily' | 'weekly' | 'seasonal' | 'milestone';
+
+/** A challenge on the board. */
 export interface Challenge {
   id: string;
-  cadence: 'daily' | 'weekly';
+  cadence: ChallengeCadence;
   title: string;
   icon: string;
   progress: number;
@@ -474,6 +480,8 @@ export interface Challenge {
   bonus?: { kind: Currency | 'xp'; amount: number };
   /** Free Gems paid on claim (weekly challenges). */
   gems?: number;
+  /** Cosmetic granted on claim (some seasonal and milestone challenges). */
+  item?: CosmeticItem;
 }
 
 /** Challenge board. */
@@ -486,6 +494,80 @@ export interface ChallengesData {
   rerollsLeft?: number;
   /** Swaps granted per day. */
   rerollsPerDay?: number;
+  /** Season the seasonal challenges belong to (online accounts). */
+  season?: { name: string; /** Epoch ms when they expire. */ endsAt: number };
+}
+
+/** One reward on the login ladder or an achievement. */
+export type GrantView =
+  { kind: Currency | 'xp' | 'crownShards'; amount: number } | { kind: 'item'; item: CosmeticItem };
+
+/** Daily login streak card (online accounts; null offline). */
+export interface LoginStreakData {
+  /** Consecutive days, 0 once broken. */
+  streak: number;
+  best: number;
+  claimedToday: boolean;
+  canClaim: boolean;
+  /** Epoch ms when the next claim opens (now when one is open). */
+  nextClaimAt: number;
+  /** Epoch ms when the streak breaks unless claimed; null when there is none to lose. */
+  breaksAt: number | null;
+  /** The next claim: its ladder day (1..7) and rewards. */
+  next: { day: number; rewards: GrantView[] };
+  /** The 7-day ladder for the current cycle. */
+  ladder: { day: number; rewards: GrantView[]; state: 'claimed' | 'today' | 'upcoming' }[];
+}
+
+/** One achievement on the achievements screen. Locked hidden ones carry no details. */
+export interface AchievementEntry {
+  id: string;
+  category: string;
+  /** `???` for a locked hidden achievement. */
+  title: string;
+  description: string;
+  hidden: boolean;
+  unlocked: boolean;
+  /** Epoch ms. */
+  unlockedAt?: number;
+  /** Null for locked hidden achievements. */
+  progress: number | null;
+  target: number | null;
+  /** Tier within a series, e.g. 2 of 4. */
+  tier?: { tier: number; tiers: number };
+  rewards: GrantView[];
+}
+
+/** The achievements screen. */
+export interface AchievementsData {
+  list: AchievementEntry[];
+  /** Display order with tallies. */
+  categories: { id: string; name: string; unlocked: number; total: number }[];
+  unlocked: number;
+  total: number;
+}
+
+/** One way to get a cosmetic, for the collection log. */
+export interface CollectionSourceView {
+  kind: 'default' | 'store' | 'pass' | 'achievement' | 'challenge' | 'event' | 'shards' | 'tutorial';
+  label: string;
+}
+
+/** One catalogue item in the collection log. */
+export interface CollectionEntryView {
+  item: CosmeticItem;
+  sources: CollectionSourceView[];
+  /** Epoch ms the item was acquired, when known. */
+  acquiredAt?: number;
+}
+
+/** The collection log: every cosmetic, owned or not, with completion. */
+export interface CollectionData {
+  entries: CollectionEntryView[];
+  owned: number;
+  total: number;
+  /** Completion percentage, one decimal, never rounded up to 100. */
+  percent: number;
 }
 
 /** Ranked tiers (SPEC §12). */
@@ -1184,6 +1266,8 @@ export interface RewardsSummary {
   unlocks: CosmeticItem[];
   ranked?: { from: RankInfo; to: RankInfo; delta: number };
   challenges?: { title: string; from: number; to: number; goal: number }[];
+  /** Achievements this show unlocked. */
+  achievements?: { id: string; title: string; description: string }[];
 }
 
 // -----------------------------------------------------------------------------

@@ -9,8 +9,12 @@ export { LockerTab } from './menu/LockerTab.tsx';
 export { StoreTab } from './menu/StoreTab.tsx';
 export { PassTab } from './menu/PassTab.tsx';
 export { ChallengesTab } from './menu/ChallengesTab.tsx';
+export { LoginStreakCard, streakStatus } from './menu/LoginStreak.tsx';
+export { AchievementsView } from './menu/AchievementsView.tsx';
+export { CollectionView, filterCollection, type CollectionFilters } from './menu/CollectionView.tsx';
 export {
   ProfileTab,
+  type ProfileSection,
   ProfileCard,
   ProfileOverlay,
   RankEmblem,

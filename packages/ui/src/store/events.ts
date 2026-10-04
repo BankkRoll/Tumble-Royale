@@ -71,6 +71,8 @@ export interface UIIntents {
   buyPremiumPass: undefined;
   rerollChallenge: { id: string };
   claimChallenge: { id: string };
+  /** Claim today's daily login reward (online accounts). */
+  claimLoginStreak: undefined;
   leaderboardQuery: { board: LeaderboardId; scope?: LeaderboardScope };
   /** Open another player's profile card (ranks, results, friends). */
   inspectPlayer: {

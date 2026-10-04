@@ -280,6 +280,24 @@ export function RewardsScreen(): JSX.Element | null {
               ))}
             </div>
           )}
+          {r.achievements && r.achievements.length > 0 && t >= p.gumAt && (
+            <div className="tr-col tr-enter tr-rewards-achievements" style={{ gap: '0.3em' }}>
+              <span className="tr-label">Achievements unlocked</span>
+              {r.achievements.map((a) => (
+                <div
+                  key={a.id}
+                  className="tr-row tr-small tr-rewards-achievement"
+                  data-testid="reward-achievement"
+                >
+                  <Icon name="medal" size="1.3em" />
+                  <span className="tr-col tr-grow" style={{ minWidth: 0 }}>
+                    <b className="tr-ellipsis">{a.title}</b>
+                    <span className="tr-muted tr-ellipsis">{a.description}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="tr-col tr-rewards-right">

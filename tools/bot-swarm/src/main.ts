@@ -55,6 +55,7 @@ interface Aggregate {
   clients: number;
   welcomed: number;
   kicked: number;
+  refused: number;
   snapshots: number;
   snapshotBytes: number;
   deltaSnapshots: number;
@@ -70,6 +71,7 @@ function aggregate(stats: readonly ClientStats[]): Aggregate {
     clients: stats.length,
     welcomed: 0,
     kicked: 0,
+    refused: 0,
     snapshots: 0,
     snapshotBytes: 0,
     deltaSnapshots: 0,
@@ -82,6 +84,7 @@ function aggregate(stats: readonly ClientStats[]): Aggregate {
   for (const s of stats) {
     if (s.welcomed) a.welcomed++;
     if (s.kicked) a.kicked++;
+    a.refused += s.refused;
     a.snapshots += s.snapshots;
     a.snapshotBytes += s.snapshotBytes;
     a.deltaSnapshots += s.deltaSnapshots;
@@ -100,6 +103,7 @@ function merge(parts: readonly Aggregate[]): Aggregate {
     out.clients += p.clients;
     out.welcomed += p.welcomed;
     out.kicked += p.kicked;
+    out.refused += p.refused;
     out.snapshots += p.snapshots;
     out.snapshotBytes += p.snapshotBytes;
     out.deltaSnapshots += p.deltaSnapshots;
@@ -154,7 +158,7 @@ function report(a: Aggregate, args: Args): void {
   const f1 = (v: number): string => v.toFixed(1);
   console.log('\n=== bot-swarm summary ===');
   console.log(
-    `clients        ${a.clients} (welcomed ${a.welcomed}, kicked ${a.kicked}) over ${args.duration}s, ${args.procs} proc(s)`,
+    `clients        ${a.clients} (welcomed ${a.welcomed}, kicked ${a.kicked}, connects retried ${a.refused}) over ${args.duration}s, ${args.procs} proc(s)`,
   );
   console.log(`snapshots/s    ${f1(a.snapshots / perClientSec)} per client (target 30)`);
   console.log(
@@ -170,12 +174,16 @@ function report(a: Aggregate, args: Args): void {
   console.log(`decode errors  ${a.decodeErrors}`);
 }
 
-async function printServerMetrics(wsUrl: string): Promise<void> {
+async function fetchServerMetrics(wsUrl: string): Promise<string> {
+  const u = new URL(wsUrl);
+  u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
+  u.pathname = '/metrics';
+  return (await fetch(u)).text();
+}
+
+async function printServerMetrics(wsUrl: string, captured: Promise<string | null>): Promise<void> {
   try {
-    const u = new URL(wsUrl);
-    u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
-    u.pathname = '/metrics';
-    const text = await (await fetch(u)).text();
+    const text = (await captured) ?? (await fetchServerMetrics(wsUrl));
     const pick = text
       .split('\n')
       .filter((l) => /^tumble_(tick_ms|snapshot_bytes|bytes_out|players|rooms|rtt)/.test(l));
@@ -194,6 +202,13 @@ async function main(): Promise<void> {
     return;
   }
   console.log(`bot-swarm: ${args.clients} clients → ${args.url} for ${args.duration}s`);
+  // The server's tick window is rolling: read it while the clients still play, not after they
+  // disconnect, when idle ticks would dilute the numbers.
+  const captureAt =
+    Math.ceil(args.clients / args.procs) * args.ramp + Math.max(0, args.duration * 1000 - 1500);
+  const captured = new Promise<string | null>((resolve) => {
+    setTimeout(() => fetchServerMetrics(args.url).then(resolve, () => resolve(null)), captureAt);
+  });
   let result: Aggregate;
   if (args.procs <= 1) {
     result = await runClients(args, args.clients, 0);
@@ -223,7 +238,7 @@ async function main(): Promise<void> {
     result = merge(parts);
   }
   report(result, args);
-  await printServerMetrics(args.url);
+  await printServerMetrics(args.url, captured);
   process.exit(0);
 }
 

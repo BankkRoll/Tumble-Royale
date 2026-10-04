@@ -118,7 +118,7 @@ test('full offline show with 100 players, boot to rewards', async ({ page }) => 
       await page.waitForTimeout(2500);
       const p = await perf(page);
       console.log(`[game] round ${round} playing`, JSON.stringify(p));
-      // The Main Show (forced above; a fresh profile would get the 40-player First Show) fills to the cap.
+      // The Main Show (forced above; a fresh profile would get the smaller First Show) fills to the cap.
       if (round === 1) expect(p.tumblers).toBe(100);
       await snap(page, `05-r${round}-play`);
       last = 'round';

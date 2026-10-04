@@ -28,6 +28,7 @@ import { getMutator } from '@tumble/sim/mutators';
 import type { ShowPlaylist } from '@tumble/sim/show';
 import {
   bindUI,
+  keyboardBusy,
   social,
   streamerSafeName,
   ui,
@@ -59,6 +60,7 @@ import {
   type PreShowView,
 } from '../views/ceremonies.ts';
 import type { GameContext, RoundOutcomeInfo, RoundStart, SessionPlayer, SessionSummary } from './context.ts';
+import { showMenuKeyAction } from '../inputRouting.ts';
 import {
   PAD_SPECTATE_NEXT,
   PAD_SPECTATE_PREV,
@@ -1615,25 +1617,34 @@ export abstract class ShowSession {
     if (dir !== 0) this.cycleSpectate(dir);
   }
 
+  /**
+   * The session reads Start / Esc itself, so the app's in-game menu routing
+   * stays out of it (Practice Island's skip prompt).
+   */
+  get ownsMenuKey(): boolean {
+    return false;
+  }
+
   private handleKey(e: KeyboardEvent): void {
-    if (e.repeat) return;
+    // The chat field (or any text field) owns every key while the player types.
+    if (e.repeat || keyboardBusy(e)) return;
+    const s = ui.getState();
     const r = this.round;
-    if (!r) return;
-    const binds = ui.getState().settings.controls.keybinds;
-    const watching = r.fate === 'spectating' || r.fate === 'qualified';
-    if (watching && ui.getState().screen === 'round' && ui.getState().overlay === 'none') {
+    const binds = s.settings.controls.keybinds;
+    const watching = !!r && (r.fate === 'spectating' || r.fate === 'qualified');
+    if (watching && s.screen === 'round' && s.overlay === 'none') {
       if (binds.spectatePrev.includes(e.code)) this.cycleSpectate(-1);
       else if (binds.spectateNext.includes(e.code)) this.cycleSpectate(1);
     }
+    if (this.ownsMenuKey) return;
     // NOTE: Escape always works too: browsers spend it on releasing pointer
     // lock, so a player who rebinds Menu still expects Esc to reach the menu.
     const menuKey = e.code === 'Escape' || this.ctx.input.isBound('menu', e.code);
     // Menu navigation already used this key (e.g. Esc pressed Resume, which closed the menu).
-    if (menuKey && !e.defaultPrevented && ui.getState().screen === 'round') {
-      const overlay = ui.getState().overlay;
-      if (overlay === 'none') ui.getState().setOverlay('inGameMenu');
-      else if (overlay === 'inGameMenu') ui.getState().setOverlay('none');
-    }
+    if (!menuKey || e.defaultPrevented) return;
+    const action = showMenuKeyAction(s);
+    if (action === 'open') s.setOverlay('inGameMenu');
+    else if (action === 'close') s.setOverlay('none');
   }
 
   // ---------------------------------------------------------------------------
@@ -1760,7 +1771,8 @@ export abstract class ShowSession {
       us.screen === 'round' &&
       us.overlay === 'none' &&
       !us.eliminatedSheet &&
-      !us.photo.active
+      !us.photo.active &&
+      !social.getState().chat.open
     )
       this.pollSpectatePad();
     else this.padCycler.reset(true, true);

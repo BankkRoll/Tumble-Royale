@@ -113,7 +113,7 @@ export function InGameMenu(): JSX.Element {
   const status = outOfShow ? OUT_OF_SHOW : STATUS[hud.status];
   return (
     <div
-      className="tr-dialog-wrap tr-interactive"
+      className="tr-dialog-wrap tr-igm-wrap tr-interactive"
       data-nav-scope="13"
       role="dialog"
       aria-modal="true"

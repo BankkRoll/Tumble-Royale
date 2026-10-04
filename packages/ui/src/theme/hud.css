@@ -845,3 +845,36 @@
     min-width: 0;
   }
 }
+
+/* "Menu" pill on show screens without a HUD (pre-show, loading, between rounds). */
+.tr-show-menu-btn {
+  position: absolute;
+  top: calc(var(--safe-t) + 0.8em);
+  right: calc(var(--safe-r) + 1em);
+  z-index: 26;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.35em 0.9em;
+  border-radius: 999px;
+  border: 0.14em solid var(--ink);
+  background: var(--cloud);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 800;
+  box-shadow: 0 0.14em 0 var(--ink);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.tr-show-menu-btn:hover {
+  transform: scale(1.04);
+}
+
+/*
+ * The in-game menu, and the Leave confirm it opens, sit above the Tumble Wipe:
+ * Leave show must stay reachable while a wipe or a loading card covers the screen.
+ */
+.tr-igm-wrap,
+.tr-root[data-overlay='inGameMenu'] .tr-dialog-wrap {
+  z-index: 110;
+}

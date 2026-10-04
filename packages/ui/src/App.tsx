@@ -6,6 +6,7 @@
 import { useEffect, useRef, type JSX } from 'react';
 import { ConnectionLayer, DialogLayer, ToastLayer } from './components/system.tsx';
 import { ChatWidgetLayer } from './hud/ChatWidget.tsx';
+import { ShowMenuButton } from './hud/ShowMenuButton.tsx';
 import { Hud } from './hud/Hud.tsx';
 import { SettingsSheet } from './screens/overlays/SettingsSheet.tsx';
 import { InGameMenu } from './screens/overlays/InGameMenu.tsx';
@@ -52,6 +53,7 @@ export function App(): JSX.Element {
   const a = useUI((s) => s.settings.accessibility);
   const streamer = useUI((s) => s.settings.gameplay.streamerMode);
   const screen = useUI((s) => s.screen);
+  const overlay = useUI((s) => s.overlay);
   const photo = useUI((s) => s.photo.active);
   const replay = useUI((s) => s.replay !== null);
   const ref = useRef<HTMLDivElement>(null);
@@ -75,6 +77,7 @@ export function App(): JSX.Element {
       data-reduce-shake={String(a.reduceShake)}
       data-streamer={String(streamer)}
       data-screen={screen}
+      data-overlay={overlay}
       data-photo={String(photo)}
       data-replay={replay ? 'true' : undefined}
       style={{ ['--ui-scale' as string]: String(a.uiScale) }}
@@ -84,6 +87,7 @@ export function App(): JSX.Element {
         <div className="tr-stage">
           <ScreenLayer />
           <HudLayer />
+          <ShowMenuButton />
           <ChatWidgetLayer />
           <StampLayer />
         </div>

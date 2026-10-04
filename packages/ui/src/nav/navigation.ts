@@ -9,6 +9,7 @@
 import { MENU_TABS, type NavDirection } from '../store/types.ts';
 import { ui } from '../store/uiStore.ts';
 import { uiEvents } from '../store/events.ts';
+import { menuOwnsInput } from '../store/inputOwnership.ts';
 import { playCue } from '../audio-cues.ts';
 
 function visible(el: Element): boolean {
@@ -229,13 +230,7 @@ export function installKeyboardNav(navigate: (dir: NavDirection) => void): () =>
   const onKey = (e: KeyboardEvent): void => {
     if (e.defaultPrevented) return;
     const s = ui.getState();
-    const menuish =
-      s.inputMode === 'menu' ||
-      s.dialog !== null ||
-      s.overlay !== 'none' ||
-      s.eliminatedSheet ||
-      s.watchChoice !== null;
-    if (!menuish) return;
+    if (!menuOwnsInput(s)) return;
     const target = e.target as HTMLElement | null;
     const typing = !!target && (TEXT_INPUT.test(target.tagName) || target.isContentEditable);
     const isRange = typing && (target as HTMLInputElement).type === 'range';

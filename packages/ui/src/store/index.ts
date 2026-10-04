@@ -63,3 +63,10 @@ export {
   type RoomAccess,
   type WhisperTarget,
 } from './chatChannels.ts';
+export {
+  SHOW_MENU_SCREENS,
+  isTypingTarget,
+  keyboardBusy,
+  menuOwnsInput,
+  watchChoiceVisible,
+} from './inputOwnership.ts';

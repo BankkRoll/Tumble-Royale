@@ -13,6 +13,8 @@
  *   checkout — instant with the API's fake provider in dev, a Stripe redirect
  *   otherwise), pass claims + premium, challenge claim/reroll, event tier and
  *   event challenge claims;
+ * - purchase history and refunds (`/purchases`): self-service store refunds
+ *   and Gem pack refund requests;
  * - leaderboards and match history;
  * - social: friend requests, the party (create, join by code, ready, kick,
  *   leader's playlist, who is away playing solo) and the realtime gateway
@@ -90,6 +92,7 @@ import {
 import { loadoutWithItem, profileDressing, randomizedLoadout } from '../profile.ts';
 import { SocialController } from '../social/socialController.ts';
 import { onlineStoreShelves } from '../storeOffers.ts';
+import { refundErrorText, refundToast, toPurchaseHistory } from './purchaseHistory.ts';
 import { explainGemCheckoutRefusal, gemCheckoutMode, type GemCheckoutMode } from './gemCheckout.ts';
 import type { PartyLobbyLink } from '../views/partyLobbyView.ts';
 import { JsonSocket, type TypedMessage } from './jsonSocket.ts';
@@ -1043,6 +1046,70 @@ export class OnlineAccount {
         ...(err instanceof ApiError && err.code ? { code: err.code } : {}),
       });
     }
+  }
+
+  /** Loads Store → Purchases, keeping what is shown while it refreshes. */
+  async loadPurchaseHistory(): Promise<void> {
+    const s = ui.getState();
+    const current = s.purchaseHistory;
+    s.setPurchaseHistory(
+      current
+        ? { ...current, status: 'loading' }
+        : {
+            status: 'loading',
+            entries: [],
+            selfRefunds: { used: 0, limit: 0, windowDays: 0, nextAvailableAt: null },
+            policy: { selfServiceWindowDays: 0, realMoneyWindowDays: 0 },
+          },
+    );
+    try {
+      s.setPurchaseHistory(toPurchaseHistory(await this.api.purchaseHistory()));
+    } catch (err) {
+      const latest = ui.getState().purchaseHistory!;
+      s.setPurchaseHistory({ ...latest, status: 'error', error: refundErrorText(err) });
+    }
+  }
+
+  /**
+   * Refunds a store purchase the player confirmed, or sends a Gem pack refund
+   * request. A repeat of the same purchase is answered with the first refund,
+   * so a retried tap can never refund twice.
+   */
+  async refundPurchase(purchaseId: string, reason?: string): Promise<void> {
+    const s = ui.getState();
+    const entry = s.purchaseHistory?.entries.find((e) => e.purchaseId === purchaseId);
+    if (s.purchaseHistory) s.setPurchaseHistory({ ...s.purchaseHistory, busyId: purchaseId });
+    try {
+      const r = await this.api.refundPurchase(purchaseId, reason);
+      const credit = entry
+        ? entry.price.currency === 'usd'
+          ? `${(entry.price.amount / 100).toFixed(2)}`
+          : `${r.credit.amount.toLocaleString()} ${r.credit.currency === 'gems' ? 'Gems' : 'Gumballs'}`
+        : `${r.credit.amount} ${r.credit.currency}`;
+      const t = refundToast(r, credit);
+      s.pushToast({ kind: r.kind === 'real_money' ? 'info' : 'success', title: t.title, body: t.body });
+      if (r.kind === 'self_service') {
+        for (const id of r.items) this.owned.delete(id);
+        await this.refreshProgress();
+        const lo = await this.api.loadouts().catch(() => null);
+        if (lo) {
+          this.applyLoadouts(lo.slots, lo.activeIndex);
+          this.pushInventory();
+          this.hooks.onLookChanged();
+        }
+      }
+    } catch (err) {
+      s.showDialog({
+        id: 'refund-failed',
+        kind: 'error',
+        title: entry?.kind === 'gem_pack' ? "Couldn't send the request" : "Couldn't refund that",
+        body: refundErrorText(err),
+        ...(err instanceof ApiError && err.code ? { code: err.code } : {}),
+      });
+    }
+    await this.loadPurchaseHistory();
+    const after = ui.getState().purchaseHistory;
+    if (after) s.setPurchaseHistory({ ...after, busyId: null });
   }
 
   /** Buys a Gem pack: instant test credit with the dev fake provider, otherwise a Stripe redirect. */

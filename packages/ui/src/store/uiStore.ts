@@ -34,6 +34,7 @@ import type {
   InventoryData,
   CosmeticSlot,
   StoreSection,
+  PurchaseHistoryData,
   LeaderboardId,
   LeaderboardInfo,
   LeaderboardRow,
@@ -172,6 +173,8 @@ export interface UIState {
   lockerSlot: CosmeticSlot | null;
   /** Section the Store should open on (set by deep links such as the Locker's empty state). */
   storeSection: StoreSection | null;
+  /** Store purchase history with refund eligibility (online accounts; null until asked for). */
+  purchaseHistory: PurchaseHistoryData | null;
 
   // --- show ----------------------------------------------------------------
   queue: QueueState;
@@ -253,6 +256,7 @@ export interface UIState {
   setWallet: (wallet: { gumballs?: number; gems?: number }) => void;
   setInventory: (inventory: InventoryData | null) => void;
   setStoreData: (store: StoreData | null) => void;
+  setPurchaseHistory: (history: PurchaseHistoryData | null) => void;
   setPass: (pass: SeasonPassData | null) => void;
   setChallenges: (challenges: ChallengesData | null) => void;
   /** Daily login streak card (null offline). */
@@ -420,6 +424,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   inspectedProfile: null,
   lockerSlot: null,
   storeSection: null,
+  purchaseHistory: null,
 
   queue: {
     status: 'idle',
@@ -548,6 +553,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   },
   setInventory: (inventory) => set({ inventory }),
   setStoreData: (store) => set({ store }),
+  setPurchaseHistory: (purchaseHistory) => set({ purchaseHistory }),
   setPass: (pass) => set({ pass }),
   setChallenges: (challenges) => set({ challenges }),
   setLoginStreak: (loginStreak) => set({ loginStreak }),

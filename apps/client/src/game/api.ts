@@ -11,6 +11,7 @@
  */
 import type { PlayerRewardMsg } from '@tumble/netcode';
 import type { WalletLedger } from './online/checkout.ts';
+import type { ApiPurchaseHistory, ApiRefundResult } from './online/purchaseHistory.ts';
 import { tokenSubject, type AuthOutcome, type LoginProvider } from './online/returnUrl.ts';
 import { loadJson, removeJson, saveJson } from './storage.ts';
 
@@ -806,6 +807,11 @@ export class ApiClient {
   purchase = (offerId: string, key: string): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> =>
     this.request('POST', '/purchase', { offerId }, { idempotencyKey: key });
   gemPacks = (): Promise<ApiGemPacks> => this.request('GET', '/gems/packs');
+  /** Purchase history with each purchase's refund and refund eligibility. */
+  purchaseHistory = (): Promise<ApiPurchaseHistory> => this.request('GET', '/purchases');
+  /** Refunds a store purchase, or files a Gem pack refund request (`reason` required there). */
+  refundPurchase = (purchaseId: string, reason?: string): Promise<ApiRefundResult> =>
+    this.request('POST', `/purchases/${encodeURIComponent(purchaseId)}/refund`, reason ? { reason } : {});
   shardShop = (): Promise<ApiShardShop> => this.request('GET', '/shop/shards');
   buyShardOffer = (offerId: string, key: string): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> =>
     this.request('POST', '/shop/shards/buy', { offerId }, { idempotencyKey: key });

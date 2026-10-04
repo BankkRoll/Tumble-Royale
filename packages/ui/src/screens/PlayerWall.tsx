@@ -20,6 +20,7 @@ import { Button } from '../components/controls.tsx';
 import { useDisplayName } from '../components/hooks.ts';
 import { TumblerAvatar } from '../components/TumblerAvatar.tsx';
 import { uiEvents } from '../store/events.ts';
+import { keyboardBusy } from '../store/inputOwnership.ts';
 import { playerWallTimeline } from '../store/playerWallTimeline.ts';
 import { useUI } from '../store/uiStore.ts';
 import type {
@@ -422,7 +423,8 @@ export function PlayerWall({
   useEffect(() => {
     let timer = 0;
     const down = (e: KeyboardEvent): void => {
-      if (e.code !== 'Space' || e.repeat || state.ended) return;
+      // A space typed in the chat must reach the field, not start the skip.
+      if (e.code !== 'Space' || e.repeat || state.ended || keyboardBusy(e)) return;
       e.preventDefault();
       setHolding(true);
       timer = window.setTimeout(() => {

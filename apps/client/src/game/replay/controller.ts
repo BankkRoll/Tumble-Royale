@@ -19,6 +19,7 @@ import type { Rapier } from '@tumble/sim';
 import type { MatchDeps } from '@tumble/sim/match';
 import {
   bindUI,
+  isTypingTarget,
   streamerSafeName,
   ui,
   type OverlayId,
@@ -515,13 +516,7 @@ export class ReplayController {
   private handleKeyDown(e: KeyboardEvent): void {
     const s = ui.getState();
     if (!this.view || s.dialog || s.overlay !== 'none') return;
-    const target = e.target as HTMLElement | null;
-    if (
-      target &&
-      /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) &&
-      (target as HTMLInputElement).type !== 'range'
-    )
-      return;
+    if (isTypingTarget(e.target)) return;
     if (moveKey(e.code) || e.code === 'KeyR' || e.code === 'KeyF') {
       this.held.add(e.code);
       e.preventDefault();

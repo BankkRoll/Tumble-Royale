@@ -13,6 +13,7 @@ import { ItemPreview } from '../components/ItemPreview.tsx';
 import { Button } from '../components/controls.tsx';
 import { formatNumber } from '../components/hooks.ts';
 import { uiEvents } from '../store/events.ts';
+import { keyboardBusy } from '../store/inputOwnership.ts';
 import { useUI } from '../store/uiStore.ts';
 import type { RewardsSummary } from '../store/types.ts';
 import { confettiSets, rarityLabels } from '../theme/tokens.ts';
@@ -154,6 +155,8 @@ export function RewardsScreen(): JSX.Element | null {
     if (!p) return;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Enter' || e.key === 'Tab' || e.key === 'Escape' || e.key.startsWith('Arrow')) return;
+      // Typing in the chat is not "skip the reveal".
+      if (keyboardBusy(e)) return;
       setT((cur) => {
         if (cur >= p.doneAt) return cur;
         start.current = performance.now() - p.doneAt;

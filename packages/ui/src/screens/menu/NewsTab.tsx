@@ -10,6 +10,7 @@ import { useNow } from '../../components/hooks.ts';
 import { SafeImg } from '../../components/SafeImg.tsx';
 import { Icon } from '../../components/icons/index.tsx';
 import { uiEvents } from '../../store/events.ts';
+import { keyboardBusy } from '../../store/inputOwnership.ts';
 import { useUI } from '../../store/uiStore.ts';
 import type { NewsItem } from '../../store/types.ts';
 
@@ -110,7 +111,8 @@ function Featured({
 function Reader({ n, onBack }: { n: NewsItem; onBack: () => void }): JSX.Element {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.code !== 'Escape') return;
+      // Capture phase: stopping it here would starve the chat field of its own Esc.
+      if (e.code !== 'Escape' || keyboardBusy(e)) return;
       e.preventDefault();
       e.stopPropagation();
       onBack();

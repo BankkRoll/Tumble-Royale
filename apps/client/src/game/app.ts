@@ -21,6 +21,7 @@
 import {
   DEFAULT_KEYBINDS,
   bindUI,
+  keyboardBusy,
   mountUI,
   social,
   ui,
@@ -1478,7 +1479,7 @@ export class GameApp {
     window.addEventListener(
       'keydown',
       (e) => {
-        if (e.code !== 'Escape' || !this.menu?.idlePlaying) return;
+        if (e.code !== 'Escape' || !this.menu?.idlePlaying || keyboardBusy(e)) return;
         e.preventDefault();
         this.menu.setIdlePlay(false);
       },

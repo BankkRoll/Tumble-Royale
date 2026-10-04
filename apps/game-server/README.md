@@ -51,7 +51,7 @@ The shared secrets and URLs come from the root [`.env`](../../.env.example); run
 
 ```sh
 FILL_WAIT_MS=3000 pnpm --filter @tumble/game-server dev
-pnpm --filter @tumble/bot-swarm start -- --clients 100 --url ws://localhost:7350/ws --duration 60
+pnpm --filter @tumble/bot-swarm start -- --clients 100 --url ws://localhost:7350/ws --duration 180
 ```
 
 Add `--lag 150 --jitter 20 --loss 0.02` to simulate a bad connection, or

@@ -279,7 +279,7 @@ the same pose with zero bandwidth.
 | Foundations                 | Done: both GPU backends render, client/server Rapier bit-identical after 600 steps (`e2e/phase0.spec.ts`)                                                            |
 | The Tumbler                 | Done; tuning still needs human playtesting                                                                                                                           |
 | Netcode                     | Done: no steady-state corrections at 150 ms + 2% loss (unit-tested), lag-compensated grab/dive hit assist, protocol v5                                               |
-| Shows                       | Done: full shows end to end in the browser (`e2e/game.spec.ts`; 100-player run pending), solo/Duos/Squads online                                                     |
+| Shows                       | Done: full shows end to end in the browser (`e2e/game.spec.ts`; 100-player offline show verified), solo/Duos/Squads online                                           |
 | Meta & accounts             | Done: guest + OAuth/email accounts, locker, parties, matchmaking, server-granted rewards, seasons, shard shop                                                        |
 | Content                     | 20 rounds, tutorial island, procedural audio. Touch controls exist but no phone frame rate has been measured                                                         |
 | Ranked, store, pass, social | Done: OpenSkill ranked with soft reset, store, pass, challenges, friends, chat, private shows, moderation                                                            |
@@ -294,9 +294,24 @@ of snapshots per client; one human with 99 bots costs 8.1 ms p95. Hence
 `MAX_ROOMS=3` per process (one event loop per core). Reproduce in process
 with `TUMBLE_PERF=1 pnpm --filter @tumble/game-server exec vitest run test/tickBudget.test.ts`,
 or over real sockets: start the game server and run
-`pnpm --filter @tumble/bot-swarm start -- --clients 100 --duration 60`, which
-prints the server's `/metrics` including `tumble_tick_ms` avg / p95 / max.
-Results depend on the machine.
+`pnpm --filter @tumble/bot-swarm start -- --clients 100 --duration 180`, which
+prints the server's `/metrics` including `tumble_tick_ms` avg / p50 / p95 / max
+(60 s ends during the first round's intro; 180 s covers about two minutes of
+PLAYING). Over loopback sockets, with the built server and all 100 swarm
+clients on the same 16-thread desktop, Slip 'n' Spiral measured **12.2 ms p50
+/ 22.4 ms p95 / 70.3 ms max** (sim 6.6 + snapshots 4.9 + send 2.3 ms mean)
+and **26.4 KB/s** down per client; the machine was shared with other work, and
+the in-process benchmark run right after measured 12.2 / 16.1 ms, so expect
+sockets to add roughly a third on top of the in-process figures. Results
+depend on the machine.
+
+A whole 100-player Main Show (seed 5) runs headless through the real server
+path in `apps/game-server/test/fullShow.test.ts`, and every round plays to its
+end with a full field of bots in `packages/content/test/rounds-complete.test.ts`;
+both are opt-in with `TUMBLE_SLOW=1` (about 1.5 and 12 minutes). In the browser,
+the offline 100-player Main Show (`?autoplay=1&ts=2&playlist=main-show&seed=5`)
+reaches rewards; round 1 (Tilt Town, 100 Tumblers, ultra tier, sim at 2× speed)
+ran at 20 fps median (14 fps p10) with 270 draw calls median (355 max).
 
 Production runs the client and services with Postgres and Redis; the
 [self-hosting guide](docs/SELF_HOSTING.md) sets all of it up with Docker

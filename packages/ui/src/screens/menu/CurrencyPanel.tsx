@@ -17,6 +17,7 @@ import { Button } from '../../components/controls.tsx';
 import { formatNumber } from '../../components/hooks.ts';
 import { Icon, type IconName } from '../../components/icons/index.tsx';
 import { uiEvents } from '../../store/events.ts';
+import { keyboardBusy } from '../../store/inputOwnership.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { MenuTab } from '../../store/types.ts';
 
@@ -201,7 +202,8 @@ export function CurrencyPanel(): JSX.Element | null {
   useEffect(() => {
     if (panel === 'none') return;
     const onKey = (e: KeyboardEvent): void => {
-      if (e.code !== 'Escape') return;
+      // Capture phase: stopping it here would starve the chat field of its own Esc.
+      if (e.code !== 'Escape' || keyboardBusy(e)) return;
       e.preventDefault();
       e.stopPropagation();
       ui.getState().setCurrencyPanel('none');

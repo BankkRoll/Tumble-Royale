@@ -161,12 +161,10 @@ export interface UIIntents {
   partyInviteAction: { userId: string; code: string; action: 'join' | 'decline' };
   /** In-show text chat (online shows only). */
   sendChat: { text: string };
-  sendPartyChat: { text: string };
   /** The in-show chat input opened or closed (the game frees the mouse and held keys). */
   chatInput: { open: boolean };
   /** Rewards / victory / winner-cam "Continue". */
   continue: { from: ScreenId };
-  skipPlayerWall: undefined;
   /** Timeline beat of the player wall; the 3D wall scene syncs to these. */
   playerWallEvent: PlayerWallEvent;
   /** The Tumble Wipe fully covers the screen: swap 3D scenes now. */

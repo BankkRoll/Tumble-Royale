@@ -14,6 +14,7 @@ import { Button } from '../../components/controls.tsx';
 import { Price } from '../../components/bits.tsx';
 import { ItemPreview } from '../../components/ItemPreview.tsx';
 import { uiEvents } from '../../store/events.ts';
+import { keyboardBusy } from '../../store/inputOwnership.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import { SLOT_NAMES, type CosmeticItem, type Currency, type Loadout } from '../../store/types.ts';
 import { rarityLabels } from '../../theme/tokens.ts';
@@ -119,7 +120,8 @@ export function DressingRoom({
     if (dressingMounts++ === 0) uiEvents.emit('dressingRoom', { active: true });
     const onKey = (e: KeyboardEvent): void => {
       const s = ui.getState();
-      if (e.code !== 'Escape' || s.dialog || s.overlay !== 'none' || s.screen !== 'menu') return;
+      if (e.code !== 'Escape' || s.dialog || s.overlay !== 'none' || s.screen !== 'menu' || keyboardBusy(e))
+        return;
       e.preventDefault();
       playCue('ui.back');
       s.setMenuTab('play');

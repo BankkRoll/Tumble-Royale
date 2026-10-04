@@ -8,6 +8,7 @@ import { playCue } from '../../audio-cues.ts';
 import { Button, Segmented, Slider, Toggle } from '../../components/controls.tsx';
 import { BIND_ACTION_LABELS, DEFAULT_KEYBINDS } from '../../store/defaults.ts';
 import { uiEvents } from '../../store/events.ts';
+import { SHOW_MENU_SCREENS } from '../../store/inputOwnership.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { BindAction, Keybinds, SettingsSection } from '../../store/types.ts';
 import { Icon } from '../../components/icons/index.tsx';
@@ -530,9 +531,10 @@ export function RegionRow(): JSX.Element {
   );
 }
 
-/** Opened from the in-round menu, Settings closes back to it. */
+/** Opened from the in-game menu (on any show screen), Settings closes back to it. */
 function closeSettings(): void {
-  ui.getState().setOverlay(ui.getState().screen === 'round' ? 'inGameMenu' : 'none');
+  const s = ui.getState();
+  s.setOverlay(s.showSeat && SHOW_MENU_SCREENS.has(s.screen) ? 'inGameMenu' : 'none');
 }
 
 let requestedSection: SettingsSection | null = null;

@@ -26,6 +26,7 @@
  */
 import {
   bindUI,
+  keyboardBusy,
   mountUI,
   social,
   ui,
@@ -111,6 +112,7 @@ import { ThumbnailRenderer } from './thumbnails.ts';
 import { swapUnderWipe } from './wipe.ts';
 import { runTutorial } from './tutorial/index.ts';
 import { shouldOfferTutorial, tutorialAnswer } from './tutorial/prompt.ts';
+import { menuOwnsPad, padStartAction, showMenuKeyAction, type RoutingContext } from './inputRouting.ts';
 
 /** Merges saved settings over defaults so new fields always exist. */
 function mergeSettings(base: Settings, saved: Partial<Settings> | null): Settings {
@@ -591,21 +593,18 @@ export class GameApp {
 
   /**
    * Gamepad menu navigation (SCREENS.md §1.1). Whenever a menu owns the pad
-   * (menu screens, overlays, dialogs, the eliminated sheet) the D-pad/stick,
-   * A, B, LB and RB drive `navigate` and gameplay ignores the pad; Start
-   * toggles the in-round menu or Settings. Spectate cycling on LB/RB lives in
-   * the show session; the replay viewer reads the pad itself while it is open.
+   * (menu screens, overlays, dialogs, the watch choice; see `menuOwnsPad`)
+   * the D-pad/stick, A, B, LB and RB drive `navigate` and gameplay ignores
+   * the pad; Start toggles the in-game menu or Settings. Spectate cycling on
+   * LB/RB lives in the show session; the replay viewer reads the pad itself
+   * while it is open.
    */
   private pollPadNav(now: number): void {
     const s = ui.getState();
-    const idle = this.menu?.idlePlaying ?? false;
     const photo = s.photo.active;
     const replay = s.replay !== null;
-    const menuOwnsPad =
-      photo ||
-      replay ||
-      (!idle && (s.inputMode === 'menu' || s.dialog !== null || s.overlay !== 'none' || s.eliminatedSheet));
-    this.input.setGamepadGameplay(!menuOwnsPad);
+    const padToMenu = menuOwnsPad(s, this.menu?.idlePlaying ?? false);
+    this.input.setGamepadGameplay(!padToMenu);
     const pad =
       typeof navigator.getGamepads === 'function' ? firstStandardPad(navigator.getGamepads()) : null;
     // Edges are tracked even during a replay so its buttons never fire here afterwards.
@@ -618,34 +617,41 @@ export class GameApp {
       // Photo mode flies the camera with the sticks and bumpers; only A (Take photo) and B (Exit) navigate.
       else if (photo) {
         if (a === 'accept' || a === 'back') ui.getState().navigate(a);
-      } else if (menuOwnsPad) ui.getState().navigate(a);
+      } else if (padToMenu) ui.getState().navigate(a);
     }
   }
 
-  /** Start: the in-round menu during rounds, Settings elsewhere; leaves idle play first. */
+  /** Facts the pad / Menu key routing needs from the game side. */
+  private routingContext(): RoutingContext {
+    return {
+      idlePlaying: this.menu?.idlePlaying ?? false,
+      inShow: this.session !== null,
+      sessionOwnsMenu: this.session?.ownsMenuKey ?? false,
+    };
+  }
+
+  /** Start: the in-game menu on every show screen, Settings elsewhere; leaves idle play first. */
   private onPadStart(): void {
     const s = ui.getState();
-    if (s.dialog) return;
-    if (s.photo.active) {
-      this.photo.exit();
-      return;
+    switch (padStartAction(s, this.routingContext())) {
+      case 'exitPhoto':
+        this.photo.exit();
+        break;
+      case 'leaveIdlePlay':
+        this.menu?.setIdlePlay(false);
+        break;
+      case 'openShowMenu':
+        s.setOverlay('inGameMenu');
+        break;
+      case 'closeOverlay':
+        s.setOverlay('none');
+        break;
+      case 'openSettings':
+        s.setOverlay('settings');
+        break;
+      case 'none':
+        break;
     }
-    if (this.menu?.idlePlaying) {
-      this.menu.setIdlePlay(false);
-      return;
-    }
-    if (s.screen === 'round') {
-      s.setOverlay(s.overlay === 'none' ? 'inGameMenu' : 'none');
-      return;
-    }
-    if (s.overlay === 'settings') s.setOverlay('none');
-    else if (
-      s.overlay === 'none' &&
-      s.inputMode === 'menu' &&
-      s.screen !== 'splash' &&
-      s.screen !== 'welcome'
-    )
-      s.setOverlay('settings');
   }
 
   /** Logs GPU memory once per round, after the previous round's view was disposed. */
@@ -1716,7 +1722,15 @@ export class GameApp {
         s().pushToast({ kind: 'success', title: 'Invite link copied!', body: url, icon: '📋' });
       },
       onNavUnhandled: ({ dir }) => {
-        if (dir === 'back' && s().screen === 'menu' && s().overlay === 'none') s().setOverlay('settings');
+        if (dir !== 'back') return;
+        if (s().screen === 'menu' && s().overlay === 'none') {
+          s().setOverlay('settings');
+          return;
+        }
+        // Show screens that hand the keys to menus (results, victory, the wall) have no Back of
+        // their own: Esc / B opens the in-game menu there, like on every other show screen.
+        if (this.session && !this.session.ownsMenuKey && showMenuKeyAction(s()) === 'open')
+          s().setOverlay('inGameMenu');
       },
       onRetryConnection: () => {
         if (this.session) this.session.retryConnection();
@@ -1761,7 +1775,7 @@ export class GameApp {
     window.addEventListener(
       'keydown',
       (e) => {
-        if (e.code !== 'Escape' || !this.menu?.idlePlaying) return;
+        if (e.code !== 'Escape' || !this.menu?.idlePlaying || keyboardBusy(e)) return;
         e.preventDefault();
         this.menu.setIdlePlay(false);
       },

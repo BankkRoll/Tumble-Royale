@@ -20,7 +20,8 @@ const databaseUrl = process.env.DATABASE_URL;
 
 /** The memory backend plus, when configured, Redis + Postgres. */
 export const BACKENDS: readonly Backend[] = [
-  { name: 'memory', env: {}, settle: () => Promise.resolve() },
+  // Empty URLs keep this row on memory even when the whole suite runs on real servers.
+  { name: 'memory', env: { DATABASE_URL: '', REDIS_URL: '' }, settle: () => Promise.resolve() },
   ...(redisUrl && databaseUrl
     ? [
         {

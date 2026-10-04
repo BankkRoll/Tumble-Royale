@@ -1,0 +1,176 @@
+# Single-server Tumble Royale: Postgres, Redis, the API (after a one-shot
+# migration), matchmaker, one game server, the web client and a Caddy edge
+# with automatic HTTPS. docs/SELF_HOSTING.md walks through it.
+#
+#   pnpm setup:env --production --domain play.example.com   # writes deploy/.env
+#   docker compose -f deploy/docker-compose.yml up -d --build
+#
+# Only Caddy publishes ports (80, 443). Every other service, including the
+# internal and metrics endpoints, is reachable only on the compose network.
+
+name: tumble
+
+x-app: &app
+  env_file: .env
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: 20m
+      max-file: '5'
+
+x-api-build: &api-build
+  context: ..
+  dockerfile: deploy/docker/api.Dockerfile
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tumble}
+      POSTGRES_DB: ${POSTGRES_DB:-tumble}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?deploy/.env is missing; run pnpm setup:env --production --domain <domain>}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Append-only file: parties, presence and leaderboards survive a restart.
+    command: ['redis-server', '--appendonly', 'yes', '--appendfsync', 'everysec']
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Applies pending SQL migrations, then exits; the API starts only after it succeeds.
+  migrate:
+    <<: *app
+    image: tumble/api:${TAG:-latest}
+    build: *api-build
+    command: ['node', '--enable-source-maps', 'dist/migrate.js']
+    restart: 'no'
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    image: tumble/api:${TAG:-latest}
+    build: *api-build
+    environment:
+      MIGRATE_ON_BOOT: '0'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  matchmaker:
+    <<: *app
+    image: tumble/matchmaker:${TAG:-latest}
+    build:
+      context: ..
+      dockerfile: deploy/docker/matchmaker.Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  game-server:
+    <<: *app
+    image: tumble/game-server:${TAG:-latest}
+    build:
+      context: ..
+      dockerfile: deploy/docker/game-server.Dockerfile
+    environment:
+      RESULTS_OUTBOX_DIR: /data/results-outbox
+    volumes:
+      - results-outbox:/data/results-outbox
+    # SIGTERM drains: up to DRAIN_SETTLE_MS (15 s) + DRAIN_TIMEOUT_MS (15 min) +
+    # OUTBOX_FLUSH_MS (15 s), and the server forces its own exit 30 s after
+    # that. Docker kills the container after this period, so it must be longer;
+    # raise both together.
+    stop_grace_period: 17m
+    depends_on:
+      matchmaker:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  client:
+    image: tumble/client:${TAG:-latest}
+    build:
+      context: ..
+      dockerfile: deploy/docker/client.Dockerfile
+    restart: unless-stopped
+    volumes:
+      # Optional runtime overrides: copy client-config/config.json.example to config.json.
+      - ./client-config:/srv/runtime:ro
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-${DOMAIN:?deploy/.env is missing; run pnpm setup:env --production --domain <domain>}}
+      CADDY_GLOBAL_OPTIONS: ${CADDY_GLOBAL_OPTIONS:-${ACME_EMAIL:+email ${ACME_EMAIL}}}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and ACME account; losing them means re-issuing (rate limited).
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      matchmaker:
+        condition: service_healthy
+      game-server:
+        condition: service_healthy
+      client:
+        condition: service_healthy
+
+  # Nightly (by default) pg_dump into the backups volume, pruned after
+  # BACKUP_KEEP_DAYS. Restore steps: docs/SELF_HOSTING.md, "Backups".
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    entrypoint: ['/bin/sh', '/usr/local/bin/tumble-backup.sh']
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-tumble}
+      PGDATABASE: ${POSTGRES_DB:-tumble}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    volumes:
+      - ./backup.sh:/usr/local/bin/tumble-backup.sh:ro
+      - backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres:
+  redis:
+  results-outbox:
+  caddy-data:
+  caddy-config:
+  backups:

@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
-import { parseArgs, run, toRequest } from './admin.mjs';
+import { loadEnv, parseArgs, run, toRequest } from './admin.mjs';
 
 function capture() {
   const out = [];
@@ -144,5 +147,34 @@ describe('run', () => {
     assert.equal(await run(['--help'], c.io), 0);
     assert.match(c.out[0], /^Usage: pnpm admin/);
     assert.equal(await run([], c.io), 2);
+  });
+});
+
+describe('loadEnv', () => {
+  it('reads deploy/.env under the development files and the real environment', () => {
+    const root = mkdtempSync(join(tmpdir(), 'tumble-admin-env-'));
+    try {
+      mkdirSync(join(root, 'deploy'));
+      mkdirSync(join(root, 'apps/api'), { recursive: true });
+      writeFileSync(
+        join(root, 'deploy/.env'),
+        'PUBLIC_API_URL=https://play.example/api\nADMIN_TOKEN=prod\nA=deploy\n',
+      );
+      assert.deepEqual(loadEnv(root, {}), {
+        PUBLIC_API_URL: 'https://play.example/api',
+        ADMIN_TOKEN: 'prod',
+        A: 'deploy',
+      });
+      writeFileSync(join(root, '.env'), 'A=root\nB=root\n');
+      writeFileSync(join(root, 'apps/api/.env'), 'B=api\n');
+      assert.deepEqual(loadEnv(root, { ADMIN_TOKEN: 'shell' }), {
+        PUBLIC_API_URL: 'https://play.example/api',
+        ADMIN_TOKEN: 'shell',
+        A: 'root',
+        B: 'api',
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

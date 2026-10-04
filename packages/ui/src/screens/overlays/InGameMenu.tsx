@@ -56,8 +56,17 @@ export function leaveShowBody(seat: ShowSeat | null): string {
   return `You'll be out of this show and back in the menu. ${rounds} Show and placement bonuses need you to stay until the end.`;
 }
 
-function confirmLeave(): void {
+let pendingLeave: (() => void) | null = null;
+
+/**
+ * Asks "Leave the show?" and emits `leaveShow` only on an explicit confirm.
+ * Every Leave button in a show goes through here, so no single key press
+ * (Esc, pad B) can drop a player out of the show.
+ */
+export function confirmLeaveShow(): void {
   const seat = ui.getState().showSeat;
+  // NOTE: a second open (double click, menu then watch choice) must not stack listeners and emit twice.
+  pendingLeave?.();
   ui.getState().showDialog({
     id: 'leaveShow',
     kind: 'confirm',
@@ -76,11 +85,13 @@ function confirmLeave(): void {
   const off = uiEvents.on('dialogResult', ({ dialogId, buttonId }) => {
     if (dialogId !== 'leaveShow') return;
     off();
+    pendingLeave = null;
     if (buttonId === 'confirm') {
       ui.getState().setOverlay('none');
       uiEvents.emit('leaveShow');
     }
   });
+  pendingLeave = off;
 }
 
 /** The in-round menu overlay. */
@@ -199,7 +210,7 @@ export function InGameMenu(): JSX.Element {
               <Icon name="camera" size="1.1em" /> Photo mode
             </Button>
           )}
-          <Button variant="danger" block data-testid="igm-leave" onClick={confirmLeave}>
+          <Button variant="danger" block data-testid="igm-leave" onClick={confirmLeaveShow}>
             Leave show
           </Button>
         </div>

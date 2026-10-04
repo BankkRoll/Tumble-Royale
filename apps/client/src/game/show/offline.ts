@@ -33,6 +33,7 @@ import { OfflineRoundSource, type RoundSource } from '../round/source.ts';
 import type { GameContext, RoundStart, SessionPlayer } from './context.ts';
 import { sessionSummaryFromShow } from './crown.ts';
 import { ShowSession } from './session.ts';
+import { StepBudget } from './stepBudget.ts';
 
 /** Phase lengths tuned so the UI cards and the director agree (SCREENS.md §15). */
 const TIMINGS = {
@@ -56,6 +57,9 @@ export class OfflineShowSession extends ShowSession {
   private readonly show: OfflineShow;
   private readonly rounds: ReadonlyMap<string, RoundDefinition>;
   private readonly stepper: FixedStepper;
+  private readonly stepCap: number;
+  private readonly budget: StepBudget;
+  private budgetMatch: MatchSimHandle | null = null;
   private source: OfflineRoundSource | null = null;
   private running = false;
   private readonly input = emptyInput();
@@ -110,7 +114,9 @@ export class OfflineShowSession extends ShowSession {
     }
     // Lobby join order is shuffled (seeded) so the wall's drop pattern looks lively.
     this.order = new Rng((seed ^ hashString('join')) >>> 0).shuffle([...this.players.keys()]);
-    this.stepper = new FixedStepper(() => this.step(), SIM_DT, Math.max(8, Math.ceil(8 * ctx.cfg.timeScale)));
+    this.stepCap = Math.max(8, Math.ceil(8 * ctx.cfg.timeScale));
+    this.stepper = new FixedStepper(() => this.step(), SIM_DT, this.stepCap);
+    this.budget = new StepBudget({ stepSeconds: SIM_DT, timeScale: ctx.cfg.timeScale });
     this.show.director.on((e) => this.onDirector(e));
   }
 
@@ -132,13 +138,24 @@ export class OfflineShowSession extends ShowSession {
     if (!this.gated) this.show.director.tick(showDt);
     const m = this.show.match;
     if (!m) return;
-    this.stepper.advance(simDt);
+    if (m !== this.budgetMatch) {
+      this.budgetMatch = m;
+      this.budget.reset();
+    }
+    const t0 = performance.now();
+    const steps = this.stepper.advance(simDt, this.budget.cap(this.stepCap));
+    this.budget.record(performance.now() - t0, steps);
     if (this.source) this.source.alpha = this.stepper.alpha;
     const evs = m.events.events;
     if (evs.length > 0) {
       this.onSimEvents(evs);
       evs.length = 0;
     }
+  }
+
+  /** Smoothed wall time of one sim step (ms), for perf probes. */
+  get stepMs(): number {
+    return this.budget.stepMs;
   }
 
   private step(): void {

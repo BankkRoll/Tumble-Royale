@@ -33,6 +33,10 @@ export interface TumbleHooks {
   memory?: () => { geometries: number; textures: number };
   /** Draw calls in the last frame (game only). */
   drawCalls?: () => number;
+  /** Renderables the active view draws this frame, by name (dev and sandbox builds only). */
+  drawBreakdown?: () => Record<string, number>;
+  /** Smoothed wall time of one offline sim step in ms; 0 outside an offline show (game only). */
+  simStepMs?: () => number;
   /** Tumblers in the current round (game only). */
   tumblers?: () => number;
   /** Active quality tier (game only). */

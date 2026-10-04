@@ -53,6 +53,8 @@ import { keymapFromKeybinds, padMenuButtons, padmapFromPadBinds } from './bindin
 import { GamepadNavigator, firstStandardPad } from '../input/gamepadNav.ts';
 import { StatsOverlay } from '../debug/stats.ts';
 import { checkDeterminism } from '../debug/determinism.ts';
+import { drawBreakdown } from '../debug/drawBreakdown.ts';
+import { DEV_TOOLS } from '../devTools.ts';
 import { ApiClient, ApiError } from './api.ts';
 import { AudioBridge } from './audioBridge.ts';
 import { installAutoplay } from './autoplay.ts';
@@ -298,6 +300,15 @@ export class GameApp {
         textures: renderer.info.memory.textures,
       }),
       drawCalls: () => renderer.info.render.drawCalls,
+      ...(DEV_TOOLS
+        ? {
+            drawBreakdown: () => {
+              const v = this.director.view;
+              return v ? drawBreakdown(v.scene, v.camera) : {};
+            },
+          }
+        : {}),
+      simStepMs: () => (this.session instanceof OfflineShowSession ? this.session.stepMs : 0),
       tumblers: () => this.session?.visibleTumblers() ?? 0,
       localPlayer: () => this.session?.localDebug() ?? null,
       tier: () => quality.tier,

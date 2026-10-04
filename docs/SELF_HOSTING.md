@@ -223,9 +223,13 @@ new shows land on it, lets running shows finish (up to `DRAIN_TIMEOUT_MS`,
 While the only game server drains, players cannot start new shows, so:
 
 - upgrade at a quiet hour, or set a shorter `DRAIN_TIMEOUT_MS` in `deploy/.env`;
-- update the rest first and the game server last:
-  `docker compose up -d --no-deps api matchmaker client caddy`, then
-  `docker compose up -d game-server`;
+- update the rest first and the game server last (`--no-deps` skips the
+  automatic migration, so run it by hand first):
+  ```sh
+  docker compose run --rm migrate
+  docker compose up -d --no-deps api matchmaker client caddy
+  docker compose up -d game-server
+  ```
 - with several game servers, upgrade them one at a time.
 
 `stop_grace_period` (17 minutes) must stay longer than

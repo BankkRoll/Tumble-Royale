@@ -18,6 +18,7 @@ import {
   SnapshotDecoder,
   createDecodedSnapshot,
   decodeReliableMessage,
+  encodeReliableMessage,
   quantizeInputInPlace,
   readKick,
   readPong,
@@ -36,6 +37,8 @@ export interface ClientStats {
   connected: boolean;
   welcomed: boolean;
   kicked: string | null;
+  /** Connection attempts the server refused before the handshake (and the client retried). */
+  refused: number;
   snapshots: number;
   snapshotBytes: number;
   deltaSnapshots: number;
@@ -49,6 +52,8 @@ export interface ClientStats {
 }
 
 const now = (): number => performance.now();
+/** Refused connects a client retries before giving up. */
+const MAX_CONNECT_ATTEMPTS = 20;
 
 /** A simulated player connection. */
 export class SwarmClient {
@@ -56,6 +61,7 @@ export class SwarmClient {
     connected: false,
     welcomed: false,
     kicked: null,
+    refused: 0,
     snapshots: 0,
     snapshotBytes: 0,
     deltaSnapshots: 0,
@@ -68,6 +74,7 @@ export class SwarmClient {
     lastSnapshotAt: 0,
   };
   private ws: WebSocket | null = null;
+  private closing = false;
   private readonly w = new BitWriter(2048);
   private readonly r = new BitReader();
   private readonly reliable = new ReliableEndpoint();
@@ -141,11 +148,27 @@ export class SwarmClient {
     });
     ws.on('error', () => {
       this.stats.connected = false;
+      if (!this.stats.welcomed) this.retry();
     });
+  }
+
+  /**
+   * The server refuses upgrades (429) once one address holds
+   * `MAX_PENDING_PER_IP` (default 8) unhandshaken sockets, and a swarm opens
+   * every client from one host: under load the first handshakes take longer
+   * than the ramp, so a few clients are refused and must try again.
+   */
+  private retry(): void {
+    if (this.closing || this.stats.refused >= MAX_CONNECT_ATTEMPTS) return;
+    this.stats.refused++;
+    setTimeout(() => {
+      if (!this.closing && !this.stats.welcomed) this.connect();
+    }, 150 * this.stats.refused);
   }
 
   /** Closes the socket. */
   close(): void {
+    this.closing = true;
     this.ws?.close();
   }
 
@@ -255,6 +278,11 @@ export class SwarmClient {
             this.quantizer = new PositionQuantizer(m.msg.bounds);
             this.decoder.reset();
             this.inRound = true;
+            // Nothing to build headless; without the ack the director holds LOADING until its hard
+            // cap and then eliminates every swarm client, so PLAYING was never load-tested.
+            this.reliable.send(
+              encodeReliableMessage({ kind: 'msg', msg: { t: 'loaded', roundId: m.msg.roundId } }),
+            );
           }
         });
         return;

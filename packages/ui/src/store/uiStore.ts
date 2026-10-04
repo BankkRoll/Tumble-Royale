@@ -16,6 +16,7 @@ import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 import { DEFAULT_HUD, DEFAULT_SETTINGS, DEFAULT_TRANSITIONS, MENU_INPUT_SCREENS } from './defaults.ts';
 import { uiEvents } from './events.ts';
+import { overlayAfterScreenChange } from './inputOwnership.ts';
 import type {
   BetweenRoundsInfo,
   BootState,
@@ -611,7 +612,7 @@ function applyScreen(screen: ScreenId, transition: TransitionKind): void {
     inputMode: MENU_INPUT_SCREENS.has(screen) ? 'menu' : 'game',
     // Leaving the round clears in-round transient UI so it never leaks into menus.
     ...(screen !== 'round' ? { eliminatedSheet: false, emoteWheelOpen: false, countdown: null } : {}),
-    overlay: screen === 'menu' ? s.overlay : 'none',
+    overlay: overlayAfterScreenChange(s.overlay, s.screen, screen),
   });
 }
 

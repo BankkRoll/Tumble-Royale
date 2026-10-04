@@ -11,6 +11,7 @@ import {
   isTypingTarget,
   keyboardBusy,
   menuOwnsInput,
+  overlayAfterScreenChange,
   watchChoiceVisible,
 } from '../src/store/inputOwnership.ts';
 import { social } from '../src/store/social.ts';
@@ -131,5 +132,38 @@ describe('input ownership', () => {
         watchChoice: choice,
       }),
     ).toBe(true);
+  });
+});
+
+describe('overlays across screen changes', () => {
+  it('keeps Settings, Friends and the in-game menu open while the show moves on', () => {
+    for (const overlay of ['settings', 'friends', 'notifications', 'inGameMenu'] as const) {
+      expect(overlayAfterScreenChange(overlay, 'round', 'roundResults')).toBe(overlay);
+      expect(overlayAfterScreenChange(overlay, 'betweenRounds', 'roundLoading')).toBe(overlay);
+      expect(overlayAfterScreenChange(overlay, 'preShow', 'showIntro')).toBe(overlay);
+    }
+  });
+
+  it('closes them when the show is over', () => {
+    expect(overlayAfterScreenChange('settings', 'playerWall', 'rewards')).toBe('none');
+    expect(overlayAfterScreenChange('inGameMenu', 'round', 'menu')).toBe('none');
+  });
+
+  it('never carries menu-only overlays into a show', () => {
+    expect(overlayAfterScreenChange('privateShow', 'menu', 'matchFound')).toBe('none');
+    expect(overlayAfterScreenChange('joinCode', 'matchmaking', 'matchFound')).toBe('none');
+  });
+
+  it('keeps the menu overlay on arrival in the menu (the private show reveal)', () => {
+    expect(overlayAfterScreenChange('privateShow', 'rewards', 'menu')).toBe('privateShow');
+    expect(overlayAfterScreenChange('settings', 'menu', 'menu')).toBe('settings');
+  });
+
+  it('applies on a real screen change', () => {
+    ui.setState({ screen: 'round', overlay: 'settings' });
+    ui.getState().setScreen('roundResults', { transition: 'none' });
+    expect(ui.getState().overlay).toBe('settings');
+    ui.getState().setScreen('rewards', { transition: 'none' });
+    expect(ui.getState().overlay).toBe('none');
   });
 });

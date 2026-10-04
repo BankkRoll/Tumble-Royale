@@ -68,5 +68,6 @@ export {
   isTypingTarget,
   keyboardBusy,
   menuOwnsInput,
+  overlayAfterScreenChange,
   watchChoiceVisible,
 } from './inputOwnership.ts';

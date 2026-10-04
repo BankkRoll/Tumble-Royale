@@ -12,7 +12,7 @@
  *   to skip, any-key skips) must ignore the key.
  */
 import { social } from './social.ts';
-import type { ScreenId } from './types.ts';
+import type { OverlayId, ScreenId } from './types.ts';
 import type { UIState } from './uiStore.ts';
 
 /**
@@ -95,4 +95,30 @@ export function isTypingTarget(target: EventTarget | null): boolean {
  */
 export function keyboardBusy(e: { target: EventTarget | null }): boolean {
   return isTypingTarget(e.target) || social.getState().chat.open;
+}
+
+/** Overlays that belong to a running show and may stay open while its screens change. */
+const SHOW_OVERLAYS: ReadonlySet<OverlayId> = new Set<OverlayId>([
+  'inGameMenu',
+  'settings',
+  'friends',
+  'notifications',
+]);
+
+/**
+ * Which overlay survives a screen change. The show moves on by itself
+ * (round end, results, the next intro), so Settings or the in-game menu
+ * opened mid-show stays open across its screens; leaving the show (to
+ * rewards) closes it. The menu keeps its overlay too (e.g. the private show
+ * revealed on arrival), but never the show-only in-game menu.
+ *
+ * @param overlay - Overlay open before the change.
+ * @param from - Previous screen.
+ * @param to - Next screen.
+ * @returns The overlay to keep, or `none`.
+ */
+export function overlayAfterScreenChange(overlay: OverlayId, from: ScreenId, to: ScreenId): OverlayId {
+  if (to === 'menu') return overlay === 'inGameMenu' ? 'none' : overlay;
+  if (SHOW_MENU_SCREENS.has(from) && SHOW_MENU_SCREENS.has(to) && SHOW_OVERLAYS.has(overlay)) return overlay;
+  return 'none';
 }

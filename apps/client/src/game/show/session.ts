@@ -109,6 +109,8 @@ const SLOWMO_SECONDS = 1.5;
 const WIPE_FALLBACK_S = 1.6;
 /** Loading overlay progress refresh: each one re-renders its bar, so keep it to ~4 Hz. */
 const LOAD_UI_INTERVAL_MS = 250;
+/** Frames a revealed round renders under the loading wipe before it lifts. */
+const WIPE_LIFT_FRAMES = 2;
 /** "Everyone's in!" stays up this long before the intro wipe. */
 const EVERYONE_IN_S = 0.8;
 /** How often the spectate banner refreshes the watched player's place. */
@@ -238,6 +240,8 @@ export abstract class ShowSession {
   private wall: WallView | null = null;
   private preShow: PreShowView | null = null;
   private slowmo = 0;
+  /** Frames left before the loading wipe lifts (0: not pending). */
+  private liftWipeIn = 0;
   private wheelOpen = false;
   private pendingEmote = 0;
   private countdownToken = 0;
@@ -516,6 +520,7 @@ export abstract class ShowSession {
   frame(dt: number, realDt: number): void {
     if (this.ended) return;
     this.flowClock += realDt * this.flowScale;
+    if (this.liftWipeIn > 0 && --this.liftWipeIn === 0) this.liftLoadingWipe();
     this.runTimers();
     this.toastTokens = Math.min(4, this.toastTokens + realDt * 3);
     if (this.slowmo > 0) this.slowmo -= dt;
@@ -1067,6 +1072,14 @@ export abstract class ShowSession {
     return this.round?.loadPct ?? 0;
   }
 
+  /** Reveals the round's intro from under the loading wipe ({@link maybeShowIntro}). */
+  private liftLoadingWipe(): void {
+    const s = ui.getState();
+    // A late intro may already have moved on to the rules card or the round itself.
+    if (s.screen === 'roundLoading') s.setScreen('roundIntro', { transition: 'wipe' });
+    s.releaseWipe();
+  }
+
   private maybeShowIntro(): void {
     const r = this.round;
     if (!r || r.introShown || !r.view || !r.loadMinDone) return;
@@ -1081,8 +1094,9 @@ export abstract class ShowSession {
     r.introShown = true;
     this.ctx.director.reveal();
     r.view.startLoops();
-    ui.getState().setScreen('roundIntro', { transition: 'wipe' });
-    ui.getState().releaseWipe();
+    // PERF: a new scene's first frames still do one-off work (first full draw with every object,
+    // crowd data textures, loops starting). They render under the held wipe, which lifts after.
+    this.liftWipeIn = WIPE_LIFT_FRAMES;
     r.view.playFlyover();
     const rs = r.start;
     this.ctx.audio.game.onRoundPhase(RoundPhase.IntroFlyover, rs.round.type, {

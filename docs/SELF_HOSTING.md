@@ -141,6 +141,91 @@ no configuration. To change that, or to turn on browser crash reports, copy
 `deploy/client-config/config.json.example` to `deploy/client-config/config.json`
 and edit it; the client reads it at every page load, no rebuild needed.
 
+## 6. Live ops
+
+Everything here takes effect without a restart or a client release. The API
+is the source of truth: the matchmaker and game servers read its live-ops
+snapshot over the internal HMAC channel (cached 30 s, so allow up to half a
+minute), browsers poll `GET /status` every minute and flags and playlists
+every five. If the API is unreachable, services keep the last state they saw
+and browsers keep their cached copy; nothing is ever switched off by an outage.
+
+### Maintenance
+
+```sh
+pnpm admin maintenance on --in 10 --for 30 --message "New rounds incoming!"
+pnpm admin maintenance status
+pnpm admin maintenance off
+```
+
+`--in` (minutes) or `--starts <ISO time>` schedules it: the menu shows
+"Maintenance in 10 min" until then. `--for` (minutes) or `--ends <ISO time>`
+ends it automatically; without one it stays on until `maintenance off`. While
+it is active:
+
+- the menu shows the message, the Play Online tile is closed and Vs Bots keeps
+  working offline;
+- the API refuses queue tickets and the matchmaker refuses new queues and
+  private lobbies with `503 maintenance`; players already queued are sent back
+  to the menu;
+- game servers stop opening new matches but let running shows finish, so
+  scheduling maintenance a few minutes before an upgrade empties the servers
+  without cutting anyone off.
+
+### Feature flags (kill switches)
+
+```sh
+pnpm admin flags get
+pnpm admin flags set store.enabled off
+pnpm admin flags set analytics.sample on --payload 0.25
+```
+
+| Flag               | Off means                                                           |
+| ------------------ | ------------------------------------------------------------------- |
+| `store.enabled`    | every purchase route answers 503; the Store tab shows a closed sign |
+| `chat.global`      | global chat closes (party, lobby and show chat are unaffected)      |
+| `party.lobbyGames` | party lobby mini-games stop and their button disappears             |
+| `replays.enabled`  | replays are not recorded, starting with the next show               |
+| `mutators.chaos`   | Chaos Mode plays without its per-show mutator                       |
+| `analytics.sample` | no analytics are stored; with `on` the payload is the sampled share |
+
+A flag that was never set is on. `--rollout N` turns a flag on for a sticky N%
+of players (client-side features only; servers read the master switch).
+`maintenance` is reserved for the maintenance window above.
+
+### Limited-time playlists
+
+```sh
+pnpm admin playlists list
+pnpm admin playlists set chaos-mode --starts 2026-12-01T18:00:00Z --ends 2026-12-08T18:00:00Z --featured on
+pnpm admin playlists hide duos      # withdraw now; `show` restores it
+pnpm admin playlists reset duos     # back to the schedule shipped with the game
+```
+
+A playlist is queueable from `--starts` (inclusive) until `--ends`
+(exclusive); `none` clears either. The menu shows "Ends in …" on a live one
+and "Coming soon" with a countdown for a `--featured` one that has not
+started. The matchmaker checks the window again when a party queues, on the
+API's clock, so a show closes on time even if a server's or a player's clock
+is off.
+
+### Analytics and errors
+
+Browsers send a fixed list of gameplay events (show and round results, quit
+points, tutorial steps, store views, matchmaking wait, load times, an FPS
+bucket per round) to `POST /api/events`, batched and sampled. Nothing is sent
+while a player turns off Settings → Gameplay → Share gameplay stats, which is
+the default when the browser sends Do Not Track or Global Privacy Control.
+The only identity stored is the account id. Events are deleted after
+`RETENTION_EVENTS_DAYS`.
+
+Uncaught browser errors and server crashes land in the same table:
+
+```sh
+pnpm admin errors top                 # client errors, last 24 h
+pnpm admin errors top --server --hours 168
+```
+
 ## Scaling
 
 One game server process runs up to three 100-player shows at once (one event
@@ -223,6 +308,8 @@ new shows land on it, lets running shows finish (up to `DRAIN_TIMEOUT_MS`,
 While the only game server drains, players cannot start new shows, so:
 
 - upgrade at a quiet hour, or set a shorter `DRAIN_TIMEOUT_MS` in `deploy/.env`;
+- or announce it: `pnpm admin maintenance on --in 15` stops new shows when the
+  window opens while running ones finish ([Live ops](#maintenance));
 - update the rest first and the game server last (`--no-deps` skips the
   automatic migration, so run it by hand first):
   ```sh

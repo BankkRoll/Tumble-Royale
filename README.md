@@ -147,6 +147,37 @@ email sign-in returns (`/auth/*`) and Stripe returns (`/store`) must serve
 from `apps/client/public/`, and `apps/client/vercel.json` does the same on
 Vercel; other hosts need equivalent rewrites.
 
+### Live ops
+
+Operators steer a running game with `pnpm admin` (it calls the API with
+`ADMIN_TOKEN`); nothing needs a restart or a client release:
+
+```sh
+pnpm admin maintenance on --in 10 --for 30 --message "New rounds incoming!"
+pnpm admin flags set store.enabled off                  # kill switch
+pnpm admin playlists set chaos-mode --ends 2026-12-08T18:00:00Z --featured on
+pnpm admin errors top                                   # most frequent client errors
+```
+
+- **Maintenance** shows a banner ahead of time, then closes online queueing
+  and private lobbies (`503 maintenance` from the API and matchmaker) while
+  Vs Bots keeps working and running shows finish on their game servers.
+- **Feature flags** (`store.enabled`, `chat.global`, `party.lobbyGames`,
+  `replays.enabled`, `mutators.chaos`, `analytics.sample`) default to on.
+  The client fetches them at boot and on reconnect and caches them for
+  offline boots; the matchmaker and game servers read them from the API
+  over the internal HMAC channel, cached 30 s.
+- **Limited-time playlists** get a start and an end (content can ship them,
+  operators override them). The menu shows "Ends in" and "Coming soon"; the
+  matchmaker refuses a playlist outside its window, judged on the API's clock.
+- **Analytics** are a fixed list of gameplay events, batched and sampled,
+  with no identity beyond the account id; players can turn them off in
+  Settings → Gameplay, and they start off under Do Not Track or Global
+  Privacy Control. Client and server crashes go to the same table.
+
+The full reference is the Live ops section of
+[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md#6-live-ops).
+
 ### Client URL options
 
 Two options work everywhere, so players can troubleshoot graphics:

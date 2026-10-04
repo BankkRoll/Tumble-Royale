@@ -21,7 +21,7 @@ export const PLANNED_ROUNDS = {
   survival: ['spin-cycle', 'tile-panic', 'rising-goo-tower', 'jump-rope-royale'],
   team: ['egg-heist', 'bounce-ball-blitz', 'paint-the-plaza'],
   hunt: ['tail-chase', 'comet-catch', 'sunbeam-squabble'],
-  logic: ['pattern-panic', 'colour-cauldron'],
+  logic: ['pattern-panic', 'colour-cauldron', 'trail-tracer'],
   final: ['crown-climb', 'last-tumbler-standing', 'spin-cycle-finale', 'goo-peak-final'],
 } as const;
 
@@ -51,6 +51,7 @@ const STANDARD_WEIGHTS: Readonly<Record<string, number>> = {
   'sunbeam-squabble': 0.8,
   'pattern-panic': 0.8,
   'colour-cauldron': 0.8,
+  'trail-tracer': 0.8,
   'crown-climb': 1.3,
   'last-tumbler-standing': 1,
   'spin-cycle-finale': 0.9,

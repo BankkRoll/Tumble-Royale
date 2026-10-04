@@ -2,6 +2,7 @@ import type { RoundDefinitionInput } from '@tumble/shared';
 import colourCauldron from './colour-cauldron/index.ts';
 import cometCatch from './comet-catch/index.ts';
 import sunbeamSquabble from './sunbeam-squabble/index.ts';
+import trailTracer from './trail-tracer/index.ts';
 
 /**
  * Rounds added after launch: two hunts (Comet Catch, Sunbeam Squabble), two
@@ -11,4 +12,5 @@ export const ROUNDS_GROUP_5: RoundDefinitionInput[] = [
   cometCatch,
   sunbeamSquabble,
   colourCauldron,
+  trailTracer,
 ];

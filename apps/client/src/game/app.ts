@@ -56,6 +56,8 @@ import { keymapFromKeybinds, padMenuButtons, padmapFromPadBinds } from './bindin
 import { GamepadNavigator, firstStandardPad } from '../input/gamepadNav.ts';
 import { StatsOverlay } from '../debug/stats.ts';
 import { checkDeterminism } from '../debug/determinism.ts';
+import { drawBreakdown } from '../debug/drawBreakdown.ts';
+import { DEV_TOOLS } from '../devTools.ts';
 import { ApiClient, ApiError } from './api.ts';
 import { AudioBridge } from './audioBridge.ts';
 import { installAutoplay } from './autoplay.ts';
@@ -345,6 +347,15 @@ export class GameApp {
         textures: renderer.info.memory.textures,
       }),
       drawCalls: () => renderer.info.render.drawCalls,
+      ...(DEV_TOOLS
+        ? {
+            drawBreakdown: () => {
+              const v = this.director.view;
+              return v ? drawBreakdown(v.scene, v.camera) : {};
+            },
+          }
+        : {}),
+      simStepMs: () => (this.session instanceof OfflineShowSession ? this.session.stepMs : 0),
       tumblers: () => this.session?.visibleTumblers() ?? 0,
       localPlayer: () => this.session?.localDebug() ?? null,
       tier: () => quality.tier,
@@ -502,6 +513,7 @@ export class GameApp {
 
     app.bindIntents();
     app.start();
+    app.watchConnectivity();
     if (cfg.debug)
       createDebugPanel({ renderer, quality, stats, session: () => app.session, timeScale: app.timeScale });
     if (cfg.autoplay) installAutoplay(cfg.autoShows);
@@ -639,7 +651,14 @@ export class GameApp {
     // Thumbnails only render in the menus, one per frame, so shows never hitch.
     if (!this.session) this.thumbs.pump(realDt * 1000);
     // Build slices stretch frames while covered; they say nothing about render cost.
-    if (!d.covered) this.quality.sample(realDt * 1000);
+    const lowered = d.covered ? null : this.quality.sample(realDt * 1000);
+    if (lowered) {
+      ui.getState().pushToast({
+        kind: 'info',
+        title: `Graphics lowered to ${lowered[0]?.toUpperCase()}${lowered.slice(1)}`,
+        body: 'Auto quality stepped down to keep the game smooth.',
+      });
+    }
     this.stats.set('view', `${d.kind} · ${this.quality.tier} · ${this.quality.adaptive.scale.toFixed(2)}x`);
     this.stats.update(realDt, this.renderer);
     this.hooks.frames++;
@@ -796,6 +815,16 @@ export class GameApp {
       s.setOnlineStatus({ state: 'disabled', message: 'Online play is turned off for this session.' });
       return;
     }
+    // NOTE: `onLine === false` is reliable (no network at all); `true` only means "maybe", so probe then.
+    if (!navigator.onLine) {
+      s.setOnlineStatus({
+        state: 'offline',
+        noNetwork: true,
+        message: "You're offline. Shows against bots still work.",
+      });
+      if (s.playMode === 'online') ui.setState({ playMode: 'offline' });
+      return;
+    }
     if (!this.cfg.online && this.liveOps.maintenanceActive()) {
       // Shown on the Play Online tile; Vs Bots stays available.
       s.setOnlineStatus({ state: 'offline', message: this.liveOps.maintenance().message });
@@ -815,6 +844,29 @@ export class GameApp {
     );
     if (up && !this.modePicked) s.setPlayMode('online');
     if (!up && s.playMode === 'online') ui.setState({ playMode: 'offline' });
+  }
+
+  /**
+   * Follows the device's network: offline, the Play tab says so and bot shows
+   * carry on; back online, the account reconnects and Play Online is re-probed.
+   */
+  private watchConnectivity(): void {
+    const tellOffline = (): void => {
+      // A running show handles its own connection (the reconnect curtain online; nothing to lose offline).
+      if (this.session) return;
+      ui.getState().pushToast({
+        kind: 'info',
+        title: "You're offline",
+        body: 'Shows against bots work without a connection. Online play comes back when you reconnect.',
+        durationMs: 6000,
+      });
+    };
+    window.addEventListener('offline', () => {
+      void this.refreshOnlineStatus();
+      tellOffline();
+    });
+    window.addEventListener('online', () => uiEvents.emit('retryOnline'));
+    if (!navigator.onLine) tellOffline();
   }
 
   /** Starts an offline show vs bots right away (Vs Bots, private show with bots). */

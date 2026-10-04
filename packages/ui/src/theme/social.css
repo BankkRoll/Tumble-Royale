@@ -7,14 +7,14 @@
 .tr-chat-wrap {
   position: absolute;
   left: calc(var(--safe-l) + 1em);
-  bottom: calc(var(--safe-b) + 7em);
+  bottom: max(calc(var(--safe-b) + 7em), calc(var(--kb-inset, 0px) + 0.5em));
   width: min(26em, 72vw);
   pointer-events: none;
   z-index: 6;
 }
 /* The menu's emote and Games buttons own the corner; chat starts just right of them. */
 [data-screen='menu'] .tr-chat-wrap {
-  bottom: calc(var(--safe-b) + 1em);
+  bottom: max(calc(var(--safe-b) + 1em), calc(var(--kb-inset, 0px) + 0.5em));
   left: calc(var(--safe-l) + 10.4em);
 }
 .tr-chat {

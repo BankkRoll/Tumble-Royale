@@ -176,6 +176,10 @@ export interface UIIntents {
   dialogResult: { dialogId: string; buttonId: string };
   toastAction: { toastId: number; actionId: string };
   retryConnection: undefined;
+  /** Install app (Settings or the menu): show the browser's install prompt. */
+  installApp: undefined;
+  /** Restart into the downloaded update. */
+  applyUpdate: undefined;
   /** Settings → Region is on screen: re-measure region pings. */
   probeRegions: undefined;
   /**

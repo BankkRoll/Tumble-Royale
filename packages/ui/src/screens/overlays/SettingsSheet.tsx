@@ -14,6 +14,7 @@ import { ui, useUI } from '../../store/uiStore.ts';
 import type { BindAction, Keybinds, SettingsSection } from '../../store/types.ts';
 import { Icon } from '../../components/icons/index.tsx';
 import { AccountSection } from './AccountSheet.tsx';
+import { AppRows } from './InstallApp.tsx';
 import { PadRebinder } from './PadRebinder.tsx';
 import { semanticColors } from '../../theme/tokens.ts';
 
@@ -475,6 +476,7 @@ export function Section({ id }: { id: SettingsSection }): JSX.Element {
             />
           </Row>
           <RegionRow />
+          <AppRows />
           <Row
             label="Share gameplay stats"
             hint="Anonymous play statistics (rounds, load times, frame rate) that help tune the game. Starts off when your browser sends Do Not Track"

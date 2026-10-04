@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import tailwind from '@tailwindcss/vite';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
+import { pwa } from './vite-pwa.ts';
 
 // Every *.html in the client root is an entry: index.html is the game,
 // admin.html the admin console, the rest dev sandboxes (playground, obstacle
@@ -38,7 +39,7 @@ export default defineConfig(({ mode }) => {
   // An empty prefix also reads non-VITE_ keys; only VITE_* ever reach the bundle.
   const env = loadEnv(mode, root, '');
   return {
-    plugins: [react(), tailwind(), adminRoute],
+    plugins: [react(), tailwind(), adminRoute, pwa()],
     resolve: {
       // three's addons import bare 'three'; point it at the WebGPU build so only one copy of the core loads.
       alias: [{ find: /^three$/, replacement: 'three/webgpu' }],

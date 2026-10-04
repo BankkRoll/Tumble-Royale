@@ -5,7 +5,7 @@
  * - Finds meshes under the registered roots that would render identically
  *   apart from their transform: same geometry content and a structurally
  *   identical node material (same node graph, constants, textures and render
- *   state) whose uniforms currently hold equal values.
+ *   state) whose uniforms and material-referenced values currently match.
  * - Draws each such group as one `InstancedMesh` and hides the sources with an
  *   empty layer mask, so obstacle code keeps animating, showing and hiding its
  *   own meshes exactly as before.
@@ -108,6 +108,7 @@ type AnyNode = {
   type: string;
   updateType?: string;
   isUniformNode?: boolean;
+  isMaterialReferenceNode?: boolean;
   value?: unknown;
 } & Record<string, unknown>;
 
@@ -115,6 +116,8 @@ type AnyNode = {
 const OBJECT_SPACE_NODES = new Set<unknown>([positionLocal, normalLocal]);
 const MODEL_NODES = new Set<unknown>([modelWorldMatrix, modelPosition, modelScale, instanceIndex]);
 const SKIP_KEYS = new Set(['id', 'uuid', 'version', 'stackTrace', 'parents', 'isNode']);
+/** Node types that read a property off some object at draw time (three sets no flag on them). */
+const REFERENCE_TYPES = /ReferenceNode$|^UserDataNode$/;
 
 /** Result of analysing one material. */
 interface MaterialInfo {
@@ -124,6 +127,8 @@ interface MaterialInfo {
   uniforms: AnyNode[];
   /** Material own-property keys holding dynamic numbers/colours/vectors. */
   stateKeys: string[];
+  /** Property paths material reference nodes read (`userData.uniforms.x.value`), split at dots. */
+  refs: string[][];
   /** Why `sig` is null (diagnostics). */
   reason: string;
 }
@@ -172,6 +177,16 @@ function graphSig(
       return fail(`${slot}: model accessor`);
     if (OBJECT_SPACE_NODES.has(node) && slot !== 'positionNode')
       return fail(`${slot}: object-space accessor`);
+    if (node.isMaterialReferenceNode === true || REFERENCE_TYPES.test(node.type)) {
+      // A material reference reads the drawing material's own value: compared per frame like a uniform.
+      // Other references read a fixed or per-object source, which a group of instances can't share.
+      if (node.isMaterialReferenceNode !== true || node.material != null)
+        return fail(`${slot}: object reference`);
+      const sig = `Ref:${String(node.property)}:${String(node.uniformType)}`;
+      info.refs.push(String(node.property).split('.'));
+      memo.set(node, sig);
+      return sig;
+    }
     memo.set(node, `#${memo.size}`);
     let out = node.type ?? 'Node';
     if (node.isUniformNode) {
@@ -219,7 +234,7 @@ function graphSig(
 function analyzeMaterial(mat: Material): MaterialInfo {
   const cached = materialInfos.get(mat);
   if (cached) return cached;
-  const info: MaterialInfo = { sig: null, uniforms: [], stateKeys: [], reason: '' };
+  const info: MaterialInfo = { sig: null, uniforms: [], stateKeys: [], refs: [], reason: '' };
   materialInfos.set(mat, info);
   const m = mat as Material & Record<string, unknown> & { isNodeMaterial?: boolean };
   if (!m.isNodeMaterial) return Object.assign(info, { reason: 'not a node material' });
@@ -269,6 +284,11 @@ function readState(mat: Material, info: MaterialInfo, out: number[]): void {
   const m = mat as unknown as Record<string, unknown>;
   for (const key of info.stateKeys) pushValue(m[key], out);
   for (const u of info.uniforms) pushValue(u.value, out);
+  for (const path of info.refs) {
+    let v: unknown = mat;
+    for (const key of path) v = v === null || v === undefined ? v : (v as Record<string, unknown>)[key];
+    pushValue(v, out);
+  }
 }
 
 function pushValue(v: unknown, out: number[]): void {

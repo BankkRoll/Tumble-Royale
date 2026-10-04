@@ -762,6 +762,24 @@ export interface OnlineStatus {
   inQueue?: number;
   /** Short human explanation for the offline state. */
   message?: string;
+  /** The device itself has no network (not just our servers being down). */
+  noNetwork?: boolean;
+}
+
+/**
+ * Installed-app state: whether the game can be installed, how, and whether a
+ * downloaded update is waiting for a restart.
+ */
+export interface PwaState {
+  /**
+   * `available`: the browser offered an install prompt (Chromium);
+   * `ios`: Safari, installed by hand via Share → Add to Home Screen;
+   * `installed`: running as the installed app;
+   * `unavailable`: neither (desktop Firefox, already dismissed, dev builds).
+   */
+  install: 'unavailable' | 'available' | 'ios' | 'installed';
+  /** A new version finished downloading and takes over on restart. */
+  updateReady: boolean;
 }
 
 // -----------------------------------------------------------------------------

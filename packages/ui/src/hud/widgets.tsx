@@ -51,14 +51,18 @@ export const HudTimer = memo(function HudTimer(): JSX.Element | null {
   );
 });
 
-/** "QUALIFIED 12 / 26" (race/final), "ALIVE 18" (survival/logic), hidden for team/hunt. */
+/**
+ * "QUALIFIED 12 / 26" (race/final and score-goal hunts), "ALIVE 18"
+ * (survival/logic), hidden for team rounds and hold-the-item hunts.
+ */
 export const QualifyCounter = memo(function QualifyCounter(): JSX.Element | null {
-  const { type, qualified, target, alive } = useUI(
+  const { type, qualified, target, alive, scoreGoal } = useUI(
     useShallow((s) => ({
       type: s.hud.roundType,
       qualified: s.hud.qualified,
       target: s.hud.qualifyTarget,
       alive: s.hud.alive,
+      scoreGoal: s.hud.scoreGoal,
     })),
   );
   const numRef = useRef<HTMLSpanElement>(null);
@@ -66,7 +70,7 @@ export const QualifyCounter = memo(function QualifyCounter(): JSX.Element | null
   useEffect(() => {
     if (numRef.current) squash(numRef.current, 1.4);
   }, [shown]);
-  if (type === 'team' || type === 'hunt') return null;
+  if (type === 'team' || (type === 'hunt' && scoreGoal <= 0)) return null;
   const survival = type === 'survival' || type === 'logic';
   const full = !survival && target > 0 && qualified >= target;
   return (
@@ -77,6 +81,33 @@ export const QualifyCounter = memo(function QualifyCounter(): JSX.Element | null
           {shown}
         </span>
         {!survival && <span className="tr-hud-qual-of">/ {target}</span>}
+      </span>
+    </div>
+  );
+});
+
+/** "YOUR SCORE 3 / 5" in score-goal hunts (comets caught, sunshine soaked); hidden elsewhere. */
+export const ScoreGoal = memo(function ScoreGoal(): JSX.Element | null {
+  const { score, goal, status } = useUI(
+    useShallow((s) => ({ score: s.hud.score, goal: s.hud.scoreGoal, status: s.hud.localStatus })),
+  );
+  const numRef = useRef<HTMLSpanElement>(null);
+  const shown = Math.min(Math.floor(score), goal);
+  useEffect(() => {
+    if (numRef.current) squash(numRef.current, 1.4);
+  }, [shown]);
+  if (goal <= 0 || status === 'spectating') return null;
+  return (
+    <div
+      className={`tr-hud-qual tr-hud-score${shown >= goal ? ' is-full' : ''}`}
+      aria-label={`Score ${shown} of ${goal}`}
+    >
+      <span className="tr-hud-qual-label">YOUR SCORE</span>
+      <span className="tr-hud-qual-num">
+        <span ref={numRef} className="tr-hud-qual-cur">
+          {shown}
+        </span>
+        <span className="tr-hud-qual-of">/ {goal}</span>
       </span>
     </div>
   );

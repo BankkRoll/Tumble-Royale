@@ -58,7 +58,7 @@ import type { RoundRules, RulesHost, RulesPlayer, TeamScoreSource } from '../rou
 import type { MatchDeps } from './deps.ts';
 import { buildStaticGeometry } from './geometry.ts';
 import { chooseVariation, resolveObstacles, spawnSlots, type SpawnSlot } from './layout.ts';
-import { ObstacleOracle } from './oracle.ts';
+import { ObstacleOracle, isBotObjective } from './oracle.ts';
 import { RemoteProxy } from './proxy.ts';
 import { clampRoundTimeScale, scaleRoundTimer } from './round-time.ts';
 import { RoundTriggers } from './triggers.ts';
@@ -296,6 +296,8 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
   private readonly mutator: Readonly<MutatorDefinition> | null;
   private readonly wind = { x: 0, z: 0 };
   private readonly windDv = vec3();
+  /** Some obstacle names the round's objective for bots (see `BotBrainOptions.objective`). */
+  private readonly botObjective: boolean;
   private qualifiedCount = 0;
   private eliminatedCount = 0;
   private started = false;
@@ -374,13 +376,23 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
       const rng = new Rng((roundSeed ^ hashString(inst.id)) >>> 0);
       const runtime = mod.create(
         { ...inst, params },
-        { R, world: this.world, surfaces: this.surfaces, events: this.events, rng, speedScale },
+        {
+          R,
+          world: this.world,
+          surfaces: this.surfaces,
+          events: this.events,
+          rng,
+          speedScale,
+          entrants: opts.players.length,
+          authoritative: opts.mode !== 'predict',
+        },
       );
       this.obstacleRuntimes.push(runtime);
       this.obstacleById.set(inst.id, runtime);
       this.oracle.add(inst, runtime, mod, params, speedScale);
     }
     this.rebuildColliderOwners();
+    this.botObjective = this.obstacleRuntimes.some(isBotObjective);
 
     // Players.
     const teams = opts.players.map((p) => p.team);
@@ -507,6 +519,7 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
             skill: info.botSkill ?? 'average',
             seed: (this.roundSeed ^ Math.imul(info.id + 1, 0x9e3779b1)) >>> 0,
             round: this.round,
+            objective: this.botObjective,
           })
         : null;
     const slot: Slot = {
@@ -1153,6 +1166,8 @@ class MatchSimImpl implements MatchSimHandle, RulesHost {
         s.rp.pos.z = p.z;
       }
       if (s.rp.status !== PlayerRoundStatus.Playing || (tick + s.index) % PROGRESS_INTERVAL !== 0) continue;
+      // Score-target rules keep progress as score / goal themselves.
+      if (progressMode === 'scoreTarget') continue;
       if (survivalLike) {
         const d = this.round.duration.seconds;
         s.rp.progress = d > 0 ? Math.min(1, Math.max(0, this.time) / d) : 0;

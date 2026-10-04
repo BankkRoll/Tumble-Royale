@@ -16,7 +16,7 @@
 </div>
 
 Up to 100 Tumblers (humans and bots) compete through a show of 3–5 randomly
-drawn rounds (races, survivals, team games, a logic round and a final) until
+drawn rounds (races, survivals, team games, hunts, logic rounds and a final) until
 one player takes the Crown. No install, no plugins: it runs in a browser tab
 on desktop and mobile.
 
@@ -42,7 +42,7 @@ on desktop and mobile.
 - **Physics:** Rapier (WASM), the same pinned build on client and server
 - **Multiplayer:** server-authoritative 30 Hz rooms, binary delta snapshots, client prediction
 - **UI:** React 19 + Zustand overlay on top of the canvas
-- **Content:** 20 rounds plus a tutorial island, 36 obstacle types, 225 cosmetics, 10 themes, all procedural (zero external art assets)
+- **Content:** 25 rounds plus a tutorial island, 40 obstacle types, 225 cosmetics, 10 themes, all procedural (zero external art assets)
 
 What a player can do today:
 
@@ -324,7 +324,7 @@ the same pose with zero bandwidth.
 | Netcode                     | Done: no steady-state corrections at 150 ms + 2% loss (unit-tested), lag-compensated grab/dive hit assist, protocol v5                                               |
 | Shows                       | Done: full shows end to end in the browser (`e2e/game.spec.ts`; 100-player offline show verified), solo/Duos/Squads online                                           |
 | Meta & accounts             | Done: guest + OAuth/email accounts, locker, parties, matchmaking, server-granted rewards, seasons, shard shop                                                        |
-| Content                     | 20 rounds, tutorial island, procedural audio. Touch controls exist but no phone frame rate has been measured                                                         |
+| Content                     | 25 rounds, tutorial island, procedural audio. Touch controls exist but no phone frame rate has been measured                                                         |
 | Ranked, store, pass, social | Done: OpenSkill ranked with soft reset, store, pass, challenges, achievements, login streak, friends, chat, private shows, moderation                                |
 | Launch hardening            | Partly: rate limits, bans, reconnect, results outbox, metrics, crash reporting, Docker Compose self-hosting. Not done: long soak, load test against a deployed stack |
 

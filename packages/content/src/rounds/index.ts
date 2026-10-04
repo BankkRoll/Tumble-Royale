@@ -8,6 +8,7 @@ import { ROUNDS_GROUP_1 } from './group-1.ts';
 import { ROUNDS_GROUP_2 } from './group-2.ts';
 import { ROUNDS_GROUP_3 } from './group-3.ts';
 import { ROUNDS_GROUP_4 } from './group-4.ts';
+import { ROUNDS_GROUP_5 } from './group-5.ts';
 
 /** Every authored round, as written. */
 export const ROUNDS: RoundDefinitionInput[] = [
@@ -16,6 +17,7 @@ export const ROUNDS: RoundDefinitionInput[] = [
   ...ROUNDS_GROUP_2,
   ...ROUNDS_GROUP_3,
   ...ROUNDS_GROUP_4,
+  ...ROUNDS_GROUP_5,
 ];
 
 /** Engineering fixtures that must not appear in real shows while real rounds exist. */

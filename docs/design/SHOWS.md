@@ -135,7 +135,7 @@ seeds per playlist checking each round's field fits its player range.
 | 1     | 100      | **60**     | 0.6  | race                           |
 | 2     | 60       | **30**     | 0.5  | survival / team / hunt / logic |
 | 3     | 30       | **12**     | 0.4  | any non-final                  |
-| Final | 12       | 1          | —    | F1–F4                          |
+| Final | 12       | 1          | —    | F1–F5                          |
 
 Duos 0.55 / 0.5 / 0.4 / 0.45, Squads and Chaos 0.5 / 0.45 / 0.4 / 0.4. Team
 rounds decide their own cut, so some shows take a fifth round; finals never
@@ -228,11 +228,15 @@ T2 with odd N, the smaller team's goal mouth narrows by 1 m (`goalWidth 11`). **
 | T3 Paint the Plaza   | —       | 4       | —       | —        |
 | H1 Tail Chase        | —       | 6       | 8       | 10       |
 | L1 Pattern Panic     | —       | 6       | 10      | 12       |
+| H2 Comet Catch       | —       | 8       | 8       | 6        |
+| H3 Sunbeam Squabble  | —       | 6       | 8       | 8        |
+| L2 Colour Cauldron   | —       | 6       | 10      | 10       |
+| L3 Trail Tracer      | —       | 6       | 10      | 10       |
 
 \* Stage 3 only exists in 60-player custom shows or when > 15 survive stage 2.
 
 **Finals:** F1 Crown Climb 30 · F2 Last Tumbler Standing 25 · F3 Spin Cycle
-Finale 20 · F4 Goo Peak Final 25. Constraints: if stage 2 was S1, F3 weight ×0.2;
+Finale 20 · F4 Goo Peak Final 25 · F5 Throne Rush 25. Constraints: if stage 2 was S1, F3 weight ×0.2;
 if stage 2 was S3, F4 weight ×0.2; if stage 2 was S2, F2 weight ×0.3 (avoid
 "same round again" feel).
 
@@ -304,7 +308,7 @@ patches).
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Lobby        | 100 humans; **no bots**. If not full after the queue timeout, start with ≥ 24 humans (curve recomputed)                                                                                                              |
 | Rounds       | 4–5, Final at ≤ 12 left, qualify curve 0.6 / 0.5 / 0.4 / 0.5                                                                                                                                                         |
-| Pools        | Races R1–R7, Survivals S1–S4, L1 Pattern Panic, H1 Tail Chase (weight ×0.5), Finals F1–F4. **No team rounds** (a teammate's play would move your rating)                                                             |
+| Pools        | Races R1–R7, Survivals S1–S4, Logic L1–L3, Hunts H1–H3 (weight ×0.5), Finals F1–F5. **No team rounds** (a teammate's play would move your rating)                                                                    |
 | Variations   | no mutators. A ranked-only variation filter is not built                                                                                                                                                             |
 | Late loaders | eliminated (flag on)                                                                                                                                                                                                 |
 | Placement    | Final order = winner, then finalists by elimination time, then by round reached; within a round by in-round rank (race finish order; survival/logic elimination time; hunt: holders > non-holders, then steal count) |
@@ -329,10 +333,10 @@ laugh in round 1, understand every round from its card, reach a final.
 Built as one playlist for all three shows: 40 players (deliberately below the
 100 of every other playlist: fewer Tumblers to read, lighter on weak devices), 3–4 rounds, Final at
 ≤ 12 left, generous cuts (0.75 / 0.65 / 0.6), `stageOffset` −1 (gentler
-obstacle speeds), bots 4:1 Clumsy:Average, and a pool of 11 friendly rounds (Gumdrop
+obstacle speeds), bots 4:1 Clumsy:Average, and a pool of 12 friendly rounds (Gumdrop
 Gauntlet, Conveyor Chaos, Tilt Town, Slip 'n' Spiral, Spin Cycle, Jump Rope
-Royale, Egg Heist, Paint the Plaza, Tail Chase, Crown Climb, Last Tumbler
-Standing).
+Royale, Egg Heist, Paint the Plaza, Tail Chase, Comet Catch, Crown Climb,
+Last Tumbler Standing).
 
 Not built: per-show lobby sizes and bot mixes, a fixed show-1 lineup, bot
 finish/crown assists, coach tips on rules cards.

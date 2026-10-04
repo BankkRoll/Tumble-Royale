@@ -366,6 +366,12 @@ export function createVfxSystem(opts: VfxSystemOptions = {}): VfxSystem {
       case 'score':
         if (anchorOr(e.player, null, scratchPos)) {
           const o = options();
+          // Individual points (score-target hunts) sparkle on the scorer; team points puff team smoke.
+          if (e.team < 0) {
+            o.scale = 0.7;
+            spawnRecipe('sparkle', targets, scratchPos, o);
+            return;
+          }
           o.team = e.team;
           scratchPos.y -= BODY_CENTRE * 0.5;
           spawnRecipe('teamSmoke', targets, scratchPos, o);

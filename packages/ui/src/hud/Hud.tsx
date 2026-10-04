@@ -19,6 +19,7 @@ import {
   ObjectiveChip,
   QualifyCounter,
   RaceProgress,
+  ScoreGoal,
   SpectateBanner,
   TeamScores,
 } from './widgets.tsx';
@@ -46,6 +47,7 @@ export const Hud = memo(function Hud(): JSX.Element {
         </div>
         <div className="tr-hud-tc">
           <QualifyCounter />
+          <ScoreGoal />
           <RaceProgress />
         </div>
         <div className="tr-hud-tr">

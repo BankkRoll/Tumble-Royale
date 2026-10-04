@@ -95,6 +95,11 @@ export interface BotBrainOptions {
   /** Per-bot seed; the default brain derives it from show seed, round id and player id. */
   seed: number;
   round: RoundDefinition;
+  /**
+   * An obstacle in the round names its objective (pickups, scoring zones,
+   * seats) through its safe spot: bots race to that spot instead of roaming.
+   */
+  objective?: boolean;
 }
 
 /** Factory signature for bot brains (built-in: `createBotBrain`). */

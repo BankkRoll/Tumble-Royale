@@ -9,6 +9,7 @@ export { SurviveRules } from './survive.ts';
 export { TeamScoreRules, assignTeams } from './team-score.ts';
 export { HoldItemRules, STEAL_COOLDOWN_SECONDS } from './hold-item.ts';
 export { LastStandingRules, CrownGrabRules } from './finals.ts';
+export { ScoreTargetRules, DEFAULT_SCORE_GOAL } from './score-target.ts';
 export { createRoundRules } from './factory.ts';
 export { computeQualifyTarget } from './quota.ts';
 export { CourseMetric, waypointDistancesToGoal } from './progress.ts';

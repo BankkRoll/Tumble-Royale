@@ -16,6 +16,7 @@ export {
   ObjectiveChip,
   QualifyCounter,
   RaceProgress,
+  ScoreGoal,
   SpectateBanner,
   TeamScores,
 } from './widgets.tsx';

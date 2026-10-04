@@ -56,6 +56,23 @@ export interface BotSafeSpotProvider {
   botSafeSpot(t: number, out: Vec3): boolean;
 }
 
+/**
+ * Optional runtime extension: a safe-spot provider whose spot is the round's
+ * objective (the nearest pickup, a scoring zone, a free seat) rather than mere
+ * safe ground. Bots in such rounds race to it (see `BotBrainOptions.objective`).
+ */
+export interface BotObjectiveProvider extends BotSafeSpotProvider {
+  readonly botObjective: true;
+}
+
+/**
+ * @param r - A live obstacle runtime.
+ * @returns True when it names the round's objective for bots.
+ */
+export function isBotObjective(r: ObstacleRuntime): r is ObstacleRuntime & BotObjectiveProvider {
+  return hasSafeSpot(r) && (r as Partial<BotObjectiveProvider>).botObjective === true;
+}
+
 function hasSafeSpot(r: ObstacleRuntime): r is ObstacleRuntime & BotSafeSpotProvider {
   return typeof (r as Partial<BotSafeSpotProvider>).botSafeSpot === 'function';
 }

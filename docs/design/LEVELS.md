@@ -24,6 +24,7 @@
 9. Finals — F1 Crown Climb · F2 Last Tumbler Standing · F3 Spin Cycle Finale · F4 Goo Peak Final
 10. [Cross-round summary tables](#10-cross-round-summary)
 11. [Schema wish list](#11-schema-wish-list)
+12. [Post-launch rounds](#12-post-launch-rounds) — H2 Comet Catch · H3 Sunbeam Squabble · L2 Colour Cauldron · L3 Trail Tracer · F5 Throne Rush
 
 ---
 
@@ -4626,6 +4627,11 @@ as S2; Sharp: crack the inner edge of a rival's ring when they are 1 ring below.
 | F2  | `last-tumbler-standing` | final    | frosty  | 1/8/15                | lastStanding     | 240 cap        | eliminate            | `mus_final_crownfever`   | win 120–190 s                | 3 layers            |
 | F3  | `spin-cycle-finale`     | final    | neon    | 1/8/15                | lastStanding     | 180 cap        | eliminate            | `mus_final_crownfever`   | win 110–170 s                | shrinking drum      |
 | F4  | `goo-peak-final`        | final    | goo     | 1/8/15                | lastStanding     | 200 cap        | eliminate            | `mus_final_crownfever`   | win 160–195 s                | 9 tiers             |
+| H2  | `comet-catch`           | hunt     | space   | 2/60/100              | scoreTarget 5    | 120            | respawn              | `mus_space_orbitparty`   | ends 35–75 s                 | 40+ landing spots   |
+| H3  | `sunbeam-squabble`      | hunt     | sunset  | 2/60/100              | scoreTarget 10   | 120            | respawn              | `mus_sunset_boardwalk`   | ends 25–90 s                 | 1–12 beams          |
+| L2  | `colour-cauldron`       | logic    | goo     | 2/60/100              | logicSurvive 0.6 | 150            | eliminate            | `mus_logic_ticktock`     | ends 25–60 s                 | 5 × 5 tiles         |
+| L3  | `trail-tracer`          | logic    | frosty  | 2/60/100              | logicSurvive 0.6 | 150            | eliminate            | `mus_logic_ticktock`     | ends 30–60 s                 | 5 × 5 tiles         |
+| F5  | `throne-rush`           | final    | castle  | 1/8/15                | lastStanding     | 150 (+30)      | eliminate            | `mus_final_crownfever`   | win 45–100 s                 | ~11 s cycles        |
 
 **Obstacle coverage** (which launch rounds exercise each module — useful for test
 priorities):
@@ -4663,6 +4669,12 @@ priorities):
 | checkpointGate / finishLine / startGate | all races, F1                                    |
 | voidTrigger                             | (trigger `void` used in R4, R6)                  |
 | propSpawner                             | T1, T2, T3, H1 (tails are round-managed), F1     |
+| cometField                              | H2                                               |
+| sunbeamZones                            | H3                                               |
+| puzzleFloor                             | L2 (`mix`), L3 (`trail`)                         |
+| throneFloor                             | F5                                               |
+| bumperPillar (post-launch)              | H2, F5 (variation)                               |
+| sweeperArm (post-launch)                | H3                                               |
 
 ---
 
@@ -4693,4 +4705,82 @@ schema owner (additive, optional fields only).
 
 ---
 
-_End of LEVELS.md — 20 launch rounds._
+## 12. Post-launch rounds
+
+Five rounds added after launch, built on four round-specific obstacle modules
+(set D) and two additions to the round schema: the `scoreTarget`
+qualification mode with `qualification.scoreGoal` (individual points from
+obstacles; the first players to bank the goal qualify, the best scores fill
+the quota at the buzzer) and an optional per-round `rulesCard`. Obstacles that
+name the round's objective (`botObjective`) switch bots to the objective
+strategy: race to the spot the obstacle names, after the bot's reaction delay.
+
+Every count below scales with the round's entrants, so each round plays from a
+duel to a full lobby; the per-round tests pin the numbers.
+
+### H2 — Comet Catch
+
+| Field         | Value                                                                                                                                                                                                                                                             |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| id / theme    | `comet-catch` / space, `mus_space_orbitparty`, orbit camera                                                                                                                                                                                                       |
+| Players       | 2 / 60 / 100                                                                                                                                                                                                                                                      |
+| Qualification | `scoreTarget`, goal 5, ratio 0.55; 120 s                                                                                                                                                                                                                          |
+| Layout        | 19 m deck; four 1 m crater mounds (r 3.6) on the diagonals with ramps along the ring; four bobbing bumper buoys on the axes; spawn grid in the middle                                                                                                             |
+| Mechanic      | `cometField`: 2 + ⌈0.3 × entrants⌉ live comets (3 at 2, 32 at 100) hop between 40+ spots every 6 s ÷ stage speed; 1.2 s of each hop is the flight (landing ring telegraph), the rest catchable. Even hops land on even spots, odd on odd, so a comet always moves |
+| Bots          | Run to the nearest resting or landing comet                                                                                                                                                                                                                       |
+| Falls         | Respawn near the middle (deck checkpoint)                                                                                                                                                                                                                         |
+| Variations    | `clear-orbit` · `golden-comets` (4 worth 2) · `restless-comets` (4.5 s hops) · `pinball-buoys`                                                                                                                                                                    |
+| Measured      | 100 bots: 56/56 at ~70 s; 20 bots ~50 s; 2 bots ~30 s                                                                                                                                                                                                             |
+
+### H3 — Sunbeam Squabble
+
+| Field         | Value                                                                                                                                                                                                                                    |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| id / theme    | `sunbeam-squabble` / sunset, `mus_sunset_boardwalk`, orbit camera                                                                                                                                                                        |
+| Players       | 2 / 60 / 100                                                                                                                                                                                                                             |
+| Qualification | `scoreTarget`, goal 10, ratio 0.55; 120 s                                                                                                                                                                                                |
+| Layout        | 46 m railed boardwalk plaza, four kiosks, a low sweeper arm (12 m, slowly accelerating) round a lighthouse post; spawn south of its reach                                                                                                |
+| Mechanic      | `sunbeamZones`: 1 + ⌊entrants / 9⌋ beams (1 at 2, 12 at 100), r 2.8, drifting on per-beam Lissajous paths. Each beam hands out 1 point/s split between everyone inside; a point is a `score` event. Optional flares double a beam's rate |
+| Bots          | Walk to the nearest, least crowded beam, leading its drift                                                                                                                                                                               |
+| Variations    | `golden-hour` · `solar-flares` · `sea-breeze` (faster drift) · `wide-beams`                                                                                                                                                              |
+| Measured      | 100 bots: 56/56 at ~84 s; 20 bots ~70 s; 2 bots ~23 s                                                                                                                                                                                    |
+
+### L2 — Colour Cauldron
+
+| Field         | Value                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| id / theme    | `colour-cauldron` / goo, `mus_logic_ticktock`, top-down tilt camera                                                                                                                                                                                                                                                                                                           |
+| Players       | 2 / 60 / 100                                                                                                                                                                                                                                                                                                                                                                  |
+| Qualification | `logicSurvive` 0.6; 150 s                                                                                                                                                                                                                                                                                                                                                     |
+| Layout        | 5 × 5 tiles (5 m, 0.8 m seams) over a cauldron; recipe-board screen behind                                                                                                                                                                                                                                                                                                    |
+| Mechanic      | `puzzleFloor` (`mix`): the screen asks a sum ("RED + BLUE") or difference ("PURPLE − RED"); answer tiles 5 → 2, never all in one line, every other colour at least twice. Primaries carry ● ▲ ■ and mixes both parents' shapes, so no colour vision is needed. Round 1 teaches (answer glows), round 3 is the first difference, from round 4 the floor fades to grey part-way |
+| Timing        | Reading 9 s → 4.5 s ÷ stage speed (≥ 3.5 s), shake 0.8 s, down 1.8 s, rise 0.6 s; a drop that would leave nobody safe is voided                                                                                                                                                                                                                                               |
+| Variations    | `house-recipe` · `hot-stove` (from round 3) · `fading-paint` (memory from round 2) · `slow-simmer`                                                                                                                                                                                                                                                                            |
+
+### L3 — Trail Tracer
+
+| Field         | Value                                                                                                                                                                                                                                                                                                           |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| id / theme    | `trail-tracer` / frosty, `mus_logic_ticktock`, top-down tilt camera                                                                                                                                                                                                                                             |
+| Players       | 2 / 60 / 100                                                                                                                                                                                                                                                                                                    |
+| Qualification | `logicSurvive` 0.6; 150 s                                                                                                                                                                                                                                                                                       |
+| Layout        | 5 × 5 ice tiles over a frozen lake; scoreboard behind; signposts and pines off the floor                                                                                                                                                                                                                        |
+| Mechanic      | `puzzleFloor` (`trail`): every tile has an arrow, 3 (later 2) carry a start flag; "FOLLOW n STEPS" (2 → 6). Walks never revisit a tile or cross another walk's flag or landing; the landings are the safe tiles. Round 1 lights the walks up near the end; from round 4 arrows frost over part-way (flags stay) |
+| Variations    | `fresh-snow` · `long-trails` (from round 4) · `whiteout` (memory from round 2) · `clear-skies`                                                                                                                                                                                                                  |
+
+### F5 — Throne Rush
+
+| Field         | Value                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| id / theme    | `throne-rush` / castle, `mus_final_crownfever`, orbit camera                                                                                                                                                                                                                                                                                                            |
+| Players       | 1 / 8 / 15                                                                                                                                                                                                                                                                                                                                                              |
+| Qualification | `lastStanding`; 150 s + 30 s overtime (the highest Tumbler, i.e. a seated one, wins at the buzzer)                                                                                                                                                                                                                                                                      |
+| Layout        | 13 m floor disc of twelve petals; 16 throne spots on rings of 4.5 m and 9 m; columns and banners off the floor                                                                                                                                                                                                                                                          |
+| Mechanic      | `throneFloor` cycles: roam 3–5.5 s → spots glow 0.9 s → thrones rise → scramble 3 s (−0.1 s a cycle, ≥ 2 s) → shake 0.7 s → floor open 1.8 s → restore. Seats = standing − max(1, ⌊standing / 4⌋): 15 → 12 → 9 → 7 → 6 → 5 → 4 → 3 → 2 → 1. First to sit owns a throne, anyone else on it is bounced; a dethroned owner frees it; a cycle with no throne held is voided |
+| Bots          | Roam while the floor is plain, then run (and hop) to the nearest free throne                                                                                                                                                                                                                                                                                            |
+| Variations    | `royal-court` · `quickstep` · `harsh-court` (a third left out) · `royal-guards` (two orbiting bumpers between the rings)                                                                                                                                                                                                                                                |
+| Measured      | 15 bots: winner at ~45–80 s                                                                                                                                                                                                                                                                                                                                             |
+
+---
+
+_End of LEVELS.md — 20 launch rounds and 5 post-launch rounds._

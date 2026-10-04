@@ -121,12 +121,14 @@ Third-person spring arm, orbit with mouse/stick, smoothed follow with look-ahead
 Races: R1 Gumdrop Gauntlet (doors, spinwheels, pendulums, finish ramp) · R2 Conveyor Chaos (reversing conveyors, punch walls, bumpers) · R3 Tilt Town (tilting platforms, seesaws over void) · R4 Slip 'n' Spiral (icy downhill spiral, boulders) · R5 Hammer Highway (narrow bridges, pendulums, collapsing segments) · R6 Wind Tunnel Peaks (vertical climb: fans, bounce pads, ledges) · R7 Cannonball Canyon (lanes under cannon fire, giant balls) · R8 Teleport Tangle · R9 Drum Roll Dash · R10 Bumper Boulevard.
 Survivals: S1 Spin Cycle (2-layer sweepers accelerate) · S2 Tile Panic (multi-layer falling tiles) · S3 Rising Goo Tower · S4 Jump Rope Royale (concentric beams, 2 heights) · S5 Cannon Crown (survive 90 s barrage) · S6 Shrinking Sundae.
 Team: T1 Egg Heist · T2 Bounce Ball Blitz · T3 Paint the Plaza · T4 Tug-o-Bridge · T5 Hoop Hustle.
-Hunt: H1 Tail Chase · H2 Key Keeper. Logic: L1 Pattern Panic · L2 Count Up.
-Finals: F1 Crown Climb (tower race, grab the floating Crown) · F2 Last Tumbler Standing (hex layers) · F3 Spin Cycle Finale · F4 Goo Peak Final · F5 Tail Finale.
+Hunt: H1 Tail Chase · H2 Comet Catch · H3 Sunbeam Squabble. Logic: L1 Pattern Panic · L2 Colour Cauldron · L3 Trail Tracer.
+Finals: F1 Crown Climb (tower race, grab the floating Crown) · F2 Last Tumbler Standing (hex layers) · F3 Spin Cycle Finale · F4 Goo Peak Final · F5 Throne Rush.
 
 Each round definition contains id, name, type, theme, player range, qualification rule, duration/overtime, spawns, obstacles with params, triggers, camera flyover, music, lighting, difficulty knobs by show stage, bot navigation, tips, thumbnail. Every round has **seeded variations** (door layouts, speed profiles, alternate paths, weather, remix flags).
 
 **Launch set: 20 rounds** — R1–R7, S1–S4, T1–T3, H1, L1, F1–F4. Full detail in `docs/design/LEVELS.md`.
+
+**Added after launch: 5 rounds** — H2 Comet Catch and H3 Sunbeam Squabble (score-target hunts: bank points first), L2 Colour Cauldron and L3 Trail Tracer (puzzle floors), F5 Throne Rush. Detail in `docs/design/LEVELS.md` §12.
 
 ## 10. Netcode
 

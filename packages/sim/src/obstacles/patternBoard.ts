@@ -468,8 +468,11 @@ export function patternPhaseOf(r: BoardRound, t: number): number {
   return PatternPhase.Idle;
 }
 
+/** The grid layout fields shared by every tile-board obstacle (pattern board, puzzle floor). */
+export type TileGrid = Pick<PatternBoardParams, 'cols' | 'rows' | 'tileSize' | 'gap' | 'solidSeams'>;
+
 /** Local centre (top surface) of tile `i`. */
-export function patternTileCenter(i: number, p: PatternBoardParams, out: Vec3): Vec3 {
+export function patternTileCenter(i: number, p: TileGrid, out: Vec3): Vec3 {
   const pitch = p.tileSize + p.gap;
   out.x = ((i % p.cols) - (p.cols - 1) / 2) * pitch;
   out.y = 0;
@@ -478,7 +481,7 @@ export function patternTileCenter(i: number, p: PatternBoardParams, out: Vec3): 
 }
 
 /** Tile under a local point (on the tile itself, not the gaps), or -1. */
-export function patternTileAt(x: number, z: number, p: PatternBoardParams): number {
+export function patternTileAt(x: number, z: number, p: TileGrid): number {
   const pitch = p.tileSize + p.gap;
   const c = Math.round(x / pitch + (p.cols - 1) / 2);
   const r = Math.round(z / pitch + (p.rows - 1) / 2);
@@ -504,7 +507,7 @@ export interface PatternSeam {
  * The seam strips filling the gaps between tiles (edges and crossings), so
  * the board reads as one floor until tiles drop. Empty when seams are off.
  */
-export function patternSeams(p: PatternBoardParams): PatternSeam[] {
+export function patternSeams(p: TileGrid): PatternSeam[] {
   if (!p.solidSeams || p.gap <= 0) return [];
   const pitch = p.tileSize + p.gap;
   const cx = (c: number): number => (c - (p.cols - 1) / 2) * pitch;

@@ -158,6 +158,7 @@ export const DEFAULT_HUD: HudState = {
   localColor: '#ff4f9a',
   place: 0,
   score: 0,
+  scoreGoal: 0,
   controlsHint: true,
   device: 'keyboard',
   emotes: DEFAULT_EMOTES,

@@ -7,7 +7,8 @@
  *   runs out (the director's safety grace never has to rescue it);
  * - qualification counts match the round's target: races fill their quota,
  *   survival rounds stop at (or survive above) theirs, hunts qualify exactly
- *   the holders, team rounds knock out whole teams, finals crown exactly one;
+ *   the holders (or exactly the quota by score), team rounds knock out whole
+ *   teams, finals crown exactly one;
  * - in races no bot is stuck for good: everyone still running moves more
  *   than a couple of metres over the last stretch (bots that keep falling
  *   back to a checkpoint are logged, since they are still trying).
@@ -17,8 +18,9 @@
  *
  *   TUMBLE_SLOW=1 pnpm --filter @tumble/content exec vitest run test/rounds-complete.test.ts
  *
- * The default run plays every final (15 bots) and the team rounds at their
- * minimum field, which covers the single-winner and whole-team paths cheaply.
+ * The default run plays every final (15 bots), and the team rounds and
+ * score-target hunts at their minimum field, which covers the single-winner,
+ * whole-team and points-race paths cheaply.
  */
 import { RoundPhase, type RoundDefinition } from '@tumble/shared';
 import { loadRapier, type Rapier } from '@tumble/sim';
@@ -246,6 +248,8 @@ function check(p: Played): void {
     } else {
       expect(p.qualified, `${where}: buzzer qualifies at least the quota`).toBeGreaterThanOrEqual(p.target);
     }
+  } else if (mode === 'scoreTarget') {
+    expect(p.qualified, `${where}: score-target quota`).toBe(p.target);
   } else if (mode === 'holdItem') {
     expect(p.qualified, `${where}: hunt qualifies the holders`).toBe(p.target);
     expect(p.qualifiedWithoutItem, `${where}: qualified without the item`).toBe(0);
@@ -276,9 +280,10 @@ describe('every round to completion with a full field of bots', () => {
   }
 });
 
-describe('finals and team rounds to completion (default run)', () => {
+describe('finals, team rounds and score-target hunts to completion (default run)', () => {
   for (const round of rounds) {
-    if (round.type !== 'final' && round.qualification.mode !== 'teamScore') continue;
+    const mode = round.qualification.mode;
+    if (round.type !== 'final' && mode !== 'teamScore' && mode !== 'scoreTarget') continue;
     const n = round.type === 'final' ? round.players.max : round.players.min;
     it(`${round.id}: ${n} bots`, () => check(play(round, n, 7)), 300_000);
   }

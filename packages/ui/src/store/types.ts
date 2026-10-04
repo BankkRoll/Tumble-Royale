@@ -1229,6 +1229,8 @@ export interface HudState {
   /** Local place / score in hunts. */
   place: number;
   score: number;
+  /** Points that qualify in score-target hunts (0 = the round has no score goal). */
+  scoreGoal: number;
   /** Controls hint visible (the game hides it after first input). */
   controlsHint: boolean;
   /** Last device used: drives glyphs. */

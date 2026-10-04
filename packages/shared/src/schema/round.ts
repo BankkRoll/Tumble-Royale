@@ -114,8 +114,32 @@ export const QualificationSchema = z.object({
   /** Team rounds: number of lowest teams eliminated. */
   teamsEliminated: z.number().int().default(1),
   teams: z.number().int().min(0).max(4).default(0),
-  /** Survival: survive until timer end. Race: finish. Hunt: hold item at end. Final: crown/last standing. */
-  mode: z.enum(['finish', 'survive', 'teamScore', 'holdItem', 'lastStanding', 'crownGrab', 'logicSurvive']),
+  /**
+   * `scoreTarget` only: points a player must bank to qualify (pickups, time in
+   * a scoring zone).
+   */
+  scoreGoal: z.number().int().min(1).optional(),
+  /**
+   * Survival: survive until timer end. Race: finish. Hunt: hold item at end, or
+   * bank `scoreGoal` points first (`scoreTarget`). Final: crown/last standing.
+   */
+  mode: z.enum([
+    'finish',
+    'survive',
+    'teamScore',
+    'holdItem',
+    'lastStanding',
+    'crownGrab',
+    'logicSurvive',
+    'scoreTarget',
+  ]),
+});
+
+/** One pictogram line of the rules card shown before a round. */
+export const RulesCardLineSchema = z.object({
+  /** A single emoji or short glyph. */
+  icon: z.string().min(1).max(8),
+  text: z.string().min(1).max(40),
 });
 
 /** Seeded variations applied at round load. */
@@ -153,6 +177,11 @@ export const RoundDefinitionSchema = z.object({
   objective: z.string(),
   /** Tips carousel during intro. */
   tips: z.array(z.string()).default([]),
+  /**
+   * Rules card lines for rounds whose rules differ from their type's stock card
+   * (empty = the stock card for the round type).
+   */
+  rulesCard: z.array(RulesCardLineSchema).max(4).optional(),
   players: z.object({ min: z.number().int(), max: z.number().int(), ideal: z.number().int() }),
   qualification: QualificationSchema,
   duration: z.object({
@@ -192,6 +221,8 @@ export type RoundDefinitionInput = z.input<typeof RoundDefinitionSchema>;
 export type StaticPiece = z.output<typeof StaticPieceSchema>;
 /** Trigger volume. */
 export type TriggerDef = z.output<typeof TriggerSchema>;
+/** Rules card pictogram line. */
+export type RulesCardLine = z.output<typeof RulesCardLineSchema>;
 /** Bot waypoint. */
 export type Waypoint = z.output<typeof WaypointSchema>;
 

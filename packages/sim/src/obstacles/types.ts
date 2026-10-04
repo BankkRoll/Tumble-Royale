@@ -42,7 +42,11 @@ export type ObstacleType =
   | 'propSpawner'
   | 'paintGrid'
   | 'patternBoard'
-  | 'goalZone';
+  | 'goalZone'
+  | 'cometField'
+  | 'sunbeamZones'
+  | 'puzzleFloor'
+  | 'throneFloor';
 
 /**
  * Placement of one obstacle in a round. `rotation` is yaw/pitch/roll in DEGREES
@@ -68,6 +72,17 @@ export interface ObstacleBuildContext {
   rng: Rng;
   /** Show-stage speed multiplier from the round's difficulty knobs (1 = base). */
   speedScale: number;
+  /**
+   * Players starting the round, the same on server and clients (prediction
+   * sims hold every entrant as a proxy). Objective counts scale with it.
+   * Absent in bare harnesses: treat as unknown.
+   */
+  entrants?: number;
+  /**
+   * False in a client's prediction sim: round mechanics that hand out points
+   * or decide seats leave that to the server's replicated state. Absent = true.
+   */
+  authoritative?: boolean;
 }
 
 /** A player as seen by obstacle logic (triggers, impulses). */

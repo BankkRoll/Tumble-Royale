@@ -47,6 +47,11 @@ const SHOT: Record<string, string> = {
   'last-tumbler-standing': 'orbit',
   'spin-cycle-finale': 'orbit',
   'goo-peak-final': 'orbit',
+  'comet-catch': 'orbit',
+  'sunbeam-squabble': 'orbit',
+  'colour-cauldron': 'orbit',
+  'trail-tracer': 'orbit',
+  'throne-rush': 'orbit',
 };
 
 const ROUNDS = process.env.ROUNDS ? process.env.ROUNDS.split(',').filter(Boolean) : Object.keys(SHOT);

@@ -3,6 +3,7 @@ import { CrownGrabRules, LastStandingRules } from './finals.ts';
 import { FinishRules } from './finish.ts';
 import { HoldItemRules } from './hold-item.ts';
 import { computeQualifyTarget } from './quota.ts';
+import { ScoreTargetRules } from './score-target.ts';
 import { SurviveRules } from './survive.ts';
 import { TeamScoreRules } from './team-score.ts';
 import type { RoundRules, RoundRulesOptions } from './types.ts';
@@ -37,5 +38,7 @@ export function createRoundRules(
       return new LastStandingRules(target, options);
     case 'crownGrab':
       return new CrownGrabRules(target, options);
+    case 'scoreTarget':
+      return new ScoreTargetRules(target, options);
   }
 }

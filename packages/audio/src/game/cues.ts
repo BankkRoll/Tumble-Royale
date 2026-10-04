@@ -188,6 +188,18 @@ export const OBSTACLE_CUES: Readonly<Record<string, string>> = {
   'ball.bounce': 'ball.bonk',
   'ball.post': 'bumper.boing',
   'egg.golden': 'ui.reward',
+  'cometField.catch': 'ui.coin',
+  'cometField.golden': 'ui.reward',
+  'sunbeamZones.flare': 'whoosh.up',
+  'puzzleFloor.question': 'ui.whoosh',
+  'puzzleFloor.hide': 'whoosh.down',
+  'puzzleFloor.reveal': 'round.whistle',
+  'puzzleFloor.void': 'crowd.aww',
+  'throneFloor.telegraph': 'alarm.blip',
+  'throneFloor.claim': 'checkpoint',
+  'throneFloor.bounce': 'bumper.boing',
+  'throneFloor.drop': 'tile.fall',
+  'throneFloor.void': 'crowd.aww',
 };
 
 /**

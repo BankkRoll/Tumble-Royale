@@ -10,7 +10,24 @@ import { describe, expect, it } from 'vitest';
 import { loadRapier } from '@tumble/sim';
 import { ROUNDS, getRound, roundCatalog, showRoundCatalog } from '../src/rounds/index.ts';
 import { MUTATOR_IDS } from '@tumble/sim/mutators';
+import { ShowPlaylistSchema } from '@tumble/sim/show/schema';
 import { DUOS, PLANNED_ROUND_IDS, PLANNED_ROUNDS, PLAYLISTS, getPlaylist } from '../src/shows/index.ts';
+
+describe('playlist schedules', () => {
+  it('bundle only well-formed windows (end after start)', () => {
+    for (const p of PLAYLISTS) {
+      if (p.startsAt && p.endsAt) expect(Date.parse(p.endsAt), p.id).toBeGreaterThan(Date.parse(p.startsAt));
+      expect(typeof p.featured).toBe('boolean');
+    }
+  });
+
+  it('accept ISO instants with offsets and reject anything else', () => {
+    const base = { id: 'x', name: 'X', pool: [{ roundId: 'tilt-town' }] };
+    expect(ShowPlaylistSchema.safeParse({ ...base, endsAt: '2026-12-01T00:00:00Z' }).success).toBe(true);
+    expect(ShowPlaylistSchema.safeParse({ ...base, startsAt: '2026-12-01T00:00:00+02:00' }).success).toBe(true);
+    expect(ShowPlaylistSchema.safeParse({ ...base, endsAt: 'next tuesday' }).success).toBe(false);
+  });
+});
 
 describe('playlists', () => {
   it('validate and cover all 20 planned rounds', () => {

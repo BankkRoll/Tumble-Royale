@@ -1043,6 +1043,8 @@ export interface ShowSeat {
   online: boolean;
   /** Knocked out of the show: watching the remaining rounds as a spectator. */
   outOfShow: boolean;
+  /** Joined as a spectator (a private show's spectator seat): watching, never knocked out. */
+  spectator?: boolean;
 }
 
 /**

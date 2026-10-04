@@ -265,6 +265,8 @@ export abstract class ShowSession {
   private watch: WatchDecision = 'undecided';
   /** The local player is out of the show and watching it as a spectator. */
   private outOfShow = false;
+  /** The local player joined as a spectator and never plays a round. */
+  private spectatorSeat = false;
   /** The watch choice holds the (offline) show clock. */
   private choiceHeld = false;
   private readonly padCycler = new SpectatePadCycler();
@@ -1310,7 +1312,22 @@ export abstract class ShowSession {
   private markOutOfShow(): void {
     if (this.outOfShow) return;
     this.outOfShow = true;
-    ui.getState().setShowSeat({ online: this.isOnline(), outOfShow: true });
+    ui.getState().setShowSeat({
+      online: this.isOnline(),
+      outOfShow: true,
+      ...(this.spectatorSeat ? { spectator: true } : {}),
+    });
+  }
+
+  /**
+   * The local player joined to watch (a private show's spectator seat). They
+   * sit out every round, which the flow reads as "out of the show", but they
+   * were never knocked out, so the UI must not say "Eliminated".
+   */
+  protected markSpectatorSeat(): void {
+    if (this.spectatorSeat) return;
+    this.spectatorSeat = true;
+    ui.getState().setShowSeat({ online: this.isOnline(), outOfShow: this.outOfShow, spectator: true });
   }
 
   /**

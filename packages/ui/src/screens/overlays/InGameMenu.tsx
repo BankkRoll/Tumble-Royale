@@ -24,8 +24,16 @@ const STATUS: Record<LocalStatus, { label: string; tone: string }> = {
   spectating: { label: 'Spectating', tone: 'is-out' },
 };
 
-/** Knocked out of the show and watching the rest of it. */
-const OUT_OF_SHOW = { label: 'Eliminated · Spectating', tone: 'is-out' };
+/**
+ * What the local player is doing while they watch: knocked-out players are
+ * "Eliminated · Spectating"; spectator seats (and anyone still in the show
+ * between their own rounds) are just "Spectating".
+ *
+ * @param seat - The local show seat.
+ */
+export function spectatingLabel(seat: ShowSeat | null): string {
+  return seat?.outOfShow && !seat.spectator ? 'Eliminated · Spectating' : 'Spectating';
+}
 
 const CONTROL_ROWS: BindAction[] = ['jump', 'dive', 'grab', 'emoteWheel'];
 const SPECTATE_ROWS: BindAction[] = ['spectatePrev', 'spectateNext'];
@@ -75,7 +83,7 @@ export function confirmLeaveShow(): void {
     buttons: [
       {
         id: 'cancel',
-        label: seat?.outOfShow ? 'Keep watching' : 'Keep playing',
+        label: seat?.outOfShow || seat?.spectator ? 'Keep watching' : 'Keep playing',
         variant: 'secondary',
         autofocus: true,
       },
@@ -109,8 +117,9 @@ export function InGameMenu(): JSX.Element {
   const binds = useUI((s) => s.settings.controls.keybinds);
   const device = useUI((s) => s.hud.device);
   const outOfShow = useUI((s) => s.showSeat?.outOfShow ?? false);
+  const watchingLabel = useUI((s) => spectatingLabel(s.showSeat));
   const replayLive = useUI((s) => s.replayLive);
-  const status = outOfShow ? OUT_OF_SHOW : STATUS[hud.status];
+  const status = outOfShow ? { label: watchingLabel, tone: 'is-out' } : STATUS[hud.status];
   return (
     <div
       className="tr-dialog-wrap tr-igm-wrap tr-interactive"

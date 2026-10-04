@@ -71,6 +71,7 @@ import { createLiveLobbyView, type LiveLobbySource, type LiveLobbyView } from '.
 import type { CharacterInput } from '@tumble/sim';
 import type { GameContext, RoundOutcomeInfo, RoundStart, SessionPlayer } from './context.ts';
 import { ShowSession } from './session.ts';
+import { isSpectatorId } from './spectator.ts';
 
 const MAIN = ShowPlaylistSchema.parse(MAIN_SHOW);
 const AIRBORNE: ReadonlySet<number> = new Set([
@@ -354,6 +355,7 @@ export class OnlineShowSession extends ShowSession {
         }
         this.welcomed = true;
         this.localId = w.playerId;
+        if (isSpectatorId(w.playerId)) this.markSpectatorSeat();
         ui.getState().setConnection({ status: 'online' });
       }),
       net.on('lobby', (l) => {

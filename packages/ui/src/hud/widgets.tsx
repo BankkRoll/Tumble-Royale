@@ -8,6 +8,7 @@ import { playCue } from '../audio-cues.ts';
 import { BotTag } from '../components/bits.tsx';
 import { TumblerAvatar } from '../components/TumblerAvatar.tsx';
 import { Button } from '../components/controls.tsx';
+import { spectatingLabel } from '../screens/overlays/InGameMenu.tsx';
 import { WatchChoicePanel } from '../screens/overlays/WatchChoice.tsx';
 import { keyLabel } from '../screens/overlays/SettingsSheet.tsx';
 import { formatClock, useDisplayName } from '../components/hooks.ts';
@@ -325,7 +326,7 @@ function useSpectateHints(): [string | undefined, string | undefined] {
 /** Bottom spectating bar: who you're watching, prev/next (keys, pad shoulders, tap) and who is left. */
 export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null {
   const spec = useUI((s) => s.spectate);
-  const out = useUI((s) => s.showSeat?.outOfShow ?? false);
+  const label = useUI((s) => spectatingLabel(s.showSeat));
   const name = useDisplayName();
   const [prevHint, nextHint] = useSpectateHints();
   if (!spec) return null;
@@ -341,7 +342,7 @@ export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null
         <Icon name="chevron-left" size="1em" />
       </Button>
       <div key={spec.player.id} className="tr-spectate-card">
-        <span className="tr-label tr-spectate-label">{out ? 'Eliminated · Spectating' : 'Spectating'}</span>
+        <span className="tr-label tr-spectate-label">{label}</span>
         <TumblerAvatar colors={spec.player.colors} hat={spec.player.hat} size="2.6em" blink={false} />
         <span className="tr-col" style={{ gap: '0.1em', minWidth: 0 }}>
           <span className="tr-row" style={{ gap: '0.4em', minWidth: 0 }}>
@@ -353,7 +354,8 @@ export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null
                 onClick={() =>
                   social.getState().openPlayerMenu({
                     userId: spec.player.userId!,
-                    name: spec.player.name,
+                    // The card must not unmask a name Streamer Mode hides on the banner.
+                    name: name(spec.player),
                     key: spec.player.userId!,
                   })
                 }

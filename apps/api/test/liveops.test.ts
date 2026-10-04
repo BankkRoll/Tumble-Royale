@@ -264,6 +264,31 @@ describe('analytics ingest', () => {
     expect((await post({ events: [{ name: 'client.error', props: crash }] })).statusCode).toBe(202);
   });
 
+  it('accepts sendBeacon batches as text/plain with the token in the body', async () => {
+    const u = await api.guest();
+    const beacon = (payload: string) =>
+      api.app.inject({
+        method: 'POST',
+        url: '/events',
+        headers: { 'content-type': 'text/plain;charset=UTF-8' },
+        payload,
+      });
+    const ok = await beacon(
+      JSON.stringify({ events: [{ name: 'quit_point', props: { round: 'beacon-1' } }], auth: u.accessToken }),
+    );
+    expect(ok.statusCode).toBe(202);
+    const forged = await beacon(
+      JSON.stringify({ events: [{ name: 'quit_point', props: { round: 'beacon-2' } }], auth: 'not-a-token' }),
+    );
+    expect(forged.statusCode).toBe(202);
+    const rows = await api.ctx.db.select().from(events).where(eq(events.name, 'quit_point'));
+    const byRound = (r: string) => rows.find((x) => (x.props as { round?: string }).round === r);
+    expect(byRound('beacon-1')?.userId).toBe(u.id);
+    expect(byRound('beacon-2')?.userId).toBeNull();
+    expect(byRound('beacon-1')?.props).not.toHaveProperty('auth');
+    expect((await beacon('{not json')).statusCode).toBe(400);
+  });
+
   it('drops analytics but keeps crash reports when analytics.sample is off', async () => {
     const u = await api.guest();
     await flag('analytics.sample', false);

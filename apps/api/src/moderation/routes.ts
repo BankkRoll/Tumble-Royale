@@ -23,6 +23,7 @@ import {
   requireAdmin,
   requireInternalSignature,
   requireUser,
+  userIdFromToken,
 } from '../http/auth.ts';
 import { badRequest, notFound, parse } from '../http/errors.ts';
 import { BOARD_TYPES, readLeaderboard } from '../leaderboards/service.ts';
@@ -68,7 +69,11 @@ const AnalyticsEvent = z.union([
   }),
 ]);
 // SECURITY: names are allow-listed so a client cannot write internal events (`audit.*`, grants).
-const EventsBody = z.object({ events: z.array(AnalyticsEvent).min(1).max(ANALYTICS_LIMITS.maxBatch) });
+const EventsBody = z.object({
+  events: z.array(AnalyticsEvent).min(1).max(ANALYTICS_LIMITS.maxBatch),
+  /** Access token of a `sendBeacon` batch, which cannot carry an Authorization header. */
+  auth: z.string().max(4096).optional(),
+});
 const BoardParams = z.object({ type: z.enum(BOARD_TYPES) });
 const BoardQuery = z.object({
   scope: z.enum(['global', 'regional', 'friends']).default('global'),
@@ -144,8 +149,17 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.post('/events', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req, reply) => {
-    const auth = await optionalUser(ctx, req);
-    const body = parse(EventsBody, req.body);
+    // `sendBeacon` from a closing page posts text/plain (no preflight) with the token in the body.
+    let raw: unknown = req.body;
+    if (typeof raw === 'string') {
+      try {
+        raw = JSON.parse(raw);
+      } catch {
+        throw badRequest('invalid_json', 'Body is not valid JSON');
+      }
+    }
+    const body = parse(EventsBody, raw);
+    const userId = (await optionalUser(ctx, req))?.userId ?? (await userIdFromToken(ctx, body.auth));
     // The sample flag is also the server-side kill switch: analytics are accepted and dropped, crash reports kept.
     const keep = (await serverFlag(ctx, 'analytics.sample'))
       ? body.events
@@ -153,7 +167,7 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
     if (keep.length > 0) {
       await ctx.db.insert(events).values(
         keep.map((e) => ({
-          userId: auth?.userId ?? null,
+          userId,
           name: e.name,
           props: e.props,
           createdAt: ctx.now(),

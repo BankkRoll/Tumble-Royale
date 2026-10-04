@@ -11,7 +11,7 @@
  */
 import { RoundPhase, type RoundPhaseId } from '@tumble/shared';
 import { COUNTDOWN_SECONDS } from '@tumble/sim/match';
-import { DEFAULT_SHOW_TIMINGS } from '@tumble/sim/show';
+import { DEFAULT_SHOW_TIMINGS, type ShowTimings } from '@tumble/sim/show';
 
 /** Phases whose sim time is frozen while the course is already on screen. */
 function isPreRoll(phase: RoundPhaseId): boolean {
@@ -22,10 +22,17 @@ function isPreRoll(phase: RoundPhaseId): boolean {
  * Seconds of intro shown before the countdown for a round's flyover.
  *
  * @param flyoverSeconds - The round's `flyover.duration` (0 falls back to the director default).
+ * @param timings - Overrides the running director was built with (the offline show shortens the rules card).
  * @returns Flyover plus rules card, as the show director schedules them.
+ * @example
+ * introPreRollSeconds(round.flyover.duration, source.showTimings);
  */
-export function introPreRollSeconds(flyoverSeconds: number): number {
-  return (flyoverSeconds || DEFAULT_SHOW_TIMINGS.introFlyover) + DEFAULT_SHOW_TIMINGS.rulesCard;
+export function introPreRollSeconds(
+  flyoverSeconds: number,
+  timings: Partial<Pick<ShowTimings, 'introFlyover' | 'rulesCard'>> = {},
+): number {
+  const t = { ...DEFAULT_SHOW_TIMINGS, ...timings };
+  return (flyoverSeconds || t.introFlyover) + t.rulesCard;
 }
 
 /**

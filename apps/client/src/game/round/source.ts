@@ -7,6 +7,7 @@ import { CharacterFlag, CharacterState, type CharacterFullState } from '@tumble/
 import { createCharacterFullState } from '@tumble/sim/character';
 import { DEFAULT_TUNING } from '@tumble/sim/character';
 import type { MatchPlayerInfo, MatchSimHandle } from '@tumble/sim/match';
+import type { ShowTimings } from '@tumble/sim/show';
 import { RoundPhase, SIM_DT } from '@tumble/shared';
 import type { RenderEntityState } from '@tumble/netcode';
 import type { NetGameSession } from '../../net/index.ts';
@@ -57,6 +58,12 @@ export interface RoundSource {
   readonly localId: number;
   /** False once the sim has been disposed (stop querying physics). */
   readonly alive: boolean;
+  /**
+   * Intro phase lengths of the director running this round, when they differ
+   * from `DEFAULT_SHOW_TIMINGS` (the offline show's rules card is shorter).
+   * The obstacle intro clock is timed from them.
+   */
+  readonly showTimings?: Partial<Pick<ShowTimings, 'introFlyover' | 'rulesCard'>>;
   /** Match time to pose obstacles and level animation at. */
   renderTime(): number;
   /** Fills `out` for player `id`; false when unknown/absent. */
@@ -100,12 +107,14 @@ export class OfflineRoundSource implements RoundSource {
    * @param players - Entrants.
    * @param localId - Local player id or -1.
    * @param isAlive - Whether the sim is still live (the show disposes it).
+   * @param showTimings - The director's phase lengths, when not the defaults.
    */
   constructor(
     readonly sim: MatchSimHandle,
     readonly players: readonly MatchPlayerInfo[],
     readonly localId: number,
     private readonly isAlive: () => boolean,
+    readonly showTimings?: Partial<Pick<ShowTimings, 'introFlyover' | 'rulesCard'>>,
   ) {
     players.forEach((p, i) => this.index.set(p.id, i));
     this.prev = new Float64Array(players.length * 4);

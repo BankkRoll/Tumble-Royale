@@ -360,6 +360,13 @@ export async function buildMatchmaker(
     return { lobby: await mm.joinLobby(p, code, spectator) };
   });
 
+  // Host, after the show: the same code opens for the next one.
+  app.post('/lobbies/:code/reopen', async (req) => {
+    const p = await player(req);
+    const { code } = parse(CodeParam, req.params);
+    return { lobby: await mm.reopenLobby(p, code) };
+  });
+
   app.post('/lobbies/:code/leave', async (req, reply) => {
     const p = await player(req);
     parse(CodeParam, req.params);

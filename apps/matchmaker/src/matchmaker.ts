@@ -1021,6 +1021,42 @@ export class Matchmaker {
     return lobby;
   }
 
+  /**
+   * Opens a finished private show again under the same code (host only), so
+   * "Play again" brings everyone back to the lobby they know instead of a new
+   * code. The host is seated; the others rejoin with the code as before.
+   * Already open: the host simply takes their seat again.
+   *
+   * @throws {MMError} 404 `lobby_not_found` once the lobby expired, 403 `not_host` / `banned`.
+   */
+  async reopenLobby(host: Player, code: string): Promise<CustomLobby> {
+    await this.checkStanding([host.userId]);
+    const current = await this.store.get(`lobby-user:${host.userId}`);
+    if (current && current !== code) await this.leaveLobby(host.userId);
+    const lobby = await this.withLobby(code, async (lobby) => {
+      rules.assertHost(lobby, host.userId);
+      if (lobby.status === 'started') {
+        lobby.status = 'open';
+        lobby.matchId = null;
+        lobby.players = [];
+        lobby.spectators = [];
+      }
+      if (!rules.seatOf(lobby, host.userId))
+        lobby.players.unshift({
+          userId: host.userId,
+          name: host.name,
+          joinedAt: this.now(),
+          ready: true,
+          awaySince: null,
+        });
+      await this.store.set(`lobby-user:${host.userId}`, code, LOBBY_TTL_MS);
+      await this.saveLobby(lobby);
+      return lobby;
+    });
+    await this.cancel(host.userId, 'joined_custom_lobby');
+    return lobby;
+  }
+
   /** Leaves the caller's lobby; hosting passes to the longest-present player, an empty lobby closes. */
   async leaveLobby(userId: string): Promise<void> {
     const code = await this.store.get(`lobby-user:${userId}`);

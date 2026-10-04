@@ -1,6 +1,7 @@
 /**
- * Match routes: signed results ingest from game servers, match detail and the
- * player's recent show history.
+ * Match routes: signed results ingest from game servers, match detail, the
+ * player's recent show history and their reward for one show (the rewards
+ * screen's fallback when the game server's forward never arrived).
  */
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
@@ -9,7 +10,7 @@ import type { AppContext } from '../context.ts';
 import { matches, matchParticipants, matchRounds, roundResults } from '../db/schema.ts';
 import { requireInternalSignature, requireUser } from '../http/auth.ts';
 import { notFound, parse } from '../http/errors.ts';
-import { ingestMatch } from './ingest.ts';
+import { ingestMatch, type PlayerRewardSummary } from './ingest.ts';
 import { MatchResultSchema } from './schema.ts';
 
 const MatchIdParam = z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{6,64}$/) });
@@ -140,5 +141,16 @@ export function registerMatchRoutes(app: FastifyInstance, ctx: AppContext): void
           }),
       })),
     };
+  });
+
+  // 404 until the game server's results land (the client polls); then the
+  // caller's stored grant, or null when the show had no reward for them.
+  app.get('/me/matches/:id/reward', async (req) => {
+    const auth = await requireUser(ctx, req);
+    const { id } = parse(MatchIdParam, req.params);
+    const [m] = await ctx.db.select({ rewards: matches.rewards }).from(matches).where(eq(matches.id, id));
+    if (!m) throw notFound('Match');
+    const reward = (m.rewards as PlayerRewardSummary[]).find((r) => r.userId === auth.userId) ?? null;
+    return { matchId: id, reward };
   });
 }

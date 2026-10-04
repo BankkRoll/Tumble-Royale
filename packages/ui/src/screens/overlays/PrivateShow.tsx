@@ -4,8 +4,9 @@
  * - `PrivateShowDialog`: pick rounds and house rules, then play them against
  *   bots right away or get an invite code (needs the online servers). Once a
  *   lobby exists the same dialog shows the live lobby (`PrivateLobby.tsx`).
- * - `JoinCodeDialog`: type a friend's invite code. Opened from the start
- *   card, the private show dialog and the friends sheet.
+ * - `JoinCodeDialog`: type a friend's code, for a private show or a party
+ *   (the game tries both). Opened from the start card, the private show
+ *   dialog and the friends sheet.
  */
 import { DEFAULT_SHOW_PLAYERS, MAX_PLAYERS } from '@tumble/shared';
 import { useRef, useState, type JSX } from 'react';
@@ -13,6 +14,7 @@ import { playCue } from '../../audio-cues.ts';
 import { Button, Slider, Toggle } from '../../components/controls.tsx';
 import { Icon } from '../../components/icons/index.tsx';
 import { uiEvents } from '../../store/events.ts';
+import { useSocial } from '../../store/social.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { CustomLobbyOptions } from '../../store/types.ts';
 import { shakeNo } from '../../theme/motion.ts';
@@ -78,9 +80,12 @@ export function openJoinCode(): void {
   ui.getState().setOverlay('joinCode');
 }
 
-/** Small dialog for a friend's invite code. */
+/** Small dialog for a friend's code: a private show's or a party's. */
 export function JoinCodeDialog(): JSX.Element {
-  const online = useUI((s) => s.onlineStatus.state === 'online');
+  const servers = useUI((s) => s.onlineStatus.state === 'online');
+  // Party codes only need the account servers, so a signed-in player can join one with matchmaking down.
+  const signedIn = useSocial((s) => s.availability === 'online');
+  const online = servers || signedIn;
   const [code, setCode] = useState('');
   const ref = useRef<HTMLDivElement>(null);
   const submit = (): void => {
@@ -95,7 +100,9 @@ export function JoinCodeDialog(): JSX.Element {
     <DialogShell label="Join with a code" title="Join with a code" className="tr-pshow--join">
       {online ? (
         <div className="tr-col tr-pshow-join">
-          <p className="tr-muted tr-small">Ask the host for their 6-character invite code.</p>
+          <p className="tr-muted tr-small">
+            Enter the 6-character code for a private show or a party. Ask the host or party leader for it.
+          </p>
           <div ref={ref} className="tr-code-cells" aria-hidden>
             {Array.from({ length: CODE_LEN }, (_, i) => (
               <span key={i} className={`tr-code-cell${i === code.length ? ' is-caret' : ''}`}>
@@ -132,13 +139,13 @@ export function JoinCodeDialog(): JSX.Element {
             disabled={code.length !== CODE_LEN}
             onClick={submit}
           >
-            Join show
+            Join
           </Button>
         </div>
       ) : (
         <div className="tr-empty">
           <Icon name="globe" size="3em" />
-          <p>Invite codes need the online servers, which aren't reachable right now.</p>
+          <p>Show and party codes need the online servers, which aren't reachable right now.</p>
           <Button variant="sky" data-autofocus="" onClick={() => uiEvents.emit('retryOnline')}>
             <Icon name="refresh" size="1em" /> Try again
           </Button>

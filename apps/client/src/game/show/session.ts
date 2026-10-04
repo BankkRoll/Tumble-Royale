@@ -60,6 +60,7 @@ import {
   type PreShowView,
 } from '../views/ceremonies.ts';
 import type { GameContext, RoundOutcomeInfo, RoundStart, SessionPlayer, SessionSummary } from './context.ts';
+import { wonShow } from './crown.ts';
 import { padSpectateButtons } from '../bindings.ts';
 import {
   SpectatePadCycler,
@@ -1390,7 +1391,7 @@ export abstract class ShowSession {
           colors: p.colors,
           isBot: p.isBot,
           place,
-          crowned: this.summary?.winnerId === id,
+          crowned: this.summary ? wonShow(this.summary, id) : false,
         };
       });
   }
@@ -1790,7 +1791,7 @@ export abstract class ShowSession {
         roundId: o.roundId,
         name: o.name,
         type: o.isFinal ? ('final' as const) : o.type,
-        eliminatedIds: o.eliminated.filter((id) => !carried.has(id) && id !== summary.winnerId),
+        eliminatedIds: o.eliminated.filter((id) => !carried.has(id) && !wonShow(summary, id)),
       };
     });
     this.uiSummary = {
@@ -1800,8 +1801,9 @@ export abstract class ShowSession {
       winnerId: summary.winnerId ?? -1,
       seed: (this.round?.start.seed ?? 1) >>> 0,
     };
-    const winnerId = summary.winnerId;
-    const localWon = winnerId !== null && winnerId === this.localId;
+    const localWon = wonShow(summary, this.localId);
+    // A duo/squad partner of the Crown grabber won too: their own Tumbler headlines their victory.
+    const winnerId = localWon ? this.localId : summary.winnerId;
     const winner = winnerId !== null ? this.players.get(winnerId) : undefined;
     this.ctx.audio.game.onShowPhase(ShowPhase.Victory, {
       localWon,
@@ -1884,14 +1886,21 @@ export abstract class ShowSession {
   }
 
   /**
-   * The rewards screen payload. Offline (and as the online fallback) the local
-   * profile computes and banks it; online sessions return the API's grant.
+   * The rewards screen payload. Offline the local profile computes and banks
+   * it; online sessions return the API's grant, or null while it has not
+   * arrived (see {@link rewardsMissing}).
    *
    * @param facts - What happened from the local player's seat.
    */
-  protected computeRewards(facts: ShowResultForProfile): RewardsSummary {
+  protected computeRewards(facts: ShowResultForProfile): RewardsSummary | null {
     return this.ctx.profile.applyShow(facts);
   }
+
+  /**
+   * The rewards screen opened without a reward (online, the grant is late):
+   * the session fetches it from the account instead of estimating locally.
+   */
+  protected rewardsMissing(): void {}
 
   private rewardsWait = 0;
 
@@ -1911,7 +1920,7 @@ export abstract class ShowSession {
       playlistName: this.showName,
       rounds: this.localRounds(),
       reachedFinal,
-      wonCrown: summary.winnerId === this.localId,
+      wonCrown: wonShow(summary, this.localId),
       place: summary.placements.get(this.localId) ?? this.order.length,
       participants: this.order.length,
       quit: false,
@@ -1932,6 +1941,7 @@ export abstract class ShowSession {
     const rewards = this.computeRewards(this.showFacts(this.summary));
     const s = ui.getState();
     s.setRewards(rewards);
+    if (!rewards) this.rewardsMissing();
     this.wall = null;
     this.ctx.onEnd('rewards');
   }

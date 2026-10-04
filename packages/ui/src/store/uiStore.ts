@@ -32,6 +32,7 @@ import type {
   LeaderboardId,
   LeaderboardInfo,
   LeaderboardRow,
+  LeaderboardScope,
   LobbyGamesState,
   MatchHistoryEntry,
   MenuTab,
@@ -183,6 +184,12 @@ export interface UIState {
   /** Bumps when a new wall starts so the timeline restarts. */
   playerWallSeq: number;
   rewards: RewardsSummary | null;
+  /**
+   * A signed-in player's reward is not here yet: `arriving` while the game
+   * asks the account servers, `deferred` once it gave up waiting (the reward
+   * still lands on the profile). Null once `rewards` is set.
+   */
+  rewardsPending: 'arriving' | 'deferred' | null;
   /** Announcer caption (shown when captions are enabled). */
   caption: string | null;
 
@@ -229,6 +236,8 @@ export interface UIState {
   setPass: (pass: SeasonPassData | null) => void;
   setChallenges: (challenges: ChallengesData | null) => void;
   setLeaderboard: (board: LeaderboardId, rows: LeaderboardRow[], info?: LeaderboardInfo) => void;
+  /** Marks a board's last load as failed (`null` clears it before a retry). Rows are kept. */
+  setLeaderboardError: (board: LeaderboardId, scope: LeaderboardScope, error: string | null) => void;
   setMatchHistory: (entries: MatchHistoryEntry[]) => void;
   setNews: (news: NewsItem[]) => void;
   setFriends: (friends: Friend[]) => void;
@@ -283,7 +292,9 @@ export interface UIState {
   setVictory: (info: VictoryInfo | null) => void;
   /** Loads the end-of-show wall; call before `setScreen('playerWall')`. */
   setPlayerWall: (summary: ShowSummary | null, opts?: Partial<PlayerWallOptions>) => void;
+  /** Shows the rewards (clears any pending state). */
   setRewards: (rewards: RewardsSummary | null) => void;
+  setRewardsPending: (pending: 'arriving' | 'deferred' | null) => void;
 
   // --- actions: replays ----------------------------------------------------
   setReplays: (replays: ReplayRoundEntry[]) => void;
@@ -393,6 +404,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   playerWallOptions: { render3D: false, autoContinueMs: 6000 },
   playerWallSeq: 0,
   rewards: null,
+  rewardsPending: null,
   caption: null,
   replays: [],
   replayLive: false,
@@ -494,6 +506,14 @@ export const ui = createStore<UIState>()((set, get) => ({
       leaderboards: { ...get().leaderboards, [board]: rows },
       ...(info ? { leaderboardInfo: { ...get().leaderboardInfo, [board]: info } } : {}),
     }),
+  setLeaderboardError: (board, scope, error) => {
+    const prev = get().leaderboardInfo[board];
+    if (!error && !prev?.error) return;
+    const next: LeaderboardInfo = { ...(prev ?? { source: 'api', updatedAt: Date.now() }), scope };
+    if (error) next.error = error;
+    else delete next.error;
+    set({ leaderboardInfo: { ...get().leaderboardInfo, [board]: next } });
+  },
   setMatchHistory: (matchHistory) => set({ matchHistory }),
   setNews: (news) => set({ news }),
   setFriends: (friends) => set({ friends }),
@@ -589,7 +609,8 @@ export const ui = createStore<UIState>()((set, get) => ({
       playerWallOptions: { ...get().playerWallOptions, ...opts },
       playerWallSeq: get().playerWallSeq + 1,
     }),
-  setRewards: (rewards) => set({ rewards }),
+  setRewards: (rewards) => set({ rewards, ...(rewards ? { rewardsPending: null } : {}) }),
+  setRewardsPending: (rewardsPending) => set({ rewardsPending }),
   setReplays: (replays) => set({ replays }),
   setReplayLive: (replayLive) => {
     if (get().replayLive !== replayLive) set({ replayLive });

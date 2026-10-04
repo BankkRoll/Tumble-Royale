@@ -42,7 +42,8 @@ export type ObstacleType =
   | 'propSpawner'
   | 'paintGrid'
   | 'patternBoard'
-  | 'goalZone';
+  | 'goalZone'
+  | 'cometField';
 
 /**
  * Placement of one obstacle in a round. `rotation` is yaw/pitch/roll in DEGREES

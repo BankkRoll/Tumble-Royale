@@ -1,16 +1,18 @@
 /**
- * Obstacle library registry. Merges both obstacle sets into one lookup used by
+ * Obstacle library registry. Merges every obstacle set into one lookup used by
  * the match sim, bots and the level tools.
  */
 import { obstacleSetA } from './set-a.ts';
 import { obstacleSetB } from './set-b.ts';
 import { obstacleSetC } from './set-c.ts';
+import { obstacleSetD } from './set-d.ts';
 import type { ObstacleModule, ObstacleType } from './types.ts';
 
 export * from './types.ts';
 export * from './set-a.ts';
 export * from './set-b.ts';
 export * from './set-c.ts';
+export * from './set-d.ts';
 
 /**
  * Every obstacle module in the library.
@@ -23,6 +25,7 @@ export const ALL_OBSTACLES: readonly ObstacleModule<any>[] = [
   ...obstacleSetA,
   ...obstacleSetB,
   ...obstacleSetC,
+  ...obstacleSetD,
 ];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- same heterogeneous param types as above

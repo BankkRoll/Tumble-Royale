@@ -188,6 +188,8 @@ export const OBSTACLE_CUES: Readonly<Record<string, string>> = {
   'ball.bounce': 'ball.bonk',
   'ball.post': 'bumper.boing',
   'egg.golden': 'ui.reward',
+  'cometField.catch': 'ui.coin',
+  'cometField.golden': 'ui.reward',
 };
 
 /**

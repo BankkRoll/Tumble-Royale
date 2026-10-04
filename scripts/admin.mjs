@@ -5,7 +5,8 @@
  * Calls the API's `/internal/*` admin routes with `ADMIN_TOKEN`. The API URL
  * and token come from `--api-url` / `--token`, else `ADMIN_API_URL` /
  * `ADMIN_TOKEN`, else `PUBLIC_API_URL` / `API_URL`, reading the repository's
- * `.env` and `apps/api/.env` when present (real environment variables win).
+ * `deploy/.env`, `.env` and `apps/api/.env` when present (later files win,
+ * real environment variables win over all of them).
  *
  * Exit codes: 0 ok, 1 the API refused or failed, 2 usage error, 3 the API
  * could not be reached.
@@ -82,12 +83,20 @@ function readEnvFile(file) {
 
 /**
  * Environment with the repository `.env` files merged under the real one.
+ * `deploy/.env` (written by `pnpm setup:env --production`) comes first, so
+ * on a production host the CLI talks to the public API with its admin token,
+ * while a development checkout's own `.env` files still win.
  *
  * @param {string} root - Repository root.
  * @param {Record<string, string | undefined>} env - Real environment.
  */
 export function loadEnv(root, env) {
-  return { ...readEnvFile(join(root, '.env')), ...readEnvFile(join(root, 'apps/api/.env')), ...env };
+  return {
+    ...readEnvFile(join(root, 'deploy/.env')),
+    ...readEnvFile(join(root, '.env')),
+    ...readEnvFile(join(root, 'apps/api/.env')),
+    ...env,
+  };
 }
 
 const enc = encodeURIComponent;

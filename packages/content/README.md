@@ -22,7 +22,7 @@ Write `src/rounds/<id>/index.ts` with `defineRound({...})`, add it to a
 group list, and preview it at `/level.html?round=<id>`. Positions are
 bounding-box centres, ramps rise toward +Z, wedge ridges run along Z, tori
 lie flat, and rotations are yaw/pitch/roll in degrees. Design intent for the
-20 launch rounds is in `docs/design/LEVELS.md`.
+20 launch rounds and the five added after launch is in `docs/design/LEVELS.md`.
 
 ## Testing
 

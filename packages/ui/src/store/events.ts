@@ -34,6 +34,8 @@ export interface UIIntents {
   welcomeDone: { name: string; colors: TumblerColors };
   /** Tutorial prompt answered. */
   tutorialChoice: { accept: boolean; dontAskAgain: boolean };
+  /** Visit Practice Island (Play tab, Settings → Gameplay), any time. */
+  startPractice: undefined;
   /** Main menu tab changed (3D lobby moves its camera). */
   menuTab: { tab: MenuTab };
   overlay: { overlay: OverlayId };

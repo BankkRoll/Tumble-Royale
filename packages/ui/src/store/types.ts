@@ -723,6 +723,8 @@ export interface PartyMember {
   ready: boolean;
   isLeader: boolean;
   isSelf: boolean;
+  /** Playing Vs Bots or Practice Island on their own; still in the party. */
+  playingSolo?: boolean;
 }
 
 /** Party state (max 4). */

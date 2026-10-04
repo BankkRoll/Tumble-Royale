@@ -158,7 +158,8 @@ function Rebinder(): JSX.Element {
   );
 }
 
-function Section({ id }: { id: SettingsSection }): JSX.Element {
+/** The rows of one settings section. */
+export function Section({ id }: { id: SettingsSection }): JSX.Element {
   const s = useUI((st) => st.settings);
   const up = ui.getState().updateSettings;
   const pct = (v: number): string => `${Math.round(v * 100)}%`;
@@ -469,6 +470,19 @@ function Section({ id }: { id: SettingsSection }): JSX.Element {
             />
           </Row>
           <RegionRow />
+          <Row label="Practice Island" hint="Coach Boing's warm-up course, any time">
+            <Button
+              size="sm"
+              variant="secondary"
+              data-testid="settings-practice"
+              onClick={() => {
+                ui.getState().setOverlay('none');
+                uiEvents.emit('startPractice');
+              }}
+            >
+              Visit
+            </Button>
+          </Row>
         </>
       );
     case 'account':

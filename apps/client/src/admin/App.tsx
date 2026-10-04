@@ -15,6 +15,7 @@ import { isAdmin, parseRoute, relativeTime, type Route } from './format.ts';
 import { AuditView } from './views/AuditView.tsx';
 import { LiveOpsView } from './views/LiveOpsView.tsx';
 import { PlayersView } from './views/PlayerView.tsx';
+import { RefundsView } from './views/RefundsView.tsx';
 import { ReportsView } from './views/ReportsView.tsx';
 import { SanctionsView } from './views/SanctionsView.tsx';
 
@@ -33,6 +34,7 @@ const NAV: { view: Route['view']; label: string; adminOnly?: boolean }[] = [
   { view: 'reports', label: 'Reports' },
   { view: 'players', label: 'Players' },
   { view: 'sanctions', label: 'Sanctions' },
+  { view: 'refunds', label: 'Refunds' },
   { view: 'liveops', label: 'Live ops', adminOnly: true },
   { view: 'audit', label: 'Audit log' },
 ];
@@ -166,6 +168,7 @@ export function AdminApp(props: AdminAppProps) {
           <PlayersView key={route.id ?? route.q ?? ''} id={route.id} q={route.q} />
         )}
         {route.view === 'sanctions' && <SanctionsView />}
+        {route.view === 'refunds' && <RefundsView key={route.id ?? ''} id={route.id} />}
         {route.view === 'liveops' && <LiveOpsView />}
         {route.view === 'audit' && <AuditView key={route.target ?? ''} target={route.target} />}
       </main>

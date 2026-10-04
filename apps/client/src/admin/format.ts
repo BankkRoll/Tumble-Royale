@@ -1,7 +1,7 @@
 /**
  * Pure formatting and query helpers for the admin console views.
  */
-import type { BanRow, PersonRef, ReportAction, StaffRole } from './types.ts';
+import type { BanRow, PersonRef, RefundStatus, ReportAction, StaffRole } from './types.ts';
 
 /** A sanction length the console offers; `hours: null` means permanent. */
 export interface DurationOption {
@@ -188,6 +188,7 @@ export type Route =
   | { view: 'players'; id?: string; q?: string }
   | { view: 'sanctions' }
   | { view: 'liveops' }
+  | { view: 'refunds'; id?: string }
   | { view: 'audit'; target?: string };
 
 /**
@@ -210,6 +211,8 @@ export function parseRoute(hash: string): Route {
       return { view: 'sanctions' };
     case 'liveops':
       return { view: 'liveops' };
+    case 'refunds':
+      return { view: 'refunds', ...(id ? { id: decodeURIComponent(id) } : {}) };
     case 'audit':
       return { view: 'audit', ...(params.get('target') ? { target: params.get('target')! } : {}) };
     default:
@@ -226,9 +229,41 @@ export function routeHash(r: Route): string {
   switch (r.view) {
     case 'players':
       return r.id ? `#/players/${encodeURIComponent(r.id)}` : `#/players${query({ q: r.q })}`;
+    case 'refunds':
+      return r.id ? `#/refunds/${encodeURIComponent(r.id)}` : '#/refunds';
     case 'audit':
       return `#/audit${query({ target: r.target })}`;
     default:
       return `#/${r.view}`;
   }
+}
+
+/** Human names and badge tones for refund statuses. */
+export const REFUND_STATUS: Record<
+  RefundStatus,
+  { label: string; tone: 'neutral' | 'good' | 'warn' | 'bad' | 'info' }
+> = {
+  completed: { label: 'refunded (self-service)', tone: 'neutral' },
+  pending: { label: 'awaiting decision', tone: 'warn' },
+  processing: { label: 'sent to Stripe', tone: 'info' },
+  manual: { label: 'refund by hand', tone: 'info' },
+  refunded: { label: 'refunded', tone: 'good' },
+  partially_refunded: { label: 'partly refunded', tone: 'good' },
+  denied: { label: 'denied', tone: 'neutral' },
+  failed: { label: 'failed', tone: 'bad' },
+};
+
+/**
+ * A refund amount for people: money in dollars, currencies with their name.
+ *
+ * @param currency - `usd`, `gumballs` or `gems`.
+ * @param amount - Minor units for money, otherwise whole units.
+ * @returns The formatted amount.
+ * @example
+ * refundAmount('usd', 999); // "$9.99"
+ */
+export function refundAmount(currency: string, amount: number): string {
+  if (currency === 'usd') return `$${(amount / 100).toFixed(2)}`;
+  const names: Record<string, string> = { gumballs: 'Gumballs', gems: 'Gems', crown_shards: 'Crown Shards' };
+  return `${amount.toLocaleString('en-US')} ${names[currency] ?? currency}`;
 }

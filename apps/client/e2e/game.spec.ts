@@ -83,7 +83,7 @@ test('full offline show with 100 players, boot to rewards', async ({ page }) => 
   });
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(
-    `${process.env.GAME_URL ?? ''}/?autoplay=1&ts=${TS}&fresh=1&api=0&seed=11&tier=high&backend=${BACKEND}`,
+    `${process.env.GAME_URL ?? ''}/?autoplay=1&ts=${TS}&fresh=1&api=0&seed=11&tier=high&playlist=main-show&backend=${BACKEND}`,
   );
   await page.waitForFunction(() => window.__tumble?.ready === true, undefined, { timeout: 120_000 });
   console.log('[game] backend', await page.evaluate(() => window.__tumble!.backend));
@@ -118,7 +118,7 @@ test('full offline show with 100 players, boot to rewards', async ({ page }) => 
       await page.waitForTimeout(2500);
       const p = await perf(page);
       console.log(`[game] round ${round} playing`, JSON.stringify(p));
-      // DEFAULT_SHOW_PLAYERS: the Main Show fills to the cap.
+      // The Main Show (forced above; a fresh profile would get the smaller First Show) fills to the cap.
       if (round === 1) expect(p.tumblers).toBe(100);
       await snap(page, `05-r${round}-play`);
       last = 'round';

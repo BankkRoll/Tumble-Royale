@@ -212,6 +212,42 @@ export class ReplayController {
   }
 
   /**
+   * Builds a replay view of a recording without showing it (the viewer, and
+   * share clips rendering offscreen).
+   *
+   * @param data - Recording.
+   * @param post - Screen effects the view may trigger (clips pass no-ops).
+   * @returns The view (caller owns and disposes it).
+   * @throws {@link ReplayFileError} (`header`) when the round is not in this build; decode errors as thrown.
+   */
+  createView(data: ReplayData, post: CeremonyPost = this.deps.post): ReplayView {
+    const h = data.header;
+    const round = getRound(h.roundId);
+    if (!round)
+      throw new ReplayFileError(
+        'header',
+        `This version of the game doesn't have the round "${h.roundName}".`,
+      );
+    const loadouts = new Map<number, TumblerLoadout>();
+    for (const p of h.players)
+      loadouts.set(p.id, decodeLoadout(JSON.stringify(p.loadout ?? '')) ?? botLoadout(h.seed, p.id, p.name));
+    const set = ui.getState().settings;
+    return new ReplayView({
+      R: this.deps.R,
+      deps: this.deps.matchDeps,
+      round,
+      timeline: new ReplayTimeline(data),
+      loadouts,
+      createTumbler: this.deps.createTumbler,
+      preset: this.deps.preset(),
+      post,
+      nameplates: set.gameplay.nameplates,
+      streamerMode: set.gameplay.streamerMode,
+      reduceShake: set.accessibility.reduceShake,
+    });
+  }
+
+  /**
    * Opens the viewer over whatever is on screen.
    *
    * @param data - Recording.
@@ -221,8 +257,7 @@ export class ReplayController {
   open(data: ReplayData, origin: 'show' | 'file'): boolean {
     if (this.view) this.exit();
     const h = data.header;
-    const round = getRound(h.roundId);
-    if (!round) {
+    if (!getRound(h.roundId)) {
       ui.getState().showDialog({
         id: 'replay-open-failed',
         kind: 'error',
@@ -232,25 +267,9 @@ export class ReplayController {
       });
       return false;
     }
-    const loadouts = new Map<number, TumblerLoadout>();
-    for (const p of h.players)
-      loadouts.set(p.id, decodeLoadout(JSON.stringify(p.loadout ?? '')) ?? botLoadout(h.seed, p.id, p.name));
-    const set = ui.getState().settings;
     let view: ReplayView;
     try {
-      view = new ReplayView({
-        R: this.deps.R,
-        deps: this.deps.matchDeps,
-        round,
-        timeline: new ReplayTimeline(data),
-        loadouts,
-        createTumbler: this.deps.createTumbler,
-        preset: this.deps.preset(),
-        post: this.deps.post,
-        nameplates: set.gameplay.nameplates,
-        streamerMode: set.gameplay.streamerMode,
-        reduceShake: set.accessibility.reduceShake,
-      });
+      view = this.createView(data);
     } catch (err) {
       console.error('[replay] could not build the replay', err);
       ui.getState().showDialog({

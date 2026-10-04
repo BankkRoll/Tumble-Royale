@@ -2019,8 +2019,10 @@ export abstract class ShowSession {
       return;
     }
     this.awaiting = 'rewards';
+    const facts = this.showFacts(this.summary);
+    this.ctx.onShowResult?.(facts);
     const s = ui.getState();
-    const rewards = withEventNote(this.computeRewards(this.showFacts(this.summary)), s.events);
+    const rewards = withEventNote(this.computeRewards(facts), s.events);
     s.setRewards(rewards);
     if (!rewards) this.rewardsMissing();
     this.wall = null;

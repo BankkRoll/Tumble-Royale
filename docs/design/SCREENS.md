@@ -115,6 +115,7 @@ gold). Cue `ui.confetti`.
      ├─ WatchChoiceLayer keep watching / leave after elimination
      ├─ ToastLayer       top-right cards + left feed
      ├─ ReplayLayer      replay viewer
+     ├─ ShareLayer       share sheet (card / clip, progress, preview)
      ├─ OverlayLayer     settings, friends, notifications, privateShow, joinCode, inGameMenu
      │   (PhotoModeBar replaces it in photo mode)
      ├─ SocialLayer      player actions, report dialog
@@ -387,7 +388,7 @@ clicks each top-level control and asserts the destination.
 | Post / featured                 | News              | reader view; `newsRead` clears the unread badges                                                                                                          |
 | All news / Esc                  | News reader       | back to the list                                                                                                                                          |
 | Eliminated choice               | show flow         | Keep watching (`spectate`, auto after a countdown) or Leave show (`leaveShow`)                                                                            |
-| Results / Rewards               | show flow         | Watch replay (`replayOpen`), Back to lobby (`backToLobby`), Play again (`playAgain`, same mode), Continue (`continue`)                                    |
+| Results / Rewards               | show flow         | Watch replay (`replayOpen`), Share (§9.19), Back to lobby (`backToLobby`), Play again (`playAgain`, same mode), Continue (`continue`)                     |
 | Open replay file                | Profile / History | `replayOpenFile` (a saved `.tumblereplay`)                                                                                                                |
 
 ---
@@ -792,6 +793,28 @@ From Victory, Winner cam or the in-game menu (not while playing, never
 during a replay). Hides all other UI. Bar: field of view 20–100°, filter
 None / Warm / Mono / Vivid, logo watermark, Take photo (`photoCapture`),
 Exit (`photoExit`). Per-device hints for keyboard, gamepad and touch.
+
+### 9.19 Share sheet
+
+From the rewards screen's **Share** button, shown when the show earned a
+card (a Crown, a final, or a top-quarter finish) or has recorded rounds to
+clip. A modal card with two tabs:
+
+- **Card:** Post (1200×630) or Story (1080×1920), and "Show my name" (off by
+  default in Streamer Mode; nobody else's name is ever on a card). Make card
+  (`shareCard`).
+- **Clip:** recorded rounds as chips (defaults to the won final, else the
+  latest qualified round), length 5 / 10 / 15 s and a start trimmer (range
+  plus ±1 s buttons for pad and keys). Make clip (`shareClip`). Hidden while
+  `replays.enabled` is off; a browser that cannot record video gets an
+  explanation instead.
+
+While rendering: spinner, progress bar (clips), live-region status and a
+focused Cancel that Back/B/Esc also triggers (`shareCancel`). When ready: the
+preview (card image, or a muted looping clip that does not autoplay under
+Reduce Motion) with Share / Save / Copy as the browser allows
+(`shareDeliver`), or an error with Try again. Closing emits `shareClose`.
+Focus moves to each state's main action and back to Share on close.
 
 ## 10. THE PLAYER WALL — `playerWall`
 

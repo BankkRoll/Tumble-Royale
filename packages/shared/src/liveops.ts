@@ -290,6 +290,10 @@ export const ANALYTICS_EVENTS = [
   'load_time',
   'fps_bucket',
   'error_count',
+  /** A share card was made or delivered: `format` (social/story), `outcome`, `action`, `named`, `crowned`. */
+  'share.card',
+  /** A clip was made or delivered: `format` (mp4/webm), `encoder`, `outcome`, `action`, `seconds`, `height`. */
+  'share.clip',
 ] as const;
 
 /** An allow-listed analytics event name. */

@@ -177,3 +177,25 @@ approval sees the request already `processing`, and a webhook that lands
 before Stripe answers is not overwritten. A failure goes back to staff as
 `failed`, and a retry uses a new idempotency key because Stripe would replay
 the failed refund for the old one.
+
+## Share cards and clips are made and kept on the device
+
+Cards and clips are rendered, encoded and handed over entirely in the
+browser: Web Share with files where it can, else a download, else (cards)
+the clipboard. Nothing is uploaded and there is no share link, so there is
+no storage, moderation queue or retention policy to run, and a card can never
+leak other players' names: it carries none, and the player's own is opt-in
+(off by default in Streamer Mode). A hosted share page can come later as an
+explicit opt-in.
+
+Clips re-render the recorded round offscreen rather than capturing the
+screen: the recording already holds everything, the result does not depend
+on what was on screen or how fast the device ran, and the menu stays usable
+while it renders. The live post pipeline is bound to the canvas size, so
+clips use a small output pass of their own (tone mapping and the round's
+grade, no bloom). Rendering needs the main thread's GPU context, so there is
+no worker: WebCodecs already encodes off the main thread, and the loop
+renders one frame per animation frame with encoder back-pressure. The MP4 and
+WebM muxers are written in-house (one video track, laid out once the samples
+are known) because the small npm muxers are either deprecated or not
+MIT/Apache.

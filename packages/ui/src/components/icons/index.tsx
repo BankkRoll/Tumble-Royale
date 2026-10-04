@@ -64,7 +64,8 @@ export type IconName =
   | 'pause'
   | 'film'
   | 'download'
-  | 'upload';
+  | 'upload'
+  | 'share';
 
 const INK = 'currentColor';
 const S = {
@@ -371,6 +372,15 @@ function paths(name: IconName): JSX.Element {
         <>
           <path d="M4.5 15.5v3.5h15v-3.5" fill="none" {...S} />
           <path d="M12 4v10M7.5 10l4.5 4.5 4.5-4.5" fill="none" {...S} strokeWidth={2.6} />
+        </>
+      );
+    case 'share':
+      return (
+        <>
+          <path d="M8.5 10.8 15.5 7M8.5 13.2l7 3.8" fill="none" {...S} strokeWidth={2.2} />
+          <circle cx="6.5" cy="12" r="2.8" fill="#fff" {...S} />
+          <circle cx="17.5" cy="6" r="2.8" fill="#fff" {...S} />
+          <circle cx="17.5" cy="18" r="2.8" fill="#fff" {...S} />
         </>
       );
     case 'upload':

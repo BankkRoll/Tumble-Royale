@@ -22,7 +22,7 @@ services:
       - results-outbox:/data/results-outbox
     restart: unless-stopped
     # Longer than DRAIN_SETTLE_MS + DRAIN_TIMEOUT_MS + OUTBOX_FLUSH_MS (see ../docker-compose.yml).
-    stop_grace_period: 16m
+    stop_grace_period: 17m
     logging:
       driver: json-file
       options:

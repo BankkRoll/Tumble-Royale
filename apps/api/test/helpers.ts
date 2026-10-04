@@ -111,11 +111,15 @@ export async function createTestApi(
       nowMs = Date.parse(iso);
     },
   };
-  // A test that brings its own database or KV (shared by two instances, or a
-  // failing double) keeps it; the rest use the configured backing services.
-  const scratch =
-    TEST_DATABASE_URL && !extra.database ? await createScratchDatabase(TEST_DATABASE_URL) : null;
-  const kv = extra.kv ?? (TEST_REDIS_URL && !memoryKv ? isolatedRedisKV(TEST_REDIS_URL) : undefined);
+  // `DATABASE_URL` / `REDIS_URL` in `env` pick the servers for this API (empty
+  // forces PGlite / the in-process KV); otherwise the suite-wide ones apply.
+  // Either way the API gets a database and key prefix of its own. A test that
+  // brings its own database or KV (shared by two instances, a failing double)
+  // keeps it.
+  const dbServer = 'DATABASE_URL' in env ? env.DATABASE_URL || undefined : TEST_DATABASE_URL;
+  const redisServer = memoryKv ? undefined : 'REDIS_URL' in env ? env.REDIS_URL || undefined : TEST_REDIS_URL;
+  const scratch = dbServer && !extra.database ? await createScratchDatabase(dbServer) : null;
+  const kv = extra.kv ?? (redisServer ? isolatedRedisKV(redisServer) : undefined);
   let built: BuiltApp;
   const mailer = new MemoryMailer();
   try {
@@ -125,8 +129,8 @@ export async function createTestApi(
         ADMIN_TOKEN,
         // Short enough for tests to watch a disconnect turn into "offline".
         PRESENCE_GRACE_MS: '150',
-        ...(scratch ? { DATABASE_URL: scratch.url } : {}),
         ...env,
+        ...(scratch ? { DATABASE_URL: scratch.url } : {}),
       }),
     );
     built = await buildApp(config, {

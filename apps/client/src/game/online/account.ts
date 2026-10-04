@@ -4,8 +4,10 @@
  *
  * Responsibilities:
  * - load `/me`, `/inventory`, `/loadouts`, `/store`, `/gems/packs`, `/pass`,
- *   `/challenges`, `/friends`, `/party` and project them onto `@tumble/ui`
- *   shapes (profile card, locker, store, pass, challenges, friends, party);
+ *   `/challenges`, `/streak`, `/achievements`, `/collection`, `/friends`,
+ *   `/party` and project them onto `@tumble/ui` shapes (profile card, locker,
+ *   store, pass, challenges, login streak, achievements, collection log,
+ *   friends, party);
  * - locker edits persisted server-side (`PUT /loadouts/:i`, activate);
  * - purchases with an `Idempotency-Key` (store items, Gem packs via the
  *   checkout — instant with the API's fake provider in dev, a Stripe redirect
@@ -23,6 +25,7 @@
  */
 import { COSMETICS, DEFAULT_LOADOUT, getCosmetic } from '@tumble/content/cosmetics';
 import {
+  ACHIEVEMENT_CATEGORY_NAMES,
   SHARDS_PER_CROWN,
   levelForXp,
   passTierForXp,
@@ -34,9 +37,13 @@ import type { PlayerRewardMsg } from '@tumble/netcode';
 import type { TumblerLoadout } from '@tumble/render/scenes';
 import { hashString } from '@tumble/shared';
 import {
+  grantText,
   ui,
+  type ChallengeCadence,
   type ChallengesData,
+  type CollectionSourceView,
   type CosmeticItem as UiItem,
+  type GrantView,
   type CosmeticSlot as UiSlot,
   type GemPackOffer,
   type LeaderboardId,
@@ -57,7 +64,9 @@ import {
   ApiError,
   idempotencyKey,
   type ApiClient,
+  type ApiGrant,
   type ApiLoadoutItems,
+  type ApiStreak,
   type ApiMe,
   type ApiParty,
   type ApiPass,
@@ -242,6 +251,9 @@ export class OnlineAccount {
   private readonly soloMembers = new Set<string>();
   /** Bumps per reward wait so a newer show cancels an older poll. */
   private rewardWait = 0;
+  /** An achievements + collection reload is running; a burst of unlock notifications shares it. */
+  private unlocksInFlight = false;
+  private unlocksQueued = false;
 
   constructor(
     readonly api: ApiClient,
@@ -333,6 +345,9 @@ export class OnlineAccount {
       this.refreshStore(),
       this.refreshPass(),
       this.refreshChallenges(),
+      this.refreshStreak(),
+      this.refreshAchievements(),
+      this.refreshCollection(),
       this.refreshFriends(),
       this.refreshParty(),
       this.history(),
@@ -352,7 +367,15 @@ export class OnlineAccount {
     }
     this.pushProfile();
     this.pushInventory();
-    await Promise.all([this.refreshStore(), this.refreshPass(), this.refreshChallenges(), this.history()]);
+    await Promise.all([
+      this.refreshStore(),
+      this.refreshPass(),
+      this.refreshChallenges(),
+      this.refreshStreak(),
+      this.refreshAchievements(),
+      this.refreshCollection(),
+      this.history(),
+    ]);
   }
 
   private applyLoadouts(
@@ -589,7 +612,7 @@ export class OnlineAccount {
     try {
       const c = await this.api.challenges();
       const row =
-        (cadence: 'daily' | 'weekly') =>
+        (cadence: ChallengeCadence) =>
         (x: (typeof c.daily)[number]): ChallengesData['list'][number] => ({
           id: x.id,
           cadence,
@@ -606,18 +629,177 @@ export class OnlineAccount {
             : {}),
           ...(x.metric ? { metric: x.metric } : {}),
           ...(x.reward.gems ? { gems: x.reward.gems } : {}),
+          ...(x.reward.cosmetic ? this.optionalItem(x.reward.cosmetic.id) : {}),
           claimed: x.claimed,
           canReroll: cadence === 'daily' && c.rerollsLeft > 0 && !x.completed,
         });
       ui.getState().setChallenges({
-        list: [...c.daily.map(row('daily')), ...c.weekly.map(row('weekly'))],
+        list: [
+          ...c.daily.map(row('daily')),
+          ...c.weekly.map(row('weekly')),
+          ...(c.seasonal ?? []).map(row('seasonal')),
+          ...(c.milestone ?? []).map(row('milestone')),
+        ],
         dailyResetsAt: Date.parse(c.dailyRefreshesAt),
         weeklyResetsAt: Date.parse(c.weeklyRefreshesAt),
         rerollsLeft: c.rerollsLeft,
         rerollsPerDay: 1,
+        ...(c.season ? { season: { name: c.season.name, endsAt: Date.parse(c.season.endsAt) } } : {}),
       });
+      for (const s of c.settled ?? []) {
+        ui.getState().pushToast({
+          kind: 'reward',
+          title: 'Seasonal challenge paid out',
+          body: `${s.title}: completed last season, rewards added.`,
+          icon: '🎯',
+        });
+      }
     } catch (err) {
       console.warn('[account] challenges failed', err);
+    }
+  }
+
+  private optionalItem(id: string): { item: UiItem } | Record<string, never> {
+    const item = getCosmetic(id);
+    return item ? { item: uiItem(item, this.owns(id)) } : {};
+  }
+
+  /** API reward → UI reward pill (unknown cosmetics are dropped). */
+  private grantView(g: ApiGrant): GrantView | null {
+    if (g.type === 'cosmetic') {
+      const item = getCosmetic(g.id);
+      return item ? { kind: 'item', item: uiItem(item, this.owns(g.id)) } : null;
+    }
+    return { kind: g.type === 'crown_shards' ? 'crownShards' : g.type, amount: g.amount };
+  }
+
+  private grantViews(list: readonly ApiGrant[]): GrantView[] {
+    return list.flatMap((g) => {
+      const v = this.grantView(g);
+      return v ? [v] : [];
+    });
+  }
+
+  private applyStreak(s: ApiStreak): void {
+    ui.getState().setLoginStreak({
+      streak: s.streak,
+      best: s.best,
+      claimedToday: s.claimedToday,
+      canClaim: s.canClaim,
+      nextClaimAt: Date.parse(s.nextClaimAt),
+      breaksAt: s.breaksAt ? Date.parse(s.breaksAt) : null,
+      next: { day: s.next.day, rewards: this.grantViews(s.next.rewards) },
+      ladder: s.ladder.map((d) => ({ day: d.day, state: d.state, rewards: this.grantViews(d.rewards) })),
+    });
+  }
+
+  private async refreshStreak(): Promise<void> {
+    try {
+      this.applyStreak(await this.api.streak());
+    } catch (err) {
+      console.warn('[account] login streak failed', err);
+    }
+  }
+
+  private async refreshAchievements(): Promise<void> {
+    try {
+      const a = await this.api.achievements();
+      ui.getState().setAchievements({
+        list: a.achievements.map((x) => ({
+          id: x.id,
+          category: x.category,
+          title: x.title,
+          description: x.description,
+          hidden: x.hidden,
+          unlocked: x.unlocked,
+          ...(x.unlockedAt ? { unlockedAt: Date.parse(x.unlockedAt) } : {}),
+          progress: x.progress,
+          target: x.target,
+          ...(x.series ? { tier: { tier: x.series.tier, tiers: x.series.tiers } } : {}),
+          rewards: this.grantViews(x.rewards),
+        })),
+        categories: a.categories.map((c) => ({
+          ...c,
+          name: ACHIEVEMENT_CATEGORY_NAMES[c.id as keyof typeof ACHIEVEMENT_CATEGORY_NAMES] ?? c.id,
+        })),
+        unlocked: a.unlocked,
+        total: a.total,
+      });
+    } catch (err) {
+      console.warn('[account] achievements failed', err);
+    }
+  }
+
+  private async refreshCollection(): Promise<void> {
+    try {
+      const c = await this.api.collection();
+      ui.getState().setCollection({
+        owned: c.owned,
+        total: c.total,
+        percent: c.percent,
+        entries: c.entries.flatMap((e) => {
+          const item = getCosmetic(e.id);
+          if (!item) return [];
+          return [
+            {
+              item: uiItem(item, e.owned),
+              sources: e.sources as CollectionSourceView[],
+              ...(e.acquiredAt ? { acquiredAt: Date.parse(e.acquiredAt) } : {}),
+            },
+          ];
+        }),
+      });
+    } catch (err) {
+      console.warn('[account] collection failed', err);
+    }
+  }
+
+  /**
+   * Reloads achievements and the collection after an unlock notification. A
+   * first sign-in can unlock several backfilled achievements at once; their
+   * notifications collapse into one reload plus at most one follow-up.
+   */
+  private refreshUnlocksSoon(): void {
+    if (this.unlocksInFlight) {
+      this.unlocksQueued = true;
+      return;
+    }
+    this.unlocksInFlight = true;
+    void Promise.all([this.refreshAchievements(), this.refreshCollection()]).finally(() => {
+      this.unlocksInFlight = false;
+      if (!this.unlocksQueued) return;
+      this.unlocksQueued = false;
+      this.refreshUnlocksSoon();
+    });
+  }
+
+  /** Claims today's login reward; the API decides the day and the streak. */
+  async claimLoginStreak(): Promise<void> {
+    try {
+      const r = await this.api.claimStreak();
+      this.applyStreak(r.view);
+      const paid = r.rewards
+        .filter((g) => g.granted)
+        .map((g) => this.grantView(g))
+        .flatMap((g) => (g && g.kind !== 'item' ? [grantText(g)] : []));
+      ui.getState().pushToast({
+        kind: 'reward',
+        title: r.ladderDay === 7 ? 'Day 7 bonus claimed!' : `Day ${r.ladderDay} reward claimed`,
+        ...(paid.length ? { body: paid.join(' · ') } : {}),
+        icon: '🔥',
+      });
+      await this.refreshProgress();
+    } catch (err) {
+      ui.getState().pushToast({
+        kind: err instanceof ApiError && err.code === 'already_claimed' ? 'info' : 'error',
+        title:
+          err instanceof ApiError && err.code === 'already_claimed'
+            ? 'Already claimed today'
+            : "Couldn't claim the login reward",
+        body: describe(err),
+        icon: '🔥',
+      });
+      await this.refreshStreak();
     }
   }
 
@@ -1056,6 +1238,15 @@ export class OnlineAccount {
             })),
           }
         : {}),
+      ...(r.achievements?.length
+        ? {
+            achievements: r.achievements.map((a) => ({
+              id: a.id,
+              title: a.title,
+              description: a.description,
+            })),
+          }
+        : {}),
     };
   }
 
@@ -1129,12 +1320,14 @@ export class OnlineAccount {
           String(m.title ?? 'Reward'),
           typeof m.body === 'string' ? m.body : undefined,
         );
+        const achievement = typeof m.achievementId === 'string';
         ui.getState().pushToast({
           kind: 'reward',
           title: String(m.title ?? 'Reward'),
           ...(typeof m.body === 'string' ? { body: m.body } : {}),
-          icon: '🎁',
+          icon: achievement ? '🏅' : '🎁',
         });
+        if (achievement) this.refreshUnlocksSoon();
       }),
       rt.on('socket_open', () => {
         rt.send({ type: 'presence', ...this.presence });

@@ -272,6 +272,8 @@ export interface PlayerRewardMsg {
   crownsFromShards: number;
   pass: { xp: number; tierBefore: number; tierAfter: number };
   challenges: { title: string; before: number; progress: number; target: number; completed: boolean }[];
+  /** Achievements this show unlocked (their XP and currency are already in the lines above). */
+  achievements?: { id: string; title: string; description: string; hidden: boolean }[];
   ranked: {
     rpBefore: number;
     rpAfter: number;

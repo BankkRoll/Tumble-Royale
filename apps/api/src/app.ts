@@ -110,6 +110,8 @@ export async function syncCatalog(ctx: AppContext): Promise<void> {
       target: c.target,
       rewardXp: c.rewardXp,
       rewardGumballs: c.rewardGumballs,
+      rewardGems: c.rewardGems,
+      rewardCosmetic: c.rewardCosmetic,
       active: true,
     };
     await ctx.db

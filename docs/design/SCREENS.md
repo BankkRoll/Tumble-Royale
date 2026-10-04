@@ -436,6 +436,9 @@ clicks each top-level control and asserts the destination.
 
 ### 5.4 Challenges
 
+- Daily login card (online): flame, "N-day streak", **Claim day N** (confetti;
+  a stamp once claimed), the 7-day ladder with day 7 highlighted, and when the
+  streak breaks or the next claim opens.
 - Season-progress strip (tier, bar, upcoming reward thumbnails → Pass).
 - Daily and Weekly sections: header with "New in 05:12:33", "N to claim" and
   "Swaps 1/1 today"; card grid. Each card: illustrated icon inside a chunky
@@ -443,6 +446,8 @@ clicks each top-level control and asserts the destination.
   bonus XP), and one state: in progress (labelled **Swap** when swaps are
   left), ready (glowing **Claim**), claimed (stamp). Claim bursts confetti
   from the card and pops it.
+- Seasonal (online; "Ends in 40d 3h", expire with the season) and Milestones
+  (online; "Permanent · 2/8 done") use the same cards; some pay a cosmetic.
 
 ### 5.5 Profile
 
@@ -455,6 +460,15 @@ clicks each top-level control and asserts the destination.
   best race times, recent form dots) and match history (last 20; expandable
   rows with round, type badge, placement, race time, qualified/out).
 - The same card opens for other players (`ProfileOverlay`, `inspectPlayer`).
+- Sections **Overview · Achievements · Collection** above the card. The other
+  two keep the card and replace the centre and right with one wide panel:
+  - Achievements: unlocked/total bar, category and locked/unlocked filters,
+    cards with tier numeral, progress bar, rewards and unlock date. Hidden
+    achievements read "???" with no progress or rewards until unlocked.
+  - Collection: completion % and owned/total, slot, rarity and owned/missing
+    filters, item grid, and a detail panel listing where the selected item
+    comes from (shop, pass tier, achievement, challenge, event, Crown Shard
+    shop, Practice Island). Works offline from local ownership.
 
 ### 5.6 Ranks
 

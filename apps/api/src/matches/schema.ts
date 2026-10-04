@@ -24,6 +24,8 @@ export const MatchParticipantSchema = z.object({
   team: z.number().int().min(0).max(31).nullable().optional(),
   /** Left before the show ended (forfeits most rewards). */
   quit: z.boolean().optional(),
+  /** Queued into this show together with a party (social achievements and challenges). */
+  party: z.boolean().optional(),
   /** Per-show action counters for challenges; omitted counters count as zero. */
   stats: z
     .object({

@@ -47,5 +47,6 @@ export {
   type CurrencyKind,
 } from './ItemPreview.tsx';
 export { type AvatarPose } from './TumblerAvatar.tsx';
+export { GrantChip, grantText } from './GrantChip.tsx';
 export { ToastLayer, DialogLayer, ConnectionLayer } from './system.tsx';
 export * from './hooks.ts';

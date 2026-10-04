@@ -1,5 +1,7 @@
 /**
- * Challenges: a season-milestone strip, then Daily and Weekly card grids.
+ * Challenges: the daily login streak card, a season-milestone strip, then
+ * Daily, Weekly, Seasonal (online, expires with the season) and Milestone
+ * (online, permanent) card grids.
  * Each card has an illustrated icon inside a chunky progress ring, a big
  * "2 / 3" readout, a reward chip, and one clear state — in progress (with a
  * labelled "Swap" when swaps are left today), ready to claim (glowing Claim),
@@ -10,14 +12,16 @@ import { useState, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
 import { Bar, Coin } from '../../components/bits.tsx';
 import { ItemPreview } from '../../components/ItemPreview.tsx';
+import { GrantChip } from '../../components/GrantChip.tsx';
 import { Button } from '../../components/controls.tsx';
 import { formatNumber, formatRemaining, useNow, useReducedMotion } from '../../components/hooks.ts';
 import { Icon, challengeIcon } from '../../components/icons/index.tsx';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
-import type { Challenge, ChallengesData } from '../../store/types.ts';
+import type { Challenge, ChallengeCadence, ChallengesData } from '../../store/types.ts';
 import { confettiSets } from '../../theme/tokens.ts';
 import { fireConfetti } from '../../transitions/Confetti.tsx';
+import { LoginStreakCard } from './LoginStreak.tsx';
 
 const RING_R = 26;
 const RING_C = 2 * Math.PI * RING_R;
@@ -73,6 +77,12 @@ function RewardChip({ c }: { c: Challenge }): JSX.Element {
           <Coin currency="gems" />
           <b>{formatNumber(c.gems)}</b>
           <small>Gems</small>
+        </>
+      )}
+      {c.item && (
+        <>
+          <span className="tr-ch-plus">+</span>
+          <GrantChip grant={{ kind: 'item', item: c.item }} />
         </>
       )}
     </span>
@@ -198,6 +208,20 @@ function MilestoneStrip(): JSX.Element | null {
   );
 }
 
+/** When a section's challenges are replaced, or null for milestones (they never are). */
+function resetsAt(cadence: ChallengeCadence, data: ChallengesData): number | null {
+  switch (cadence) {
+    case 'daily':
+      return data.dailyResetsAt;
+    case 'weekly':
+      return data.weeklyResetsAt;
+    case 'seasonal':
+      return data.season?.endsAt ?? null;
+    case 'milestone':
+      return null;
+  }
+}
+
 function Section({
   title,
   cadence,
@@ -205,20 +229,29 @@ function Section({
   now,
 }: {
   title: string;
-  cadence: 'daily' | 'weekly';
+  cadence: ChallengeCadence;
   data: ChallengesData;
   now: number;
-}): JSX.Element {
+}): JSX.Element | null {
   const list = data.list.filter((c) => c.cadence === cadence);
-  const resets = cadence === 'daily' ? data.dailyResetsAt : data.weeklyResetsAt;
+  if (list.length === 0) return null;
+  const resets = resetsAt(cadence, data);
   const ready = list.filter((c) => !c.claimed && c.progress >= c.goal).length;
+  const done = list.filter((c) => c.claimed).length;
   return (
-    <section className={`tr-ch-section tr-ch-section--${cadence}`}>
+    <section className={`tr-ch-section tr-ch-section--${cadence}`} data-testid={`challenges-${cadence}`}>
       <header className="tr-ch-head">
         <h2 className="tr-title tr-h3">{title}</h2>
-        <span className="tr-chip tr-chip--ink">
-          <Icon name="clock" size="1em" /> New in {formatRemaining(resets - now)}
-        </span>
+        {cadence === 'milestone' ? (
+          <span className="tr-chip tr-chip--ink" title="Milestones never expire">
+            <Icon name="medal" size="1em" /> Permanent · {done}/{list.length} done
+          </span>
+        ) : resets !== null ? (
+          <span className="tr-chip tr-chip--ink">
+            <Icon name={cadence === 'seasonal' ? 'calendar' : 'clock'} size="1em" />{' '}
+            {cadence === 'seasonal' ? 'Ends in' : 'New in'} {formatRemaining(resets - now)}
+          </span>
+        ) : null}
         {ready > 0 && <span className="tr-chip tr-chip--mint">{ready} to claim</span>}
         {cadence === 'daily' && data.rerollsLeft !== undefined && (
           <span className="tr-chip" title="Swap an unfinished challenge for a new one">
@@ -242,10 +275,18 @@ export function ChallengesTab(): JSX.Element {
   if (!data) return <div className="tr-panel tr-empty">No challenges yet — check back soon!</div>;
   return (
     <div className="tr-challenges">
+      <LoginStreakCard />
       <MilestoneStrip />
       <div className="tr-panel tr-ch-board">
         <Section title="Daily" cadence="daily" data={data} now={now} />
         <Section title="Weekly" cadence="weekly" data={data} now={now} />
+        <Section
+          title={data.season ? `Seasonal · ${data.season.name}` : 'Seasonal'}
+          cadence="seasonal"
+          data={data}
+          now={now}
+        />
+        <Section title="Milestones" cadence="milestone" data={data} now={now} />
       </div>
     </div>
   );

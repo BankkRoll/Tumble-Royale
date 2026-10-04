@@ -2,20 +2,23 @@
  * The preview's single mock "world": one roster, one locker, one show recap,
  * plus helpers to push meta data into the UI store and reset transient state.
  */
-import { MAX_PLAYERS } from '@tumble/shared';
+import { hashString, MAX_PLAYERS } from '@tumble/shared';
 import { ui, type ShowSummary } from '@tumble/ui';
+import { uiCollection } from '../game/cosmetics.ts';
 import { uiNews } from '../game/meta.ts';
 import {
   NEWS,
   NOTIFICATIONS,
   PLAYLISTS,
   ROUND_CATALOG,
+  makeAchievements,
   makeChallenges,
   makeFriends,
   makeHistory,
   makeInventory,
   makeItems,
   makeLeaderboard,
+  makeLoginStreak,
   makeParty,
   makePass,
   makePlayers,
@@ -44,6 +47,9 @@ export function seedMeta(): void {
   s.setStoreData(makeStore(world.items));
   s.setPass(makePass(world.items));
   s.setChallenges(makeChallenges());
+  s.setLoginStreak(makeLoginStreak());
+  s.setAchievements(makeAchievements(world.items));
+  s.setCollection(uiCollection((id) => (hashString(id) >>> 0) % 3 === 0));
   s.setLeaderboard('crowns', makeLeaderboard(21, 1));
   s.setLeaderboard('ranked', makeLeaderboard(22, 4));
   s.setLeaderboard('weekly', makeLeaderboard(23, 0.2));

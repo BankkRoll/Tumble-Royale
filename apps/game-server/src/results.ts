@@ -34,6 +34,8 @@ export interface ResultParticipant {
   name: string;
   team?: number | null;
   quit?: boolean;
+  /** Queued with a party and at least one party member played this show too. */
+  party?: boolean;
   stats?: Partial<PlayerStatsCounters>;
 }
 

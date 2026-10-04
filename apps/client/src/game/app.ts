@@ -1646,6 +1646,11 @@ export class GameApp {
         if (a) void a.rerollChallenge(id);
         else s().pushToast({ kind: 'info', title: 'Rerolls need an online account', icon: '🎲' });
       },
+      onClaimLoginStreak: () => {
+        const a = online();
+        if (a) void a.claimLoginStreak();
+        else s().setLoginStreak(null);
+      },
       onPlayMode: () => {
         this.modePicked = true;
       },

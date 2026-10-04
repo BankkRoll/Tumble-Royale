@@ -127,6 +127,19 @@ export function installMockGame(): () => void {
       if (c)
         s().setChallenges({ ...c, list: c.list.map((x) => (x.id === id ? { ...x, claimed: true } : x)) });
     },
+    onClaimLoginStreak: () => {
+      const l = s().loginStreak;
+      if (!l) return;
+      s().setLoginStreak({
+        ...l,
+        streak: l.streak + 1,
+        claimedToday: true,
+        canClaim: false,
+        nextClaimAt: Date.now() + 5 * 3600_000,
+        ladder: l.ladder.map((d) => (d.state === 'today' ? { ...d, state: 'claimed' } : d)),
+      });
+      s().pushToast({ kind: 'reward', title: `Day ${l.next.day} reward claimed` });
+    },
     onRerollChallenge: ({ id }) => {
       const c = s().challenges;
       if (c)

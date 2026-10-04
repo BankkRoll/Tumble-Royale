@@ -37,6 +37,11 @@ import {
   type StoreData,
   type StoreOffer,
   type TumblerColors,
+  type AchievementEntry,
+  type AchievementsData,
+  type ChallengeCadence,
+  type GrantView,
+  type LoginStreakData,
 } from '@tumble/ui';
 
 const PATTERNS: PatternId[] = [
@@ -556,7 +561,7 @@ export function makePass(items: CosmeticItem[]): SeasonPassData {
 export function makeChallenges(): ChallengesData {
   const c = (
     id: string,
-    cadence: 'daily' | 'weekly',
+    cadence: ChallengeCadence,
     title: string,
     icon: string,
     progress: number,
@@ -585,9 +590,126 @@ export function makeChallenges(): ChallengesData {
       c('w4', 'weekly', 'Bounce on 100 pads', '🦘', 64, 100, { kind: 'xp', amount: 1500 }),
       c('w5', 'weekly', 'Play 10 shows with a party', '👥', 4, 10, { kind: 'stars', amount: 4 }),
       c('w6', 'weekly', 'Win the Crown', '🏆', 0, 1, { kind: 'gems', amount: 50 }),
+      c('s1', 'seasonal', 'Win 3 Crowns this season', '👑', 1, 3, { kind: 'xp', amount: 8000 }),
+      c('s2', 'seasonal', 'Play 20 shows with a party this season', '👥', 20, 20, {
+        kind: 'gumballs',
+        amount: 400,
+      }),
+      c('m1', 'milestone', 'Reach 100 finals', '👑', 37, 100, { kind: 'xp', amount: 15000 }),
+      c('m2', 'milestone', 'Play 500 shows', '🎪', 500, 500, { kind: 'gumballs', amount: 1500 }, true),
     ],
     dailyResetsAt: Date.now() + 7 * 3600_000,
     weeklyResetsAt: Date.now() + 3 * 86400_000,
+    season: { name: 'Season 1: Sugar Rush', endsAt: Date.now() + 40 * 86400_000 },
+  };
+}
+
+/** Daily login card mid-week, today's claim open. */
+export function makeLoginStreak(): LoginStreakData {
+  const day = (n: number): GrantView[] =>
+    n === 7
+      ? [
+          { kind: 'gumballs', amount: 250 },
+          { kind: 'gems', amount: 20 },
+          { kind: 'xp', amount: 1500 },
+        ]
+      : n % 2 === 0
+        ? [{ kind: 'xp', amount: 250 + n * 125 }]
+        : [{ kind: 'gumballs', amount: 25 + n * 25 }];
+  return {
+    streak: 3,
+    best: 9,
+    claimedToday: false,
+    canClaim: true,
+    nextClaimAt: Date.now(),
+    breaksAt: Date.now() + 9 * 3600_000,
+    next: { day: 4, rewards: day(4) },
+    ladder: [1, 2, 3, 4, 5, 6, 7].map((n) => ({
+      day: n,
+      rewards: day(n),
+      state: n < 4 ? 'claimed' : n === 4 ? 'today' : 'upcoming',
+    })),
+  };
+}
+
+/** Achievements screen: a few unlocked, a few in progress, one secret. */
+export function makeAchievements(items: CosmeticItem[]): AchievementsData {
+  const a = (
+    id: string,
+    category: string,
+    title: string,
+    description: string,
+    progress: number,
+    target: number,
+    rewards: GrantView[],
+    extra: Partial<AchievementEntry> = {},
+  ): AchievementEntry => ({
+    id,
+    category,
+    title,
+    description,
+    hidden: false,
+    unlocked: progress >= target,
+    ...(progress >= target ? { unlockedAt: Date.now() - 3 * 86400_000 } : {}),
+    progress,
+    target,
+    rewards,
+    ...extra,
+  });
+  const list = [
+    a('showtime-1', 'shows', 'Showtime I', 'Play 1 show', 1, 1, [{ kind: 'xp', amount: 250 }], {
+      tier: { tier: 1, tiers: 5 },
+    }),
+    a('showtime-2', 'shows', 'Showtime II', 'Play 10 shows', 7, 10, [{ kind: 'gumballs', amount: 100 }], {
+      tier: { tier: 2, tiers: 5 },
+    }),
+    a(
+      'crown-collector-1',
+      'crowns',
+      'Crown Collector I',
+      'Win 1 Crowns',
+      1,
+      1,
+      [{ kind: 'item', item: items[0] as CosmeticItem }],
+      { tier: { tier: 1, tiers: 4 } },
+    ),
+    a(
+      'crown-collector-2',
+      'crowns',
+      'Crown Collector II',
+      'Win 5 Crowns',
+      2,
+      5,
+      [{ kind: 'crownShards', amount: 5 }],
+      { tier: { tier: 2, tiers: 4 } },
+    ),
+    a('hidden-1', 'crowns', '???', 'Hidden achievement. Keep playing to discover it.', 0, 1, [], {
+      hidden: true,
+      progress: null,
+      target: null,
+    }),
+    a(
+      'grabby-hands-1',
+      'grabs',
+      'Grabby Hands I',
+      'Grab other Tumblers 100 times',
+      64,
+      100,
+      [{ kind: 'gumballs', amount: 50 }],
+      { tier: { tier: 1, tiers: 3 } },
+    ),
+  ];
+  const names: Record<string, string> = { shows: 'Shows', crowns: 'Crowns', grabs: 'Grabs' };
+  return {
+    list,
+    categories: Object.keys(names).map((id) => ({
+      id,
+      name: names[id] as string,
+      unlocked: list.filter((x) => x.category === id && x.unlocked).length,
+      total: list.filter((x) => x.category === id).length,
+    })),
+    unlocked: list.filter((x) => x.unlocked).length,
+    total: list.length,
   };
 }
 
@@ -830,5 +952,12 @@ export function makeRewards(items: CosmeticItem[], won: boolean, roundsSurvived 
       { title: 'Qualify from 3 races', from: 2, to: 3, goal: 3 },
       { title: 'Reach 5 finals', from: 3, to: won ? 4 : 3, goal: 5 },
     ],
+    ...(won
+      ? {
+          achievements: [
+            { id: 'crown-collector-1', title: 'Crown Collector I', description: 'Win 1 Crowns' },
+          ],
+        }
+      : {}),
   };
 }

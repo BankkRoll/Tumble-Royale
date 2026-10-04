@@ -29,6 +29,10 @@ export type LedgerReason =
   | 'pass_reward'
   | 'pass_premium'
   | 'challenge_reward'
+  /** An achievement unlocked (ref `achievement:<id>`). */
+  | 'achievement_reward'
+  /** A daily login claim (ref `login:<YYYY-MM-DD>`). */
+  | 'login_reward'
   | 'shard_conversion'
   /** Free Gems for the first Crown of a UTC day (ref `day:<YYYY-MM-DD>`). */
   | 'daily_crown'

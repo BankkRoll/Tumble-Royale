@@ -20,7 +20,10 @@ import { overlayAfterScreenChange } from './inputOwnership.ts';
 import type {
   BetweenRoundsInfo,
   BootState,
+  AchievementsData,
   ChallengesData,
+  CollectionData,
+  LoginStreakData,
   ConnectionState,
   CustomLobbyState,
   DialogSpec,
@@ -126,6 +129,11 @@ export interface UIState {
   store: StoreData | null;
   pass: SeasonPassData | null;
   challenges: ChallengesData | null;
+  /** Daily login streak (online accounts). */
+  loginStreak: LoginStreakData | null;
+  achievements: AchievementsData | null;
+  /** Every cosmetic with ownership and sources. */
+  collection: CollectionData | null;
   leaderboards: Partial<Record<LeaderboardId, LeaderboardRow[]>>;
   matchHistory: MatchHistoryEntry[];
   news: NewsItem[];
@@ -239,6 +247,11 @@ export interface UIState {
   setStoreData: (store: StoreData | null) => void;
   setPass: (pass: SeasonPassData | null) => void;
   setChallenges: (challenges: ChallengesData | null) => void;
+  /** Daily login streak card (null offline). */
+  setLoginStreak: (streak: LoginStreakData | null) => void;
+  /** Achievements screen (null offline). */
+  setAchievements: (achievements: AchievementsData | null) => void;
+  setCollection: (collection: CollectionData | null) => void;
   setLeaderboard: (board: LeaderboardId, rows: LeaderboardRow[], info?: LeaderboardInfo) => void;
   /** Marks a board's last load as failed (`null` clears it before a retry). Rows are kept. */
   setLeaderboardError: (board: LeaderboardId, scope: LeaderboardScope, error: string | null) => void;
@@ -368,6 +381,9 @@ export const ui = createStore<UIState>()((set, get) => ({
   store: null,
   pass: null,
   challenges: null,
+  loginStreak: null,
+  achievements: null,
+  collection: null,
   leaderboards: {},
   matchHistory: [],
   news: [],
@@ -516,6 +532,9 @@ export const ui = createStore<UIState>()((set, get) => ({
   setStoreData: (store) => set({ store }),
   setPass: (pass) => set({ pass }),
   setChallenges: (challenges) => set({ challenges }),
+  setLoginStreak: (loginStreak) => set({ loginStreak }),
+  setAchievements: (achievements) => set({ achievements }),
+  setCollection: (collection) => set({ collection }),
   setLeaderboard: (board, rows, info) =>
     set({
       leaderboards: { ...get().leaderboards, [board]: rows },

@@ -54,8 +54,9 @@ What a player can do today:
 - **Social:** friends (requests, presence, join), party and in-show text chat
   with a filter, quick pings, report / block / mute, streamer mode
 - **Progression:** accounts (guest, Discord, Google, email link), seasons,
-  a 100-tier pass, challenges, store, Crown Shard shop, free Gem paths, live
-  news and notifications
+  a 100-tier pass, daily/weekly/seasonal/milestone challenges, 45
+  achievements (some hidden), a collection log, a daily login streak, store,
+  Crown Shard shop, free Gem paths, live news and notifications
 - **Watch:** keep spectating after elimination, round replays (save and
   reopen them), photo mode
 - **Input & access:** keyboard/mouse with rebinding, gamepad menus,
@@ -313,7 +314,7 @@ the same pose with zero bandwidth.
 | Shows                       | Done: full shows end to end in the browser (`e2e/game.spec.ts`; 100-player offline show verified), solo/Duos/Squads online                                           |
 | Meta & accounts             | Done: guest + OAuth/email accounts, locker, parties, matchmaking, server-granted rewards, seasons, shard shop                                                        |
 | Content                     | 20 rounds, tutorial island, procedural audio. Touch controls exist but no phone frame rate has been measured                                                         |
-| Ranked, store, pass, social | Done: OpenSkill ranked with soft reset, store, pass, challenges, friends, chat, private shows, moderation                                                            |
+| Ranked, store, pass, social | Done: OpenSkill ranked with soft reset, store, pass, challenges, achievements, login streak, friends, chat, private shows, moderation                                |
 | Launch hardening            | Partly: rate limits, bans, reconnect, results outbox, metrics, crash reporting, Docker Compose self-hosting. Not done: long soak, load test against a deployed stack |
 
 Server tick time is measured, and checked only nightly against a loose

@@ -171,7 +171,7 @@ Adaptive stem music per theme (intro, loop, intensity, final-30 s, stingers), lo
 
 ## 16. Backend data model
 
-users, auth_identities, sessions, profiles, player_stats, player_round_stats, inventory_items, cosmetics_catalog, loadouts, currencies_ledger (append-only), purchases, store_rotations, season_pass_progress, challenges, challenge_progress, ratings, rank_history, matches, match_participants, match_rounds, round_results, friendships, parties (Redis), reports, bans, feature_flags, events. APIs `/auth/*`, `/me`, `/profile/:id`, `/inventory`, `/loadouts`, `/store`, `/purchase`, `/pass`, `/challenges`, `/leaderboards/:type`, `/matches/:id`, `/friends`, `/party`, `/report`. Game server posts results via signed internal endpoint; API is the only economy writer; idempotent grants keyed by match id.
+users, auth_identities, sessions, profiles, player_stats, player_round_stats, inventory_items, cosmetics_catalog, loadouts, currencies_ledger (append-only), purchases, store_rotations, season_pass_progress, challenges, challenge_progress, achievement_stats, player_achievements, login_streaks, ratings, rank_history, matches, match_participants, match_rounds, round_results, friendships, parties (Redis), reports, bans, feature_flags, events. APIs `/auth/*`, `/me`, `/profile/:id`, `/inventory`, `/loadouts`, `/store`, `/purchase`, `/pass`, `/challenges`, `/achievements`, `/collection`, `/streak`, `/leaderboards/:type`, `/matches/:id`, `/friends`, `/party`, `/report`. Game server posts results via signed internal endpoint; API is the only economy writer; idempotent grants keyed by match id.
 
 ## 17. Phases & acceptance
 

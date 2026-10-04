@@ -21,14 +21,13 @@ import { and, count, desc, eq, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { changeDisplayName } from '../accounts/accounts.ts';
-import { starterItems, type LoadoutItems } from '../catalog.ts';
+import { starterItems } from '../catalog.ts';
 import type { AppContext } from '../context.ts';
 import {
   adminAuditLog,
   authIdentities,
   bans,
   inventoryItems,
-  loadouts,
   matches,
   matchParticipants,
   nameHistory,
@@ -41,6 +40,7 @@ import {
   users,
 } from '../db/schema.ts';
 import { applyLedger } from '../economy/ledger.ts';
+import { revokeCosmetic } from '../inventory/revoke.ts';
 import { readWallet } from '../economy/wallet.ts';
 import { badRequest, notFound, parse } from '../http/errors.ts';
 import { generateGuestName } from '../names/display-name.ts';
@@ -66,50 +66,6 @@ const CurrencyBody = z
     reason: Reason,
   })
   .strict();
-
-const LOADOUT_SINGLE_SLOTS = [
-  'pattern',
-  'face',
-  'upper',
-  'lower',
-  'headwear',
-  'back',
-  'celebration',
-  'victoryPose',
-  'nameplate',
-  'trail',
-  'banner',
-  'footsteps',
-] as const;
-
-/**
- * A loadout with every use of `cosmeticId` replaced by the default loadout's
- * choice for that slot (emotes are reset as a set, so none repeats).
- *
- * @param items - Saved loadout.
- * @param cosmeticId - Revoked item.
- * @param defaults - The default loadout.
- * @returns The new loadout, or null when it did not use the item.
- */
-export function stripCosmetic(
-  items: LoadoutItems,
-  cosmeticId: string,
-  defaults: LoadoutItems,
-): LoadoutItems | null {
-  let changed = false;
-  const next: LoadoutItems = { ...items, emotes: [...items.emotes] as LoadoutItems['emotes'] };
-  for (const slot of LOADOUT_SINGLE_SLOTS) {
-    if (next[slot] === cosmeticId) {
-      (next as unknown as Record<string, unknown>)[slot] = defaults[slot] ?? null;
-      changed = true;
-    }
-  }
-  if (next.emotes.includes(cosmeticId)) {
-    next.emotes = [...defaults.emotes] as LoadoutItems['emotes'];
-    changed = true;
-  }
-  return changed ? next : null;
-}
 
 /**
  * Registers the player page routes.
@@ -415,27 +371,9 @@ export function registerPlayerAdminRoutes(app: FastifyInstance, ctx: AppContext)
     // Starter items back the default loadout every slot falls back to.
     if (starterItems(ctx.catalog).includes(cosmeticId))
       throw badRequest('starter_item', 'Starter items cannot be revoked');
-    const defaults = ctx.catalog.defaultLoadout();
     const changedLoadouts = await ctx.db.transaction(async (tx) => {
-      const removed = await tx
-        .delete(inventoryItems)
-        .where(and(eq(inventoryItems.userId, id), eq(inventoryItems.cosmeticId, cosmeticId)))
-        .returning({ source: inventoryItems.source });
-      if (removed.length === 0) throw notFound('Owned cosmetic');
-      const saved = await tx
-        .select({ slotIndex: loadouts.slotIndex, items: loadouts.items })
-        .from(loadouts)
-        .where(eq(loadouts.userId, id));
-      const changed: number[] = [];
-      for (const l of saved) {
-        const next = stripCosmetic(l.items as LoadoutItems, cosmeticId, defaults);
-        if (!next) continue;
-        changed.push(l.slotIndex);
-        await tx
-          .update(loadouts)
-          .set({ items: next, updatedAt: ctx.now() })
-          .where(and(eq(loadouts.userId, id), eq(loadouts.slotIndex, l.slotIndex)));
-      }
+      const revoked = await revokeCosmetic(tx, ctx, id, cosmeticId);
+      if (!revoked) throw notFound('Owned cosmetic');
       await recordAudit(
         ctx,
         req,
@@ -445,11 +383,11 @@ export function registerPlayerAdminRoutes(app: FastifyInstance, ctx: AppContext)
           targetType: 'user',
           targetId: id,
           reason,
-          details: { cosmeticId, source: removed[0]!.source, loadouts: changed },
+          details: { cosmeticId, source: revoked.source, loadouts: revoked.loadouts },
         },
         tx,
       );
-      return changed;
+      return revoked.loadouts;
     });
     return { userId: id, cosmeticId, loadoutsChanged: changedLoadouts };
   });

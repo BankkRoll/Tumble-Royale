@@ -79,9 +79,10 @@ const ErrorsTopQuery = z.object({
   source: z.enum(['client', 'server']).default('client'),
 });
 
-/** Routes that spend currency or start a payment; `store.enabled` off closes them all. */
+/** Routes that spend or refund currency or start a payment; `store.enabled` off closes them all. */
 export const STORE_SPEND_ROUTES: ReadonlySet<string> = new Set([
   '/purchase',
+  '/purchases/:purchaseId/refund',
   '/gems/checkout',
   '/shop/shards/buy',
   '/pass/premium',

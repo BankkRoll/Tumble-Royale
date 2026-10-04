@@ -165,11 +165,39 @@ settings changed).
   `https://DOMAIN/api/webhooks/stripe` in the Stripe dashboard for
   `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
   `checkout.session.async_payment_failed`, `checkout.session.expired`,
-  `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed` and
-  `charge.dispute.funds_reinstated`. The API refuses to start with a key but
-  no webhook secret, and without Stripe Gem checkout is simply off.
+  `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`,
+  `charge.dispute.funds_reinstated` and `refund.failed` (or
+  `refund.updated`). The API refuses to start with a key but no webhook
+  secret, and without Stripe Gem checkout is simply off. See
+  [Refunds](#refunds) for how Gem pack refund requests reach Stripe.
 - **Crash reports:** `SENTRY_DSN` (any Sentry-compatible service) for the
   servers; `sentryDsn` in the client overrides below for browsers.
+
+### Refunds
+
+Players refund store items bought with Gumballs or Gems themselves (Store →
+Purchases, within 7 days, 3 per year). Gem packs bought with real money are
+**requests** that land in the console's **Refunds** queue
+(`https://DOMAIN/admin#/refunds`) and in the CLI:
+
+```sh
+pnpm admin refunds list                          # awaiting a decision, oldest first
+pnpm admin refunds list --status all --user <userId>
+pnpm admin refunds approve <refundId> --note "bought the wrong pack"
+pnpm admin refunds deny <refundId> --reason "the Gems were already spent"
+```
+
+Approving needs the **admin** role. With `STRIPE_SECRET_KEY` set, approval
+asks Stripe to refund the whole payment (the restricted key needs write
+access to **Refunds**) and the request shows `processing`; the Gems are taken
+back when Stripe's `charge.refunded` webhook arrives, and the request becomes
+`refunded`. Without a key the request becomes `manual`: refund the payment
+yourself in your payment dashboard. A refund issued straight from the Stripe
+dashboard also closes a matching request. If Stripe refuses or later fails
+the refund, the request shows `failed` with the reason and can be approved
+again; Gems already taken back are not re-credited automatically (adjust
+them with the player tools if needed). Denials need a reason, which the
+player sees.
 
 ### Client overrides
 
@@ -220,7 +248,7 @@ pnpm admin flags set analytics.sample on --payload 0.25
 
 | Flag               | Off means                                                           |
 | ------------------ | ------------------------------------------------------------------- |
-| `store.enabled`    | every purchase route answers 503; the Store tab shows a closed sign |
+| `store.enabled`    | every purchase and refund route answers 503; the Store tab closes   |
 | `chat.global`      | global chat closes (party, lobby and show chat are unaffected)      |
 | `party.lobbyGames` | party lobby mini-games stop and their button disappears             |
 | `replays.enabled`  | replays are not recorded, starting with the next show               |

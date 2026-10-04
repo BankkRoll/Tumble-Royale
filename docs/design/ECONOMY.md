@@ -138,6 +138,51 @@ the implementation; the policy is:
 - An expired session (`checkout.session.expired`) or a declined delayed payment
   (`checkout.session.async_payment_failed`) marks the pending purchase
   `expired` / `failed`; no Gems move.
+- A `refund.failed` event (or a `refund.updated` to `failed`/`canceled`)
+  marks the player's refund request `failed` for staff; it moves no Gems.
+
+### 3.3 Refunds
+
+`GET /purchases` lists a player's completed purchases with each one's refund
+and whether it can be refunded now, and why not. `POST
+/purchases/:purchaseId/refund` does whichever refund the purchase allows.
+`apps/api/src/economy/refunds.ts` holds the policy as one pure function.
+
+| Purchase                             | Refund                                         | Window  |
+| ------------------------------------ | ---------------------------------------------- | ------- |
+| Store item or bundle (Gumballs/Gems) | Self-service, immediate                        | 7 days  |
+| Gem pack (real money)                | Request reviewed by staff, paid out by Stripe  | 14 days |
+| Season Pass premium                  | Never: its rewards unlock at once              | —       |
+| Crown Shard shop                     | Never: spent shards no longer count to a Crown | —       |
+
+- **Self-service.** The whole purchase is refunded: every item it granted
+  leaves the locker (a bundle goes whole), loadouts wearing them fall back to
+  the default loadout's choice for that slot, and the full price paid comes
+  back as one `store_refund` ledger row with ref `refund:<purchaseId>`. Gems
+  coming back repay Gem debt first, like any Gem credit.
+- **Limit.** 3 self-service refunds per rolling 365 days. The refusal says
+  when the oldest one leaves the window.
+- **Wearing is fine.** The game does not record which cosmetics were worn in
+  which show, so "used" is not a rule; the short window and the yearly limit
+  bound wearing an item for a week and refunding it.
+- **Items must still be there.** A purchase whose items were taken away (by
+  staff) is refused. An item the player has since also earned another way
+  (an event, achievement or pass reward) stays with them on refund: the
+  repeated grant re-sources the inventory row, and refunds only remove copies
+  still held from the store. The price still comes back in full.
+- **Once.** One refund per purchase (`refunds.purchase_id` is unique) under
+  the buyer's wallet lock: a double or concurrent submit returns the first
+  refund with `replayed: true`. A denied request cannot be filed again.
+- **Gem packs.** A request (with the player's reason) waits in the admin
+  console's **Refunds** queue and `pnpm admin refunds`. Admins approve
+  (Stripe refund of the whole payment, or `manual` without a Stripe key);
+  moderators and admins can deny with a reason the player sees. Gems move
+  only when Stripe reports the refund, through the reconciliation above, so
+  a refunded pack behaves exactly like a refunded chargeback: Gems back,
+  shortfall as debt, cosmetics kept.
+- Refunds close with the store (`store.enabled` off → `503`) and during
+  maintenance. Guests can refund store purchases too. Deleting the account
+  deletes its purchases and refunds with it.
 
 ## 4. Crown Shard shop
 

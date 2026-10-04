@@ -1657,6 +1657,15 @@ export class GameApp {
           s().showDialog({ id: 'purchase-failed', kind: 'error', title: 'Purchase failed', body: msg });
         }
       },
+      onRequestPurchaseHistory: () => {
+        const a = online();
+        if (a) void a.loadPurchaseHistory();
+      },
+      onRefundPurchase: ({ purchaseId, reason }) => {
+        const a = online();
+        if (a) void a.refundPurchase(purchaseId, reason);
+        else s().pushToast({ kind: 'info', title: 'Refunds need an online account' });
+      },
       onBuyGems: ({ packId }) => {
         const a = online();
         if (a) void a.buyGems(packId);

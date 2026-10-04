@@ -239,3 +239,92 @@ export interface ErrorGroup {
   sampleStack: string | null;
   samplePath: string | null;
 }
+
+/** Refund kinds: a store purchase refunded by the player, or a Gem pack request for staff. */
+export type RefundKind = 'self_service' | 'real_money';
+
+/** Refund statuses (`apps/api/src/economy/refunds.ts`). */
+export type RefundStatus =
+  'completed' | 'pending' | 'processing' | 'manual' | 'refunded' | 'partially_refunded' | 'denied' | 'failed';
+
+/** One row of `GET /internal/refunds`. */
+export interface RefundRow {
+  id: string;
+  userId: string;
+  purchaseId: string;
+  kind: RefundKind;
+  status: RefundStatus;
+  /** `gumballs`, `gems`, or the Gem pack's money currency (`usd`). */
+  currency: string;
+  /** Currency units, or minor units for money. */
+  amount: number;
+  items: string[];
+  playerReason: string | null;
+  decisionReason: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+  offerId: string;
+  purchasedAt: string | null;
+  displayName: string | null;
+  tag: string | null;
+}
+
+/** `GET /internal/refunds`. */
+export interface RefundPage {
+  total: number;
+  offset: number;
+  limit: number;
+  refunds: RefundRow[];
+}
+
+/** `GET /internal/refunds/:id`. */
+export interface RefundDetail {
+  refund: Omit<RefundRow, 'offerId' | 'purchasedAt' | 'displayName' | 'tag'> & {
+    providerRefundId: string | null;
+    attempts: number;
+  };
+  purchase: {
+    id: string;
+    kind: string;
+    offerId: string;
+    currency: string;
+    price: number;
+    status: string;
+    provider: string | null;
+    paymentIntent: string | null;
+    createdAt: string;
+    completedAt: string | null;
+  } | null;
+  player: {
+    id: string;
+    isGuest: boolean;
+    createdAt: string;
+    gumballs: number;
+    gems: number;
+    gemDebt: number;
+    displayName: string | null;
+    tag: string | null;
+    purchases: number;
+  } | null;
+  history: {
+    id: string;
+    purchaseId: string;
+    kind: RefundKind;
+    status: RefundStatus;
+    currency: string;
+    amount: number;
+    createdAt: string;
+  }[];
+  ledger: {
+    currency: string;
+    delta: number;
+    balanceAfter: number;
+    reason: string;
+    ref: string;
+    createdAt: string;
+  }[];
+  /** Payment provider the API runs with; `stripe` means approval refunds through Stripe. */
+  provider: 'stripe' | 'fake' | 'disabled';
+}

@@ -26,6 +26,26 @@ If you run your own deployment ([docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)):
   (`pnpm admin staff grant <userId> --role moderator`), so each action in the
   audit log names a person and access can be withdrawn without rotating it.
 
+### Payment webhook trust boundary
+
+`POST /webhooks/stripe` is public by necessity, so nothing in a delivery is
+trusted until `stripe.webhooks.constructEvent` has verified the
+`Stripe-Signature` HMAC over the exact raw body with `STRIPE_WEBHOOK_SECRET`
+(which also bounds the timestamp's age); a missing or bad signature is a
+`400` with no effect. Each verified event id is recorded in `stripe_events`
+in the same transaction as its effects, so a redelivery is acknowledged and
+ignored, and a failed one is retried whole. Refunds and disputes are
+reconciled to a target per PaymentIntent rather than replayed, so retried,
+late and out-of-order events converge on the same ledger. A `refund.failed`
+event can only mark a refund request `failed`; it never credits anything.
+
+Player refunds never trust the client: the API re-checks ownership of the
+purchase, the window, the yearly limit and the items under the buyer's
+wallet lock, and `refunds.purchase_id` is unique, so a double or concurrent
+submit refunds once. Real-money refunds are only ever issued by an admin
+(moderators can deny but not approve), each decision is audited, and the
+Stripe refund carries an idempotency key per approval attempt.
+
 ### Admin console trust boundary
 
 The console at `/admin` is only a client. Every action is authorised by the

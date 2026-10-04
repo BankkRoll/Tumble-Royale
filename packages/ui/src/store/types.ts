@@ -405,8 +405,55 @@ export interface StoreData {
   catalog?: StoreOffer[];
 }
 
-/** Store tab sections. */
-export type StoreSection = 'today' | 'week' | 'catalog' | 'shards';
+/** Store tab sections. `purchases` is the online account's purchase history. */
+export type StoreSection = 'today' | 'week' | 'catalog' | 'shards' | 'purchases';
+
+/** Why a purchase cannot be refunded (the API's error codes). */
+export type RefundRefusal =
+  | 'refund_not_refundable'
+  | 'refund_not_completed'
+  | 'refund_already_refunded'
+  | 'refund_already_requested'
+  | 'refund_payment_reversed'
+  | 'refund_window_expired'
+  | 'refund_limit_reached'
+  | 'refund_item_missing';
+
+/** Where a refund stands. */
+export type RefundState =
+  'completed' | 'pending' | 'processing' | 'manual' | 'refunded' | 'partially_refunded' | 'denied' | 'failed';
+
+/** One purchase in the Store's Purchases section. */
+export interface PurchaseHistoryEntry {
+  purchaseId: string;
+  /** `cosmetic` (store item or bundle), `gem_pack`, `pass_premium` or `shard_item`. */
+  kind: string;
+  title: string;
+  /** Cosmetics the purchase gave (what a refund takes away). */
+  items: { id: string; name: string }[];
+  /** Gem packs: Gems the pack gave. */
+  gems?: number;
+  /** `gumballs` / `gems` / `crown_shards`, or `usd` (minor units) for a Gem pack. */
+  price: { currency: string; amount: number };
+  /** Epoch ms. */
+  purchasedAt: number;
+  refund: { kind: 'self_service' | 'real_money'; status: RefundState; decisionReason: string | null } | null;
+  eligibility:
+    | { eligible: true; kind: 'self_service' | 'real_money'; until: number }
+    | { eligible: false; reason: RefundRefusal; message: string; retryAt?: number };
+}
+
+/** The Store's Purchases section. */
+export interface PurchaseHistoryData {
+  status: 'loading' | 'ready' | 'error';
+  /** Why loading failed. */
+  error?: string;
+  entries: PurchaseHistoryEntry[];
+  selfRefunds: { used: number; limit: number; windowDays: number; nextAvailableAt: number | null };
+  policy: { selfServiceWindowDays: number; realMoneyWindowDays: number };
+  /** Purchase whose refund is being sent (its buttons disable). */
+  busyId?: string | null;
+}
 
 /** A Crown Shard shop offer. */
 export interface ShardOffer {

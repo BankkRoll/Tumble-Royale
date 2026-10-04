@@ -2,8 +2,9 @@
  * Real-money payment providers for Gem packs.
  *
  * {@link StripePaymentProvider} creates Stripe Checkout sessions and verifies
- * and decodes webhooks into provider-agnostic {@link PaymentEvent}s: checkout
- * completion and expiry, refunds and disputes. {@link FakePaymentProvider}
+ * and refunds, and verifies and decodes webhooks into provider-agnostic
+ * {@link PaymentEvent}s: checkout completion and expiry, refunds, failed
+ * refunds and disputes. {@link FakePaymentProvider}
  * (used when `STRIPE_SECRET_KEY` is unset outside production) completes
  * instantly so the whole purchase flow works without credentials.
  */
@@ -18,6 +19,31 @@ export interface CheckoutRequest {
   pack: CatalogGemPack;
   successUrl: string;
   cancelUrl: string;
+}
+
+/** A refund staff approved (`refunds` row of kind `real_money`). */
+export interface RefundRequest {
+  /** The `refunds` row id, copied into the provider's metadata. */
+  refundId: string;
+  purchaseId: string;
+  /** Stripe PaymentIntent of the purchase. */
+  paymentIntent: string;
+  /** Amount in minor units. */
+  amount: number;
+  /**
+   * Provider idempotency key. A retry of the same approval reuses it; a new
+   * approval after a failure gets a new one, since Stripe would otherwise
+   * replay the failed refund.
+   */
+  idempotencyKey: string;
+}
+
+/** A refund the provider accepted. */
+export interface ProviderRefund {
+  /** Provider refund id (Stripe `re_…`). */
+  providerRefundId: string;
+  /** Provider status (`pending`, `succeeded`, …); money and Gems move on the webhook, not here. */
+  status: string;
 }
 
 /** A created checkout. */
@@ -72,12 +98,30 @@ export type PaymentEvent =
       disputeId: string;
       outcome: DisputeOutcome;
     }
+  | {
+      /** A refund Stripe could not complete (`refund.failed`, or an update to `failed`/`canceled`). */
+      type: 'refund_failed';
+      eventId: string;
+      providerRefundId: string;
+      paymentIntent: string | null;
+      /** Our `refunds` row id from the refund's metadata, when we created it. */
+      refundId: string | null;
+      /** Stripe's failure reason, when given. */
+      failureReason: string | null;
+    }
   | { type: 'ignored'; eventId: string | null };
 
 /** Payment provider contract. */
 export interface PaymentProvider {
   readonly id: 'stripe' | 'fake' | 'disabled';
   createCheckout(req: CheckoutRequest): Promise<CheckoutSession>;
+  /**
+   * Refunds a payment in full.
+   *
+   * @throws {ApiError} 502 `payment_provider_error` when the provider refuses
+   *   or cannot be reached; 503 `payments_unavailable` without a provider.
+   */
+  refund(req: RefundRequest): Promise<ProviderRefund>;
   /**
    * Verifies and decodes a webhook delivery.
    *
@@ -151,6 +195,24 @@ export class StripePaymentProvider implements PaymentProvider {
     return { url: session.url, providerRef: session.id, completed: false };
   }
 
+  async refund(req: RefundRequest): Promise<ProviderRefund> {
+    try {
+      const r = await this.stripe.refunds.create(
+        {
+          payment_intent: req.paymentIntent,
+          amount: req.amount,
+          reason: 'requested_by_customer',
+          metadata: { refundId: req.refundId, purchaseId: req.purchaseId },
+        },
+        { idempotencyKey: req.idempotencyKey },
+      );
+      return { providerRefundId: r.id, status: r.status ?? 'pending' };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new ApiError(502, 'payment_provider_error', `Stripe refused the refund: ${message}`);
+    }
+  }
+
   parseWebhook(rawBody: string, signature: string | undefined): PaymentEvent {
     if (!this.webhookSecret) throw new ApiError(503, 'webhook_disabled', 'STRIPE_WEBHOOK_SECRET is not set');
     if (!signature) throw new ApiError(400, 'bad_signature', 'Missing Stripe-Signature header');
@@ -217,6 +279,20 @@ export class StripePaymentProvider implements PaymentProvider {
           outcome: event.type === 'charge.dispute.funds_reinstated' ? 'won' : disputeOutcome(d.status),
         };
       }
+      case 'refund.failed':
+      case 'refund.updated':
+      case 'charge.refund.updated': {
+        const r = event.data.object;
+        if (r.status !== 'failed' && r.status !== 'canceled') return { type: 'ignored', eventId };
+        return {
+          type: 'refund_failed',
+          eventId,
+          providerRefundId: r.id,
+          paymentIntent: idOf(r.payment_intent),
+          refundId: r.metadata?.refundId ?? null,
+          failureReason: r.failure_reason ?? null,
+        };
+      }
       default:
         return { type: 'ignored', eventId };
     }
@@ -229,6 +305,10 @@ export class FakePaymentProvider implements PaymentProvider {
 
   async createCheckout(req: CheckoutRequest): Promise<CheckoutSession> {
     return { url: req.successUrl, providerRef: `fake_${req.purchaseId}`, completed: true };
+  }
+
+  async refund(): Promise<ProviderRefund> {
+    throw new ApiError(503, 'payments_unavailable', 'The development payment provider cannot refund');
   }
 
   parseWebhook(): PaymentEvent {
@@ -246,6 +326,10 @@ export class DisabledPaymentProvider implements PaymentProvider {
 
   async createCheckout(): Promise<CheckoutSession> {
     throw new ApiError(503, 'payments_unavailable', 'Gem purchases are coming soon');
+  }
+
+  async refund(): Promise<ProviderRefund> {
+    throw new ApiError(503, 'payments_unavailable', 'Payments are not configured');
   }
 
   parseWebhook(): PaymentEvent {

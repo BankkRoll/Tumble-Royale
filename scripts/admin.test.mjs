@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
-import { formatErrors, loadEnv, parseArgs, run, toRequest } from './admin.mjs';
+import { formatErrors, formatRefunds, loadEnv, parseArgs, run, toRequest } from './admin.mjs';
 
 function capture() {
   const out = [];
@@ -53,6 +53,64 @@ describe('toRequest', () => {
       '/internal/users/lookup?q=Bouncy%20Noodle%230042',
     );
     assert.deepEqual(req(['user', 'rename', 'u1', 'Polite', 'Name']).body, { displayName: 'Polite Name' });
+  });
+
+  it('maps the refund commands', () => {
+    const list = req([
+      'refunds',
+      'list',
+      '--status',
+      'pending',
+      '--kind',
+      'real_money',
+      '--user',
+      'u1',
+      '--limit',
+      '5',
+    ]);
+    assert.equal(list.method, 'GET');
+    assert.equal(list.path, '/internal/refunds?status=pending&kind=real_money&userId=u1&limit=5');
+    assert.equal(list.format, formatRefunds);
+    assert.equal(req(['refunds', 'list']).path, '/internal/refunds');
+    assert.deepEqual(req(['refunds', 'approve', 'r/1', '--note', 'wrong pack']), {
+      method: 'POST',
+      path: '/internal/refunds/r%2F1/approve',
+      body: { note: 'wrong pack' },
+    });
+    assert.deepEqual(req(['refunds', 'approve', 'r1']).body, {});
+    assert.deepEqual(req(['refunds', 'deny', 'r1', '--reason', 'Gems spent']), {
+      method: 'POST',
+      path: '/internal/refunds/r1/deny',
+      body: { reason: 'Gems spent' },
+    });
+    assert.throws(() => req(['refunds', 'deny', 'r1']), /--reason/);
+    assert.throws(() => req(['refunds', 'approve']), /refundId/);
+    assert.throws(() => req(['refunds', 'list', '--limit', '0']), /--limit/);
+  });
+
+  it('formats the refund queue', () => {
+    assert.equal(formatRefunds({ total: 0, refunds: [] }), 'No refunds match.');
+    const text = formatRefunds({
+      total: 3,
+      refunds: [
+        {
+          id: 'r1',
+          kind: 'real_money',
+          status: 'pending',
+          currency: 'usd',
+          amount: 999,
+          offerId: 'gems.1100',
+          createdAt: '2026-10-04T12:00:00.000Z',
+          displayName: 'Bouncy',
+          tag: '0042',
+          userId: 'u1',
+          playerReason: 'wrong pack',
+        },
+      ],
+    });
+    assert.match(text, /^1 of 3 refunds:/);
+    assert.match(text, /r1 {2}pending .*\$9\.99 {2}gems\.1100 {2}Bouncy#0042/);
+    assert.match(text, /"wrong pack"/);
   });
 
   it('maps the console staff and audit commands', () => {

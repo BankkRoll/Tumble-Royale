@@ -125,7 +125,20 @@ export async function recordServerError(
   }
 }
 
-async function audit(ctx: AppContext, req: FastifyRequest, name: string, props: Record<string, unknown>) {
+/**
+ * Records an admin action in the log and as an `audit.admin.<name>` event.
+ *
+ * @param ctx - Shared services.
+ * @param req - The admin request (its IP is kept).
+ * @param name - Action name, e.g. `playlist_override`.
+ * @param props - What changed.
+ */
+export async function audit(
+  ctx: AppContext,
+  req: FastifyRequest,
+  name: string,
+  props: Record<string, unknown>,
+): Promise<void> {
   req.log.info({ audit: name, ...props }, 'admin action');
   await ctx.db
     .insert(events)

@@ -1,7 +1,7 @@
 /**
  * The API's own view of live-ops state: feature flags, the maintenance
- * window and playlist overrides, read from the database and cached per
- * instance.
+ * window, playlist overrides and event overrides, read from the database and
+ * cached per instance.
  *
  * Responsibilities:
  * - One cached snapshot per app instance (30 s), shared by the kill switches
@@ -15,6 +15,7 @@
  *   payload), which keeps it next to the other operator switches without a
  *   table of its own.
  */
+import type { EventOverride } from '@tumble/content/progression';
 import { PLAYLISTS } from '@tumble/content/shows';
 import {
   FLAG_DEFAULTS,
@@ -31,7 +32,7 @@ import {
   type EffectiveSchedule,
 } from '@tumble/shared/liveops';
 import type { AppContext } from '../context.ts';
-import { featureFlags, playlistOverrides } from '../db/schema.ts';
+import { eventOverrides, featureFlags, playlistOverrides } from '../db/schema.ts';
 import { ApiError } from '../http/errors.ts';
 
 /** Feature-flag key that stores the maintenance window. Not settable through the generic flag route. */
@@ -55,6 +56,8 @@ export interface LiveOpsSnapshot {
   flags: Record<string, FlagRow>;
   maintenance: MaintenanceWindow;
   playlists: PlaylistOverride[];
+  /** Operator windows for limited-time events. */
+  events: EventOverride[];
 }
 
 interface Cache {
@@ -77,6 +80,7 @@ async function load(ctx: AppContext): Promise<LiveOpsSnapshot> {
     flags[r.key] = { enabled: r.enabled, rolloutPercent: r.rolloutPercent, payload: r.payload ?? null };
   }
   const overrides = await ctx.db.select().from(playlistOverrides);
+  const eventRows = await ctx.db.select().from(eventOverrides);
   return {
     flags,
     maintenance,
@@ -86,6 +90,12 @@ async function load(ctx: AppContext): Promise<LiveOpsSnapshot> {
       endsAt: o.endsAt?.toISOString() ?? null,
       featured: o.featured,
       hidden: o.hidden,
+    })),
+    events: eventRows.map((o) => ({
+      id: o.id,
+      startsAt: o.startsAt.toISOString(),
+      endsAt: o.endsAt.toISOString(),
+      enabled: o.enabled,
     })),
   };
 }

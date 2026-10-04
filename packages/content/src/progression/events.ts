@@ -457,13 +457,18 @@ export interface EventShowFacts {
   placement: number;
 }
 
+/** The part of an event that says which playlists it spotlights. */
+export interface FeaturingEvent {
+  readonly playlistIds: readonly string[];
+}
+
 /**
  * Whether a playlist is one the event spotlights.
  *
  * @param event - The event.
  * @param playlistId - Playlist the show was played in.
  */
-export function inEventPlaylist(event: Pick<LiveEvent, 'playlistIds'>, playlistId: string): boolean {
+export function inEventPlaylist(event: FeaturingEvent, playlistId: string): boolean {
   return event.playlistIds.includes(playlistId);
 }
 
@@ -478,7 +483,7 @@ export function inEventPlaylist(event: Pick<LiveEvent, 'playlistIds'>, playlistI
  * eventShowPoints(getLiveEvent('moonlit-mischief')!, { playlistId: 'chaos-mode', roundsQualified: 2, ... }); // 80
  */
 export function eventShowPoints(
-  event: Pick<LiveEvent, 'points' | 'playlistIds'>,
+  event: FeaturingEvent & { readonly points: EventPointsRules },
   facts: EventShowFacts,
 ): number {
   const r = event.points;
@@ -519,7 +524,7 @@ export function eventShowMetrics(facts: EventShowFacts): Record<EventMetric, num
  * @param facts - The show.
  */
 export function eventChallengeIncrement(
-  event: Pick<LiveEvent, 'playlistIds'>,
+  event: FeaturingEvent,
   challenge: Pick<EventChallenge, 'metric' | 'eventPlaylistsOnly'>,
   facts: EventShowFacts,
 ): number {
@@ -534,7 +539,10 @@ export function eventChallengeIncrement(
  * @param points - Points total.
  * @returns 0..tiers.length.
  */
-export function eventTiersReached(event: Pick<LiveEvent, 'tiers'>, points: number): number {
+export function eventTiersReached(
+  event: { readonly tiers: readonly { tier: number; points: number }[] },
+  points: number,
+): number {
   let n = 0;
   for (const t of event.tiers) if (points >= t.points) n = t.tier;
   return n;

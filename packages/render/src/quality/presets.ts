@@ -37,6 +37,15 @@ export interface QualityPreset {
   vfx: { particles: number; confetti: number; trails: number; shadows: number };
   /** Character LOD switch distances (m): LOD0 → LOD1 at `[0]`, LOD1 → LOD2 at `[1]`. */
   lodDistances: [number, number];
+  /**
+   * Far (LOD2) Tumblers re-pose every Nth frame and off-screen ones at twice
+   * that; their position still updates every frame. 1 = every frame.
+   */
+  farAnimStride: number;
+  /** Most nameplates drawn at once (nearest first). */
+  maxNameplates: number;
+  /** Other Tumblers whose footsteps play (nearest first); the local player's always do. */
+  footstepVoices: number;
   /** Max simultaneous cosmetic ragdolls (spec: 8 near camera at most). */
   maxRagdolls: number;
   /** Target frame time for adaptive resolution (ms). */
@@ -66,7 +75,10 @@ export const QUALITY_PRESETS: Readonly<Record<QualityTier, QualityPreset>> = {
       streaks: 50,
     },
     vfx: { particles: 1024, confetti: 400, trails: 4, shadows: 40 },
-    lodDistances: [10, 22],
+    lodDistances: [8, 18],
+    farAnimStride: 3,
+    maxNameplates: 4,
+    footstepVoices: 4,
     maxRagdolls: 2,
     targetFrameMs: 1000 / 30,
   },
@@ -92,6 +104,9 @@ export const QUALITY_PRESETS: Readonly<Record<QualityTier, QualityPreset>> = {
     },
     vfx: { particles: 3072, confetti: 1000, trails: 8, shadows: 64 },
     lodDistances: [16, 34],
+    farAnimStride: 2,
+    maxNameplates: 8,
+    footstepVoices: 8,
     maxRagdolls: 4,
     targetFrameMs: 1000 / 60,
   },
@@ -117,6 +132,9 @@ export const QUALITY_PRESETS: Readonly<Record<QualityTier, QualityPreset>> = {
     },
     vfx: { particles: 6144, confetti: 1800, trails: 12, shadows: 64 },
     lodDistances: [24, 48],
+    farAnimStride: 1,
+    maxNameplates: 8,
+    footstepVoices: 12,
     maxRagdolls: 8,
     targetFrameMs: 1000 / 60,
   },
@@ -142,6 +160,9 @@ export const QUALITY_PRESETS: Readonly<Record<QualityTier, QualityPreset>> = {
     },
     vfx: { particles: 8192, confetti: 2500, trails: 16, shadows: 64 },
     lodDistances: [32, 64],
+    farAnimStride: 1,
+    maxNameplates: 8,
+    footstepVoices: 12,
     maxRagdolls: 8,
     targetFrameMs: 1000 / 60,
   },

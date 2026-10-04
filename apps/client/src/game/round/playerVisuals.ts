@@ -6,7 +6,7 @@
  *
  * Hot loop is allocation-free: samples, anim inputs and vectors are reused.
  */
-import { Vector3, type Camera, type Object3D } from 'three/webgpu';
+import { Frustum, Matrix4, Sphere, Vector3, type Camera, type Object3D } from 'three/webgpu';
 import type { GameAudio } from '@tumble/audio';
 import { getCosmetic } from '@tumble/content/cosmetics';
 import {
@@ -39,8 +39,8 @@ import {
 /** Players within this distance of the camera get footstep sounds. */
 const FOOTSTEP_RANGE = 28;
 const SHADOW_RADIUS = 0.55;
-/** Only the nearest few names are drawn: a full show's crowd of plates hides the course. */
-const MAX_PLATES = 8;
+/** Bounding sphere radius around a Tumbler's centre for the off-screen test (covers hats and dives). */
+const CULL_RADIUS = 1.6;
 /** Names closer than this would fill the screen. */
 const PLATE_MIN_DIST = 5;
 /** Moving closer must cross this fraction of a LOD distance, so Tumblers near a boundary don't flip every frame. */
@@ -145,6 +145,8 @@ interface Entry {
   speed: number;
   sliding: boolean;
   dist: number;
+  /** Frame time not yet handed to the visual (pose updates skipped by the stride). */
+  animDt: number;
 }
 
 /** Options for {@link PlayerVisuals}. */
@@ -178,6 +180,15 @@ export class PlayerVisuals {
   private showPlates: boolean;
   private readonly dists = new Float32Array(MAX_PLAYERS);
   private readonly crowd: TumblerCrowd | null;
+  private readonly frustum = new Frustum();
+  private readonly viewProj = new Matrix4();
+  private readonly sphere = new Sphere(new Vector3(), CULL_RADIUS);
+  private frameNo = 0;
+  private animStride: number;
+  private maxPlates: number;
+  private footstepVoices: number;
+  /** Footsteps play for players nearer than this (the Nth nearest last frame). */
+  private footstepLimit = FOOTSTEP_RANGE;
 
   constructor(
     private readonly source: RoundSource,
@@ -192,6 +203,9 @@ export class PlayerVisuals {
     opts.parent.add(this.bubbles.mesh);
     this.lod1 = opts.preset.lodDistances[0];
     this.lod2 = opts.preset.lodDistances[1];
+    this.animStride = opts.preset.farAnimStride;
+    this.maxPlates = opts.preset.maxNameplates;
+    this.footstepVoices = opts.preset.footstepVoices;
     this.showPlates = opts.nameplates;
     let trails = opts.preset.vfx.trails;
     const visuals: TumblerVisual[] = [];
@@ -251,6 +265,7 @@ export class PlayerVisuals {
         speed: 0,
         sliding: false,
         dist: 0,
+        animDt: 0,
       };
       this.entries.push(e);
       this.byId.set(info.id, e);
@@ -259,10 +274,13 @@ export class PlayerVisuals {
     if (this.crowd) opts.parent.add(this.crowd.object);
   }
 
-  /** Applies quality changes (LOD distances). */
+  /** Applies quality changes (LOD distances, crowd animation and nameplate/footstep caps). */
   setPreset(p: QualityPreset): void {
     this.lod1 = p.lodDistances[0];
     this.lod2 = p.lodDistances[1];
+    this.animStride = p.farAnimStride;
+    this.maxPlates = p.maxNameplates;
+    this.footstepVoices = p.footstepVoices;
   }
 
   /** Nameplate settings. */
@@ -380,6 +398,11 @@ export class PlayerVisuals {
    */
   update(dt: number, camera: Camera): void {
     camera.getWorldPosition(this.camPos);
+    camera.updateMatrixWorld();
+    this.frustum.setFromProjectionMatrix(
+      this.viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+    );
+    const frame = ++this.frameNo;
     const vfx = this.opts.vfx;
     const s = this.sample;
     let shadows = 0;
@@ -431,9 +454,22 @@ export class PlayerVisuals {
       a.emote =
         s.state === CharacterState.Emote && s.emote > 0 ? (e.loadout.emotes[s.emote - 1] ?? null) : null;
       a.ghost = isRespawnGhost(s);
-      a.impulse = e.impulse;
-      e.impulse = 0;
-      e.visual.update(dt, a);
+      // PERF: posing is the per-Tumbler CPU cost that scales with a 100-player field; far and
+      // off-screen Tumblers re-pose every few frames (staggered by id) with the time they missed.
+      e.animDt += dt;
+      const local = e.info.id === this.source.localId;
+      let stride = 1;
+      if (!local && this.animStride > 1) {
+        this.sphere.center.copy(e.centre);
+        if (!this.frustum.intersectsSphere(this.sphere)) stride = this.animStride * 2;
+        else if (lod === 2) stride = this.animStride;
+      }
+      if (stride === 1 || (frame + e.info.id) % stride === 0) {
+        a.impulse = e.impulse;
+        e.impulse = 0;
+        e.visual.update(e.animDt, a);
+        e.animDt = 0;
+      }
 
       vfx.setPlayerPosition(e.info.id, s.x, s.y, s.z);
       if (shadows < this.opts.preset.vfx.shadows && s.state !== CharacterState.Respawning) {
@@ -442,7 +478,7 @@ export class PlayerVisuals {
       e.trail?.update(s.x, fy + 0.5, s.z, dt);
 
       const audio = this.opts.audio;
-      if (audio && (dist < FOOTSTEP_RANGE || e.info.id === this.source.localId)) {
+      if (audio && (dist <= this.footstepLimit || local)) {
         this.footPos.x = s.x;
         this.footPos.y = fy;
         this.footPos.z = s.z;
@@ -462,12 +498,25 @@ export class PlayerVisuals {
     this.updateBubbles(dt, camera);
   }
 
+  /**
+   * Keeps the nearest few nameplates, and picks next frame's footstep range:
+   * at a start line every bot is within earshot, and a footstep voice per bot
+   * per stride (hundreds of WebAudio node graphs a second) costs real CPU.
+   */
   private cullPlates(): void {
     let n = 0;
+    const local = this.source.localId;
+    for (const e of this.entries)
+      if (e.visible && e.info.id !== local && n < this.dists.length) this.dists[n++] = e.dist;
+    const near = this.dists.subarray(0, n).sort();
+    const k = this.footstepVoices;
+    this.footstepLimit = Math.min(FOOTSTEP_RANGE, n > k ? (k > 0 ? (near[k - 1] as number) : -1) : Infinity);
+    n = 0;
     for (const e of this.entries)
       if (e.plate && e.visible && e.dist >= PLATE_MIN_DIST && n < this.dists.length) this.dists[n++] = e.dist;
     const list = this.dists.subarray(0, n).sort();
-    const limit = n > MAX_PLATES ? (list[MAX_PLATES - 1] as number) : Infinity;
+    const max = this.maxPlates;
+    const limit = n > max ? (max > 0 ? (list[max - 1] as number) : -1) : Infinity;
     for (const e of this.entries) {
       if (e.plate)
         e.plate.visible = this.showPlates && e.visible && e.dist >= PLATE_MIN_DIST && e.dist <= limit;

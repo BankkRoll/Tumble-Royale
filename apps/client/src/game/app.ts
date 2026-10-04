@@ -1615,24 +1615,13 @@ export class GameApp {
           void this.mm.cancel().catch(() => undefined);
           this.account?.setPresence('in_menu');
         }
-        const hadSession = this.session !== null;
-        if (this.session) {
-          this.forgetOnlineShow(this.session);
-          this.session.quit();
-          this.session = null;
-          this.endPlayingSolo();
-        }
+        const hadSession = this.quitSession();
         s().setQueue({ status: 'idle' });
         if (hadSession) this.goMenu();
         else this.leaveQueueScreen();
       },
       onPlayAgain: () => {
-        if (this.session) {
-          this.forgetOnlineShow(this.session);
-          this.session.quit();
-          this.session = null;
-          this.endPlayingSolo();
-        }
+        this.quitSession();
         this.replayLastShow();
       },
       onBackToLobby: () => this.leaveToMenu(),
@@ -1845,13 +1834,26 @@ export class GameApp {
     }
   }
 
+  /**
+   * Leaves the running show early: it is over for this player (no rejoin
+   * offer, no replayed match_found), the party learns they are back, and
+   * friends see them in the menu until the next show says otherwise.
+   *
+   * @returns Whether a show was running.
+   */
+  private quitSession(): boolean {
+    const session = this.session;
+    if (!session) return false;
+    this.forgetOnlineShow(session);
+    session.quit();
+    this.session = null;
+    this.endPlayingSolo();
+    if (this.account?.active) this.account.setPresence('in_menu');
+    return true;
+  }
+
   private leaveToMenu(): void {
-    if (this.session) {
-      this.forgetOnlineShow(this.session);
-      this.session.quit();
-      this.session = null;
-      this.endPlayingSolo();
-    }
+    this.quitSession();
     this.clearStartedLobby();
     if (this.account?.active) this.account.setPresence('in_menu');
     this.goMenu();

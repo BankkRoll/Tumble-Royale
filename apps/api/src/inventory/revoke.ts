@@ -72,17 +72,26 @@ export interface RevokedCosmetic {
  * @param ctx - Shared services (catalog defaults, clock).
  * @param userId - Owner.
  * @param cosmeticId - Item to take away.
- * @returns What was removed, or null when the player did not own it.
+ * @param onlySource - Remove it only while held from this source (`store`
+ *   for refunds), so an item also earned another way is never taken.
+ * @returns What was removed, or null when the player did not own it (from that source).
  */
 export async function revokeCosmetic(
   tx: DbOrTx,
   ctx: AppContext,
   userId: string,
   cosmeticId: string,
+  onlySource?: string,
 ): Promise<RevokedCosmetic | null> {
   const removed = await tx
     .delete(inventoryItems)
-    .where(and(eq(inventoryItems.userId, userId), eq(inventoryItems.cosmeticId, cosmeticId)))
+    .where(
+      and(
+        eq(inventoryItems.userId, userId),
+        eq(inventoryItems.cosmeticId, cosmeticId),
+        onlySource ? eq(inventoryItems.source, onlySource) : undefined,
+      ),
+    )
     .returning({ source: inventoryItems.source });
   if (removed.length === 0) return null;
   const defaults = ctx.catalog.defaultLoadout();

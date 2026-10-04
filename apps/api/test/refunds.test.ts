@@ -11,6 +11,7 @@ import { STORE_SETS } from '@tumble/content/cosmetics';
 import type { CatalogCosmetic } from '../src/catalog.ts';
 import { currenciesLedger, inventoryItems, loadouts, purchases, refunds } from '../src/db/schema.ts';
 import { applyLedger, verifyLedger } from '../src/economy/ledger.ts';
+import { grantCosmetic } from '../src/economy/wallet.ts';
 import {
   REAL_MONEY_REFUND_WINDOW_DAYS,
   refundEligibility,
@@ -308,6 +309,25 @@ describe.each(BACKENDS)('self-service refunds ($name)', (backend) => {
     expect(res.json().items.sort()).toEqual([...p.items].sort());
     const inv = await owned(u);
     for (const id of p.items) expect(inv.has(id)).toBe(false);
+    expect((await wallet(u)).wallet).toMatchObject(before);
+  });
+
+  it('keeps an item the player has since also earned, and still gives the price back', async () => {
+    api.clock.set(T0.toISOString());
+    const u = await api.guest();
+    await api.grant(u.id, 'gumballs', 200_000);
+    await api.grant(u.id, 'gems', 200_000);
+    const set = STORE_SETS[0]!;
+    const before = (await wallet(u)).wallet;
+    const p = await buy(u, `bundle:${set.id}`);
+    const [earned, ...bought] = p.items;
+    await api.ctx.db.transaction((tx) => grantCosmetic(tx, u.id, earned!, 'event'));
+    const res = await refund(u, p.purchaseId);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().items.sort()).toEqual([...bought].sort());
+    const inv = await owned(u);
+    expect(inv.has(earned!)).toBe(true);
+    for (const id of bought) expect(inv.has(id)).toBe(false);
     expect((await wallet(u)).wallet).toMatchObject(before);
   });
 

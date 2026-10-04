@@ -242,7 +242,10 @@ export interface RefundResult {
   status: RefundStatus;
   /** What came back (self-service) or will be refunded (real money, minor units). */
   credit: { currency: string; amount: number };
-  /** Cosmetic ids taken away. */
+  /**
+   * Cosmetic ids taken away. An item the player has since also earned
+   * elsewhere (event, achievement, pass) is kept and not listed.
+   */
   items: string[];
   /** Loadout slots that wore a removed item and now use the defaults. */
   loadoutsChanged: number[];
@@ -350,6 +353,17 @@ export async function refundPurchase(
         return resultOf(row!, await readWallet(tx, userId), [], false);
       }
 
+      // Only copies still held because of this purchase go: an item the player
+      // has since also earned (event, achievement, pass…) is re-sourced by
+      // grantCosmetic and stays theirs.
+      const removed: string[] = [];
+      const loadoutsChanged = new Set<number>();
+      for (const id of items) {
+        const revoked = await revokeCosmetic(tx, ctx, userId, id, 'store');
+        if (!revoked) continue;
+        removed.push(id);
+        for (const slot of revoked.loadouts) loadoutsChanged.add(slot);
+      }
       const [row] = await tx
         .insert(refunds)
         .values({
@@ -359,7 +373,7 @@ export async function refundPurchase(
           status: 'completed',
           currency: purchase.currency,
           amount: purchase.price,
-          items,
+          items: removed,
           playerReason: reason ?? null,
           createdAt: now,
           updatedAt: now,
@@ -372,11 +386,6 @@ export async function refundPurchase(
         reason: 'store_refund',
         ref: `refund:${purchaseId}`,
       });
-      const loadoutsChanged = new Set<number>();
-      for (const id of items) {
-        const revoked = await revokeCosmetic(tx, ctx, userId, id);
-        for (const slot of revoked?.loadouts ?? []) loadoutsChanged.add(slot);
-      }
       await tx.update(purchases).set({ status: 'refunded' }).where(eq(purchases.id, purchaseId));
       return resultOf(
         row!,

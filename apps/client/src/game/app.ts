@@ -18,15 +18,7 @@
  *   listener, adaptive resolution, stats;
  * - settings persistence and live application; debug panel and hooks.
  */
-import {
-  bindUI,
-  mountUI,
-  social,
-  ui,
-  uiEvents,
-  type CustomLobbyState,
-  type Settings,
-} from '@tumble/ui';
+import { bindUI, mountUI, social, ui, uiEvents, type CustomLobbyState, type Settings } from '@tumble/ui';
 import { bindChatRouter } from './social/chatRouter.ts';
 import { loadMutes, publishSocialAvailability, socialIntents } from './social/intents.ts';
 import { onLobbyChat, onLobbyChatError, syncLobbyChat } from './social/lobbyChat.ts';
@@ -40,7 +32,7 @@ import type { MatchDeps } from '@tumble/sim/match';
 import type { ShowPlaylist } from '@tumble/sim/show';
 import { PerspectiveCamera, Scene, type WebGPURenderer } from 'three/webgpu';
 import { InputSystem } from '../input/index.ts';
-import { keymapFromKeybinds } from './bindings.ts';
+import { keymapFromKeybinds, padMenuButtons, padmapFromPadBinds } from './bindings.ts';
 import { GamepadNavigator, firstStandardPad } from '../input/gamepadNav.ts';
 import { StatsOverlay } from '../debug/stats.ts';
 import { checkDeterminism } from '../debug/determinism.ts';
@@ -107,6 +99,7 @@ function mergeSettings(base: Settings, saved: Partial<Settings> | null): Setting
       ...base.controls,
       ...saved.controls,
       keybinds: { ...base.controls.keybinds, ...saved.controls?.keybinds },
+      padBinds: { ...base.controls.padBinds, ...saved.controls?.padBinds },
     },
     audio: { ...base.audio, ...saved.audio },
     accessibility: { ...base.accessibility, ...saved.accessibility },
@@ -572,7 +565,8 @@ export class GameApp {
       typeof navigator.getGamepads === 'function' ? firstStandardPad(navigator.getGamepads()) : null;
     // Edges are tracked even during a replay so its buttons never fire here afterwards.
     const actions = this.padNav.update(pad, now, true);
-    if (replay) return;
+    // Settings → Controller is listening for a button to bind; it must not also navigate.
+    if (replay || s.padCapture) return;
     for (const a of actions) {
       this.input.lastDevice = 'gamepad';
       if (a === 'start') this.onPadStart();
@@ -1530,6 +1524,8 @@ export class GameApp {
     this.input.settings.invertY = st.controls.invertY;
     this.input.settings.toggleGrab = st.controls.toggleGrab;
     this.input.setKeymap(keymapFromKeybinds(st.controls.keybinds));
+    this.input.setPadMap(padmapFromPadBinds(st.controls.padBinds));
+    this.padNav.setStartButtons(padMenuButtons(st.controls.padBinds));
     const view = this.session?.roundView;
     view?.setAccessibility(st.accessibility.reduceShake, st.gameplay.nameplates, st.gameplay.streamerMode);
     view?.setBotTags(st.gameplay.botTags);

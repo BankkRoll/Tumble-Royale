@@ -104,6 +104,8 @@ export interface UIState {
   isTouch: boolean;
   /** Mouse camera lock in a round: 'off' when it does not apply (menus, touch, setting off). */
   cameraLock: 'off' | 'unlocked' | 'locked';
+  /** Settings is waiting for a controller button to bind; menu navigation ignores the pad meanwhile. */
+  padCapture: boolean;
 
   // --- system --------------------------------------------------------------
   boot: BootState;
@@ -324,6 +326,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   inputMode: 'game',
   isTouch: false,
   cameraLock: 'off',
+  padCapture: false,
 
   boot: { progress: 0, label: 'Inflating Tumblers…' },
   connection: { status: 'online' },

@@ -1205,6 +1205,26 @@ export type BindAction =
 /** `KeyboardEvent.code` (or `Mouse0`…`Mouse4`) per action: [primary, secondary]. */
 export type Keybinds = Record<BindAction, [string, string]>;
 
+/** Controller actions the player can remap (movement and camera stay on the sticks). */
+export type PadBindAction =
+  | 'jump'
+  | 'dive'
+  | 'grab'
+  | 'emoteWheel'
+  | 'emote1'
+  | 'emote2'
+  | 'emote3'
+  | 'emote4'
+  | 'pause'
+  | 'spectatePrev'
+  | 'spectateNext';
+
+/**
+ * Standard-mapping gamepad button index per action: [primary, secondary],
+ * `-1` when a slot is empty.
+ */
+export type PadBinds = Record<PadBindAction, [number, number]>;
+
 /** Colour-blind palettes. */
 export type ColorBlindMode = 'off' | 'protanopia' | 'deuteranopia' | 'tritanopia';
 
@@ -1232,6 +1252,8 @@ export interface Settings {
     touchLayout: 'right' | 'left';
     touchButtonScale: number;
     keybinds: Keybinds;
+    /** Controller button mapping (Settings → Controls → Controller). */
+    padBinds: PadBinds;
   };
   audio: {
     master: number;

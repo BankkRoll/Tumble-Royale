@@ -5,10 +5,27 @@
  * - turn the UI's two-slot keyboard bindings (`Settings.controls.keybinds`)
  *   into the input system's full keymap, keeping the input layer's extra
  *   default keys (C and Right Ctrl for dive, Right Shift for grab) while an
- *   action is on its defaults.
+ *   action is on its defaults;
+ * - turn the controller bindings (`Settings.controls.padBinds`) into the
+ *   input system's pad map, the menu button list and the spectate buttons.
  */
-import { DEFAULT_KEYBINDS, type BindAction, type Keybinds } from '@tumble/ui';
-import { DEFAULT_KEYMAP, INPUT_ACTIONS, type InputAction, type Keymap } from '../input/index.ts';
+import {
+  DEFAULT_KEYBINDS,
+  DEFAULT_PAD_BINDS,
+  type BindAction,
+  type Keybinds,
+  type PadBindAction,
+  type PadBinds,
+} from '@tumble/ui';
+import {
+  DEFAULT_KEYMAP,
+  INPUT_ACTIONS,
+  PAD_ACTIONS,
+  isPadButton,
+  type InputAction,
+  type Keymap,
+  type PadMap,
+} from '../input/index.ts';
 
 /** UI rebindable action → input system action (spectate keys are read by the show session). */
 export const BIND_TO_INPUT: Readonly<Partial<Record<BindAction, InputAction>>> = {
@@ -67,4 +84,48 @@ export function keymapFromKeybinds(binds: Partial<Keybinds>): Keymap {
     });
   }
   return out;
+}
+
+const buttonsOf = (binds: Partial<PadBinds>, action: PadBindAction): number[] => {
+  const pair = binds[action];
+  const list: readonly unknown[] = Array.isArray(pair) ? pair : DEFAULT_PAD_BINDS[action];
+  return [...new Set(list.filter(isPadButton))];
+};
+
+/**
+ * The input system's gameplay pad mapping for the player's controller
+ * bindings. Menu and spectate buttons are read elsewhere
+ * ({@link padMenuButtons}, {@link padSpectateButtons}).
+ *
+ * @param binds - `Settings.controls.padBinds` (missing or malformed actions use defaults).
+ * @returns Button indices per pad action.
+ * @example
+ * input.setPadMap(padmapFromPadBinds(settings.controls.padBinds));
+ */
+export function padmapFromPadBinds(binds: Partial<PadBinds> | undefined): PadMap {
+  const b = binds ?? {};
+  const out = {} as PadMap;
+  for (const a of PAD_ACTIONS) out[a] = buttonsOf(b, a);
+  return out;
+}
+
+/**
+ * Buttons that open the menu (in-round menu / Settings).
+ *
+ * @param binds - `Settings.controls.padBinds`.
+ * @returns Button indices; the navigator falls back to Start when empty.
+ */
+export function padMenuButtons(binds: Partial<PadBinds> | undefined): number[] {
+  return buttonsOf(binds ?? {}, 'pause');
+}
+
+/**
+ * Buttons that cycle spectate targets.
+ *
+ * @param binds - `Settings.controls.padBinds`.
+ * @returns Previous and next button lists.
+ */
+export function padSpectateButtons(binds: Partial<PadBinds> | undefined): { prev: number[]; next: number[] } {
+  const b = binds ?? {};
+  return { prev: buttonsOf(b, 'spectatePrev'), next: buttonsOf(b, 'spectateNext') };
 }

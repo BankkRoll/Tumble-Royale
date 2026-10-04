@@ -26,22 +26,14 @@ import {
   type ShowPlaylist,
   type ShowSummary,
 } from '@tumble/sim/show';
+import { seatName } from '@tumble/ui';
 import { botLoadout } from '../cosmetics.ts';
 import type { HudInput, HudPlayerStatus } from '../round/hud.ts';
 import { OfflineRoundSource, type RoundSource } from '../round/source.ts';
 import type { GameContext, RoundStart, SessionPlayer } from './context.ts';
+import { sessionSummaryFromShow } from './crown.ts';
+import { OFFLINE_SHOW_TIMINGS } from './offlineTimings.ts';
 import { ShowSession } from './session.ts';
-
-/** Phase lengths tuned so the UI cards and the director agree (SCREENS.md §15). */
-const TIMINGS = {
-  preShow: 0,
-  rulesCard: 3,
-  countdown: 3,
-  roundEnd: 1.5,
-  results: 5.5,
-  transition: 0.2,
-  victory: 600,
-} as const;
 
 /**
  * Builds the offline session.
@@ -92,7 +84,7 @@ export class OfflineShowSession extends ShowSession {
       ...(ctx.cfg.players
         ? { players: Math.max(2, Math.min(MAX_PLAYERS, Math.round(ctx.cfg.players))) }
         : {}),
-      timings: TIMINGS,
+      timings: OFFLINE_SHOW_TIMINGS,
       // The round waits for this machine's build (and shader compile), however long it takes.
       localLoad: 'manual',
       ...(roundTimeScale !== undefined ? { roundTimeScale } : {}),
@@ -196,7 +188,7 @@ export class OfflineShowSession extends ShowSession {
           const sp = this.players.get(id);
           players.push({
             id,
-            name: sp?.name ?? `Tumbler ${id}`,
+            name: sp?.name ?? seatName(id),
             isBot: sp?.isBot ?? true,
             team: p.team ?? -1,
           });
@@ -207,6 +199,7 @@ export class OfflineShowSession extends ShowSession {
           players,
           inRound ? this.localId : -1,
           () => this.show.match === m,
+          OFFLINE_SHOW_TIMINGS,
         );
         this.stepper.reset();
         this.source.capture();
@@ -245,23 +238,7 @@ export class OfflineShowSession extends ShowSession {
   }
 
   private finish(summary: ShowSummary): void {
-    const placements = new Map<number, number>();
-    for (const p of summary.placements) placements.set(p.playerId, p.place);
-    this.onShowEnded({
-      winnerId: summary.winner,
-      placements,
-      rounds: summary.rounds.map((o) => {
-        const carried = new Set(o.carried);
-        return {
-          roundId: o.roundId,
-          name: o.name,
-          type: o.type,
-          isFinal: o.isFinal,
-          qualified: [...o.qualified, ...o.carried],
-          eliminated: o.eliminated.filter((id) => !carried.has(id)),
-        };
-      }),
-    });
+    this.onShowEnded(sessionSummaryFromShow(summary));
   }
 
   // ---------------------------------------------------------------------------

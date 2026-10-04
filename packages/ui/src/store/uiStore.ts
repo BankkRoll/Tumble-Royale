@@ -16,10 +16,14 @@ import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 import { DEFAULT_HUD, DEFAULT_SETTINGS, DEFAULT_TRANSITIONS, MENU_INPUT_SCREENS } from './defaults.ts';
 import { uiEvents } from './events.ts';
+import { overlayAfterScreenChange } from './inputOwnership.ts';
 import type {
   BetweenRoundsInfo,
   BootState,
+  AchievementsData,
   ChallengesData,
+  CollectionData,
+  LoginStreakData,
   ConnectionState,
   CustomLobbyState,
   DialogSpec,
@@ -32,6 +36,7 @@ import type {
   LeaderboardId,
   LeaderboardInfo,
   LeaderboardRow,
+  LeaderboardScope,
   LobbyGamesState,
   MatchHistoryEntry,
   MenuTab,
@@ -43,6 +48,7 @@ import type {
   PartyState,
   PlayMode,
   PlayerWallOptions,
+  LiveOpsUiState,
   Playlist,
   PreShowInfo,
   ProfileData,
@@ -104,6 +110,10 @@ export interface UIState {
   isTouch: boolean;
   /** Mouse camera lock in a round: 'off' when it does not apply (menus, touch, setting off). */
   cameraLock: 'off' | 'unlocked' | 'locked';
+  /** The local Tumbler is running around the menu platform (idle play, party hangout, lobby games). */
+  idlePlay: boolean;
+  /** Settings is waiting for a controller button to bind; menu navigation ignores the pad meanwhile. */
+  padCapture: boolean;
 
   // --- system --------------------------------------------------------------
   boot: BootState;
@@ -119,11 +129,18 @@ export interface UIState {
   store: StoreData | null;
   pass: SeasonPassData | null;
   challenges: ChallengesData | null;
+  /** Daily login streak (online accounts). */
+  loginStreak: LoginStreakData | null;
+  achievements: AchievementsData | null;
+  /** Every cosmetic with ownership and sources. */
+  collection: CollectionData | null;
   leaderboards: Partial<Record<LeaderboardId, LeaderboardRow[]>>;
   matchHistory: MatchHistoryEntry[];
   news: NewsItem[];
   friends: Friend[];
   party: PartyState | null;
+  /** Maintenance banner and feature flags. */
+  liveOps: LiveOpsUiState;
   playlists: Playlist[];
   selectedPlaylist: string;
   localReady: boolean;
@@ -179,6 +196,12 @@ export interface UIState {
   /** Bumps when a new wall starts so the timeline restarts. */
   playerWallSeq: number;
   rewards: RewardsSummary | null;
+  /**
+   * A signed-in player's reward is not here yet: `arriving` while the game
+   * asks the account servers, `deferred` once it gave up waiting (the reward
+   * still lands on the profile). Null once `rewards` is set.
+   */
+  rewardsPending: 'arriving' | 'deferred' | null;
   /** Announcer caption (shown when captions are enabled). */
   caption: string | null;
 
@@ -224,11 +247,20 @@ export interface UIState {
   setStoreData: (store: StoreData | null) => void;
   setPass: (pass: SeasonPassData | null) => void;
   setChallenges: (challenges: ChallengesData | null) => void;
+  /** Daily login streak card (null offline). */
+  setLoginStreak: (streak: LoginStreakData | null) => void;
+  /** Achievements screen (null offline). */
+  setAchievements: (achievements: AchievementsData | null) => void;
+  setCollection: (collection: CollectionData | null) => void;
   setLeaderboard: (board: LeaderboardId, rows: LeaderboardRow[], info?: LeaderboardInfo) => void;
+  /** Marks a board's last load as failed (`null` clears it before a retry). Rows are kept. */
+  setLeaderboardError: (board: LeaderboardId, scope: LeaderboardScope, error: string | null) => void;
   setMatchHistory: (entries: MatchHistoryEntry[]) => void;
   setNews: (news: NewsItem[]) => void;
   setFriends: (friends: Friend[]) => void;
   setParty: (party: PartyState | null) => void;
+  /** Merges maintenance and flag state (the game publishes it from the API). */
+  setLiveOps: (patch: Partial<LiveOpsUiState>) => void;
   setPlaylists: (playlists: Playlist[], selected?: string) => void;
   selectPlaylist: (id: string) => void;
   setLocalReady: (ready: boolean) => void;
@@ -253,6 +285,14 @@ export interface UIState {
   setRegionStatus: (patch: Partial<RegionStatus>) => void;
   setPhoto: (patch: Partial<PhotoModeState>) => void;
   setPreShow: (info: PreShowInfo | null) => void;
+  /**
+   * Forgets the previous show's screens (pre-show, intro, round cards,
+   * results, wall), so nothing from it (its name in the in-game menu, a stale
+   * round card) leaks into a new show. Called when a show starts; the
+   * rewards screen is left alone because Play again starts the next show
+   * from it.
+   */
+  resetShowScreens: () => void;
   setShowIntro: (info: ShowIntroInfo | null) => void;
   setRoundIntro: (info: RoundIntroInfo | null) => void;
   /**
@@ -279,7 +319,9 @@ export interface UIState {
   setVictory: (info: VictoryInfo | null) => void;
   /** Loads the end-of-show wall; call before `setScreen('playerWall')`. */
   setPlayerWall: (summary: ShowSummary | null, opts?: Partial<PlayerWallOptions>) => void;
+  /** Shows the rewards (clears any pending state). */
   setRewards: (rewards: RewardsSummary | null) => void;
+  setRewardsPending: (pending: 'arriving' | 'deferred' | null) => void;
 
   // --- actions: replays ----------------------------------------------------
   setReplays: (replays: ReplayRoundEntry[]) => void;
@@ -324,6 +366,8 @@ export const ui = createStore<UIState>()((set, get) => ({
   inputMode: 'game',
   isTouch: false,
   cameraLock: 'off',
+  idlePlay: false,
+  padCapture: false,
 
   boot: { progress: 0, label: 'Inflating Tumblers…' },
   connection: { status: 'online' },
@@ -337,11 +381,15 @@ export const ui = createStore<UIState>()((set, get) => ({
   store: null,
   pass: null,
   challenges: null,
+  loginStreak: null,
+  achievements: null,
+  collection: null,
   leaderboards: {},
   matchHistory: [],
   news: [],
   friends: [],
   party: null,
+  liveOps: { maintenance: null, flags: {} },
   playlists: [],
   selectedPlaylist: '',
   localReady: false,
@@ -387,6 +435,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   playerWallOptions: { render3D: false, autoContinueMs: 6000 },
   playerWallSeq: 0,
   rewards: null,
+  rewardsPending: null,
   caption: null,
   replays: [],
   replayLive: false,
@@ -485,15 +534,27 @@ export const ui = createStore<UIState>()((set, get) => ({
   setStoreData: (store) => set({ store }),
   setPass: (pass) => set({ pass }),
   setChallenges: (challenges) => set({ challenges }),
+  setLoginStreak: (loginStreak) => set({ loginStreak }),
+  setAchievements: (achievements) => set({ achievements }),
+  setCollection: (collection) => set({ collection }),
   setLeaderboard: (board, rows, info) =>
     set({
       leaderboards: { ...get().leaderboards, [board]: rows },
       ...(info ? { leaderboardInfo: { ...get().leaderboardInfo, [board]: info } } : {}),
     }),
+  setLeaderboardError: (board, scope, error) => {
+    const prev = get().leaderboardInfo[board];
+    if (!error && !prev?.error) return;
+    const next: LeaderboardInfo = { ...(prev ?? { source: 'api', updatedAt: Date.now() }), scope };
+    if (error) next.error = error;
+    else delete next.error;
+    set({ leaderboardInfo: { ...get().leaderboardInfo, [board]: next } });
+  },
   setMatchHistory: (matchHistory) => set({ matchHistory }),
   setNews: (news) => set({ news }),
   setFriends: (friends) => set({ friends }),
   setParty: (party) => set({ party }),
+  setLiveOps: (patch) => set({ liveOps: { ...get().liveOps, ...patch } }),
   setPlaylists: (playlists, selected) =>
     set({ playlists, selectedPlaylist: selected ?? (get().selectedPlaylist || playlists[0]?.id || '') }),
   selectPlaylist: (id) => {
@@ -526,6 +587,22 @@ export const ui = createStore<UIState>()((set, get) => ({
   setRegionStatus: (patch) => set({ regionStatus: { ...get().regionStatus, ...patch } }),
   setPhoto: (patch) => set({ photo: { ...get().photo, ...patch } }),
   setPreShow: (preShow) => set({ preShow }),
+  resetShowScreens: () =>
+    set({
+      preShow: null,
+      showIntro: null,
+      roundIntro: null,
+      roundLoading: null,
+      countdown: null,
+      stamps: [],
+      spectate: null,
+      results: null,
+      betweenRounds: null,
+      finalHype: null,
+      victory: null,
+      playerWall: null,
+      caption: null,
+    }),
   setShowIntro: (showIntro) => set({ showIntro }),
   setRoundIntro: (roundIntro) => set({ roundIntro }),
   setRoundLoading: (patch) =>
@@ -585,7 +662,8 @@ export const ui = createStore<UIState>()((set, get) => ({
       playerWallOptions: { ...get().playerWallOptions, ...opts },
       playerWallSeq: get().playerWallSeq + 1,
     }),
-  setRewards: (rewards) => set({ rewards }),
+  setRewards: (rewards) => set({ rewards, ...(rewards ? { rewardsPending: null } : {}) }),
+  setRewardsPending: (rewardsPending) => set({ rewardsPending }),
   setReplays: (replays) => set({ replays }),
   setReplayLive: (replayLive) => {
     if (get().replayLive !== replayLive) set({ replayLive });
@@ -613,7 +691,7 @@ function applyScreen(screen: ScreenId, transition: TransitionKind): void {
     inputMode: MENU_INPUT_SCREENS.has(screen) ? 'menu' : 'game',
     // Leaving the round clears in-round transient UI so it never leaks into menus.
     ...(screen !== 'round' ? { eliminatedSheet: false, emoteWheelOpen: false, countdown: null } : {}),
-    overlay: screen === 'menu' ? s.overlay : 'none',
+    overlay: overlayAfterScreenChange(s.overlay, s.screen, screen),
   });
 }
 

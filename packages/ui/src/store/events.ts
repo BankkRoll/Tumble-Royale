@@ -34,6 +34,8 @@ export interface UIIntents {
   welcomeDone: { name: string; colors: TumblerColors };
   /** Tutorial prompt answered. */
   tutorialChoice: { accept: boolean; dontAskAgain: boolean };
+  /** Visit Practice Island (Play tab, Settings → Gameplay), any time. */
+  startPractice: undefined;
   /** Main menu tab changed (3D lobby moves its camera). */
   menuTab: { tab: MenuTab };
   overlay: { overlay: OverlayId };
@@ -69,6 +71,8 @@ export interface UIIntents {
   buyPremiumPass: undefined;
   rerollChallenge: { id: string };
   claimChallenge: { id: string };
+  /** Claim today's daily login reward (online accounts). */
+  claimLoginStreak: undefined;
   leaderboardQuery: { board: LeaderboardId; scope?: LeaderboardScope };
   /** Open another player's profile card (ranks, results, friends). */
   inspectPlayer: {
@@ -159,12 +163,10 @@ export interface UIIntents {
   partyInviteAction: { userId: string; code: string; action: 'join' | 'decline' };
   /** In-show text chat (online shows only). */
   sendChat: { text: string };
-  sendPartyChat: { text: string };
   /** The in-show chat input opened or closed (the game frees the mouse and held keys). */
   chatInput: { open: boolean };
   /** Rewards / victory / winner-cam "Continue". */
   continue: { from: ScreenId };
-  skipPlayerWall: undefined;
   /** Timeline beat of the player wall; the 3D wall scene syncs to these. */
   playerWallEvent: PlayerWallEvent;
   /** The Tumble Wipe fully covers the screen: swap 3D scenes now. */
@@ -183,6 +185,10 @@ export interface UIIntents {
   touchInput: { move: { x: number; y: number }; jump: boolean; dive: boolean; grab: boolean };
   /** Camera drag on the touch HUD, in CSS pixels since the last emit. */
   touchLook: { dx: number; dy: number };
+  /** Touch Done button: leave idle play and bring the menu back. */
+  leaveIdlePlay: undefined;
+  /** A tap (not a drag) on the touch camera surface during idle play, in client pixels; picks the sign or a party member like a click on the stage. */
+  stageTap: { x: number; y: number };
   /** A menu navigation the UI didn't consume (e.g. Back on the root menu). */
   navUnhandled: { dir: NavDirection };
   /** Colour preview while the welcome screen is open. */

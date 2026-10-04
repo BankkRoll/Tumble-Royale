@@ -14,6 +14,8 @@ import { LOBBY_GAME_INFO, LOBBY_GAME_KINDS } from '@tumble/shared';
 import { playCue } from '../../audio-cues.ts';
 import { Icon, type IconName } from '../../components/icons/index.tsx';
 import { uiEvents } from '../../store/events.ts';
+import { keyboardBusy } from '../../store/inputOwnership.ts';
+import { featureOn } from '../../store/liveOps.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { LobbyGameHud, LobbyGameId } from '../../store/types.ts';
 
@@ -60,7 +62,10 @@ export interface LobbyGamesButtonProps {
 export const LobbyGamesButton = memo(function LobbyGamesButton({
   className,
 }: LobbyGamesButtonProps): JSX.Element | null {
-  const visible = useUI((s) => s.screen === 'menu' && s.menuTab === 'play');
+  // party.lobbyGames off hides the picker too (the API already strips game frames).
+  const visible = useUI(
+    (s) => s.screen === 'menu' && s.menuTab === 'play' && featureOn(s.liveOps.flags, 'party.lobbyGames'),
+  );
   const { open, canStart, players, running } = useUI(
     useShallow((s) => ({
       open: s.lobbyGames.pickerOpen,
@@ -78,7 +83,7 @@ export const LobbyGamesButton = memo(function LobbyGamesButton({
     }
     if (!open) return;
     const onKey = (e: KeyboardEvent): void => {
-      if (e.code !== 'Escape') return;
+      if (e.code !== 'Escape' || keyboardBusy(e)) return;
       // Capture phase: closing the picker must not also count as menu Back.
       e.preventDefault();
       playCue('ui.back');

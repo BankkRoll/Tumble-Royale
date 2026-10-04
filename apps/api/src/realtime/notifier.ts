@@ -67,8 +67,24 @@ export type RealtimeEvent =
       partyId: string;
     }
   | { type: 'party_kicked'; partyId: string }
+  /** A party member (or the leader) started or finished a show on their own (Vs Bots, Practice). */
+  | {
+      type: 'party_solo';
+      partyId: string;
+      userId: string;
+      name: string;
+      leader: boolean;
+      playing: boolean;
+    }
   | { type: 'party_disbanded'; partyId: string }
-  | { type: 'notification'; kind: 'info' | 'success' | 'warning' | 'reward'; title: string; body?: string }
+  | {
+      type: 'notification';
+      kind: 'info' | 'success' | 'warning' | 'reward';
+      title: string;
+      body?: string;
+      /** Set for achievement unlocks, so the client can refresh its achievements view. */
+      achievementId?: string;
+    }
   | { type: 'wallet'; gumballs: number; gems: number; crownShards: number };
 
 /** Channel name for a user's personal event stream. */

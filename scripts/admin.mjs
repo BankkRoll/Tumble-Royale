@@ -5,7 +5,8 @@
  * Calls the API's `/internal/*` admin routes with `ADMIN_TOKEN`. The API URL
  * and token come from `--api-url` / `--token`, else `ADMIN_API_URL` /
  * `ADMIN_TOKEN`, else `PUBLIC_API_URL` / `API_URL`, reading the repository's
- * `.env` and `apps/api/.env` when present (real environment variables win).
+ * `deploy/.env`, `.env` and `apps/api/.env` when present (later files win,
+ * real environment variables win over all of them).
  *
  * Exit codes: 0 ok, 1 the API refused or failed, 2 usage error, 3 the API
  * could not be reached.
@@ -31,6 +32,17 @@ News
 Feature flags
   flags get [key]
   flags set <key> on|off [--rollout 0-100] [--payload <json>]
+Playlists (limited-time shows; times are ISO 8601, "none" clears)
+  playlists list                                    every playlist with its schedule and phase
+  playlists set <id> [--starts <time>] [--ends <time>] [--featured on|off] [--hidden on|off]
+  playlists hide <id> | playlists show <id>         withdraw or restore a playlist
+  playlists reset <id>                              drop the override (back to the bundled schedule)
+Maintenance
+  maintenance status
+  maintenance on [--message <text>] [--in <minutes> | --starts <time>] [--for <minutes> | --ends <time>]
+  maintenance off
+Errors
+  errors top [--hours N] [--limit N] [--server]     most frequent client (or server) errors
 Economy
   ledger check <userId>                             verify cached balances against the ledger
 Users
@@ -52,7 +64,7 @@ class UsageError extends Error {}
  * @returns {{ args: string[], opts: Record<string, string | true> }}
  */
 export function parseArgs(argv) {
-  const BOOLEAN = new Set(['json', 'all', 'help']);
+  const BOOLEAN = new Set(['json', 'all', 'help', 'server']);
   const args = [];
   const opts = {};
   for (let i = 0; i < argv.length; i++) {
@@ -82,12 +94,20 @@ function readEnvFile(file) {
 
 /**
  * Environment with the repository `.env` files merged under the real one.
+ * `deploy/.env` (written by `pnpm setup:env --production`) comes first, so
+ * on a production host the CLI talks to the public API with its admin token,
+ * while a development checkout's own `.env` files still win.
  *
  * @param {string} root - Repository root.
  * @param {Record<string, string | undefined>} env - Real environment.
  */
 export function loadEnv(root, env) {
-  return { ...readEnvFile(join(root, '.env')), ...readEnvFile(join(root, 'apps/api/.env')), ...env };
+  return {
+    ...readEnvFile(join(root, 'deploy/.env')),
+    ...readEnvFile(join(root, '.env')),
+    ...readEnvFile(join(root, 'apps/api/.env')),
+    ...env,
+  };
 }
 
 const enc = encodeURIComponent;
@@ -97,15 +117,49 @@ function need(value, what) {
   return value;
 }
 
+/** `--x <ISO time>` → ISO string, `none` → null, absent → undefined. */
+function timeOpt(opts, name) {
+  const v = opts[name];
+  if (v === undefined) return undefined;
+  if (v === 'none') return null;
+  const t = Date.parse(String(v));
+  if (!Number.isFinite(t))
+    throw new UsageError(`--${name} must be an ISO time (2026-12-01T18:00:00Z) or none`);
+  return new Date(t).toISOString();
+}
+
+function onOff(opts, name) {
+  const v = opts[name];
+  if (v === undefined) return undefined;
+  if (v !== 'on' && v !== 'off') throw new UsageError(`--${name} must be on or off`);
+  return v === 'on';
+}
+
+function minutesOpt(opts, name) {
+  if (opts[name] === undefined) return undefined;
+  const n = Number(opts[name]);
+  if (!(Number.isFinite(n) && n > 0)) throw new UsageError(`--${name} must be a positive number of minutes`);
+  return n * 60_000;
+}
+
+/** Positive integer query option, passed through when present. */
+function intOpt(q, opts, name) {
+  if (opts[name] === undefined) return;
+  const n = Number(opts[name]);
+  if (!(Number.isInteger(n) && n > 0)) throw new UsageError(`--${name} must be a positive integer`);
+  q.set(name, String(n));
+}
+
 /**
  * Maps a command to an HTTP request.
  *
  * @param {string[]} args - Positionals after `admin`.
  * @param {Record<string, string | true>} opts - Options.
  * @param {(file: string) => string} readFile - Reads `news publish` input.
+ * @param {number} now - Wall clock (ms) for relative times such as `maintenance on --in 10`.
  * @returns {{ method: string, path: string, body?: unknown }}
  */
-export function toRequest(args, opts, readFile = (f) => readFileSync(f, 'utf8')) {
+export function toRequest(args, opts, readFile = (f) => readFileSync(f, 'utf8'), now = Date.now()) {
   const [group, action, a, ...rest] = args;
   const key = `${group ?? ''} ${action ?? ''}`.trim();
   switch (key) {
@@ -184,6 +238,63 @@ export function toRequest(args, opts, readFile = (f) => readFileSync(f, 'utf8'))
         },
       };
     }
+    case 'playlists list':
+      return { method: 'GET', path: '/internal/playlists' };
+    case 'playlists set': {
+      const body = {
+        startsAt: timeOpt(opts, 'starts'),
+        endsAt: timeOpt(opts, 'ends'),
+        featured: onOff(opts, 'featured'),
+        hidden: onOff(opts, 'hidden'),
+      };
+      for (const k of Object.keys(body)) if (body[k] === undefined) delete body[k];
+      if (Object.keys(body).length === 0)
+        throw new UsageError('playlists set needs --starts, --ends, --featured or --hidden');
+      return { method: 'PUT', path: `/internal/playlists/${enc(need(a, '<id>'))}`, body };
+    }
+    case 'playlists hide':
+    case 'playlists show':
+      return {
+        method: 'PUT',
+        path: `/internal/playlists/${enc(need(a, '<id>'))}`,
+        body: { hidden: action === 'hide' },
+      };
+    case 'playlists reset':
+      return { method: 'DELETE', path: `/internal/playlists/${enc(need(a, '<id>'))}` };
+    case 'maintenance status':
+      return { method: 'GET', path: '/status' };
+    case 'maintenance on': {
+      const inMs = minutesOpt(opts, 'in');
+      const forMs = minutesOpt(opts, 'for');
+      if (inMs !== undefined && opts.starts !== undefined)
+        throw new UsageError('use --in or --starts, not both');
+      if (forMs !== undefined && opts.ends !== undefined)
+        throw new UsageError('use --for or --ends, not both');
+      const startsAt =
+        inMs !== undefined ? new Date(now + inMs).toISOString() : (timeOpt(opts, 'starts') ?? null);
+      const from = startsAt ? Date.parse(startsAt) : now;
+      const endsAt =
+        forMs !== undefined ? new Date(from + forMs).toISOString() : (timeOpt(opts, 'ends') ?? null);
+      return {
+        method: 'PUT',
+        path: '/internal/maintenance',
+        body: {
+          enabled: true,
+          startsAt,
+          endsAt,
+          ...(typeof opts.message === 'string' ? { message: opts.message } : {}),
+        },
+      };
+    }
+    case 'maintenance off':
+      return { method: 'DELETE', path: '/internal/maintenance' };
+    case 'errors top': {
+      const q = new URLSearchParams();
+      intOpt(q, opts, 'hours');
+      intOpt(q, opts, 'limit');
+      if (opts.server) q.set('source', 'server');
+      return { method: 'GET', path: `/internal/errors/top${q.size ? `?${q}` : ''}`, format: formatErrors };
+    }
     case 'ledger check':
       return { method: 'GET', path: `/internal/ledger/${enc(need(a, '<userId>'))}` };
     case 'user lookup':
@@ -200,6 +311,26 @@ export function toRequest(args, opts, readFile = (f) => readFileSync(f, 'utf8'))
     default:
       throw new UsageError(key ? `unknown command: ${key}` : 'no command given');
   }
+}
+
+/**
+ * Renders `errors top` for a terminal: one line per error, most frequent first.
+ *
+ * @param {{ source: string, since: string, errors: { type: string, message: string, occurrences: number,
+ *   players: number, lastSeen: string, services?: string | null, releases?: string | null }[] }} body
+ * @returns {string}
+ */
+export function formatErrors(body) {
+  if (!body.errors?.length) return `No ${body.source} errors since ${body.since}.`;
+  const lines = [`Top ${body.source} errors since ${body.since}:`];
+  for (const e of body.errors) {
+    const who =
+      body.source === 'server' ? (e.services ?? '?') : `${e.players} player${e.players === 1 ? '' : 's'}`;
+    const release = e.releases ? ` · ${e.releases}` : '';
+    lines.push(`${String(e.occurrences).padStart(7)}x  ${e.type}: ${e.message}`);
+    lines.push(`          ${who}${release} · last ${e.lastSeen}`);
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -280,7 +411,8 @@ export async function run(argv, io = {}) {
       return 1;
     }
   }
-  out(body === null ? `ok (HTTP ${res.status})` : JSON.stringify(body, null, opts.json ? 0 : 2));
+  if (req.format && !opts.json && body && typeof body === 'object') out(req.format(body));
+  else out(body === null ? `ok (HTTP ${res.status})` : JSON.stringify(body, null, opts.json ? 0 : 2));
   return 0;
 }
 

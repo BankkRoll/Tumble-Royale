@@ -5,6 +5,7 @@
  */
 import { randomInt, randomUUID } from 'node:crypto';
 import { DEFAULT_SHOW_PLAYERS, filterChat } from '@tumble/shared';
+import { STATIC_LIVEOPS, type LiveOpsSource } from '@tumble/shared/liveops-client';
 import { NO_BANS, type BanLookup } from './bans.ts';
 import type { MatchmakerConfig } from './config.ts';
 import { MMError } from './errors.ts';
@@ -242,6 +243,7 @@ export class Matchmaker {
    * @param now - Clock (ms).
    * @param bans - Ban lookups; {@link NO_BANS} skips the checks.
    * @param control - Game-server control channel (tests inject a fake).
+   * @param liveOps - Maintenance and playlist schedules; the defaults (always open) without an API.
    */
   constructor(
     private readonly cfg: MatchmakerConfig,
@@ -249,6 +251,7 @@ export class Matchmaker {
     private readonly now: () => number = Date.now,
     private readonly bans: BanLookup = NO_BANS,
     control?: GameControl,
+    private readonly liveOps: LiveOpsSource = STATIC_LIVEOPS,
   ) {
     this.control = control ?? httpGameControl(cfg.gameServerSecret, now);
     this.chatLimiter = new SharedRateLimiter(store, 'rl:chat', LOBBY_CHAT_MAX, LOBBY_CHAT_WINDOW_MS, now);
@@ -294,6 +297,38 @@ export class Matchmaker {
       if (s.has('chat')) muted.add(id);
     }
     return muted;
+  }
+
+  /**
+   * Refuses new queues and lobbies while an operator's maintenance window is
+   * active. Shows already placed keep running on their game servers.
+   *
+   * @throws {MMError} 503 `maintenance` with the operator's message.
+   */
+  async assertNotInMaintenance(): Promise<void> {
+    const m = (await this.liveOps.get()).maintenance(this.now());
+    if (m.phase === 'active') throw new MMError(503, 'maintenance', m.message);
+  }
+
+  /**
+   * Refuses a playlist outside its live window or withdrawn by an operator.
+   * The API checks the same when it issues the ticket; this catches a ticket
+   * issued just before the playlist closed.
+   *
+   * @throws {MMError} 409 `playlist_unavailable`.
+   */
+  private async assertPlaylistLive(playlistId: string): Promise<void> {
+    const phase = (await this.liveOps.get()).playlist(playlistId, null, this.now());
+    if (phase === 'live') return;
+    throw new MMError(
+      409,
+      'playlist_unavailable',
+      phase === 'upcoming'
+        ? 'That playlist has not started yet'
+        : phase === 'ended'
+          ? 'That playlist has ended'
+          : 'That playlist is not available right now',
+    );
   }
 
   /** True when the player has an active `all` ban (used to refuse the status stream). */
@@ -346,6 +381,8 @@ export class Matchmaker {
     if (ticket.sub !== caller.userId || ticket.leaderId !== caller.userId) {
       throw new MMError(403, 'not_leader', 'Only the party leader can queue the party');
     }
+    await this.assertNotInMaintenance();
+    await this.assertPlaylistLive(ticket.playlistId);
     const muted = await this.checkStanding(
       ticket.members.map((m) => m.userId),
       ticket.queue === 'ranked',
@@ -451,6 +488,11 @@ export class Matchmaker {
     }, TICK_LOCK_RENEW_MS);
     renew.unref?.();
     try {
+      // Entries queued before the window opened would otherwise wait forever; send them back to the menu.
+      if ((await this.liveOps.get()).maintenance(this.now()).phase === 'active') {
+        for (const e of await this.entries()) await this.cancel(e.leaderId, 'maintenance');
+        return [];
+      }
       const lobbies = formLobbies(await this.entries(), this.now(), this.engine);
       const created: MatchRecord[] = [];
       for (const lobby of lobbies) {
@@ -913,6 +955,7 @@ export class Matchmaker {
 
   /** Creates a lobby hosted by the caller. */
   async createLobby(host: Player, settings: Partial<CustomSettings>, region?: string): Promise<CustomLobby> {
+    await this.assertNotInMaintenance();
     await this.checkStanding([host.userId]);
     await this.leaveLobby(host.userId);
     await this.cancel(host.userId, 'joined_custom_lobby');
@@ -1018,6 +1061,43 @@ export class Matchmaker {
       return lobby;
     });
     await this.cancel(p.userId, 'joined_custom_lobby');
+    return lobby;
+  }
+
+  /**
+   * Opens a finished private show again under the same code (host only), so
+   * "Play again" brings everyone back to the lobby they know instead of a new
+   * code. The host is seated; the others rejoin with the code as before.
+   * Already open: the host simply takes their seat again.
+   *
+   * @throws {MMError} 404 `lobby_not_found` once the lobby expired, 403 `not_host` / `banned`.
+   */
+  async reopenLobby(host: Player, code: string): Promise<CustomLobby> {
+    await this.assertNotInMaintenance();
+    await this.checkStanding([host.userId]);
+    const current = await this.store.get(`lobby-user:${host.userId}`);
+    if (current && current !== code) await this.leaveLobby(host.userId);
+    const lobby = await this.withLobby(code, async (lobby) => {
+      rules.assertHost(lobby, host.userId);
+      if (lobby.status === 'started') {
+        lobby.status = 'open';
+        lobby.matchId = null;
+        lobby.players = [];
+        lobby.spectators = [];
+      }
+      if (!rules.seatOf(lobby, host.userId))
+        lobby.players.unshift({
+          userId: host.userId,
+          name: host.name,
+          joinedAt: this.now(),
+          ready: true,
+          awaySince: null,
+        });
+      await this.store.set(`lobby-user:${host.userId}`, code, LOBBY_TTL_MS);
+      await this.saveLobby(lobby);
+      return lobby;
+    });
+    await this.cancel(host.userId, 'joined_custom_lobby');
     return lobby;
   }
 
@@ -1207,6 +1287,7 @@ export class Matchmaker {
    * @throws {MMError} 409 too few players / not ready, 503 when no game server is available.
    */
   async startLobby(hostId: string, code: string, force = false): Promise<MatchRecord> {
+    await this.assertNotInMaintenance();
     const { lobby, record, server, seats } = await this.withLobby(code, async (lobby) => {
       rules.assertHost(lobby, hostId);
       rules.assertOpen(lobby);

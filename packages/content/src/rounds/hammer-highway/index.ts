@@ -671,7 +671,10 @@ const botNav: Waypoint[] = [
   // §2 Ram Run: chase each ram as it swings away.
   wp(100, 0, 0, 66, [101], { radius: 0.8, action: 'waitForGap', timeAgainst: 's2-ram-1' }),
   wp(101, 0, 0, 81, [102], { radius: 0.8, action: 'waitForGap', timeAgainst: 's2-ram-2' }),
-  wp(102, 0, 0, 95, [103, 104, 105], { radius: 0.8, action: 'waitForGap', timeAgainst: 's2-ram-3' }),
+  wp(102, 0, 0, 95, [106], { radius: 0.8, action: 'waitForGap', timeAgainst: 's2-ram-3' }),
+  // Stay on the 6 m run until it meets the plaza: heading for the side checkpoint nodes straight
+  // from the last ram walked bots off the run's edge at x ≈ −4, z 113–122.
+  wp(106, 0, 0, 121, [103, 104, 105], { radius: 1.5 }),
   cpNode(104, -5, 0, 126.8, [200]),
   cpNode(103, 0, 0, 126.8, [200, 201]),
   cpNode(105, 5, 0, 126.8, [201]),

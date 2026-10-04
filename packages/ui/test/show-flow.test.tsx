@@ -16,7 +16,7 @@ import {
   openMatchHistory,
 } from '../src/screens/menu/ProfileTab.tsx';
 import { uiEvents } from '../src/store/events.ts';
-import { InGameMenu, leaveShowBody } from '../src/screens/overlays/InGameMenu.tsx';
+import { InGameMenu, leaveShowBody, spectatingLabel } from '../src/screens/overlays/InGameMenu.tsx';
 import { FinalHypeScreen, RoundResultsScreen } from '../src/screens/Results.tsx';
 import { WatchChoiceLayer, watchChoiceRewardsNote } from '../src/screens/overlays/WatchChoice.tsx';
 import { DEFAULT_SETTINGS } from '../src/store/defaults.ts';
@@ -285,5 +285,41 @@ describe('spectate banner', () => {
       },
     });
     expect(renderToStaticMarkup(<SpectateBanner />)).not.toContain('BOT');
+  });
+
+  it('says just Spectating for a spectator seat, which was never knocked out', () => {
+    expect(spectatingLabel({ online: true, outOfShow: true })).toBe('Eliminated · Spectating');
+    expect(spectatingLabel({ online: true, outOfShow: true, spectator: true })).toBe('Spectating');
+    expect(spectatingLabel({ online: true, outOfShow: false, spectator: true })).toBe('Spectating');
+    expect(spectatingLabel(null)).toBe('Spectating');
+    ui.setState({
+      showSeat: { online: true, outOfShow: true, spectator: true },
+      spectate: {
+        player: { id: 4, name: 'Gizmo', colors, isBot: true },
+        detail: 'In the lead',
+        qualified: false,
+        index: 0,
+        count: 9,
+      },
+      roundIntro: {
+        roundId: 'r',
+        name: 'Gumdrop Gauntlet',
+        type: 'race',
+        theme: 'candy',
+        objective: 'Reach the finish line!',
+        rules: [],
+        tips: [],
+        roundIndex: 1,
+        roundCount: 4,
+        isFinal: false,
+        playerCount: 12,
+        qualifyTarget: 8,
+      },
+    });
+    expect(renderToStaticMarkup(<SpectateBanner />)).not.toContain('Eliminated');
+    const menu = renderToStaticMarkup(<InGameMenu />);
+    expect(menu).not.toContain('Eliminated');
+    expect(menu).toContain('Spectating');
+    ui.setState({ roundIntro: null });
   });
 });

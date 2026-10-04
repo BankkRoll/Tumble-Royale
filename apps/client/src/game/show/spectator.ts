@@ -12,6 +12,17 @@
  * Everything here is free of DOM, three.js and store access so it can be unit
  * tested in Node.
  */
+import { MAX_ENTITIES } from '@tumble/netcode';
+
+/**
+ * True for a spectator seat's player id: the game server hands spectators ids
+ * above the player range, so they never collide with a Tumbler entity.
+ *
+ * @param id - The id from the server's Welcome.
+ */
+export function isSpectatorId(id: number): boolean {
+  return id >= MAX_ENTITIES;
+}
 
 /** The local player's decision about the rest of the show once they are out. */
 export type WatchDecision = 'undecided' | 'watching';

@@ -9,7 +9,7 @@
  * - Edge-safe buttons: presses are latched between steps so taps are never lost.
  * - Camera look deltas per rendered frame (mouse, right stick, touch drag) with
  *   sensitivity and invert-Y.
- * - Rebindable keymap.
+ * - Rebindable keymap and remappable gamepad buttons.
  *
  * The sim never sees devices: humans, bots and replays all produce the same
  * `CharacterInput`.
@@ -18,6 +18,7 @@ import { Button, type CharacterInput } from '@tumble/sim/character';
 import { ButtonLatch } from './latch.ts';
 import { createKeymap, mouseCode, INPUT_ACTIONS, type InputAction, type Keymap } from './keymap.ts';
 import { TouchState, type TouchSnapshot } from './touchState.ts';
+import { PAD_ACTIONS, PAD_BUTTON_MAX, createPadMap, type PadAction, type PadMap } from './padmap.ts';
 import { firstStandardPad } from './gamepadNav.ts';
 import { playHaptic, type RumblePattern } from './haptics.ts';
 
@@ -75,22 +76,6 @@ export interface LookDelta {
   pitch: number;
 }
 
-/** Standard-mapping gamepad button indices. */
-const PAD = {
-  A: 0,
-  B: 1,
-  X: 2,
-  Y: 3,
-  LB: 4,
-  RB: 5,
-  LT: 6,
-  RT: 7,
-  Up: 12,
-  Down: 13,
-  Left: 14,
-  Right: 15,
-} as const;
-
 const MOVE_ACTIONS: readonly InputAction[] = ['forward', 'back', 'left', 'right'];
 
 const PREVENT_DEFAULT_CODES = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab']);
@@ -109,6 +94,8 @@ export class InputSystem {
   readonly settings: InputSettings;
   /** Live keymap; prefer {@link setBinding} so held keys are released cleanly. */
   readonly keymap: Keymap;
+  /** Live gamepad mapping; change it through {@link setPadMap}. */
+  readonly padmap: PadMap;
   /** Latched state of the HUD's touch controls. */
   readonly touch = new TouchState();
   /** Device of the last meaningful input. */
@@ -118,6 +105,7 @@ export class InputSystem {
   private readonly kb = new Map<InputAction, ButtonLatch>();
   private readonly pad = new Map<InputAction, ButtonLatch>();
   private codeToActions = new Map<string, InputAction[]>();
+  private padIndex: PadAction[][] = [];
   private readonly downCodes = new Set<string>();
   private mouseDx = 0;
   private mouseDy = 0;
@@ -135,17 +123,25 @@ export class InputSystem {
   /**
    * @param opts.element - Focus/pointer-lock target, usually the game canvas.
    * @param opts.keymap - Binding overrides.
+   * @param opts.padmap - Gamepad button overrides.
    * @param opts.settings - Setting overrides.
    */
-  constructor(opts: { element: HTMLElement; keymap?: Partial<Keymap>; settings?: Partial<InputSettings> }) {
+  constructor(opts: {
+    element: HTMLElement;
+    keymap?: Partial<Keymap>;
+    padmap?: Partial<PadMap>;
+    settings?: Partial<InputSettings>;
+  }) {
     this.element = opts.element;
     this.settings = { ...DEFAULT_INPUT_SETTINGS, ...opts.settings };
     this.keymap = createKeymap(opts.keymap);
+    this.padmap = createPadMap(opts.padmap);
     for (const a of INPUT_ACTIONS) {
       this.kb.set(a, new ButtonLatch());
       this.pad.set(a, new ButtonLatch());
     }
     this.rebuildCodeIndex();
+    this.rebuildPadIndex();
 
     this.listen(window, 'keydown', (e) => this.onKey(e as KeyboardEvent, true));
     this.listen(window, 'keyup', (e) => this.onKey(e as KeyboardEvent, false));
@@ -276,6 +272,55 @@ export class InputSystem {
     this.keymap[action] = [...codes];
     this.releaseAll();
     this.rebuildCodeIndex();
+  }
+
+  /**
+   * Replaces the whole keymap. Actions whose codes did not change are left
+   * alone, and when nothing changed at all held keys stay held, so settings
+   * re-applied for an unrelated change (a volume slider) never drop a key.
+   *
+   * @param map - Complete keymap (every action).
+   * @returns True when any binding changed.
+   * @example
+   * input.setKeymap(createKeymap()); // back to defaults
+   */
+  setKeymap(map: Readonly<Keymap>): boolean {
+    let changed = false;
+    for (const a of INPUT_ACTIONS) {
+      const next = map[a] ?? [];
+      if (sameList(this.keymap[a], next)) continue;
+      this.keymap[a] = [...next];
+      changed = true;
+    }
+    if (!changed) return false;
+    this.releaseAll();
+    this.rebuildCodeIndex();
+    return true;
+  }
+
+  /**
+   * Replaces the gamepad button mapping (Settings → Controls → Controller).
+   * Pad actions held under the old mapping are released; a button still held
+   * through the change presses its new action only after it is let go and
+   * pressed again.
+   *
+   * @param map - Button indices per pad action (missing actions keep their defaults).
+   * @returns True when any mapping changed.
+   * @example
+   * input.setPadMap({ ...DEFAULT_PADMAP, jump: [1] }); // B jumps
+   */
+  setPadMap(map: Partial<Readonly<PadMap>>): boolean {
+    const next = createPadMap(map);
+    let changed = false;
+    for (const a of PAD_ACTIONS) {
+      if (sameList(this.padmap[a], next[a])) continue;
+      this.padmap[a] = next[a];
+      changed = true;
+    }
+    if (!changed) return false;
+    for (const a of PAD_ACTIONS) this.pad.get(a)!.reset();
+    this.rebuildPadIndex();
+    return true;
   }
 
   /**
@@ -526,16 +571,8 @@ export class InputSystem {
       const b = gp.buttons[i];
       return !!b && (b.pressed || b.value > 0.5);
     };
-    this.padButton(PAD.A, pressed(PAD.A), 'jump');
-    this.padButton(PAD.X, pressed(PAD.X), 'dive');
-    this.padButton(PAD.B, pressed(PAD.B), 'dive');
-    this.padButton(PAD.RT, pressed(PAD.RT), 'grab');
-    this.padButton(PAD.RB, pressed(PAD.RB), 'grab');
-    this.padButton(PAD.Y, pressed(PAD.Y), 'emoteWheel');
-    this.padButton(PAD.Up, pressed(PAD.Up), 'emote1');
-    this.padButton(PAD.Right, pressed(PAD.Right), 'emote2');
-    this.padButton(PAD.Down, pressed(PAD.Down), 'emote3');
-    this.padButton(PAD.Left, pressed(PAD.Left), 'emote4');
+    // Every button is tracked, mapped or not, so one held across a remap never fires its new action.
+    for (let i = 0; i <= PAD_BUTTON_MAX; i++) this.padButton(i, pressed(i));
     if (Math.hypot(this.padStick.x, this.padStick.y) > 0 || Math.hypot(this.padLook.x, this.padLook.y) > 0) {
       this.lastDevice = 'gamepad';
     }
@@ -545,21 +582,27 @@ export class InputSystem {
     }
   }
 
-  private padButton(index: number, down: boolean, action: InputAction): void {
+  private padButton(index: number, down: boolean): void {
     const prev = this.padPrev[index] ?? false;
     if (down === prev) return;
     this.padPrev[index] = down;
-    if (!this.padGameplay) {
-      if (down) this.lastDevice = 'gamepad';
-      return;
+    if (down) this.lastDevice = 'gamepad';
+    if (!this.padGameplay) return;
+    const actions = this.padIndex[index];
+    if (!actions) return;
+    for (const a of actions) {
+      const latch = this.pad.get(a)!;
+      if (down) latch.press();
+      else latch.release();
     }
-    const latch = this.pad.get(action)!;
-    if (down) {
-      latch.press();
-      this.lastDevice = 'gamepad';
-    } else {
-      latch.release();
+  }
+
+  private rebuildPadIndex(): void {
+    const idx: PadAction[][] = [];
+    for (const a of PAD_ACTIONS) {
+      for (const i of this.padmap[a]) (idx[i] ??= []).push(a);
     }
+    this.padIndex = idx;
   }
 
   private releaseMouseButtons(): void {
@@ -592,6 +635,10 @@ export class InputSystem {
     target.addEventListener(type, fn);
     this.unlisten.push(() => target.removeEventListener(type, fn));
   }
+}
+
+function sameList<T>(a: readonly T[], b: readonly T[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
 /** True on phones and tablets, where the first input will be a touch. */

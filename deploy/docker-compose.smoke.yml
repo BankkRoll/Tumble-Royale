@@ -1,0 +1,23 @@
+# CI smoke-test override for docker-compose.yml: plain HTTP on port 80 for any
+# host name, no certificates, and browser origins to match.
+#
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.smoke.yml up -d
+
+x-http-origins: &http-origins
+  PUBLIC_WEB_URL: http://localhost
+  PUBLIC_API_URL: http://localhost/api
+  PUBLIC_WS_URL: ws://localhost/gs/ws
+  CORS_ORIGINS: http://localhost
+  ALLOWED_ORIGINS: http://localhost
+
+services:
+  api:
+    environment: *http-origins
+  matchmaker:
+    environment: *http-origins
+  game-server:
+    environment: *http-origins
+  caddy:
+    environment:
+      SITE_ADDRESS: ':80'
+      CADDY_GLOBAL_OPTIONS: auto_https off

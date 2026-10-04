@@ -5,11 +5,13 @@
  * out under the new one) so switching never flashes or wipes.
  * docs/design/SCREENS.md §4 and §6.
  */
-import { useEffect, useRef, useState, type JSX, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, type JSX, type ReactNode } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { playCue } from '../../audio-cues.ts';
 import { Bar, CurrencyPill } from '../../components/bits.tsx';
 import { Icon } from '../../components/icons/index.tsx';
+import { useNow } from '../../components/hooks.ts';
+import { maintenanceHeadline } from '../../store/liveOps.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import { MENU_TABS, type MenuTab } from '../../store/types.ts';
 import { ChallengesTab } from './ChallengesTab.tsx';
@@ -225,6 +227,34 @@ function TopBar(): JSX.Element {
   );
 }
 
+/**
+ * Announces scheduled maintenance ("Maintenance in 10 min") and explains a
+ * running one. Online play is blocked by the game meanwhile; Vs Bots still
+ * works, which the banner says so nobody thinks the whole game is down.
+ */
+export function MaintenanceBanner(): JSX.Element | null {
+  const notice = useUI((s) => s.liveOps.maintenance);
+  const now = useNow(notice?.phase === 'scheduled' ? 1000 : 30_000);
+  if (!notice) return null;
+  const active = notice.phase === 'active';
+  return (
+    <div
+      className={`tr-maintenance${active ? ' is-active' : ''}`}
+      role="status"
+      aria-live="polite"
+      data-testid="maintenance-banner"
+    >
+      <Icon name="clock" size="1.1em" />
+      <span className="tr-col" style={{ gap: '0.1em', minWidth: 0 }}>
+        <b>{maintenanceHeadline(notice, now)}</b>
+        <small className="tr-ellipsis">
+          {active ? `${notice.message} Vs Bots still works offline.` : notice.message}
+        </small>
+      </span>
+    </div>
+  );
+}
+
 function tabBody(tab: MenuTab, matchmaking: boolean): ReactNode {
   switch (tab) {
     case 'play':
@@ -249,37 +279,71 @@ function tabBody(tab: MenuTab, matchmaking: boolean): ReactNode {
 /** Length of the outgoing tab's fade (keep in sync with `.tr-tab-panel.is-leaving`). */
 const LEAVE_MS = 200;
 
+/** Attributes that make an element reachable by menu navigation or tests. */
+const LIVE_ATTRS = [
+  'data-nav',
+  'data-autofocus',
+  'data-nav-back',
+  'data-nav-scope',
+  'data-nav-tabs',
+  'data-testid',
+];
+
+/**
+ * Turns a copy of the outgoing tab into a dead picture for its fade-out: no
+ * navigation targets, no test ids, hidden from assistive tech and inert.
+ * The live tab unmounts at once, so its effects (dressing-room events, key
+ * listeners) never outlive the switch.
+ *
+ * @param ghost - A deep clone of the outgoing panel (detached).
+ * @param tab - The outgoing tab.
+ * @param dir - Direction of travel.
+ * @returns The same element, ready to insert.
+ */
+export function inertTabGhost(ghost: Element, tab: MenuTab, dir: 'left' | 'right'): Element {
+  for (const el of [ghost, ...Array.from(ghost.querySelectorAll('*'))])
+    for (const a of LIVE_ATTRS) el.removeAttribute(a);
+  ghost.removeAttribute('role');
+  ghost.setAttribute('class', `tr-tab-panel tr-tab-panel--${tab} is-leaving to-${dir}`);
+  ghost.setAttribute('aria-hidden', 'true');
+  ghost.setAttribute('inert', '');
+  return ghost;
+}
+
 function TabPanel({ matchmaking }: { matchmaking: boolean }): JSX.Element {
   const tab = useUI((s) => s.menuTab);
   const reduce = useUI((s) => s.settings.accessibility.reduceMotion);
   const prev = useRef<MenuTab>(tab);
-  const [leaving, setLeaving] = useState<{ tab: MenuTab; dir: 'left' | 'right' } | null>(null);
-  const dir: 'left' | 'right' = MENU_TABS.indexOf(tab) >= MENU_TABS.indexOf(prev.current) ? 'right' : 'left';
+  const enterDir = useRef<'left' | 'right'>('right');
+  const panel = useRef<HTMLDivElement>(null);
+  const stack = useRef<HTMLDivElement>(null);
+  const ghost = useRef<Element | null>(null);
   if (prev.current !== tab) {
     const from = prev.current;
+    const dir = MENU_TABS.indexOf(tab) >= MENU_TABS.indexOf(from) ? 'right' : 'left';
+    enterDir.current = dir;
     prev.current = tab;
-    if (!reduce) setLeaving({ tab: from, dir });
+    // NOTE: read during render on purpose: until this render commits, the DOM still shows the old tab.
+    const old = panel.current;
+    ghost.current = !reduce && old ? inertTabGhost(old.cloneNode(true) as Element, from, dir) : null;
   }
-  useEffect(() => {
-    if (!leaving) return;
-    const id = window.setTimeout(() => setLeaving(null), LEAVE_MS);
-    return () => window.clearTimeout(id);
-  }, [leaving]);
+  useLayoutEffect(() => {
+    const g = ghost.current;
+    ghost.current = null;
+    if (!g || !stack.current) return;
+    stack.current.prepend(g);
+    const id = window.setTimeout(() => g.remove(), LEAVE_MS);
+    return () => {
+      window.clearTimeout(id);
+      g.remove();
+    };
+  }, [tab]);
   return (
-    <div className="tr-tab-stack">
-      {leaving && leaving.tab !== tab && (
-        <div
-          key={leaving.tab}
-          className={`tr-tab-panel tr-tab-panel--${leaving.tab} is-leaving to-${leaving.dir}`}
-          aria-hidden
-          inert
-        >
-          {tabBody(leaving.tab, false)}
-        </div>
-      )}
+    <div ref={stack} className="tr-tab-stack">
       <div
+        ref={panel}
         key={tab}
-        className={`tr-tab-panel tr-tab-panel--${tab} tr-tab-from-${leaving?.dir ?? dir}`}
+        className={`tr-tab-panel tr-tab-panel--${tab} tr-tab-from-${enterDir.current}`}
         role="tabpanel"
         data-testid={`panel-${tab}`}
       >
@@ -301,6 +365,7 @@ export function MainMenu({ matchmaking = false }: { matchmaking?: boolean }): JS
       data-nav-scope="0"
     >
       <TopBar />
+      <MaintenanceBanner />
       <TabPanel matchmaking={matchmaking} />
       <CurrencyPanel />
       <ProfileOverlay />

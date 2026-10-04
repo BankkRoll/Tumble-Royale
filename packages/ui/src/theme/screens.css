@@ -908,6 +908,31 @@
     transform: translateY(-160%);
   }
 }
+/* Out of the grid flow so the menu layout does not jump when a window is announced. */
+.tr-maintenance {
+  position: absolute;
+  top: 4.4em;
+  left: 50%;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  max-width: min(34em, calc(100% - 2em));
+  padding: 0.5em 0.9em;
+  border: 0.14em solid var(--ink);
+  border-radius: 0.9em;
+  background: var(--lemon);
+  color: var(--ink);
+  box-shadow: var(--shadow-hard);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.tr-maintenance.is-active {
+  background: #ff8fb8;
+}
+.tr-maintenance small {
+  max-width: 28em;
+}
 .tr-level {
   display: flex;
   align-items: center;
@@ -2931,6 +2956,9 @@
   box-shadow: 0 0.12em 0 var(--ink);
   font-weight: 700;
   min-height: 2.2em;
+}
+.tr-binds-title {
+  margin-top: 0.4em;
 }
 .tr-bind-capture {
   background: var(--lemon) !important;

@@ -1,5 +1,5 @@
 /**
- * Settings sheet: Graphics, Controls (with key rebinding), Audio,
+ * Settings sheet: Graphics, Controls (keyboard and controller rebinding), Audio,
  * Accessibility, Gameplay, Account. Every change applies live and emits
  * `settingsChange`. docs/design/SCREENS.md §5.10.
  */
@@ -8,10 +8,13 @@ import { playCue } from '../../audio-cues.ts';
 import { Button, Segmented, Slider, Toggle } from '../../components/controls.tsx';
 import { BIND_ACTION_LABELS, DEFAULT_KEYBINDS } from '../../store/defaults.ts';
 import { uiEvents } from '../../store/events.ts';
+import { SHOW_MENU_SCREENS } from '../../store/inputOwnership.ts';
+import { analyticsAllowed, type PrivacyNavigator } from '../../store/liveOps.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { BindAction, Keybinds, SettingsSection } from '../../store/types.ts';
 import { Icon } from '../../components/icons/index.tsx';
 import { AccountSection } from './AccountSheet.tsx';
+import { PadRebinder } from './PadRebinder.tsx';
 import { semanticColors } from '../../theme/tokens.ts';
 
 const SECTIONS: { id: SettingsSection; label: string }[] = [
@@ -120,6 +123,7 @@ function Rebinder(): JSX.Element {
 
   return (
     <div className="tr-binds">
+      <div className="tr-binds-title tr-label">Keyboard and mouse</div>
       <div className="tr-binds-head">
         <span>Action</span>
         <span>Primary</span>
@@ -158,7 +162,8 @@ function Rebinder(): JSX.Element {
   );
 }
 
-function Section({ id }: { id: SettingsSection }): JSX.Element {
+/** The rows of one settings section. */
+export function Section({ id }: { id: SettingsSection }): JSX.Element {
   const s = useUI((st) => st.settings);
   const up = ui.getState().updateSettings;
   const pct = (v: number): string => `${Math.round(v * 100)}%`;
@@ -292,6 +297,7 @@ function Section({ id }: { id: SettingsSection }): JSX.Element {
             />
           </Row>
           <Rebinder />
+          <PadRebinder />
         </>
       );
     case 'audio':
@@ -469,6 +475,32 @@ function Section({ id }: { id: SettingsSection }): JSX.Element {
             />
           </Row>
           <RegionRow />
+          <Row
+            label="Share gameplay stats"
+            hint="Anonymous play statistics (rounds, load times, frame rate) that help tune the game. Starts off when your browser sends Do Not Track"
+          >
+            <Toggle
+              label="Share gameplay stats"
+              checked={analyticsAllowed(
+                s.gameplay.analytics,
+                typeof navigator === 'undefined' ? undefined : (navigator as PrivacyNavigator),
+              )}
+              onChange={(analytics) => up('gameplay', { analytics })}
+            />
+          </Row>
+          <Row label="Practice Island" hint="Coach Boing's warm-up course, any time">
+            <Button
+              size="sm"
+              variant="secondary"
+              data-testid="settings-practice"
+              onClick={() => {
+                ui.getState().setOverlay('none');
+                uiEvents.emit('startPractice');
+              }}
+            >
+              Visit
+            </Button>
+          </Row>
         </>
       );
     case 'account':
@@ -513,9 +545,10 @@ export function RegionRow(): JSX.Element {
   );
 }
 
-/** Opened from the in-round menu, Settings closes back to it. */
+/** Opened from the in-game menu (on any show screen), Settings closes back to it. */
 function closeSettings(): void {
-  ui.getState().setOverlay(ui.getState().screen === 'round' ? 'inGameMenu' : 'none');
+  const s = ui.getState();
+  s.setOverlay(s.showSeat && SHOW_MENU_SCREENS.has(s.screen) ? 'inGameMenu' : 'none');
 }
 
 let requestedSection: SettingsSection | null = null;

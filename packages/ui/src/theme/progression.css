@@ -1,0 +1,320 @@
+/* -----------------------------------------------------------------------------
+ * Daily login streak, achievements and the collection log
+ * -------------------------------------------------------------------------- */
+
+.tr-grant {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  padding: 0.1em 0.55em 0.12em 0.25em;
+  border-radius: 999px;
+  border: 0.12em solid var(--ink);
+  background: #fffbe8;
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+.tr-grant .tr-coin {
+  width: 1.25em;
+  height: 1.25em;
+}
+.tr-grant small {
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+.tr-grant--item {
+  max-width: 12em;
+  padding: 0.1em 0.55em 0.1em 0.1em;
+  background: #fff;
+}
+.tr-grant-art {
+  width: 1.8em;
+  height: 1.8em;
+  border-radius: 0.5em;
+  object-fit: contain;
+}
+
+/* Login streak card (Challenges tab) */
+
+.tr-streak {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 0.6em;
+  padding: 0.75em 1em !important;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(255, 138, 61, 0.28), transparent 55%),
+    linear-gradient(180deg, #fff, var(--cream)) !important;
+  border: var(--outline) solid var(--ink) !important;
+}
+.tr-streak-head {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+}
+.tr-streak-flame {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 3.2em;
+  height: 3.2em;
+  border-radius: 50%;
+  border: 0.15em solid var(--ink);
+  background: #f1ecf8;
+  color: var(--ink-soft);
+}
+.tr-streak-flame.is-lit {
+  background: radial-gradient(circle at 50% 65%, var(--lemon), #ff8a3d);
+  color: var(--ink);
+  animation: tr-streak-flicker 2.4s ease-in-out infinite;
+}
+@keyframes tr-streak-flicker {
+  50% {
+    transform: scale(1.06) rotate(-3deg);
+  }
+}
+.tr-streak-ladder {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.4em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tr-streak-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3em;
+  min-width: 0;
+  padding: 0.35em 0.2em 0.45em;
+  border-radius: 0.9em;
+  border: 0.14em solid var(--ink);
+  background: #fff;
+  text-align: center;
+}
+.tr-streak-day-n {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2em;
+  font-family: var(--font-display);
+  font-size: 0.8em;
+}
+.tr-streak-day-rewards {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.2em;
+}
+.tr-streak-day.is-big {
+  background: linear-gradient(180deg, #fff7d6, #ffe08a);
+}
+.tr-streak-day.is-claimed {
+  background: #e9fbf4;
+  opacity: 0.8;
+}
+.tr-streak-day.is-today {
+  background: linear-gradient(180deg, #f2fff9, #c9f8e6);
+  box-shadow: 0 0 0 0.22em rgba(62, 230, 180, 0.45);
+}
+
+/* Profile sections: the wide views take the 3D gap and the right column */
+
+.tr-profile-wide {
+  display: flex;
+  flex-direction: column;
+  grid-column: 2 / 4;
+  min-height: 0;
+  padding: 0.2em 0.3em 0.4em;
+}
+.tr-achievements,
+.tr-collection {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.7em;
+  min-height: 0;
+}
+.tr-ach-summary {
+  display: flex;
+  align-items: center;
+  gap: 1em;
+}
+.tr-ach-count {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1;
+}
+.tr-ach-filters {
+  align-items: center;
+  gap: 0.5em;
+}
+.tr-ach-filters .tr-seg {
+  flex-wrap: nowrap;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.tr-ach-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 1em;
+  min-height: 0;
+  overflow-y: auto;
+}
+.tr-ach-group-title {
+  font-size: 1.1em;
+}
+.tr-ach-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17em, 1fr));
+  gap: 0.6em;
+}
+.tr-ach {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7em;
+  padding: 0.65em 0.8em;
+  border-radius: 1.1em;
+  border: 0.16em solid var(--ink);
+  background: #fff;
+  box-shadow: 0 0.18em 0 var(--ink);
+  animation: tr-spring-up 480ms var(--ease-spring) backwards;
+}
+.tr-ach.is-unlocked {
+  background: linear-gradient(180deg, #fffdf0, #fff1b8);
+}
+.tr-ach.is-secret {
+  background: repeating-linear-gradient(135deg, #f3f1f8 0 0.6em, #ebe7f5 0.6em 1.2em);
+}
+.tr-ach-badge {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 3.2em;
+  height: 3.2em;
+  border-radius: 50%;
+  border: 0.15em solid var(--ink);
+  background: #efeaf8;
+  color: var(--ink-soft);
+}
+.tr-ach.is-unlocked .tr-ach-badge {
+  background: radial-gradient(circle at 50% 35%, #fff, var(--lemon));
+  color: var(--ink);
+}
+.tr-ach-badge small {
+  position: absolute;
+  bottom: -0.5em;
+  padding: 0 0.45em;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 0.62em;
+  font-weight: 700;
+}
+.tr-ach-title {
+  line-height: 1.15;
+}
+.tr-ach-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  font-variant-numeric: tabular-nums;
+}
+.tr-ach-progress .tr-bar {
+  flex: 1 1 auto;
+}
+.tr-ach-date,
+.tr-collection-owned {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  color: #0f8f6a;
+  font-weight: 700;
+}
+.tr-ach-rewards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3em;
+}
+
+/* Collection log */
+
+.tr-collection-body {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1fr) minmax(14em, 18em);
+  gap: 0.8em;
+  min-height: 0;
+}
+.tr-collection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.5em, 1fr));
+  align-content: start;
+  gap: 0.5em;
+  min-height: 0;
+  padding: 0.2em;
+  overflow-y: auto;
+}
+.tr-collection-detail {
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+  gap: 0.6em;
+  padding: 0.8em;
+  border-radius: 1.1em;
+  border: 0.16em solid var(--ink);
+  background: #fff;
+}
+.tr-collection-detail-art {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border-radius: 1em;
+  background: radial-gradient(circle at 50% 35%, #fff, color-mix(in srgb, var(--rar) 35%, #fff));
+}
+.tr-collection-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tr-collection-source {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.25em 0.5em;
+  border-radius: 0.7em;
+  background: var(--cream);
+  font-size: 0.9em;
+}
+.tr-collection-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+}
+
+/* Rewards screen */
+
+.tr-rewards-achievement {
+  align-items: center;
+  gap: 0.5em;
+}
+
+@media (max-width: 760px), (orientation: portrait) {
+  .tr-streak-ladder {
+    grid-template-columns: repeat(7, minmax(3.4em, 1fr));
+    overflow-x: auto;
+  }
+  .tr-profile-wide,
+  .tr-ach-groups,
+  .tr-collection-grid {
+    flex: none;
+    overflow: visible;
+  }
+  .tr-collection-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

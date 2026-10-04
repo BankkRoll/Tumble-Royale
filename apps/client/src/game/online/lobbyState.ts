@@ -4,7 +4,8 @@
  * - {@link toCustomLobbyState}: matchmaker lobby → the lobby view's state;
  * - {@link optionsToSettings}: the UI's option names → matchmaker settings;
  * - {@link reduceLobbyEvent}: folds `lobby_update` / `lobby_closed` /
- *   `lobby_kicked` into the next lobby plus what to tell the player.
+ *   `lobby_kicked` into the next lobby plus what to tell the player;
+ * - {@link liveStartedLobby}: a running show's roster as its host's tools list it.
  *
  * No DOM, store or network here, so the rules are unit-tested directly.
  */
@@ -132,26 +133,48 @@ export function toCustomLobbyState(
       away: isAway(s),
     };
   };
-  const st = lobby.settings;
   return {
     code: lobby.code,
     isHost: lobby.hostId === me,
     players: lobby.players.map(member),
     spectators: lobby.spectators.map(member),
-    options: {
-      rounds: st.rounds,
-      bots: st.bots,
-      maxPlayers: st.maxPlayers,
-      timerScale: st.roundTimeScale,
-      spectators: st.spectatorSlots > 0,
-      spectatorSlots: st.spectatorSlots,
-      countdownSec: st.lobbyCountdownSec,
-      minPlayers: st.minPlayers ?? 1,
-      isPrivate: true,
-    },
+    options: lobbyOptions(lobby.settings),
     locked: lobby.locked ?? false,
     banned: (lobby.banned ?? []).map((b) => ({ id: b.userId, name: display(b.name) })),
   };
+}
+
+/**
+ * Matchmaker lobby settings as the private show dialog's options (also what
+ * Play again recreates a lobby with).
+ */
+export function lobbyOptions(st: LobbySettings): CustomLobbyOptions {
+  return {
+    rounds: [...st.rounds],
+    bots: st.bots,
+    maxPlayers: st.maxPlayers,
+    timerScale: st.roundTimeScale,
+    spectators: st.spectatorSlots > 0,
+    spectatorSlots: st.spectatorSlots,
+    countdownSec: st.lobbyCountdownSec,
+    minPlayers: st.minPlayers ?? 1,
+    isPrivate: true,
+  };
+}
+
+/**
+ * The running private show as its host's tools should list it: the lobby
+ * roster freezes when the show starts, so members who have since left the
+ * game server would still be offered for removal. Keeps the host and every
+ * member the server still has in the show.
+ *
+ * @param lobby - The started lobby.
+ * @param present - Account ids the game server lists right now; null before its first roster.
+ */
+export function liveStartedLobby(lobby: Lobby, present: ReadonlySet<string> | null): Lobby {
+  if (!present) return lobby;
+  const keep = (s: LobbySeat): boolean => s.userId === lobby.hostId || present.has(s.userId);
+  return { ...lobby, players: lobby.players.filter(keep), spectators: lobby.spectators.filter(keep) };
 }
 
 /**

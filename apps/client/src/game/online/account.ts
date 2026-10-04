@@ -4,23 +4,28 @@
  *
  * Responsibilities:
  * - load `/me`, `/inventory`, `/loadouts`, `/store`, `/gems/packs`, `/pass`,
- *   `/challenges`, `/friends`, `/party` and project them onto `@tumble/ui`
- *   shapes (profile card, locker, store, pass, challenges, friends, party);
+ *   `/challenges`, `/streak`, `/achievements`, `/collection`, `/friends`,
+ *   `/party` and project them onto `@tumble/ui` shapes (profile card, locker,
+ *   store, pass, challenges, login streak, achievements, collection log,
+ *   friends, party);
  * - locker edits persisted server-side (`PUT /loadouts/:i`, activate);
  * - purchases with an `Idempotency-Key` (store items, Gem packs via the
  *   checkout — instant with the API's fake provider in dev, a Stripe redirect
  *   otherwise), pass claims + premium, challenge claim/reroll;
  * - leaderboards and match history;
  * - social: friend requests, the party (create, join by code, ready, kick,
- *   leader's playlist) and the realtime gateway (`presence`, `friend_request`,
- *   `party_update`, `party_invite`, `wallet`, …);
- * - the API's post-show reward summary → rewards screen.
+ *   leader's playlist, who is away playing solo) and the realtime gateway
+ *   (`presence`, `friend_request`, `party_update`, `party_solo`,
+ *   `party_invite`, `wallet`, …);
+ * - the API's post-show reward summary → rewards screen, fetched from the API
+ *   when the game server's forward is late (never estimated locally).
  *
  * The local {@link ProfileStore} stays the offline fallback; nothing here
  * writes to it except the display name.
  */
 import { COSMETICS, DEFAULT_LOADOUT, getCosmetic } from '@tumble/content/cosmetics';
 import {
+  ACHIEVEMENT_CATEGORY_NAMES,
   SHARDS_PER_CROWN,
   levelForXp,
   passTierForXp,
@@ -32,9 +37,13 @@ import type { PlayerRewardMsg } from '@tumble/netcode';
 import type { TumblerLoadout } from '@tumble/render/scenes';
 import { hashString } from '@tumble/shared';
 import {
+  grantText,
   ui,
+  type ChallengeCadence,
   type ChallengesData,
+  type CollectionSourceView,
   type CosmeticItem as UiItem,
+  type GrantView,
   type CosmeticSlot as UiSlot,
   type GemPackOffer,
   type LeaderboardId,
@@ -55,7 +64,9 @@ import {
   ApiError,
   idempotencyKey,
   type ApiClient,
+  type ApiGrant,
   type ApiLoadoutItems,
+  type ApiStreak,
   type ApiMe,
   type ApiParty,
   type ApiPass,
@@ -80,6 +91,9 @@ import { explainGemCheckoutRefusal, gemCheckoutMode, type GemCheckoutMode } from
 import type { PartyLobbyLink } from '../views/partyLobbyView.ts';
 import { JsonSocket, type TypedMessage } from './jsonSocket.ts';
 import { partyLobbyLink } from './partyLobbyLink.ts';
+import { soloNotice } from './partyPlay.ts';
+import { pollShowReward, type RewardPollResult } from './rewardPoll.ts';
+import { track } from '../liveOps/analytics.ts';
 
 const LOADOUT_SLOTS = 6;
 
@@ -233,6 +247,13 @@ export class OnlineAccount {
   private realtimeOpened = false;
   /** Account XP and season XP before the current show, for the rewards bars. */
   private snapshotBefore: { xp: number; passXp: number } | null = null;
+  /** Party members away in a solo show (from `party_solo`), shown on the party line. */
+  private readonly soloMembers = new Set<string>();
+  /** Bumps per reward wait so a newer show cancels an older poll. */
+  private rewardWait = 0;
+  /** An achievements + collection reload is running; a burst of unlock notifications shares it. */
+  private unlocksInFlight = false;
+  private unlocksQueued = false;
 
   constructor(
     readonly api: ApiClient,
@@ -324,6 +345,9 @@ export class OnlineAccount {
       this.refreshStore(),
       this.refreshPass(),
       this.refreshChallenges(),
+      this.refreshStreak(),
+      this.refreshAchievements(),
+      this.refreshCollection(),
       this.refreshFriends(),
       this.refreshParty(),
       this.history(),
@@ -343,7 +367,15 @@ export class OnlineAccount {
     }
     this.pushProfile();
     this.pushInventory();
-    await Promise.all([this.refreshStore(), this.refreshPass(), this.refreshChallenges(), this.history()]);
+    await Promise.all([
+      this.refreshStore(),
+      this.refreshPass(),
+      this.refreshChallenges(),
+      this.refreshStreak(),
+      this.refreshAchievements(),
+      this.refreshCollection(),
+      this.history(),
+    ]);
   }
 
   private applyLoadouts(
@@ -580,7 +612,7 @@ export class OnlineAccount {
     try {
       const c = await this.api.challenges();
       const row =
-        (cadence: 'daily' | 'weekly') =>
+        (cadence: ChallengeCadence) =>
         (x: (typeof c.daily)[number]): ChallengesData['list'][number] => ({
           id: x.id,
           cadence,
@@ -597,18 +629,177 @@ export class OnlineAccount {
             : {}),
           ...(x.metric ? { metric: x.metric } : {}),
           ...(x.reward.gems ? { gems: x.reward.gems } : {}),
+          ...(x.reward.cosmetic ? this.optionalItem(x.reward.cosmetic.id) : {}),
           claimed: x.claimed,
           canReroll: cadence === 'daily' && c.rerollsLeft > 0 && !x.completed,
         });
       ui.getState().setChallenges({
-        list: [...c.daily.map(row('daily')), ...c.weekly.map(row('weekly'))],
+        list: [
+          ...c.daily.map(row('daily')),
+          ...c.weekly.map(row('weekly')),
+          ...(c.seasonal ?? []).map(row('seasonal')),
+          ...(c.milestone ?? []).map(row('milestone')),
+        ],
         dailyResetsAt: Date.parse(c.dailyRefreshesAt),
         weeklyResetsAt: Date.parse(c.weeklyRefreshesAt),
         rerollsLeft: c.rerollsLeft,
         rerollsPerDay: 1,
+        ...(c.season ? { season: { name: c.season.name, endsAt: Date.parse(c.season.endsAt) } } : {}),
       });
+      for (const s of c.settled ?? []) {
+        ui.getState().pushToast({
+          kind: 'reward',
+          title: 'Seasonal challenge paid out',
+          body: `${s.title}: completed last season, rewards added.`,
+          icon: '🎯',
+        });
+      }
     } catch (err) {
       console.warn('[account] challenges failed', err);
+    }
+  }
+
+  private optionalItem(id: string): { item: UiItem } | Record<string, never> {
+    const item = getCosmetic(id);
+    return item ? { item: uiItem(item, this.owns(id)) } : {};
+  }
+
+  /** API reward → UI reward pill (unknown cosmetics are dropped). */
+  private grantView(g: ApiGrant): GrantView | null {
+    if (g.type === 'cosmetic') {
+      const item = getCosmetic(g.id);
+      return item ? { kind: 'item', item: uiItem(item, this.owns(g.id)) } : null;
+    }
+    return { kind: g.type === 'crown_shards' ? 'crownShards' : g.type, amount: g.amount };
+  }
+
+  private grantViews(list: readonly ApiGrant[]): GrantView[] {
+    return list.flatMap((g) => {
+      const v = this.grantView(g);
+      return v ? [v] : [];
+    });
+  }
+
+  private applyStreak(s: ApiStreak): void {
+    ui.getState().setLoginStreak({
+      streak: s.streak,
+      best: s.best,
+      claimedToday: s.claimedToday,
+      canClaim: s.canClaim,
+      nextClaimAt: Date.parse(s.nextClaimAt),
+      breaksAt: s.breaksAt ? Date.parse(s.breaksAt) : null,
+      next: { day: s.next.day, rewards: this.grantViews(s.next.rewards) },
+      ladder: s.ladder.map((d) => ({ day: d.day, state: d.state, rewards: this.grantViews(d.rewards) })),
+    });
+  }
+
+  private async refreshStreak(): Promise<void> {
+    try {
+      this.applyStreak(await this.api.streak());
+    } catch (err) {
+      console.warn('[account] login streak failed', err);
+    }
+  }
+
+  private async refreshAchievements(): Promise<void> {
+    try {
+      const a = await this.api.achievements();
+      ui.getState().setAchievements({
+        list: a.achievements.map((x) => ({
+          id: x.id,
+          category: x.category,
+          title: x.title,
+          description: x.description,
+          hidden: x.hidden,
+          unlocked: x.unlocked,
+          ...(x.unlockedAt ? { unlockedAt: Date.parse(x.unlockedAt) } : {}),
+          progress: x.progress,
+          target: x.target,
+          ...(x.series ? { tier: { tier: x.series.tier, tiers: x.series.tiers } } : {}),
+          rewards: this.grantViews(x.rewards),
+        })),
+        categories: a.categories.map((c) => ({
+          ...c,
+          name: ACHIEVEMENT_CATEGORY_NAMES[c.id as keyof typeof ACHIEVEMENT_CATEGORY_NAMES] ?? c.id,
+        })),
+        unlocked: a.unlocked,
+        total: a.total,
+      });
+    } catch (err) {
+      console.warn('[account] achievements failed', err);
+    }
+  }
+
+  private async refreshCollection(): Promise<void> {
+    try {
+      const c = await this.api.collection();
+      ui.getState().setCollection({
+        owned: c.owned,
+        total: c.total,
+        percent: c.percent,
+        entries: c.entries.flatMap((e) => {
+          const item = getCosmetic(e.id);
+          if (!item) return [];
+          return [
+            {
+              item: uiItem(item, e.owned),
+              sources: e.sources as CollectionSourceView[],
+              ...(e.acquiredAt ? { acquiredAt: Date.parse(e.acquiredAt) } : {}),
+            },
+          ];
+        }),
+      });
+    } catch (err) {
+      console.warn('[account] collection failed', err);
+    }
+  }
+
+  /**
+   * Reloads achievements and the collection after an unlock notification. A
+   * first sign-in can unlock several backfilled achievements at once; their
+   * notifications collapse into one reload plus at most one follow-up.
+   */
+  private refreshUnlocksSoon(): void {
+    if (this.unlocksInFlight) {
+      this.unlocksQueued = true;
+      return;
+    }
+    this.unlocksInFlight = true;
+    void Promise.all([this.refreshAchievements(), this.refreshCollection()]).finally(() => {
+      this.unlocksInFlight = false;
+      if (!this.unlocksQueued) return;
+      this.unlocksQueued = false;
+      this.refreshUnlocksSoon();
+    });
+  }
+
+  /** Claims today's login reward; the API decides the day and the streak. */
+  async claimLoginStreak(): Promise<void> {
+    try {
+      const r = await this.api.claimStreak();
+      this.applyStreak(r.view);
+      const paid = r.rewards
+        .filter((g) => g.granted)
+        .map((g) => this.grantView(g))
+        .flatMap((g) => (g && g.kind !== 'item' ? [grantText(g)] : []));
+      ui.getState().pushToast({
+        kind: 'reward',
+        title: r.ladderDay === 7 ? 'Day 7 bonus claimed!' : `Day ${r.ladderDay} reward claimed`,
+        ...(paid.length ? { body: paid.join(' · ') } : {}),
+        icon: '🔥',
+      });
+      await this.refreshProgress();
+    } catch (err) {
+      ui.getState().pushToast({
+        kind: err instanceof ApiError && err.code === 'already_claimed' ? 'info' : 'error',
+        title:
+          err instanceof ApiError && err.code === 'already_claimed'
+            ? 'Already claimed today'
+            : "Couldn't claim the login reward",
+        body: describe(err),
+        icon: '🔥',
+      });
+      await this.refreshStreak();
     }
   }
 
@@ -731,6 +922,8 @@ export class OnlineAccount {
       this.owned.add(itemId);
       if (this.me) this.me.wallet = res.wallet;
       const item = getCosmetic(itemId);
+      if (!res.replayed)
+        track('store_purchase', { shop: shard ? 'shards' : 'store', slot: item?.slot ?? null });
       s.pushToast({
         kind: 'reward',
         title: `${item?.name ?? 'Item'} is yours!`,
@@ -742,13 +935,15 @@ export class OnlineAccount {
     } catch (err) {
       const code = err instanceof ApiError ? err.code : '';
       const body =
-        code === 'insufficient_funds'
-          ? shard
-            ? 'Not enough Crown Shards — reach a few more finals!'
-            : 'Not enough currency — play a few shows!'
-          : code === 'already_owned'
-            ? 'You already own that.'
-            : describe(err);
+        code === 'feature_disabled'
+          ? 'The store is closed for a moment. Nothing was charged; try again soon!'
+          : code === 'insufficient_funds'
+            ? shard
+              ? 'Not enough Crown Shards — reach a few more finals!'
+              : 'Not enough currency — play a few shows!'
+            : code === 'already_owned'
+              ? 'You already own that.'
+              : describe(err);
       s.showDialog({
         id: 'purchase-failed',
         kind: 'error',
@@ -903,18 +1098,10 @@ export class OnlineAccount {
           isSelf: true,
         });
       }
-      if (rows.length === 0 && this.me)
-        rows.push({
-          rank: 1,
-          playerId: this.me.userId,
-          name: `${this.me.displayName}#${this.me.tag}`,
-          value: 0,
-          colors: this.loadout.colors,
-          isSelf: true,
-        });
       ui.getState().setLeaderboard(board, rows, { scope, source: 'api', updatedAt: Date.now() });
     } catch (err) {
       console.warn('[account] leaderboard failed', err);
+      ui.getState().setLeaderboardError(board, scope, describe(err));
     }
   }
 
@@ -1051,6 +1238,15 @@ export class OnlineAccount {
             })),
           }
         : {}),
+      ...(r.achievements?.length
+        ? {
+            achievements: r.achievements.map((a) => ({
+              id: a.id,
+              title: a.title,
+              description: a.description,
+            })),
+          }
+        : {}),
     };
   }
 
@@ -1095,6 +1291,23 @@ export class OnlineAccount {
             body: 'Pick the show and hit Play when everyone is ready.',
           });
       }),
+      rt.on('party_solo', (m) => {
+        const userId = String(m.userId ?? '');
+        if (!userId || m.partyId !== this.party?.id) return;
+        if (m.playing === true) this.soloMembers.add(userId);
+        else this.soloMembers.delete(userId);
+        this.applyParty(this.party);
+        const notice = soloNotice(
+          {
+            userId,
+            name: String(m.name ?? 'A member'),
+            leader: m.leader === true,
+            playing: m.playing === true,
+          },
+          this.userId,
+        );
+        if (notice) ui.getState().pushToast({ kind: 'social', ...notice });
+      }),
       rt.on('party_kicked', () => {
         ui.getState().pushToast({ kind: 'warning', title: 'You were removed from the party', icon: '👋' });
         this.applyParty(null);
@@ -1107,12 +1320,14 @@ export class OnlineAccount {
           String(m.title ?? 'Reward'),
           typeof m.body === 'string' ? m.body : undefined,
         );
+        const achievement = typeof m.achievementId === 'string';
         ui.getState().pushToast({
           kind: 'reward',
           title: String(m.title ?? 'Reward'),
           ...(typeof m.body === 'string' ? { body: m.body } : {}),
-          icon: '🎁',
+          icon: achievement ? '🏅' : '🎁',
         });
+        if (achievement) this.refreshUnlocksSoon();
       }),
       rt.on('socket_open', () => {
         rt.send({ type: 'presence', ...this.presence });
@@ -1315,6 +1530,7 @@ export class OnlineAccount {
       { userId: me.userId, displayName: me.displayName, tag: me.tag, ready: true, joinedAt: 0 },
     ];
     const leaderId = party?.leaderId ?? me.userId;
+    for (const id of this.soloMembers) if (!members.some((m) => m.userId === id)) this.soloMembers.delete(id);
     const state: PartyState = {
       code: party?.code ?? '',
       maxSize: party?.maxSize ?? 4,
@@ -1326,6 +1542,7 @@ export class OnlineAccount {
         ready: m.userId === leaderId || m.ready,
         isLeader: m.userId === leaderId,
         isSelf: m.userId === me.userId,
+        ...(this.soloMembers.has(m.userId) ? { playingSolo: true } : {}),
       })),
     };
     s.setParty(state);
@@ -1376,16 +1593,7 @@ export class OnlineAccount {
   /** Joins a party by invite code (deep link or toast). */
   async joinParty(code: string): Promise<boolean> {
     try {
-      const { party } = await this.api.joinParty(code.toUpperCase());
-      this.applyParty(party);
-      const leader = party.members.find((m) => m.userId === party.leaderId);
-      ui.getState().pushToast({
-        kind: 'social',
-        title: `Joined ${leader?.displayName ?? 'the'}'s party!`,
-        body: 'Hit Ready when you are.',
-        icon: '🎉',
-      });
-      this.hooks.onJoinedParty?.();
+      this.adoptJoinedParty((await this.api.joinParty(code.toUpperCase())).party);
       return true;
     } catch (err) {
       ui.getState().showDialog({
@@ -1397,6 +1605,19 @@ export class OnlineAccount {
       });
       return false;
     }
+  }
+
+  /** Shows a party the player just joined (by code, link or invite) and welcomes them. */
+  adoptJoinedParty(party: ApiParty): void {
+    this.applyParty(party);
+    const leader = party.members.find((m) => m.userId === party.leaderId);
+    ui.getState().pushToast({
+      kind: 'social',
+      title: `Joined ${leader?.displayName ?? 'the'}'s party!`,
+      body: 'Hit Ready when you are.',
+      icon: '🎉',
+    });
+    this.hooks.onJoinedParty?.();
   }
 
   /** Leaves the party. */
@@ -1437,14 +1658,79 @@ export class OnlineAccount {
     }
   }
 
-  /** Member ready toggle. */
+  /**
+   * Member ready toggle. The button flips at once; a refusal puts it back to
+   * the party's last known state, and every `party_update` reconciles it.
+   */
   async setReady(ready: boolean): Promise<void> {
-    if (!this.party) return;
+    if (!this.party) {
+      ui.getState().setLocalReady(false);
+      return;
+    }
     try {
       this.applyParty((await this.api.setReady(ready)).party);
     } catch (err) {
+      this.applyParty(this.party);
       ui.getState().pushToast({ kind: 'error', title: "Couldn't change ready", body: describe(err) });
     }
+  }
+
+  /**
+   * Leader: the matchmaker accepted the party's ticket, so the ready votes
+   * are spent now (members ready up again for the next show).
+   */
+  async confirmQueued(): Promise<void> {
+    if (!this.inParty) return;
+    try {
+      const { party } = await this.api.partyQueued();
+      if (party) this.applyParty(party);
+    } catch (err) {
+      // The queue is running either way; stale votes only mean members skip one Ready.
+      console.warn('[account] queued confirm failed', err);
+    }
+  }
+
+  /** Tells the party this player started (or finished) a solo show. No-op outside a party. */
+  async announceSolo(playing: boolean): Promise<void> {
+    if (!this.inParty) return;
+    try {
+      const { party } = await this.api.partySolo(playing);
+      if (party) this.applyParty(party);
+    } catch (err) {
+      console.warn('[account] solo notice failed', err);
+    }
+  }
+
+  /** True when other people are in the party. */
+  get inParty(): boolean {
+    return (this.party?.members.length ?? 0) > 1;
+  }
+
+  /**
+   * Waits for a finished show's reward from the API (the game server's
+   * forward was late or lost) and shows it on the rewards screen, or says it
+   * will appear on the profile. A newer wait cancels this one.
+   *
+   * @param matchId - The show.
+   */
+  async awaitShowReward(matchId: string): Promise<RewardPollResult> {
+    const id = ++this.rewardWait;
+    ui.getState().setRewardsPending('arriving');
+    const result = await pollShowReward({
+      fetch: async () => (await this.api.matchReward(matchId)).reward,
+      sleep: (ms) => new Promise((r) => window.setTimeout(r, ms)),
+      cancelled: () => id !== this.rewardWait,
+    });
+    if (result.status === 'cancelled') return result;
+    if (result.status === 'ready') ui.getState().setRewards(this.rewardsSummary(result.reward));
+    else ui.getState().setRewardsPending('deferred');
+    void this.refreshProgress();
+    return result;
+  }
+
+  /** Stops any reward wait (a new show started). */
+  cancelRewardWait(): void {
+    this.rewardWait++;
   }
 
   /** Leader picks the party's playlist. */

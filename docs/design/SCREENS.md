@@ -436,6 +436,9 @@ clicks each top-level control and asserts the destination.
 
 ### 5.4 Challenges
 
+- Daily login card (online): flame, "N-day streak", **Claim day N** (confetti;
+  a stamp once claimed), the 7-day ladder with day 7 highlighted, and when the
+  streak breaks or the next claim opens.
 - Season-progress strip (tier, bar, upcoming reward thumbnails → Pass).
 - Daily and Weekly sections: header with "New in 05:12:33", "N to claim" and
   "Swaps 1/1 today"; card grid. Each card: illustrated icon inside a chunky
@@ -443,6 +446,8 @@ clicks each top-level control and asserts the destination.
   bonus XP), and one state: in progress (labelled **Swap** when swaps are
   left), ready (glowing **Claim**), claimed (stamp). Claim bursts confetti
   from the card and pops it.
+- Seasonal (online; "Ends in 40d 3h", expire with the season) and Milestones
+  (online; "Permanent · 2/8 done") use the same cards; some pay a cosmetic.
 
 ### 5.5 Profile
 
@@ -455,6 +460,15 @@ clicks each top-level control and asserts the destination.
   best race times, recent form dots) and match history (last 20; expandable
   rows with round, type badge, placement, race time, qualified/out).
 - The same card opens for other players (`ProfileOverlay`, `inspectPlayer`).
+- Sections **Overview · Achievements · Collection** above the card. The other
+  two keep the card and replace the centre and right with one wide panel:
+  - Achievements: unlocked/total bar, category and locked/unlocked filters,
+    cards with tier numeral, progress bar, rewards and unlock date. Hidden
+    achievements read "???" with no progress or rewards until unlocked.
+  - Collection: completion % and owned/total, slot, rarity and owned/missing
+    filters, item grid, and a detail panel listing where the selected item
+    comes from (shop, pass tier, achievement, challenge, event, Crown Shard
+    shop, Practice Island). Works offline from local ownership.
 
 ### 5.6 Ranks
 
@@ -531,7 +545,13 @@ Full-height sheet with text-only tabs:
   clicking in a round grabs the mouse; Esc lets go), invert Y, toggle grab,
   controller vibration, touch buttons side and size, rebinding table (primary
   / secondary per action, including **Menu**; conflicts swap; Reset to
-  defaults).
+  defaults), and a **Controller** table (jump, dive, grab, emote wheel,
+  emotes 1–4, Menu, spectate previous / next) with "press a button" capture.
+  Controller conflicts swap only between actions live at the same time
+  (gameplay vs spectating may share, e.g. RB); Menu can't take a button menus
+  navigate with or lose its last button; Delete clears a secondary slot.
+  Every prompt (controls hint, in-game menu, spectate, pre-show, grab,
+  tutorial) shows the current keys and buttons.
 - **Audio**: Master, Music, Sound effects, Menu sounds, Announcer; Mute when
   unfocused.
 - **Accessibility**: colour-blind mode (Protan/Deutan/Tritan, palette
@@ -670,7 +690,13 @@ ring, cue `ui.countdown.go`, HUD brightens to 100%.
   the last device: floating joystick, Jump / Dive / Grab buttons, an Emote
   button that toggles the wheel, camera drag elsewhere (`touchInput`,
   `touchLook`). Big moments vibrate the phone or controller (Controller
-  vibration setting).
+  vibration setting). The same layer serves every place the Tumbler can
+  move (`touchMode`): the round and tutorial; the pre-show platform
+  (joystick and buttons, no wheel or camera); and menu idle play, party
+  hangout and lobby games, where the menu chrome steps aside (a running
+  lobby game keeps its score), a Done button returns to the menu, and taps
+  on the stage still pick the Games sign or a party member. Opening any menu
+  UI hides it again.
 - **Gear button** opens the in-game menu (§9.16).
 - **Overtime**: timer becomes "OVERTIME!" flashing (steady with Reduce Flashing).
 

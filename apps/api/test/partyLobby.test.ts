@@ -14,7 +14,8 @@ import { createTestApi, type TestApi, type TestUser } from './helpers.ts';
 let api: TestApi;
 let base: string;
 beforeAll(async () => {
-  api = await createTestApi();
+  // Rate buckets refill on the fake clock, which only the in-process KV follows.
+  api = await createTestApi(undefined, {}, { memoryKv: true });
   await api.app.listen({ host: '127.0.0.1', port: 0 });
   base = `ws://127.0.0.1:${(api.app.server.address() as AddressInfo).port}`;
 });

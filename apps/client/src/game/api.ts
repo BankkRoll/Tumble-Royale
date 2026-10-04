@@ -9,6 +9,7 @@
  *   API's `{ error, message }` as {@link ApiError};
  * - typed endpoint helpers mirroring `apps/api/README.md`.
  */
+import type { PlayerRewardMsg } from '@tumble/netcode';
 import type { WalletLedger } from './online/checkout.ts';
 import { tokenSubject, type AuthOutcome, type LoginProvider } from './online/returnUrl.ts';
 import { loadJson, removeJson, saveJson } from './storage.ts';
@@ -219,7 +220,12 @@ export interface ApiChallenge {
   target: number;
   completed: boolean;
   claimed: boolean;
-  reward: { xp: number; gumballs: number; gems?: number };
+  reward: {
+    xp: number;
+    gumballs: number;
+    gems?: number;
+    cosmetic?: { id: string; name: string; slot: string; rarity: string } | null;
+  };
   rerolled: boolean;
 }
 
@@ -227,9 +233,79 @@ export interface ApiChallenge {
 export interface ApiChallenges {
   daily: ApiChallenge[];
   weekly: ApiChallenge[];
+  /** Absent on APIs that predate seasonal and milestone challenges. */
+  seasonal?: ApiChallenge[];
+  milestone?: ApiChallenge[];
   rerollsLeft: number;
   dailyRefreshesAt: string;
   weeklyRefreshesAt: string;
+  season?: { id: string; name: string; endsAt: string };
+  /** Seasonal challenges of an ended season that this call paid out. */
+  settled?: { id: string; title: string; gumballs: number; gems: number; cosmetic: string | null }[];
+}
+
+/** A reward as the API describes it (achievements, login ladder). */
+export type ApiGrant =
+  { type: 'xp' | 'gumballs' | 'gems' | 'crown_shards'; amount: number } | { type: 'cosmetic'; id: string };
+
+/** `GET /achievements`. */
+export interface ApiAchievements {
+  achievements: {
+    id: string;
+    category: string;
+    title: string;
+    description: string;
+    hidden: boolean;
+    unlocked: boolean;
+    unlockedAt: string | null;
+    progress: number | null;
+    target: number | null;
+    series: { id: string; tier: number; tiers: number } | null;
+    rewards: ApiGrant[];
+  }[];
+  categories: { id: string; unlocked: number; total: number }[];
+  unlocked: number;
+  total: number;
+  newlyUnlocked: { id: string; title: string }[];
+}
+
+/** `GET /collection`. */
+export interface ApiCollection {
+  owned: number;
+  total: number;
+  percent: number;
+  entries: {
+    id: string;
+    owned: boolean;
+    acquiredAt: string | null;
+    sources: { kind: string; label: string }[];
+  }[];
+}
+
+/** `GET /streak`. */
+export interface ApiStreak {
+  streak: number;
+  best: number;
+  claims: number;
+  today: string;
+  claimedToday: boolean;
+  canClaim: boolean;
+  nextClaimAt: string;
+  breaksAt: string | null;
+  next: { streak: number; day: number; rewards: ApiGrant[] };
+  ladder: { day: number; rewards: ApiGrant[]; state: 'claimed' | 'today' | 'upcoming' }[];
+}
+
+/** `POST /streak/claim`. */
+export interface ApiStreakClaim {
+  day: string;
+  streak: number;
+  best: number;
+  ladderDay: number;
+  rewards: (ApiGrant & { granted: boolean })[];
+  achievements: { id: string; title: string }[];
+  wallet: ApiMe['wallet'];
+  view: ApiStreak;
 }
 
 /** `POST /me/tutorial-complete`. */
@@ -317,6 +393,16 @@ export interface ApiParty {
   playlistId: string;
   inviteUrl: string;
   maxSize: number;
+}
+
+/** `GET /party/code/:code`: who is behind an invite code. */
+export interface ApiPartyPreview {
+  code: string;
+  /** `name#tag` of the leader. */
+  leader: string | null;
+  size: number;
+  maxSize: number;
+  playlistId: string;
 }
 
 /** `GET /profile/:id`. */
@@ -666,6 +752,21 @@ export class ApiClient {
   shardShop = (): Promise<ApiShardShop> => this.request('GET', '/shop/shards');
   buyShardOffer = (offerId: string, key: string): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> =>
     this.request('POST', '/shop/shards/buy', { offerId }, { idempotencyKey: key });
+  /** Feature flags; signed in, percentage rollouts are evaluated for this account. */
+  flags = (): Promise<{ flags: Record<string, unknown> }> => this.request('GET', '/flags');
+  /** Maintenance window and the server clock (public). */
+  status = (): Promise<{ maintenance: unknown; serverTime: number }> =>
+    this.request('GET', '/status', undefined, { auth: false });
+  /** Every playlist's effective schedule and the server clock (public). */
+  playlistSchedule = (): Promise<{ playlists: unknown[]; serverTime: number }> =>
+    this.request('GET', '/playlists', undefined, { auth: false });
+  /**
+   * The stored access token without refreshing it, for `pagehide` beacons
+   * that cannot wait for a refresh. The API treats an expired one as anonymous.
+   */
+  currentAccessToken(): string | null {
+    return this.tokens?.accessToken ?? null;
+  }
   /** Live news feed (public; no sign-in needed). */
   news = (): Promise<{ posts: unknown[]; withdrawn?: string[] }> =>
     this.request('GET', '/news', undefined, { auth: false });
@@ -682,10 +783,21 @@ export class ApiClient {
   challenges = (): Promise<ApiChallenges> => this.request('GET', '/challenges');
   rerollChallenge = (id: string): Promise<unknown> => this.request('POST', '/challenges/reroll', { id });
   claimChallenge = (id: string): Promise<unknown> => this.request('POST', '/challenges/claim', { id });
+  /** Achievements; also unlocks anything already earned (the API announces those over realtime). */
+  achievements = (): Promise<ApiAchievements> => this.request('GET', '/achievements');
+  collection = (): Promise<ApiCollection> => this.request('GET', '/collection');
+  streak = (): Promise<ApiStreak> => this.request('GET', '/streak');
+  claimStreak = (): Promise<ApiStreakClaim> => this.request('POST', '/streak/claim');
   tutorialComplete = (): Promise<ApiTutorialComplete> => this.request('POST', '/me/tutorial-complete');
   leaderboard = (type: string, scope: 'global' | 'regional' | 'friends'): Promise<ApiLeaderboard> =>
     this.request('GET', `/leaderboards/${type}?scope=${scope}&limit=50`);
   myMatches = (): Promise<{ matches: ApiMatch[] }> => this.request('GET', '/me/matches');
+  /**
+   * The caller's reward for one show; 404 (`not_found`) until the game
+   * server's results reach the API, `reward: null` when there was none.
+   */
+  matchReward = (matchId: string): Promise<{ matchId: string; reward: PlayerRewardMsg | null }> =>
+    this.request('GET', `/me/matches/${encodeURIComponent(matchId)}/reward`);
 
   // ---------------------------------------------------------------------------
   // Social
@@ -731,6 +843,14 @@ export class ApiClient {
   party = (): Promise<{ party: ApiParty | null }> => this.request('GET', '/party');
   createParty = (): Promise<{ party: ApiParty }> => this.request('POST', '/party');
   joinParty = (code: string): Promise<{ party: ApiParty }> => this.request('POST', '/party/join', { code });
+  /** Public summary of the party behind an invite code (404 when none). */
+  partyByCode = (code: string): Promise<ApiPartyPreview> =>
+    this.request('GET', `/party/code/${encodeURIComponent(code)}`);
+  /** Leader: the matchmaker accepted the party's ticket, so the ready votes are spent. */
+  partyQueued = (): Promise<{ party: ApiParty | null }> => this.request('POST', '/party/queued');
+  /** Tells the party this player started (or finished) a show on their own. */
+  partySolo = (playing: boolean): Promise<{ party: ApiParty | null }> =>
+    this.request('POST', '/party/solo', { playing });
   leaveParty = (): Promise<void> => this.request('POST', '/party/leave');
   kickFromParty = (userId: string): Promise<{ party: ApiParty }> =>
     this.request('POST', '/party/kick', { userId });

@@ -373,16 +373,22 @@ export const newsPosts = pgTable(
 /** Challenge definitions, synced from content. */
 export const challenges = pgTable('challenges', {
   id: text('id').primaryKey(),
+  /** `daily`, `weekly`, `seasonal` or `milestone`. */
   period: text('period').notNull(),
   title: text('title').notNull(),
   metric: text('metric').notNull(),
   target: integer('target').notNull(),
   rewardXp: integer('reward_xp').notNull(),
   rewardGumballs: integer('reward_gumballs').notNull().default(0),
+  rewardGems: integer('reward_gems').notNull().default(0),
+  rewardCosmetic: text('reward_cosmetic'),
   active: boolean('active').notNull().default(true),
 });
 
-/** A challenge assigned to a player for one period (day or ISO week). */
+/**
+ * A challenge assigned to a player for one period. `period_key` is the UTC
+ * day, the ISO week, the season id (`seasonal`) or `all` (`milestone`).
+ */
 export const challengeProgress = pgTable(
   'challenge_progress',
   {
@@ -403,6 +409,60 @@ export const challengeProgress = pgTable(
   },
   (t) => [uniqueIndex('challenge_progress_slot_uq').on(t.userId, t.period, t.periodKey, t.slot)],
 );
+
+// -----------------------------------------------------------------------------
+// Achievements & login streak
+// -----------------------------------------------------------------------------
+
+/**
+ * Lifetime value of one achievement metric per player: a running total for
+ * `sum` metrics, the best ever for `max` metrics. `gauge` metrics (items
+ * owned) are recomputed from live state and never stored here. Only the match
+ * ingest and the login claim write rows, inside the transaction that also
+ * records the match or the claim, so a replayed report cannot count twice.
+ */
+export const achievementStats = pgTable(
+  'achievement_stats',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    metric: text('metric').notNull(),
+    value: integer('value').notNull().default(0),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.metric] })],
+);
+
+/**
+ * Achievements a player has unlocked. The primary key makes the unlock (and
+ * with it the reward grant) happen exactly once.
+ */
+export const playerAchievements = pgTable(
+  'player_achievements',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    achievementId: text('achievement_id').notNull(),
+    unlockedAt: ts('unlocked_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.achievementId] })],
+);
+
+/** Daily login streak per player. Days are UTC `YYYY-MM-DD` from the server clock. */
+export const loginStreaks = pgTable('login_streaks', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  /** Consecutive days claimed, ending on `last_claim_day`. */
+  current: integer('current').notNull().default(0),
+  best: integer('best').notNull().default(0),
+  lastClaimDay: text('last_claim_day'),
+  /** Lifetime claims. */
+  claims: integer('claims').notNull().default(0),
+  updatedAt: ts('updated_at').notNull().defaultNow(),
+});
 
 // -----------------------------------------------------------------------------
 // Ranked
@@ -636,6 +696,20 @@ export const featureFlags = pgTable('feature_flags', {
   enabled: boolean('enabled').notNull().default(false),
   rolloutPercent: integer('rollout_percent').notNull().default(100),
   payload: jsonb('payload'),
+  updatedAt: ts('updated_at').notNull().defaultNow(),
+});
+
+/**
+ * Operator overrides for bundled playlists (`PUT /internal/playlists/:id`).
+ * A row replaces the bundled schedule wholesale, so null times mean "no
+ * bound", not "inherit".
+ */
+export const playlistOverrides = pgTable('playlist_overrides', {
+  id: text('id').primaryKey(),
+  startsAt: ts('starts_at'),
+  endsAt: ts('ends_at'),
+  featured: boolean('featured').notNull().default(false),
+  hidden: boolean('hidden').notNull().default(false),
   updatedAt: ts('updated_at').notNull().defaultNow(),
 });
 

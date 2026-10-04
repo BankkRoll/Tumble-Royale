@@ -4,6 +4,7 @@
 import { resolve } from 'node:path';
 import { loadServiceConfig } from '@tumble/shared/env';
 import { consoleLogger, installLifecycle } from '@tumble/shared/lifecycle';
+import { apiErrorReporter } from '@tumble/shared/liveops-client';
 import { startInternalMetrics } from '@tumble/shared/metrics';
 import { buildMatchmaker } from './app.ts';
 import { loadConfig } from './config.ts';
@@ -15,6 +16,16 @@ const life = installLifecycle({
   log: consoleLogger,
   sentryDsn: config.sentryDsn,
   environment: config.env,
+  reporters:
+    config.apiUrl && config.internalHmacSecret
+      ? [
+          apiErrorReporter({
+            apiUrl: config.apiUrl,
+            secret: config.internalHmacSecret,
+            service: 'matchmaker',
+          }),
+        ]
+      : [],
 });
 const built = await buildMatchmaker(config);
 life.setLogger(built.app.log);

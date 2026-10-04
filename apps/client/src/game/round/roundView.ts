@@ -119,7 +119,7 @@ export class RoundView implements GameView {
     this.targetId = source.localId;
     this.ray = new R.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
     this.camBall = new R.Ball(0.2);
-    this.obstacleClock = new ObstacleClock(introPreRollSeconds(round.flyover.duration));
+    this.obstacleClock = new ObstacleClock(introPreRollSeconds(round.flyover.duration, source.showTimings));
   }
 
   /** Builds a view synchronously (flows that need it in the same call). */

@@ -15,6 +15,7 @@ export { mountUI, type MountOptions, type UIHandle } from './mount.tsx';
 export { App } from './App.tsx';
 export { openNewsPost } from './screens/menu/NewsTab.tsx';
 export { openAccountSettings } from './screens/overlays/SettingsSheet.tsx';
+export { grantText } from './components/GrantChip.tsx';
 export * from './store/index.ts';
 export {
   setAudioHooks,
@@ -27,7 +28,16 @@ export {
   type UICueName,
 } from './audio-cues.ts';
 export { fireConfetti, fireFireworks, CONSOLATION_LINES, type ConfettiOptions } from './transitions/index.ts';
-export { randomTumblerName, validateDisplayName, streamerSafeName, type NamedPlayer } from './names.ts';
+export {
+  maskedName,
+  randomTumblerName,
+  seatName,
+  validateDisplayName,
+  streamerSafeKeyedName,
+  streamerSafeName,
+  type KeyedPlayer,
+  type NamedPlayer,
+} from './names.ts';
 export {
   palette,
   rarityColors,

@@ -8,6 +8,8 @@
     ".": "./src/index.ts",
     "./env": "./src/env.ts",
     "./lifecycle": "./src/lifecycle.ts",
+    "./liveops": "./src/liveops.ts",
+    "./liveops-client": "./src/liveopsClient.ts",
     "./metrics": "./src/metrics.ts",
     "./proxy": "./src/proxy.ts",
     "./request-id": "./src/requestId.ts",

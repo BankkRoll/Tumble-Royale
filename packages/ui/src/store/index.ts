@@ -3,6 +3,20 @@
  */
 export * from './types.ts';
 export * from './defaults.ts';
+export {
+  PAD_INDEX,
+  PAD_BIND_CONTEXT,
+  PAD_MENU_BUTTONS,
+  PadCapture,
+  assignPadButton,
+  padActionsClash,
+  padButtonLabel,
+  padPressed,
+  padSwapMessage,
+  type PadAssignResult,
+  type PadBindContext,
+  type PadButtonsSnapshot,
+} from './padBinds.ts';
 export { ui, useUI, setNavigator, type UIState, type WipeState } from './uiStore.ts';
 export {
   uiEvents,
@@ -63,3 +77,18 @@ export {
   type RoomAccess,
   type WhisperTarget,
 } from './chatChannels.ts';
+export {
+  analyticsAllowed,
+  featureOn,
+  maintenanceHeadline,
+  privacySignal,
+  type PrivacyNavigator,
+} from './liveOps.ts';
+export {
+  SHOW_MENU_SCREENS,
+  isTypingTarget,
+  keyboardBusy,
+  menuOwnsInput,
+  overlayAfterScreenChange,
+  watchChoiceVisible,
+} from './inputOwnership.ts';

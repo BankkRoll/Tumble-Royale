@@ -82,6 +82,8 @@ export class CrashReporter {
   private sending = false;
   /** Reports dropped by the rate limits (tests, diagnostics). */
   dropped = 0;
+  /** Every error seen this page load, repeats and dropped ones included (analytics `error_count`). */
+  captured = 0;
 
   constructor(private readonly opts: CrashReporterOptions) {
     this.sentry = opts.sentryDsn ? parseSentryDsn(opts.sentryDsn) : null;
@@ -131,6 +133,7 @@ export class CrashReporter {
   ): void {
     // A send in progress that fails must not report itself.
     if (this.sending && kind === 'unhandledrejection') return;
+    this.captured++;
     const d = describe(reason);
     const key = `${kind}|${d.type}|${d.message}|${where.source ?? ''}:${where.line ?? ''}`;
     const existing = this.queue.get(key);
@@ -151,7 +154,7 @@ export class CrashReporter {
     this.recent.push(t);
     this.queue.set(key, {
       kind,
-      type: d.type,
+      type: d.type.slice(0, 100),
       message: d.message.slice(0, MAX_MESSAGE),
       ...(d.stack ? { stack: d.stack.slice(0, MAX_STACK) } : {}),
       ...(where.source ? { source: where.source.split('?')[0]!.slice(0, 300) } : {}),
@@ -195,7 +198,7 @@ export class CrashReporter {
           props: {
             ...r,
             ...(ua ? { ua } : {}),
-            ...(this.opts.release ? { release: this.opts.release } : {}),
+            ...(this.opts.release ? { release: this.opts.release.slice(0, 100) } : {}),
           },
         })),
       }),

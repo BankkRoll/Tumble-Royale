@@ -33,6 +33,7 @@ import {
 import { ownedSet } from '../accounts/routes.ts';
 import type { AppContext } from '../context.ts';
 import { ApiError } from '../http/errors.ts';
+import { serverFlag } from '../liveops/state.ts';
 import { LoadoutItemsSchema, validateLoadout } from '../inventory/loadout.ts';
 import type { PartyService } from '../social/party.ts';
 
@@ -88,6 +89,11 @@ export class PartyLobbyRelay {
     if (frame.ball && party.leaderId !== userId) delete frame.ball;
     if (frame.grab && !others.includes(frame.grab)) delete frame.grab;
     const memberIds = party.members.map((m) => m.userId);
+    // Kill switch: lobby games stop for everyone; poses, emotes and the ball keep flowing.
+    if ((frame.game || frame.claim) && !(await serverFlag(this.ctx, 'party.lobbyGames'))) {
+      delete frame.game;
+      delete frame.claim;
+    }
     // The leader runs every lobby game; a stale player list (someone just left) would show ghosts.
     if (
       frame.game &&

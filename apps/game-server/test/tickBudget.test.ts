@@ -11,6 +11,8 @@
  * because wall-clock budgets do not belong in shared CI:
  *
  *   TUMBLE_PERF=1 pnpm --filter @tumble/game-server exec vitest run test/tickBudget.test.ts
+ *
+ * `TUMBLE_PERF_P95_MS` sets the p95 budget (default 16 ms).
  */
 import { MAX_ENTITIES, SNAPSHOT_BYTE_BUDGET } from '@tumble/netcode';
 import { MAX_PLAYERS, RoundPhase, SERVER_TICK_HZ } from '@tumble/shared';
@@ -24,6 +26,8 @@ import { FakeConnection, TestClient } from './helpers.ts';
 
 const TICK_MS = 1000 / SERVER_TICK_HZ;
 const PERF = process.env.TUMBLE_PERF === '1';
+// Slower shared runners (the nightly CI job) raise it; 16 ms leaves half the tick spare.
+const P95_BUDGET_MS = Number(process.env.TUMBLE_PERF_P95_MS ?? 16);
 
 interface RunResult {
   roundId: string;
@@ -162,14 +166,14 @@ describe(`a full ${MAX_PLAYERS}-player room`, () => {
   }, 300_000);
 
   it.runIf(PERF)(
-    'keeps the 30 Hz tick p95 under 16 ms with every seat a protocol client, and with one human and bots',
+    `keeps the 30 Hz tick p95 under ${P95_BUDGET_MS} ms with every seat a protocol client, and with one human and bots`,
     async () => {
       const humans = await runRoom(MAX_PLAYERS, 60);
       process.stderr.write(`\n${describeRun(`${MAX_PLAYERS} clients`, humans)}\n`);
       const bots = await runRoom(1, 60);
       process.stderr.write(`${describeRun(`1 client + ${MAX_PLAYERS - 1} bots`, bots)}\n`);
-      expect(humans.total.percentile(0.95)).toBeLessThan(16);
-      expect(bots.total.percentile(0.95)).toBeLessThan(16);
+      expect(humans.total.percentile(0.95)).toBeLessThan(P95_BUDGET_MS);
+      expect(bots.total.percentile(0.95)).toBeLessThan(P95_BUDGET_MS);
       expect(humans.downKBps).toBeLessThan(40);
     },
     1_800_000,

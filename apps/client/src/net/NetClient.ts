@@ -14,6 +14,7 @@ import {
   BitWriter,
   ClockSync,
   INPUT_REDUNDANCY,
+  LEAVE_CLOSE_REASON,
   MsgType,
   NetworkConditioner,
   PROTOCOL_VERSION,
@@ -116,6 +117,12 @@ export interface NetClientOptions {
   loadout?: string;
   /** Matchmaker join ticket (matchmade shows); omitted for unticketed dev rooms. */
   ticket?: string;
+  /**
+   * Resume token from an earlier connection to the same show (kept across a
+   * page reload). The server puts the player back in their seat while its
+   * resume window lasts and otherwise falls back to the ticket.
+   */
+  resumeToken?: string;
   /** Impairment per direction; defaults to parsing `location.search` (`lag`, `jitter`, `loss`, `dup`, `reorder`). */
   conditioner?: ConditionerOptions | null;
   /** Monotonic clock in ms. */
@@ -175,7 +182,9 @@ export class NetClient extends TypedEmitter<NetClientEvents> {
     lastSnapshotAt: 0,
   };
 
-  private readonly opts: Required<Omit<NetClientOptions, 'url' | 'conditioner' | 'createSocket'>> & {
+  private readonly opts: Required<
+    Omit<NetClientOptions, 'url' | 'conditioner' | 'createSocket' | 'resumeToken'>
+  > & {
     url: string;
     conditioner: ConditionerOptions | null;
     createSocket: (url: string) => WebSocketLike;
@@ -195,8 +204,13 @@ export class NetClient extends TypedEmitter<NetClientEvents> {
     buttons: 0,
     emote: 0,
   }));
-  private resumeToken = '';
+  private token = '';
   private welcomed = false;
+
+  /** The current resume token ('' before the first Welcome), for persisting across a reload. */
+  get resumeToken(): string {
+    return this.token;
+  }
   private userClosed = false;
   private lastHelloAt = 0;
   private lastPingAt = -Infinity;
@@ -210,6 +224,7 @@ export class NetClient extends TypedEmitter<NetClientEvents> {
   /** @param opts - Connection options. */
   constructor(opts: NetClientOptions) {
     super();
+    this.token = opts.resumeToken ?? '';
     const now = opts.now ?? (() => performance.now());
     this.opts = {
       url: opts.url ?? defaultServerUrl(),
@@ -274,7 +289,7 @@ export class NetClient extends TypedEmitter<NetClientEvents> {
   /** Closes for good (no reconnect). */
   close(): void {
     this.userClosed = true;
-    this.socket?.close(1000, 'bye');
+    this.socket?.close(1000, LEAVE_CLOSE_REASON);
     this.socket = null;
     this.up?.stopAutoPump();
     this.down?.stopAutoPump();
@@ -400,7 +415,7 @@ export class NetClient extends TypedEmitter<NetClientEvents> {
     writeHello(w, {
       version: PROTOCOL_VERSION,
       name: this.opts.name,
-      resumeToken: this.resumeToken,
+      resumeToken: this.token,
       loadout: this.opts.loadout,
       ticket: this.opts.ticket,
     });
@@ -472,7 +487,7 @@ export class NetClient extends TypedEmitter<NetClientEvents> {
     this.presentedSnapshot = -1;
     this.playerId = m.playerId;
     this.roomId = m.roomId;
-    this.resumeToken = m.resumeToken;
+    this.token = m.resumeToken;
     this.tickMs = m.tickMs;
     this.tickEpochMs = m.tickEpochMs;
     this.droppedAt = -1;

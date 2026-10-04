@@ -155,6 +155,7 @@ export class ServerMetrics {
     for (const phase of Object.keys(this.tick) as TickPhase[]) {
       const w = this.tick[phase];
       lines.push(`tumble_tick_ms{phase="${phase}",stat="avg"} ${w.mean().toFixed(4)}`);
+      lines.push(`tumble_tick_ms{phase="${phase}",stat="p50"} ${w.percentile(0.5).toFixed(4)}`);
       lines.push(`tumble_tick_ms{phase="${phase}",stat="p95"} ${w.percentile(0.95).toFixed(4)}`);
       lines.push(`tumble_tick_ms{phase="${phase}",stat="max"} ${w.max().toFixed(4)}`);
     }

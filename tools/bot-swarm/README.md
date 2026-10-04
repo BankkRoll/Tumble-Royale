@@ -5,7 +5,7 @@ send plausible 60 Hz inputs with redundancy, and report snapshot rate,
 bandwidth and RTT, followed by the server's `/metrics`.
 
 ```sh
-pnpm --filter @tumble/bot-swarm start -- --clients 100 --url ws://localhost:7350/ws --duration 60
+pnpm --filter @tumble/bot-swarm start -- --clients 100 --url ws://localhost:7350/ws --duration 180
 ```
 
 | Flag                            | Meaning                                                      |
@@ -13,5 +13,5 @@ pnpm --filter @tumble/bot-swarm start -- --clients 100 --url ws://localhost:7350
 | `--clients N`                   | Clients to spawn (default 100, one full show)                |
 | `--procs N`                     | Spread clients across N processes (for thousands of clients) |
 | `--url <ws>`                    | Game server WebSocket                                        |
-| `--duration S`                  | Run time in seconds                                          |
+| `--duration S`                  | Run time in seconds (PLAYING starts about 60 s in)           |
 | `--lag MS --jitter MS --loss P` | Simulated network conditions                                 |

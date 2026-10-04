@@ -265,10 +265,18 @@ describe('ShowDirector', () => {
       const { infos, summary } = runShow(seed, { playlist: duos, partySize: 2 });
       for (const info of infos.filter((i) => i.round.qualification.mode === 'teamScore')) {
         const teamOf = new Map(info.players.map((p) => [p.id, p.team]));
+        const sizes = new Map<number, number>();
+        let splitDuos = 0;
         for (const p of info.players) {
+          sizes.set(p.team, (sizes.get(p.team) ?? 0) + 1);
           const mate = p.id % 2 === 0 ? p.id + 1 : p.id - 1;
-          if (teamOf.has(mate)) expect(teamOf.get(mate)).toBe(p.team);
+          if (p.id % 2 === 0 && teamOf.has(mate) && teamOf.get(mate) !== p.team) splitDuos++;
         }
+        // Whole duos cannot always balance (20 duos over 3 teams is 14/14/12): a bot duo or two
+        // may be split to keep sizes within one, but never the human's.
+        expect(Math.max(...sizes.values()) - Math.min(...sizes.values())).toBeLessThanOrEqual(1);
+        expect(splitDuos).toBeLessThanOrEqual(sizes.size - 1);
+        if (teamOf.has(0) && teamOf.has(1)) expect(teamOf.get(1)).toBe(teamOf.get(0));
       }
       if (summary.winner !== null) {
         const w = summary.winner;

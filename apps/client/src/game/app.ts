@@ -13,20 +13,29 @@
  *   → `match_found` → ticketed game server) when signed in and the
  *   matchmaker answers, `?online=1` joins the local game server directly,
  *   otherwise an offline show with bots runs;
- * - custom lobbies through the matchmaker;
+ * - parties: the leader queues once every member is ready and in the menu;
+ *   anyone may play Vs Bots or Practice Island on their own (confirmed, and
+ *   the party is told);
+ * - rejoining a running online show after a reload, and never re-entering
+ *   one that ended;
+ * - custom lobbies through the matchmaker, one Join dialog for show and
+ *   party codes, and Play again back into the same private show;
  * - the frame loop: show session, active 3D view, post pipeline, audio
  *   listener, adaptive resolution, stats;
  * - settings persistence and live application; debug panel and hooks.
  */
 import {
-  DEFAULT_KEYBINDS,
+  analyticsAllowed,
   bindUI,
+  keyboardBusy,
   mountUI,
   social,
   ui,
   uiEvents,
-  type BindAction,
+  type CustomLobbyOptions,
   type CustomLobbyState,
+  type DialogSpec,
+  type PrivacyNavigator,
   type Settings,
 } from '@tumble/ui';
 import { bindChatRouter } from './social/chatRouter.ts';
@@ -40,8 +49,10 @@ import { createTumblerController } from '@tumble/sim/character';
 import { OBSTACLE_REGISTRY } from '@tumble/sim/obstacles';
 import type { MatchDeps } from '@tumble/sim/match';
 import type { ShowPlaylist } from '@tumble/sim/show';
+import { getPlaylist } from '@tumble/content/shows';
 import { PerspectiveCamera, Scene, type WebGPURenderer } from 'three/webgpu';
-import { InputSystem, type InputAction } from '../input/index.ts';
+import { InputSystem } from '../input/index.ts';
+import { keymapFromKeybinds, padMenuButtons, padmapFromPadBinds } from './bindings.ts';
 import { GamepadNavigator, firstStandardPad } from '../input/gamepadNav.ts';
 import { StatsOverlay } from '../debug/stats.ts';
 import { checkDeterminism } from '../debug/determinism.ts';
@@ -60,19 +71,29 @@ import {
   pushLeaderboard,
   pushLiveNews,
   pushMeta,
+  pushPlaylists,
   pushStaticMeta,
 } from './meta.ts';
 import { playlistIdForPlay, privateShow, resolvePlaylist } from './playlists.ts';
+import { Analytics, setAnalytics, track } from './liveOps/analytics.ts';
+import { LiveOpsController } from './liveOps/controller.ts';
+import { flag, gatedReplays, liveFlags } from './liveOps/flags.ts';
+import { isPlaylistLive } from './liveOps/schedule.ts';
 import { OnlineAccount } from './online/account.ts';
 import { PhotoMode } from './photo/photoMode.ts';
 import { AccountAuth } from './online/auth.ts';
 import { finishCheckoutReturn } from './online/checkout.ts';
+import { joinWithCode } from './online/joinCode.ts';
 import {
+  liveStartedLobby,
+  lobbyOptions,
   optionsToSettings,
   reduceLobbyEvent,
   toCustomLobbyState,
   type LobbyEvent,
 } from './online/lobbyState.ts';
+import { queueRefusal, routePlay, type PlayKind } from './online/partyPlay.ts';
+import { RejoinStore, planRejoin, sessionStore, type RejoinPlan } from './online/rejoin.ts';
 import { onlineCounts, queueTarget } from './online/playerCounts.ts';
 import { MatchmakerClient, gameSocketUrl, type Lobby, type MatchFound } from './online/matchmaker.ts';
 import {
@@ -98,23 +119,8 @@ import { SceneDirector } from './views/sceneDirector.ts';
 import { ThumbnailRenderer } from './thumbnails.ts';
 import { swapUnderWipe } from './wipe.ts';
 import { runTutorial } from './tutorial/index.ts';
-
-/** UI rebindable action → input system action. */
-const BIND_TO_INPUT: Partial<Record<BindAction, InputAction>> = {
-  moveForward: 'forward',
-  moveBack: 'back',
-  moveLeft: 'left',
-  moveRight: 'right',
-  jump: 'jump',
-  dive: 'dive',
-  grab: 'grab',
-  emoteWheel: 'emoteWheel',
-  emote1: 'emote1',
-  emote2: 'emote2',
-  emote3: 'emote3',
-  emote4: 'emote4',
-  pause: 'menu',
-};
+import { shouldOfferTutorial, tutorialAnswer } from './tutorial/prompt.ts';
+import { menuOwnsPad, padStartAction, showMenuKeyAction, type RoutingContext } from './inputRouting.ts';
 
 /** Merges saved settings over defaults so new fields always exist. */
 function mergeSettings(base: Settings, saved: Partial<Settings> | null): Settings {
@@ -125,11 +131,44 @@ function mergeSettings(base: Settings, saved: Partial<Settings> | null): Setting
       ...base.controls,
       ...saved.controls,
       keybinds: { ...base.controls.keybinds, ...saved.controls?.keybinds },
+      padBinds: { ...base.controls.padBinds, ...saved.controls?.padBinds },
     },
     audio: { ...base.audio, ...saved.audio },
     accessibility: { ...base.accessibility, ...saved.accessibility },
     gameplay: { ...base.gameplay, ...saved.gameplay },
   };
+}
+
+/** Extra wiring from `main.ts`. */
+export interface BootOptions {
+  /** Uncaught errors captured so far this page load (reported as `error_count`). */
+  errorCount?: () => number;
+}
+
+/**
+ * Installs the game's analytics: batched to `<api>/events` while the API is
+ * reachable, gated by the player's setting (and browser privacy signals) and
+ * the `analytics.sample` flag. The session's new error count goes out with
+ * the last batch when the page hides.
+ */
+function installAnalytics(cfg: GameConfig, api: ApiClient, errorCount?: () => number): void {
+  const analytics = new Analytics({
+    endpoint: () => (cfg.api && api.online ? `${cfg.apiUrl}/events` : null),
+    allowed: () => analyticsAllowed(ui.getState().settings.gameplay.analytics, navigator as PrivacyNavigator),
+    sampleRate: () => liveFlags.sampleRate(),
+    token: () => api.accessToken(),
+    tokenSync: () => api.currentAccessToken(),
+    ...(typeof navigator.sendBeacon === 'function'
+      ? { sendBeacon: (url: string, data: Blob) => navigator.sendBeacon(url, data) }
+      : {}),
+  });
+  let reported = 0;
+  analytics.install(window, document, () => {
+    const n = errorCount?.() ?? 0;
+    if (n > reported) analytics.track('error_count', { count: n - reported });
+    reported = n;
+  });
+  setAnalytics(analytics);
 }
 
 /** Party invite code from a `/join/<code>` deep link, or null. */
@@ -176,11 +215,24 @@ export class GameApp {
   private readonly thumbs: ThumbnailRenderer;
   private readonly padNav = new GamepadNavigator();
   private readonly photo: PhotoMode;
+  /** The running online show kept for a rejoin after a reload, and matches already over. */
+  private readonly rejoin = new RejoinStore(sessionStore());
+  /** The private show that just started (its code and settings), until its `match_found` arrives. */
+  private lobbyMatch: { matchId: string; code: string; host: boolean; options: CustomLobbyOptions } | null =
+    null;
+  /** Humans the game server has in the running show; null before its first roster. */
+  private showHumans: ReadonlySet<string> | null = null;
+  /** The party was told this player is in a solo show (tell them again when it ends). */
+  private soloAnnounced = false;
+  /** The Practice Island prompt showed in this launch. */
+  private tutorialAsked = false;
   private regionProbe: RegionProbe = { pings: {}, available: [], matchmakerMs: null };
   private regionProbing: Promise<void> | null = null;
   private regionProbedAt = -Infinity;
   private readonly auth: AccountAuth;
   private readonly replays: ReplayController;
+  /** Flags, maintenance and playlist schedules from the API. */
+  private readonly liveOps: LiveOpsController;
 
   private constructor(
     private readonly cfg: GameConfig,
@@ -219,6 +271,11 @@ export class GameApp {
         })
       : null;
     this.mm = cfg.api && cfg.matchmaking ? new MatchmakerClient(cfg.mmUrl, api) : null;
+    this.liveOps = new LiveOpsController({
+      api: cfg.api ? api : null,
+      onPlaylists: () => pushPlaylists(this.showsPlayed()),
+      onMaintenance: () => void this.refreshOnlineStatus(),
+    });
     this.auth = new AccountAuth({
       api,
       profile,
@@ -270,7 +327,7 @@ export class GameApp {
       fps: () => this.fpsSmooth,
       settings: () => ui.getState().settings,
       onEnd: (reason) => this.onSessionEnd(reason),
-      replays: this.replays.live,
+      replays: gatedReplays(this.replays.live, () => flag('replays.enabled')),
     };
     this.hooks = {
       ready: false,
@@ -325,6 +382,17 @@ export class GameApp {
     else pushMeta(this.profile);
   }
 
+  /** Whether to show the Practice Island prompt now (at most once per launch). */
+  private offerTutorial(): boolean {
+    const offer = shouldOfferTutorial({
+      dontAsk: this.profile.tutorialAnswered,
+      completed: this.profile.tutorialCompleted,
+      askedThisLaunch: this.tutorialAsked,
+    });
+    if (offer) this.tutorialAsked = true;
+    return offer;
+  }
+
   /** Finished shows for First Show selection: the account's when signed in, else this device's; null while unknown. */
   private showsPlayed(): number | null {
     if (this.account?.active) return ui.getState().profile?.stats.shows ?? null;
@@ -341,7 +409,11 @@ export class GameApp {
    * @param cfg - Launch config.
    * @param staticProgress - Updates the static HTML loader until the UI mounts.
    */
-  static async boot(cfg: GameConfig, staticProgress: (pct: number, label: string) => void): Promise<GameApp> {
+  static async boot(
+    cfg: GameConfig,
+    staticProgress: (pct: number, label: string) => void,
+    opts: BootOptions = {},
+  ): Promise<GameApp> {
     const uiRoot = document.getElementById('ui') as HTMLElement;
     const s = ui.getState();
     const defaults = s.settings;
@@ -433,6 +505,8 @@ export class GameApp {
     if (cfg.debug)
       createDebugPanel({ renderer, quality, stats, session: () => app.session, timeScale: app.timeScale });
     if (cfg.autoplay) installAutoplay(cfg.autoShows);
+    app.liveOps.start(window);
+    installAnalytics(cfg, api, opts.errorCount);
     if (cfg.api) void pushLiveNews(api.news);
     loadMutes();
     if (cfg.api) {
@@ -478,6 +552,8 @@ export class GameApp {
     if (!ok || !(await account.load())) return;
     if (welcome && fresh) await account.adoptWelcomeColors(welcome.colors);
     account.startRealtime();
+    // Rollouts are per account, and an offline boot may have skipped the first fetch.
+    void this.liveOps.refresh();
     publishSocialAvailability(true);
     void this.probeRegions();
     if (this.mm) {
@@ -486,6 +562,7 @@ export class GameApp {
       });
       this.bindMatchmaker();
     }
+    void this.offerRejoin();
     // The boot-time check ran before this sign-in (welcome screen); publish the real online state now.
     void this.refreshOnlineStatus();
     ui.getState().pushToast({
@@ -571,60 +648,65 @@ export class GameApp {
 
   /**
    * Gamepad menu navigation (SCREENS.md §1.1). Whenever a menu owns the pad
-   * (menu screens, overlays, dialogs, the eliminated sheet) the D-pad/stick,
-   * A, B, LB and RB drive `navigate` and gameplay ignores the pad; Start
-   * toggles the in-round menu or Settings. Spectate cycling on LB/RB lives in
-   * the show session; the replay viewer reads the pad itself while it is open.
+   * (menu screens, overlays, dialogs, the watch choice; see `menuOwnsPad`)
+   * the D-pad/stick, A, B, LB and RB drive `navigate` and gameplay ignores
+   * the pad; Start toggles the in-game menu or Settings. Spectate cycling on
+   * LB/RB lives in the show session; the replay viewer reads the pad itself
+   * while it is open.
    */
   private pollPadNav(now: number): void {
     const s = ui.getState();
-    const idle = this.menu?.idlePlaying ?? false;
     const photo = s.photo.active;
     const replay = s.replay !== null;
-    const menuOwnsPad =
-      photo ||
-      replay ||
-      (!idle && (s.inputMode === 'menu' || s.dialog !== null || s.overlay !== 'none' || s.eliminatedSheet));
-    this.input.setGamepadGameplay(!menuOwnsPad);
+    const padToMenu = menuOwnsPad(s, this.menu?.idlePlaying ?? false);
+    this.input.setGamepadGameplay(!padToMenu);
     const pad =
       typeof navigator.getGamepads === 'function' ? firstStandardPad(navigator.getGamepads()) : null;
     // Edges are tracked even during a replay so its buttons never fire here afterwards.
     const actions = this.padNav.update(pad, now, true);
-    if (replay) return;
+    // Settings → Controller is listening for a button to bind; it must not also navigate.
+    if (replay || s.padCapture) return;
     for (const a of actions) {
       this.input.lastDevice = 'gamepad';
       if (a === 'start') this.onPadStart();
       // Photo mode flies the camera with the sticks and bumpers; only A (Take photo) and B (Exit) navigate.
       else if (photo) {
         if (a === 'accept' || a === 'back') ui.getState().navigate(a);
-      } else if (menuOwnsPad) ui.getState().navigate(a);
+      } else if (padToMenu) ui.getState().navigate(a);
     }
   }
 
-  /** Start: the in-round menu during rounds, Settings elsewhere; leaves idle play first. */
+  /** Facts the pad / Menu key routing needs from the game side. */
+  private routingContext(): RoutingContext {
+    return {
+      idlePlaying: this.menu?.idlePlaying ?? false,
+      inShow: this.session !== null,
+      sessionOwnsMenu: this.session?.ownsMenuKey ?? false,
+    };
+  }
+
+  /** Start: the in-game menu on every show screen, Settings elsewhere; leaves idle play first. */
   private onPadStart(): void {
     const s = ui.getState();
-    if (s.dialog) return;
-    if (s.photo.active) {
-      this.photo.exit();
-      return;
+    switch (padStartAction(s, this.routingContext())) {
+      case 'exitPhoto':
+        this.photo.exit();
+        break;
+      case 'leaveIdlePlay':
+        this.menu?.setIdlePlay(false);
+        break;
+      case 'openShowMenu':
+        s.setOverlay('inGameMenu');
+        break;
+      case 'closeOverlay':
+        s.setOverlay('none');
+        break;
+      case 'openSettings':
+        s.setOverlay('settings');
+        break;
+      case 'none':
+        break;
     }
-    if (this.menu?.idlePlaying) {
-      this.menu.setIdlePlay(false);
-      return;
-    }
-    if (s.screen === 'round') {
-      s.setOverlay(s.overlay === 'none' ? 'inGameMenu' : 'none');
-      return;
-    }
-    if (s.overlay === 'settings') s.setOverlay('none');
-    else if (
-      s.overlay === 'none' &&
-      s.inputMode === 'menu' &&
-      s.screen !== 'splash' &&
-      s.screen !== 'welcome'
-    )
-      s.setOverlay('settings');
   }
 
   /** Logs GPU memory once per round, after the previous round's view was disposed. */
@@ -714,6 +796,12 @@ export class GameApp {
       s.setOnlineStatus({ state: 'disabled', message: 'Online play is turned off for this session.' });
       return;
     }
+    if (!this.cfg.online && this.liveOps.maintenanceActive()) {
+      // Shown on the Play Online tile; Vs Bots stays available.
+      s.setOnlineStatus({ state: 'offline', message: this.liveOps.maintenance().message });
+      if (s.playMode === 'online') ui.setState({ playMode: 'offline' });
+      return;
+    }
     s.setOnlineStatus({ state: 'checking' });
     let up = false;
     if (this.cfg.online) up = await gameServerAvailable();
@@ -732,23 +820,107 @@ export class GameApp {
   /** Starts an offline show vs bots right away (Vs Bots, private show with bots). */
   private startOfflineShow(playlist: ShowPlaylist, roundTimeScale?: number): void {
     if (this.session) return;
+    this.beginShow();
     this.menu?.setIdlePlay(false);
     this.lastSummary = null;
     const seed = this.cfg.seed ?? (Math.floor(Math.random() * 0x7fffffff) ^ Date.now()) >>> 0;
     const session = new OfflineShowSession(this.ctx, playlist, seed, roundTimeScale);
     this.session = session;
     session.start();
+    this.markPlayingSolo(playlist.id);
+  }
+
+  /** Clears what the last show left behind before the next one starts. */
+  private beginShow(): void {
+    this.account?.cancelRewardWait();
+    ui.getState().setRewardsPending(null);
+  }
+
+  /**
+   * A solo show (Vs Bots, Practice) began: friends see the player in a show,
+   * which also keeps the party leader from queueing without them, and the
+   * party is told.
+   */
+  private markPlayingSolo(playlistId?: string): void {
+    const a = this.account?.active ? this.account : null;
+    if (!a) return;
+    a.setPresence('in_match', playlistId ? { playlistId } : {});
+    if (a.inParty) {
+      this.soloAnnounced = true;
+      void a.announceSolo(true);
+    }
+  }
+
+  /** The solo show is over: the party learns the player is back. */
+  private endPlayingSolo(): void {
+    if (!this.soloAnnounced) return;
+    this.soloAnnounced = false;
+    void this.account?.announceSolo(false);
+  }
+
+  /**
+   * Shows a dialog and resolves with the pressed button id (the cancel
+   * button's id when it is dismissed).
+   */
+  private ask(spec: DialogSpec): Promise<string> {
+    return new Promise((resolve) => {
+      const off = uiEvents.on('dialogResult', ({ dialogId, buttonId }) => {
+        if (dialogId !== spec.id) return;
+        off();
+        resolve(buttonId);
+      });
+      ui.getState().showDialog(spec);
+    });
+  }
+
+  /**
+   * Vs Bots or Practice Island: always allowed, but inside a party it is
+   * confirmed first, since the others will wait without this player.
+   *
+   * @returns Whether it started.
+   */
+  private async playSolo(kind: PlayKind, start: () => void): Promise<boolean> {
+    const a = this.account?.active ? this.account : null;
+    const route = routePlay(kind, { inParty: a?.inParty ?? false, isLeader: a?.isLeader ?? true });
+    if (route.action === 'confirmSolo') {
+      const choice = await this.ask({
+        id: 'solo-confirm',
+        kind: 'confirm',
+        title: route.dialog.title,
+        body: route.dialog.body,
+        buttons: [
+          { id: 'cancel', label: 'Stay', variant: 'secondary', autofocus: true },
+          { id: 'confirm', label: route.dialog.confirm, variant: 'go' },
+        ],
+      });
+      if (choice !== 'confirm') return false;
+    }
+    if (this.session) return false;
+    start();
+    return true;
+  }
+
+  /** Practice Island, any time (tutorial prompt, Play tab, Settings). */
+  private startPractice(): void {
+    if (this.session) return;
+    this.beginShow();
+    this.menu?.setIdlePlay(false);
+    this.session = runTutorial(this.ctx);
+    this.markPlayingSolo();
   }
 
   /** Vs Bots on a playlist (the first-ever show uses the gentler starter playlist). */
   private startBotShow(playlistId: string | null): void {
     this.lastShow = { kind: 'offline', playlistId };
-    this.startOfflineShow(resolvePlaylist(playlistId, this.showsPlayed(), this.cfg.playlist ?? null));
+    // Play again (or a stale selection) can name a limited-time show that has since closed.
+    const live = playlistId && isPlaylistLive(getPlaylist(playlistId), playlistId) ? playlistId : null;
+    this.startOfflineShow(resolvePlaylist(live, this.showsPlayed(), this.cfg.playlist ?? null));
   }
 
   /** Play again: the same kind of show as last time (mode, playlist, private-show options). */
   private replayLastShow(): void {
-    const next = playAgainAction(this.lastShow);
+    const a = this.account?.active ? this.account : null;
+    const next = playAgainAction(this.lastShow, { partyMember: !!a && a.inParty && !a.isLeader });
     switch (next.action) {
       case 'offline':
         this.startBotShow(next.playlistId);
@@ -762,6 +934,69 @@ export class GameApp {
       case 'play':
         void this.startShow(next.playlistId);
         break;
+      case 'menu':
+        ui.getState().pushToast({ kind: 'info', title: next.title, body: next.body });
+        this.goMenu();
+        break;
+      case 'reopenLobby':
+      case 'rejoinLobby':
+        this.goMenu();
+        void this.backToPrivateShow(next);
+        break;
+    }
+  }
+
+  /**
+   * Play again after a private online show: the host reopens the same lobby
+   * (a new one with the same settings if it expired), members rejoin it with
+   * its code.
+   */
+  private async backToPrivateShow(
+    next: Extract<ReturnType<typeof playAgainAction>, { action: 'reopenLobby' | 'rejoinLobby' }>,
+  ): Promise<void> {
+    const mm = this.mm;
+    if (this.customUnavailable() || !mm) return;
+    const s = ui.getState();
+    try {
+      const { lobby } =
+        next.action === 'reopenLobby' ? await mm.reopenLobby(next.code) : await mm.joinLobby(next.code);
+      this.applyLobby(lobby);
+      return;
+    } catch (err) {
+      const code = err instanceof ApiError ? err.code : '';
+      if (next.action === 'reopenLobby' && code === 'lobby_not_found' && next.options) {
+        try {
+          this.applyLobby((await mm.createLobby(optionsToSettings(next.options), this.region())).lobby);
+        } catch (again) {
+          s.showDialog({
+            id: 'custom-failed',
+            kind: 'error',
+            title: "Couldn't create the lobby",
+            body: errorText(again),
+          });
+        }
+        return;
+      }
+      if (code === 'lobby_started') {
+        const choice = await this.ask({
+          id: 'lobby-not-open',
+          kind: 'info',
+          title: "The host hasn't opened the next show yet",
+          body: 'They reopen the lobby with Play again. Try again in a moment.',
+          buttons: [
+            { id: 'ok', label: 'Back to menu', variant: 'secondary' },
+            { id: 'retry', label: 'Try again', variant: 'go', autofocus: true },
+          ],
+        });
+        if (choice === 'retry') void this.backToPrivateShow(next);
+        return;
+      }
+      s.showDialog({
+        id: 'custom-closed',
+        kind: 'info',
+        title: code === 'lobby_not_found' ? 'That private show has closed' : "Couldn't get back to the lobby",
+        body: code === 'lobby_not_found' ? 'Start a new one from Private on the Play tab.' : errorText(err),
+      });
     }
   }
 
@@ -772,6 +1007,8 @@ export class GameApp {
 
   private async startShow(playlistId: string | null): Promise<void> {
     if (this.session) return;
+    if (this.canMatchmake && this.refuseForMaintenance()) return;
+    this.beginShow();
     this.menu?.setIdlePlay(false);
     this.lastShow = { kind: 'auto', playlistId };
     this.lastSummary = null;
@@ -807,6 +1044,7 @@ export class GameApp {
     }
     this.session = session;
     session.start();
+    if (session instanceof OfflineShowSession) this.markPlayingSolo(playlistId ?? undefined);
   }
 
   /** Party leader: API queue ticket → matchmaker queue. Members follow via the status stream. */
@@ -830,19 +1068,37 @@ export class GameApp {
       await mm.queue(ticket);
       this.queued = true;
       account.setPresence('in_queue', { playlistId });
+      // Only now are the members' ready votes spent: a refused enqueue keeps them.
+      void account.confirmQueued();
     } catch (err) {
       this.queued = false;
-      const notReady = err instanceof ApiError && err.code === 'not_ready';
+      this.trackQueueWait('refused');
+      if (err instanceof ApiError && err.code === 'maintenance') void this.liveOps.refreshStatus();
+      if (err instanceof ApiError && err.code === 'playlist_unavailable')
+        void this.liveOps.refreshPlaylists();
+      const why = queueRefusal(err instanceof ApiError ? err.code : '', errorText(err));
       s.showDialog({
         id: 'queue-failed',
         kind: 'error',
-        title: notReady ? 'Not everyone is ready' : "Couldn't start matchmaking",
-        body: notReady ? 'Wait for every party member to hit Ready.' : errorText(err),
+        title: why.title,
+        body: why.body,
         ...(err instanceof ApiError ? { code: err.code } : {}),
       });
       s.setQueue({ status: 'idle' });
       this.leaveQueueScreen();
     }
+  }
+
+  /** Reports how long the player searched (`matchmaking_wait`) as the search ends. */
+  private trackQueueWait(outcome: 'matched' | 'cancelled' | 'refused' | 'stopped'): void {
+    const q = ui.getState().queue;
+    if (q.status !== 'searching' || !q.startedAt) return;
+    track('matchmaking_wait', {
+      seconds: Math.round((Date.now() - q.startedAt) / 1000),
+      outcome,
+      playlist: ui.getState().selectedPlaylist || null,
+      region: q.region || null,
+    });
   }
 
   private showSearching(partySize: number, playlistId: string | null): void {
@@ -880,9 +1136,18 @@ export class GameApp {
     mm.on('queue_cancelled', (m) => {
       this.queued = false;
       if (this.session) return;
+      this.trackQueueWait(m.reason === 'cancelled' ? 'cancelled' : 'stopped');
       ui.getState().setQueue({ status: 'idle' });
       if (ui.getState().screen === 'matchmaking') this.leaveQueueScreen();
-      if (m.reason && m.reason !== 'cancelled')
+      if (m.reason === 'maintenance') {
+        // The matchmaker sent everyone back when the window opened; the status poll may not have run yet.
+        void this.liveOps.refreshStatus();
+        ui.getState().pushToast({
+          kind: 'warning',
+          title: 'Down for maintenance',
+          body: 'Matchmaking is paused for maintenance. You can still play Vs Bots.',
+        });
+      } else if (m.reason && m.reason !== 'cancelled')
         ui.getState().pushToast({
           kind: 'warning',
           title: 'Matchmaking stopped',
@@ -906,20 +1171,148 @@ export class GameApp {
 
   private startMatchmadeShow(m: MatchFound): void {
     this.queued = false;
+    // A replayed match_found for a show this player already finished or left must not pull them back in.
+    if (this.rejoin.isEnded(m.matchId)) {
+      void this.mm?.declineMatch().catch(() => undefined);
+      return;
+    }
     if (this.session) return;
-    this.menu?.setIdlePlay(false);
-    this.lastSummary = null;
-    this.lastShow = { kind: 'matchmade', playlistId: m.playlistId };
-    this.applyLobby(null);
-    const session = new OnlineShowSession(this.ctx, {
+    this.trackQueueWait('matched');
+    if (ui.getState().dialog?.id === 'rejoin-show') ui.getState().closeDialog();
+    this.startOnlineShow({
       url: gameSocketUrl(m.server.url),
       ticket: m.ticket,
       matchId: m.matchId,
       playlistId: m.playlistId,
+      queue: m.queue,
+      ticketExpiresAt: Date.now() + m.expiresIn * 1000,
+    });
+  }
+
+  /** Enters a matchmade (or rejoined) online show. */
+  private startOnlineShow(opts: {
+    url: string;
+    ticket: string;
+    matchId: string;
+    playlistId: string;
+    queue: string;
+    ticketExpiresAt: number;
+    resumeToken?: string;
+  }): void {
+    this.beginShow();
+    this.menu?.setIdlePlay(false);
+    this.lastSummary = null;
+    const lm = this.lobbyMatch?.matchId === opts.matchId ? this.lobbyMatch : null;
+    this.lastShow =
+      opts.queue === 'custom'
+        ? {
+            kind: 'custom',
+            options: lm?.options ?? null,
+            lobby: { code: lm?.code ?? null, host: lm?.host ?? false },
+          }
+        : { kind: 'matchmade', playlistId: opts.playlistId };
+    this.applyLobby(null);
+    this.showHumans = null;
+    const session = new OnlineShowSession(this.ctx, {
+      ...opts,
+      rejoin: this.rejoin,
+      onHumans: (ids) => {
+        this.showHumans = ids;
+        if (this.startedLobby) this.applyLobby(this.lobby);
+      },
     });
     this.session = session;
-    this.account?.setPresence('in_match', { playlistId: m.playlistId });
+    this.account?.setPresence('in_match', { playlistId: opts.playlistId });
     session.start();
+  }
+
+  /**
+   * On boot: a show this tab was connected to before a reload may still be
+   * running. Offer to jump back in.
+   */
+  private async offerRejoin(): Promise<void> {
+    const plan = planRejoin(this.rejoin.load(), Date.now(), (id) => this.rejoin.isEnded(id));
+    if (plan.kind === 'none') {
+      this.rejoin.clear();
+      return;
+    }
+    const choice = await this.ask({
+      id: 'rejoin-show',
+      kind: 'confirm',
+      title: 'Rejoin show',
+      body: 'Your last show is still running. Jump back in?',
+      buttons: [
+        { id: 'leave', label: 'Leave show', variant: 'secondary' },
+        { id: 'rejoin', label: 'Rejoin', variant: 'go', autofocus: true },
+      ],
+    });
+    // The show may have started on its own meanwhile (a replayed match_found).
+    if (this.session) return;
+    if (choice !== 'rejoin') {
+      this.rejoin.finish(plan.record.matchId);
+      return;
+    }
+    await this.rejoinShow(plan);
+  }
+
+  /**
+   * Back into a stored show: the resume token inside the server's window,
+   * a matchmaker rejoin ticket when the stored ticket or the seat is gone.
+   */
+  private async rejoinShow(plan: Extract<RejoinPlan, { kind: 'rejoin' }>): Promise<void> {
+    const rec = plan.record;
+    let target = {
+      url: rec.serverUrl,
+      ticket: rec.ticket,
+      playlistId: rec.playlistId,
+      queue: rec.queue,
+      ticketExpiresAt: rec.expiresAt,
+    };
+    if (plan.freshTicket) {
+      try {
+        if (!this.mm) throw new ApiError(0, 'network', 'Matchmaking is unreachable.');
+        const m = await this.mm.rejoinMatch(rec.matchId);
+        target = {
+          url: gameSocketUrl(m.server.url),
+          ticket: m.ticket,
+          playlistId: m.playlistId,
+          queue: m.queue,
+          ticketExpiresAt: Date.now() + m.expiresIn * 1000,
+        };
+      } catch (err) {
+        // With a live seat the token alone may still get in; without one there is no way back.
+        if (!plan.resumeToken) {
+          const over = err instanceof ApiError && err.status !== 0;
+          if (over) this.rejoin.finish(rec.matchId);
+          ui.getState().showDialog({
+            id: 'rejoin-failed',
+            kind: 'info',
+            title: over ? 'That show has ended' : "Couldn't rejoin the show",
+            body: over ? 'It finished while you were away.' : errorText(err),
+          });
+          return;
+        }
+      }
+    }
+    if (this.session) return;
+    this.startOnlineShow({
+      ...target,
+      matchId: rec.matchId,
+      ...(plan.resumeToken ? { resumeToken: plan.resumeToken } : {}),
+    });
+  }
+
+  /**
+   * The local player is done with an online show (finished, left, or it
+   * failed): stop offering it for a rejoin and stop the matchmaker replaying
+   * it if they never reached the server.
+   *
+   * @param failed - The connection failed mid-show; the show may still run, so a reload can still rejoin.
+   */
+  private forgetOnlineShow(session: ShowSession | null, failed = false): void {
+    if (!(session instanceof OnlineShowSession) || !session.matchId) return;
+    if (!session.reachedServer) void this.mm?.declineMatch().catch(() => undefined);
+    if (!failed || !session.reachedServer) this.rejoin.finish(session.matchId);
   }
 
   private endSession(): void {
@@ -931,7 +1324,9 @@ export class GameApp {
   }
 
   private onSessionEnd(reason: SessionEnd): void {
+    this.forgetOnlineShow(this.session, reason === 'failed');
     this.endSession();
+    this.endPlayingSolo();
     this.clearStartedLobby();
     this.pushMeta();
     if (this.account?.active) {
@@ -954,8 +1349,17 @@ export class GameApp {
   private onLobbyEvent(event: LobbyEvent): void {
     const me = this.account?.userId ?? null;
     if (event.type === 'lobby_update' && event.lobby.status === 'started') {
+      const l = event.lobby;
+      // Play again returns everyone to this lobby, so remember it until (and after) match_found.
+      if (l.matchId)
+        this.lobbyMatch = {
+          matchId: l.matchId,
+          code: l.code,
+          host: l.hostId === me,
+          options: lobbyOptions(l.settings),
+        };
       // The host keeps the roster of the running show for in-show kicks; members let match_found take over.
-      this.startedLobby = event.lobby.hostId === me ? event.lobby : null;
+      this.startedLobby = l.hostId === me ? l : null;
       this.applyLobby(null);
       return;
     }
@@ -990,7 +1394,7 @@ export class GameApp {
     this.lobby = lobby;
     if (!lobby || lobby.status === 'started') {
       this.lobbyRevealPending = false;
-      const started = this.startedLobby;
+      const started = this.startedLobby ? liveStartedLobby(this.startedLobby, this.showHumans) : null;
       ui.getState().setCustomLobby(started ? { ...this.lobbyView(started), started: true } : null);
       if (!lobby && this.account?.active && !this.session) this.account.setPresence('in_menu');
       return;
@@ -1007,6 +1411,7 @@ export class GameApp {
 
   /** Forgets the running private show (its session ended). */
   private clearStartedLobby(): void {
+    this.showHumans = null;
     if (!this.startedLobby) return;
     this.startedLobby = null;
     if (!this.lobby) ui.getState().setCustomLobby(null);
@@ -1031,7 +1436,25 @@ export class GameApp {
     );
   }
 
+  /**
+   * Online queueing and private lobbies are closed during maintenance (the
+   * matchmaker refuses them too); explains why instead of a failed request.
+   *
+   * @returns True when refused.
+   */
+  private refuseForMaintenance(): boolean {
+    if (!this.liveOps.maintenanceActive()) return false;
+    ui.getState().showDialog({
+      id: 'maintenance',
+      kind: 'info',
+      title: 'Down for maintenance',
+      body: `${this.liveOps.maintenance().message} You can still play Vs Bots.`,
+    });
+    return true;
+  }
+
   private customUnavailable(): boolean {
+    if (this.refuseForMaintenance()) return true;
     if (this.mm?.online && this.account?.active) return false;
     ui.getState().showDialog({
       id: 'custom-offline',
@@ -1065,6 +1488,7 @@ export class GameApp {
       onStart: () => {
         this.audio.unlock();
         if (!this.profile.exists) s().setScreen('welcome', { transition: 'wipe' });
+        else if (this.offerTutorial()) s().setScreen('tutorialPrompt', { transition: 'fade' });
         else this.goMenu();
       },
       onPreviewColors: ({ colors, pattern }) =>
@@ -1074,20 +1498,23 @@ export class GameApp {
         this.pushMeta();
         refreshLook();
         if (this.cfg.api) void this.connectAccount({ name, colors }).then(() => this.auth.publishSession());
-        if (!this.profile.tutorialAnswered) s().setScreen('tutorialPrompt', { transition: 'fade' });
+        if (this.offerTutorial()) s().setScreen('tutorialPrompt', { transition: 'fade' });
         else this.goMenu();
       },
-      onTutorialChoice: ({ accept }) => {
-        this.profile.answerTutorial();
-        if (accept && !this.session) {
-          this.menu?.setIdlePlay(false);
-          this.session = runTutorial(this.ctx);
-        } else {
-          this.goMenu();
-        }
+      onTutorialChoice: (choice) => {
+        const answer = tutorialAnswer(choice);
+        // "I'll wing it" alone only skips this launch; the prompt returns until ticked or completed.
+        if (answer.stopAsking) this.profile.answerTutorial();
+        if (answer.start && !this.session) this.startPractice();
+        else this.goMenu();
+      },
+      onStartPractice: () => {
+        if (this.session) return;
+        void this.playSolo('practice', () => this.startPractice());
       },
       onMenuTab: ({ tab }) => {
         if (tab !== 'play') this.menu?.setIdlePlay(false);
+        if (tab === 'store') track('store_view', { online: !!online() });
         // The Profile tab lists the latest shows; an account's history lives on the API.
         if (tab === 'profile') void online()?.history();
       },
@@ -1219,6 +1646,11 @@ export class GameApp {
         if (a) void a.rerollChallenge(id);
         else s().pushToast({ kind: 'info', title: 'Rerolls need an online account', icon: '🎲' });
       },
+      onClaimLoginStreak: () => {
+        const a = online();
+        if (a) void a.claimLoginStreak();
+        else s().setLoginStreak(null);
+      },
       onPlayMode: () => {
         this.modePicked = true;
       },
@@ -1290,33 +1722,31 @@ export class GameApp {
       },
       onPlay: ({ playlistId, mode }) => {
         if (mode === 'offline' && !this.cfg.online) {
-          this.startBotShow(playlistId);
+          void this.playSolo('offline', () => this.startBotShow(playlistId));
           return;
         }
         void this.startShow(playlistId);
       },
-      onSelectPlaylist: ({ playlistId }) => void online()?.setPlaylist(playlistId),
+      onSelectPlaylist: ({ playlistId }) => {
+        // Browsing onto a "Coming soon" card is not a pick: the API would refuse it for the party.
+        if (s().playlists.find((p) => p.id === playlistId)?.comingSoon) return;
+        void online()?.setPlaylist(playlistId);
+      },
       onReady: ({ ready }) => void online()?.setReady(ready),
       onCancelQueue: () => {
+        this.trackQueueWait('cancelled');
         if (this.queued && this.mm) {
           this.queued = false;
           void this.mm.cancel().catch(() => undefined);
           this.account?.setPresence('in_menu');
         }
-        const hadSession = this.session !== null;
-        if (this.session) {
-          this.session.quit();
-          this.session = null;
-        }
+        const hadSession = this.quitSession();
         s().setQueue({ status: 'idle' });
         if (hadSession) this.goMenu();
         else this.leaveQueueScreen();
       },
       onPlayAgain: () => {
-        if (this.session) {
-          this.session.quit();
-          this.session = null;
-        }
+        this.quitSession();
         this.replayLastShow();
       },
       onBackToLobby: () => this.leaveToMenu(),
@@ -1348,20 +1778,7 @@ export class GameApp {
             }),
         );
       },
-      onJoinCode: ({ code }) => {
-        if (this.customUnavailable() || !this.mm) return;
-        void this.mm.joinLobby(code.toUpperCase()).then(
-          ({ lobby }) => this.applyLobby(lobby),
-          (err) =>
-            s().showDialog({
-              id: 'badcode',
-              kind: 'error',
-              title: 'No show with that code',
-              body: errorText(err),
-              code: 'E-LOBBY-404',
-            }),
-        );
-      },
+      onJoinCode: ({ code }) => void this.joinCode(code),
       onStartCustom: ({ force }) => {
         const lobby = this.lobby;
         if (!lobby || !this.mm) return;
@@ -1424,7 +1841,15 @@ export class GameApp {
         s().pushToast({ kind: 'success', title: 'Invite link copied!', body: url, icon: '📋' });
       },
       onNavUnhandled: ({ dir }) => {
-        if (dir === 'back' && s().screen === 'menu' && s().overlay === 'none') s().setOverlay('settings');
+        if (dir !== 'back') return;
+        if (s().screen === 'menu' && s().overlay === 'none') {
+          s().setOverlay('settings');
+          return;
+        }
+        // Show screens that hand the keys to menus (results, victory, the wall) have no Back of
+        // their own: Esc / B opens the in-game menu there, like on every other show screen.
+        if (this.session && !this.session.ownsMenuKey && showMenuKeyAction(s()) === 'open')
+          s().setOverlay('inGameMenu');
       },
       onRetryConnection: () => {
         if (this.session) this.session.retryConnection();
@@ -1435,7 +1860,7 @@ export class GameApp {
     });
 
     const canvas = this.renderer.domElement;
-    canvas.addEventListener('pointerdown', (e) => {
+    const onStagePress = (x: number, y: number): void => {
       const st = s();
       if (
         this.session ||
@@ -1446,8 +1871,8 @@ export class GameApp {
       )
         return;
       const rect = canvas.getBoundingClientRect();
-      const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      const ny = 1 - ((e.clientY - rect.top) / rect.height) * 2;
+      const nx = ((x - rect.left) / rect.width) * 2 - 1;
+      const ny = 1 - ((y - rect.top) / rect.height) * 2;
       if (this.menu.signAt(nx, ny)) {
         st.setLobbyGames({ pickerOpen: true });
         return;
@@ -1460,12 +1885,16 @@ export class GameApp {
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       canvas.focus({ preventScroll: true });
       this.menu.setIdlePlay(true);
-    });
+    };
+    canvas.addEventListener('pointerdown', (e) => onStagePress(e.clientX, e.clientY));
+    // Touch idle play covers the stage with the camera-drag surface, which forwards taps here.
+    uiEvents.on('stageTap', ({ x, y }) => onStagePress(x, y));
+    uiEvents.on('leaveIdlePlay', () => this.menu?.setIdlePlay(false));
     // Capture phase + preventDefault: Esc only leaves idle play; menu navigation must not also treat it as Back.
     window.addEventListener(
       'keydown',
       (e) => {
-        if (e.code !== 'Escape' || !this.menu?.idlePlaying) return;
+        if (e.code !== 'Escape' || !this.menu?.idlePlaying || keyboardBusy(e)) return;
         e.preventDefault();
         this.menu.setIdlePlay(false);
       },
@@ -1473,11 +1902,91 @@ export class GameApp {
     );
   }
 
-  private leaveToMenu(): void {
-    if (this.session) {
-      this.session.quit();
-      this.session = null;
+  /**
+   * Join with a code: a private show's lobby when one owns the code, else
+   * the party behind it (asking before leaving a party with others in it).
+   */
+  private async joinCode(code: string, leaveParty = false): Promise<void> {
+    const s = ui.getState();
+    const account = this.account?.active ? this.account : null;
+    if (!account) {
+      s.showDialog({
+        id: 'custom-offline',
+        kind: 'error',
+        title: 'Codes need the online servers',
+        body: 'Sign in and make sure the servers are reachable.',
+        code: 'E-CODE-503',
+      });
+      return;
     }
+    const mm = this.mm?.online ? this.mm : null;
+    const r = await joinWithCode(
+      code,
+      {
+        joinLobby: mm ? (c) => mm.joinLobby(c) : null,
+        partyByCode: (c) => this.api.partyByCode(c),
+        joinParty: (c) => this.api.joinParty(c),
+        currentParty: () => account.party,
+      },
+      { leaveParty },
+    );
+    switch (r.kind) {
+      case 'lobby':
+        this.applyLobby(r.lobby);
+        return;
+      case 'party':
+        account.adoptJoinedParty(r.party);
+        if (s.overlay === 'joinCode') s.setOverlay('none');
+        return;
+      case 'alreadyInParty':
+        s.pushToast({
+          kind: 'info',
+          title: "That's your party's code",
+          body: 'Share it so friends can join you.',
+        });
+        if (s.overlay === 'joinCode') s.setOverlay('none');
+        return;
+      case 'confirmLeaveParty': {
+        const who = r.preview.leader ? `${r.preview.leader.split('#')[0]}'s party` : 'that party';
+        const choice = await this.ask({
+          id: 'leave-party-confirm',
+          kind: 'confirm',
+          title: 'Leave your party?',
+          body: `You're in a party of ${r.currentSize}. Leave it and join ${who}?`,
+          buttons: [
+            { id: 'cancel', label: 'Stay', variant: 'secondary', autofocus: true },
+            { id: 'confirm', label: 'Leave and join', variant: 'go' },
+          ],
+        });
+        if (choice === 'confirm') await this.joinCode(code, true);
+        return;
+      }
+      case 'error':
+        s.showDialog({ id: 'badcode', kind: 'error', title: r.title, body: r.body, code: r.code });
+        return;
+    }
+  }
+
+  /**
+   * Leaves the running show early: it is over for this player (no rejoin
+   * offer, no replayed match_found), the party learns they are back, and
+   * friends see them in the menu until the next show says otherwise.
+   *
+   * @returns Whether a show was running.
+   */
+  private quitSession(): boolean {
+    const session = this.session;
+    if (!session) return false;
+    this.forgetOnlineShow(session);
+    session.quit();
+    this.session = null;
+    this.endPlayingSolo();
+    if (this.account?.active) this.account.setPresence('in_menu');
+    return true;
+  }
+
+  private leaveToMenu(): void {
+    this.quitSession();
     this.clearStartedLobby();
     if (this.account?.active) this.account.setPresence('in_menu');
     this.goMenu();
@@ -1547,16 +2056,9 @@ export class GameApp {
     this.input.settings.sensitivity = st.controls.mouseSensitivity;
     this.input.settings.invertY = st.controls.invertY;
     this.input.settings.toggleGrab = st.controls.toggleGrab;
-    for (const [bind, action] of Object.entries(BIND_TO_INPUT) as [BindAction, InputAction][]) {
-      const codes = st.controls.keybinds[bind];
-      const defaults = DEFAULT_KEYBINDS[bind];
-      // Untouched defaults keep the input layer's richer bindings (e.g. C and Right Ctrl for dive).
-      if (!codes || (codes[0] === defaults[0] && codes[1] === defaults[1])) continue;
-      this.input.setBinding(
-        action,
-        codes.filter((c) => c !== ''),
-      );
-    }
+    this.input.setKeymap(keymapFromKeybinds(st.controls.keybinds));
+    this.input.setPadMap(padmapFromPadBinds(st.controls.padBinds));
+    this.padNav.setStartButtons(padMenuButtons(st.controls.padBinds));
     const view = this.session?.roundView;
     view?.setAccessibility(st.accessibility.reduceShake, st.gameplay.nameplates, st.gameplay.streamerMode);
     view?.setBotTags(st.gameplay.botTags);

@@ -15,6 +15,7 @@ import './theme/wall.css';
 import './theme/lobby.css';
 import './theme/lobbyGames.css';
 import './theme/menu.css';
+import './theme/progression.css';
 import './theme/account.css';
 import './theme/social.css';
 import './theme/replay.css';

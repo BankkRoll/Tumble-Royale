@@ -23,6 +23,11 @@ export interface RealDepsOptions {
   log?: (msg: string) => void;
   /** Results reporting for matchmade shows. */
   results?: ResultsSink | null;
+  /**
+   * The `mutators.chaos` kill switch, read when each show starts: false plays
+   * mutator playlists (Chaos Mode) without their twist. Default: on.
+   */
+  mutatorsEnabled?: () => boolean;
 }
 
 /**
@@ -111,6 +116,7 @@ export function createRealRoomDeps(R: Rapier, opts: RealDepsOptions = {}): RoomD
         playlist: playlistForMatch(opts.playlistId, match),
         rounds,
         ...customShowOptions(match),
+        ...(opts.mutatorsEnabled?.() === false ? { mutatorId: null } : {}),
       }),
     lobbyRound: PRE_SHOW_LOBBY_ROUND,
     describePlaylist: (playlistId, players) => {

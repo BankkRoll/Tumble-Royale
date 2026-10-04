@@ -103,6 +103,7 @@ describe('WebSocket transport', () => {
       expect(types).toContain(MsgType.Snapshot);
       const metrics = await (await fetch(`http://127.0.0.1:${server.port}/metrics`)).text();
       expect(metrics).toMatch(/tumble_tick_ms\{phase="total",stat="p95"\}/);
+      expect(metrics).toMatch(/tumble_tick_ms\{phase="total",stat="p50"\}/);
       const rooms = (await (await fetch(`http://127.0.0.1:${server.port}/rooms`)).json()) as unknown[];
       expect(rooms.length).toBe(1);
       ws.close();

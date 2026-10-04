@@ -457,10 +457,16 @@ export interface SeasonPassData {
   tiers: PassTier[];
 }
 
-/** A daily/weekly challenge. */
+/**
+ * How long a challenge lives: rotating daily/weekly, the current season, or
+ * a permanent milestone.
+ */
+export type ChallengeCadence = 'daily' | 'weekly' | 'seasonal' | 'milestone';
+
+/** A challenge on the board. */
 export interface Challenge {
   id: string;
-  cadence: 'daily' | 'weekly';
+  cadence: ChallengeCadence;
   title: string;
   icon: string;
   progress: number;
@@ -474,6 +480,8 @@ export interface Challenge {
   bonus?: { kind: Currency | 'xp'; amount: number };
   /** Free Gems paid on claim (weekly challenges). */
   gems?: number;
+  /** Cosmetic granted on claim (some seasonal and milestone challenges). */
+  item?: CosmeticItem;
 }
 
 /** Challenge board. */
@@ -486,6 +494,80 @@ export interface ChallengesData {
   rerollsLeft?: number;
   /** Swaps granted per day. */
   rerollsPerDay?: number;
+  /** Season the seasonal challenges belong to (online accounts). */
+  season?: { name: string; /** Epoch ms when they expire. */ endsAt: number };
+}
+
+/** One reward on the login ladder or an achievement. */
+export type GrantView =
+  { kind: Currency | 'xp' | 'crownShards'; amount: number } | { kind: 'item'; item: CosmeticItem };
+
+/** Daily login streak card (online accounts; null offline). */
+export interface LoginStreakData {
+  /** Consecutive days, 0 once broken. */
+  streak: number;
+  best: number;
+  claimedToday: boolean;
+  canClaim: boolean;
+  /** Epoch ms when the next claim opens (now when one is open). */
+  nextClaimAt: number;
+  /** Epoch ms when the streak breaks unless claimed; null when there is none to lose. */
+  breaksAt: number | null;
+  /** The next claim: its ladder day (1..7) and rewards. */
+  next: { day: number; rewards: GrantView[] };
+  /** The 7-day ladder for the current cycle. */
+  ladder: { day: number; rewards: GrantView[]; state: 'claimed' | 'today' | 'upcoming' }[];
+}
+
+/** One achievement on the achievements screen. Locked hidden ones carry no details. */
+export interface AchievementEntry {
+  id: string;
+  category: string;
+  /** `???` for a locked hidden achievement. */
+  title: string;
+  description: string;
+  hidden: boolean;
+  unlocked: boolean;
+  /** Epoch ms. */
+  unlockedAt?: number;
+  /** Null for locked hidden achievements. */
+  progress: number | null;
+  target: number | null;
+  /** Tier within a series, e.g. 2 of 4. */
+  tier?: { tier: number; tiers: number };
+  rewards: GrantView[];
+}
+
+/** The achievements screen. */
+export interface AchievementsData {
+  list: AchievementEntry[];
+  /** Display order with tallies. */
+  categories: { id: string; name: string; unlocked: number; total: number }[];
+  unlocked: number;
+  total: number;
+}
+
+/** One way to get a cosmetic, for the collection log. */
+export interface CollectionSourceView {
+  kind: 'default' | 'store' | 'pass' | 'achievement' | 'challenge' | 'event' | 'shards' | 'tutorial';
+  label: string;
+}
+
+/** One catalogue item in the collection log. */
+export interface CollectionEntryView {
+  item: CosmeticItem;
+  sources: CollectionSourceView[];
+  /** Epoch ms the item was acquired, when known. */
+  acquiredAt?: number;
+}
+
+/** The collection log: every cosmetic, owned or not, with completion. */
+export interface CollectionData {
+  entries: CollectionEntryView[];
+  owned: number;
+  total: number;
+  /** Completion percentage, one decimal, never rounded up to 100. */
+  percent: number;
 }
 
 /** Ranked tiers (SPEC §12). */
@@ -611,6 +693,8 @@ export interface LeaderboardInfo {
   source: 'api' | 'local';
   /** Epoch ms of the fetch. */
   updatedAt: number;
+  /** Why the last load failed; the board shows it with a Retry instead of spinning. */
+  error?: string;
 }
 
 /** One past show for match history. */
@@ -721,6 +805,8 @@ export interface PartyMember {
   ready: boolean;
   isLeader: boolean;
   isSelf: boolean;
+  /** Playing Vs Bots or Practice Island on their own; still in the party. */
+  playingSolo?: boolean;
 }
 
 /** Party state (max 4). */
@@ -794,7 +880,29 @@ export interface Playlist {
   icon: string;
   /** Epoch ms for limited-time playlists. */
   endsAt?: number;
+  /** Epoch ms a featured upcoming playlist opens (set with `comingSoon`). */
+  startsAt?: number;
+  /** Announced but not open yet: shown with a countdown, cannot be played. */
+  comingSoon?: boolean;
   ranked?: boolean;
+}
+
+/** An announced or running maintenance window (times on the device clock). */
+export interface MaintenanceNotice {
+  phase: 'scheduled' | 'active';
+  message: string;
+  /** Epoch ms; null when it started without a scheduled time. */
+  startsAt: number | null;
+  /** Epoch ms of the expected end; null when open-ended. */
+  endsAt: number | null;
+}
+
+/** Operator switches the menu reflects. */
+export interface LiveOpsUiState {
+  /** Null when no maintenance is scheduled or running. */
+  maintenance: MaintenanceNotice | null;
+  /** Feature flags by key; a missing key means on. */
+  flags: Readonly<Record<string, boolean>>;
 }
 
 /** Custom lobby options (`createCustom`). */
@@ -1043,6 +1151,8 @@ export interface ShowSeat {
   online: boolean;
   /** Knocked out of the show: watching the remaining rounds as a spectator. */
   outOfShow: boolean;
+  /** Joined as a spectator (a private show's spectator seat): watching, never knocked out. */
+  spectator?: boolean;
 }
 
 /**
@@ -1178,6 +1288,8 @@ export interface RewardsSummary {
   unlocks: CosmeticItem[];
   ranked?: { from: RankInfo; to: RankInfo; delta: number };
   challenges?: { title: string; from: number; to: number; goal: number }[];
+  /** Achievements this show unlocked. */
+  achievements?: { id: string; title: string; description: string }[];
 }
 
 // -----------------------------------------------------------------------------
@@ -1204,6 +1316,26 @@ export type BindAction =
 
 /** `KeyboardEvent.code` (or `Mouse0`…`Mouse4`) per action: [primary, secondary]. */
 export type Keybinds = Record<BindAction, [string, string]>;
+
+/** Controller actions the player can remap (movement and camera stay on the sticks). */
+export type PadBindAction =
+  | 'jump'
+  | 'dive'
+  | 'grab'
+  | 'emoteWheel'
+  | 'emote1'
+  | 'emote2'
+  | 'emote3'
+  | 'emote4'
+  | 'pause'
+  | 'spectatePrev'
+  | 'spectateNext';
+
+/**
+ * Standard-mapping gamepad button index per action: [primary, secondary],
+ * `-1` when a slot is empty.
+ */
+export type PadBinds = Record<PadBindAction, [number, number]>;
 
 /** Colour-blind palettes. */
 export type ColorBlindMode = 'off' | 'protanopia' | 'deuteranopia' | 'tritanopia';
@@ -1232,6 +1364,8 @@ export interface Settings {
     touchLayout: 'right' | 'left';
     touchButtonScale: number;
     keybinds: Keybinds;
+    /** Controller button mapping (Settings → Controls → Controller). */
+    padBinds: PadBinds;
   };
   audio: {
     master: number;
@@ -1266,6 +1400,11 @@ export interface Settings {
     /** Off hides every chat line and quick ping from other players. */
     showChat: boolean;
     region: string;
+    /**
+     * Anonymous gameplay statistics. Null follows the browser: on, unless Do
+     * Not Track or Global Privacy Control is set. A choice made here wins.
+     */
+    analytics: boolean | null;
   };
 }
 

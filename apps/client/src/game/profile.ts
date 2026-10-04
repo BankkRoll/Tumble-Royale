@@ -342,9 +342,14 @@ export class ProfileStore {
     return this.clock();
   }
 
-  /** Whether the tutorial prompt was already answered. */
+  /** Whether the player asked not to be offered Practice Island again (or finished it). */
   get tutorialAnswered(): boolean {
     return this.data?.tutorialAnswered ?? false;
+  }
+
+  /** Whether Practice Island was finished once on this profile. */
+  get tutorialCompleted(): boolean {
+    return this.data?.tutorialCompleted ?? false;
   }
 
   /** Records the tutorial choice. */

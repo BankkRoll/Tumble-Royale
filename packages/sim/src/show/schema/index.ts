@@ -71,6 +71,15 @@ export const ShowPlaylistSchema = z.object({
    * round. Unknown ids are skipped.
    */
   mutators: z.array(z.object({ id: z.string(), weight: z.number().min(0).default(1) })).default([]),
+  /**
+   * Limited-time playlists: ISO instants bounding when it can be queued
+   * (start inclusive, end exclusive). Operators can override both at runtime
+   * (`PUT /internal/playlists/:id`); absent means always available.
+   */
+  startsAt: z.iso.datetime({ offset: true }).optional(),
+  endsAt: z.iso.datetime({ offset: true }).optional(),
+  /** Spotlighted: announced as "Coming soon" before `startsAt`. */
+  featured: z.boolean().default(false),
 });
 
 /** Validated playlist. */

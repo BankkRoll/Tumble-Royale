@@ -767,8 +767,11 @@ const botNav: Waypoint[] = [
   wp(300, 0, 0, 212.5, [301], { radius: 0.5 }),
   wp(301, 0, 5, 242, [302], { radius: 0.5 }),
   wp(302, 0, 10, 273.5, [303, 304, 305], { radius: 1.5 }),
-  ...cpNodes([303, 304, 305], 10, 279.5, [410]),
+  ...cpNodes([303, 304, 305], 10, 279.5, [409]),
   // §5 Stepping rocks (bots cannot time the rafts): take off from each rock's far rim.
+  // Line up on the rock line first: heading for the take-off node straight from the checkpoint
+  // ran bots diagonally off the deck's edge at x ≈ −8, a jump that lands 2.6 m wide of rock 1.
+  wp(409, -10.3, 10, 280.5, [410], { radius: 1 }),
   // Nodes sit just past each rim with a wide radius: bots jump from inside the rim without braking.
   wp(410, -10.6, 10, 284.6, [411], { radius: 1, action: 'jump' }),
   ...ROCK_Z.map((z, k) =>

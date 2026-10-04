@@ -15,6 +15,7 @@
 import { MAX_PLAYERS } from '@tumble/shared';
 import { useEffect, useRef, useState, type JSX } from 'react';
 import { Button, Slider, Toggle } from '../../components/controls.tsx';
+import { useAccountName } from '../../components/hooks.ts';
 import { Icon } from '../../components/icons/index.tsx';
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
 import { uiEvents } from '../../store/events.ts';
@@ -25,6 +26,8 @@ import { RoundPicker } from './RoundPicker.tsx';
 
 /** Settings edits are sent after this much quiet, so a slider drag is one request. */
 const SETTINGS_DEBOUNCE_MS = 350;
+/** A sent edit that no pushed update confirmed by now was refused or overridden. */
+export const SETTINGS_CONFIRM_MS = 4000;
 const DEFAULT_SPECTATOR_SLOTS = 2;
 
 /** Whether the host can start, and what to tell them otherwise. */
@@ -40,9 +43,14 @@ export interface LobbyStartState {
  * Mirrors the matchmaker's start blockers so the button explains itself
  * before the host clicks.
  *
+ * @param lobby - The lobby.
+ * @param nameOf - Display name for a member (Streamer Mode masks strangers).
  * @example lobbyStartState(lobby).reason // "Waiting for players: 1/4"
  */
-export function lobbyStartState(lobby: CustomLobbyState): LobbyStartState {
+export function lobbyStartState(
+  lobby: CustomLobbyState,
+  nameOf: (m: CustomLobbyMember) => string = (m) => m.name,
+): LobbyStartState {
   const min = Math.max(1, lobby.options.minPlayers ?? 1);
   const n = lobby.players.length;
   if (n < min) return { canStart: false, reason: `Waiting for players: ${n}/${min}`, waitingOn: [] };
@@ -51,7 +59,7 @@ export function lobbyStartState(lobby: CustomLobbyState): LobbyStartState {
   return {
     canStart: true,
     reason: null,
-    waitingOn: lobby.players.filter((p) => !p.isHost && !p.ready).map((p) => p.name),
+    waitingOn: lobby.players.filter((p) => !p.isHost && !p.ready).map(nameOf),
   };
 }
 
@@ -59,21 +67,75 @@ export function lobbyStartState(lobby: CustomLobbyState): LobbyStartState {
 // Settings
 // -----------------------------------------------------------------------------
 
+type OptionKey = keyof CustomLobbyOptions;
+
+/** When each drafted setting was sent to the matchmaker; null while it still waits for the debounce. */
+export type DraftSentAt = Partial<Record<OptionKey, number | null>>;
+
+/**
+ * Which host edits survive a pushed lobby update. Any member joining or
+ * readying pushes the whole lobby, so dropping the draft on every push made
+ * a slider snap back mid-drag. An edit goes once the push shows its value
+ * (it landed); it stays while unsent or in flight; and a sent edit that no
+ * push confirmed within {@link SETTINGS_CONFIRM_MS} is dropped, since the
+ * matchmaker refused it or another change won.
+ *
+ * @param draft - Edited values over the pushed settings.
+ * @param sentAt - Per edited key: send time, or null while debouncing.
+ * @param pushed - The latest settings from the matchmaker.
+ * @param now - Epoch ms.
+ * @returns The edits (and their send times) still to show.
+ */
+export function reconcileSettingsDraft(
+  draft: Partial<CustomLobbyOptions>,
+  sentAt: DraftSentAt,
+  pushed: CustomLobbyOptions,
+  now: number,
+): { draft: Partial<CustomLobbyOptions>; sentAt: DraftSentAt } {
+  const nextDraft: Partial<Record<OptionKey, unknown>> = {};
+  const nextSent: DraftSentAt = {};
+  for (const key of Object.keys(draft) as OptionKey[]) {
+    const value = draft[key];
+    if (JSON.stringify(value) === JSON.stringify(pushed[key])) continue;
+    const sent = sentAt[key];
+    if (sent !== null && sent !== undefined && now - sent >= SETTINGS_CONFIRM_MS) continue;
+    nextDraft[key] = value;
+    nextSent[key] = sent ?? null;
+  }
+  return { draft: nextDraft as Partial<CustomLobbyOptions>, sentAt: nextSent };
+}
+
 /** Local draft over the pushed settings, flushed as one `updateCustom` after a pause. */
 function useSettingsDraft(options: CustomLobbyOptions) {
   const [draft, setDraft] = useState<Partial<CustomLobbyOptions>>({});
+  const sentAt = useRef<DraftSentAt>({});
+  const latest = useRef(options);
+  latest.current = options;
   const pending = useRef<Partial<CustomLobbyOptions>>({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const expiry = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconcile = (): void =>
+    setDraft((d) => {
+      const r = reconcileSettingsDraft(d, sentAt.current, latest.current, Date.now());
+      sentAt.current = r.sentAt;
+      return Object.keys(r.draft).length === Object.keys(d).length ? d : r.draft;
+    });
   const flush = (): void => {
     timer.current = null;
     const patch = pending.current;
     pending.current = {};
-    if (Object.keys(patch).length > 0) uiEvents.emit('updateCustom', { options: patch });
+    if (Object.keys(patch).length === 0) return;
+    const at = Date.now();
+    for (const key of Object.keys(patch) as OptionKey[]) sentAt.current[key] = at;
+    uiEvents.emit('updateCustom', { options: patch });
+    // A refused patch brings no push at all; let the confirm window lapse on its own.
+    if (expiry.current) clearTimeout(expiry.current);
+    expiry.current = setTimeout(reconcile, SETTINGS_CONFIRM_MS + 50);
   };
-  // A pushed update is the source of truth once it arrives (or someone else's change won).
-  useEffect(() => setDraft({}), [options]);
+  useEffect(reconcile, [options]);
   useEffect(
     () => () => {
+      if (expiry.current) clearTimeout(expiry.current);
       if (timer.current) {
         clearTimeout(timer.current);
         flush();
@@ -83,6 +145,7 @@ function useSettingsDraft(options: CustomLobbyOptions) {
   );
   const change = (p: Partial<CustomLobbyOptions>): void => {
     setDraft((d) => ({ ...d, ...p }));
+    for (const key of Object.keys(p) as OptionKey[]) sentAt.current[key] = null;
     pending.current = { ...pending.current, ...p };
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(flush, SETTINGS_DEBOUNCE_MS);
@@ -245,12 +308,13 @@ function MemberRow({
   onArm: (id: string | null) => void;
 }): JSX.Element {
   const canManage = hostView && !m.isSelf;
+  const name = useAccountName()(m);
   return (
     <div
       className={`tr-lobby-member${m.isSelf ? ' is-self' : ''}${m.away ? ' is-away' : ''}`}
       data-testid="lobby-member"
     >
-      <PlayerButton player={{ userId: m.id, name: m.name, key: m.id }} disabled={m.isSelf}>
+      <PlayerButton player={{ userId: m.id, name, key: m.id }} disabled={m.isSelf}>
         <TumblerAvatar colors={m.colors} size="2.2em" blink={false} noShadow />
         <span className="tr-grow tr-ellipsis tr-lobby-member-name">
           {m.isHost ? (
@@ -258,12 +322,12 @@ function MemberRow({
               <Icon name="crown" size="0.95em" />
             </span>
           ) : null}
-          {m.name}
+          {name}
           {m.isSelf ? <span className="tr-muted"> (you)</span> : null}
         </span>
       </PlayerButton>
       {armed ? (
-        <span className="tr-row tr-lobby-confirm" role="group" aria-label={`Remove ${m.name}?`}>
+        <span className="tr-row tr-lobby-confirm" role="group" aria-label={`Remove ${name}?`}>
           <span className="tr-small">Remove?</span>
           <Button
             size="sm"
@@ -296,7 +360,7 @@ function MemberRow({
             <Button
               size="sm"
               variant="ghost"
-              aria-label={`Make ${m.name} the host`}
+              aria-label={`Make ${name} the host`}
               title="Make host"
               onClick={() => uiEvents.emit('transferCustomHost', { userId: m.id })}
             >
@@ -307,7 +371,7 @@ function MemberRow({
             <Button
               size="sm"
               variant="ghost"
-              aria-label={`Remove ${m.name}`}
+              aria-label={`Remove ${name}`}
               title="Remove from the show"
               data-testid="kick"
               onClick={() => onArm(m.id)}
@@ -323,6 +387,7 @@ function MemberRow({
 
 function Members({ lobby }: { lobby: CustomLobbyState }): JSX.Element {
   const [armed, setArmed] = useState<string | null>(null);
+  const nameOf = useAccountName();
   const slots = lobby.options.spectatorSlots ?? (lobby.options.spectators ? DEFAULT_SPECTATOR_SLOTS : 0);
   return (
     <section className="tr-pshow-players" aria-label="Players">
@@ -370,11 +435,11 @@ function Members({ lobby }: { lobby: CustomLobbyState }): JSX.Element {
           <div className="tr-lobby-members" data-testid="lobby-banned">
             {lobby.banned.map((b) => (
               <div key={b.id} className="tr-lobby-member is-banned">
-                <span className="tr-grow tr-ellipsis">{b.name}</span>
+                <span className="tr-grow tr-ellipsis">{nameOf(b)}</span>
                 <Button
                   size="sm"
                   variant="secondary"
-                  aria-label={`Let ${b.name} rejoin`}
+                  aria-label={`Let ${nameOf(b)} rejoin`}
                   onClick={() => uiEvents.emit('unbanCustomMember', { userId: b.id })}
                 >
                   Unban
@@ -453,7 +518,7 @@ function CodePanel({ lobby }: { lobby: CustomLobbyState }): JSX.Element {
 }
 
 function HostFooter({ lobby }: { lobby: CustomLobbyState }): JSX.Element {
-  const start = lobbyStartState(lobby);
+  const start = lobbyStartState(lobby, useAccountName());
   const [confirming, setConfirming] = useState(false);
   if (confirming && start.canStart && start.waitingOn.length > 0) {
     return (

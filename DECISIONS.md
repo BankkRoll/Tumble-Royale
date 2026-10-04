@@ -84,3 +84,48 @@ Tumbler controller keeps grabs, dives, bumps and emotes identical to rounds;
 world (a rebuild would pop every Tumbler back to a spawn grid). A dropped
 connection keeps its Tumbler idling until the resume window ends, so resumes
 never flash a despawn. Offline shows keep the local pre-show.
+
+## Self-hosting is one Compose stack on one origin
+
+`deploy/docker-compose.yml` puts every service behind a single Caddy edge on
+one domain (`/api`, `/mm`, `/gs/ws`) instead of a hostname per service. One
+origin means one certificate, no cross-origin requests between the client and
+its services, and one client build that works for any domain (it defaults to
+same-origin paths and reads `/config.json`). Caddy was picked for automatic
+HTTPS with no extra container or cron job. Game servers are the exception:
+players connect to each one directly, so every extra game server gets its own
+hostname (`deploy/game-server/`) rather than a path on the main edge, which
+would route every show through one host. There is deliberately no monitoring
+stack in the bundle: `/health`, `/ready` and token-protected `/metrics` are
+there for whatever the operator already runs.
+
+## Achievements count inside the match ingest transaction
+
+Achievement totals are written in the same transaction that inserts the
+`matches` row, so they inherit its idempotency: a replayed report replays the
+stored summary, and a concurrent duplicate fails on the primary key and
+replays too. A separate per-match log would only duplicate that guarantee.
+Unlocks are rows keyed by (player, achievement), so each reward is granted
+once, and their currency is also keyed `achievement:<id>` on the ledger. XP
+from unlocks is folded into the show's own XP so the rewards screen and the
+level bar stay truthful. Metrics the history can rebuild (shows, Crowns,
+qualifies by round type, finals, best win streak) are backfilled by the
+migration; the rest start at zero.
+
+## The login streak is keyed by the server's UTC day
+
+The client sends nothing when it claims: the day is `dayKey(now)` on the API
+clock, so time zones, DST and a wrong device clock cannot move it. The claim
+locks the streak row and advances it with an update that only matches when
+today is unclaimed, so racing claims pay once (`login:<day>` on the ledger is
+a second guard). A claim recorded for a later day than today, which can only
+mean the clock stepped back, counts as already claimed rather than rewinding
+the streak.
+
+## Seasonal challenges settle like the pass
+
+Seasonal challenges are keyed by season id and stop counting when the season
+ends. Completed but unclaimed ones are paid out automatically on the next
+challenges read, the same rule as unclaimed pass tiers: nothing earned is
+lost. Milestones are one append-only list whose index is the stored slot, so
+new ones can be added without disturbing anyone's progress.

@@ -13,6 +13,7 @@ import type { Duplex } from 'node:stream';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { WebSocket, WebSocketServer } from 'ws';
 import { MAX_PLAYERS } from '@tumble/shared';
+import { ApiLiveOps, STATIC_LIVEOPS, type LiveOpsSource } from '@tumble/shared/liveops-client';
 import { clientIp, trustFunction } from '@tumble/shared/proxy';
 import { z } from 'zod';
 import { ApiBanLookup, NO_BANS, type BanLookup } from './bans.ts';
@@ -33,6 +34,8 @@ export interface MatchmakerAppOptions {
   bans?: BanLookup;
   /** Game-server control channel (host kicks after a show started). */
   control?: GameControl;
+  /** Maintenance and playlist schedules; defaults to the API at `API_URL` (30 s cache), or none without it. */
+  liveOps?: LiveOpsSource;
 }
 
 /** A built matchmaker. */
@@ -142,7 +145,17 @@ export async function buildMatchmaker(
           log: (m) => app.log.warn(m),
         })
       : NO_BANS);
-  const mm = new Matchmaker(cfg, store, now, bans, opts.control);
+  const liveOps =
+    opts.liveOps ??
+    (cfg.apiUrl && cfg.internalHmacSecret
+      ? new ApiLiveOps({
+          apiUrl: cfg.apiUrl,
+          secret: cfg.internalHmacSecret,
+          now,
+          log: (m) => app.log.warn(m),
+        })
+      : STATIC_LIVEOPS);
+  const mm = new Matchmaker(cfg, store, now, bans, opts.control, liveOps);
   const trust = trustFunction(cfg.trustProxy);
   const app = Fastify({
     logger: opts.logger === false ? false : { level: cfg.logLevel },
@@ -358,6 +371,13 @@ export async function buildMatchmaker(
     const { code } = parse(CodeParam, req.params);
     const { spectator } = parse(JoinLobbyBody, req.body ?? undefined);
     return { lobby: await mm.joinLobby(p, code, spectator) };
+  });
+
+  // Host, after the show: the same code opens for the next one.
+  app.post('/lobbies/:code/reopen', async (req) => {
+    const p = await player(req);
+    const { code } = parse(CodeParam, req.params);
+    return { lobby: await mm.reopenLobby(p, code) };
   });
 
   app.post('/lobbies/:code/leave', async (req, reply) => {

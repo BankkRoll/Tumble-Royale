@@ -15,7 +15,7 @@
  * The scene keeps running: rounds never pause for one player.
  */
 import { PerspectiveCamera, Vector3 } from 'three/webgpu';
-import { fonts, ui } from '@tumble/ui';
+import { fonts, isTypingTarget, ui } from '@tumble/ui';
 import type { PostPipeline } from '@tumble/render/post';
 import { firstStandardPad, PAD_BUTTON } from '../../input/gamepadNav.ts';
 import { radialDeadzone } from '../../input/inputSystem.ts';
@@ -233,8 +233,7 @@ export class PhotoMode {
           this.exit();
           return;
         }
-        const target = e.target as HTMLElement | null;
-        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+        if (isTypingTarget(e.target)) return;
         if (MOVE_KEYS[e.code]) {
           this.keys.add(e.code);
           e.stopImmediatePropagation();

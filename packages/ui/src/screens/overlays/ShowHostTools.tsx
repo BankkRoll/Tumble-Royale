@@ -6,6 +6,7 @@
  */
 import { useState, type JSX } from 'react';
 import { Button } from '../../components/controls.tsx';
+import { useAccountName } from '../../components/hooks.ts';
 import { Icon } from '../../components/icons/index.tsx';
 import { uiEvents } from '../../store/events.ts';
 import { useUI } from '../../store/uiStore.ts';
@@ -14,6 +15,7 @@ import { useUI } from '../../store/uiStore.ts';
 export function ShowHostTools(): JSX.Element | null {
   const lobby = useUI((s) => s.customLobby);
   const [armed, setArmed] = useState<string | null>(null);
+  const nameOf = useAccountName();
   if (!lobby?.started || !lobby.isHost) return null;
   const others = [...lobby.players, ...lobby.spectators].filter((m) => !m.isSelf);
   if (others.length === 0) return null;
@@ -25,7 +27,7 @@ export function ShowHostTools(): JSX.Element | null {
       <div className="tr-lobby-members tr-scroll">
         {others.map((m) => (
           <div key={m.id} className="tr-lobby-member">
-            <span className="tr-grow tr-ellipsis">{m.name}</span>
+            <span className="tr-grow tr-ellipsis">{nameOf(m)}</span>
             {armed === m.id ? (
               <>
                 <Button
@@ -47,7 +49,7 @@ export function ShowHostTools(): JSX.Element | null {
               <Button
                 size="sm"
                 variant="ghost"
-                aria-label={`Remove ${m.name}`}
+                aria-label={`Remove ${nameOf(m)}`}
                 data-testid="show-kick"
                 onClick={() => setArmed(m.id)}
               >

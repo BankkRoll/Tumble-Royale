@@ -20,6 +20,7 @@ import { Button } from '../components/controls.tsx';
 import { useDisplayName } from '../components/hooks.ts';
 import { TumblerAvatar } from '../components/TumblerAvatar.tsx';
 import { uiEvents } from '../store/events.ts';
+import { keyboardBusy } from '../store/inputOwnership.ts';
 import { playerWallTimeline } from '../store/playerWallTimeline.ts';
 import { useUI } from '../store/uiStore.ts';
 import type {
@@ -403,7 +404,6 @@ export function PlayerWall({
     const skipEvent: PlayerWallEvent = { type: 'skip', t: -1 };
     onEventRef.current?.(skipEvent);
     uiEvents.emit('playerWallEvent', skipEvent);
-    uiEvents.emit('skipPlayerWall');
     dispatch({ type: 'skip', summary, countIndex: timeline.counts.length - 1 });
     if (summary.winnerId >= 0) fireConfetti({ x: 0.5, y: 0.35, count: 120, colors: confettiSets.victory });
     const endEvent: PlayerWallEvent = { type: 'wallEnd', t: -1 };
@@ -422,7 +422,8 @@ export function PlayerWall({
   useEffect(() => {
     let timer = 0;
     const down = (e: KeyboardEvent): void => {
-      if (e.code !== 'Space' || e.repeat || state.ended) return;
+      // A space typed in the chat must reach the field, not start the skip.
+      if (e.code !== 'Space' || e.repeat || state.ended || keyboardBusy(e)) return;
       e.preventDefault();
       setHolding(true);
       timer = window.setTimeout(() => {

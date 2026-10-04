@@ -30,6 +30,8 @@ describe('party ready checks', () => {
     await api.req('POST', '/party/ready', { token: ann.accessToken, body: { ready: true } });
     const ticket = await api.req('POST', '/party/queue-ticket', { token: leader.accessToken, body: {} });
     expect(ticket.statusCode).toBe(200);
+    // The matchmaker took the ticket; the leader confirms and the votes are spent.
+    await api.req('POST', '/party/queued', { token: leader.accessToken });
 
     const after = (await api.req('GET', '/party', { token: ann.accessToken })).json().party;
     expect(member(ann.id, after).ready).toBe(false);

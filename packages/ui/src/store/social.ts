@@ -67,6 +67,11 @@ export interface SocialState {
   search: { query: string; results: PlayerSearchResult[]; loading: boolean };
   /** Global chat: every channel's lines, tabs, unread counts, input state. */
   chat: ChatState;
+  /**
+   * Unsent text in the chat input. Lives here, not in the widget, so a wipe or
+   * a loading screen that unmounts the widget never loses a half-typed line.
+   */
+  chatDraft: string;
   /** Player action menu target. */
   playerMenu: PlayerRef | null;
   /** Report dialog target. */
@@ -81,6 +86,7 @@ export interface SocialState {
   dispatchChat(action: ChatAction): void;
   /** Shorthand for a `receive` action. */
   pushChat(line: ChatLine): void;
+  setChatDraft(text: string): void;
   openPlayerMenu(p: PlayerRef | null): void;
   openReport(p: PlayerRef | null): void;
 }
@@ -94,6 +100,7 @@ export const social = createStore<SocialState>()((set) => ({
   muted: [],
   search: { query: '', results: [], loading: false },
   chat: INITIAL_CHAT,
+  chatDraft: '',
   playerMenu: null,
   reportTarget: null,
 
@@ -112,6 +119,7 @@ export const social = createStore<SocialState>()((set) => ({
       const chat = reduceChat(s.chat, { type: 'receive', line });
       return chat === s.chat ? s : { chat };
     }),
+  setChatDraft: (chatDraft) => set({ chatDraft }),
   openPlayerMenu: (playerMenu) => set({ playerMenu }),
   openReport: (reportTarget) => set({ reportTarget, playerMenu: null }),
 }));

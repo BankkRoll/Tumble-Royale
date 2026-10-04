@@ -41,6 +41,7 @@ import type {
   NewsItem,
   NotificationItem,
   OnlineStatus,
+  PwaState,
   OverlayId,
   PartyState,
   PlayMode,
@@ -145,6 +146,8 @@ export interface UIState {
   playMode: PlayMode;
   /** Online play reachability (drives the Play Online card). */
   onlineStatus: OnlineStatus;
+  /** Install prompt and update state of the installable app. */
+  pwa: PwaState;
   /** Where each leaderboard's rows came from. */
   leaderboardInfo: Partial<Record<LeaderboardId, LeaderboardInfo>>;
   /** Another player's profile card being viewed (null = closed). */
@@ -256,6 +259,7 @@ export interface UIState {
   /** Switches the Play tab mode and emits `playMode`. */
   setPlayMode: (mode: PlayMode) => void;
   setOnlineStatus: (status: OnlineStatus) => void;
+  setPwa: (patch: Partial<PwaState>) => void;
   setInspectedProfile: (profile: ProfileData | null) => void;
   /** Opens the Locker tab on a slot. */
   openLocker: (slot: CosmeticSlot | null) => void;
@@ -378,6 +382,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   currencyPanel: 'none',
   playMode: 'offline',
   onlineStatus: { state: 'checking' },
+  pwa: { install: 'unavailable', updateReady: false },
   leaderboardInfo: {},
   inspectedProfile: null,
   lockerSlot: null,
@@ -545,6 +550,7 @@ export const ui = createStore<UIState>()((set, get) => ({
     uiEvents.emit('playMode', { mode: playMode });
   },
   setOnlineStatus: (onlineStatus) => set({ onlineStatus }),
+  setPwa: (patch) => set({ pwa: { ...get().pwa, ...patch } }),
   setInspectedProfile: (inspectedProfile) => set({ inspectedProfile }),
   openLocker: (lockerSlot) => {
     set({ lockerSlot });

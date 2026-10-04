@@ -1,6 +1,7 @@
 /**
  * Main menu shell: top bar (level → Profile, text-only tabs with Q/E cycling,
- * named wallet pills with their popovers, bell, friends, settings) and the
+ * named wallet pills with their popovers, Install app where the device can
+ * install it, bell, friends, settings) and the
  * active tab panel. Tabs cross-fade (~200 ms slide/fade, the old panel fades
  * out under the new one) so switching never flashes or wipes.
  * docs/design/SCREENS.md §4 and §6.
@@ -21,6 +22,7 @@ import { PassTab } from './PassTab.tsx';
 import { claimablePass, PlayTab } from './PlayTab.tsx';
 import { ProfileTab, ProfileOverlay } from './ProfileTab.tsx';
 import { StoreTab } from './StoreTab.tsx';
+import { canInstall, requestInstall } from '../overlays/InstallApp.tsx';
 
 export { MATCHMAKING_TIPS } from './PlayTab.tsx';
 
@@ -161,6 +163,7 @@ function TopBar(): JSX.Element {
   const online = useUI((s) => s.friends.filter((f) => !f.recent && f.presence !== 'offline').length);
   const overlay = useUI((s) => s.overlay);
   const panel = useUI((s) => s.currencyPanel);
+  const installable = useUI((s) => canInstall(s.pwa.install));
   const toggle = (o: 'friends' | 'notifications' | 'settings'): void => {
     playCue('ui.click');
     const st = ui.getState();
@@ -196,6 +199,9 @@ function TopBar(): JSX.Element {
         >
           <CurrencyPill currency="gems" amount={wallet.gems} onAdd={() => wallet$('gems')} />
         </span>
+        {installable && (
+          <IconButton label="Install app" icon="download" onClick={requestInstall} testId="btn-install" />
+        )}
         <IconButton
           label={`Notifications (${unread} new)`}
           icon="bell"

@@ -13,6 +13,7 @@ import { ui, useUI } from '../../store/uiStore.ts';
 import type { BindAction, Keybinds, SettingsSection } from '../../store/types.ts';
 import { Icon } from '../../components/icons/index.tsx';
 import { AccountSection } from './AccountSheet.tsx';
+import { AppRows } from './InstallApp.tsx';
 import { PadRebinder } from './PadRebinder.tsx';
 import { semanticColors } from '../../theme/tokens.ts';
 
@@ -474,6 +475,7 @@ export function Section({ id }: { id: SettingsSection }): JSX.Element {
             />
           </Row>
           <RegionRow />
+          <AppRows />
           <Row label="Practice Island" hint="Coach Boing's warm-up course, any time">
             <Button
               size="sm"

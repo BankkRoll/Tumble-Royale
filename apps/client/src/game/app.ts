@@ -462,6 +462,7 @@ export class GameApp {
 
     app.bindIntents();
     app.start();
+    app.watchConnectivity();
     if (cfg.debug)
       createDebugPanel({ renderer, quality, stats, session: () => app.session, timeScale: app.timeScale });
     if (cfg.autoplay) installAutoplay(cfg.autoShows);
@@ -759,6 +760,16 @@ export class GameApp {
       s.setOnlineStatus({ state: 'disabled', message: 'Online play is turned off for this session.' });
       return;
     }
+    // NOTE: `onLine === false` is reliable (no network at all); `true` only means "maybe", so probe then.
+    if (!navigator.onLine) {
+      s.setOnlineStatus({
+        state: 'offline',
+        noNetwork: true,
+        message: "You're offline. Shows against bots still work.",
+      });
+      if (s.playMode === 'online') ui.setState({ playMode: 'offline' });
+      return;
+    }
     s.setOnlineStatus({ state: 'checking' });
     let up = false;
     if (this.cfg.online) up = await gameServerAvailable();
@@ -772,6 +783,29 @@ export class GameApp {
     );
     if (up && !this.modePicked) s.setPlayMode('online');
     if (!up && s.playMode === 'online') ui.setState({ playMode: 'offline' });
+  }
+
+  /**
+   * Follows the device's network: offline, the Play tab says so and bot shows
+   * carry on; back online, the account reconnects and Play Online is re-probed.
+   */
+  private watchConnectivity(): void {
+    const tellOffline = (): void => {
+      // A running show handles its own connection (the reconnect curtain online; nothing to lose offline).
+      if (this.session) return;
+      ui.getState().pushToast({
+        kind: 'info',
+        title: "You're offline",
+        body: 'Shows against bots work without a connection. Online play comes back when you reconnect.',
+        durationMs: 6000,
+      });
+    };
+    window.addEventListener('offline', () => {
+      void this.refreshOnlineStatus();
+      tellOffline();
+    });
+    window.addEventListener('online', () => uiEvents.emit('retryOnline'));
+    if (!navigator.onLine) tellOffline();
   }
 
   /** Starts an offline show vs bots right away (Vs Bots, private show with bots). */

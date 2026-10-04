@@ -6,7 +6,7 @@
 import { encodeLobbyFrame, type LobbyGameWire } from '@tumble/shared';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { events } from '../src/db/schema.ts';
+import { adminAuditLog, events } from '../src/db/schema.ts';
 import { recordServerError } from '../src/liveops/routes.ts';
 import { sendGlobalChat } from '../src/social/globalChat.ts';
 import { userChannel } from '../src/realtime/notifier.ts';
@@ -96,7 +96,10 @@ describe('maintenance', () => {
   it('records every change in the audit log', async () => {
     await admin('PUT', '/internal/maintenance', { enabled: true });
     await admin('DELETE', '/internal/maintenance');
-    const rows = await api.ctx.db.select().from(events).where(eq(events.name, 'audit.admin.maintenance_set'));
+    const rows = await api.ctx.db
+      .select()
+      .from(adminAuditLog)
+      .where(eq(adminAuditLog.action, 'maintenance.set'));
     expect(rows.length).toBeGreaterThan(0);
   });
 });

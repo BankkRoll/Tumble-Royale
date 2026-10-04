@@ -28,6 +28,7 @@ import {
   type PaymentProvider,
 } from './economy/payments.ts';
 import { registerEconomyRoutes } from './economy/routes.ts';
+import { registerEventRoutes } from './events/routes.ts';
 import { ApiError } from './http/errors.ts';
 import { rateLimitKey } from './http/rate-limit.ts';
 import { kvRateLimitStore } from './http/rate-limit-store.ts';
@@ -35,6 +36,8 @@ import { createKV, type KV } from './kv/index.ts';
 import { registerMatchRoutes } from './matches/routes.ts';
 import { registerLiveOpsRoutes } from './liveops/routes.ts';
 import { registerAdminRoutes } from './moderation/admin.ts';
+import { registerPlayerAdminRoutes } from './moderation/players.ts';
+import { registerReportRoutes } from './moderation/reports.ts';
 import { registerModerationRoutes } from './moderation/routes.ts';
 import { registerNewsRoutes } from './news/routes.ts';
 import { registerOps, requestIdOptions, type Ops } from './ops/index.ts';
@@ -46,6 +49,7 @@ import { attachGateway, type Gateway } from './realtime/gateway.ts';
 import { Notifier } from './realtime/notifier.ts';
 import { registerFriendRoutes } from './social/friends.ts';
 import { registerWhisperRoutes } from './social/whisper.ts';
+import { registerStaffRoutes } from './staff/routes.ts';
 import { registerPartyRoutes } from './social/party.ts';
 
 /** Optional dependency overrides (tests). */
@@ -110,6 +114,8 @@ export async function syncCatalog(ctx: AppContext): Promise<void> {
       target: c.target,
       rewardXp: c.rewardXp,
       rewardGumballs: c.rewardGumballs,
+      rewardGems: c.rewardGems,
+      rewardCosmetic: c.rewardCosmetic,
       active: true,
     };
     await ctx.db
@@ -269,6 +275,7 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
   registerIdentityRoutes(app, ctx);
   registerEconomyRoutes(app, ctx);
   registerProgressionRoutes(app, ctx);
+  registerEventRoutes(app, ctx);
   registerTutorialRoutes(app, ctx);
   registerMatchRoutes(app, ctx);
   registerFriendRoutes(app, ctx);
@@ -277,6 +284,9 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
   registerModerationRoutes(app, ctx);
   registerNewsRoutes(app, ctx);
   registerAdminRoutes(app, ctx);
+  registerReportRoutes(app, ctx);
+  registerPlayerAdminRoutes(app, ctx);
+  registerStaffRoutes(app, ctx);
   const gateway = attachGateway(app, ctx);
   const ops = registerOps(app, ctx, { database, gateway });
 

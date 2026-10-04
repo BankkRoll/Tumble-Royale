@@ -16,10 +16,12 @@ import {
   randomLoadout,
   type CosmeticItem as ContentItem,
 } from '@tumble/content/cosmetics';
+import { collectionLog } from '@tumble/content/progression';
 import type { TumblerLoadout } from '@tumble/render/scenes';
 import { Rng, hashString } from '@tumble/shared';
 import type {
   AvatarHat,
+  CollectionData,
   CosmeticItem as UiItem,
   CosmeticSlot as UiSlot,
   EmoteSlot,
@@ -292,6 +294,26 @@ const RARITY_ART: Readonly<Record<string, [string, string]>> = {
 /** Content slot → UI slot. */
 function uiSlot(slot: ContentItem['slot']): UiSlot {
   return slot === 'color' ? 'colors' : slot;
+}
+
+/**
+ * The collection log as the UI shows it, built from content's read model.
+ * Offline profiles use it with their local ownership; online accounts get
+ * the same model from the API.
+ *
+ * @param owns - Whether the player owns an item.
+ */
+export function uiCollection(owns: (id: string) => boolean): CollectionData {
+  const log = collectionLog(owns);
+  return {
+    owned: log.owned,
+    total: log.total,
+    percent: log.percent,
+    entries: log.entries.flatMap((e) => {
+      const item = getCosmetic(e.id);
+      return item ? [{ item: uiItem(item, e.owned), sources: [...e.sources] }] : [];
+    }),
+  };
 }
 
 /**

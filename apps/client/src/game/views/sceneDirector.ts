@@ -3,13 +3,14 @@
  * while the Tumble Wipe covers the screen), points the post pipeline at the
  * new scene/grade, and disposes the old view so GPU memory never accumulates.
  *
- * While an opaque loading screen hides the canvas the director is
+ * While the loading wipe hides the canvas the director is
  * {@link SceneDirector.covered}: the app skips updating and rendering the 3D
- * view, and the next view can be precompiled ({@link SceneDirector.precompile})
- * so its first visible frame does not hitch.
+ * view, and the next view warms up ({@link SceneDirector.precompileSteps}) so
+ * its first visible frames do not hitch.
  */
 import { PerspectiveCamera, Scene, Vector3 } from 'three/webgpu';
-import { NEUTRAL_GRADE, disableFrustumCulling, type PostPipeline } from '@tumble/render/post';
+import { NEUTRAL_GRADE, type PostPipeline, type SceneWarmUp } from '@tumble/render/post';
+import type { LoadStep } from '../round/loadPipeline.ts';
 import type { GameView } from './types.ts';
 
 const UP = new Vector3(0, 1, 0);
@@ -134,30 +135,74 @@ export class SceneDirector {
   }
 
   /**
-   * Shows `view` while still covered, compiles its shaders and pipelines for
-   * the real scene pass, then renders it once off-screen (uploads geometry
-   * and textures, builds shadow pipelines) so its first visible frame is
-   * cheap.
+   * Load steps that make `view` ready to show without a hitch, run while it
+   * is still covered:
+   * - `warm`: shows it (hidden) and renders it a few objects at a time so
+   *   shader graphs build in small slices and every render pipeline its
+   *   frames need (scene, shadow and post passes, nothing culled) starts
+   *   compiling in parallel off the GPU process's main thread;
+   * - `pipelines`: waits for those pipelines;
+   * - `upload`: the same batches again, now drawing, so the first visible
+   *   frame finds geometry, textures and bind groups on the GPU;
+   * - `gpu`: waits until the GPU executed those draws (WebGL2 compiles
+   *   shaders on first draw, in the GPU process).
    *
-   * @param view - The fully built view (ownership transfers to the director).
-   * @param onProgress - Compile progress (0..1).
+   * @param view - The fully built view (ownership transfers to the director when `warm` starts).
+   * @param onHandOver - Called once the director owns the view (its next swap disposes it).
+   * @returns Steps for `runLoadPipeline`, in order.
    */
-  async precompile(view: GameView, onProgress?: (fraction: number) => void): Promise<void> {
+  precompileSteps(view: GameView, onHandOver?: () => void): LoadStep[] {
+    let warm: SceneWarmUp | null = null;
+    return [
+      {
+        name: 'warm',
+        // Weighed against the view's own steps (~20 in all), from measured cold first rounds:
+        // ~0.4 s building the scene, ~3.5 s building shaders, ~1 s waiting for the GPU's pipelines.
+        weight: 150,
+        run: () =>
+          this.warmView(view, (w) => {
+            warm = w;
+            onHandOver?.();
+          }),
+      },
+      {
+        name: 'pipelines',
+        weight: 45,
+        run: async (ctx) => {
+          await warm?.settle((f) => ctx.report(f));
+        },
+      },
+      {
+        // Pipelines still compiling skip their draws, so nothing was drawn yet: bind groups and
+        // first-draw uploads would land on the first visible frame. Same batches, now all drawing.
+        name: 'upload',
+        weight: 4,
+        run: () => (this.current === view ? this.warmView(view) : undefined),
+      },
+      {
+        name: 'gpu',
+        weight: 2,
+        run: async () => {
+          if (this.current === view) await this.post.gpuIdle();
+        },
+      },
+    ];
+  }
+
+  private *warmView(view: GameView, started?: (w: SceneWarmUp) => void): Generator<number> {
     if (this.current !== view) this.show(view);
     this.hidden = true;
-    // NOTE: renderer.compileAsync is skipped on purpose. Against the bloom pass it
-    // fails on WebGPU and never settles; against the default target it took ~7 s
-    // on a cold cache and did not warm the pipelines the real frames use. The
-    // hidden render below builds exactly those, in a fraction of the time.
-    onProgress?.(1);
-    if (this.current !== view) return;
-    // The loading screen hides this frame; everything in the scene is drawn once, frustum or not.
     view.camera.updateMatrixWorld();
-    const restore = disableFrustumCulling(view.scene);
+    const w = this.post.beginWarmUp();
+    started?.(w);
     try {
-      this.post.render();
+      while (this.current === view && w.next()) yield w.progress;
+    } catch (err) {
+      // Not fatal: the view still renders, it just compiles on its first visible frames.
+      console.warn('[director] warm-up failed', err);
     } finally {
-      restore();
+      // Also on cancellation: the warm-up hides objects while it runs.
+      w.cancel();
     }
   }
 

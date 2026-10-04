@@ -36,6 +36,7 @@ import type {
   SeasonPassData,
 } from '../../store/types.ts';
 import { LobbyEmotes } from './LobbyEmotes.tsx';
+import { EventCard } from './EventsView.tsx';
 import { LobbyGameHudSlot, LobbyGamesButton } from './LobbyGames.tsx';
 import { openNewsPost } from './NewsTab.tsx';
 import { openJoinCode, openPrivateShow } from '../overlays/PrivateShow.tsx';
@@ -244,6 +245,7 @@ export function effectiveMode(mode: PlayMode, online: boolean): PlayMode {
  */
 export function onlineTileSub(status: OnlineStatus): string {
   if (status.state === 'checking') return 'Checking servers…';
+  if (status.noNetwork) return "You're offline";
   if (status.state !== 'online') return 'Servers offline';
   const fmt = (n: number): string => n.toLocaleString('en-US');
   const parts: string[] = [];
@@ -676,6 +678,7 @@ export function PlayTab({ matchmaking = false }: { matchmaking?: boolean }): JSX
   return (
     <div className="tr-play-tab">
       <aside className="tr-play-info tr-interactive" aria-label="Season, challenges and news">
+        <EventCard />
         <SeasonCard />
         <ChallengesCard />
         <NewsCard />

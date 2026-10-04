@@ -305,6 +305,60 @@ export const paymentReversals = pgTable(
   (t) => [index('payment_reversals_charge_idx').on(t.chargeId)],
 );
 
+/**
+ * Refunds, one per purchase at most (the unique purchase id is what makes a
+ * double-submitted refund apply once).
+ *
+ * - `self_service`: a store purchase paid in Gumballs or Gems, refunded by the
+ *   player at once (`completed`); the currency comes back as a `store_refund`
+ *   ledger row with ref `refund:<purchaseId>`.
+ * - `real_money`: a Gem pack refund the player asked for, decided by staff:
+ *   `pending` → `processing` (Stripe refund issued) or `manual` (no Stripe
+ *   key: staff refund by hand) → `refunded` / `partially_refunded` once the
+ *   `charge.refunded` webhook lands; `denied`, or `failed` when Stripe refused
+ *   (staff may approve again).
+ */
+export const refunds = pgTable(
+  'refunds',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    purchaseId: uuid('purchase_id')
+      .notNull()
+      .references(() => purchases.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    status: text('status').notNull(),
+    /** `gumballs` / `gems` credited back, or the Gem pack's money currency (`usd`). */
+    currency: text('currency').notNull(),
+    /** Currency credited back, or minor units to refund for a Gem pack. */
+    amount: integer('amount').notNull(),
+    /** Cosmetic ids taken away by a self-service refund. */
+    items: jsonb('items').notNull().default([]),
+    /** The player's own words (real-money requests). */
+    playerReason: text('player_reason'),
+    /** Staff note on approval, or the reason shown to the player on denial. */
+    decisionReason: text('decision_reason'),
+    /** Staff label (`name#tag` or `operator token`) of whoever decided. */
+    decidedBy: text('decided_by'),
+    decidedAt: ts('decided_at'),
+    /** Stripe refund id (`re_…`) once Stripe accepted the refund. */
+    providerRefundId: text('provider_refund_id'),
+    /** Approvals sent to the provider; numbers the provider idempotency key so a retry after a failure is a new refund. */
+    attempts: integer('attempts').notNull().default(0),
+    lastError: text('last_error'),
+    createdAt: createdAt(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('refunds_purchase_uq').on(t.purchaseId),
+    index('refunds_user_idx').on(t.userId, t.kind, t.createdAt),
+    index('refunds_status_idx').on(t.status, t.createdAt),
+    index('refunds_provider_refund_idx').on(t.providerRefundId),
+  ],
+);
+
 /** Persisted daily store rotations (deterministic; stored for audit and support). */
 export const storeRotations = pgTable('store_rotations', {
   day: text('day').primaryKey(),
@@ -373,16 +427,22 @@ export const newsPosts = pgTable(
 /** Challenge definitions, synced from content. */
 export const challenges = pgTable('challenges', {
   id: text('id').primaryKey(),
+  /** `daily`, `weekly`, `seasonal` or `milestone`. */
   period: text('period').notNull(),
   title: text('title').notNull(),
   metric: text('metric').notNull(),
   target: integer('target').notNull(),
   rewardXp: integer('reward_xp').notNull(),
   rewardGumballs: integer('reward_gumballs').notNull().default(0),
+  rewardGems: integer('reward_gems').notNull().default(0),
+  rewardCosmetic: text('reward_cosmetic'),
   active: boolean('active').notNull().default(true),
 });
 
-/** A challenge assigned to a player for one period (day or ISO week). */
+/**
+ * A challenge assigned to a player for one period. `period_key` is the UTC
+ * day, the ISO week, the season id (`seasonal`) or `all` (`milestone`).
+ */
 export const challengeProgress = pgTable(
   'challenge_progress',
   {
@@ -402,6 +462,150 @@ export const challengeProgress = pgTable(
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex('challenge_progress_slot_uq').on(t.userId, t.period, t.periodKey, t.slot)],
+);
+
+// -----------------------------------------------------------------------------
+// Achievements & login streak
+// -----------------------------------------------------------------------------
+
+/**
+ * Lifetime value of one achievement metric per player: a running total for
+ * `sum` metrics, the best ever for `max` metrics. `gauge` metrics (items
+ * owned) are recomputed from live state and never stored here. Only the match
+ * ingest and the login claim write rows, inside the transaction that also
+ * records the match or the claim, so a replayed report cannot count twice.
+ */
+export const achievementStats = pgTable(
+  'achievement_stats',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    metric: text('metric').notNull(),
+    value: integer('value').notNull().default(0),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.metric] })],
+);
+
+/**
+ * Achievements a player has unlocked. The primary key makes the unlock (and
+ * with it the reward grant) happen exactly once.
+ */
+export const playerAchievements = pgTable(
+  'player_achievements',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    achievementId: text('achievement_id').notNull(),
+    unlockedAt: ts('unlocked_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.achievementId] })],
+);
+
+/** Daily login streak per player. Days are UTC `YYYY-MM-DD` from the server clock. */
+export const loginStreaks = pgTable('login_streaks', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  /** Consecutive days claimed, ending on `last_claim_day`. */
+  current: integer('current').notNull().default(0),
+  best: integer('best').notNull().default(0),
+  lastClaimDay: text('last_claim_day'),
+  /** Lifetime claims. */
+  claims: integer('claims').notNull().default(0),
+  updatedAt: ts('updated_at').notNull().defaultNow(),
+});
+
+// -----------------------------------------------------------------------------
+// Limited-time events
+// -----------------------------------------------------------------------------
+
+/**
+ * Operator overrides for bundled events (`PUT /internal/events/:id`). A row
+ * replaces the bundled window wholesale; `enabled = false` withdraws the event.
+ */
+export const eventOverrides = pgTable('event_overrides', {
+  id: text('id').primaryKey(),
+  startsAt: ts('starts_at').notNull(),
+  endsAt: ts('ends_at').notNull(),
+  enabled: boolean('enabled').notNull().default(true),
+  updatedAt: ts('updated_at').notNull().defaultNow(),
+});
+
+/**
+ * A player's points in one event. Only the match ingest adds show points and
+ * only a challenge claim adds challenge points, each in the transaction that
+ * also writes its own idempotency key.
+ */
+export const eventProgress = pgTable(
+  'event_progress',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    eventId: text('event_id').notNull(),
+    points: integer('points').notNull().default(0),
+    /** Shows that counted toward the event. */
+    shows: integer('shows').notNull().default(0),
+    /** Last time an ended event's earned rewards were paid out automatically. */
+    settledAt: ts('settled_at'),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.eventId] })],
+);
+
+/** One event challenge for one player. `claimed_at` is the claim guard. */
+export const eventChallengeProgress = pgTable(
+  'event_challenge_progress',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    eventId: text('event_id').notNull(),
+    challengeId: text('challenge_id').notNull(),
+    progress: integer('progress').notNull().default(0),
+    target: integer('target').notNull(),
+    completedAt: ts('completed_at'),
+    claimedAt: ts('claimed_at'),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.eventId, t.challengeId] })],
+);
+
+/** Points-track tiers paid out. The primary key makes each tier pay once. */
+export const eventTierClaims = pgTable(
+  'event_tier_claims',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    eventId: text('event_id').notNull(),
+    tier: integer('tier').notNull(),
+    claimedAt: ts('claimed_at').notNull(),
+    /** True when paid by the end-of-event settlement rather than a claim. */
+    auto: boolean('auto').notNull().default(false),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.eventId, t.tier] })],
+);
+
+/**
+ * Shows credited to an event, one row per player per match. Written in the
+ * ingest transaction next to the `matches` row as a second guard against a
+ * show counting twice, and the audit trail behind a points total.
+ */
+export const eventMatchCredits = pgTable(
+  'event_match_credits',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    eventId: text('event_id').notNull(),
+    matchId: text('match_id').notNull(),
+    points: integer('points').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.eventId, t.matchId] })],
 );
 
 // -----------------------------------------------------------------------------
@@ -575,9 +779,14 @@ export const reports = pgTable(
     reason: text('reason').notNull(),
     details: text('details'),
     status: text('status').notNull().default('open'),
+    /**
+     * Chat evidence captured when the report was filed: the target's recent
+     * public (global) lines, plus whispers they sent the reporter.
+     */
+    evidence: jsonb('evidence'),
     createdAt: createdAt(),
   },
-  (t) => [index('reports_status_idx').on(t.status)],
+  (t) => [index('reports_status_idx').on(t.status), index('reports_target_idx').on(t.targetUserId)],
 );
 
 /** Bans; `scope` = `all` blocks every authenticated call, `ranked` only ranked queueing. */
@@ -627,6 +836,85 @@ export const banEvasionMarks = pgTable(
   (t) => [
     uniqueIndex('ban_evasion_marks_ban_identifier_uq').on(t.banId, t.identifierHash),
     index('ban_evasion_marks_identifier_idx').on(t.identifierHash),
+  ],
+);
+
+/** Moderator warnings: a recorded strike with no restriction attached. */
+export const playerWarnings = pgTable(
+  'player_warnings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    reason: text('reason').notNull(),
+    /** Report that prompted the warning, if any. */
+    reportId: uuid('report_id'),
+    /** Staff label at the time (`name#tag`, or `operator token`). */
+    issuedBy: text('issued_by').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('player_warnings_user_idx').on(t.userId)],
+);
+
+/** Previous display names, one row per change, so moderators can trace renames. */
+export const nameHistory = pgTable(
+  'name_history',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The name the player had before this change. */
+    displayName: text('display_name').notNull(),
+    tag: text('tag').notNull(),
+    /** `player` or `staff`. */
+    changedBy: text('changed_by').notNull(),
+    changedAt: ts('changed_at').notNull().defaultNow(),
+  },
+  (t) => [index('name_history_user_idx').on(t.userId, t.changedAt)],
+);
+
+/**
+ * Accounts allowed into the admin console. `admin` may do everything the
+ * `ADMIN_TOKEN` can; `moderator` handles reports, sanctions and player lookups.
+ */
+export const staffMembers = pgTable('staff_members', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  role: text('role').notNull(),
+  grantedBy: text('granted_by').notNull(),
+  createdAt: createdAt(),
+  updatedAt: ts('updated_at').notNull().defaultNow(),
+});
+
+/**
+ * Every admin action, from the CLI or the console. The actor is kept as a
+ * label as well as an id so the history survives the staff account's deletion.
+ */
+export const adminAuditLog = pgTable(
+  'admin_audit_log',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    /** Staff account, or null for the static `ADMIN_TOKEN`. */
+    actorUserId: uuid('actor_user_id'),
+    actorLabel: text('actor_label').notNull(),
+    actorRole: text('actor_role').notNull(),
+    /** Dotted action name, e.g. `player.ban`, `report.dismiss`, `flag.set`. */
+    action: text('action').notNull(),
+    /** `user`, `report`, `ban`, `flag`, `playlist`, `news`, `maintenance`, `staff`, `session`. */
+    targetType: text('target_type'),
+    targetId: text('target_id'),
+    reason: text('reason'),
+    details: jsonb('details'),
+    ip: text('ip'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('admin_audit_created_idx').on(t.createdAt),
+    index('admin_audit_target_idx').on(t.targetType, t.targetId),
+    index('admin_audit_actor_idx').on(t.actorUserId),
   ],
 );
 

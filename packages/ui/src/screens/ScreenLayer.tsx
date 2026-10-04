@@ -21,11 +21,11 @@ import {
   WinnerCamScreen,
 } from './Results.tsx';
 import { RewardsScreen } from './Rewards.tsx';
+import { LoadingCoverScreen } from '../transitions/LoadingOverlay.tsx';
 import {
   MatchFoundScreen,
   PreShowScreen,
   RoundIntroScreen,
-  RoundLoadingScreen,
   RulesScreen,
   ShowIntroScreen,
 } from './ShowFlow.tsx';
@@ -55,7 +55,7 @@ export function renderScreen(screen: ScreenId): JSX.Element | null {
     case 'showIntro':
       return <ShowIntroScreen />;
     case 'roundLoading':
-      return <RoundLoadingScreen />;
+      return <LoadingCoverScreen />;
     case 'roundIntro':
       return <RoundIntroScreen />;
     case 'rules':

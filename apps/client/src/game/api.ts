@@ -11,6 +11,7 @@
  */
 import type { PlayerRewardMsg } from '@tumble/netcode';
 import type { WalletLedger } from './online/checkout.ts';
+import type { ApiPurchaseHistory, ApiRefundResult } from './online/purchaseHistory.ts';
 import { tokenSubject, type AuthOutcome, type LoginProvider } from './online/returnUrl.ts';
 import { loadJson, removeJson, saveJson } from './storage.ts';
 
@@ -220,7 +221,12 @@ export interface ApiChallenge {
   target: number;
   completed: boolean;
   claimed: boolean;
-  reward: { xp: number; gumballs: number; gems?: number };
+  reward: {
+    xp: number;
+    gumballs: number;
+    gems?: number;
+    cosmetic?: { id: string; name: string; slot: string; rarity: string } | null;
+  };
   rerolled: boolean;
 }
 
@@ -228,9 +234,136 @@ export interface ApiChallenge {
 export interface ApiChallenges {
   daily: ApiChallenge[];
   weekly: ApiChallenge[];
+  /** Absent on APIs that predate seasonal and milestone challenges. */
+  seasonal?: ApiChallenge[];
+  milestone?: ApiChallenge[];
   rerollsLeft: number;
   dailyRefreshesAt: string;
   weeklyRefreshesAt: string;
+  season?: { id: string; name: string; endsAt: string };
+  /** Seasonal challenges of an ended season that this call paid out. */
+  settled?: { id: string; title: string; gumballs: number; gems: number; cosmetic: string | null }[];
+}
+
+/** A reward as the API describes it (achievements, login ladder). */
+export type ApiGrant =
+  { type: 'xp' | 'gumballs' | 'gems' | 'crown_shards'; amount: number } | { type: 'cosmetic'; id: string };
+
+/** `GET /achievements`. */
+export interface ApiAchievements {
+  achievements: {
+    id: string;
+    category: string;
+    title: string;
+    description: string;
+    hidden: boolean;
+    unlocked: boolean;
+    unlockedAt: string | null;
+    progress: number | null;
+    target: number | null;
+    series: { id: string; tier: number; tiers: number } | null;
+    rewards: ApiGrant[];
+  }[];
+  categories: { id: string; unlocked: number; total: number }[];
+  unlocked: number;
+  total: number;
+  newlyUnlocked: { id: string; title: string }[];
+}
+
+/** `GET /collection`. */
+export interface ApiCollection {
+  owned: number;
+  total: number;
+  percent: number;
+  entries: {
+    id: string;
+    owned: boolean;
+    acquiredAt: string | null;
+    sources: { kind: string; label: string }[];
+  }[];
+}
+
+/** `GET /streak`. */
+export interface ApiStreak {
+  streak: number;
+  best: number;
+  claims: number;
+  today: string;
+  claimedToday: boolean;
+  canClaim: boolean;
+  nextClaimAt: string;
+  breaksAt: string | null;
+  next: { streak: number; day: number; rewards: ApiGrant[] };
+  ladder: { day: number; rewards: ApiGrant[]; state: 'claimed' | 'today' | 'upcoming' }[];
+}
+
+/** One event as `GET /live-events` lists it (also built from bundled content offline). */
+export interface ApiLiveEvent {
+  id: string;
+  name: string;
+  description: string;
+  art: [string, string];
+  icon: string;
+  /** Effective window, ISO. */
+  startsAt: string;
+  endsAt: string;
+  phase: 'upcoming' | 'live' | 'ended';
+  playlistIds: string[];
+  points: {
+    perShow: number;
+    perQualifiedRound: number;
+    finalReached: number;
+    crown: number;
+    eventPlaylistMultiplier: number;
+  };
+  challenges: {
+    id: string;
+    title: string;
+    metric: string;
+    target: number;
+    eventPlaylistsOnly: boolean;
+    points: number;
+    rewardXp: number;
+  }[];
+  tiers: { tier: number; points: number; rewards: ApiGrant[] }[];
+}
+
+/** `GET /live-events`. */
+export interface ApiLiveEvents {
+  enabled: boolean;
+  events: ApiLiveEvent[];
+  serverTime: number;
+}
+
+/** The player's standing in one event. */
+export interface ApiEventProgress {
+  eventId: string;
+  points: number;
+  shows: number;
+  tierReached: number;
+  claimedTiers: number[];
+  challenges: { id: string; progress: number; target: number; completed: boolean; claimed: boolean }[];
+}
+
+/** `GET /live-events/progress`. */
+export interface ApiEventProgressList {
+  enabled: boolean;
+  progress: ApiEventProgress[];
+  /** Ended events this read paid out automatically. */
+  settled: { eventId: string; name: string; points: number; tiers: number[]; challenges: string[] }[];
+  serverTime: number;
+}
+
+/** `POST /streak/claim`. */
+export interface ApiStreakClaim {
+  day: string;
+  streak: number;
+  best: number;
+  ladderDay: number;
+  rewards: (ApiGrant & { granted: boolean })[];
+  achievements: { id: string; title: string }[];
+  wallet: ApiMe['wallet'];
+  view: ApiStreak;
 }
 
 /** `POST /me/tutorial-complete`. */
@@ -674,6 +807,11 @@ export class ApiClient {
   purchase = (offerId: string, key: string): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> =>
     this.request('POST', '/purchase', { offerId }, { idempotencyKey: key });
   gemPacks = (): Promise<ApiGemPacks> => this.request('GET', '/gems/packs');
+  /** Purchase history with each purchase's refund and refund eligibility. */
+  purchaseHistory = (): Promise<ApiPurchaseHistory> => this.request('GET', '/purchases');
+  /** Refunds a store purchase, or files a Gem pack refund request (`reason` required there). */
+  refundPurchase = (purchaseId: string, reason?: string): Promise<ApiRefundResult> =>
+    this.request('POST', `/purchases/${encodeURIComponent(purchaseId)}/refund`, reason ? { reason } : {});
   shardShop = (): Promise<ApiShardShop> => this.request('GET', '/shop/shards');
   buyShardOffer = (offerId: string, key: string): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> =>
     this.request('POST', '/shop/shards/buy', { offerId }, { idempotencyKey: key });
@@ -708,6 +846,22 @@ export class ApiClient {
   challenges = (): Promise<ApiChallenges> => this.request('GET', '/challenges');
   rerollChallenge = (id: string): Promise<unknown> => this.request('POST', '/challenges/reroll', { id });
   claimChallenge = (id: string): Promise<unknown> => this.request('POST', '/challenges/claim', { id });
+  /** Achievements; also unlocks anything already earned (the API announces those over realtime). */
+  achievements = (): Promise<ApiAchievements> => this.request('GET', '/achievements');
+  collection = (): Promise<ApiCollection> => this.request('GET', '/collection');
+  streak = (): Promise<ApiStreak> => this.request('GET', '/streak');
+  claimStreak = (): Promise<ApiStreakClaim> => this.request('POST', '/streak/claim');
+  /** Upcoming, live and recently ended events (public). */
+  liveEvents = (): Promise<ApiLiveEvents> => this.request('GET', '/live-events', undefined, { auth: false });
+  /** The player's event progress; also pays out events that ended. */
+  eventProgress = (): Promise<ApiEventProgressList> => this.request('GET', '/live-events/progress');
+  claimEventTier = (eventId: string, tier: number): Promise<{ progress: ApiEventProgress }> =>
+    this.request('POST', `/live-events/${encodeURIComponent(eventId)}/claim`, { tier });
+  claimEventChallenge = (
+    eventId: string,
+    challengeId: string,
+  ): Promise<{ points: number; xp: number; progress: ApiEventProgress }> =>
+    this.request('POST', `/live-events/${encodeURIComponent(eventId)}/challenges/claim`, { challengeId });
   tutorialComplete = (): Promise<ApiTutorialComplete> => this.request('POST', '/me/tutorial-complete');
   leaderboard = (type: string, scope: 'global' | 'regional' | 'friends'): Promise<ApiLeaderboard> =>
     this.request('GET', `/leaderboards/${type}?scope=${scope}&limit=50`);

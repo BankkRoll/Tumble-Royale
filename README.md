@@ -54,8 +54,11 @@ What a player can do today:
 - **Social:** friends (requests, presence, join), party and in-show text chat
   with a filter, quick pings, report / block / mute, streamer mode
 - **Progression:** accounts (guest, Discord, Google, email link), seasons,
-  a 100-tier pass, challenges, store, Crown Shard shop, free Gem paths, live
-  news and notifications
+  a 100-tier pass, daily/weekly/seasonal/milestone challenges, 45
+  achievements (some hidden), a collection log, a daily login streak,
+  limited-time events with their own challenges, points track and cosmetics,
+  store with self-service refunds (Gem packs go to a staff refund queue),
+  Crown Shard shop, free Gem paths, live news and notifications
 - **Watch:** keep spectating after elimination, round replays (save and
   reopen them), photo mode
 - **Input & access:** keyboard/mouse with rebinding, gamepad menus,
@@ -143,7 +146,7 @@ The "Required in production" group of each `.env.example` lists what to set.
 
 The client is a single-page app. Party invites (`/join/<code>`), OAuth and
 email sign-in returns (`/auth/*`) and Stripe returns (`/store`) must serve
-`index.html`. The build includes `_redirects` (Netlify, Cloudflare Pages)
+`index.html`, and `/admin` serves `admin.html`. The build includes `_redirects` (Netlify, Cloudflare Pages)
 from `apps/client/public/`, and `apps/client/vercel.json` does the same on
 Vercel; other hosts need equivalent rewrites.
 
@@ -151,6 +154,11 @@ Vercel; other hosts need equivalent rewrites.
 
 Operators steer a running game with `pnpm admin` (it calls the API with
 `ADMIN_TOKEN`); nothing needs a restart or a client release:
+
+Staff can do the same, and work the report queue, from the web console at
+`/admin`: grant a full account a role with
+`pnpm admin staff grant <userId> --role moderator|admin`, and every action is
+recorded in an audit log (see [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md#the-admin-console)).
 
 ```sh
 pnpm admin maintenance on --in 10 --for 30 --message "New rounds incoming!"
@@ -170,6 +178,9 @@ pnpm admin errors top                                   # most frequent client e
 - **Limited-time playlists** get a start and an end (content can ship them,
   operators override them). The menu shows "Ends in" and "Coming soon"; the
   matchmaker refuses a playlist outside its window, judged on the API's clock.
+- **Limited-time events** run in the same way: operators move, withdraw or
+  reset them (`pnpm admin events`), `events.enabled` pauses them all, and
+  unclaimed rewards pay out automatically after an event ends.
 - **Analytics** are a fixed list of gameplay events, batched and sampled,
   with no identity beyond the account id; players can turn them off in
   Settings → Gameplay, and they start off under Do Not Track or Global
@@ -313,7 +324,7 @@ the same pose with zero bandwidth.
 | Shows                       | Done: full shows end to end in the browser (`e2e/game.spec.ts`; 100-player offline show verified), solo/Duos/Squads online                                           |
 | Meta & accounts             | Done: guest + OAuth/email accounts, locker, parties, matchmaking, server-granted rewards, seasons, shard shop                                                        |
 | Content                     | 25 rounds, tutorial island, procedural audio. Touch controls exist but no phone frame rate has been measured                                                         |
-| Ranked, store, pass, social | Done: OpenSkill ranked with soft reset, store, pass, challenges, friends, chat, private shows, moderation                                                            |
+| Ranked, store, pass, social | Done: OpenSkill ranked with soft reset, store, pass, challenges, achievements, login streak, friends, chat, private shows, moderation                                |
 | Launch hardening            | Partly: rate limits, bans, reconnect, results outbox, metrics, crash reporting, Docker Compose self-hosting. Not done: long soak, load test against a deployed stack |
 
 Server tick time is measured, and checked only nightly against a loose

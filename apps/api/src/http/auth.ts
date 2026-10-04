@@ -1,6 +1,6 @@
 /**
- * Request authentication: bearer access tokens, ban enforcement, admin and
- * internal-HMAC guards.
+ * Request authentication: bearer access tokens, ban enforcement and the
+ * internal-HMAC guard. Admin routes use `requireStaff` (`staff/auth.ts`).
  */
 import { createHmac } from 'node:crypto';
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
@@ -165,18 +165,6 @@ export async function userIdFromToken(ctx: AppContext, token: string | undefined
   if (!claims || (await isErased(ctx.kv, claims.sub))) return null;
   if ((await activeBans(ctx, claims.sub)).some((b) => b.scope === 'all')) return null;
   return claims.sub;
-}
-
-/**
- * Guards admin routes with the static `ADMIN_TOKEN`.
- *
- * @throws {ApiError} 503 when no admin token is configured, 401 on mismatch.
- */
-export function requireAdmin(ctx: AppContext, req: FastifyRequest): void {
-  if (!ctx.config.adminToken)
-    throw new ApiError(503, 'admin_disabled', 'Admin routes are disabled (set ADMIN_TOKEN)');
-  const token = bearer(req);
-  if (!token || !safeEqual(token, ctx.config.adminToken)) throw unauthorized('Invalid admin token');
 }
 
 /** Header names of the internal HMAC scheme. */

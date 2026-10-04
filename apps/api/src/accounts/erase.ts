@@ -9,7 +9,8 @@
  *   so a new account with the same login, email or device inherits them.
  * - Anonymise the player in other people's match history and drop their
  *   analytics events (no foreign keys there).
- * - Clear KV state: party membership, presence and live leaderboard rows.
+ * - Clear KV state: party membership, presence, live leaderboard rows and
+ *   recent chat kept as report evidence.
  * - Leave a short-lived tombstone so access tokens minted before the deletion
  *   stop working immediately instead of at their 15-minute expiry.
  * - Write an audit event.
@@ -21,6 +22,7 @@ import { invalidateBanCache } from '../http/auth.ts';
 import { notFound } from '../http/errors.ts';
 import { removeFromLeaderboards } from '../leaderboards/service.ts';
 import { retainBans } from '../moderation/ban-evasion.ts';
+import { forgetChatLines } from '../social/chatEvidence.ts';
 import { friendIds } from '../social/friends.ts';
 import { PartyService } from '../social/party.ts';
 import { setPresence } from '../social/presence.ts';
@@ -77,6 +79,7 @@ export async function deleteAccount(
   });
 
   await markErased(ctx.kv, userId);
+  await forgetChatLines(ctx.kv, userId);
   await invalidateBanCache(ctx, userId);
   await setPresence(ctx.kv, userId, 'offline', now.getTime());
   await removeFromLeaderboards(ctx, userId, user.region);

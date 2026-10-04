@@ -4,12 +4,17 @@
  *
  * Responsibilities:
  * - load `/me`, `/inventory`, `/loadouts`, `/store`, `/gems/packs`, `/pass`,
- *   `/challenges`, `/friends`, `/party` and project them onto `@tumble/ui`
- *   shapes (profile card, locker, store, pass, challenges, friends, party);
+ *   `/challenges`, `/streak`, `/achievements`, `/collection`, `/live-events`, `/friends`,
+ *   `/party` and project them onto `@tumble/ui` shapes (profile card, locker,
+ *   store, pass, challenges, login streak, achievements, collection log,
+ *   friends, party);
  * - locker edits persisted server-side (`PUT /loadouts/:i`, activate);
  * - purchases with an `Idempotency-Key` (store items, Gem packs via the
  *   checkout — instant with the API's fake provider in dev, a Stripe redirect
- *   otherwise), pass claims + premium, challenge claim/reroll;
+ *   otherwise), pass claims + premium, challenge claim/reroll, event tier and
+ *   event challenge claims;
+ * - purchase history and refunds (`/purchases`): self-service store refunds
+ *   and Gem pack refund requests;
  * - leaderboards and match history;
  * - social: friend requests, the party (create, join by code, ready, kick,
  *   leader's playlist, who is away playing solo) and the realtime gateway
@@ -23,6 +28,7 @@
  */
 import { COSMETICS, DEFAULT_LOADOUT, getCosmetic } from '@tumble/content/cosmetics';
 import {
+  ACHIEVEMENT_CATEGORY_NAMES,
   SHARDS_PER_CROWN,
   levelForXp,
   passTierForXp,
@@ -34,9 +40,13 @@ import type { PlayerRewardMsg } from '@tumble/netcode';
 import type { TumblerLoadout } from '@tumble/render/scenes';
 import { hashString } from '@tumble/shared';
 import {
+  grantText,
   ui,
+  type ChallengeCadence,
   type ChallengesData,
+  type CollectionSourceView,
   type CosmeticItem as UiItem,
+  type GrantView,
   type CosmeticSlot as UiSlot,
   type GemPackOffer,
   type LeaderboardId,
@@ -57,13 +67,17 @@ import {
   ApiError,
   idempotencyKey,
   type ApiClient,
+  type ApiGrant,
   type ApiLoadoutItems,
+  type ApiStreak,
   type ApiMe,
   type ApiParty,
   type ApiPass,
   type ApiPassReward,
   type ApiTutorialComplete,
+  type ApiLiveEvents,
 } from '../api.ts';
+import { eventsView, rewardEventLines } from '../liveEvents.ts';
 import {
   avatarHat,
   botLoadout,
@@ -78,6 +92,7 @@ import {
 import { loadoutWithItem, profileDressing, randomizedLoadout } from '../profile.ts';
 import { SocialController } from '../social/socialController.ts';
 import { onlineStoreShelves } from '../storeOffers.ts';
+import { refundErrorText, refundToast, toPurchaseHistory } from './purchaseHistory.ts';
 import { explainGemCheckoutRefusal, gemCheckoutMode, type GemCheckoutMode } from './gemCheckout.ts';
 import type { PartyLobbyLink } from '../views/partyLobbyView.ts';
 import { JsonSocket, type TypedMessage } from './jsonSocket.ts';
@@ -242,6 +257,9 @@ export class OnlineAccount {
   private readonly soloMembers = new Set<string>();
   /** Bumps per reward wait so a newer show cancels an older poll. */
   private rewardWait = 0;
+  /** An achievements + collection reload is running; a burst of unlock notifications shares it. */
+  private unlocksInFlight = false;
+  private unlocksQueued = false;
 
   constructor(
     readonly api: ApiClient,
@@ -333,6 +351,10 @@ export class OnlineAccount {
       this.refreshStore(),
       this.refreshPass(),
       this.refreshChallenges(),
+      this.refreshStreak(),
+      this.refreshAchievements(),
+      this.refreshCollection(),
+      this.refreshEvents(),
       this.refreshFriends(),
       this.refreshParty(),
       this.history(),
@@ -352,7 +374,16 @@ export class OnlineAccount {
     }
     this.pushProfile();
     this.pushInventory();
-    await Promise.all([this.refreshStore(), this.refreshPass(), this.refreshChallenges(), this.history()]);
+    await Promise.all([
+      this.refreshStore(),
+      this.refreshPass(),
+      this.refreshChallenges(),
+      this.refreshStreak(),
+      this.refreshAchievements(),
+      this.refreshCollection(),
+      this.refreshEvents(),
+      this.history(),
+    ]);
   }
 
   private applyLoadouts(
@@ -589,7 +620,7 @@ export class OnlineAccount {
     try {
       const c = await this.api.challenges();
       const row =
-        (cadence: 'daily' | 'weekly') =>
+        (cadence: ChallengeCadence) =>
         (x: (typeof c.daily)[number]): ChallengesData['list'][number] => ({
           id: x.id,
           cadence,
@@ -606,18 +637,263 @@ export class OnlineAccount {
             : {}),
           ...(x.metric ? { metric: x.metric } : {}),
           ...(x.reward.gems ? { gems: x.reward.gems } : {}),
+          ...(x.reward.cosmetic ? this.optionalItem(x.reward.cosmetic.id) : {}),
           claimed: x.claimed,
           canReroll: cadence === 'daily' && c.rerollsLeft > 0 && !x.completed,
         });
       ui.getState().setChallenges({
-        list: [...c.daily.map(row('daily')), ...c.weekly.map(row('weekly'))],
+        list: [
+          ...c.daily.map(row('daily')),
+          ...c.weekly.map(row('weekly')),
+          ...(c.seasonal ?? []).map(row('seasonal')),
+          ...(c.milestone ?? []).map(row('milestone')),
+        ],
         dailyResetsAt: Date.parse(c.dailyRefreshesAt),
         weeklyResetsAt: Date.parse(c.weeklyRefreshesAt),
         rerollsLeft: c.rerollsLeft,
         rerollsPerDay: 1,
+        ...(c.season ? { season: { name: c.season.name, endsAt: Date.parse(c.season.endsAt) } } : {}),
       });
+      for (const s of c.settled ?? []) {
+        ui.getState().pushToast({
+          kind: 'reward',
+          title: 'Seasonal challenge paid out',
+          body: `${s.title}: completed last season, rewards added.`,
+          icon: '🎯',
+        });
+      }
     } catch (err) {
       console.warn('[account] challenges failed', err);
+    }
+  }
+
+  private optionalItem(id: string): { item: UiItem } | Record<string, never> {
+    const item = getCosmetic(id);
+    return item ? { item: uiItem(item, this.owns(id)) } : {};
+  }
+
+  /** API reward → UI reward pill (unknown cosmetics are dropped). */
+  private grantView(g: ApiGrant): GrantView | null {
+    if (g.type === 'cosmetic') {
+      const item = getCosmetic(g.id);
+      return item ? { kind: 'item', item: uiItem(item, this.owns(g.id)) } : null;
+    }
+    return { kind: g.type === 'crown_shards' ? 'crownShards' : g.type, amount: g.amount };
+  }
+
+  private grantViews(list: readonly ApiGrant[]): GrantView[] {
+    return list.flatMap((g) => {
+      const v = this.grantView(g);
+      return v ? [v] : [];
+    });
+  }
+
+  private applyStreak(s: ApiStreak): void {
+    ui.getState().setLoginStreak({
+      streak: s.streak,
+      best: s.best,
+      claimedToday: s.claimedToday,
+      canClaim: s.canClaim,
+      nextClaimAt: Date.parse(s.nextClaimAt),
+      breaksAt: s.breaksAt ? Date.parse(s.breaksAt) : null,
+      next: { day: s.next.day, rewards: this.grantViews(s.next.rewards) },
+      ladder: s.ladder.map((d) => ({ day: d.day, state: d.state, rewards: this.grantViews(d.rewards) })),
+    });
+  }
+
+  private async refreshStreak(): Promise<void> {
+    try {
+      this.applyStreak(await this.api.streak());
+    } catch (err) {
+      console.warn('[account] login streak failed', err);
+    }
+  }
+
+  private async refreshAchievements(): Promise<void> {
+    try {
+      const a = await this.api.achievements();
+      ui.getState().setAchievements({
+        list: a.achievements.map((x) => ({
+          id: x.id,
+          category: x.category,
+          title: x.title,
+          description: x.description,
+          hidden: x.hidden,
+          unlocked: x.unlocked,
+          ...(x.unlockedAt ? { unlockedAt: Date.parse(x.unlockedAt) } : {}),
+          progress: x.progress,
+          target: x.target,
+          ...(x.series ? { tier: { tier: x.series.tier, tiers: x.series.tiers } } : {}),
+          rewards: this.grantViews(x.rewards),
+        })),
+        categories: a.categories.map((c) => ({
+          ...c,
+          name: ACHIEVEMENT_CATEGORY_NAMES[c.id as keyof typeof ACHIEVEMENT_CATEGORY_NAMES] ?? c.id,
+        })),
+        unlocked: a.unlocked,
+        total: a.total,
+      });
+    } catch (err) {
+      console.warn('[account] achievements failed', err);
+    }
+  }
+
+  private async refreshCollection(): Promise<void> {
+    try {
+      const c = await this.api.collection();
+      ui.getState().setCollection({
+        owned: c.owned,
+        total: c.total,
+        percent: c.percent,
+        entries: c.entries.flatMap((e) => {
+          const item = getCosmetic(e.id);
+          if (!item) return [];
+          return [
+            {
+              item: uiItem(item, e.owned),
+              sources: e.sources as CollectionSourceView[],
+              ...(e.acquiredAt ? { acquiredAt: Date.parse(e.acquiredAt) } : {}),
+            },
+          ];
+        }),
+      });
+    } catch (err) {
+      console.warn('[account] collection failed', err);
+    }
+  }
+
+  /**
+   * Loads the events and the player's progress in them. Reading progress is
+   * also what pays out an ended event, so anything it settled is toasted.
+   */
+  private async refreshEvents(): Promise<void> {
+    try {
+      const sent = Date.now();
+      const [list, progress]: [ApiLiveEvents, Awaited<ReturnType<ApiClient['eventProgress']>>] =
+        await Promise.all([this.api.liveEvents(), this.api.eventProgress()]);
+      const now = Date.now();
+      ui.getState().setEvents(
+        eventsView({
+          events: list.events,
+          progress: progress.progress,
+          enabled: list.enabled && progress.enabled,
+          offsetMs: Math.round(list.serverTime - (sent + now) / 2),
+          now,
+          grant: (g) => this.grantView(g),
+        }),
+      );
+      for (const s of progress.settled) {
+        ui.getState().pushToast({
+          kind: 'reward',
+          title: `${s.name} rewards added`,
+          body: 'The event ended. Everything you earned but had not claimed is now yours.',
+          icon: '🎁',
+        });
+      }
+      if (progress.settled.length) await this.refreshWalletAndInventory();
+    } catch (err) {
+      console.warn('[account] events failed', err);
+    }
+  }
+
+  /** Re-reads the wallet and inventory only (after an event payout). */
+  private async refreshWalletAndInventory(): Promise<void> {
+    try {
+      const [me, inv] = await Promise.all([this.api.me(), this.api.inventory()]);
+      this.me = me;
+      this.owned = new Set(inv.items.map((i) => i.id));
+      this.pushProfile();
+      this.pushInventory();
+    } catch (err) {
+      console.warn('[account] wallet refresh failed', err);
+    }
+  }
+
+  /**
+   * Claims a reached tier on an event's points track.
+   *
+   * @param eventId - Event id.
+   * @param tier - Tier number.
+   */
+  async claimEventTier(eventId: string, tier: number): Promise<void> {
+    try {
+      await this.api.claimEventTier(eventId, tier);
+      ui.getState().pushToast({ kind: 'reward', title: `Event tier ${tier} claimed!`, icon: '🎁' });
+      await this.refreshProgress();
+    } catch (err) {
+      ui.getState().pushToast({ kind: 'error', title: "Couldn't claim that reward", body: describe(err) });
+      await this.refreshEvents();
+    }
+  }
+
+  /**
+   * Claims a completed event challenge (its points join the track).
+   *
+   * @param eventId - Event id.
+   * @param challengeId - Challenge id within the event.
+   */
+  async claimEventChallenge(eventId: string, challengeId: string): Promise<void> {
+    try {
+      const r = await this.api.claimEventChallenge(eventId, challengeId);
+      ui.getState().pushToast({
+        kind: 'reward',
+        title: `+${r.points} event points`,
+        ...(r.xp > 0 ? { body: `+${r.xp} XP` } : {}),
+        icon: '🎯',
+      });
+      await this.refreshProgress();
+    } catch (err) {
+      ui.getState().pushToast({ kind: 'error', title: "Couldn't claim that challenge", body: describe(err) });
+      await this.refreshEvents();
+    }
+  }
+
+  /**
+   * Reloads achievements and the collection after an unlock notification. A
+   * first sign-in can unlock several backfilled achievements at once; their
+   * notifications collapse into one reload plus at most one follow-up.
+   */
+  private refreshUnlocksSoon(): void {
+    if (this.unlocksInFlight) {
+      this.unlocksQueued = true;
+      return;
+    }
+    this.unlocksInFlight = true;
+    void Promise.all([this.refreshAchievements(), this.refreshCollection()]).finally(() => {
+      this.unlocksInFlight = false;
+      if (!this.unlocksQueued) return;
+      this.unlocksQueued = false;
+      this.refreshUnlocksSoon();
+    });
+  }
+
+  /** Claims today's login reward; the API decides the day and the streak. */
+  async claimLoginStreak(): Promise<void> {
+    try {
+      const r = await this.api.claimStreak();
+      this.applyStreak(r.view);
+      const paid = r.rewards
+        .filter((g) => g.granted)
+        .map((g) => this.grantView(g))
+        .flatMap((g) => (g && g.kind !== 'item' ? [grantText(g)] : []));
+      ui.getState().pushToast({
+        kind: 'reward',
+        title: r.ladderDay === 7 ? 'Day 7 bonus claimed!' : `Day ${r.ladderDay} reward claimed`,
+        ...(paid.length ? { body: paid.join(' · ') } : {}),
+        icon: '🔥',
+      });
+      await this.refreshProgress();
+    } catch (err) {
+      ui.getState().pushToast({
+        kind: err instanceof ApiError && err.code === 'already_claimed' ? 'info' : 'error',
+        title:
+          err instanceof ApiError && err.code === 'already_claimed'
+            ? 'Already claimed today'
+            : "Couldn't claim the login reward",
+        body: describe(err),
+        icon: '🔥',
+      });
+      await this.refreshStreak();
     }
   }
 
@@ -770,6 +1046,70 @@ export class OnlineAccount {
         ...(err instanceof ApiError && err.code ? { code: err.code } : {}),
       });
     }
+  }
+
+  /** Loads Store → Purchases, keeping what is shown while it refreshes. */
+  async loadPurchaseHistory(): Promise<void> {
+    const s = ui.getState();
+    const current = s.purchaseHistory;
+    s.setPurchaseHistory(
+      current
+        ? { ...current, status: 'loading' }
+        : {
+            status: 'loading',
+            entries: [],
+            selfRefunds: { used: 0, limit: 0, windowDays: 0, nextAvailableAt: null },
+            policy: { selfServiceWindowDays: 0, realMoneyWindowDays: 0 },
+          },
+    );
+    try {
+      s.setPurchaseHistory(toPurchaseHistory(await this.api.purchaseHistory()));
+    } catch (err) {
+      const latest = ui.getState().purchaseHistory!;
+      s.setPurchaseHistory({ ...latest, status: 'error', error: refundErrorText(err) });
+    }
+  }
+
+  /**
+   * Refunds a store purchase the player confirmed, or sends a Gem pack refund
+   * request. A repeat of the same purchase is answered with the first refund,
+   * so a retried tap can never refund twice.
+   */
+  async refundPurchase(purchaseId: string, reason?: string): Promise<void> {
+    const s = ui.getState();
+    const entry = s.purchaseHistory?.entries.find((e) => e.purchaseId === purchaseId);
+    if (s.purchaseHistory) s.setPurchaseHistory({ ...s.purchaseHistory, busyId: purchaseId });
+    try {
+      const r = await this.api.refundPurchase(purchaseId, reason);
+      const credit = entry
+        ? entry.price.currency === 'usd'
+          ? `${(entry.price.amount / 100).toFixed(2)}`
+          : `${r.credit.amount.toLocaleString()} ${r.credit.currency === 'gems' ? 'Gems' : 'Gumballs'}`
+        : `${r.credit.amount} ${r.credit.currency}`;
+      const t = refundToast(r, credit);
+      s.pushToast({ kind: r.kind === 'real_money' ? 'info' : 'success', title: t.title, body: t.body });
+      if (r.kind === 'self_service') {
+        for (const id of r.items) this.owned.delete(id);
+        await this.refreshProgress();
+        const lo = await this.api.loadouts().catch(() => null);
+        if (lo) {
+          this.applyLoadouts(lo.slots, lo.activeIndex);
+          this.pushInventory();
+          this.hooks.onLookChanged();
+        }
+      }
+    } catch (err) {
+      s.showDialog({
+        id: 'refund-failed',
+        kind: 'error',
+        title: entry?.kind === 'gem_pack' ? "Couldn't send the request" : "Couldn't refund that",
+        body: refundErrorText(err),
+        ...(err instanceof ApiError && err.code ? { code: err.code } : {}),
+      });
+    }
+    await this.loadPurchaseHistory();
+    const after = ui.getState().purchaseHistory;
+    if (after) s.setPurchaseHistory({ ...after, busyId: null });
   }
 
   /** Buys a Gem pack: instant test credit with the dev fake provider, otherwise a Stripe redirect. */
@@ -1056,6 +1396,16 @@ export class OnlineAccount {
             })),
           }
         : {}),
+      ...(r.events?.length ? { events: rewardEventLines(r.events) } : {}),
+      ...(r.achievements?.length
+        ? {
+            achievements: r.achievements.map((a) => ({
+              id: a.id,
+              title: a.title,
+              description: a.description,
+            })),
+          }
+        : {}),
     };
   }
 
@@ -1129,12 +1479,14 @@ export class OnlineAccount {
           String(m.title ?? 'Reward'),
           typeof m.body === 'string' ? m.body : undefined,
         );
+        const achievement = typeof m.achievementId === 'string';
         ui.getState().pushToast({
           kind: 'reward',
           title: String(m.title ?? 'Reward'),
           ...(typeof m.body === 'string' ? { body: m.body } : {}),
-          icon: '🎁',
+          icon: achievement ? '🏅' : '🎁',
         });
+        if (achievement) this.refreshUnlocksSoon();
       }),
       rt.on('socket_open', () => {
         rt.send({ type: 'presence', ...this.presence });

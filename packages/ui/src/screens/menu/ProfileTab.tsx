@@ -4,8 +4,10 @@
  * lobby Tumbler in the middle, and real stats from the player's show history
  * (win rate, qualify rate, favourite round, best race times, gameplay
  * totals), the showcase (rarest owned cosmetics) and the last 20 shows with
- * expandable per-round results. `ProfileOverlay` shows the same card for
- * another player (ranks, results). docs/design/SCREENS.md §5.5.
+ * expandable per-round results. The Achievements and Collection sections
+ * swap the right-hand side for those views and keep the card. `ProfileOverlay`
+ * shows the same card for another player (ranks, results).
+ * docs/design/SCREENS.md §5.5.
  */
 import { useState, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
@@ -13,7 +15,7 @@ import { Bar, BotTag, TypeBadge } from '../../components/bits.tsx';
 import { ItemPreview, Nameplate, bannerStyle } from '../../components/ItemPreview.tsx';
 import { confirmSignOut } from '../../components/account.ts';
 import { RenameField } from '../overlays/AccountSheet.tsx';
-import { Button } from '../../components/controls.tsx';
+import { Button, Segmented } from '../../components/controls.tsx';
 import { formatNumber, ordinal, useDisplayName } from '../../components/hooks.ts';
 import { Icon, type IconName } from '../../components/icons/index.tsx';
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
@@ -30,6 +32,8 @@ import type {
 } from '../../store/types.ts';
 import { rarityLabels } from '../../theme/tokens.ts';
 import { OpenReplayButton } from '../Replay.tsx';
+import { AchievementsView } from './AchievementsView.tsx';
+import { CollectionView } from './CollectionView.tsx';
 
 /** Ranked ladder tiers, lowest first, with display colours. */
 export const RANK_TIERS: { tier: RankTier; label: string; color: string; dark: string }[] = [
@@ -465,32 +469,68 @@ export function openMatchHistory(): void {
   ui.getState().setScreen('matchHistory', { transition: 'fade' });
 }
 
+/** Sections of the Profile tab. */
+export type ProfileSection = 'overview' | 'achievements' | 'collection';
+
 /** Profile tab (self). */
-export function ProfileTab(): JSX.Element {
+export function ProfileTab({
+  initialSection = 'overview',
+}: { initialSection?: ProfileSection } = {}): JSX.Element {
   const p = useUI((s) => s.profile);
   const history = useUI((s) => s.matchHistory);
+  const [section, setSection] = useState<ProfileSection>(initialSection);
   if (!p) return <div className="tr-panel tr-empty">Create your Tumbler to see your profile.</div>;
   return (
-    <div className="tr-profile">
+    <div className={`tr-profile tr-profile--${section}`}>
       <div className="tr-profile-left tr-scroll">
+        <Segmented<ProfileSection>
+          label="Profile sections"
+          value={section}
+          onChange={setSection}
+          options={[
+            { value: 'overview', label: 'Overview' },
+            { value: 'achievements', label: 'Achievements' },
+            { value: 'collection', label: 'Collection' },
+          ]}
+        />
         <ProfileCard p={p} self />
-        <Showcase p={p} />
-        <AccountCard p={p} />
+        {section === 'overview' && (
+          <>
+            <Showcase p={p} />
+            <AccountCard p={p} />
+          </>
+        )}
       </div>
-      <div className="tr-profile-right tr-scroll">
-        <Stats p={p} />
-        <div className="tr-panel tr-profile-history">
-          <div className="tr-panel-head">
-            <h2 className="tr-title tr-h3 tr-grow">Latest shows</h2>
-            <OpenReplayButton />
-            {history.length > 0 && (
-              <Button variant="secondary" size="sm" data-testid="history-see-all" onClick={openMatchHistory}>
-                See all
-              </Button>
-            )}
-          </div>
-          <HistoryList entries={history.slice(0, PROFILE_HISTORY_PREVIEW)} />
+      {section === 'achievements' ? (
+        <div className="tr-profile-wide">
+          <AchievementsView />
         </div>
+      ) : section === 'collection' ? (
+        <div className="tr-profile-wide">
+          <CollectionView />
+        </div>
+      ) : (
+        <ProfileOverviewRight p={p} history={history} />
+      )}
+    </div>
+  );
+}
+
+function ProfileOverviewRight({ p, history }: { p: ProfileData; history: MatchHistoryEntry[] }): JSX.Element {
+  return (
+    <div className="tr-profile-right tr-scroll">
+      <Stats p={p} />
+      <div className="tr-panel tr-profile-history">
+        <div className="tr-panel-head">
+          <h2 className="tr-title tr-h3 tr-grow">Latest shows</h2>
+          <OpenReplayButton />
+          {history.length > 0 && (
+            <Button variant="secondary" size="sm" data-testid="history-see-all" onClick={openMatchHistory}>
+              See all
+            </Button>
+          )}
+        </div>
+        <HistoryList entries={history.slice(0, PROFILE_HISTORY_PREVIEW)} />
       </div>
     </div>
   );

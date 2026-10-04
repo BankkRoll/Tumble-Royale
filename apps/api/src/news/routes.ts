@@ -1,5 +1,5 @@
 /**
- * Live news: `GET /news` (public) and `POST /internal/news` (ADMIN_TOKEN).
+ * Live news: `GET /news` (public) and `POST /internal/news` (admin).
  *
  * The feed is the news bundled with `@tumble/content` overlaid with posts
  * stored in `news_posts`, so a post can be published, corrected or withdrawn
@@ -12,8 +12,9 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.ts';
 import { newsPosts } from '../db/schema.ts';
-import { requireAdmin } from '../http/auth.ts';
 import { parse } from '../http/errors.ts';
+import { recordAudit } from '../staff/audit.ts';
+import { requireStaff } from '../staff/auth.ts';
 
 /**
  * A post as published live. Hero images may also be absolute `https://` URLs
@@ -72,7 +73,7 @@ export function registerNewsRoutes(app: FastifyInstance, ctx: AppContext): void 
 
   // SECURITY: publishing reaches every player's menu, so it is admin-only.
   app.post('/internal/news', async (req, reply) => {
-    requireAdmin(ctx, req);
+    const actor = await requireStaff(ctx, req);
     const post = parse(LiveNewsPostSchema, req.body);
     const now = ctx.now();
     await ctx.db
@@ -82,6 +83,7 @@ export function registerNewsRoutes(app: FastifyInstance, ctx: AppContext): void 
         target: newsPosts.id,
         set: { data: post, hidden: post.hidden ?? false, updatedAt: sql`now()` },
       });
+    await recordAudit(ctx, req, actor, { action: 'news.publish', targetType: 'news', targetId: post.id });
     return reply.code(201).send({ post });
   });
 }

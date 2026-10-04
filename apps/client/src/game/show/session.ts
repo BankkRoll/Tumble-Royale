@@ -64,6 +64,7 @@ import {
 import type { GameContext, RoundOutcomeInfo, RoundStart, SessionPlayer, SessionSummary } from './context.ts';
 import { wonShow } from './crown.ts';
 import { showMenuKeyAction } from '../inputRouting.ts';
+import { withEventNote } from '../liveEvents.ts';
 import { FpsSampler, track } from '../liveOps/analytics.ts';
 import { padSpectateButtons } from '../bindings.ts';
 import {
@@ -112,8 +113,10 @@ interface ActiveRound {
 const SLOWMO_SCALE = 0.3;
 const SLOWMO_SECONDS = 1.5;
 const WIPE_FALLBACK_S = 1.6;
-/** Loading screen progress refresh: each one re-renders the screen, so keep it to ~4 Hz. */
+/** Loading overlay progress refresh: each one re-renders its bar, so keep it to ~4 Hz. */
 const LOAD_UI_INTERVAL_MS = 250;
+/** Frames a revealed round renders under the loading wipe before it lifts. */
+const WIPE_LIFT_FRAMES = 2;
 /** "Everyone's in!" stays up this long before the intro wipe. */
 const EVERYONE_IN_S = 0.8;
 /** How often the spectate banner refreshes the watched player's place. */
@@ -249,6 +252,8 @@ export abstract class ShowSession {
   private wall: WallView | null = null;
   private preShow: PreShowView | null = null;
   private slowmo = 0;
+  /** Frames left before the loading wipe lifts (0: not pending). */
+  private liftWipeIn = 0;
   private wheelOpen = false;
   private pendingEmote = 0;
   private countdownToken = 0;
@@ -530,6 +535,7 @@ export abstract class ShowSession {
   frame(dt: number, realDt: number): void {
     if (this.ended) return;
     this.flowClock += realDt * this.flowScale;
+    if (this.liftWipeIn > 0 && --this.liftWipeIn === 0) this.liftLoadingWipe();
     this.runTimers();
     this.toastTokens = Math.min(4, this.toastTokens + realDt * 3);
     if (this.slowmo > 0) this.slowmo -= dt;
@@ -933,8 +939,8 @@ export abstract class ShowSession {
     s.setRoundLoading(null);
     s.setRoundLoading({ progress: 0 });
     this.ctx.audio.game.onRoundPhase(RoundPhase.Loading, r.start.round.type, { theme: r.start.round.theme });
-    // The loading screen is opaque and shows real progress, so the wipe reveals it rather than holding.
-    this.swapUnder('roundLoading', { transition: 'wipe' }, () => {
+    // The wipe holds over the whole load (its overlay shows the progress) and reveals straight into the intro.
+    this.swapUnder('roundLoading', { transition: 'wipe', hold: true }, () => {
       r.loadRequested = true;
       // Free the previous view's GPU memory before the new round starts allocating.
       this.preShow = null;
@@ -990,10 +996,10 @@ export abstract class ShowSession {
   }
 
   /**
-   * Starts the time-sliced build of the round's view behind the loading
-   * screen (retried when the source appears later online): scene steps, then
-   * shader/pipeline compilation and one hidden warm-up frame. When it is done
-   * the local player counts as loaded ({@link onRoundBuilt}).
+   * Starts the time-sliced build of the round's view under the loading wipe
+   * (retried when the source appears later online): scene steps, then the
+   * director's shader warm-up. When it is done the local player counts as
+   * loaded ({@link onRoundBuilt}).
    */
   protected requestRoundBuild(): void {
     const r = this.round;
@@ -1013,20 +1019,9 @@ export abstract class ShowSession {
     let handedOver = false;
     const steps: LoadStep[] = [
       ...view.loadSteps(),
-      {
-        // A cold shader cache can make compiling cost as much as building; an estimate, see loadTimings.
-        name: 'compile',
-        weight: 8,
-        run: async (ctx) => {
-          handedOver = true;
-          try {
-            await this.ctx.director.precompile(view, (f) => ctx.report(f));
-          } catch (err) {
-            // Not fatal: the round still renders, it just compiles on its first frames.
-            console.warn('[show] shader precompile failed', err);
-          }
-        },
-      },
+      ...this.ctx.director.precompileSteps(view, () => {
+        handedOver = true;
+      }),
     ];
     const showProgress = throttleProgress(LOAD_UI_INTERVAL_MS, (pct) => {
       if (!stale()) ui.getState().setRoundLoading({ progress: pct });
@@ -1120,6 +1115,14 @@ export abstract class ShowSession {
     return this.round?.loadPct ?? 0;
   }
 
+  /** Reveals the round's intro from under the loading wipe ({@link maybeShowIntro}). */
+  private liftLoadingWipe(): void {
+    const s = ui.getState();
+    // A late intro may already have moved on to the rules card or the round itself.
+    if (s.screen === 'roundLoading') s.setScreen('roundIntro', { transition: 'wipe' });
+    s.releaseWipe();
+  }
+
   private maybeShowIntro(): void {
     const r = this.round;
     if (!r || r.introShown || !r.view || !r.loadMinDone) return;
@@ -1134,8 +1137,9 @@ export abstract class ShowSession {
     r.introShown = true;
     this.ctx.director.reveal();
     r.view.startLoops();
-    ui.getState().setScreen('roundIntro', { transition: 'wipe' });
-    ui.getState().releaseWipe();
+    // PERF: a new scene's first frames still do one-off work (first full draw with every object,
+    // crowd data textures, loops starting). They render under the held wipe, which lifts after.
+    this.liftWipeIn = WIPE_LIFT_FRAMES;
     r.view.playFlyover();
     const rs = r.start;
     this.ctx.audio.game.onRoundPhase(RoundPhase.IntroFlyover, rs.round.type, {
@@ -2019,8 +2023,8 @@ export abstract class ShowSession {
       return;
     }
     this.awaiting = 'rewards';
-    const rewards = this.computeRewards(this.showFacts(this.summary));
     const s = ui.getState();
+    const rewards = withEventNote(this.computeRewards(this.showFacts(this.summary)), s.events);
     s.setRewards(rewards);
     if (!rewards) this.rewardsMissing();
     this.wall = null;

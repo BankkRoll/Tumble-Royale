@@ -57,6 +57,13 @@ export interface UIIntents {
   customizeColors: { colors: TumblerColors };
   randomizeOutfit: undefined;
   purchase: { offerId: string };
+  /** Store → Purchases opened or refreshed. */
+  requestPurchaseHistory: undefined;
+  /**
+   * Refund a store purchase (already confirmed by the player), or request a
+   * Gem pack refund (`reason` required) for staff review.
+   */
+  refundPurchase: { purchaseId: string; reason?: string };
   /** Buy a Gem pack (`StoreData.gemPacks`). */
   buyGems: { packId: string };
   /** Try on several items at once (bundles); an empty list restores the equipped look. */
@@ -71,6 +78,12 @@ export interface UIIntents {
   buyPremiumPass: undefined;
   rerollChallenge: { id: string };
   claimChallenge: { id: string };
+  /** Claim a reached tier on an event's points track (online accounts). */
+  claimEventTier: { eventId: string; tier: number };
+  /** Claim a completed event challenge (online accounts). */
+  claimEventChallenge: { eventId: string; challengeId: string };
+  /** Claim today's daily login reward (online accounts). */
+  claimLoginStreak: undefined;
   leaderboardQuery: { board: LeaderboardId; scope?: LeaderboardScope };
   /** Open another player's profile card (ranks, results, friends). */
   inspectPlayer: {
@@ -174,6 +187,10 @@ export interface UIIntents {
   dialogResult: { dialogId: string; buttonId: string };
   toastAction: { toastId: number; actionId: string };
   retryConnection: undefined;
+  /** Install app (Settings or the menu): show the browser's install prompt. */
+  installApp: undefined;
+  /** Restart into the downloaded update. */
+  applyUpdate: undefined;
   /** Settings → Region is on screen: re-measure region pings. */
   probeRegions: undefined;
   /**

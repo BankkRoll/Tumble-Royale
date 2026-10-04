@@ -10,6 +10,7 @@ import { assignBotSkills } from '@tumble/sim/show';
 import { RoundPhase, ShowPhase } from '@tumble/shared';
 import { ServerMetrics } from '../src/metrics.ts';
 import { customShowOptions } from '../src/realDeps.ts';
+import type { MatchResultPayload } from '../src/results.ts';
 import { RoomManager } from '../src/room/RoomManager.ts';
 import type { RoomDeps, ShowController } from '../src/room/types.ts';
 import { ShowDirectorController } from '../src/show/ShowDirectorController.ts';
@@ -204,6 +205,29 @@ describe('online duos', () => {
 
     const summary = b.lowFreq('showSummary').at(-1) as Msg<'showSummary'>;
     expect(summary.winners.sort()).toEqual([0, 1]);
+  });
+
+  it('reports who played alongside their queue party', async () => {
+    const posted: MatchResultPayload[] = [];
+    const results = {
+      post: async (p: MatchResultPayload) => {
+        posted.push(p);
+        return null;
+      },
+    };
+    const h = harness({ createShowController: () => duoController(), results });
+    const a = h.connect(signJoinTicket(SECRET, claims('u-a', { pid: 'party-1', humans: 3 }), WALL));
+    const b = h.connect(signJoinTicket(SECRET, claims('u-b', { pid: 'party-1', humans: 3 }), WALL));
+    // Queued with a party whose other members never made it into this show.
+    const c = h.connect(signJoinTicket(SECRET, claims('u-c', { pid: 'party-2', humans: 3 }), WALL));
+    h.advance(30 * 25, [a, b, c]);
+    await Promise.resolve();
+    expect(posted).toHaveLength(1);
+    const party = new Map(posted[0]!.participants.map((p) => [p.userId, p.party]));
+    expect(party.get('u-a')).toBe(true);
+    expect(party.get('u-b')).toBe(true);
+    expect(party.get('u-c')).toBeUndefined();
+    expect(posted[0]!.participants.filter((p) => p.isBot).every((p) => p.party === undefined)).toBe(true);
   });
 
   it('uses the matchmaker team over the queue party', () => {

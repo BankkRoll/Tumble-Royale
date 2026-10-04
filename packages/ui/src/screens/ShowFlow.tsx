@@ -6,8 +6,7 @@
 import { useEffect, useRef, type JSX } from 'react';
 import { playCue } from '../audio-cues.ts';
 import { Bar, RoundDots, TipCarousel, TypeBadge } from '../components/bits.tsx';
-import { formatClock, useDisplayName, useNow, useReducedFlashing, useSequence } from '../components/hooks.ts';
-import { Icon } from '../components/icons/index.tsx';
+import { formatClock, useNow, useReducedFlashing, useSequence } from '../components/hooks.ts';
 import { TumblerAvatar } from '../components/TumblerAvatar.tsx';
 import { useUI } from '../store/uiStore.ts';
 import { roundTypeStyle, tumblerSwatches } from '../theme/tokens.ts';
@@ -142,139 +141,6 @@ export function ShowIntroScreen(): JSX.Element | null {
         )}
       </div>
       <div className="tr-vignette" />
-    </div>
-  );
-}
-
-/** Players shown by name on the loading screen (the protocol caps the roster at 8 too). */
-const MAX_WAITING_SHOWN = 8;
-/** How long each loading tip stays up. */
-const LOADING_TIP_MS = 4000;
-
-/**
- * Cycles tips with compositor-only opacity animations (WAAPI), so the
- * carousel keeps moving while the main thread builds a round and React never
- * re-renders for it.
- */
-function CompositorTips({ tips, intervalMs }: { tips: readonly string[]; intervalMs: number }): JSX.Element {
-  const refs = useRef<(HTMLDivElement | null)[]>([]);
-  const key = tips.join('\n');
-  useEffect(() => {
-    const n = tips.length;
-    if (n < 2) return;
-    const cycle = n * intervalMs;
-    const share = 1 / n;
-    const fade = Math.min(0.25, 350 / cycle);
-    const anims: Animation[] = [];
-    refs.current.forEach((el, i) => {
-      if (!el || typeof el.animate !== 'function') return;
-      anims.push(
-        el.animate(
-          [
-            { opacity: 0, offset: 0 },
-            { opacity: 1, offset: fade },
-            { opacity: 1, offset: share - fade },
-            { opacity: 0, offset: share },
-            { opacity: 0, offset: 1 },
-          ],
-          { duration: cycle, delay: i * intervalMs, iterations: Infinity, fill: 'backwards' },
-        ),
-      );
-    });
-    return () => {
-      for (const a of anims) a.cancel();
-    };
-    // Keyed on the text: a new array holding the same tips must not restart the cycle.
-  }, [key, intervalMs]);
-  return (
-    <div className="tr-loading-tips" aria-live="off">
-      {tips.map((tip, i) => (
-        <div
-          key={i}
-          ref={(el) => {
-            refs.current[i] = el;
-          }}
-          className="tr-tip tr-loading-tip"
-          style={{ opacity: tips.length < 2 || i === 0 ? 1 : 0 }}
-        >
-          <span className="tr-tip-icon" aria-hidden>
-            <Icon name="star" size="1.2em" />
-          </span>
-          <span>{tip}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/**
- * Round loading screen: this machine's real build progress, then (online)
- * who the round is still waiting for, then an "Everyone's in!" beat right
- * before the intro. Every looping motion is a compositor animation so it
- * keeps running while the round builds.
- */
-export function RoundLoadingScreen(): JSX.Element {
-  const info = useUI((s) => s.roundIntro);
-  const load = useUI((s) => s.roundLoading);
-  const displayName = useDisplayName();
-  const progress = Math.max(0, Math.min(1, load?.progress ?? 0));
-  const waiting = load?.waiting ?? [];
-  const outstanding = load ? Math.max(0, load.total - load.loaded) : 0;
-  // The roster names at most 8; beyond that the count comes from loaded/total.
-  const waitingCount =
-    waiting.length < MAX_WAITING_SHOWN ? waiting.length : Math.max(waiting.length, outstanding);
-  const ready = load?.ready ?? false;
-  const everyoneIn = load?.everyoneIn ?? false;
-  let title: string;
-  if (everyoneIn) title = "Everyone's in!";
-  else if (ready && waitingCount > 0)
-    title = `Waiting for ${waitingCount} player${waitingCount === 1 ? '' : 's'}…`;
-  else if (ready) title = 'Ready!';
-  else title = `Loading ${info?.name ?? 'the next round'}…`;
-  return (
-    <div className={`tr-screen tr-roundloading${ready ? ' is-ready' : ''}${everyoneIn ? ' is-go' : ''}`}>
-      <div className="tr-roundloading-inner">
-        {info && <TypeBadge type={info.type} className="tr-enter-pop" />}
-        <div
-          key={everyoneIn ? 'go' : 'load'}
-          className={`tr-title tr-h2${everyoneIn ? ' tr-slam' : ''}`}
-          aria-live="polite"
-        >
-          {title}
-        </div>
-        {!everyoneIn && <span className="tr-gumball-spinner" aria-hidden />}
-        {!ready && (
-          <div className="tr-roundloading-meter">
-            <div
-              className="tr-roundloading-bar"
-              role="progressbar"
-              aria-label="Loading the round"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(progress * 100)}
-            >
-              <i style={{ transform: `scaleX(${progress})` }} />
-            </div>
-            <span className="tr-roundloading-pct">{Math.round(progress * 100)}%</span>
-          </div>
-        )}
-        {ready && load && load.total > 1 && (
-          <div className="tr-chip tr-chip--ink tr-roundloading-count">
-            {load.loaded} / {load.total} ready
-          </div>
-        )}
-        {ready && !everyoneIn && waiting.length > 0 && (
-          <ul className="tr-roundloading-waiting" aria-label="Still loading">
-            {waiting.slice(0, MAX_WAITING_SHOWN).map((p) => (
-              <li key={p.id} className="tr-roundloading-player">
-                <TumblerAvatar colors={p.colors} expression="sleepy" size="2.2em" blink={false} noShadow />
-                <span>{displayName(p)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {info && info.tips.length > 0 && <CompositorTips tips={info.tips} intervalMs={LOADING_TIP_MS} />}
-      </div>
     </div>
   );
 }

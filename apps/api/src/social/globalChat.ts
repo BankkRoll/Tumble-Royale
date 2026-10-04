@@ -25,6 +25,7 @@ import { requireFlag } from '../liveops/state.ts';
 import { ApiError, badRequest, forbidden } from '../http/errors.ts';
 import type { KV } from '../kv/index.ts';
 import type { SocialRef } from '../realtime/notifier.ts';
+import { rememberChatLine } from './chatEvidence.ts';
 import { socialRef } from './friends.ts';
 
 /** Lines one account may send per {@link GLOBAL_CHAT_WINDOW_MS}. */
@@ -78,6 +79,7 @@ export async function sendGlobalChat(ctx: AppContext, userId: string, raw: unkno
     at: now,
   };
   await ctx.kv.publish(GLOBAL_CHAT_CHANNEL, JSON.stringify(line));
+  await rememberChatLine(ctx.kv, userId, { channel: 'global', text: line.text, at: now });
   return line;
 }
 

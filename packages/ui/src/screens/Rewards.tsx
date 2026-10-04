@@ -280,6 +280,44 @@ export function RewardsScreen(): JSX.Element | null {
               ))}
             </div>
           )}
+          {r.events && r.events.length > 0 && t >= p.gumAt && (
+            <div className="tr-col tr-enter tr-rewards-events" style={{ gap: '0.3em' }}>
+              <span className="tr-label">Event points</span>
+              {r.events.map((e) => (
+                <div key={e.id} className="tr-row tr-small" data-testid="reward-event">
+                  <Icon name="star" size="1.2em" />
+                  <span className="tr-grow tr-ellipsis">{e.name}</span>
+                  <b>+{formatNumber(Math.round(e.gained * gumP))} pts</b>
+                  {e.tierTo > e.tierFrom && (
+                    <span className="tr-chip tr-chip--mint">Tier {e.tierTo} unlocked</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {!r.events?.length && r.eventNote && t >= p.gumAt && (
+            <p className="tr-small tr-muted tr-enter" data-testid="reward-event-note">
+              {r.eventNote}
+            </p>
+          )}
+          {r.achievements && r.achievements.length > 0 && t >= p.gumAt && (
+            <div className="tr-col tr-enter tr-rewards-achievements" style={{ gap: '0.3em' }}>
+              <span className="tr-label">Achievements unlocked</span>
+              {r.achievements.map((a) => (
+                <div
+                  key={a.id}
+                  className="tr-row tr-small tr-rewards-achievement"
+                  data-testid="reward-achievement"
+                >
+                  <Icon name="medal" size="1.3em" />
+                  <span className="tr-col tr-grow" style={{ minWidth: 0 }}>
+                    <b className="tr-ellipsis">{a.title}</b>
+                    <span className="tr-muted tr-ellipsis">{a.description}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="tr-col tr-rewards-right">

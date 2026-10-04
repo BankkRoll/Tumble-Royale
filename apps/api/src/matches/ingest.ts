@@ -6,6 +6,13 @@
  * stored reward summaries; a concurrent duplicate blocks on the primary key,
  * fails with a unique violation after the first commits, and also replays.
  * Ledger rows are additionally keyed by match id as a second line of defence.
+ * Achievement, challenge and event progress are written in the same
+ * transaction, so they inherit this: a duplicate report never counts twice.
+ *
+ * Limited-time events count a show by its start, the game server's
+ * `startedAt` (capped at the API clock, since a show cannot have started in
+ * the future): a show that straddles an event's end still counts, one that
+ * started after it does not, however late its result arrives.
  *
  * Custom lobbies are recorded (history, stats) but grant nothing, so private
  * lobbies cannot be used to farm rewards or rank.
@@ -28,8 +35,16 @@ import {
 } from '../db/schema.ts';
 import { applyLedger, type Wallet } from '../economy/ledger.ts';
 import { readWallet } from '../economy/wallet.ts';
+import { recordEventShow, type EventShowUpdate } from '../events/progress.ts';
+import { countingEvents } from '../events/state.ts';
 import { badRequest, isUniqueViolation } from '../http/errors.ts';
 import { recordLeaderboards, RANKED_QUEUE } from '../leaderboards/service.ts';
+import {
+  notifyUnlocks,
+  recordAchievementProgress,
+  unlockAchievements,
+  type AchievementUnlock,
+} from '../progression/achievements.ts';
 import { applyChallengeProgress, type ChallengeUpdate } from '../progression/challenges.ts';
 import { addXp } from '../progression/xp.ts';
 import { computeRankedUpdate, type RankedPrior } from '../ranked/rating.ts';
@@ -61,6 +76,13 @@ export interface PlayerRewardSummary {
   crownsFromShards: number;
   pass: { xp: number; tierBefore: number; tierAfter: number };
   challenges: ChallengeUpdate[];
+  /**
+   * Achievements this show unlocked; their XP, Gumballs and Gems are already
+   * in the lines above. Absent on older stored results.
+   */
+  achievements?: AchievementUnlock[];
+  /** Limited-time events this show counted toward. Absent on older stored results. */
+  events?: EventShowUpdate[];
   ranked: {
     rpBefore: number;
     rpAfter: number;
@@ -156,6 +178,9 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
   if (m.queue === 'ranked' && seasonId === ctx.catalog.season.id) await ensureRankedSeason(ctx, seasonId);
   const now = ctx.now();
   const grants = m.queue !== 'custom';
+  const liveEvents = grants
+    ? await countingEvents(ctx, Math.min(Date.parse(m.startedAt), now.getTime()))
+    : [];
   let leaderboardUpdates: Parameters<typeof recordLeaderboards>[1][] = [];
 
   let result: IngestResult;
@@ -268,11 +293,63 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
         const gbLines: RewardLine[] = payout.lines
           .filter((l) => l.gumballs > 0)
           .map((l) => ({ label: l.label, amount: l.gumballs }));
-        const xpTotal = payout.xp;
+        const won = grants && pl.crowned;
+        const prevStreak = stats?.currentWinStreak ?? 0;
+        const streak = grants ? (won ? prevStreak + 1 : 0) : prevStreak;
+        const bestStreak = Math.max(stats?.bestWinStreak ?? 0, streak);
+        const qualifiedByType = new Map<string, number>();
+        for (const r of played)
+          if (r.results.find((x) => x.key === p.key)?.qualified)
+            qualifiedByType.set(r.roundType, (qualifiedByType.get(r.roundType) ?? 0) + 1);
+
+        // Before the match's own ledger grants, so Crown Shards from an
+        // unlock join this show's shard-to-Crown conversion below.
+        let achievements: AchievementUnlock[] = [];
+        if (grants) {
+          await recordAchievementProgress(
+            tx,
+            ctx.catalog,
+            userId,
+            {
+              add: {
+                showsPlayed: 1,
+                crowns: pl.crowned ? 1 : 0,
+                runnerUps: pl.placement === 2 && !pl.crowned ? 1 : 0,
+                roundsQualified: qualified,
+                racesQualified: qualifiedByType.get('race') ?? 0,
+                survivalsQualified: qualifiedByType.get('survival') ?? 0,
+                teamRoundsWon: qualifiedByType.get('team') ?? 0,
+                huntRoundsQualified: qualifiedByType.get('hunt') ?? 0,
+                logicRoundsQualified: qualifiedByType.get('logic') ?? 0,
+                finalsReached: reachedFinal ? 1 : 0,
+                grabs: p.stats?.grabs ?? 0,
+                emotes: p.stats?.emotes ?? 0,
+                partyShows: p.party ? 1 : 0,
+              },
+              max: { bestWinStreak: streak, mostGrabsInShow: p.stats?.grabs ?? 0 },
+            },
+            now,
+          );
+          const unlocked = await unlockAchievements(tx, ctx.catalog, userId, now);
+          achievements = unlocked.unlocks;
+        }
+        const achievementLines = (type: 'xp' | 'gumballs' | 'gems'): RewardLine[] =>
+          achievements.flatMap((a) =>
+            a.rewards.flatMap((r) =>
+              r.type === type && r.granted ? [{ label: `Achievement: ${a.title}`, amount: r.amount }] : [],
+            ),
+          );
+        xpLines.push(...achievementLines('xp'));
+        const xpTotal = payout.xp + achievementLines('xp').reduce((s, l) => s + l.amount, 0);
         let gbTotal = payout.gumballs;
         const shards = payout.crownShards;
         const ref = `match:${m.matchId}`;
         await applyLedger(tx, { userId, currency: 'gumballs', delta: gbTotal, reason: 'match_reward', ref });
+        // Paid under their own `achievement:<id>` ledger refs; listed here for the rewards screen.
+        for (const l of achievementLines('gumballs')) {
+          gbLines.push(l);
+          gbTotal += l.amount;
+        }
         const shardBalance = (
           await applyLedger(tx, {
             userId,
@@ -303,7 +380,7 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
           gbLines.push({ label: `Level up → ${xp.levelAfter}`, amount: xp.levelGumballs });
           gbTotal += xp.levelGumballs;
         }
-        const gemLines: RewardLine[] = [];
+        const gemLines: RewardLine[] = achievementLines('gems');
         if (xp.levelGems) gemLines.push({ label: `Level ${xp.levelAfter} milestone`, amount: xp.levelGems });
         const crownGems = ctx.catalog.gemEarn.firstCrownOfDay;
         if (grants && pl.crowned && crownGems > 0) {
@@ -325,10 +402,6 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
             .where(eq(profiles.userId, userId));
         }
 
-        const won = grants && pl.crowned;
-        const prevStreak = stats?.currentWinStreak ?? 0;
-        const streak = grants ? (won ? prevStreak + 1 : 0) : prevStreak;
-        const bestStreak = Math.max(stats?.bestWinStreak ?? 0, streak);
         await tx
           .update(playerStats)
           .set({
@@ -377,14 +450,31 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
             finalsReached: reachedFinal ? 1 : 0,
             crowns: pl.crowned ? 1 : 0,
             topTenFinishes: pl.placement <= 10 ? 1 : 0,
+            partyShows: p.party ? 1 : 0,
           };
-          for (const r of played) {
-            const metric = QUALIFY_METRIC[r.roundType];
-            if (metric && r.results.find((x) => x.key === p.key)?.qualified)
-              metrics[metric] = (metrics[metric] ?? 0) + 1;
+          for (const [type, n] of qualifiedByType) {
+            const metric = QUALIFY_METRIC[type];
+            if (metric) metrics[metric] = (metrics[metric] ?? 0) + n;
           }
           challenges = await applyChallengeProgress(tx, ctx.catalog, userId, metrics, now);
         }
+        const eventUpdates = liveEvents.length
+          ? await recordEventShow(
+              tx,
+              liveEvents,
+              userId,
+              m.matchId,
+              {
+                playlistId: m.playlistId,
+                roundsQualified: qualified,
+                qualifiedByType: Object.fromEntries(qualifiedByType),
+                reachedFinal,
+                crowned: pl.crowned,
+                placement: pl.placement,
+              },
+              now,
+            )
+          : [];
 
         const rk = ranked.get(userId);
         await tx
@@ -406,6 +496,8 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
           crownsFromShards,
           pass: { xp: xp.passXp, tierBefore: xp.passTierBefore, tierAfter: xp.passTierAfter },
           challenges,
+          achievements,
+          events: eventUpdates,
           ranked: rk
             ? {
                 rpBefore: rk.rpBefore,
@@ -459,6 +551,23 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
         body: c.title,
       });
     }
+    for (const e of r.events ?? []) {
+      for (const c of e.challenges.filter((x) => x.completed))
+        await ctx.notifier.notifyUser(r.userId, {
+          type: 'notification',
+          kind: 'reward',
+          title: 'Event challenge complete!',
+          body: `${e.name}: ${c.title}`,
+        });
+      if (e.tierAfter > e.tierBefore)
+        await ctx.notifier.notifyUser(r.userId, {
+          type: 'notification',
+          kind: 'reward',
+          title: `${e.name} reward unlocked`,
+          body: `Tier ${e.tierAfter} is ready to claim.`,
+        });
+    }
+    await notifyUnlocks(ctx, r.userId, r.achievements ?? []);
   }
   return result;
 }

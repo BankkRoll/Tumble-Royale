@@ -12,13 +12,13 @@
  *   effective schedule (so services need no copy of the content).
  * - `POST /internal/errors` — a crash report, stored as a `server.error` event.
  *
- * Admin (`ADMIN_TOKEN`, used by `pnpm admin`):
+ * Admin (`ADMIN_TOKEN` or an admin console session):
  * - `GET /internal/playlists`, `PUT|DELETE /internal/playlists/:id`.
  * - `PUT|DELETE /internal/maintenance`.
  * - `GET /internal/errors/top` — client or server errors grouped by type and
  *   message over a recent window.
  *
- * Every admin mutation writes an `audit.admin.*` event and invalidates the
+ * Every admin mutation writes an `admin_audit_log` row and invalidates the
  * live-ops cache on every API instance.
  */
 import { PLAYLISTS } from '@tumble/content/shows';
@@ -28,8 +28,10 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.ts';
 import { events, featureFlags, playlistOverrides } from '../db/schema.ts';
-import { requireAdmin, requireInternalSignature } from '../http/auth.ts';
+import { requireInternalSignature } from '../http/auth.ts';
 import { badRequest, notFound, parse } from '../http/errors.ts';
+import { recordAudit } from '../staff/audit.ts';
+import { requireStaff, type StaffActor } from '../staff/auth.ts';
 import {
   invalidateLiveOps,
   liveOpsSnapshot,
@@ -77,9 +79,10 @@ const ErrorsTopQuery = z.object({
   source: z.enum(['client', 'server']).default('client'),
 });
 
-/** Routes that spend currency or start a payment; `store.enabled` off closes them all. */
+/** Routes that spend or refund currency or start a payment; `store.enabled` off closes them all. */
 export const STORE_SPEND_ROUTES: ReadonlySet<string> = new Set([
   '/purchase',
+  '/purchases/:purchaseId/refund',
   '/gems/checkout',
   '/shop/shards/buy',
   '/pass/premium',
@@ -123,13 +126,6 @@ export async function recordServerError(
   } catch {
     // The database may be what broke; Sentry and the log still have it.
   }
-}
-
-async function audit(ctx: AppContext, req: FastifyRequest, name: string, props: Record<string, unknown>) {
-  req.log.info({ audit: name, ...props }, 'admin action');
-  await ctx.db
-    .insert(events)
-    .values({ userId: null, name: `audit.admin.${name}`, props: { ...props, ip: req.ip } });
 }
 
 /**
@@ -194,12 +190,12 @@ export function registerLiveOpsRoutes(app: FastifyInstance, ctx: AppContext): vo
   // --- Admin: playlists -------------------------------------------------------------
 
   app.get('/internal/playlists', async (req) => {
-    requireAdmin(ctx, req);
+    await requireStaff(ctx, req);
     return { playlists: await scheduledPlaylists(ctx), serverTime: ctx.now().getTime() };
   });
 
   app.put('/internal/playlists/:id', async (req) => {
-    requireAdmin(ctx, req);
+    const actor = await requireStaff(ctx, req);
     const { id } = parse(z.object({ id: z.string().min(1).max(64) }), req.params);
     const patch = parse(PlaylistPatch, req.body ?? {});
     if (!PLAYLISTS.some((p) => p.id === id)) throw notFound('Playlist');
@@ -223,23 +219,28 @@ export function registerLiveOpsRoutes(app: FastifyInstance, ctx: AppContext): vo
       .values({ id, ...values })
       .onConflictDoUpdate({ target: playlistOverrides.id, set: values });
     await invalidateLiveOps(ctx);
-    await audit(ctx, req, 'playlist_override', { playlistId: id, ...next });
+    await recordAudit(ctx, req, actor, {
+      action: 'playlist.override',
+      targetType: 'playlist',
+      targetId: id,
+      details: next,
+    });
     return { playlist: (await scheduledPlaylists(ctx)).find((p) => p.id === id) };
   });
 
   app.delete('/internal/playlists/:id', async (req) => {
-    requireAdmin(ctx, req);
+    const actor = await requireStaff(ctx, req);
     const { id } = parse(z.object({ id: z.string().min(1).max(64) }), req.params);
     if (!PLAYLISTS.some((p) => p.id === id)) throw notFound('Playlist');
     await ctx.db.delete(playlistOverrides).where(eq(playlistOverrides.id, id));
     await invalidateLiveOps(ctx);
-    await audit(ctx, req, 'playlist_reset', { playlistId: id });
+    await recordAudit(ctx, req, actor, { action: 'playlist.reset', targetType: 'playlist', targetId: id });
     return { playlist: (await scheduledPlaylists(ctx)).find((p) => p.id === id) };
   });
 
   // --- Admin: maintenance -------------------------------------------------------------
 
-  const writeMaintenance = async (req: FastifyRequest, m: MaintenanceWindow) => {
+  const writeMaintenance = async (req: FastifyRequest, actor: StaffActor, m: MaintenanceWindow) => {
     const values = {
       enabled: m.enabled,
       rolloutPercent: 100,
@@ -251,12 +252,16 @@ export function registerLiveOpsRoutes(app: FastifyInstance, ctx: AppContext): vo
       .values({ key: MAINTENANCE_FLAG_KEY, ...values })
       .onConflictDoUpdate({ target: featureFlags.key, set: values });
     await invalidateLiveOps(ctx);
-    await audit(ctx, req, m.enabled ? 'maintenance_set' : 'maintenance_clear', { ...m });
+    await recordAudit(ctx, req, actor, {
+      action: m.enabled ? 'maintenance.set' : 'maintenance.clear',
+      targetType: 'maintenance',
+      details: { ...m },
+    });
     return { maintenance: await maintenanceStatus(ctx) };
   };
 
   app.put('/internal/maintenance', async (req) => {
-    requireAdmin(ctx, req);
+    const actor = await requireStaff(ctx, req);
     const body = parse(MaintenanceBody, req.body);
     const current = await maintenanceStatus(ctx);
     const next: MaintenanceWindow = {
@@ -268,13 +273,13 @@ export function registerLiveOpsRoutes(app: FastifyInstance, ctx: AppContext): vo
     checkOrder(next.startsAt, next.endsAt);
     if (next.enabled && next.endsAt && Date.parse(next.endsAt) <= ctx.now().getTime())
       throw badRequest('invalid_window', 'endsAt is already in the past');
-    return writeMaintenance(req, next);
+    return writeMaintenance(req, actor, next);
   });
 
   app.delete('/internal/maintenance', async (req) => {
-    requireAdmin(ctx, req);
+    const actor = await requireStaff(ctx, req);
     const current = await maintenanceStatus(ctx);
-    return writeMaintenance(req, {
+    return writeMaintenance(req, actor, {
       enabled: false,
       message: current.message,
       startsAt: null,
@@ -285,7 +290,7 @@ export function registerLiveOpsRoutes(app: FastifyInstance, ctx: AppContext): vo
   // --- Admin: errors -------------------------------------------------------------------
 
   app.get('/internal/errors/top', async (req) => {
-    requireAdmin(ctx, req);
+    await requireStaff(ctx, req);
     const q = parse(ErrorsTopQuery, req.query);
     const since = new Date(ctx.now().getTime() - q.hours * 3_600_000);
     const name = q.source === 'client' ? CLIENT_ERROR_EVENT : SERVER_ERROR_EVENT;

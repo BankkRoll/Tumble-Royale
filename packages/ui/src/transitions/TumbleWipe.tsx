@@ -3,16 +3,18 @@
  * pour up from the bottom in a springy cascade while a Tumbler cartwheels
  * across. The screen swaps while covered (the game swaps its 3D scene on
  * `transitionCovered`), then the bands keep rising off the top to reveal the
- * next screen, so the whole thing reads as one continuous sweep.
+ * next screen, so the whole thing reads as one continuous sweep. Held over a
+ * loading round, the covered bands carry the {@link LoadingOverlay}.
  *
  * PERF: every band is roughly one sixth of the viewport and only its
  * `transform` animates, so the browser rasterises each layer once and runs the
  * motion on the compositor. That keeps it smooth while the main thread is busy
  * building the next round's scene.
  */
-import { useEffect, useRef, type JSX } from 'react';
+import { useEffect, useRef, useState, type JSX } from 'react';
 import { playCue } from '../audio-cues.ts';
 import { TumblerAvatar } from '../components/TumblerAvatar.tsx';
+import { LoadingOverlay } from './LoadingOverlay.tsx';
 import { ui, useUI } from '../store/uiStore.ts';
 
 const BANDS = ['#ff4f9a', '#ffd23f', '#3ee6b4', '#8a5cff', '#5aa9ff', '#ff8a3d'] as const;
@@ -47,9 +49,18 @@ export function TumbleWipe(): JSX.Element | null {
   const phase = useUI((s) => s.wipe.phase);
   const seq = useUI((s) => s.wipe.seq);
   const colors = useUI((s) => s.profile?.colors);
+  const loadingUnder = useUI((s) => s.screen === 'roundLoading');
   const bandRefs = useRef<(HTMLDivElement | null)[]>([]);
   const runnerRef = useRef<HTMLDivElement>(null);
   const anims = useRef<Animation[]>([]);
+  // The overlay outlives the swap to the round's first screen by one reveal, so it can fade out with the bands.
+  const [overlay, setOverlay] = useState<'off' | 'on' | 'leaving'>('off');
+
+  useEffect(() => {
+    if (phase === 'covered' && loadingUnder) setOverlay('on');
+    else if (phase === 'revealing') setOverlay((o) => (o === 'on' ? 'leaving' : 'off'));
+    else setOverlay('off');
+  }, [phase, loadingUnder, seq]);
 
   useEffect(() => {
     const bands = bandRefs.current.filter((b): b is HTMLDivElement => b !== null);
@@ -157,7 +168,8 @@ export function TumbleWipe(): JSX.Element | null {
           />
         </div>
       )}
-      {phase === 'covered' && (
+      {overlay !== 'off' && <LoadingOverlay leaving={overlay === 'leaving'} />}
+      {phase === 'covered' && !loadingUnder && (
         <div className="tr-wipe-hold">
           <div className="tr-wipe-hold-card">
             <span className="tr-gumball-spinner" />

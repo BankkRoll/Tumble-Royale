@@ -29,11 +29,19 @@ export type LedgerReason =
   | 'pass_reward'
   | 'pass_premium'
   | 'challenge_reward'
+  /** An achievement unlocked (ref `achievement:<id>`). */
+  | 'achievement_reward'
+  /** A limited-time event tier or challenge (ref `event:<eventId>:<tier>` or `event:<eventId>:challenge:<id>`). */
+  | 'event_reward'
+  /** A daily login claim (ref `login:<YYYY-MM-DD>`). */
+  | 'login_reward'
   | 'shard_conversion'
   /** Free Gems for the first Crown of a UTC day (ref `day:<YYYY-MM-DD>`). */
   | 'daily_crown'
   /** Crown Shards spent in the shard shop (ref = purchase id). */
   | 'shard_shop'
+  /** Currency given back by a self-service store refund (ref `refund:<purchaseId>`). */
+  | 'store_refund'
   /** Gems (and debt) taken back after a refund or dispute (ref `<purchaseId>:<n>`). */
   | 'gem_reversal'
   /** Gems given back when a dispute is won (ref `<purchaseId>:<n>`). */

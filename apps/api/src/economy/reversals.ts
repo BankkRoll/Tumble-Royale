@@ -29,13 +29,18 @@
  *   completion credits the pack. Events for unknown sessions or charges are
  *   acknowledged (200) without effect so Stripe stops retrying them.
  * - **Failed refunds** (`amount_refunded` going down) are ignored: the
- *   highest amount seen wins, and support restores Gems by hand.
+ *   highest amount seen wins, and support restores Gems by hand. A
+ *   `refund.failed` event marks the player's refund request `failed` so
+ *   staff see it (`refunds.ts`).
+ * - **Refund requests** follow the purchase: a full or partial refund moves
+ *   the player's `real_money` request to `refunded` / `partially_refunded`.
  */
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { AppContext } from '../context.ts';
 import type { DbOrTx } from '../db/client.ts';
 import { paymentReversals, purchases, stripeEvents } from '../db/schema.ts';
 import { applyLedger, lockWallet, readGemDebt, revokeGems } from './ledger.ts';
+import { markRefundFailed, syncRefundRequest } from './refunds.ts';
 import type { DisputeOutcome, PaymentEvent } from './payments.ts';
 import { readWallet } from './wallet.ts';
 
@@ -134,6 +139,7 @@ async function reconcilePayment(tx: DbOrTx, ctx: AppContext, paymentIntent: stri
   if (purchase.status !== status) {
     await tx.update(purchases).set({ status }).where(eq(purchases.id, purchase.id));
   }
+  await syncRefundRequest(tx, ctx, purchase.id, status);
   const delta = target - state.gemsReversed;
   if (delta === 0) return null;
   const ref = `${purchase.id}:${state.adjustments + 1}`;
@@ -279,6 +285,9 @@ export async function applyPaymentEvent(
         await lockPurchaseByIntent(tx, event.paymentIntent);
         await recordDispute(tx, ctx, event);
         changed.push(await reconcilePayment(tx, ctx, event.paymentIntent));
+        break;
+      case 'refund_failed':
+        await markRefundFailed(tx, ctx, event);
         break;
     }
     return {

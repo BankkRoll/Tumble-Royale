@@ -187,6 +187,33 @@ export function buildLevelVisuals(
   theme: ThemeDefinition,
   opts: LevelBuildOptions = {},
 ): LevelVisuals {
+  const steps = buildLevelVisualsSliced(round, theme, opts);
+  for (;;) {
+    const r = steps.next();
+    if (r.done) return r.value;
+  }
+}
+
+/**
+ * {@link buildLevelVisuals} in slices: yields its progress (0..1) between
+ * pieces and between merged buckets, so a loader can pause there, and
+ * returns the visuals.
+ *
+ * @param round - Validated round definition (defaults applied).
+ * @param theme - Theme resolving palette keys, sky/fog/void.
+ * @param opts - Tessellation and batching options.
+ * @returns A generator whose return value is the level.
+ * @example
+ * const steps = buildLevelVisualsSliced(round, theme);
+ * let r = steps.next();
+ * while (!r.done) r = steps.next(); // or pause between slices
+ * scene.add(r.value.object);
+ */
+export function* buildLevelVisualsSliced(
+  round: RoundDefinition,
+  theme: ThemeDefinition,
+  opts: LevelBuildOptions = {},
+): Generator<number, LevelVisuals> {
   const detail = opts.detail ?? 1;
   // PERF: draw calls cost far more CPU than the vertices big cells add (a whole course is < 200k tris), so cells only split very large maps.
   const cellSize = opts.cellSize ?? 256;
@@ -200,7 +227,11 @@ export function buildLevelVisuals(
   const bmin = new Vector3(Infinity, Infinity, Infinity);
   const bmax = new Vector3(-Infinity, -Infinity, -Infinity);
 
+  const pieces = round.geometry.length;
+  let piecesDone = 0;
   for (const piece of round.geometry) {
+    if (piecesDone > 0) yield (0.7 * piecesDone) / pieces;
+    piecesDone++;
     quaternionFromRotation(piece.rotation, tmpQuat);
     tmpPos.set(piece.position.x, piece.position.y, piece.position.z);
     tmpMatrix.compose(tmpPos, tmpQuat, unitScale);
@@ -248,7 +279,9 @@ export function buildLevelVisuals(
   };
 
   let meshCount = 0;
+  let bucketsDone = 0;
   for (const [key, b] of buckets) {
+    yield 0.7 + (0.3 * bucketsDone++) / buckets.size;
     const merged = mergeGeometries(b.geos, false);
     for (const g of b.geos) g.dispose();
     if (!merged) continue;

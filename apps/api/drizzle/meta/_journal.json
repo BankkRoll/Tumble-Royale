@@ -50,6 +50,34 @@
       "when": 1791122314805,
       "tag": "0006_live_ops",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791126192461,
+      "tag": "0007_achievements_streaks",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791126816362,
+      "tag": "0008_admin_console",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791128330858,
+      "tag": "0009_live_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791129313000,
+      "tag": "0010_refunds",
+      "breakpoints": true
     }
   ]
 }

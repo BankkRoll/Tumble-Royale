@@ -7,6 +7,8 @@ import type { WebGPURenderer } from 'three/webgpu';
 import type { PostPipeline } from '@tumble/render/post';
 import {
   AdaptiveResolution,
+  QUALITY_TIERS,
+  TierGovernor,
   applyQualityToRenderer,
   getQualityPreset,
   runBenchmark,
@@ -39,9 +41,12 @@ export class QualityManager {
   /** Benchmark frame time, when it ran this session or was saved. */
   benchmarkMs = -1;
   readonly adaptive: AdaptiveResolution;
+  private readonly governor: TierGovernor;
   private post: PostPipeline | null = null;
   private userScale = 1;
   private forced: QualityTier | null = null;
+  /** The player picked Auto (the governor may only move Auto). */
+  private auto = false;
   private shadows = true;
   private postFx = true;
   private readonly listeners = new Set<(p: QualityPreset) => void>();
@@ -52,6 +57,7 @@ export class QualityManager {
       min: this.preset.minRenderScale,
       onChange: () => this.pushResolution(),
     });
+    this.governor = new TierGovernor({ targetMs: this.preset.targetFrameMs });
   }
 
   /**
@@ -88,6 +94,7 @@ export class QualityManager {
       }
     }
     this.forced = forced;
+    this.auto = setting === 'auto';
     this.setTier(forced ?? (setting === 'auto' ? this.autoTier : setting));
   }
 
@@ -119,6 +126,7 @@ export class QualityManager {
     this.renderer.shadowMap.enabled = this.renderer.shadowMap.enabled && this.shadows;
     this.adaptive.setTarget(this.preset.targetFrameMs, this.preset.minRenderScale);
     this.adaptive.scale = this.preset.renderScale;
+    this.governor.reset(this.preset.targetFrameMs);
     this.pushPost();
     for (const fn of this.listeners) fn(this.preset);
   }
@@ -128,6 +136,7 @@ export class QualityManager {
     this.userScale = Math.max(0.5, Math.min(1, g.resolutionScale));
     this.shadows = g.shadows;
     this.postFx = g.postFx;
+    this.auto = g.quality === 'auto';
     // A ?tier= override (tests, support) wins over the saved preference.
     const tier = this.forced ?? (g.quality === 'auto' ? this.autoTier : g.quality);
     if (tier !== this.preset.tier) this.setTier(tier);
@@ -137,9 +146,27 @@ export class QualityManager {
     }
   }
 
-  /** Feeds one frame time to adaptive resolution. */
-  sample(frameMs: number): void {
+  /**
+   * Feeds one frame time to adaptive resolution and, on Auto, to the tier
+   * governor. A step down is saved as the new Auto tier, so the next launch
+   * starts there instead of relearning it.
+   *
+   * @returns The tier Auto just stepped down to, else null.
+   */
+  sample(frameMs: number): QualityTier | null {
     this.adaptive.sample(frameMs);
+    if (this.forced || !this.auto || this.preset.tier === 'low') return null;
+    const spent = this.adaptive.scale <= this.preset.minRenderScale + 1e-3;
+    if (!this.governor.sample(frameMs, spent)) return null;
+    const lower = QUALITY_TIERS[QUALITY_TIERS.indexOf(this.preset.tier) - 1] ?? 'low';
+    this.autoTier = lower;
+    saveJson('quality', {
+      tier: lower,
+      avgFrameMs: this.benchmarkMs,
+      at: Date.now(),
+    } satisfies SavedQuality);
+    this.setTier(lower);
+    return lower;
   }
 
   private pushResolution(): void {

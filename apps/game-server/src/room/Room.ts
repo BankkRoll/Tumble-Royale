@@ -110,6 +110,8 @@ interface PlayerSlot {
   stats: PlayerStatsCounters;
   /** Who this human queued with: matchmaker team, else party id (null for solos and bots). */
   partyKey: string | null;
+  /** Queue party id from the join ticket; null for solos, bots and unticketed joins. */
+  queuePartyId: string | null;
   /** Show party (duos/squads), -1 when solo. Fixed when the show starts. */
   partyId: number;
   /** Bot skill tier (bots only). */
@@ -144,6 +146,7 @@ function newSlot(
     brain: null,
     lastYaw: 0,
     partyKey: null,
+    queuePartyId: null,
     partyId: -1,
     botSkill: undefined,
     reserved: false,
@@ -506,6 +509,7 @@ export class Room {
       spectator,
     });
     slot.partyKey = partyKeyOf(ticket);
+    slot.queuePartyId = ticket?.pid && !ticket.pid.startsWith('solo:') ? ticket.pid : null;
     slot.muted = ticket?.mute === true;
     this.slots.set(id, slot);
     this.chat.register(id, { muted: slot.muted === true }, now);
@@ -1454,6 +1458,11 @@ export class Room {
       })),
       winners.map(String).filter((k) => keys.has(k)),
     );
+    // A party whose friends all missed the show (or a party of one) is not "playing with a party".
+    const partySizes = new Map<string, number>();
+    for (const s of players)
+      if (!s.isBot && s.queuePartyId)
+        partySizes.set(s.queuePartyId, (partySizes.get(s.queuePartyId) ?? 0) + 1);
     return {
       matchId: m.matchId,
       queue: m.queue,
@@ -1467,6 +1476,7 @@ export class Room {
         isBot: s.isBot,
         name: s.name.slice(0, 32) || 'Tumbler',
         ...(s.left ? { quit: true } : {}),
+        ...(s.queuePartyId && (partySizes.get(s.queuePartyId) ?? 0) > 1 ? { party: true } : {}),
         ...(s.isBot ? {} : { stats: { ...s.stats } }),
       })),
       rounds: this.roundRecords.slice(0, 10).map((r) => ({

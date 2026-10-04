@@ -1722,7 +1722,11 @@ export class GameApp {
         }
         void this.startShow(playlistId);
       },
-      onSelectPlaylist: ({ playlistId }) => void online()?.setPlaylist(playlistId),
+      onSelectPlaylist: ({ playlistId }) => {
+        // Browsing onto a "Coming soon" card is not a pick: the API would refuse it for the party.
+        if (s().playlists.find((p) => p.id === playlistId)?.comingSoon) return;
+        void online()?.setPlaylist(playlistId);
+      },
       onReady: ({ ready }) => void online()?.setReady(ready),
       onCancelQueue: () => {
         this.trackQueueWait('cancelled');

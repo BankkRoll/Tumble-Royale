@@ -41,6 +41,7 @@ import { bloom, type default as BloomNode } from 'three/addons/tsl/display/Bloom
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 import { smaa } from 'three/addons/tsl/display/SMAANode.js';
 import type { ThemeDefinition } from '@tumble/content/themes';
+import { beginSceneWarmUp, waitForGpuIdle, type SceneWarmUp } from './warmUp.ts';
 
 /**
  * Tiered TSL post-processing stack:
@@ -170,14 +171,16 @@ export interface PostPipeline {
   /** Swap scene/camera (menu scene switches) without losing settings. */
   setView(scene: Scene, camera: Camera): void;
   /**
-   * Compiles the current view's materials for the exact render target the
-   * scene pass draws into (formats, MSAA, MRT), yielding between objects, so
-   * the first real frame of a new scene does not stall on shader and
-   * pipeline creation. Objects outside the camera frustum are compiled too.
+   * Starts warming the current view up for display: renders it a few objects
+   * at a time with every missing render pipeline (scene pass with its MRT
+   * targets, shadow maps, bloom, outline, AA) compiled asynchronously. The
+   * view must stay hidden until the warm-up finished and settled.
    *
-   * @param onProgress - Fraction of objects compiled (0..1).
+   * @param budgetMs - Target main-thread time per {@link SceneWarmUp.next}.
    */
-  compileAsync(onProgress?: (fraction: number) => void): Promise<void>;
+  beginWarmUp(budgetMs?: number): SceneWarmUp;
+  /** Resolves once the GPU executed everything submitted so far (see {@link waitForGpuIdle}). */
+  gpuIdle(): Promise<void>;
   setSettings(patch: Partial<PostSettings>): void;
   /** Applies a grade instantly. */
   setGrade(grade: GradeParams): void;
@@ -407,20 +410,14 @@ export function createPostPipeline(
       view = { scene: s, camera: cam };
       if (current.enabled) build();
     },
-    async compileAsync(onProgress?: (fraction: number) => void): Promise<void> {
-      const progress = onProgress
-        ? (e: ProgressEvent): void => onProgress(e.total > 0 ? e.loaded / e.total : 1)
-        : null;
-      // WARNING: compiling against the scene pass's MRT target fails on WebGPU
-      // ("color target has no corresponding fragment stage output") and the
-      // failed pipelines never settle the promise. Compile for the default
-      // target; the hidden warm-up render that follows builds the MRT ones.
-      const restoreCulling = disableFrustumCulling(view.scene);
-      try {
-        await renderer.compileAsync(view.scene, view.camera, null, progress);
-      } finally {
-        restoreCulling();
-      }
+    beginWarmUp(budgetMs?: number): SceneWarmUp {
+      return beginSceneWarmUp(renderer, view.scene, {
+        render: () => api.render(),
+        ...(budgetMs !== undefined ? { budgetMs } : {}),
+      });
+    },
+    gpuIdle(): Promise<void> {
+      return waitForGpuIdle(renderer);
     },
     setSettings(patch: Partial<PostSettings>): void {
       const structural =

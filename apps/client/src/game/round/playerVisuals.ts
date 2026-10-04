@@ -60,20 +60,27 @@ export class TumblerPool {
 
   /**
    * Routes a round's Tumblers through the crowd renderer and drops everyone
-   * else from it, so eliminated players cost nothing.
+   * else from it, so eliminated players cost nothing. Pauses after every
+   * Tumbler added: a first round assembles each cosmetic combination's crowd
+   * geometry, ~1 ms apiece.
    *
    * @param active - Visuals on screen this round.
-   * @returns The crowd's root (add it to the round scene), or null when no visual can be batched.
+   * @returns A generator yielding progress (0..1) whose return value is the crowd's root (add it
+   *   to the round scene), or null when no visual can be batched.
    */
-  batch(active: readonly TumblerVisual[]): TumblerCrowd | null {
+  *batch(active: readonly TumblerVisual[]): Generator<number, TumblerCrowd | null> {
     const tumblers = active.filter((v): v is Tumbler => v instanceof Tumbler);
     if (tumblers.length === 0) return null;
-    this.crowd ??= new TumblerCrowd();
+    const crowd = (this.crowd ??= new TumblerCrowd());
     const keep = new Set(tumblers);
     for (const v of this.visuals.values())
-      if (v instanceof Tumbler && !keep.has(v) && this.crowd.has(v)) this.crowd.remove(v);
-    for (const t of tumblers) this.crowd.add(t);
-    return this.crowd;
+      if (v instanceof Tumbler && !keep.has(v) && crowd.has(v)) crowd.remove(v);
+    let i = 0;
+    for (const t of tumblers) {
+      crowd.add(t);
+      yield ++i / tumblers.length;
+    }
+    return crowd;
   }
 
   /**
@@ -179,7 +186,7 @@ export class PlayerVisuals {
   private lod2: number;
   private showPlates: boolean;
   private readonly dists = new Float32Array(MAX_PLAYERS);
-  private readonly crowd: TumblerCrowd | null;
+  private crowd: TumblerCrowd | null = null;
   private readonly frustum = new Frustum();
   private readonly viewProj = new Matrix4();
   private readonly sphere = new Sphere(new Vector3(), CULL_RADIUS);
@@ -190,6 +197,7 @@ export class PlayerVisuals {
   /** Footsteps play for players nearer than this (the Nth nearest last frame). */
   private footstepLimit = FOOTSTEP_RANGE;
 
+  /** Cheap setup only: {@link populate} adds the players. */
   constructor(
     private readonly source: RoundSource,
     private readonly opts: PlayerVisualsOptions,
@@ -207,11 +215,24 @@ export class PlayerVisuals {
     this.maxPlates = opts.preset.maxNameplates;
     this.footstepVoices = opts.preset.footstepVoices;
     this.showPlates = opts.nameplates;
+  }
+
+  /**
+   * Adds every entrant (skin, nameplate, trail), then routes them through the
+   * shared crowd renderer, pausing after each player: a full show's field
+   * takes over 100 ms on a first round.
+   *
+   * @returns A generator yielding progress (0..1).
+   */
+  *populate(): Generator<number> {
+    const { source, opts } = this;
     let trails = opts.preset.vfx.trails;
     const visuals: TumblerVisual[] = [];
     const order = [...source.players].sort((a, b) =>
       a.id === source.localId ? -1 : b.id === source.localId ? 1 : 0,
     );
+    // Adding players and batching them into the crowd cost about the same on a first round.
+    const playersShare = 0.5;
     for (const info of order) {
       const loadout = opts.loadouts.get(info.id);
       if (!loadout) continue;
@@ -269,8 +290,15 @@ export class PlayerVisuals {
       };
       this.entries.push(e);
       this.byId.set(info.id, e);
+      yield (playersShare * this.entries.length) / order.length;
     }
-    this.crowd = opts.pool.batch(visuals);
+    const batching = opts.pool.batch(visuals);
+    let r = batching.next();
+    while (!r.done) {
+      yield playersShare + (1 - playersShare) * r.value;
+      r = batching.next();
+    }
+    this.crowd = r.value;
     if (this.crowd) opts.parent.add(this.crowd.object);
   }
 

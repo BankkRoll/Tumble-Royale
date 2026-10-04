@@ -122,7 +122,20 @@ export interface NamedPlayer {
  * streamerSafeName({ id: 4, name: 'xXSniperXx' }, true); // 'Tumbler 5'
  */
 export function streamerSafeName(p: NamedPlayer, streamer: boolean): string {
-  return streamer && !p.isLocal && !p.isBot && !p.isParty ? `Tumbler ${p.id + 1}` : p.name;
+  return streamer && !p.isLocal && !p.isBot && !p.isParty ? seatName(p.id) : p.name;
+}
+
+/**
+ * The generic name of a show seat: what Streamer Mode shows, and the
+ * fallback for a seat whose player is unknown. Counts from 1, so seat 0 is
+ * "Tumbler 1" everywhere (nameplates, chat, the wall, replays).
+ *
+ * @param id - Show player id.
+ * @example
+ * seatName(0); // 'Tumbler 1'
+ */
+export function seatName(id: number): string {
+  return `Tumbler ${id + 1}`;
 }
 
 /**
@@ -164,5 +177,5 @@ export interface KeyedPlayer {
  */
 export function streamerSafeKeyedName(p: KeyedPlayer, streamer: boolean): string {
   if (!streamer || p.known || p.isBot) return p.name;
-  return p.seat !== undefined ? `Tumbler ${p.seat + 1}` : maskedName(p.key);
+  return p.seat !== undefined ? seatName(p.seat) : maskedName(p.key);
 }

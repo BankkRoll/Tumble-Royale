@@ -26,6 +26,7 @@ import {
   type ShowPlaylist,
   type ShowSummary,
 } from '@tumble/sim/show';
+import { seatName } from '@tumble/ui';
 import { botLoadout } from '../cosmetics.ts';
 import type { HudInput, HudPlayerStatus } from '../round/hud.ts';
 import { OfflineRoundSource, type RoundSource } from '../round/source.ts';
@@ -196,7 +197,7 @@ export class OfflineShowSession extends ShowSession {
           const sp = this.players.get(id);
           players.push({
             id,
-            name: sp?.name ?? `Tumbler ${id}`,
+            name: sp?.name ?? seatName(id),
             isBot: sp?.isBot ?? true,
             team: p.team ?? -1,
           });

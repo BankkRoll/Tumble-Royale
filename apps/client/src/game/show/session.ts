@@ -30,6 +30,7 @@ import {
   bindUI,
   keyboardBusy,
   social,
+  seatName,
   streamerSafeName,
   ui,
   type HudGrab,
@@ -669,7 +670,7 @@ export abstract class ShowSession {
     if (!p)
       return {
         id,
-        name: `Tumbler ${id}`,
+        name: seatName(id),
         colors: { primary: '#ff6fb5', secondary: '#ffd23f', pattern: 'plain' },
         isBot: true,
       };
@@ -695,7 +696,7 @@ export abstract class ShowSession {
    */
   protected publicName(id: number): string {
     const p = this.players.get(id);
-    if (!p) return `Tumbler ${id + 1}`;
+    if (!p) return seatName(id);
     return streamerSafeName(
       { id, name: p.name, isBot: p.isBot, isLocal: id === this.localId, isParty: this.isPartyMate(id) },
       this.ctx.settings().gameplay.streamerMode,

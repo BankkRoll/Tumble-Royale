@@ -20,6 +20,7 @@ import type { MatchDeps } from '@tumble/sim/match';
 import {
   bindUI,
   isTypingTarget,
+  seatName,
   streamerSafeName,
   ui,
   type OverlayId,
@@ -306,7 +307,7 @@ export class ReplayController {
     const h = data.header;
     const name = (id: number): string => {
       const p = h.players.find((q) => q.id === id);
-      return p ? publicName(h, p) : `Tumbler ${id + 1}`;
+      return p ? publicName(h, p) : seatName(id);
     };
     const markers: ReplayMarkerInfo[] = view.timeline.markers.map((m: ReplayMarker) => ({
       t: m.t,

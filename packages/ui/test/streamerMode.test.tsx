@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ChatWidget } from '../src/hud/ChatWidget.tsx';
 import { RaceProgress, SpectateBanner } from '../src/hud/widgets.tsx';
-import { maskedName, streamerSafeKeyedName, streamerSafeName } from '../src/names.ts';
+import { maskedName, seatName, streamerSafeKeyedName, streamerSafeName } from '../src/names.ts';
 import { ShowHostTools } from '../src/screens/overlays/ShowHostTools.tsx';
 import { VictoryScreen, WinnerCamScreen } from '../src/screens/Results.tsx';
 import { INITIAL_CHAT } from '../src/store/chatChannels.ts';
@@ -34,6 +34,13 @@ describe('streamerSafeName', () => {
     expect(streamerSafeName({ id: 4, name: 'Me', isLocal: true }, true)).toBe('Me');
     expect(streamerSafeName({ id: 4, name: 'Pal', isParty: true }, true)).toBe('Pal');
     expect(streamerSafeName({ id: 4, name: 'Sir Wobble', isBot: true }, true)).toBe('Sir Wobble');
+  });
+
+  it('uses one seat name for masks and unknown seats, counting from 1', () => {
+    expect(seatName(0)).toBe('Tumbler 1');
+    expect(seatName(41)).toBe('Tumbler 42');
+    expect(streamerSafeName({ id: 41, name: 'Real' }, true)).toBe(seatName(41));
+    expect(streamerSafeKeyedName({ key: 'u', name: 'Real', seat: 41 }, true)).toBe(seatName(41));
   });
 });
 

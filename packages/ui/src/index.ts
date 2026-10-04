@@ -30,6 +30,7 @@ export { fireConfetti, fireFireworks, CONSOLATION_LINES, type ConfettiOptions } 
 export {
   maskedName,
   randomTumblerName,
+  seatName,
   validateDisplayName,
   streamerSafeKeyedName,
   streamerSafeName,

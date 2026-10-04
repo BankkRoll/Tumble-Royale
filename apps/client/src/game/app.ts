@@ -1411,7 +1411,7 @@ export class GameApp {
     });
 
     const canvas = this.renderer.domElement;
-    canvas.addEventListener('pointerdown', (e) => {
+    const onStagePress = (x: number, y: number): void => {
       const st = s();
       if (
         this.session ||
@@ -1422,8 +1422,8 @@ export class GameApp {
       )
         return;
       const rect = canvas.getBoundingClientRect();
-      const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      const ny = 1 - ((e.clientY - rect.top) / rect.height) * 2;
+      const nx = ((x - rect.left) / rect.width) * 2 - 1;
+      const ny = 1 - ((y - rect.top) / rect.height) * 2;
       if (this.menu.signAt(nx, ny)) {
         st.setLobbyGames({ pickerOpen: true });
         return;
@@ -1436,7 +1436,11 @@ export class GameApp {
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       canvas.focus({ preventScroll: true });
       this.menu.setIdlePlay(true);
-    });
+    };
+    canvas.addEventListener('pointerdown', (e) => onStagePress(e.clientX, e.clientY));
+    // Touch idle play covers the stage with the camera-drag surface, which forwards taps here.
+    uiEvents.on('stageTap', ({ x, y }) => onStagePress(x, y));
+    uiEvents.on('leaveIdlePlay', () => this.menu?.setIdlePlay(false));
     // Capture phase + preventDefault: Esc only leaves idle play; menu navigation must not also treat it as Back.
     window.addEventListener(
       'keydown',

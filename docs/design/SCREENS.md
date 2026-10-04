@@ -670,7 +670,13 @@ ring, cue `ui.countdown.go`, HUD brightens to 100%.
   the last device: floating joystick, Jump / Dive / Grab buttons, an Emote
   button that toggles the wheel, camera drag elsewhere (`touchInput`,
   `touchLook`). Big moments vibrate the phone or controller (Controller
-  vibration setting).
+  vibration setting). The same layer serves every place the Tumbler can
+  move (`touchMode`): the round and tutorial; the pre-show platform
+  (joystick and buttons, no wheel or camera); and menu idle play, party
+  hangout and lobby games, where the menu chrome steps aside (a running
+  lobby game keeps its score), a Done button returns to the menu, and taps
+  on the stage still pick the Games sign or a party member. Opening any menu
+  UI hides it again.
 - **Gear button** opens the in-game menu (§9.16).
 - **Overtime**: timer becomes "OVERTIME!" flashing (steady with Reduce Flashing).
 

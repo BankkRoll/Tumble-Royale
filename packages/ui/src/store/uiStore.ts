@@ -104,6 +104,8 @@ export interface UIState {
   isTouch: boolean;
   /** Mouse camera lock in a round: 'off' when it does not apply (menus, touch, setting off). */
   cameraLock: 'off' | 'unlocked' | 'locked';
+  /** The local Tumbler is running around the menu platform (idle play, party hangout, lobby games). */
+  idlePlay: boolean;
   /** Settings is waiting for a controller button to bind; menu navigation ignores the pad meanwhile. */
   padCapture: boolean;
 
@@ -326,6 +328,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   inputMode: 'game',
   isTouch: false,
   cameraLock: 'off',
+  idlePlay: false,
   padCapture: false,
 
   boot: { progress: 0, label: 'Inflating Tumblers…' },

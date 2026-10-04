@@ -31,6 +31,17 @@ describe('touch → CharacterInput', () => {
     expect(out.yaw).toBe(1.25);
   });
 
+  it('keeps working in menu mode (idle play, party hangout, lobby games)', () => {
+    input.setMouseActions(false);
+    input.setGamepadGameplay(false);
+    input.applyTouch({ ...rest, move: { x: 0, y: 1 }, jump: true });
+    const out = input.sample(0, blank());
+    expect(out.moveZ).toBeCloseTo(1);
+    expect(out.buttons & Button.Jump).toBeTruthy();
+    input.addTouchLook(10, 0);
+    expect(input.readLook(1 / 60).yaw).toBeGreaterThan(0);
+  });
+
   it('clamps an over-long stick vector to the unit disc', () => {
     input.applyTouch({ ...rest, move: { x: 3, y: 4 } });
     const out = input.sample(0, blank());

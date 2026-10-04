@@ -670,6 +670,40 @@
 .tr-touch-btn--emote > svg {
   width: 1.2em;
 }
+/* Menu idle play: Done hands the screen back to the menu. */
+.tr-touch-done {
+  position: absolute;
+  top: calc(var(--safe-t) + 1em);
+  right: calc(var(--safe-r) + 1em);
+  min-width: 5.5em;
+  min-height: 2.75em;
+  padding: 0.5em 1.2em;
+  border-radius: 999px;
+  border: 0.15em solid var(--ink) !important;
+  background: var(--cream) !important;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 1.05em;
+  box-shadow: 0 0.18em 0 var(--ink);
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.tr-touch-done:active {
+  transform: translateY(0.1em);
+  box-shadow: 0 0.08em 0 var(--ink);
+}
+/*
+ * While a touch player runs around the menu platform the menu chrome steps
+ * aside (it would sit under the joystick and buttons); a running lobby game
+ * keeps its score. `visibility` also stops the hidden chrome taking taps.
+ */
+.tr-root[data-touch-play='menu'] .tr-menu {
+  visibility: hidden;
+}
+.tr-root[data-touch-play='menu'] .tr-menu .tr-play-lgame {
+  visibility: visible;
+}
 /* Left-handed layout mirrors the cluster so Jump stays nearest the screen edge. */
 .tr-touch.is-left .tr-touch-btn--jump {
   right: auto;

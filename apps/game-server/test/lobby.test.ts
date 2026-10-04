@@ -5,7 +5,12 @@
  * snapshot + reliable-event pipeline.
  */
 import { describe, expect, it } from 'vitest';
-import { LEAVE_CLOSE_REASON, type DecodedSnapshot, type LowFreqMessage, type NetEntityState } from '@tumble/netcode';
+import {
+  LEAVE_CLOSE_REASON,
+  type DecodedSnapshot,
+  type LowFreqMessage,
+  type NetEntityState,
+} from '@tumble/netcode';
 import { Button, CharacterState, loadRapier, type CharacterInput } from '@tumble/sim';
 import { createTumblerController } from '@tumble/sim/character';
 import { createMatchSim, createTestArenaRound, testObstacleModules } from '@tumble/sim/match';

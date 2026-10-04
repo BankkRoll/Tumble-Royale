@@ -3,8 +3,9 @@
  *
  * Turns a standard-mapping pad into the UI's navigation directions: D-pad or
  * left stick moves focus with a key-repeat style delay, A accepts, B goes
- * back, LB/RB cycle tabs and Start is reported separately (the caller decides
- * between the in-round menu and Settings).
+ * back, LB/RB cycle tabs and the Menu button (Start unless remapped) is
+ * reported separately as `start` (the caller decides between the in-round
+ * menu and Settings).
  *
  * Pure apart from the pad snapshot it is handed, so it is driven by fake pads
  * in tests and by `navigator.getGamepads()` in the game.
@@ -57,12 +58,27 @@ export const PAD_BUTTON = {
   Right: 15,
 } as const;
 
-const EDGE_BUTTONS: readonly [number, PadNavAction][] = [
+const NAV_BUTTONS: readonly [number, PadNavAction][] = [
   [PAD_BUTTON.A, 'accept'],
   [PAD_BUTTON.B, 'back'],
   [PAD_BUTTON.LB, 'tabPrev'],
   [PAD_BUTTON.RB, 'tabNext'],
-  [PAD_BUTTON.Start, 'start'],
+];
+
+/**
+ * Buttons menus always read while they own the pad (accept, back, tabs and
+ * the D-pad). The remappable Menu button must stay off these, or opening a
+ * menu would also press inside it.
+ */
+export const MENU_NAV_BUTTONS: readonly number[] = [
+  PAD_BUTTON.A,
+  PAD_BUTTON.B,
+  PAD_BUTTON.LB,
+  PAD_BUTTON.RB,
+  PAD_BUTTON.Up,
+  PAD_BUTTON.Down,
+  PAD_BUTTON.Left,
+  PAD_BUTTON.Right,
 ];
 
 type Dir = 'up' | 'down' | 'left' | 'right';
@@ -101,9 +117,27 @@ export class GamepadNavigator {
   private readonly prev = new Map<number, boolean>();
   private dir: Dir | null = null;
   private nextRepeat = 0;
+  private edges: readonly [number, PadNavAction][] = [...NAV_BUTTONS, [PAD_BUTTON.Start, 'start']];
 
   constructor(opts: Partial<PadNavOptions> = {}) {
     this.opts = { ...DEFAULT_PAD_NAV, ...opts };
+  }
+
+  /**
+   * Sets which buttons report `start` (the player's Menu binding). Buttons
+   * menus already use for navigation are ignored, and an empty list falls
+   * back to Start so a pad can always reach the menu.
+   *
+   * @param buttons - Standard-mapping button indices.
+   * @example
+   * nav.setStartButtons([PAD_BUTTON.Back]);
+   */
+  setStartButtons(buttons: readonly number[]): void {
+    const usable = [...new Set(buttons)].filter(
+      (b) => Number.isInteger(b) && b >= 0 && !MENU_NAV_BUTTONS.includes(b),
+    );
+    const start = usable.length ? usable : [PAD_BUTTON.Start];
+    this.edges = [...NAV_BUTTONS, ...start.map((b): [number, PadNavAction] => [b, 'start'])];
   }
 
   /**
@@ -123,12 +157,14 @@ export class GamepadNavigator {
       this.dir = null;
       return out;
     }
-    for (const [i, action] of EDGE_BUTTONS) {
-      const down = pressed(pad, i);
+    const downNow = new Map<number, boolean>();
+    for (const [i, action] of this.edges) {
+      const down = downNow.get(i) ?? pressed(pad, i);
+      downNow.set(i, down);
       const was = this.prev.get(i) ?? false;
-      this.prev.set(i, down);
       if (down && !was && (active || action === 'start')) out.push(action);
     }
+    for (const [i, down] of downNow) this.prev.set(i, down);
     const dir = padDirection(pad, this.opts.stickThreshold);
     if (dir !== this.dir) {
       this.dir = dir;

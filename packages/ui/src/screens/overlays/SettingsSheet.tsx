@@ -1,5 +1,5 @@
 /**
- * Settings sheet: Graphics, Controls (with key rebinding), Audio,
+ * Settings sheet: Graphics, Controls (keyboard and controller rebinding), Audio,
  * Accessibility, Gameplay, Account. Every change applies live and emits
  * `settingsChange`. docs/design/SCREENS.md §5.10.
  */
@@ -13,6 +13,7 @@ import { ui, useUI } from '../../store/uiStore.ts';
 import type { BindAction, Keybinds, SettingsSection } from '../../store/types.ts';
 import { Icon } from '../../components/icons/index.tsx';
 import { AccountSection } from './AccountSheet.tsx';
+import { PadRebinder } from './PadRebinder.tsx';
 import { semanticColors } from '../../theme/tokens.ts';
 
 const SECTIONS: { id: SettingsSection; label: string }[] = [
@@ -121,6 +122,7 @@ function Rebinder(): JSX.Element {
 
   return (
     <div className="tr-binds">
+      <div className="tr-binds-title tr-label">Keyboard and mouse</div>
       <div className="tr-binds-head">
         <span>Action</span>
         <span>Primary</span>
@@ -293,6 +295,7 @@ function Section({ id }: { id: SettingsSection }): JSX.Element {
             />
           </Row>
           <Rebinder />
+          <PadRebinder />
         </>
       );
     case 'audio':

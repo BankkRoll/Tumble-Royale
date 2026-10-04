@@ -181,6 +181,10 @@ export interface UIIntents {
   touchInput: { move: { x: number; y: number }; jump: boolean; dive: boolean; grab: boolean };
   /** Camera drag on the touch HUD, in CSS pixels since the last emit. */
   touchLook: { dx: number; dy: number };
+  /** Touch Done button: leave idle play and bring the menu back. */
+  leaveIdlePlay: undefined;
+  /** A tap (not a drag) on the touch camera surface during idle play, in client pixels; picks the sign or a party member like a click on the stage. */
+  stageTap: { x: number; y: number };
   /** A menu navigation the UI didn't consume (e.g. Back on the root menu). */
   navUnhandled: { dir: NavDirection };
   /** Colour preview while the welcome screen is open. */

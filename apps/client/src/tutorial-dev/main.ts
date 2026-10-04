@@ -19,6 +19,7 @@ import { PerspectiveCamera, Scene } from 'three/webgpu';
 import { checkDeterminism } from '../debug/determinism.ts';
 import { InputSystem } from '../input/index.ts';
 import { AudioBridge } from '../game/audioBridge.ts';
+import { keymapFromKeybinds, padmapFromPadBinds } from '../game/bindings.ts';
 import { resolveTumblerFactory } from '../game/characters.ts';
 import { readConfig } from '../game/config.ts';
 import '../game/hooks.ts';
@@ -55,6 +56,7 @@ async function boot(): Promise<void> {
         ...d.controls,
         ...saved.controls,
         keybinds: { ...d.controls.keybinds, ...saved.controls?.keybinds },
+        padBinds: { ...d.controls.padBinds, ...saved.controls?.padBinds },
       },
       audio: { ...d.audio, ...saved.audio },
       accessibility: { ...d.accessibility, ...saved.accessibility },
@@ -76,6 +78,8 @@ async function boot(): Promise<void> {
   audio.applySettings(ui.getState().settings);
   const input = new InputSystem({ element: canvas, settings: { pointerLock: false } });
   input.settings.sensitivity = ui.getState().settings.controls.mouseSensitivity;
+  input.setKeymap(keymapFromKeybinds(ui.getState().settings.controls.keybinds));
+  input.setPadMap(padmapFromPadBinds(ui.getState().settings.controls.padBinds));
   const profile = new ProfileStore(cfg.fresh);
   if (!profile.exists)
     profile.create('Rookie', { primary: '#ff6fb5', secondary: '#ffd23f', pattern: 'dots' });

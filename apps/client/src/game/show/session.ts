@@ -29,6 +29,7 @@ import type { ShowPlaylist } from '@tumble/sim/show';
 import {
   bindUI,
   keyboardBusy,
+  padButtonLabel,
   social,
   seatName,
   streamerSafeName,
@@ -62,9 +63,8 @@ import {
 } from '../views/ceremonies.ts';
 import type { GameContext, RoundOutcomeInfo, RoundStart, SessionPlayer, SessionSummary } from './context.ts';
 import { showMenuKeyAction } from '../inputRouting.ts';
+import { padSpectateButtons } from '../bindings.ts';
 import {
-  PAD_SPECTATE_NEXT,
-  PAD_SPECTATE_PREV,
   SpectatePadCycler,
   afterRoundResults,
   cycleSpectateIndex,
@@ -1504,12 +1504,12 @@ export abstract class ShowSession {
         return;
       }
       // Waiting for the others: spectating is one key / shoulder press away.
-      const binds = ui.getState().settings.controls.keybinds;
+      const { keybinds: binds, padBinds: pad } = ui.getState().settings.controls;
       ui.getState().pushToast({
         kind: 'info',
         variant: 'feed',
         title: 'Qualified! Waiting for the round to end',
-        body: `${shortKey(binds.spectatePrev[0])} / ${shortKey(binds.spectateNext[0])} or LB / RB to watch the others`,
+        body: `${shortKey(binds.spectatePrev[0])} / ${shortKey(binds.spectateNext[0])} or ${padButtonLabel(pad.spectatePrev[0])} / ${padButtonLabel(pad.spectateNext[0])} to watch the others`,
         durationMs: 5000,
       });
     });
@@ -1621,7 +1621,7 @@ export abstract class ShowSession {
     if (i >= 0) this.spectatePlayer(r.spectateId, i, list.length);
   }
 
-  /** Gamepad shoulder buttons cycle spectate targets (the input system has no spectate actions). */
+  /** The controller's spectate buttons (LB/RB unless remapped) cycle targets; the input system has no spectate actions. */
   private pollSpectatePad(): void {
     const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : [];
     let gp: Gamepad | null = null;
@@ -1632,7 +1632,8 @@ export abstract class ShowSession {
       }
     }
     const down = (i: number): boolean => !!gp?.buttons[i]?.pressed;
-    const dir = this.padCycler.update(down(PAD_SPECTATE_PREV), down(PAD_SPECTATE_NEXT));
+    const { prev, next } = padSpectateButtons(ui.getState().settings.controls.padBinds);
+    const dir = this.padCycler.update(prev.some(down), next.some(down));
     if (dir !== 0) this.cycleSpectate(dir);
   }
 

@@ -13,7 +13,7 @@ import { BIND_ACTION_LABELS } from '../../store/defaults.ts';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { BindAction, LocalStatus, ShowSeat } from '../../store/types.ts';
-import { PAD_GLYPHS, controlGlyph } from '../../hud/glyphs.ts';
+import { controlGlyph, padGlyph } from '../../hud/glyphs.ts';
 import { keyLabel } from './SettingsSheet.tsx';
 import { ShowHostTools } from './ShowHostTools.tsx';
 
@@ -115,6 +115,7 @@ export function InGameMenu(): JSX.Element {
     })),
   );
   const binds = useUI((s) => s.settings.controls.keybinds);
+  const padBinds = useUI((s) => s.settings.controls.padBinds);
   const device = useUI((s) => s.hud.device);
   const outOfShow = useUI((s) => s.showSeat?.outOfShow ?? false);
   const watchingLabel = useUI((s) => spectatingLabel(s.showSeat));
@@ -163,12 +164,14 @@ export function InGameMenu(): JSX.Element {
           <div className="tr-igm-keys" aria-label="Controls">
             {(hud.status === 'spectating' || outOfShow ? SPECTATE_ROWS : CONTROL_ROWS).map((a) => (
               <span key={a} className="tr-hud-hint-item">
-                <kbd>{controlGlyph(a, device, binds)}</kbd>
+                <kbd>{controlGlyph(a, device, binds, padBinds)}</kbd>
                 {BIND_ACTION_LABELS[a]}
               </span>
             ))}
             <span className="tr-hud-hint-item" data-testid="igm-menu-key">
-              <kbd>{device === 'gamepad' ? PAD_GLYPHS.pause : keyLabel(binds.pause[0] || 'Escape')}</kbd>
+              <kbd>
+                {device === 'gamepad' ? padGlyph('pause', padBinds) : keyLabel(binds.pause[0] || 'Escape')}
+              </kbd>
               {BIND_ACTION_LABELS.pause}
             </span>
             {device === 'keyboard' && (

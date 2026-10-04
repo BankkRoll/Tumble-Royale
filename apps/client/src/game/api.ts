@@ -296,6 +296,63 @@ export interface ApiStreak {
   ladder: { day: number; rewards: ApiGrant[]; state: 'claimed' | 'today' | 'upcoming' }[];
 }
 
+/** One event as `GET /live-events` lists it (also built from bundled content offline). */
+export interface ApiLiveEvent {
+  id: string;
+  name: string;
+  description: string;
+  art: [string, string];
+  icon: string;
+  /** Effective window, ISO. */
+  startsAt: string;
+  endsAt: string;
+  phase: 'upcoming' | 'live' | 'ended';
+  playlistIds: string[];
+  points: {
+    perShow: number;
+    perQualifiedRound: number;
+    finalReached: number;
+    crown: number;
+    eventPlaylistMultiplier: number;
+  };
+  challenges: {
+    id: string;
+    title: string;
+    metric: string;
+    target: number;
+    eventPlaylistsOnly: boolean;
+    points: number;
+    rewardXp: number;
+  }[];
+  tiers: { tier: number; points: number; rewards: ApiGrant[] }[];
+}
+
+/** `GET /live-events`. */
+export interface ApiLiveEvents {
+  enabled: boolean;
+  events: ApiLiveEvent[];
+  serverTime: number;
+}
+
+/** The player's standing in one event. */
+export interface ApiEventProgress {
+  eventId: string;
+  points: number;
+  shows: number;
+  tierReached: number;
+  claimedTiers: number[];
+  challenges: { id: string; progress: number; target: number; completed: boolean; claimed: boolean }[];
+}
+
+/** `GET /live-events/progress`. */
+export interface ApiEventProgressList {
+  enabled: boolean;
+  progress: ApiEventProgress[];
+  /** Ended events this read paid out automatically. */
+  settled: { eventId: string; name: string; points: number; tiers: number[]; challenges: string[] }[];
+  serverTime: number;
+}
+
 /** `POST /streak/claim`. */
 export interface ApiStreakClaim {
   day: string;
@@ -788,6 +845,17 @@ export class ApiClient {
   collection = (): Promise<ApiCollection> => this.request('GET', '/collection');
   streak = (): Promise<ApiStreak> => this.request('GET', '/streak');
   claimStreak = (): Promise<ApiStreakClaim> => this.request('POST', '/streak/claim');
+  /** Upcoming, live and recently ended events (public). */
+  liveEvents = (): Promise<ApiLiveEvents> => this.request('GET', '/live-events', undefined, { auth: false });
+  /** The player's event progress; also pays out events that ended. */
+  eventProgress = (): Promise<ApiEventProgressList> => this.request('GET', '/live-events/progress');
+  claimEventTier = (eventId: string, tier: number): Promise<{ progress: ApiEventProgress }> =>
+    this.request('POST', `/live-events/${encodeURIComponent(eventId)}/claim`, { tier });
+  claimEventChallenge = (
+    eventId: string,
+    challengeId: string,
+  ): Promise<{ points: number; xp: number; progress: ApiEventProgress }> =>
+    this.request('POST', `/live-events/${encodeURIComponent(eventId)}/challenges/claim`, { challengeId });
   tutorialComplete = (): Promise<ApiTutorialComplete> => this.request('POST', '/me/tutorial-complete');
   leaderboard = (type: string, scope: 'global' | 'regional' | 'friends'): Promise<ApiLeaderboard> =>
     this.request('GET', `/leaderboards/${type}?scope=${scope}&limit=50`);

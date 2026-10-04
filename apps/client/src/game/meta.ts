@@ -15,6 +15,7 @@ import {
 } from '@tumble/ui';
 import { uiCollection } from './cosmetics.ts';
 import { facedCard } from './facedCard.ts';
+import { offlineEvents } from './liveEvents.ts';
 import { DEFAULT_PLAYLIST_ID, isNewcomer } from './playlists.ts';
 import { currentNews, refreshLiveNews } from './liveNews.ts';
 import { activeSchedule, scheduledCard, type ScheduleCache } from './liveOps/schedule.ts';
@@ -141,6 +142,7 @@ export function pushMeta(profile: ProfileStore): void {
   s.setAchievements(null);
   s.setLoginStreak(null);
   s.setCollection(uiCollection((id) => profile.owns(id)));
+  s.setEvents(offlineEvents((id) => profile.owns(id), Date.now()));
   s.setMatchHistory(profile.uiHistory());
   syncLocalNotifications(profile);
   pushStaticMeta(profile.showsPlayed);

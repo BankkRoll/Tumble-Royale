@@ -1698,6 +1698,16 @@ export class GameApp {
         if (a) void a.rerollChallenge(id);
         else s().pushToast({ kind: 'info', title: 'Rerolls need an online account', icon: '🎲' });
       },
+      onClaimEventTier: ({ eventId, tier }) => {
+        const a = online();
+        if (a) void a.claimEventTier(eventId, tier);
+        else s().pushToast({ kind: 'info', title: 'Event rewards need an online account' });
+      },
+      onClaimEventChallenge: ({ eventId, challengeId }) => {
+        const a = online();
+        if (a) void a.claimEventChallenge(eventId, challengeId);
+        else s().pushToast({ kind: 'info', title: 'Event rewards need an online account' });
+      },
       onClaimLoginStreak: () => {
         const a = online();
         if (a) void a.claimLoginStreak();

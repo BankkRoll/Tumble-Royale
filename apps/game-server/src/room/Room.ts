@@ -587,8 +587,15 @@ export class Room {
     }
   }
 
-  /** Called when a session's connection closes. */
-  onClose(session: ClientSession, now: number): void {
+  /**
+   * Called when a session's connection closes.
+   *
+   * @param session - The closed session.
+   * @param now - Server time (ms).
+   * @param left - The player chose to leave (the client closed with the leave reason): the seat
+   *   is freed now instead of being held for a resume.
+   */
+  onClose(session: ClientSession, now: number, left = false): void {
     this.sessions.delete(session);
     const slot = this.slots.get(session.playerId);
     if (!slot || slot.session !== session) return;
@@ -596,6 +603,13 @@ export class Room {
     if (slot.spectator) {
       this.slots.delete(slot.id);
       this.chat.remove(slot.id);
+      return;
+    }
+    if (left) {
+      this.show.onPlayerConnection?.(slot.id, false);
+      this.dropSlot(slot);
+      this.log(`[room ${this.id}] player ${slot.id} left`);
+      this.broadcastPlayerList();
       return;
     }
     slot.disconnectedAt = now;
@@ -674,20 +688,28 @@ export class Room {
   // Roster
   // ---------------------------------------------------------------------------
 
+  /**
+   * Takes a departed player out for good: the seat frees up in the pre-show
+   * lobby; mid-show it forfeits so the director eliminates the Tumbler.
+   */
+  private dropSlot(slot: PlayerSlot): void {
+    this.leaveLobby(slot.id);
+    if (this.state === 'lobby') {
+      this.slots.delete(slot.id);
+    } else {
+      slot.left = true;
+      // The real sim eliminates forfeiting players at once; the contract makes it optional.
+      (this.sim as { forfeit?: (id: number) => void } | null)?.forfeit?.(slot.id);
+      this.show.onPlayerLeft(slot.id);
+    }
+  }
+
   private updateRoster(now: number): void {
     for (const slot of this.slots.values()) {
       if (slot.isBot || slot.left || slot.session || slot.disconnectedAt < 0) continue;
       if (now - slot.disconnectedAt < this.config.resumeWindowMs) continue;
       // Until then the Tumbler idles on the platform, so a resume never flashes a despawn.
-      this.leaveLobby(slot.id);
-      if (this.state === 'lobby') {
-        this.slots.delete(slot.id);
-      } else {
-        slot.left = true;
-        // The real sim eliminates forfeiting players at once; the contract makes it optional.
-        (this.sim as { forfeit?: (id: number) => void } | null)?.forfeit?.(slot.id);
-        this.show.onPlayerLeft(slot.id);
-      }
+      this.dropSlot(slot);
       this.log(`[room ${this.id}] player ${slot.id} resume window expired`);
       this.broadcastPlayerList();
     }

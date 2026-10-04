@@ -2,9 +2,9 @@
  * Shared React hooks: clocks, count-ups, timed sequences, accessibility and
  * streamer-mode helpers.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useUI } from '../store/uiStore.ts';
-import { streamerSafeName, type NamedPlayer } from '../names.ts';
+import { streamerSafeKeyedName, streamerSafeName, type NamedPlayer } from '../names.ts';
 
 /**
  * Re-renders every `intervalMs` and returns `Date.now()`.
@@ -116,6 +116,25 @@ export function useReducedFlashing(): boolean {
 export function useDisplayName(): (p: NamedPlayer) => string {
   const streamer = useUI((s) => s.settings.gameplay.streamerMode);
   return useCallback((p) => streamerSafeName(p, streamer), [streamer]);
+}
+
+/**
+ * Display name honouring Streamer Mode for players known by account id
+ * (private-lobby members, host tools): strangers become a stable
+ * "Tumbler N"; you, your party, friends and bots keep their names.
+ */
+export function useAccountName(): (p: { id: string; name: string; isSelf?: boolean }) => string {
+  const streamer = useUI((s) => s.settings.gameplay.streamerMode);
+  const friends = useUI((s) => s.friends);
+  const members = useUI((s) => s.party?.members);
+  return useMemo(() => {
+    const known = new Set([
+      ...friends.filter((f) => !f.recent).map((f) => f.id),
+      ...(members ?? []).map((m) => m.id),
+    ]);
+    return (p) =>
+      streamerSafeKeyedName({ key: p.id, name: p.name, known: !!p.isSelf || known.has(p.id) }, streamer);
+  }, [streamer, friends, members]);
 }
 
 /** Formats seconds as `m:ss`. */

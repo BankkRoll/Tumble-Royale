@@ -45,3 +45,50 @@ describe('play again', () => {
     expect(playAgainAction(null)).toEqual({ action: 'play', playlistId: null });
   });
 });
+
+describe('play again after a private online show', () => {
+  it('reopens the same lobby for its host instead of queueing public matchmaking', () => {
+    const next = playAgainAction({ kind: 'custom', options, lobby: { code: 'QWE234', host: true } });
+    expect(next).toEqual({ action: 'reopenLobby', code: 'QWE234', options });
+    if (next.action === 'reopenLobby') expect(next.options?.rounds).not.toBe(options.rounds);
+  });
+
+  it('takes a member back into the lobby with its code', () => {
+    expect(playAgainAction({ kind: 'custom', options, lobby: { code: 'QWE234', host: false } })).toEqual({
+      action: 'rejoinLobby',
+      code: 'QWE234',
+    });
+  });
+
+  it('goes back to the menu when the lobby is unknown (show rejoined after a reload)', () => {
+    const next = playAgainAction({ kind: 'custom', options: null, lobby: { code: null, host: false } });
+    expect(next.action).toBe('menu');
+  });
+
+  it('never turns a private show into a public queue, even for a party member', () => {
+    const next = playAgainAction(
+      { kind: 'custom', options, lobby: { code: 'QWE234', host: false } },
+      { partyMember: true },
+    );
+    expect(next.action).toBe('rejoinLobby');
+  });
+});
+
+describe('play again as a party member', () => {
+  it('leaves the next online show to the leader', () => {
+    for (const last of [{ kind: 'matchmade', playlistId: 'main-show' } as const, null]) {
+      expect(playAgainAction(last, { partyMember: true })).toEqual({
+        action: 'menu',
+        title: 'The leader starts the next show',
+        body: 'Hit Ready in the menu and hang tight.',
+      });
+    }
+  });
+
+  it('still replays a solo Vs Bots show', () => {
+    expect(playAgainAction({ kind: 'offline', playlistId: 'main-show' }, { partyMember: true })).toEqual({
+      action: 'offline',
+      playlistId: 'main-show',
+    });
+  });
+});

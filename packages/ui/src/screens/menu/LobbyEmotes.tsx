@@ -10,6 +10,7 @@ import { playCue } from '../../audio-cues.ts';
 import { ItemPreview } from '../../components/ItemPreview.tsx';
 import { Icon } from '../../components/icons/index.tsx';
 import { uiEvents } from '../../store/events.ts';
+import { keyboardBusy } from '../../store/inputOwnership.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { CosmeticItem, InventoryData, SeasonPassData } from '../../store/types.ts';
 
@@ -57,11 +58,6 @@ function play(entry: EmoteEntry): void {
   uiEvents.emit('emote', { slot: Math.max(0, entry.slot), id: entry.item.id });
 }
 
-function isTyping(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null;
-  return !!el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable);
-}
-
 /** Props for {@link LobbyEmotes}. */
 export interface LobbyEmotesProps {
   /** Extra class on the root (positioning is up to the menu layout). */
@@ -102,7 +98,7 @@ export const LobbyEmotes = memo(function LobbyEmotes({ className }: LobbyEmotesP
       return;
     }
     const onKey = (e: KeyboardEvent): void => {
-      if (e.repeat || isTyping(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.repeat || keyboardBusy(e) || e.ctrlKey || e.metaKey || e.altKey) return;
       const s = ui.getState();
       if (s.overlay !== 'none' || s.dialog) return;
       if (e.code === 'KeyB') {

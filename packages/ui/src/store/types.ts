@@ -611,6 +611,8 @@ export interface LeaderboardInfo {
   source: 'api' | 'local';
   /** Epoch ms of the fetch. */
   updatedAt: number;
+  /** Why the last load failed; the board shows it with a Retry instead of spinning. */
+  error?: string;
 }
 
 /** One past show for match history. */
@@ -721,6 +723,8 @@ export interface PartyMember {
   ready: boolean;
   isLeader: boolean;
   isSelf: boolean;
+  /** Playing Vs Bots or Practice Island on their own; still in the party. */
+  playingSolo?: boolean;
 }
 
 /** Party state (max 4). */
@@ -1043,6 +1047,8 @@ export interface ShowSeat {
   online: boolean;
   /** Knocked out of the show: watching the remaining rounds as a spectator. */
   outOfShow: boolean;
+  /** Joined as a spectator (a private show's spectator seat): watching, never knocked out. */
+  spectator?: boolean;
 }
 
 /**

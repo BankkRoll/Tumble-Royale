@@ -10,6 +10,7 @@ import { Button } from '../../components/controls.tsx';
 import { Icon } from '../../components/icons/index.tsx';
 import { uiEvents } from '../../store/events.ts';
 import { useUI } from '../../store/uiStore.ts';
+import { confirmLeaveShow } from './InGameMenu.tsx';
 import type { WatchChoice } from '../../store/types.ts';
 
 /**
@@ -62,20 +63,15 @@ export const WatchChoicePanel = memo(function WatchChoicePanel({
           variant="sky"
           size="lg"
           autoFocusNav
+          // Back (Esc, pad B) keeps watching: Esc also frees the mouse, so it must never leave the show.
+          data-nav-back=""
           data-testid="watch-keep"
           onClick={() => uiEvents.emit('spectate')}
         >
           <Icon name="eye" size="1.1em" /> Keep watching
           {secs !== null && <span className="tr-muted"> ({secs})</span>}
         </Button>
-        <Button
-          variant="secondary"
-          size="lg"
-          data-nav-back=""
-          cue="ui.back"
-          data-testid="watch-leave"
-          onClick={() => uiEvents.emit('leaveShow')}
-        >
+        <Button variant="secondary" size="lg" data-testid="watch-leave" onClick={confirmLeaveShow}>
           <Icon name="home" size="1.1em" /> Leave show
         </Button>
       </div>

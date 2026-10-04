@@ -13,6 +13,7 @@ import { ItemPreview } from '../components/ItemPreview.tsx';
 import { Button } from '../components/controls.tsx';
 import { formatNumber } from '../components/hooks.ts';
 import { uiEvents } from '../store/events.ts';
+import { keyboardBusy } from '../store/inputOwnership.ts';
 import { useUI } from '../store/uiStore.ts';
 import type { RewardsSummary } from '../store/types.ts';
 import { confettiSets, rarityLabels } from '../theme/tokens.ts';
@@ -119,9 +120,70 @@ function beats(r: RewardsSummary, p: Plan): { at: number; fire: () => void }[] {
   return out;
 }
 
+function RewardsActions({ hint }: { hint?: string | undefined }): JSX.Element {
+  return (
+    <div className="tr-rewards-actions tr-interactive" data-nav-scope="1">
+      <ReplayPicker />
+      {hint && <span className="tr-small tr-muted">{hint}</span>}
+      <Button
+        variant="secondary"
+        size="lg"
+        data-nav-back=""
+        cue="ui.back"
+        onClick={() => uiEvents.emit('backToLobby')}
+      >
+        <Icon name="home" size="1.1em" /> Back to lobby
+      </Button>
+      <Button variant="go" size="lg" autoFocusNav cue="ui.confirm" onClick={() => uiEvents.emit('playAgain')}>
+        <Icon name="refresh" size="1.1em" /> Play again
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * The account's reward is still on its way (or will only show on the
+ * profile). Online progress is never estimated locally, so this waits
+ * honestly instead of showing made-up numbers.
+ */
+function PendingRewards({ state }: { state: 'arriving' | 'deferred' }): JSX.Element {
+  return (
+    <div className="tr-screen tr-rewards">
+      <div className="tr-rewards-grid">
+        <div
+          className="tr-panel tr-rewards-xp tr-enter tr-interactive"
+          style={{ ['--tilt' as string]: '-1deg' }}
+          role="status"
+          aria-live="polite"
+          data-testid={`rewards-${state}`}
+        >
+          <h1 className="tr-title tr-h2">Show rewards</h1>
+          {state === 'arriving' ? (
+            <div className="tr-empty">
+              <span className="tr-gumball-spinner" />
+              <p>Rewards arriving…</p>
+              <p className="tr-small tr-muted">The servers are tallying your show.</p>
+            </div>
+          ) : (
+            <div className="tr-empty">
+              <Icon name="gift" size="3em" />
+              <p>Rewards will appear in your profile</p>
+              <p className="tr-small tr-muted">
+                They're taking longer than usual to arrive. Nothing is lost.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+      <RewardsActions />
+    </div>
+  );
+}
+
 /** Rewards screen. */
 export function RewardsScreen(): JSX.Element | null {
   const r = useUI((s) => s.rewards);
+  const pending = useUI((s) => s.rewardsPending);
   const [t, setT] = useState(0);
   const start = useRef(0);
   const fired = useRef(new Set<number>());
@@ -154,6 +216,8 @@ export function RewardsScreen(): JSX.Element | null {
     if (!p) return;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Enter' || e.key === 'Tab' || e.key === 'Escape' || e.key.startsWith('Arrow')) return;
+      // Typing in the chat is not "skip the reveal".
+      if (keyboardBusy(e)) return;
       setT((cur) => {
         if (cur >= p.doneAt) return cur;
         start.current = performance.now() - p.doneAt;
@@ -164,7 +228,7 @@ export function RewardsScreen(): JSX.Element | null {
     return () => window.removeEventListener('keydown', onKey);
   }, [p]);
 
-  if (!r || !p) return null;
+  if (!r || !p) return pending ? <PendingRewards state={pending} /> : null;
 
   const lineVals = r.xpLines.map((l, i) => Math.round(l.xp * ease((t - (p.lineAt[i] ?? 0)) / LINE_COUNT)));
   const totalXp = lineVals.reduce((a, b) => a + b, 0);
@@ -337,28 +401,7 @@ export function RewardsScreen(): JSX.Element | null {
         </div>
       </div>
 
-      <div className="tr-rewards-actions tr-interactive" data-nav-scope="1">
-        <ReplayPicker />
-        {!done && <span className="tr-small tr-muted">Press any key to skip</span>}
-        <Button
-          variant="secondary"
-          size="lg"
-          data-nav-back=""
-          cue="ui.back"
-          onClick={() => uiEvents.emit('backToLobby')}
-        >
-          <Icon name="home" size="1.1em" /> Back to lobby
-        </Button>
-        <Button
-          variant="go"
-          size="lg"
-          autoFocusNav
-          cue="ui.confirm"
-          onClick={() => uiEvents.emit('playAgain')}
-        >
-          <Icon name="refresh" size="1.1em" /> Play again
-        </Button>
-      </div>
+      <RewardsActions hint={done ? undefined : 'Press any key to skip'} />
     </div>
   );
 }

@@ -7,7 +7,12 @@
  * Two ways in:
  * - matchmade (`match_found`): the matchmaker's server URL + join ticket; the
  *   server posts results to the account API and forwards this player's grant
- *   (`showRewards`), which the rewards screen shows;
+ *   (`showRewards`), which the rewards screen shows. When that forward is
+ *   late the account fetches the grant itself; a signed-in show is never
+ *   banked on the local guest profile;
+ * - rejoined after a reload: the stored resume token (inside the server's
+ *   resume window) and/or a fresh rejoin ticket. While connected the show is
+ *   kept in sessionStorage so a reload can come back;
  * - dev (`?online=1`): an unticketed join to the local game server.
  *
  * Also derives race-progress leaders from the interpolated positions (the
@@ -50,6 +55,7 @@ import type { ArenaPlayer } from '@tumble/render/scenes';
 import { getTheme } from '@tumble/content/themes';
 import { bindUI, ui, type RewardsSummary } from '@tumble/ui';
 import { KICKED_TITLE } from '../online/lobbyState.ts';
+import type { RejoinStore } from '../online/rejoin.ts';
 import {
   NetClient,
   NetGameSession,
@@ -71,6 +77,7 @@ import { createLiveLobbyView, type LiveLobbySource, type LiveLobbyView } from '.
 import type { CharacterInput } from '@tumble/sim';
 import type { GameContext, RoundOutcomeInfo, RoundStart, SessionPlayer } from './context.ts';
 import { ShowSession } from './session.ts';
+import { isSpectatorId } from './spectator.ts';
 
 const MAIN = ShowPlaylistSchema.parse(MAIN_SHOW);
 const AIRBORNE: ReadonlySet<number> = new Set([
@@ -118,7 +125,20 @@ export interface OnlineShowOptions {
   matchId?: string;
   /** Playlist id for the show name before `showInfo` arrives. */
   playlistId?: string;
+  /** Matchmaker queue (`custom` for private shows), kept for a rejoin after a reload. */
+  queue?: string;
+  /** Epoch ms the join ticket expires. */
+  ticketExpiresAt?: number;
+  /** Resume token from before a reload (puts the player back in their seat). */
+  resumeToken?: string;
+  /** Where the live show is kept for a rejoin after a reload. */
+  rejoin?: RejoinStore;
+  /** Account ids of the humans the server has in the show, on every roster change. */
+  onHumans?: (userIds: ReadonlySet<string>) => void;
 }
+
+/** How often the live-show record is refreshed while connected. */
+const REJOIN_TOUCH_S = 5;
 
 /**
  * Online source that also replays remote emotes: the snapshot carries the
@@ -193,6 +213,7 @@ export class OnlineShowSession extends ShowSession {
   private showStarted = false;
   private readonly lobbySource: LiveLobbySource;
   private standings: number[] = [];
+  private rejoinTouch = 0;
   private readonly hudInput: HudInput = {
     timeLeft: -1,
     qualifiedCount: 0,
@@ -215,6 +236,7 @@ export class OnlineShowSession extends ShowSession {
       loadout: encodeLoadout(ctx.look()),
       ...(opts.url ? { url: opts.url } : {}),
       ...(opts.ticket ? { ticket: opts.ticket } : {}),
+      ...(opts.resumeToken ? { resumeToken: opts.resumeToken } : {}),
     });
     this.session = new NetGameSession(this.net, (join) => this.createPredictSim(join), {
       onEvent: (e) => this.events.push(e),
@@ -312,7 +334,7 @@ export class OnlineShowSession extends ShowSession {
     if (!info) return;
     const names = this.order
       .filter((id) => this.present.has(id))
-      .map((id) => this.players.get(id)?.name ?? '');
+      .map((id) => (this.players.has(id) ? this.publicName(id) : ''));
     ui.getState().setPreShow({
       ...info,
       playersJoined: names.length,
@@ -354,6 +376,8 @@ export class OnlineShowSession extends ShowSession {
         }
         this.welcomed = true;
         this.localId = w.playerId;
+        this.rememberLiveShow();
+        if (isSpectatorId(w.playerId)) this.markSpectatorSeat();
         ui.getState().setConnection({ status: 'online' });
       }),
       net.on('lobby', (l) => {
@@ -509,6 +533,7 @@ export class OnlineShowSession extends ShowSession {
     }
     this.present.clear();
     for (const p of list) this.present.add(p.id);
+    this.opts.onHumans?.(new Set(list.flatMap((p) => (!p.isBot && p.userId ? [p.userId] : []))));
     this.updatePreShowFeed();
     // Typed chat only makes sense with another human in the show.
     this.chat.setTextEnabled(list.some((p) => !p.isBot && p.id !== this.net.playerId));
@@ -677,7 +702,7 @@ export class OnlineShowSession extends ShowSession {
         if (!placements.has(id)) placements.set(id, place++);
     }
     for (const id of this.order) if (!placements.has(id)) placements.set(id, place++);
-    this.onShowEnded({ winnerId: winners[0] ?? null, rounds: outcomes, placements });
+    this.onShowEnded({ winnerId: winners[0] ?? null, winnerIds: winners, rounds: outcomes, placements });
   }
 
   private onSnapshot(s: DecodedSnapshot): void {
@@ -779,7 +804,37 @@ export class OnlineShowSession extends ShowSession {
     return this.hudInput;
   }
 
+  /** True once the game server welcomed this player (the match is no longer only pending). */
+  get reachedServer(): boolean {
+    return this.welcomed;
+  }
+
+  /** The matchmaker match this session plays, if any. */
+  get matchId(): string | null {
+    return this.opts.matchId ?? null;
+  }
+
+  /** Keeps the show in sessionStorage so a reload can rejoin it. */
+  private rememberLiveShow(): void {
+    const o = this.opts;
+    if (!o.rejoin || !o.matchId || !o.ticket || !o.url) return;
+    o.rejoin.save({
+      serverUrl: o.url,
+      resumeToken: this.net.resumeToken,
+      matchId: o.matchId,
+      ticket: o.ticket,
+      expiresAt: o.ticketExpiresAt ?? 0,
+      playlistId: o.playlistId ?? MAIN.id,
+      queue: o.queue ?? 'casual',
+    });
+  }
+
   override frame(dt: number, realDt: number): void {
+    this.rejoinTouch += realDt;
+    if (this.rejoinTouch >= REJOIN_TOUCH_S && this.opts.matchId && this.net.state === 'connected') {
+      this.rejoinTouch = 0;
+      this.opts.rejoin?.touch(this.opts.matchId);
+    }
     this.leaderAcc += realDt;
     if (this.leaderAcc >= LEADER_INTERVAL_S) {
       this.leaderAcc = 0;
@@ -814,10 +869,17 @@ export class OnlineShowSession extends ShowSession {
     return !!this.opts.matchId && !!this.ctx.account?.active && this.apiReward === undefined;
   }
 
-  protected override computeRewards(facts: ShowResultForProfile): RewardsSummary {
+  protected override computeRewards(facts: ShowResultForProfile): RewardsSummary | null {
     const account = this.ctx.account;
     if (this.apiReward && account?.active) return account.rewardsSummary(this.apiReward);
+    // Signed in, the grant lives on the account: a local estimate would bank it on the guest profile.
+    if (this.reportsToAccount()) return null;
     return super.computeRewards(facts);
+  }
+
+  protected override rewardsMissing(): void {
+    const account = this.ctx.account;
+    if (this.opts.matchId && account?.active) void account.awaitShowReward(this.opts.matchId);
   }
 
   protected override onDispose(): void {

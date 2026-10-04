@@ -42,8 +42,22 @@ MIT license allows it.
   ```
 
   Without the two variables Playwright uses your installed Edge and the Vite
-  dev server instead. The other specs (`game`, `level`, `online`, …) are
-  slower and run only by hand.
+  dev server instead. The `meta`, `online` and `game` specs and the
+  100-player tick budget run nightly (`.github/workflows/nightly.yml`); the
+  rest (`level`, `media`, …) run only by hand.
+
+- The `services` job reruns the API and matchmaker suites on Postgres 16 and
+  Redis 7, which also enables the Redis integration tests. Point them at any
+  local servers the same way (each test creates and drops its own database):
+
+  ```sh
+  DATABASE_URL=postgres://user:pass@localhost:5432/postgres REDIS_URL=redis://localhost:6379 \
+    pnpm --filter @tumble/api test
+  ```
+
+- The `compose` job builds the Docker images and boots
+  `deploy/docker-compose.yml` over plain HTTP; changes under `deploy/` should
+  keep it green.
 
 - For gameplay or rendering changes, include a screenshot or short clip. The
   sandbox pages (`/playground.html`, `/level.html`, `/obstacles.html`, …) are

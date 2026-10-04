@@ -14,6 +14,7 @@ import { LOBBY_GAME_INFO, LOBBY_GAME_KINDS } from '@tumble/shared';
 import { playCue } from '../../audio-cues.ts';
 import { Icon, type IconName } from '../../components/icons/index.tsx';
 import { uiEvents } from '../../store/events.ts';
+import { keyboardBusy } from '../../store/inputOwnership.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { LobbyGameHud, LobbyGameId } from '../../store/types.ts';
 
@@ -78,7 +79,7 @@ export const LobbyGamesButton = memo(function LobbyGamesButton({
     }
     if (!open) return;
     const onKey = (e: KeyboardEvent): void => {
-      if (e.code !== 'Escape') return;
+      if (e.code !== 'Escape' || keyboardBusy(e)) return;
       // Capture phase: closing the picker must not also count as menu Back.
       e.preventDefault();
       playCue('ui.back');

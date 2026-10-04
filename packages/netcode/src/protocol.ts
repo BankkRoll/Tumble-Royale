@@ -12,6 +12,13 @@ import type { Bounds } from './quantize.ts';
 /** Bumped on any incompatible wire change; peers with different versions are rejected in the handshake. */
 export const PROTOCOL_VERSION = 5;
 
+/**
+ * WebSocket close reason (with code 1000) a client sends when the player chose
+ * to leave the show, so the server frees the seat at once instead of holding
+ * it for a resume like a dropped connection.
+ */
+export const LEAVE_CLOSE_REASON = 'bye';
+
 /** First byte of every binary message. Values are stable wire ids. */
 export const MsgType = {
   Hello: 1,

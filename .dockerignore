@@ -1,0 +1,27 @@
+# Build context for deploy/docker/*.Dockerfile. The images install from the
+# lockfile and build inside the container, so nothing generated locally is needed.
+**/node_modules
+**/dist
+**/.turbo
+**/.data
+**/coverage
+**/test-results
+**/playwright-report
+**/*.log
+**/.DS_Store
+.git
+.github
+.claude
+.media-build
+
+# Secrets never enter an image; services get them from deploy/.env at runtime.
+**/.env
+**/.env.*
+!**/.env.example
+
+# Documentation and media (tens of MB) that no build reads.
+docs
+**/*.md
+tools/media
+deploy
+!deploy/docker/client.Caddyfile

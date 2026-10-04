@@ -1,0 +1,39 @@
+# Static file server inside the client image. TLS, compression and routing
+# to the services happen at the edge (deploy/Caddyfile); this only serves files.
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:8080 {
+	root * /srv/www
+
+	handle /health {
+		respond "ok" 200
+	}
+
+	# Deployment overrides read by the client at boot. Absent unless the
+	# operator mounts a config.json into /srv/runtime; the client then keeps
+	# its same-origin defaults.
+	handle /config.json {
+		root * /srv/runtime
+		header Cache-Control "no-store"
+		file_server
+	}
+
+	handle {
+		# Client-routed paths (party invites, OAuth and email sign-in returns,
+		# Stripe returns) load the game's index.html.
+		@spa path /join/* /auth/* /store
+		rewrite @spa /index.html
+
+		# Vite fingerprints everything under /assets; the HTML must revalidate
+		# so a deploy reaches players on their next load.
+		header /assets/* Cache-Control "public, max-age=31536000, immutable"
+		@html path / /index.html /join/* /auth/* /store
+		header @html Cache-Control "no-cache"
+
+		file_server
+	}
+}

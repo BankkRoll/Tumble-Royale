@@ -27,7 +27,16 @@ export {
   type UICueName,
 } from './audio-cues.ts';
 export { fireConfetti, fireFireworks, CONSOLATION_LINES, type ConfettiOptions } from './transitions/index.ts';
-export { randomTumblerName, validateDisplayName, streamerSafeName, type NamedPlayer } from './names.ts';
+export {
+  maskedName,
+  randomTumblerName,
+  seatName,
+  validateDisplayName,
+  streamerSafeKeyedName,
+  streamerSafeName,
+  type KeyedPlayer,
+  type NamedPlayer,
+} from './names.ts';
 export {
   palette,
   rarityColors,

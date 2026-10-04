@@ -28,8 +28,10 @@ import { getMutator } from '@tumble/sim/mutators';
 import type { ShowPlaylist } from '@tumble/sim/show';
 import {
   bindUI,
+  keyboardBusy,
   padButtonLabel,
   social,
+  seatName,
   streamerSafeName,
   ui,
   type HudGrab,
@@ -60,6 +62,8 @@ import {
   type PreShowView,
 } from '../views/ceremonies.ts';
 import type { GameContext, RoundOutcomeInfo, RoundStart, SessionPlayer, SessionSummary } from './context.ts';
+import { wonShow } from './crown.ts';
+import { showMenuKeyAction } from '../inputRouting.ts';
 import { padSpectateButtons } from '../bindings.ts';
 import {
   SpectatePadCycler,
@@ -263,6 +267,8 @@ export abstract class ShowSession {
   private watch: WatchDecision = 'undecided';
   /** The local player is out of the show and watching it as a spectator. */
   private outOfShow = false;
+  /** The local player joined as a spectator and never plays a round. */
+  private spectatorSeat = false;
   /** The watch choice holds the (offline) show clock. */
   private choiceHeld = false;
   private readonly padCycler = new SpectatePadCycler();
@@ -288,6 +294,7 @@ export abstract class ShowSession {
       },
       0,
     );
+    ui.getState().resetShowScreens();
     ui.getState().setShowSeat({ online: this.isOnline(), outOfShow: false });
     ui.getState().setWatchChoice(null);
     this.offs.push(
@@ -664,7 +671,7 @@ export abstract class ShowSession {
     if (!p)
       return {
         id,
-        name: `Tumbler ${id}`,
+        name: seatName(id),
         colors: { primary: '#ff6fb5', secondary: '#ffd23f', pattern: 'plain' },
         isBot: true,
       };
@@ -690,7 +697,7 @@ export abstract class ShowSession {
    */
   protected publicName(id: number): string {
     const p = this.players.get(id);
-    if (!p) return `Tumbler ${id + 1}`;
+    if (!p) return seatName(id);
     return streamerSafeName(
       { id, name: p.name, isBot: p.isBot, isLocal: id === this.localId, isParty: this.isPartyMate(id) },
       this.ctx.settings().gameplay.streamerMode,
@@ -1308,7 +1315,22 @@ export abstract class ShowSession {
   private markOutOfShow(): void {
     if (this.outOfShow) return;
     this.outOfShow = true;
-    ui.getState().setShowSeat({ online: this.isOnline(), outOfShow: true });
+    ui.getState().setShowSeat({
+      online: this.isOnline(),
+      outOfShow: true,
+      ...(this.spectatorSeat ? { spectator: true } : {}),
+    });
+  }
+
+  /**
+   * The local player joined to watch (a private show's spectator seat). They
+   * sit out every round, which the flow reads as "out of the show", but they
+   * were never knocked out, so the UI must not say "Eliminated".
+   */
+  protected markSpectatorSeat(): void {
+    if (this.spectatorSeat) return;
+    this.spectatorSeat = true;
+    ui.getState().setShowSeat({ online: this.isOnline(), outOfShow: this.outOfShow, spectator: true });
   }
 
   /**
@@ -1390,7 +1412,7 @@ export abstract class ShowSession {
           colors: p.colors,
           isBot: p.isBot,
           place,
-          crowned: this.summary?.winnerId === id,
+          crowned: this.summary ? wonShow(this.summary, id) : false,
         };
       });
   }
@@ -1616,25 +1638,34 @@ export abstract class ShowSession {
     if (dir !== 0) this.cycleSpectate(dir);
   }
 
+  /**
+   * The session reads Start / Esc itself, so the app's in-game menu routing
+   * stays out of it (Practice Island's skip prompt).
+   */
+  get ownsMenuKey(): boolean {
+    return false;
+  }
+
   private handleKey(e: KeyboardEvent): void {
-    if (e.repeat) return;
+    // The chat field (or any text field) owns every key while the player types.
+    if (e.repeat || keyboardBusy(e)) return;
+    const s = ui.getState();
     const r = this.round;
-    if (!r) return;
-    const binds = ui.getState().settings.controls.keybinds;
-    const watching = r.fate === 'spectating' || r.fate === 'qualified';
-    if (watching && ui.getState().screen === 'round' && ui.getState().overlay === 'none') {
+    const binds = s.settings.controls.keybinds;
+    const watching = !!r && (r.fate === 'spectating' || r.fate === 'qualified');
+    if (watching && s.screen === 'round' && s.overlay === 'none') {
       if (binds.spectatePrev.includes(e.code)) this.cycleSpectate(-1);
       else if (binds.spectateNext.includes(e.code)) this.cycleSpectate(1);
     }
+    if (this.ownsMenuKey) return;
     // NOTE: Escape always works too: browsers spend it on releasing pointer
     // lock, so a player who rebinds Menu still expects Esc to reach the menu.
     const menuKey = e.code === 'Escape' || this.ctx.input.isBound('menu', e.code);
     // Menu navigation already used this key (e.g. Esc pressed Resume, which closed the menu).
-    if (menuKey && !e.defaultPrevented && ui.getState().screen === 'round') {
-      const overlay = ui.getState().overlay;
-      if (overlay === 'none') ui.getState().setOverlay('inGameMenu');
-      else if (overlay === 'inGameMenu') ui.getState().setOverlay('none');
-    }
+    if (!menuKey || e.defaultPrevented) return;
+    const action = showMenuKeyAction(s);
+    if (action === 'open') s.setOverlay('inGameMenu');
+    else if (action === 'close') s.setOverlay('none');
   }
 
   // ---------------------------------------------------------------------------
@@ -1761,7 +1792,8 @@ export abstract class ShowSession {
       us.screen === 'round' &&
       us.overlay === 'none' &&
       !us.eliminatedSheet &&
-      !us.photo.active
+      !us.photo.active &&
+      !social.getState().chat.open
     )
       this.pollSpectatePad();
     else this.padCycler.reset(true, true);
@@ -1790,7 +1822,7 @@ export abstract class ShowSession {
         roundId: o.roundId,
         name: o.name,
         type: o.isFinal ? ('final' as const) : o.type,
-        eliminatedIds: o.eliminated.filter((id) => !carried.has(id) && id !== summary.winnerId),
+        eliminatedIds: o.eliminated.filter((id) => !carried.has(id) && !wonShow(summary, id)),
       };
     });
     this.uiSummary = {
@@ -1800,12 +1832,14 @@ export abstract class ShowSession {
       winnerId: summary.winnerId ?? -1,
       seed: (this.round?.start.seed ?? 1) >>> 0,
     };
-    const winnerId = summary.winnerId;
-    const localWon = winnerId !== null && winnerId === this.localId;
+    const localWon = wonShow(summary, this.localId);
+    // A duo/squad partner of the Crown grabber won too: their own Tumbler headlines their victory.
+    const winnerId = localWon ? this.localId : summary.winnerId;
     const winner = winnerId !== null ? this.players.get(winnerId) : undefined;
     this.ctx.audio.game.onShowPhase(ShowPhase.Victory, {
       localWon,
-      ...(winner ? { winnerName: winner.name } : {}),
+      // The announcer's line becomes an on-screen caption, so it gets the Streamer Mode name.
+      ...(winner && winnerId !== null ? { winnerName: this.publicName(winnerId) } : {}),
     });
     if (!winner || winnerId === null) {
       this.after(1.2, () => this.goWall());
@@ -1884,14 +1918,21 @@ export abstract class ShowSession {
   }
 
   /**
-   * The rewards screen payload. Offline (and as the online fallback) the local
-   * profile computes and banks it; online sessions return the API's grant.
+   * The rewards screen payload. Offline the local profile computes and banks
+   * it; online sessions return the API's grant, or null while it has not
+   * arrived (see {@link rewardsMissing}).
    *
    * @param facts - What happened from the local player's seat.
    */
-  protected computeRewards(facts: ShowResultForProfile): RewardsSummary {
+  protected computeRewards(facts: ShowResultForProfile): RewardsSummary | null {
     return this.ctx.profile.applyShow(facts);
   }
+
+  /**
+   * The rewards screen opened without a reward (online, the grant is late):
+   * the session fetches it from the account instead of estimating locally.
+   */
+  protected rewardsMissing(): void {}
 
   private rewardsWait = 0;
 
@@ -1911,7 +1952,7 @@ export abstract class ShowSession {
       playlistName: this.showName,
       rounds: this.localRounds(),
       reachedFinal,
-      wonCrown: summary.winnerId === this.localId,
+      wonCrown: wonShow(summary, this.localId),
       place: summary.placements.get(this.localId) ?? this.order.length,
       participants: this.order.length,
       quit: false,
@@ -1932,6 +1973,7 @@ export abstract class ShowSession {
     const rewards = this.computeRewards(this.showFacts(this.summary));
     const s = ui.getState();
     s.setRewards(rewards);
+    if (!rewards) this.rewardsMissing();
     this.wall = null;
     this.ctx.onEnd('rewards');
   }

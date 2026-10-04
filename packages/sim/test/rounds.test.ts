@@ -10,6 +10,7 @@ import {
 } from '../src/match/index.ts';
 import { loadRapier } from '../src/index.ts';
 import {
+  DEFAULT_SCORE_GOAL,
   computeQualifyTarget,
   createRoundRules,
   type RoundRules,
@@ -290,6 +291,78 @@ describe('hunt rules (holdItem)', () => {
     expect(host.rules.finished).toBe(true);
     for (const p of host.players)
       expect(p.status).toBe(p.hasItem ? PlayerRoundStatus.Qualified : PlayerRoundStatus.Eliminated);
+  });
+});
+
+describe('score-target hunt rules', () => {
+  const hunt = (scoreGoal?: number) =>
+    createTestArenaRound({
+      type: 'hunt',
+      qualification: {
+        mode: 'scoreTarget',
+        ratio: 0.5,
+        teams: 0,
+        teamsEliminated: 1,
+        ...(scoreGoal !== undefined ? { scoreGoal } : {}),
+      },
+      duration: { seconds: 10, overtimeSeconds: 0 },
+    });
+  const point = (player: number, delta = 1, team = -1) =>
+    ({ type: 'score', team, player, delta, total: 0 }) as const;
+
+  it('qualifies players in the order they bank the goal, then ends at the quota', () => {
+    const host = new FakeHost(hunt(3), 6);
+    expect(host.rules.qualifyTarget).toBe(3);
+    for (const id of [4, 4, 1, 4]) host.rules.onEvent(point(id));
+    expect(host.status(4)).toBe(PlayerRoundStatus.Qualified);
+    expect(host.players[4]!.place).toBe(1);
+    expect(host.players[1]!.progress).toBeCloseTo(1 / 3);
+    // A golden pickup can finish someone in one go; team points never count.
+    host.rules.onEvent(point(2, 3));
+    host.rules.onEvent(point(0, 5, 1));
+    expect(host.status(2)).toBe(PlayerRoundStatus.Qualified);
+    expect(host.status(0)).toBe(PlayerRoundStatus.Playing);
+    host.rules.onEvent(point(1));
+    host.rules.onEvent(point(1));
+    expect(host.rules.finished).toBe(true);
+    expect(host.qualifiedCount).toBe(3);
+    expect(host.eliminatedCount).toBe(3);
+    // Scores after the end change nothing.
+    host.rules.onEvent(point(5, 9));
+    expect(host.status(5)).toBe(PlayerRoundStatus.Eliminated);
+  });
+
+  it('fills the quota by score at the buzzer, earlier points winning ties', () => {
+    const host = new FakeHost(hunt(10), 6);
+    host.rules.onEvent(point(3, 4));
+    host.run(1);
+    host.rules.onEvent(point(5, 2));
+    host.run(1);
+    host.rules.onEvent(point(1, 2));
+    host.rules.onEvent(point(0, 1));
+    host.run(10);
+    expect(host.rules.finished).toBe(true);
+    expect(host.status(3)).toBe(PlayerRoundStatus.Qualified);
+    expect(host.status(5)).toBe(PlayerRoundStatus.Qualified);
+    expect(host.status(1)).toBe(PlayerRoundStatus.Qualified);
+    for (const id of [0, 2, 4]) expect(host.status(id)).toBe(PlayerRoundStatus.Eliminated);
+    expect(host.players[3]!.place).toBe(1);
+  });
+
+  it('defaults the goal when the round leaves it out', () => {
+    const host = new FakeHost(hunt(), 4);
+    host.rules.onEvent(point(0, DEFAULT_SCORE_GOAL - 1));
+    expect(host.status(0)).toBe(PlayerRoundStatus.Playing);
+    host.rules.onEvent(point(0));
+    expect(host.status(0)).toBe(PlayerRoundStatus.Qualified);
+  });
+
+  it('falls respawn per the round, and a leaver is simply eliminated', () => {
+    const host = new FakeHost(hunt(3), 4);
+    expect(host.rules.onFellOut(host.players[0]!)).toBe('respawn');
+    host.players[2]!.forfeited = true;
+    host.rules.onForfeit(host.players[2]!);
+    expect(host.status(2)).toBe(PlayerRoundStatus.Eliminated);
   });
 });
 

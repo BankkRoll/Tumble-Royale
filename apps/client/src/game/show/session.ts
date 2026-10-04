@@ -1885,14 +1885,21 @@ export abstract class ShowSession {
   }
 
   /**
-   * The rewards screen payload. Offline (and as the online fallback) the local
-   * profile computes and banks it; online sessions return the API's grant.
+   * The rewards screen payload. Offline the local profile computes and banks
+   * it; online sessions return the API's grant, or null while it has not
+   * arrived (see {@link rewardsMissing}).
    *
    * @param facts - What happened from the local player's seat.
    */
-  protected computeRewards(facts: ShowResultForProfile): RewardsSummary {
+  protected computeRewards(facts: ShowResultForProfile): RewardsSummary | null {
     return this.ctx.profile.applyShow(facts);
   }
+
+  /**
+   * The rewards screen opened without a reward (online, the grant is late):
+   * the session fetches it from the account instead of estimating locally.
+   */
+  protected rewardsMissing(): void {}
 
   private rewardsWait = 0;
 
@@ -1933,6 +1940,7 @@ export abstract class ShowSession {
     const rewards = this.computeRewards(this.showFacts(this.summary));
     const s = ui.getState();
     s.setRewards(rewards);
+    if (!rewards) this.rewardsMissing();
     this.wall = null;
     this.ctx.onEnd('rewards');
   }

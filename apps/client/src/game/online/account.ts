@@ -12,9 +12,11 @@
  *   otherwise), pass claims + premium, challenge claim/reroll;
  * - leaderboards and match history;
  * - social: friend requests, the party (create, join by code, ready, kick,
- *   leader's playlist) and the realtime gateway (`presence`, `friend_request`,
- *   `party_update`, `party_invite`, `wallet`, …);
- * - the API's post-show reward summary → rewards screen.
+ *   leader's playlist, who is away playing solo) and the realtime gateway
+ *   (`presence`, `friend_request`, `party_update`, `party_solo`,
+ *   `party_invite`, `wallet`, …);
+ * - the API's post-show reward summary → rewards screen, fetched from the API
+ *   when the game server's forward is late (never estimated locally).
  *
  * The local {@link ProfileStore} stays the offline fallback; nothing here
  * writes to it except the display name.
@@ -80,6 +82,8 @@ import { explainGemCheckoutRefusal, gemCheckoutMode, type GemCheckoutMode } from
 import type { PartyLobbyLink } from '../views/partyLobbyView.ts';
 import { JsonSocket, type TypedMessage } from './jsonSocket.ts';
 import { partyLobbyLink } from './partyLobbyLink.ts';
+import { soloNotice } from './partyPlay.ts';
+import { pollShowReward, type RewardPollResult } from './rewardPoll.ts';
 
 const LOADOUT_SLOTS = 6;
 
@@ -233,6 +237,10 @@ export class OnlineAccount {
   private realtimeOpened = false;
   /** Account XP and season XP before the current show, for the rewards bars. */
   private snapshotBefore: { xp: number; passXp: number } | null = null;
+  /** Party members away in a solo show (from `party_solo`), shown on the party line. */
+  private readonly soloMembers = new Set<string>();
+  /** Bumps per reward wait so a newer show cancels an older poll. */
+  private rewardWait = 0;
 
   constructor(
     readonly api: ApiClient,
@@ -1087,6 +1095,23 @@ export class OnlineAccount {
             body: 'Pick the show and hit Play when everyone is ready.',
           });
       }),
+      rt.on('party_solo', (m) => {
+        const userId = String(m.userId ?? '');
+        if (!userId || m.partyId !== this.party?.id) return;
+        if (m.playing === true) this.soloMembers.add(userId);
+        else this.soloMembers.delete(userId);
+        this.applyParty(this.party);
+        const notice = soloNotice(
+          {
+            userId,
+            name: String(m.name ?? 'A member'),
+            leader: m.leader === true,
+            playing: m.playing === true,
+          },
+          this.userId,
+        );
+        if (notice) ui.getState().pushToast({ kind: 'social', ...notice });
+      }),
       rt.on('party_kicked', () => {
         ui.getState().pushToast({ kind: 'warning', title: 'You were removed from the party', icon: '👋' });
         this.applyParty(null);
@@ -1307,6 +1332,7 @@ export class OnlineAccount {
       { userId: me.userId, displayName: me.displayName, tag: me.tag, ready: true, joinedAt: 0 },
     ];
     const leaderId = party?.leaderId ?? me.userId;
+    for (const id of this.soloMembers) if (!members.some((m) => m.userId === id)) this.soloMembers.delete(id);
     const state: PartyState = {
       code: party?.code ?? '',
       maxSize: party?.maxSize ?? 4,
@@ -1318,6 +1344,7 @@ export class OnlineAccount {
         ready: m.userId === leaderId || m.ready,
         isLeader: m.userId === leaderId,
         isSelf: m.userId === me.userId,
+        ...(this.soloMembers.has(m.userId) ? { playingSolo: true } : {}),
       })),
     };
     s.setParty(state);
@@ -1368,16 +1395,7 @@ export class OnlineAccount {
   /** Joins a party by invite code (deep link or toast). */
   async joinParty(code: string): Promise<boolean> {
     try {
-      const { party } = await this.api.joinParty(code.toUpperCase());
-      this.applyParty(party);
-      const leader = party.members.find((m) => m.userId === party.leaderId);
-      ui.getState().pushToast({
-        kind: 'social',
-        title: `Joined ${leader?.displayName ?? 'the'}'s party!`,
-        body: 'Hit Ready when you are.',
-        icon: '🎉',
-      });
-      this.hooks.onJoinedParty?.();
+      this.adoptJoinedParty((await this.api.joinParty(code.toUpperCase())).party);
       return true;
     } catch (err) {
       ui.getState().showDialog({
@@ -1389,6 +1407,19 @@ export class OnlineAccount {
       });
       return false;
     }
+  }
+
+  /** Shows a party the player just joined (by code, link or invite) and welcomes them. */
+  adoptJoinedParty(party: ApiParty): void {
+    this.applyParty(party);
+    const leader = party.members.find((m) => m.userId === party.leaderId);
+    ui.getState().pushToast({
+      kind: 'social',
+      title: `Joined ${leader?.displayName ?? 'the'}'s party!`,
+      body: 'Hit Ready when you are.',
+      icon: '🎉',
+    });
+    this.hooks.onJoinedParty?.();
   }
 
   /** Leaves the party. */
@@ -1429,14 +1460,79 @@ export class OnlineAccount {
     }
   }
 
-  /** Member ready toggle. */
+  /**
+   * Member ready toggle. The button flips at once; a refusal puts it back to
+   * the party's last known state, and every `party_update` reconciles it.
+   */
   async setReady(ready: boolean): Promise<void> {
-    if (!this.party) return;
+    if (!this.party) {
+      ui.getState().setLocalReady(false);
+      return;
+    }
     try {
       this.applyParty((await this.api.setReady(ready)).party);
     } catch (err) {
+      this.applyParty(this.party);
       ui.getState().pushToast({ kind: 'error', title: "Couldn't change ready", body: describe(err) });
     }
+  }
+
+  /**
+   * Leader: the matchmaker accepted the party's ticket, so the ready votes
+   * are spent now (members ready up again for the next show).
+   */
+  async confirmQueued(): Promise<void> {
+    if (!this.inParty) return;
+    try {
+      const { party } = await this.api.partyQueued();
+      if (party) this.applyParty(party);
+    } catch (err) {
+      // The queue is running either way; stale votes only mean members skip one Ready.
+      console.warn('[account] queued confirm failed', err);
+    }
+  }
+
+  /** Tells the party this player started (or finished) a solo show. No-op outside a party. */
+  async announceSolo(playing: boolean): Promise<void> {
+    if (!this.inParty) return;
+    try {
+      const { party } = await this.api.partySolo(playing);
+      if (party) this.applyParty(party);
+    } catch (err) {
+      console.warn('[account] solo notice failed', err);
+    }
+  }
+
+  /** True when other people are in the party. */
+  get inParty(): boolean {
+    return (this.party?.members.length ?? 0) > 1;
+  }
+
+  /**
+   * Waits for a finished show's reward from the API (the game server's
+   * forward was late or lost) and shows it on the rewards screen, or says it
+   * will appear on the profile. A newer wait cancels this one.
+   *
+   * @param matchId - The show.
+   */
+  async awaitShowReward(matchId: string): Promise<RewardPollResult> {
+    const id = ++this.rewardWait;
+    ui.getState().setRewardsPending('arriving');
+    const result = await pollShowReward({
+      fetch: async () => (await this.api.matchReward(matchId)).reward,
+      sleep: (ms) => new Promise((r) => window.setTimeout(r, ms)),
+      cancelled: () => id !== this.rewardWait,
+    });
+    if (result.status === 'cancelled') return result;
+    if (result.status === 'ready') ui.getState().setRewards(this.rewardsSummary(result.reward));
+    else ui.getState().setRewardsPending('deferred');
+    void this.refreshProgress();
+    return result;
+  }
+
+  /** Stops any reward wait (a new show started). */
+  cancelRewardWait(): void {
+    this.rewardWait++;
   }
 
   /** Leader picks the party's playlist. */

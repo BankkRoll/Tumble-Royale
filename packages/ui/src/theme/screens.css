@@ -1953,7 +1953,8 @@
 }
 .tr-preshow-ring {
   position: absolute;
-  top: calc(var(--safe-t) + 1em);
+  /* Clear of the show's Menu pill, which shares the top-right corner. */
+  top: calc(var(--safe-t) + 3.6em);
   right: calc(var(--safe-r) + 1.2em);
   display: grid;
   place-content: center;
@@ -3320,6 +3321,126 @@
   .tr-btn-key,
   .tr-tabs-hint {
     display: none;
+  }
+}
+
+/*
+ * Touch targets: on a landscape phone the menu's root size bottoms out at
+ * 12 px, which leaves tabs 22 px tall and the wallet + buttons at 17 px.
+ * Small controls keep their look but get an invisible hit area of at least
+ * 44 px (Apple HIG, WCAG 2.5.5) centred on them. Controls that are already
+ * positioned only gain the pseudo-element; static ones also become the
+ * containing block for it.
+ */
+@media (pointer: coarse) {
+  .tr-currency-add,
+  .tr-playlist-arrow,
+  .tr-link-btn,
+  button.tr-chat-hint,
+  .tr-level,
+  .tr-hud-menu-btn,
+  .tr-toast-close,
+  .tr-settings-tab,
+  .tr-rotate-hint-close,
+  .tr-close:not(.tr-offer-modal .tr-close, .tr-gem-modal .tr-close) {
+    position: relative;
+  }
+  .tr-tab::after,
+  .tr-round-btn::after,
+  .tr-currency-add::after,
+  .tr-playlist-arrow::after,
+  .tr-link-btn::after,
+  button.tr-chat-hint::after,
+  .tr-level::after,
+  .tr-hud-menu-btn::after,
+  .tr-show-menu-btn::after,
+  .tr-touch-btn--emote::after,
+  .tr-lobby-emote-btn::after,
+  .tr-lobby-games-btn::after,
+  .tr-party-slot::after,
+  .tr-toast-close::after,
+  .tr-settings-tab::after,
+  .tr-rotate-hint-close::after,
+  .tr-close::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* Lift bottom-anchored UI above the on-screen keyboard (`--kb-inset`, see hud/keyboardInset.ts). */
+.tr-modal-wrap,
+.tr-dialog-wrap {
+  padding-bottom: calc(1em + var(--kb-inset, 0px));
+}
+.tr-sheet-wrap {
+  bottom: var(--kb-inset, 0px);
+}
+.tr-welcome {
+  padding-bottom: var(--kb-inset, 0px);
+}
+
+/* Portrait hint during a show (hud/RotateHint.tsx). */
+.tr-rotate-hint {
+  position: absolute;
+  /* Below the round's timer, objective, counter and progress bar. */
+  top: calc(var(--safe-t) + 12.5em);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  width: max-content;
+  max-width: calc(100% - 2em - var(--safe-l) - var(--safe-r));
+  padding: 0.45em 0.5em 0.45em 0.8em;
+  border-radius: 1em;
+  border: 0.14em solid var(--ink);
+  background: var(--cloud);
+  color: var(--ink);
+  font-size: 1.05em;
+  font-weight: 700;
+  line-height: 1.2;
+  box-shadow: 0 0.2em 0 var(--ink);
+  pointer-events: auto;
+  animation: tr-rotate-hint-in 320ms var(--ease-back-out) both;
+}
+.tr-rotate-hint-phone {
+  flex: none;
+  width: 1.1em;
+  height: 1.7em;
+  border-radius: 0.25em;
+  border: 0.16em solid var(--ink);
+  animation: tr-rotate-hint-turn 2.4s var(--ease-spring) infinite;
+}
+.tr-rotate-hint-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.8em;
+  height: 1.8em;
+  border-radius: 50%;
+  border: 0.12em solid var(--ink);
+  background: #fff;
+}
+@keyframes tr-rotate-hint-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -0.6em);
+  }
+}
+@keyframes tr-rotate-hint-turn {
+  0%,
+  35% {
+    transform: rotate(0deg);
+  }
+  55%,
+  100% {
+    transform: rotate(-90deg);
   }
 }
 

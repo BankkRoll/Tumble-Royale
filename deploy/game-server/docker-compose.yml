@@ -1,0 +1,53 @@
+# An extra game server on its own host: more capacity, or a second region.
+# It registers with the main server's matchmaker and reports results to its
+# API over their public URLs; players connect to it directly at GS_DOMAIN.
+#
+#   cp deploy/game-server/.env.example deploy/game-server/.env   # then edit it
+#   docker compose -f deploy/game-server/docker-compose.yml up -d --build
+#
+# docs/SELF_HOSTING.md, "Scaling", has the details.
+
+name: tumble-game-server
+
+services:
+  game-server:
+    image: tumble/game-server:${TAG:-latest}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/game-server.Dockerfile
+    env_file: .env
+    environment:
+      RESULTS_OUTBOX_DIR: /data/results-outbox
+    volumes:
+      - results-outbox:/data/results-outbox
+    restart: unless-stopped
+    # Longer than DRAIN_SETTLE_MS + DRAIN_TIMEOUT_MS + OUTBOX_FLUSH_MS (see ../docker-compose.yml).
+    stop_grace_period: 16m
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: '5'
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-${GS_DOMAIN:?set GS_DOMAIN in deploy/game-server/.env}}
+      CADDY_GLOBAL_OPTIONS: ${CADDY_GLOBAL_OPTIONS:-${ACME_EMAIL:+email ${ACME_EMAIL}}}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      game-server:
+        condition: service_healthy
+
+volumes:
+  results-outbox:
+  caddy-data:
+  caddy-config:

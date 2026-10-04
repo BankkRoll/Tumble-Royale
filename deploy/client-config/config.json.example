@@ -1,0 +1,7 @@
+{
+  "apiUrl": "/api",
+  "matchmakerUrl": "/mm",
+  "gameServerUrl": "/gs/ws",
+  "reportErrors": true,
+  "sentryDsn": ""
+}

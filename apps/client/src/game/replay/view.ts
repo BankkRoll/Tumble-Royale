@@ -105,7 +105,7 @@ export class ReplayView implements GameView {
     this.source = new ReplayRoundSource(sim, tl);
     this.source.setTime(0);
     try {
-      this.roundView = new RoundView({
+      this.roundView = RoundView.build({
         R: opts.R,
         source: this.source,
         round: opts.round,

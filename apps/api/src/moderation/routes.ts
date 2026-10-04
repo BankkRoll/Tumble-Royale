@@ -4,6 +4,12 @@
 import { createHash } from 'node:crypto';
 import { and, asc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
+import {
+  ANALYTICS_EVENTS,
+  ANALYTICS_LIMITS,
+  CLIENT_ERROR_EVENT,
+  validAnalyticsProps,
+} from '@tumble/shared/liveops';
 import { z } from 'zod';
 import { accountRegion, RegionSchema } from '../accounts/accounts.ts';
 import { isErased } from '../accounts/tombstone.ts';
@@ -21,6 +27,7 @@ import {
 import { badRequest, notFound, parse } from '../http/errors.ts';
 import { BOARD_TYPES, readLeaderboard } from '../leaderboards/service.ts';
 import { maskProfanity } from '../names/profanity.ts';
+import { invalidateLiveOps, MAINTENANCE_FLAG_KEY, serverFlag } from '../liveops/state.ts';
 import { revokeMarks } from './ban-evasion.ts';
 import { friendIds } from '../social/friends.ts';
 
@@ -30,17 +37,38 @@ const ReportBody = z.object({
   reason: z.enum(['cheating', 'harassment', 'offensive_name', 'griefing', 'spam', 'other']),
   details: z.string().max(1000).optional(),
 });
-const EventsBody = z.object({
-  events: z
-    .array(
-      z.object({
-        name: z.string().regex(/^[a-z0-9_.]{2,64}$/),
-        props: z.record(z.string(), z.unknown()).optional(),
+/** What the browser's crash reporter sends (`apps/client/src/crashReporter.ts`). */
+const ClientErrorProps = z
+  .object({
+    kind: z.enum(['error', 'unhandledrejection']),
+    type: z.string().max(100),
+    message: z.string().max(500),
+    stack: z.string().max(4000).optional(),
+    source: z.string().max(300).optional(),
+    line: z.number().int().min(0).optional(),
+    col: z.number().int().min(0).optional(),
+    path: z.string().max(200),
+    count: z.number().int().min(1).max(1_000_000),
+    ua: z.string().max(300).optional(),
+    release: z.string().max(100).optional(),
+  })
+  .strict();
+const AnalyticsEvent = z.union([
+  z.object({ name: z.literal(CLIENT_ERROR_EVENT), props: ClientErrorProps }),
+  z.object({
+    name: z.enum(ANALYTICS_EVENTS),
+    props: z
+      .unknown()
+      .optional()
+      .transform((p, c) => {
+        const ok = validAnalyticsProps(p);
+        if (!ok) c.addIssue({ code: 'custom', message: 'props must be a small flat object' });
+        return ok ?? {};
       }),
-    )
-    .min(1)
-    .max(50),
-});
+  }),
+]);
+// SECURITY: names are allow-listed so a client cannot write internal events (`audit.*`, grants).
+const EventsBody = z.object({ events: z.array(AnalyticsEvent).min(1).max(ANALYTICS_LIMITS.maxBatch) });
 const BoardParams = z.object({ type: z.enum(BOARD_TYPES) });
 const BoardQuery = z.object({
   scope: z.enum(['global', 'regional', 'friends']).default('global'),
@@ -61,6 +89,7 @@ const BanBody = z.object({
 });
 const BanLookupBody = z.object({ userIds: z.array(z.string().min(1).max(64)).min(1).max(64) });
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const FlagKeyParam = z.object({ key: z.string().regex(/^[A-Za-z0-9_.-]{2,64}$/) });
 const FlagBody = z.object({
   enabled: z.boolean(),
   rolloutPercent: z.number().int().min(0).max(100).default(100),
@@ -103,6 +132,7 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
     const rows = await ctx.db.select().from(featureFlags);
     const flags: Record<string, { enabled: boolean; payload: unknown }> = {};
     for (const f of rows) {
+      if (f.key === MAINTENANCE_FLAG_KEY) continue;
       const inRollout =
         f.rolloutPercent >= 100 || (auth ? rolloutBucket(f.key, auth.userId) < f.rolloutPercent : false);
       flags[f.key] = {
@@ -116,11 +146,20 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
   app.post('/events', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req, reply) => {
     const auth = await optionalUser(ctx, req);
     const body = parse(EventsBody, req.body);
-    await ctx.db
-      .insert(events)
-      .values(
-        body.events.map((e) => ({ userId: auth?.userId ?? null, name: e.name, props: e.props ?? null })),
+    // The sample flag is also the server-side kill switch: analytics are accepted and dropped, crash reports kept.
+    const keep = (await serverFlag(ctx, 'analytics.sample'))
+      ? body.events
+      : body.events.filter((e) => e.name === CLIENT_ERROR_EVENT);
+    if (keep.length > 0) {
+      await ctx.db.insert(events).values(
+        keep.map((e) => ({
+          userId: auth?.userId ?? null,
+          name: e.name,
+          props: e.props,
+          createdAt: ctx.now(),
+        })),
       );
+    }
     return reply.code(202).send({ accepted: body.events.length });
   });
 
@@ -207,7 +246,12 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
 
   app.put('/internal/flags/:key', async (req) => {
     requireAdmin(ctx, req);
-    const { key } = parse(z.object({ key: z.string().regex(/^[a-z0-9_.-]{2,64}$/) }), req.params);
+    const { key } = parse(FlagKeyParam, req.params);
+    if (key === MAINTENANCE_FLAG_KEY)
+      throw badRequest(
+        'reserved_flag',
+        'Set maintenance with PUT /internal/maintenance (pnpm admin maintenance)',
+      );
     const body = parse(FlagBody, req.body);
     const values = {
       enabled: body.enabled,
@@ -219,6 +263,7 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
       .insert(featureFlags)
       .values({ key, ...values })
       .onConflictDoUpdate({ target: featureFlags.key, set: values });
+    await invalidateLiveOps(ctx);
     return { key, ...values };
   });
 

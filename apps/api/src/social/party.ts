@@ -26,6 +26,7 @@ import { activeBans, requireUser, type AuthContext } from '../http/auth.ts';
 import { badRequest, conflict, forbidden, notFound, parse } from '../http/errors.ts';
 import { withLock } from '../kv/index.ts';
 import { RANKED_QUEUE } from '../leaderboards/service.ts';
+import { refuseDuringMaintenance, requireLivePlaylist } from '../liveops/state.ts';
 import { DEFAULT_RATING, skillOrdinal } from '../ranked/rating.ts';
 import { broadcastPresence, friendIds, socialRef } from './friends.ts';
 import { sendPartyChat } from './partyChat.ts';
@@ -374,6 +375,8 @@ export async function issueQueueTicket(
   const playlistId = opts.playlistId ?? party?.playlistId ?? ctx.catalog.playlists[0]?.id ?? 'main_show';
   const playlist = ctx.catalog.playlists.find((p) => p.id === playlistId);
   if (!playlist) throw badRequest('unknown_playlist', `Unknown playlist ${playlistId}`);
+  await refuseDuringMaintenance(ctx);
+  await requireLivePlaylist(ctx, playlist.id);
   const memberIds = party ? party.members.map((m) => m.userId) : [auth.userId];
   if (memberIds.length > playlist.teamSize && playlist.teamSize > 1) {
     throw conflict('party_too_large', `${playlist.name} allows parties of up to ${playlist.teamSize}`);
@@ -543,6 +546,7 @@ export function registerPartyRoutes(app: FastifyInstance, ctx: AppContext): void
     const { playlistId } = parse(PlaylistBody, req.body);
     const playlist = ctx.catalog.playlists.find((x) => x.id === playlistId);
     if (!playlist) throw badRequest('unknown_playlist', `Unknown playlist ${playlistId}`);
+    await requireLivePlaylist(ctx, playlist.id);
     const p = await parties.mutate(auth.userId, (party) => {
       if (party.leaderId !== auth.userId)
         throw forbidden('not_leader', 'Only the party leader picks the playlist');

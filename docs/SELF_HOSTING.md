@@ -8,6 +8,7 @@ one domain:
 | Path                         | Goes to                                                |
 | ---------------------------- | ------------------------------------------------------ |
 | `https://DOMAIN/`            | the web client (static files)                          |
+| `https://DOMAIN/admin`       | the admin console ([below](#the-admin-console))        |
 | `https://DOMAIN/api/*`       | account API, including its WebSocket `/api/ws`         |
 | `https://DOMAIN/mm/*`        | matchmaker, including its WebSocket `/mm/ws`           |
 | `https://DOMAIN/gs/ws`       | game server WebSocket                                  |
@@ -90,9 +91,9 @@ Then open `https://play.example.com` and press Play.
 
 ## 4. First admin steps
 
-There are no admin accounts; admin actions use `ADMIN_TOKEN` from
-`deploy/.env`. On the server, `pnpm admin` (or `node scripts/admin.mjs`) reads
-that file and talks to `https://DOMAIN/api`:
+Admin actions use `ADMIN_TOKEN` from `deploy/.env`. On the server,
+`pnpm admin` (or `node scripts/admin.mjs`) reads that file and talks to
+`https://DOMAIN/api`:
 
 ```sh
 pnpm admin --help
@@ -109,6 +110,42 @@ to that instance directly:
 ```sh
 docker compose exec api node scripts/admin.mjs reports list
 ```
+
+### The admin console
+
+`https://DOMAIN/admin` is a web console for the same work: the report queue
+(with chat evidence and bulk decisions), player lookup and the player page,
+bans and mutes, live ops and the audit log. It is part of the client image,
+so there is nothing to enable; nobody can use it until you grant a role.
+
+1. Have the person sign in to the game with a full account (email, Discord
+   or Google; guests cannot be staff) and send you their `Name#1234`.
+2. Find their account id and grant a role:
+
+   ```sh
+   pnpm admin user lookup "Name#1234"
+   pnpm admin staff grant <userId> --role moderator   # or --role admin
+   pnpm admin staff list
+   pnpm admin staff revoke <userId>                    # takes effect at once
+   ```
+
+3. They open `https://DOMAIN/admin` in the browser where they play and press
+   **Open the console**.
+
+A **moderator** handles reports, warnings, mutes, suspensions and lifting
+them, renames and the audit log. An **admin** can also adjust currencies,
+revoke cosmetics, run live ops and manage staff. Console sessions last 30
+minutes, live only in that browser tab and end at once if the role is revoked
+or the account is suspended. Every action from the console or the CLI lands
+in the audit log, with who did it and the reason:
+
+```sh
+pnpm admin audit --limit 20
+pnpm admin audit --action player. --target <userId>
+```
+
+`ADMIN_TOKEN` still works for the CLI and acts as an admin; keep it on the
+server.
 
 ## 5. Optional features
 
@@ -143,7 +180,8 @@ and edit it; the client reads it at every page load, no rebuild needed.
 
 ## 6. Live ops
 
-Everything here takes effect without a restart or a client release. The API
+Everything here takes effect without a restart or a client release, and
+everything here can also be done from the admin console's **Live ops** page. The API
 is the source of truth: the matchmaker and game servers read its live-ops
 snapshot over the internal HMAC channel (cached 30 s, so allow up to half a
 minute), browsers poll `GET /status` every minute and flags and playlists

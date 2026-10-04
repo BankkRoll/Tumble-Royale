@@ -21,3 +21,21 @@ If you run your own deployment ([docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)):
   off (configure Stripe or leave Gem purchases off).
 - Publish only the reverse proxy. The services' ports, and their internal
   metrics listeners, belong on a private network.
+- Treat `ADMIN_TOKEN` like a root password: it acts as an admin on every
+  admin route. Give people console access through staff roles instead
+  (`pnpm admin staff grant <userId> --role moderator`), so each action in the
+  audit log names a person and access can be withdrawn without rotating it.
+
+### Admin console trust boundary
+
+The console at `/admin` is only a client. Every action is authorised by the
+API on each request: a console session token (30 minutes, `sessionStorage`
+only, sent as a bearer header, never a cookie) is looked up by its hash, the
+account's staff role is re-read, and suspended or deleted accounts are
+refused. Moderators cannot reach live ops, economy corrections or staff
+management (`403 insufficient_role`). A player's ordinary access token is
+never accepted on an admin route, even for a staff account. The console page
+is served with `X-Frame-Options: DENY` and `frame-ancestors 'none'` so its
+confirm buttons cannot be clickjacked. Every admin action is written to the
+append-only `admin_audit_log`. Report evidence only includes the reported
+player's public global chat and whispers they sent to the reporter.

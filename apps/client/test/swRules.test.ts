@@ -58,7 +58,16 @@ describe('routeRequest', () => {
     ])
       expect(get(p, 'navigate').kind, p).toBe('shell');
     // OAuth starts and returns on the API are top-level navigations too; they must reach the server.
-    for (const p of ['/api/auth/google', '/level.html', '/join/a/b', '/storefront', '/config.json'])
+    // The admin console is its own page; the worker must never answer it with the game.
+    for (const p of [
+      '/api/auth/google',
+      '/level.html',
+      '/join/a/b',
+      '/storefront',
+      '/config.json',
+      '/admin',
+      '/admin.html',
+    ])
       expect(get(p, 'navigate').kind, p).toBe('passthrough');
   });
 
@@ -118,6 +127,9 @@ describe('shouldPrecache', () => {
       'config.json',
       '_redirects',
       'level.html',
+      'admin.html',
+      'assets/admin-Dkd5BaaA.js',
+      'assets/admin-C9yXQ9rg.css',
       '.well-known/x',
     ])
       expect(shouldPrecache(f), f).toBe(false);

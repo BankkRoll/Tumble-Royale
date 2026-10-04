@@ -57,8 +57,9 @@ What a player can do today:
   a 100-tier pass, daily/weekly/seasonal/milestone challenges, 45
   achievements (some hidden), a collection log, a daily login streak, store,
   Crown Shard shop, free Gem paths, live news and notifications
-- **Watch:** keep spectating after elimination, round replays (save and
-  reopen them), photo mode
+- **Watch & share:** keep spectating after elimination, round replays (save and
+  reopen them), photo mode, share cards for wins and deep runs, and 5–15 s
+  clips of any recorded round, all made on the device (no upload)
 - **Input & access:** keyboard/mouse with rebinding, gamepad menus,
   single-layer touch controls, vibration, colour-blind palettes (also in 3D),
   captions and an opt-in spoken announcer

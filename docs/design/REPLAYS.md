@@ -112,3 +112,39 @@ the replay view, its pool and its sim (logged in
 `window.__tumble.memoryLog` as `replay:<round>:open` / `:closed`) and
 restores the previous overlay. Offline the show waits while a replay is
 open; online it keeps running, and if it changes screen the replay closes.
+
+## Clips
+
+The rewards screen's Share sheet turns any recorded round of the show into a
+5–15 s video (code: `apps/client/src/game/share/`). The default is the round
+the player won, else the latest one they qualified from, ending 1.5 s after
+the moment they qualified (`clipWindow.ts` reads it straight from the event
+stream, no timeline decode).
+
+Rendering builds a private `ReplayView` (same as the viewer: own pool, own
+replay sim, no audio, screen effects replaced by no-ops), seeks to the window
+start and steps the clock by exactly 1/30 s per frame, so a clip is the same
+whatever the display rate. The camera is the viewer's default: "Your view"
+when the recording has a camera track, else following the local player.
+Each frame renders into a multisampled HDR target, a full-screen pass applies
+exposure, the preset's tone mapping and the round's saturation/contrast into
+an 8-bit target, and the pixels are read back onto a 2D canvas that gets the
+round-name pill and the wordmark. 720p30 by default, 1080p30 on High/Ultra.
+
+Encoding, best first: WebCodecs H.264 in MP4, VP9 then VP8 in WebM (muxed by
+`mp4Muxer.ts` / `webmMuxer.ts`, no dependencies), then MediaRecorder on
+`canvas.captureStream()`. The loop renders one clip frame per animation frame
+and waits on the encoder queue, so the menu keeps its frame rate; it checks
+for cancel every frame and disposes the view, both targets and the canvas
+whatever happens. The finished file lives in one object URL, revoked when it
+is replaced, when the sheet closes and when the rewards screen goes away.
+Nothing is uploaded.
+
+| Browser                          | Clip path                                                   |
+| -------------------------------- | ----------------------------------------------------------- |
+| Chrome / Edge (desktop, Android) | WebCodecs H.264 → MP4                                       |
+| Chromium builds without H.264    | WebCodecs VP9 → WebM                                        |
+| Safari 16.4+ / iOS 16.4+         | WebCodecs H.264 → MP4                                       |
+| Firefox 130+                     | WebCodecs H.264 → MP4 where the OS has an encoder, else VP9 |
+| Older engines with MediaRecorder | MediaRecorder WebM (or MP4 on Safari), paced in real time   |
+| Neither                          | Clips explained as unavailable; cards still work            |

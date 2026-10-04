@@ -60,27 +60,15 @@ export class TumblerPool {
 
   /**
    * Routes a round's Tumblers through the crowd renderer and drops everyone
-   * else from it, so eliminated players cost nothing.
+   * else from it, so eliminated players cost nothing. Pauses after every
+   * Tumbler added: a first round assembles each cosmetic combination's crowd
+   * geometry, ~1 ms apiece.
    *
    * @param active - Visuals on screen this round.
-   * @returns The crowd's root (add it to the round scene), or null when no visual can be batched.
+   * @returns A generator yielding progress (0..1) whose return value is the crowd's root (add it
+   *   to the round scene), or null when no visual can be batched.
    */
-  batch(active: readonly TumblerVisual[]): TumblerCrowd | null {
-    const steps = this.batchSliced(active);
-    for (;;) {
-      const r = steps.next();
-      if (r.done) return r.value;
-    }
-  }
-
-  /**
-   * {@link batch}, pausing after every Tumbler added: a first round assembles
-   * each cosmetic combination's crowd geometry, ~1 ms apiece.
-   *
-   * @param active - Visuals on screen this round.
-   * @returns A generator yielding progress (0..1) whose return value is the crowd's root, or null.
-   */
-  *batchSliced(active: readonly TumblerVisual[]): Generator<number, TumblerCrowd | null> {
+  *batch(active: readonly TumblerVisual[]): Generator<number, TumblerCrowd | null> {
     const tumblers = active.filter((v): v is Tumbler => v instanceof Tumbler);
     if (tumblers.length === 0) return null;
     const crowd = (this.crowd ??= new TumblerCrowd());
@@ -198,23 +186,7 @@ export class PlayerVisuals {
   private readonly dists = new Float32Array(MAX_PLAYERS);
   private crowd: TumblerCrowd | null = null;
 
-  /**
-   * Builds the visuals in one go.
-   *
-   * @param source - The round's players.
-   * @param opts - Scene, pool and settings.
-   * @returns Every entrant's visual, placed in the scene.
-   */
-  static create(source: RoundSource, opts: PlayerVisualsOptions): PlayerVisuals {
-    const v = new PlayerVisuals(source, opts);
-    const steps = v.populate();
-    while (!steps.next().done) {
-      // Drain.
-    }
-    return v;
-  }
-
-  /** Cheap setup only: {@link populate} (or {@link create}) adds the players. */
+  /** Cheap setup only: {@link populate} adds the players. */
   constructor(
     private readonly source: RoundSource,
     private readonly opts: PlayerVisualsOptions,
@@ -305,7 +277,7 @@ export class PlayerVisuals {
       this.byId.set(info.id, e);
       yield (playersShare * this.entries.length) / order.length;
     }
-    const batching = opts.pool.batchSliced(visuals);
+    const batching = opts.pool.batch(visuals);
     let r = batching.next();
     while (!r.done) {
       yield playersShare + (1 - playersShare) * r.value;

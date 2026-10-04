@@ -195,6 +195,11 @@ export const OBSTACLE_CUES: Readonly<Record<string, string>> = {
   'puzzleFloor.hide': 'whoosh.down',
   'puzzleFloor.reveal': 'round.whistle',
   'puzzleFloor.void': 'crowd.aww',
+  'throneFloor.telegraph': 'alarm.blip',
+  'throneFloor.claim': 'checkpoint',
+  'throneFloor.bounce': 'bumper.boing',
+  'throneFloor.drop': 'tile.fall',
+  'throneFloor.void': 'crowd.aww',
 };
 
 /**

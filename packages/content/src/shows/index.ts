@@ -22,7 +22,7 @@ export const PLANNED_ROUNDS = {
   team: ['egg-heist', 'bounce-ball-blitz', 'paint-the-plaza'],
   hunt: ['tail-chase', 'comet-catch', 'sunbeam-squabble'],
   logic: ['pattern-panic', 'colour-cauldron', 'trail-tracer'],
-  final: ['crown-climb', 'last-tumbler-standing', 'spin-cycle-finale', 'goo-peak-final'],
+  final: ['crown-climb', 'last-tumbler-standing', 'spin-cycle-finale', 'goo-peak-final', 'throne-rush'],
 } as const;
 
 /** Every planned round id. */
@@ -56,6 +56,7 @@ const STANDARD_WEIGHTS: Readonly<Record<string, number>> = {
   'last-tumbler-standing': 1,
   'spin-cycle-finale': 0.9,
   'goo-peak-final': 0.9,
+  'throne-rush': 1,
 };
 
 function pool(ids: readonly string[], scale: Readonly<Record<string, number>> = {}): Pool {

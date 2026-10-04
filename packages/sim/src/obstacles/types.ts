@@ -45,7 +45,8 @@ export type ObstacleType =
   | 'goalZone'
   | 'cometField'
   | 'sunbeamZones'
-  | 'puzzleFloor';
+  | 'puzzleFloor'
+  | 'throneFloor';
 
 /**
  * Placement of one obstacle in a round. `rotation` is yaw/pitch/roll in DEGREES

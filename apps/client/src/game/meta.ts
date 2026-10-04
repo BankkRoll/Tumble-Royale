@@ -1,6 +1,6 @@
 /**
  * Pushes the local account's meta data (profile, locker, store, pass,
- * challenges, history, playlists, news, leaderboards, party) into the UI
+ * challenges, collection log, history, playlists, news, leaderboards, party) into the UI
  * while playing offline; `online/account.ts` does the same from the API.
  */
 import { roundCatalog, DEV_ROUND_IDS } from '@tumble/content/rounds';
@@ -13,6 +13,7 @@ import {
   type Playlist,
   type ProfileData,
 } from '@tumble/ui';
+import { uiCollection } from './cosmetics.ts';
 import { facedCard } from './facedCard.ts';
 import { DEFAULT_PLAYLIST_ID, isNewcomer } from './playlists.ts';
 import { currentNews, refreshLiveNews } from './liveNews.ts';
@@ -116,6 +117,10 @@ export function pushMeta(profile: ProfileStore): void {
   s.setStoreData(profile.uiStore());
   s.setPass(profile.uiPass());
   s.setChallenges(profile.uiChallenges());
+  // Achievements and the login streak are server-authoritative: offline has neither.
+  s.setAchievements(null);
+  s.setLoginStreak(null);
+  s.setCollection(uiCollection((id) => profile.owns(id)));
   s.setMatchHistory(profile.uiHistory());
   syncLocalNotifications(profile);
   pushStaticMeta(profile.showsPlayed);

@@ -21,6 +21,7 @@ import {
   type TumblerColors,
 } from '@tumble/ui';
 import { ApiError, type ApiClient, type ApiParty } from '../api.ts';
+import { liveFlags } from '../liveOps/flags.ts';
 import type { TypedMessage } from '../online/jsonSocket.ts';
 import {
   chatHint,
@@ -134,6 +135,7 @@ export class SocialController {
       }),
       this.rt.on('socket_open', () => this.setGlobalRoom(true)),
       this.rt.on('socket_closed', () => this.setGlobalRoom(false)),
+      liveFlags.subscribe(() => this.setGlobalRoom(this.rt.connected)),
     );
     setWhisperRoute((to, text) => this.whisper(to.userId, text));
     setChatRoute('global', (text) => this.sendGlobalChat(text));
@@ -145,7 +147,9 @@ export class SocialController {
    * A drop keeps the lines: the history on reconnect dedupes against them.
    */
   private setGlobalRoom(up: boolean): void {
-    social.getState().dispatchChat({ type: 'room', room: 'global', access: up ? 'write' : 'off' });
+    // `chat.global` off closes the room like a dropped socket; the API refuses sends anyway.
+    const open = up && liveFlags.flag('chat.global');
+    social.getState().dispatchChat({ type: 'room', room: 'global', access: open ? 'write' : 'off' });
   }
 
   /**

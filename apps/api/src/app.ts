@@ -33,6 +33,7 @@ import { rateLimitKey } from './http/rate-limit.ts';
 import { kvRateLimitStore } from './http/rate-limit-store.ts';
 import { createKV, type KV } from './kv/index.ts';
 import { registerMatchRoutes } from './matches/routes.ts';
+import { registerLiveOpsRoutes } from './liveops/routes.ts';
 import { registerAdminRoutes } from './moderation/admin.ts';
 import { registerModerationRoutes } from './moderation/routes.ts';
 import { registerNewsRoutes } from './news/routes.ts';
@@ -261,6 +262,8 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     season: catalog.season.id,
   }));
 
+  // First: its store kill-switch hook must be in place before the spend routes exist.
+  registerLiveOpsRoutes(app, ctx);
   registerAuthRoutes(app, ctx);
   registerAccountRoutes(app, ctx);
   registerIdentityRoutes(app, ctx);

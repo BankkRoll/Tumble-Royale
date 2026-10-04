@@ -64,6 +64,7 @@ import {
 import type { GameContext, RoundOutcomeInfo, RoundStart, SessionPlayer, SessionSummary } from './context.ts';
 import { wonShow } from './crown.ts';
 import { showMenuKeyAction } from '../inputRouting.ts';
+import { withEventNote } from '../liveEvents.ts';
 import { FpsSampler, track } from '../liveOps/analytics.ts';
 import { padSpectateButtons } from '../bindings.ts';
 import {
@@ -2018,8 +2019,8 @@ export abstract class ShowSession {
       return;
     }
     this.awaiting = 'rewards';
-    const rewards = this.computeRewards(this.showFacts(this.summary));
     const s = ui.getState();
+    const rewards = withEventNote(this.computeRewards(this.showFacts(this.summary)), s.events);
     s.setRewards(rewards);
     if (!rewards) this.rewardsMissing();
     this.wall = null;

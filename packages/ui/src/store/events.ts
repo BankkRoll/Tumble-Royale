@@ -71,6 +71,10 @@ export interface UIIntents {
   buyPremiumPass: undefined;
   rerollChallenge: { id: string };
   claimChallenge: { id: string };
+  /** Claim a reached tier on an event's points track (online accounts). */
+  claimEventTier: { eventId: string; tier: number };
+  /** Claim a completed event challenge (online accounts). */
+  claimEventChallenge: { eventId: string; challengeId: string };
   /** Claim today's daily login reward (online accounts). */
   claimLoginStreak: undefined;
   leaderboardQuery: { board: LeaderboardId; scope?: LeaderboardScope };

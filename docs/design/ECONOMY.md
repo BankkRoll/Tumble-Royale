@@ -153,3 +153,37 @@ the implementation; the policy is:
 - Purchase: `POST /shop/shards/buy` with an `Idempotency-Key`; writes a
   `shard_shop` ledger spend and a `purchases` row; `402 insufficient_funds`
   when short; `409 already_owned`; `404 offer_not_available` off-rotation.
+
+## 5. Limited-time events
+
+- Data: `LIVE_EVENTS` in `packages/content/src/progression/events.ts`, event
+  cosmetics in `packages/content/src/cosmetics/catalog-events.ts`. Each event
+  has a UTC window (at most 45 days, never overlapping another bundled one),
+  featured playlists, up to 12 challenges and up to 30 tiers.
+- Points per show: 20 for playing, 10 per round qualified, 25 for reaching the
+  final, 60 for the Crown, doubled in the featured playlists. Claiming an event
+  challenge adds 150–300 points and XP. A steady player (two featured shows a
+  day, qualifying twice) plus every challenge reaches the top tier; content
+  tests check that for every event.
+- Rewards: event-only cosmetics (`source: 'event'`, never sold, each on exactly
+  one track; the collection log names the event and tier), currency and XP.
+  Currency is paid on the ledger under `event:<eventId>:<tier>` with reason
+  `event_reward`, so a tier can never pay twice.
+- Settlement: like seasonal challenges (§2.1), completed challenges and reached
+  tiers the player never claimed pay out automatically after the event ends,
+  through the same guards as a claim.
+
+**Per-event currency budget** (`EVENT_CURRENCY_BUDGET`, enforced by the event
+schema; tiers plus challenge XP):
+
+| Currency     | Cap per event | Moonlit Mischief | Frostbite Frolic |
+| ------------ | ------------- | ---------------- | ---------------- |
+| Gumballs     | 2,500         | 1,700            | 1,700            |
+| Gems         | 60            | 60               | 60               |
+| Crown Shards | 12            | 7                | 7                |
+| XP           | 30,000        | 17,500           | 17,500           |
+
+60 Gems is about one week of weekly challenges (§3) spread over a four-week
+event, so events add a little to the Gem budget without moving the premium
+pass or a Legendary item noticeably closer. Gumballs stay below a week of
+regular play. Events are optional: none of the §3 season budget counts on them.

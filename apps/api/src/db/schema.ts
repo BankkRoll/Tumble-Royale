@@ -519,6 +519,96 @@ export const loginStreaks = pgTable('login_streaks', {
 });
 
 // -----------------------------------------------------------------------------
+// Limited-time events
+// -----------------------------------------------------------------------------
+
+/**
+ * Operator overrides for bundled events (`PUT /internal/events/:id`). A row
+ * replaces the bundled window wholesale; `enabled = false` withdraws the event.
+ */
+export const eventOverrides = pgTable('event_overrides', {
+  id: text('id').primaryKey(),
+  startsAt: ts('starts_at').notNull(),
+  endsAt: ts('ends_at').notNull(),
+  enabled: boolean('enabled').notNull().default(true),
+  updatedAt: ts('updated_at').notNull().defaultNow(),
+});
+
+/**
+ * A player's points in one event. Only the match ingest adds show points and
+ * only a challenge claim adds challenge points, each in the transaction that
+ * also writes its own idempotency key.
+ */
+export const eventProgress = pgTable(
+  'event_progress',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    eventId: text('event_id').notNull(),
+    points: integer('points').notNull().default(0),
+    /** Shows that counted toward the event. */
+    shows: integer('shows').notNull().default(0),
+    /** Last time an ended event's earned rewards were paid out automatically. */
+    settledAt: ts('settled_at'),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.eventId] })],
+);
+
+/** One event challenge for one player. `claimed_at` is the claim guard. */
+export const eventChallengeProgress = pgTable(
+  'event_challenge_progress',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    eventId: text('event_id').notNull(),
+    challengeId: text('challenge_id').notNull(),
+    progress: integer('progress').notNull().default(0),
+    target: integer('target').notNull(),
+    completedAt: ts('completed_at'),
+    claimedAt: ts('claimed_at'),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.eventId, t.challengeId] })],
+);
+
+/** Points-track tiers paid out. The primary key makes each tier pay once. */
+export const eventTierClaims = pgTable(
+  'event_tier_claims',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    eventId: text('event_id').notNull(),
+    tier: integer('tier').notNull(),
+    claimedAt: ts('claimed_at').notNull(),
+    /** True when paid by the end-of-event settlement rather than a claim. */
+    auto: boolean('auto').notNull().default(false),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.eventId, t.tier] })],
+);
+
+/**
+ * Shows credited to an event, one row per player per match. Written in the
+ * ingest transaction next to the `matches` row as a second guard against a
+ * show counting twice, and the audit trail behind a points total.
+ */
+export const eventMatchCredits = pgTable(
+  'event_match_credits',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    eventId: text('event_id').notNull(),
+    matchId: text('match_id').notNull(),
+    points: integer('points').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.eventId, t.matchId] })],
+);
+
+// -----------------------------------------------------------------------------
 // Ranked
 // -----------------------------------------------------------------------------
 

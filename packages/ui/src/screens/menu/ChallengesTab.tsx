@@ -1,5 +1,6 @@
 /**
- * Challenges: the daily login streak card, a season-milestone strip, then
+ * Challenges: a switch to the limited-time event screen while an event is
+ * on, the daily login streak card, a season-milestone strip, then
  * Daily, Weekly, Seasonal (online, expires with the season) and Milestone
  * (online, permanent) card grids.
  * Each card has an illustrated icon inside a chunky progress ring, a big
@@ -13,14 +14,16 @@ import { playCue } from '../../audio-cues.ts';
 import { Bar, Coin } from '../../components/bits.tsx';
 import { ItemPreview } from '../../components/ItemPreview.tsx';
 import { GrantChip } from '../../components/GrantChip.tsx';
-import { Button } from '../../components/controls.tsx';
+import { Button, Segmented } from '../../components/controls.tsx';
 import { formatNumber, formatRemaining, useNow, useReducedMotion } from '../../components/hooks.ts';
 import { Icon, challengeIcon } from '../../components/icons/index.tsx';
 import { uiEvents } from '../../store/events.ts';
+import { featureOn } from '../../store/liveOps.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { Challenge, ChallengeCadence, ChallengesData } from '../../store/types.ts';
 import { confettiSets } from '../../theme/tokens.ts';
 import { fireConfetti } from '../../transitions/Confetti.tsx';
+import { EventScreen, featuredEvent } from './EventsView.tsx';
 import { LoginStreakCard } from './LoginStreak.tsx';
 
 const RING_R = 26;
@@ -268,13 +271,50 @@ function Section({
   );
 }
 
+/** Board / event switch, shown while there is an event to look at. */
+function ViewSwitch(): JSX.Element | null {
+  const events = useUI((s) => s.events);
+  const flags = useUI((s) => s.liveOps.flags);
+  const view = useUI((s) => s.challengesView);
+  const e = events ? featuredEvent(events.list) : null;
+  // Kept while events are paused so the event view (which explains the pause) can be left.
+  if (!e || (view === 'board' && (!featureOn(flags, 'events.enabled') || events?.enabled === false)))
+    return null;
+  return (
+    <Segmented<'board' | 'event'>
+      label="Challenges or event"
+      value={view}
+      onChange={(v) => ui.getState().setChallengesView(v)}
+      options={[
+        { value: 'board', label: 'Challenges' },
+        { value: 'event', label: e.name },
+      ]}
+    />
+  );
+}
+
 /** Challenges tab. */
 export function ChallengesTab(): JSX.Element {
   const data = useUI((s) => s.challenges);
+  const view = useUI((s) => s.challengesView);
   const now = useNow(1000);
-  if (!data) return <div className="tr-panel tr-empty">No challenges yet — check back soon!</div>;
+  if (view === 'event')
+    return (
+      <div className="tr-challenges">
+        <ViewSwitch />
+        <EventScreen />
+      </div>
+    );
+  if (!data)
+    return (
+      <div className="tr-challenges">
+        <ViewSwitch />
+        <div className="tr-panel tr-empty">No challenges yet — check back soon!</div>
+      </div>
+    );
   return (
     <div className="tr-challenges">
+      <ViewSwitch />
       <LoginStreakCard />
       <MilestoneStrip />
       <div className="tr-panel tr-ch-board">

@@ -28,6 +28,7 @@ import {
   type PaymentProvider,
 } from './economy/payments.ts';
 import { registerEconomyRoutes } from './economy/routes.ts';
+import { registerEventRoutes } from './events/routes.ts';
 import { ApiError } from './http/errors.ts';
 import { rateLimitKey } from './http/rate-limit.ts';
 import { kvRateLimitStore } from './http/rate-limit-store.ts';
@@ -274,6 +275,7 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
   registerIdentityRoutes(app, ctx);
   registerEconomyRoutes(app, ctx);
   registerProgressionRoutes(app, ctx);
+  registerEventRoutes(app, ctx);
   registerTutorialRoutes(app, ctx);
   registerMatchRoutes(app, ctx);
   registerFriendRoutes(app, ctx);

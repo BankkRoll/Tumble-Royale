@@ -5,7 +5,8 @@
  * Responsibilities:
  * - Source metadata per item ({@link cosmeticSources}), derived from the
  *   catalogue's `source` plus the places that actually hand items out: pass
- *   tracks, achievements, seasonal/milestone challenges, the tutorial.
+ *   tracks, achievements, seasonal/milestone challenges, event points
+ *   tracks, the tutorial.
  * - A pure read model over an ownership predicate ({@link collectionLog}),
  *   shared by the account API and the offline client so both count alike.
  *
@@ -21,6 +22,7 @@ import {
 } from '../cosmetics/index.ts';
 import { ACHIEVEMENTS } from './achievements.ts';
 import { MILESTONE_CHALLENGES, SEASONAL_CHALLENGE_POOL } from './challenges.ts';
+import { LIVE_EVENTS } from './events.ts';
 import { PASS_TRACKS } from './seasons.ts';
 import { TUTORIAL_REWARD } from './tutorial.ts';
 
@@ -108,6 +110,10 @@ function buildSources(): Map<string, CollectionSource[]> {
       label: `${c.cadence === 'milestone' ? 'Milestone' : 'Seasonal challenge'}: ${what}`,
     });
   }
+  for (const e of LIVE_EVENTS)
+    for (const t of e.tiers)
+      for (const r of t.rewards)
+        if (r.kind === 'cosmetic') add(r.itemId, { kind: 'event', label: `${e.name} event tier ${t.tier}` });
   add(TUTORIAL_REWARD.cosmeticId, { kind: 'tutorial', label: 'Complete Practice Island' });
 
   for (const item of COSMETICS) {

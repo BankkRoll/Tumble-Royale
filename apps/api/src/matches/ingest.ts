@@ -6,8 +6,13 @@
  * stored reward summaries; a concurrent duplicate blocks on the primary key,
  * fails with a unique violation after the first commits, and also replays.
  * Ledger rows are additionally keyed by match id as a second line of defence.
- * Achievement and challenge progress are written in the same transaction, so
- * they inherit this: a duplicate report never counts twice.
+ * Achievement, challenge and event progress are written in the same
+ * transaction, so they inherit this: a duplicate report never counts twice.
+ *
+ * Limited-time events count a show by its start, the game server's
+ * `startedAt` (capped at the API clock, since a show cannot have started in
+ * the future): a show that straddles an event's end still counts, one that
+ * started after it does not, however late its result arrives.
  *
  * Custom lobbies are recorded (history, stats) but grant nothing, so private
  * lobbies cannot be used to farm rewards or rank.
@@ -30,6 +35,8 @@ import {
 } from '../db/schema.ts';
 import { applyLedger, type Wallet } from '../economy/ledger.ts';
 import { readWallet } from '../economy/wallet.ts';
+import { recordEventShow, type EventShowUpdate } from '../events/progress.ts';
+import { countingEvents } from '../events/state.ts';
 import { badRequest, isUniqueViolation } from '../http/errors.ts';
 import { recordLeaderboards, RANKED_QUEUE } from '../leaderboards/service.ts';
 import {
@@ -74,6 +81,8 @@ export interface PlayerRewardSummary {
    * in the lines above. Absent on older stored results.
    */
   achievements?: AchievementUnlock[];
+  /** Limited-time events this show counted toward. Absent on older stored results. */
+  events?: EventShowUpdate[];
   ranked: {
     rpBefore: number;
     rpAfter: number;
@@ -169,6 +178,9 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
   if (m.queue === 'ranked' && seasonId === ctx.catalog.season.id) await ensureRankedSeason(ctx, seasonId);
   const now = ctx.now();
   const grants = m.queue !== 'custom';
+  const liveEvents = grants
+    ? await countingEvents(ctx, Math.min(Date.parse(m.startedAt), now.getTime()))
+    : [];
   let leaderboardUpdates: Parameters<typeof recordLeaderboards>[1][] = [];
 
   let result: IngestResult;
@@ -446,6 +458,23 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
           }
           challenges = await applyChallengeProgress(tx, ctx.catalog, userId, metrics, now);
         }
+        const eventUpdates = liveEvents.length
+          ? await recordEventShow(
+              tx,
+              liveEvents,
+              userId,
+              m.matchId,
+              {
+                playlistId: m.playlistId,
+                roundsQualified: qualified,
+                qualifiedByType: Object.fromEntries(qualifiedByType),
+                reachedFinal,
+                crowned: pl.crowned,
+                placement: pl.placement,
+              },
+              now,
+            )
+          : [];
 
         const rk = ranked.get(userId);
         await tx
@@ -468,6 +497,7 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
           pass: { xp: xp.passXp, tierBefore: xp.passTierBefore, tierAfter: xp.passTierAfter },
           challenges,
           achievements,
+          events: eventUpdates,
           ranked: rk
             ? {
                 rpBefore: rk.rpBefore,
@@ -520,6 +550,22 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
         title: 'Challenge complete!',
         body: c.title,
       });
+    }
+    for (const e of r.events ?? []) {
+      for (const c of e.challenges.filter((x) => x.completed))
+        await ctx.notifier.notifyUser(r.userId, {
+          type: 'notification',
+          kind: 'reward',
+          title: 'Event challenge complete!',
+          body: `${e.name}: ${c.title}`,
+        });
+      if (e.tierAfter > e.tierBefore)
+        await ctx.notifier.notifyUser(r.userId, {
+          type: 'notification',
+          kind: 'reward',
+          title: `${e.name} reward unlocked`,
+          body: `Tier ${e.tierAfter} is ready to claim.`,
+        });
     }
     await notifyUnlocks(ctx, r.userId, r.achievements ?? []);
   }

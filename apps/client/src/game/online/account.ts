@@ -4,14 +4,15 @@
  *
  * Responsibilities:
  * - load `/me`, `/inventory`, `/loadouts`, `/store`, `/gems/packs`, `/pass`,
- *   `/challenges`, `/streak`, `/achievements`, `/collection`, `/friends`,
+ *   `/challenges`, `/streak`, `/achievements`, `/collection`, `/live-events`, `/friends`,
  *   `/party` and project them onto `@tumble/ui` shapes (profile card, locker,
  *   store, pass, challenges, login streak, achievements, collection log,
  *   friends, party);
  * - locker edits persisted server-side (`PUT /loadouts/:i`, activate);
  * - purchases with an `Idempotency-Key` (store items, Gem packs via the
  *   checkout — instant with the API's fake provider in dev, a Stripe redirect
- *   otherwise), pass claims + premium, challenge claim/reroll;
+ *   otherwise), pass claims + premium, challenge claim/reroll, event tier and
+ *   event challenge claims;
  * - leaderboards and match history;
  * - social: friend requests, the party (create, join by code, ready, kick,
  *   leader's playlist, who is away playing solo) and the realtime gateway
@@ -72,7 +73,9 @@ import {
   type ApiPass,
   type ApiPassReward,
   type ApiTutorialComplete,
+  type ApiLiveEvents,
 } from '../api.ts';
+import { eventsView, rewardEventLines } from '../liveEvents.ts';
 import {
   avatarHat,
   botLoadout,
@@ -348,6 +351,7 @@ export class OnlineAccount {
       this.refreshStreak(),
       this.refreshAchievements(),
       this.refreshCollection(),
+      this.refreshEvents(),
       this.refreshFriends(),
       this.refreshParty(),
       this.history(),
@@ -374,6 +378,7 @@ export class OnlineAccount {
       this.refreshStreak(),
       this.refreshAchievements(),
       this.refreshCollection(),
+      this.refreshEvents(),
       this.history(),
     ]);
   }
@@ -751,6 +756,92 @@ export class OnlineAccount {
       });
     } catch (err) {
       console.warn('[account] collection failed', err);
+    }
+  }
+
+  /**
+   * Loads the events and the player's progress in them. Reading progress is
+   * also what pays out an ended event, so anything it settled is toasted.
+   */
+  private async refreshEvents(): Promise<void> {
+    try {
+      const sent = Date.now();
+      const [list, progress]: [ApiLiveEvents, Awaited<ReturnType<ApiClient['eventProgress']>>] =
+        await Promise.all([this.api.liveEvents(), this.api.eventProgress()]);
+      const now = Date.now();
+      ui.getState().setEvents(
+        eventsView({
+          events: list.events,
+          progress: progress.progress,
+          enabled: list.enabled && progress.enabled,
+          offsetMs: Math.round(list.serverTime - (sent + now) / 2),
+          now,
+          grant: (g) => this.grantView(g),
+        }),
+      );
+      for (const s of progress.settled) {
+        ui.getState().pushToast({
+          kind: 'reward',
+          title: `${s.name} rewards added`,
+          body: 'The event ended. Everything you earned but had not claimed is now yours.',
+          icon: '🎁',
+        });
+      }
+      if (progress.settled.length) await this.refreshWalletAndInventory();
+    } catch (err) {
+      console.warn('[account] events failed', err);
+    }
+  }
+
+  /** Re-reads the wallet and inventory only (after an event payout). */
+  private async refreshWalletAndInventory(): Promise<void> {
+    try {
+      const [me, inv] = await Promise.all([this.api.me(), this.api.inventory()]);
+      this.me = me;
+      this.owned = new Set(inv.items.map((i) => i.id));
+      this.pushProfile();
+      this.pushInventory();
+    } catch (err) {
+      console.warn('[account] wallet refresh failed', err);
+    }
+  }
+
+  /**
+   * Claims a reached tier on an event's points track.
+   *
+   * @param eventId - Event id.
+   * @param tier - Tier number.
+   */
+  async claimEventTier(eventId: string, tier: number): Promise<void> {
+    try {
+      await this.api.claimEventTier(eventId, tier);
+      ui.getState().pushToast({ kind: 'reward', title: `Event tier ${tier} claimed!`, icon: '🎁' });
+      await this.refreshProgress();
+    } catch (err) {
+      ui.getState().pushToast({ kind: 'error', title: "Couldn't claim that reward", body: describe(err) });
+      await this.refreshEvents();
+    }
+  }
+
+  /**
+   * Claims a completed event challenge (its points join the track).
+   *
+   * @param eventId - Event id.
+   * @param challengeId - Challenge id within the event.
+   */
+  async claimEventChallenge(eventId: string, challengeId: string): Promise<void> {
+    try {
+      const r = await this.api.claimEventChallenge(eventId, challengeId);
+      ui.getState().pushToast({
+        kind: 'reward',
+        title: `+${r.points} event points`,
+        ...(r.xp > 0 ? { body: `+${r.xp} XP` } : {}),
+        icon: '🎯',
+      });
+      await this.refreshProgress();
+    } catch (err) {
+      ui.getState().pushToast({ kind: 'error', title: "Couldn't claim that challenge", body: describe(err) });
+      await this.refreshEvents();
     }
   }
 
@@ -1238,6 +1329,7 @@ export class OnlineAccount {
             })),
           }
         : {}),
+      ...(r.events?.length ? { events: rewardEventLines(r.events) } : {}),
       ...(r.achievements?.length
         ? {
             achievements: r.achievements.map((a) => ({

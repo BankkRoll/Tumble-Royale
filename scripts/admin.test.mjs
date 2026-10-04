@@ -123,6 +123,43 @@ describe('live-ops commands', () => {
     });
   });
 
+  it('maps event commands', () => {
+    assert.deepEqual(req(['events', 'list']), { method: 'GET', path: '/internal/live-events' });
+    assert.deepEqual(
+      req([
+        'events',
+        'set',
+        'moonlit-mischief',
+        '--starts',
+        '2026-10-10T00:00:00Z',
+        '--ends',
+        '2026-10-20T00:00Z',
+      ]),
+      {
+        method: 'PUT',
+        path: '/internal/live-events/moonlit-mischief',
+        body: { startsAt: '2026-10-10T00:00:00.000Z', endsAt: '2026-10-20T00:00:00.000Z' },
+      },
+    );
+    assert.deepEqual(req(['events', 'set', 'moonlit-mischief', '--ends', '2026-11-05T00:00:00Z']).body, {
+      endsAt: '2026-11-05T00:00:00.000Z',
+    });
+    assert.deepEqual(req(['events', 'disable', 'moonlit-mischief']).body, { enabled: false });
+    assert.deepEqual(req(['events', 'enable', 'moonlit-mischief']).body, { enabled: true });
+    assert.deepEqual(req(['events', 'reset', 'frostbite-frolic']), {
+      method: 'DELETE',
+      path: '/internal/live-events/frostbite-frolic',
+    });
+    for (const argv of [
+      ['events', 'set', 'moonlit-mischief'],
+      ['events', 'set', 'moonlit-mischief', '--ends', 'none'],
+      ['events', 'set', 'moonlit-mischief', '--starts', 'soon'],
+      ['events', 'disable'],
+      ['events', 'reset'],
+    ])
+      assert.throws(() => req(argv), /./, argv.join(' '));
+  });
+
   it('schedules maintenance relative to now or at fixed times', () => {
     assert.deepEqual(req(['maintenance', 'on', '--in', '10', '--for', '30', '--message', 'Patch day']).body, {
       enabled: true,

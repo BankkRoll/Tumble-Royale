@@ -23,6 +23,7 @@ import type {
   AchievementsData,
   ChallengesData,
   CollectionData,
+  EventsData,
   LoginStreakData,
   ConnectionState,
   CustomLobbyState,
@@ -135,6 +136,10 @@ export interface UIState {
   achievements: AchievementsData | null;
   /** Every cosmetic with ownership and sources. */
   collection: CollectionData | null;
+  /** Limited-time events (bundled ones offline, the API's when signed in). */
+  events: EventsData | null;
+  /** What the Challenges tab shows: the challenge board or the event screen. */
+  challengesView: 'board' | 'event';
   leaderboards: Partial<Record<LeaderboardId, LeaderboardRow[]>>;
   matchHistory: MatchHistoryEntry[];
   news: NewsItem[];
@@ -255,6 +260,10 @@ export interface UIState {
   /** Achievements screen (null offline). */
   setAchievements: (achievements: AchievementsData | null) => void;
   setCollection: (collection: CollectionData | null) => void;
+  setEvents: (events: EventsData | null) => void;
+  setChallengesView: (view: 'board' | 'event') => void;
+  /** Opens the event screen (Challenges tab, event view). */
+  openEvents: () => void;
   setLeaderboard: (board: LeaderboardId, rows: LeaderboardRow[], info?: LeaderboardInfo) => void;
   /** Marks a board's last load as failed (`null` clears it before a retry). Rows are kept. */
   setLeaderboardError: (board: LeaderboardId, scope: LeaderboardScope, error: string | null) => void;
@@ -388,6 +397,8 @@ export const ui = createStore<UIState>()((set, get) => ({
   loginStreak: null,
   achievements: null,
   collection: null,
+  events: null,
+  challengesView: 'board',
   leaderboards: {},
   matchHistory: [],
   news: [],
@@ -542,6 +553,12 @@ export const ui = createStore<UIState>()((set, get) => ({
   setLoginStreak: (loginStreak) => set({ loginStreak }),
   setAchievements: (achievements) => set({ achievements }),
   setCollection: (collection) => set({ collection }),
+  setEvents: (events) => set({ events }),
+  setChallengesView: (challengesView) => set({ challengesView }),
+  openEvents: () => {
+    set({ challengesView: 'event' });
+    get().setMenuTab('challenges');
+  },
   setLeaderboard: (board, rows, info) =>
     set({
       leaderboards: { ...get().leaderboards, [board]: rows },

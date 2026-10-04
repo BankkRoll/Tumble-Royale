@@ -274,6 +274,18 @@ export interface PlayerRewardMsg {
   challenges: { title: string; before: number; progress: number; target: number; completed: boolean }[];
   /** Achievements this show unlocked (their XP and currency are already in the lines above). */
   achievements?: { id: string; title: string; description: string; hidden: boolean }[];
+  /** Limited-time events this show counted toward (the API's `EventShowUpdate`). */
+  events?: {
+    eventId: string;
+    name: string;
+    gained: number;
+    pointsBefore: number;
+    pointsAfter: number;
+    tierBefore: number;
+    tierAfter: number;
+    tiers: number;
+    challenges: { title: string; before: number; progress: number; target: number; completed: boolean }[];
+  }[];
   ranked: {
     rpBefore: number;
     rpAfter: number;

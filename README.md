@@ -55,8 +55,9 @@ What a player can do today:
   with a filter, quick pings, report / block / mute, streamer mode
 - **Progression:** accounts (guest, Discord, Google, email link), seasons,
   a 100-tier pass, daily/weekly/seasonal/milestone challenges, 45
-  achievements (some hidden), a collection log, a daily login streak, store,
-  Crown Shard shop, free Gem paths, live news and notifications
+  achievements (some hidden), a collection log, a daily login streak,
+  limited-time events with their own challenges, points track and cosmetics,
+  store, Crown Shard shop, free Gem paths, live news and notifications
 - **Watch:** keep spectating after elimination, round replays (save and
   reopen them), photo mode
 - **Input & access:** keyboard/mouse with rebinding, gamepad menus,
@@ -176,6 +177,9 @@ pnpm admin errors top                                   # most frequent client e
 - **Limited-time playlists** get a start and an end (content can ship them,
   operators override them). The menu shows "Ends in" and "Coming soon"; the
   matchmaker refuses a playlist outside its window, judged on the API's clock.
+- **Limited-time events** run in the same way: operators move, withdraw or
+  reset them (`pnpm admin events`), `events.enabled` pauses them all, and
+  unclaimed rewards pay out automatically after an event ends.
 - **Analytics** are a fixed list of gameplay events, batched and sampled,
   with no identity beyond the account id; players can turn them off in
   Settings → Gameplay, and they start off under Do Not Track or Global

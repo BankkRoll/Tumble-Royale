@@ -63,6 +63,9 @@ Gems must be reachable without paying. Rules: `GEM_EARN` in
 | Account level milestone (every 10)                                        | 100     | levels 10, 20, … 100                        |
 | Season Pass free track (x5 spotlight tiers 5, 15, 35, 45, 55, 65, 85, 95) | 50 each | 400/season                                  |
 | Season Pass premium track                                                 | 100 × 8 | 800/season (premium refunds most of itself) |
+| Daily login, day 7 of the ladder                                          | 20      | 1 per 7-day streak → 20/week                |
+| Seasonal challenges with a Gem reward (when drawn)                        | 25 each | at most 2 per season → 50/season            |
+| Achievements (top tiers) and the 50-Crown milestone                       | 25–100  | once per account: 350 + 100 lifetime        |
 
 Season budget (13 weeks):
 
@@ -77,6 +80,11 @@ pass from one season of play; premium then refunds 800 of it. Legendary store
 items (800) and Mythics (1,600) take a regular player roughly one season of
 saving. `packages/content/test/economy.test.ts` checks the casual row stays at
 or above the premium price.
+
+The budget above leaves out the daily login (up to 260/season for an unbroken
+streak), seasonal challenges (up to 50/season) and the one-time achievement
+and milestone Gems: they reward showing up rather than grinding, and the
+budget should hold without them.
 
 ### 3.1 Buying Gems
 

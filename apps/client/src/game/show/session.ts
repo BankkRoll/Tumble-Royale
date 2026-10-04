@@ -953,10 +953,10 @@ export abstract class ShowSession {
   }
 
   /**
-   * Starts the time-sliced build of the round's view behind the loading
-   * screen (retried when the source appears later online): scene steps, then
-   * shader/pipeline compilation and one hidden warm-up frame. When it is done
-   * the local player counts as loaded ({@link onRoundBuilt}).
+   * Starts the time-sliced build of the round's view under the loading wipe
+   * (retried when the source appears later online): scene steps, then the
+   * director's shader warm-up. When it is done the local player counts as
+   * loaded ({@link onRoundBuilt}).
    */
   protected requestRoundBuild(): void {
     const r = this.round;
@@ -976,20 +976,9 @@ export abstract class ShowSession {
     let handedOver = false;
     const steps: LoadStep[] = [
       ...view.loadSteps(),
-      {
-        // A cold shader cache can make compiling cost as much as building; an estimate, see loadTimings.
-        name: 'compile',
-        weight: 8,
-        run: async (ctx) => {
-          handedOver = true;
-          try {
-            await this.ctx.director.precompile(view, (f) => ctx.report(f));
-          } catch (err) {
-            // Not fatal: the round still renders, it just compiles on its first frames.
-            console.warn('[show] shader precompile failed', err);
-          }
-        },
-      },
+      ...this.ctx.director.precompileSteps(view, () => {
+        handedOver = true;
+      }),
     ];
     const showProgress = throttleProgress(LOAD_UI_INTERVAL_MS, (pct) => {
       if (!stale()) ui.getState().setRoundLoading({ progress: pct });

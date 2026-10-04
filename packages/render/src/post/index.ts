@@ -3,3 +3,4 @@
  * per-theme grade, photo filters, vignette, hit punch, flash).
  */
 export * from './pipeline.ts';
+export * from './warmUp.ts';

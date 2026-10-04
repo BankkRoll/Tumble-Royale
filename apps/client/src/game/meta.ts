@@ -16,6 +16,7 @@ import {
 import { facedCard } from './facedCard.ts';
 import { DEFAULT_PLAYLIST_ID, isNewcomer } from './playlists.ts';
 import { currentNews, refreshLiveNews } from './liveNews.ts';
+import { activeSchedule, scheduledCard, type ScheduleCache } from './liveOps/schedule.ts';
 import { syncLocalNotifications } from './localNotifications.ts';
 import type { ProfileStore } from './profile.ts';
 import { loadJson, saveJson } from './storage.ts';
@@ -44,22 +45,41 @@ const PLAYLIST_ART: Readonly<Record<string, { art: [string, string]; icon: strin
  * the player is a newcomer it replaces the Main Show card (same id, so the
  * selection survives), because that is what Play will actually start.
  *
+ * Scheduled playlists appear only while live (with an "Ends in" time when
+ * they close), or ahead of time as "Coming soon" when featured; ended and
+ * withdrawn ones are left out (see `liveOps/schedule.ts`).
+ *
  * @param showsPlayed - Finished shows, or null when unknown.
+ * @param schedule - The API's schedules (null: the bundled ones).
+ * @param now - Device clock.
  */
-export function uiPlaylists(showsPlayed: number | null = null): Playlist[] {
+export function uiPlaylists(
+  showsPlayed: number | null = null,
+  schedule: ScheduleCache | null = activeSchedule(),
+  now: number = Date.now(),
+): Playlist[] {
   const first = isNewcomer(showsPlayed) ? getPlaylist('first-show') : undefined;
-  return PLAYLISTS.filter((p) => p.id !== 'first-show').map((p) => {
+  return PLAYLISTS.filter((p) => p.id !== 'first-show').flatMap((p): Playlist[] => {
+    const when = scheduledCard(p, p.id, schedule, now);
+    const comingSoon = when.phase === 'upcoming' && when.featured;
+    if (when.phase !== 'live' && !comingSoon) return [];
     const shown = first && p.id === DEFAULT_PLAYLIST_ID ? first : p;
-    return {
-      id: p.id,
-      name: shown.name,
-      description: shown.description,
-      players: shown.maxPlayers,
-      teamSize: (p.partySize === 2 ? 2 : p.partySize === 4 ? 4 : 1) as 1 | 2 | 4,
-      art: PLAYLIST_ART[p.id]?.art ?? ['#ff6fae', '#ffd23f'],
-      icon: shown === first ? '🌱' : (PLAYLIST_ART[p.id]?.icon ?? '🎪'),
-      ...(p.ranked ? { ranked: true } : {}),
-    };
+    return [
+      {
+        id: p.id,
+        name: shown.name,
+        description: shown.description,
+        players: shown.maxPlayers,
+        teamSize: (p.partySize === 2 ? 2 : p.partySize === 4 ? 4 : 1) as 1 | 2 | 4,
+        art: PLAYLIST_ART[p.id]?.art ?? ['#ff6fae', '#ffd23f'],
+        icon: shown === first ? '🌱' : (PLAYLIST_ART[p.id]?.icon ?? '🎪'),
+        ...(p.ranked ? { ranked: true } : {}),
+        ...(comingSoon
+          ? { comingSoon: true, ...(when.startsAt !== null ? { startsAt: when.startsAt } : {}) }
+          : {}),
+        ...(!comingSoon && when.endsAt !== null ? { endsAt: when.endsAt } : {}),
+      },
+    ];
   });
 }
 
@@ -130,6 +150,19 @@ export function pushMeta(profile: ProfileStore): void {
 }
 
 /**
+ * Re-offers the playlists (a schedule changed or a window opened or closed).
+ * Only touches the store when the cards differ, so it is cheap to call often.
+ *
+ * @param showsPlayed - Finished shows, for the First Show card; null when unknown.
+ */
+export function pushPlaylists(showsPlayed: number | null = null): void {
+  const s = ui.getState();
+  const cards = uiPlaylists(showsPlayed);
+  if (s.playlists.length === 0) s.setPlaylists(cards, DEFAULT_PLAYLIST_ID);
+  else if (JSON.stringify(cards) !== JSON.stringify(s.playlists)) s.setPlaylists(cards);
+}
+
+/**
  * News, playlists and the custom-lobby round catalog (the same online and offline).
  *
  * @param showsPlayed - Finished shows, for the First Show card; null when unknown.
@@ -137,9 +170,7 @@ export function pushMeta(profile: ProfileStore): void {
 export function pushStaticMeta(showsPlayed: number | null = null): void {
   const s = ui.getState();
   s.setNews(uiNews());
-  const cards = uiPlaylists(showsPlayed);
-  if (s.playlists.length === 0) s.setPlaylists(cards, DEFAULT_PLAYLIST_ID);
-  else if (JSON.stringify(cards) !== JSON.stringify(s.playlists)) s.setPlaylists(cards);
+  pushPlaylists(showsPlayed);
   if (s.roundCatalog.length === 0) {
     s.setRoundCatalog(
       [...roundCatalog().values()]

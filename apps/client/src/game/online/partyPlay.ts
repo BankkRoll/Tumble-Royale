@@ -97,5 +97,9 @@ export function queueRefusal(code: string, message: string): { title: string; bo
       title: 'Someone is still in a show',
       body: `${message}. Queue again once they're back in the menu.`,
     };
+  if (code === 'maintenance')
+    return { title: 'Down for maintenance', body: `${message} You can still play Vs Bots.` };
+  if (code === 'playlist_unavailable')
+    return { title: "That playlist isn't open", body: `${message}. Pick another playlist and try again.` };
   return { title: "Couldn't start matchmaking", body: message };
 }

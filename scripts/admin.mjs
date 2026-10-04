@@ -50,6 +50,10 @@ Errors
   errors top [--hours N] [--limit N] [--server]     most frequent client (or server) errors
 Economy
   ledger check <userId>                             verify cached balances against the ledger
+Refunds (approving issues the Stripe refund when the API has a Stripe key)
+  refunds list [--status open|pending|failed|...|all] [--kind self_service|real_money] [--user <userId>] [--limit N]
+  refunds approve <refundId> [--note <text>]
+  refunds deny <refundId> --reason <text>           the reason is shown to the player
 Users
   user lookup <userId | name#1234 | email | name>
   user rename <userId> <new display name>
@@ -337,6 +341,30 @@ export function toRequest(args, opts, readFile = (f) => readFileSync(f, 'utf8'),
         path: `/internal/users/${enc(need(a, '<userId>'))}/rename`,
         body: { displayName: need(rest.join(' ').trim(), '<new display name>') },
       };
+    case 'refunds list': {
+      const q = new URLSearchParams();
+      for (const [opt, param] of [
+        ['status', 'status'],
+        ['kind', 'kind'],
+        ['user', 'userId'],
+      ]) {
+        if (typeof opts[opt] === 'string') q.set(param, opts[opt]);
+      }
+      intOpt(q, opts, 'limit');
+      return { method: 'GET', path: `/internal/refunds${q.size ? `?${q}` : ''}`, format: formatRefunds };
+    }
+    case 'refunds approve':
+      return {
+        method: 'POST',
+        path: `/internal/refunds/${enc(need(a, '<refundId>'))}/approve`,
+        body: typeof opts.note === 'string' ? { note: opts.note } : {},
+      };
+    case 'refunds deny':
+      return {
+        method: 'POST',
+        path: `/internal/refunds/${enc(need(a, '<refundId>'))}/deny`,
+        body: { reason: need(typeof opts.reason === 'string' ? opts.reason : '', '--reason') },
+      };
     case 'staff list':
       return { method: 'GET', path: '/internal/staff' };
     case 'staff grant': {
@@ -374,6 +402,28 @@ export function formatErrors(body) {
     const release = e.releases ? ` · ${e.releases}` : '';
     lines.push(`${String(e.occurrences).padStart(7)}x  ${e.type}: ${e.message}`);
     lines.push(`          ${who}${release} · last ${e.lastSeen}`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Renders `refunds list` for a terminal: one line per refund, then the player's reason.
+ *
+ * @param {{ total: number, refunds: { id: string, kind: string, status: string, currency: string,
+ *   amount: number, offerId: string, createdAt: string, displayName?: string | null, tag?: string | null,
+ *   userId: string, playerReason?: string | null }[] }} body
+ * @returns {string}
+ */
+export function formatRefunds(body) {
+  if (!body.refunds?.length) return 'No refunds match.';
+  const lines = [`${body.refunds.length} of ${body.total} refunds:`];
+  for (const r of body.refunds) {
+    const who = r.displayName ? `${r.displayName}#${r.tag}` : r.userId;
+    const amount = r.currency === 'usd' ? `$${(r.amount / 100).toFixed(2)}` : `${r.amount} ${r.currency}`;
+    lines.push(
+      `${r.id}  ${r.status.padEnd(18)} ${r.kind.padEnd(12)} ${amount.padStart(10)}  ${r.offerId}  ${who}  ${r.createdAt}`,
+    );
+    if (r.playerReason) lines.push(`    "${r.playerReason}"`);
   }
   return lines.join('\n');
 }

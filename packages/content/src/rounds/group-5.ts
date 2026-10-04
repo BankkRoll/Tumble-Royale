@@ -1,4 +1,5 @@
 import type { RoundDefinitionInput } from '@tumble/shared';
+import colourCauldron from './colour-cauldron/index.ts';
 import cometCatch from './comet-catch/index.ts';
 import sunbeamSquabble from './sunbeam-squabble/index.ts';
 
@@ -9,4 +10,5 @@ import sunbeamSquabble from './sunbeam-squabble/index.ts';
 export const ROUNDS_GROUP_5: RoundDefinitionInput[] = [
   cometCatch,
   sunbeamSquabble,
+  colourCauldron,
 ];

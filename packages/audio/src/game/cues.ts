@@ -191,6 +191,10 @@ export const OBSTACLE_CUES: Readonly<Record<string, string>> = {
   'cometField.catch': 'ui.coin',
   'cometField.golden': 'ui.reward',
   'sunbeamZones.flare': 'whoosh.up',
+  'puzzleFloor.question': 'ui.whoosh',
+  'puzzleFloor.hide': 'whoosh.down',
+  'puzzleFloor.reveal': 'round.whistle',
+  'puzzleFloor.void': 'crowd.aww',
 };
 
 /**

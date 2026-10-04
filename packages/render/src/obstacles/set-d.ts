@@ -4,6 +4,7 @@
  * puzzle floor and screen, and Throne Rush's thrones and opening floor.
  */
 import { cometFieldVisual } from './cometField.ts';
+import { puzzleFloorVisual } from './puzzleFloor.ts';
 import { sunbeamZonesVisual } from './sunbeamZones.ts';
 import type { ObstacleVisualSet } from './types.ts';
 
@@ -11,4 +12,5 @@ import type { ObstacleVisualSet } from './types.ts';
 export const obstacleVisualSetD: ObstacleVisualSet = {
   cometField: cometFieldVisual,
   sunbeamZones: sunbeamZonesVisual,
+  puzzleFloor: puzzleFloorVisual,
 };

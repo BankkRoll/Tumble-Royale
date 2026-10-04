@@ -44,7 +44,8 @@ export type ObstacleType =
   | 'patternBoard'
   | 'goalZone'
   | 'cometField'
-  | 'sunbeamZones';
+  | 'sunbeamZones'
+  | 'puzzleFloor';
 
 /**
  * Placement of one obstacle in a round. `rotation` is yaw/pitch/roll in DEGREES

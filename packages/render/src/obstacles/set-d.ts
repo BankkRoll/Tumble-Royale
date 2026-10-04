@@ -4,9 +4,11 @@
  * puzzle floor and screen, and Throne Rush's thrones and opening floor.
  */
 import { cometFieldVisual } from './cometField.ts';
+import { sunbeamZonesVisual } from './sunbeamZones.ts';
 import type { ObstacleVisualSet } from './types.ts';
 
 /** Set D visual factories keyed by obstacle type. */
 export const obstacleVisualSetD: ObstacleVisualSet = {
   cometField: cometFieldVisual,
+  sunbeamZones: sunbeamZonesVisual,
 };

@@ -32,7 +32,7 @@ describe('playlist schedules', () => {
 });
 
 describe('playlists', () => {
-  it('validate and cover all 21 planned rounds', () => {
+  it('validate and cover all 22 planned rounds', () => {
     expect(PLAYLISTS.map((p) => p.id)).toEqual([
       'main-show',
       'duos',
@@ -41,7 +41,7 @@ describe('playlists', () => {
       'ranked',
       'first-show',
     ]);
-    expect(PLANNED_ROUND_IDS).toHaveLength(21);
+    expect(PLANNED_ROUND_IDS).toHaveLength(22);
     const main = getPlaylist('main-show')!;
     expect(main.pool.map((r) => r.roundId).sort()).toEqual([...PLANNED_ROUND_IDS].sort());
     expect(getPlaylist('duos')!.partySize).toBe(DUOS.partySize);

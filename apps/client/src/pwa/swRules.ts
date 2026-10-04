@@ -103,6 +103,9 @@ export function shouldPrecache(rel: string): boolean {
   if (rel.endsWith('.map')) return false;
   if (rel === 'sw.js' || rel === 'config.json' || rel === '_redirects' || rel === '_headers') return false;
   if (rel.endsWith('.html')) return rel === 'index.html';
+  // The admin console's entry chunk and stylesheet (Vite names them after the
+  // `admin` input): players must never download the console, not even into a cache.
+  if (/^assets\/admin-[\w-]+\.(js|css)$/.test(rel)) return false;
   return !rel.startsWith('.') && !rel.includes('/.');
 }
 

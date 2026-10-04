@@ -5,3 +5,5 @@
 /join/*        /index.html   200
 /auth/*        /index.html   200
 /store         /index.html   200
+# The admin console is its own page.
+/admin         /admin.html   200

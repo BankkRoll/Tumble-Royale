@@ -635,9 +635,14 @@ export const reports = pgTable(
     reason: text('reason').notNull(),
     details: text('details'),
     status: text('status').notNull().default('open'),
+    /**
+     * Chat evidence captured when the report was filed: the target's recent
+     * public (global) lines, plus whispers they sent the reporter.
+     */
+    evidence: jsonb('evidence'),
     createdAt: createdAt(),
   },
-  (t) => [index('reports_status_idx').on(t.status)],
+  (t) => [index('reports_status_idx').on(t.status), index('reports_target_idx').on(t.targetUserId)],
 );
 
 /** Bans; `scope` = `all` blocks every authenticated call, `ranked` only ranked queueing. */
@@ -687,6 +692,85 @@ export const banEvasionMarks = pgTable(
   (t) => [
     uniqueIndex('ban_evasion_marks_ban_identifier_uq').on(t.banId, t.identifierHash),
     index('ban_evasion_marks_identifier_idx').on(t.identifierHash),
+  ],
+);
+
+/** Moderator warnings: a recorded strike with no restriction attached. */
+export const playerWarnings = pgTable(
+  'player_warnings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    reason: text('reason').notNull(),
+    /** Report that prompted the warning, if any. */
+    reportId: uuid('report_id'),
+    /** Staff label at the time (`name#tag`, or `operator token`). */
+    issuedBy: text('issued_by').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('player_warnings_user_idx').on(t.userId)],
+);
+
+/** Previous display names, one row per change, so moderators can trace renames. */
+export const nameHistory = pgTable(
+  'name_history',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The name the player had before this change. */
+    displayName: text('display_name').notNull(),
+    tag: text('tag').notNull(),
+    /** `player` or `staff`. */
+    changedBy: text('changed_by').notNull(),
+    changedAt: ts('changed_at').notNull().defaultNow(),
+  },
+  (t) => [index('name_history_user_idx').on(t.userId, t.changedAt)],
+);
+
+/**
+ * Accounts allowed into the admin console. `admin` may do everything the
+ * `ADMIN_TOKEN` can; `moderator` handles reports, sanctions and player lookups.
+ */
+export const staffMembers = pgTable('staff_members', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  role: text('role').notNull(),
+  grantedBy: text('granted_by').notNull(),
+  createdAt: createdAt(),
+  updatedAt: ts('updated_at').notNull().defaultNow(),
+});
+
+/**
+ * Every admin action, from the CLI or the console. The actor is kept as a
+ * label as well as an id so the history survives the staff account's deletion.
+ */
+export const adminAuditLog = pgTable(
+  'admin_audit_log',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    /** Staff account, or null for the static `ADMIN_TOKEN`. */
+    actorUserId: uuid('actor_user_id'),
+    actorLabel: text('actor_label').notNull(),
+    actorRole: text('actor_role').notNull(),
+    /** Dotted action name, e.g. `player.ban`, `report.dismiss`, `flag.set`. */
+    action: text('action').notNull(),
+    /** `user`, `report`, `ban`, `flag`, `playlist`, `news`, `maintenance`, `staff`, `session`. */
+    targetType: text('target_type'),
+    targetId: text('target_id'),
+    reason: text('reason'),
+    details: jsonb('details'),
+    ip: text('ip'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('admin_audit_created_idx').on(t.createdAt),
+    index('admin_audit_target_idx').on(t.targetType, t.targetId),
+    index('admin_audit_actor_idx').on(t.actorUserId),
   ],
 );
 

@@ -35,6 +35,8 @@ import { createKV, type KV } from './kv/index.ts';
 import { registerMatchRoutes } from './matches/routes.ts';
 import { registerLiveOpsRoutes } from './liveops/routes.ts';
 import { registerAdminRoutes } from './moderation/admin.ts';
+import { registerPlayerAdminRoutes } from './moderation/players.ts';
+import { registerReportRoutes } from './moderation/reports.ts';
 import { registerModerationRoutes } from './moderation/routes.ts';
 import { registerNewsRoutes } from './news/routes.ts';
 import { registerOps, requestIdOptions, type Ops } from './ops/index.ts';
@@ -46,6 +48,7 @@ import { attachGateway, type Gateway } from './realtime/gateway.ts';
 import { Notifier } from './realtime/notifier.ts';
 import { registerFriendRoutes } from './social/friends.ts';
 import { registerWhisperRoutes } from './social/whisper.ts';
+import { registerStaffRoutes } from './staff/routes.ts';
 import { registerPartyRoutes } from './social/party.ts';
 
 /** Optional dependency overrides (tests). */
@@ -279,6 +282,9 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
   registerModerationRoutes(app, ctx);
   registerNewsRoutes(app, ctx);
   registerAdminRoutes(app, ctx);
+  registerReportRoutes(app, ctx);
+  registerPlayerAdminRoutes(app, ctx);
+  registerStaffRoutes(app, ctx);
   const gateway = attachGateway(app, ctx);
   const ops = registerOps(app, ctx, { database, gateway });
 

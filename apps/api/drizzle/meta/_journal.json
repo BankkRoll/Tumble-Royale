@@ -57,6 +57,13 @@
       "when": 1791126192461,
       "tag": "0007_achievements_streaks",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791126816362,
+      "tag": "0008_admin_console",
+      "breakpoints": true
     }
   ]
 }

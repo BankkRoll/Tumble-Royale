@@ -1,0 +1,14 @@
+# Netlify / Cloudflare Pages: keep the admin console out of frames (no
+# clickjacking of its confirm buttons), search engines and shared caches.
+/admin
+  X-Frame-Options: DENY
+  Content-Security-Policy: frame-ancestors 'none'
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex, nofollow
+  Cache-Control: no-cache
+/admin.html
+  X-Frame-Options: DENY
+  Content-Security-Policy: frame-ancestors 'none'
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex, nofollow
+  Cache-Control: no-cache

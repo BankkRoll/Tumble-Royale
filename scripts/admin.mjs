@@ -48,6 +48,11 @@ Economy
 Users
   user lookup <userId | name#1234 | email | name>
   user rename <userId> <new display name>
+Admin console (staff accounts sign in at https://DOMAIN/admin)
+  staff list
+  staff grant <userId> [--role admin|moderator]       the account must not be a guest
+  staff revoke <userId>
+  audit [--action <name|prefix.>] [--target <id>] [--limit N]   newest admin actions
 
 Options
   --api-url <url>   API base URL (default: ADMIN_API_URL, PUBLIC_API_URL, API_URL, http://127.0.0.1:7360)
@@ -308,7 +313,23 @@ export function toRequest(args, opts, readFile = (f) => readFileSync(f, 'utf8'),
         path: `/internal/users/${enc(need(a, '<userId>'))}/rename`,
         body: { displayName: need(rest.join(' ').trim(), '<new display name>') },
       };
+    case 'staff list':
+      return { method: 'GET', path: '/internal/staff' };
+    case 'staff grant': {
+      const role = opts.role ?? 'moderator';
+      if (role !== 'admin' && role !== 'moderator') throw new UsageError('--role must be admin or moderator');
+      return { method: 'PUT', path: `/internal/staff/${enc(need(a, '<userId>'))}`, body: { role } };
+    }
+    case 'staff revoke':
+      return { method: 'DELETE', path: `/internal/staff/${enc(need(a, '<userId>'))}` };
     default:
+      if (group === 'audit') {
+        const q = new URLSearchParams();
+        if (typeof opts.action === 'string') q.set('action', opts.action);
+        if (typeof opts.target === 'string') q.set('targetId', opts.target);
+        intOpt(q, opts, 'limit');
+        return { method: 'GET', path: `/internal/audit${q.size ? `?${q}` : ''}` };
+      }
       throw new UsageError(key ? `unknown command: ${key}` : 'no command given');
   }
 }

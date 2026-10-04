@@ -144,7 +144,7 @@ The "Required in production" group of each `.env.example` lists what to set.
 
 The client is a single-page app. Party invites (`/join/<code>`), OAuth and
 email sign-in returns (`/auth/*`) and Stripe returns (`/store`) must serve
-`index.html`. The build includes `_redirects` (Netlify, Cloudflare Pages)
+`index.html`, and `/admin` serves `admin.html`. The build includes `_redirects` (Netlify, Cloudflare Pages)
 from `apps/client/public/`, and `apps/client/vercel.json` does the same on
 Vercel; other hosts need equivalent rewrites.
 
@@ -152,6 +152,11 @@ Vercel; other hosts need equivalent rewrites.
 
 Operators steer a running game with `pnpm admin` (it calls the API with
 `ADMIN_TOKEN`); nothing needs a restart or a client release:
+
+Staff can do the same, and work the report queue, from the web console at
+`/admin`: grant a full account a role with
+`pnpm admin staff grant <userId> --role moderator|admin`, and every action is
+recorded in an audit log (see [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md#the-admin-console)).
 
 ```sh
 pnpm admin maintenance on --in 10 --for 30 --message "New rounds incoming!"

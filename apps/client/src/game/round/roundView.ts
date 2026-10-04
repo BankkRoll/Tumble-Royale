@@ -14,7 +14,7 @@ import { MeshBatcher } from '@tumble/render/batching';
 import { RagdollManager, RagdollWorld } from '@tumble/render/character';
 import { ThirdPersonCamera, type CameraFollowTarget, type CameraVec3 } from '@tumble/render/camera';
 import { createEnvironment, roundDressing, type Environment } from '@tumble/render/environment';
-import { buildLevelVisuals, quaternionFromRotation, type LevelVisuals } from '@tumble/render/level';
+import { buildLevelVisualsSliced, quaternionFromRotation, type LevelVisuals } from '@tumble/render/level';
 import { getObstacleVisual, type ObstacleVisual } from '@tumble/render/obstacles';
 import { gradeFromTheme, type GradeParams } from '@tumble/render/post';
 import type { QualityPreset } from '@tumble/render/quality';
@@ -159,10 +159,7 @@ export class RoundView implements GameView {
       {
         name: 'level',
         weight: 3,
-        run: () => {
-          this.level = buildLevelVisuals(round, this.theme, { detail: preset.geometryDetail });
-          this.scene.add(this.level.object);
-        },
+        run: () => this.buildLevel(),
       },
       {
         name: 'environment',
@@ -216,6 +213,7 @@ export class RoundView implements GameView {
         name: 'players',
         weight: 1,
         run: () => {
+          // Assigned before populating, so a cancelled load still disposes what was added.
           this.playersRef = new PlayerVisuals(source, {
             parent: this.scene,
             pool: this.opts.pool,
@@ -227,6 +225,7 @@ export class RoundView implements GameView {
             streamerMode: this.opts.streamerMode,
             ...(this.opts.botTags !== undefined ? { botTags: this.opts.botTags } : {}),
           });
+          return this.playersRef.populate();
         },
       },
       {
@@ -248,6 +247,19 @@ export class RoundView implements GameView {
         run: () => (this.opts.ragdolls && preset.maxRagdolls > 0 ? this.buildRagdolls(R) : undefined),
       },
     ];
+  }
+
+  private *buildLevel(): Generator<number> {
+    const steps = buildLevelVisualsSliced(this.opts.round, this.theme, {
+      detail: this.opts.preset.geometryDetail,
+    });
+    let r = steps.next();
+    while (!r.done) {
+      yield r.value;
+      r = steps.next();
+    }
+    this.level = r.value;
+    this.scene.add(this.level.object);
   }
 
   private *buildObstacles(): Generator<number> {

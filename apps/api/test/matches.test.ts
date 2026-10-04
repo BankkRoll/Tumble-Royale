@@ -145,6 +145,8 @@ describe('match results ingest', () => {
     const before = (await api.req('GET', '/challenges', { token: u.accessToken })).json();
     expect(before.daily).toHaveLength(3);
     expect(before.weekly).toHaveLength(6);
+    expect(before.seasonal).toHaveLength(8);
+    expect(before.milestone).toHaveLength(api.ctx.catalog.milestoneChallenges.length);
 
     const res = await api.postMatch(buildShow({ humans: [{ userId: u.id, placement: 1 }] }));
     const updates = res.json().rewards[0].challenges as {
@@ -152,10 +154,11 @@ describe('match results ingest', () => {
       progress: number;
       before: number;
     }[];
-    const all = [...before.daily, ...before.weekly];
-    // A crowned run qualifies every round, so any assigned challenge whose metric this show touches must move.
+    const all = [...before.daily, ...before.weekly, ...before.seasonal, ...before.milestone];
+    // A crowned solo run qualifies every round, so any assigned challenge whose metric this show touches must move.
     const touched = all.filter(
-      (c: { metric: string }) => !['huntRoundsQualified', 'logicRoundsQualified'].includes(c.metric),
+      (c: { metric: string }) =>
+        !['huntRoundsQualified', 'logicRoundsQualified', 'partyShows'].includes(c.metric),
     );
     expect(updates.length).toBe(touched.length);
     for (const up of updates) expect(up.progress).toBeGreaterThan(up.before);

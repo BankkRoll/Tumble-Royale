@@ -1,6 +1,7 @@
 /**
  * Server-side view of content data: cosmetics, playlists, the season pass,
- * challenges, show rewards, the level curve and Gem packs.
+ * challenges, achievements, the login ladder, the collection log, show
+ * rewards, the level curve and Gem packs.
  *
  * Responsibilities:
  * - Adapt `@tumble/content/{cosmetics,progression,shows}` into the narrow
@@ -12,10 +13,16 @@
  */
 import { COSMETICS, DEFAULT_LOADOUT, type CosmeticItem } from '@tumble/content/cosmetics';
 import {
-  CHALLENGE_POOL,
+  ACHIEVEMENT_METRIC_KIND,
+  ACHIEVEMENTS,
+  ALL_CHALLENGES,
+  achievementDescription,
+  collectionLog,
   computeShowRewards,
   GEM_EARN,
   levelForXp as contentLevelForXp,
+  LOGIN_STREAK_LADDER,
+  MILESTONE_CHALLENGES,
   nextSeason as contentNextSeason,
   passForSeason,
   pickChallenges as contentPickChallenges,
@@ -23,8 +30,14 @@ import {
   seasonById,
   shardShopAt,
   SHARDS_PER_CROWN,
+  type AchievementCategory,
+  type AchievementMetric as ContentAchievementMetric,
+  type ChallengeDef,
   type ChallengeMetric as ContentChallengeMetric,
+  type CollectionFilter,
+  type CollectionLog,
   type GemEarnRules,
+  type Grant,
   type PassReward,
   type Season,
   type ShardShopRotation,
@@ -126,16 +139,53 @@ export interface CatalogSeason {
 /** Stat a challenge counts (content's `ChallengeMetric`). */
 export type ChallengeMetric = ContentChallengeMetric;
 
+/** How long a challenge lives: rotating daily/weekly, the live season, or forever. */
+export type ChallengePeriod = 'daily' | 'weekly' | 'seasonal' | 'milestone';
+
 /** A challenge definition. */
 export interface CatalogChallenge {
   id: string;
-  period: 'daily' | 'weekly';
+  period: ChallengePeriod;
   title: string;
   metric: ChallengeMetric;
   target: number;
   /** XP (player + pass) granted on claim. */
   rewardXp: number;
   rewardGumballs: number;
+  /** Gems on claim (weekly challenges pay `gemEarn.weeklyChallenge` instead). */
+  rewardGems: number;
+  /** Cosmetic granted on claim, if any. */
+  rewardCosmetic: string | null;
+}
+
+/** Stat an achievement counts (content's `AchievementMetric`). */
+export type AchievementMetric = ContentAchievementMetric;
+
+/** Something an achievement or a login day grants: a pass-style reward or account XP. */
+export type CatalogGrant = CatalogReward | { type: 'xp'; amount: number };
+
+/** An achievement definition. */
+export interface CatalogAchievement {
+  /** Stable id; stored per player, never renamed. */
+  id: string;
+  category: AchievementCategory;
+  title: string;
+  /** Description with the target filled in. */
+  description: string;
+  metric: AchievementMetric;
+  /** How the metric accumulates (see content `ACHIEVEMENT_METRIC_KIND`). */
+  kind: 'sum' | 'max' | 'gauge';
+  target: number;
+  hidden: boolean;
+  series: { id: string; tier: number; tiers: number } | null;
+  rewards: readonly CatalogGrant[];
+}
+
+/** One day of the daily login ladder. */
+export interface CatalogLoginDay {
+  /** 1-based day within the cycle. */
+  day: number;
+  rewards: readonly CatalogGrant[];
 }
 
 /** A Gem pack sold for real money (Stripe). */
@@ -207,8 +257,23 @@ export interface Catalog {
   showRewards(facts: ShowFacts): ShowPayout;
   /** Account level for lifetime XP. */
   levelForXp(totalXp: number): { level: number; into: number; next: number };
-  /** The period's challenge set before any reroll. */
-  pickChallenges(period: 'daily' | 'weekly', periodKey: string): CatalogChallenge[];
+  /** The period's challenge set before any reroll (`periodKey` is a day, ISO week or season id). */
+  pickChallenges(period: 'daily' | 'weekly' | 'seasonal', periodKey: string): CatalogChallenge[];
+  /**
+   * Permanent milestones in slot order. Append-only: an index is the stored slot.
+   */
+  milestoneChallenges: readonly CatalogChallenge[];
+  /** Every achievement, in display order. */
+  achievements: readonly CatalogAchievement[];
+  /**
+   * How each achievement metric accumulates. Covers metrics no achievement
+   * uses yet, so their history is already there when one does.
+   */
+  achievementMetrics: Readonly<Record<AchievementMetric, CatalogAchievement['kind']>>;
+  /** The daily login ladder, day 1 first. */
+  loginLadder: readonly CatalogLoginDay[];
+  /** The collection log over an ownership predicate. */
+  collection(owns: (cosmeticId: string) => boolean, filter?: CollectionFilter): CollectionLog;
   /** Starter look for new accounts. */
   defaultLoadout(): LoadoutItems;
 }
@@ -237,20 +302,51 @@ function toReward(r: PassReward): CatalogReward {
   }
 }
 
+function toChallenge(c: ChallengeDef): CatalogChallenge {
+  return {
+    id: c.id,
+    period: c.cadence,
+    title: c.description.replace('{n}', String(c.target)),
+    metric: c.metric,
+    target: c.target,
+    rewardXp: c.rewardXp,
+    rewardGumballs: c.rewardGumballs,
+    rewardGems: c.rewardGems,
+    rewardCosmetic: c.rewardCosmetic ?? null,
+  };
+}
+
+function toGrant(g: Grant): CatalogGrant {
+  switch (g.kind) {
+    case 'xp':
+      return { type: 'xp', amount: g.amount };
+    case 'cosmetic':
+      return { type: 'cosmetic', id: g.itemId };
+    case 'gumballs':
+      return { type: 'gumballs', amount: g.amount };
+    case 'gems':
+      return { type: 'gems', amount: g.amount };
+    case 'crownShards':
+      return { type: 'crown_shards', amount: g.amount };
+  }
+}
+
 const challengeById = new Map<string, CatalogChallenge>(
-  CHALLENGE_POOL.map((c) => [
-    c.id,
-    {
-      id: c.id,
-      period: c.cadence,
-      title: c.description.replace('{n}', String(c.target)),
-      metric: c.metric,
-      target: c.target,
-      rewardXp: c.rewardXp,
-      rewardGumballs: c.rewardGumballs,
-    },
-  ]),
+  [...ALL_CHALLENGES.values()].map((c) => [c.id, toChallenge(c)]),
 );
+
+const ACHIEVEMENT_LIST: readonly CatalogAchievement[] = ACHIEVEMENTS.map((a) => ({
+  id: a.id,
+  category: a.category,
+  title: a.title,
+  description: achievementDescription(a),
+  metric: a.metric,
+  kind: ACHIEVEMENT_METRIC_KIND[a.metric],
+  target: a.target,
+  hidden: a.hidden,
+  series: a.series ?? null,
+  rewards: a.rewards.map(toGrant),
+}));
 
 const seasonCache = new Map<string, CatalogSeason>();
 
@@ -315,6 +411,11 @@ export const CONTENT_CATALOG: Catalog = {
     return { level: r.level, into: r.intoLevel, next: r.toNext };
   },
   pickChallenges: (period, key) => contentPickChallenges(period, key).map((c) => challengeById.get(c.id)!),
+  milestoneChallenges: MILESTONE_CHALLENGES.map((c) => challengeById.get(c.id)!),
+  achievements: ACHIEVEMENT_LIST,
+  achievementMetrics: ACHIEVEMENT_METRIC_KIND,
+  loginLadder: LOGIN_STREAK_LADDER.map((d) => ({ day: d.day, rewards: d.rewards.map(toGrant) })),
+  collection: (owns, filter) => collectionLog(owns, filter),
   defaultLoadout: () => ({
     ...DEFAULT_LOADOUT,
     colors: [...DEFAULT_LOADOUT.colors],

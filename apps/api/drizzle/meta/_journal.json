@@ -43,6 +43,13 @@
       "when": 1791061789792,
       "tag": "0005_ban_evasion_marks",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791124244850,
+      "tag": "0006_achievements_streaks",
+      "breakpoints": true
     }
   ]
 }

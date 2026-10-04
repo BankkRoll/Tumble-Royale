@@ -22,6 +22,121 @@ jobs:
       - run: pnpm test
       - run: pnpm build
 
+  services:
+    # The check job runs these suites on PGlite and the in-process KV; this
+    # runs them on the Postgres and Redis production uses, including the
+    # Redis Lua scripts (tick lock, rate-limit windows, counters) and pub/sub.
+    name: API and matchmaker on Postgres 16 + Redis 7
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tumble
+          POSTGRES_PASSWORD: tumble
+          POSTGRES_DB: tumble
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tumble -d tumble"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # Each test API creates (and drops) its own database on this server.
+      DATABASE_URL: postgres://tumble:tumble@localhost:5432/tumble
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @tumble/api exec vitest run --maxWorkers=2
+      - run: pnpm --filter @tumble/matchmaker exec vitest run --maxWorkers=2
+
+  compose:
+    # Builds every image and boots deploy/docker-compose.yml the way a
+    # self-hoster would, over plain HTTP (deploy/docker-compose.smoke.yml).
+    name: Compose stack smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      COMPOSE: docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.smoke.yml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Write deploy/.env
+        run: node scripts/setup-env.mjs --production --domain localhost
+      - name: Validate the compose files
+        run: |
+          docker compose -f deploy/docker-compose.yml config --quiet
+          $COMPOSE config --quiet
+      - name: Build the images
+        run: $COMPOSE build
+      - name: Start the stack
+        run: $COMPOSE up -d
+      - name: Wait for the API through the edge
+        run: |
+          for i in $(seq 1 90); do
+            if curl -fsS http://localhost/api/ready; then exit 0; fi
+            sleep 2
+          done
+          echo "the API never became ready" >&2
+          exit 1
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          base=http://localhost
+          curl -fsS "$base/api/health" | jq -e '.ok and .db == "postgres" and .kv == "redis"'
+          curl -fsS "$base/api/ready" | jq -e '.ok'
+          curl -fsS "$base/" | grep -q '<script type="module"'
+          curl -fsS "$base/join/ABCD" | grep -q '<script type="module"'
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$base/config.json")" = 404
+          token=$(curl -fsS -X POST "$base/api/auth/guest" \
+            -H 'content-type: application/json' -H "origin: $base" \
+            -d '{"displayName":"Smoke"}' | jq -er '.accessToken')
+          curl -fsS -o /dev/null "$base/api/me" -H "authorization: Bearer $token"
+          # The game server registered with the matchmaker.
+          for i in $(seq 1 30); do
+            if curl -fsS "$base/mm/ping" | jq -e '.regions | index("na")'; then break; fi
+            if [ "$i" = 30 ]; then echo "no game server registered" >&2; exit 1; fi
+            sleep 2
+          done
+          # WebSocket upgrades reach the game server through the edge.
+          curl -sS -o /dev/null --max-time 5 -w '%{http_code}' "$base/gs/ws" \
+            -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
+            -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H "Origin: $base" | grep -q 101 || {
+            echo "/gs/ws did not upgrade" >&2; exit 1; }
+          # Metrics stay behind their token.
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$base/api/metrics")" != 200
+      - name: Game server drains and exits on stop
+        run: |
+          start=$(date +%s)
+          $COMPOSE stop -t 120 game-server
+          echo "stopped after $(( $(date +%s) - start )) s"
+          test "$(docker inspect -f '{{.State.ExitCode}}' "$($COMPOSE ps -aq game-server)")" = 0
+      - name: Service logs
+        if: failure()
+        run: $COMPOSE logs --no-color --timestamps
+      - name: Tear down
+        if: always()
+        run: $COMPOSE down -v --remove-orphans
+
   e2e:
     # Browser smoke tests are slower and GPU-less runners only get WebGL2
     # through SwiftShader, so they run on main rather than gating every PR.

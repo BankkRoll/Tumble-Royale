@@ -21,7 +21,8 @@ import { createTestApi, type TestApi, type TestUser } from './helpers.ts';
 
 let api: TestApi;
 beforeAll(async () => {
-  api = await createTestApi();
+  // The inbox assertions expect pub/sub to deliver synchronously, as the in-process KV does.
+  api = await createTestApi(undefined, {}, { memoryKv: true });
 });
 afterAll(async () => {
   await api.close();

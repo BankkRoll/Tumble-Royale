@@ -84,3 +84,17 @@ Tumbler controller keeps grabs, dives, bumps and emotes identical to rounds;
 world (a rebuild would pop every Tumbler back to a spawn grid). A dropped
 connection keeps its Tumbler idling until the resume window ends, so resumes
 never flash a despawn. Offline shows keep the local pre-show.
+
+## Self-hosting is one Compose stack on one origin
+
+`deploy/docker-compose.yml` puts every service behind a single Caddy edge on
+one domain (`/api`, `/mm`, `/gs/ws`) instead of a hostname per service. One
+origin means one certificate, no cross-origin requests between the client and
+its services, and one client build that works for any domain (it defaults to
+same-origin paths and reads `/config.json`). Caddy was picked for automatic
+HTTPS with no extra container or cron job. Game servers are the exception:
+players connect to each one directly, so every extra game server gets its own
+hostname (`deploy/game-server/`) rather than a path on the main edge, which
+would route every show through one host. There is deliberately no monitoring
+stack in the bundle: `/health`, `/ready` and token-protected `/metrics` are
+there for whatever the operator already runs.

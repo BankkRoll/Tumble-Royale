@@ -1,0 +1,66 @@
+name: Nightly
+
+# Suites too slow or too machine-dependent to gate every push: the online
+# browser specs (real API, matchmaker and game server) and the 100-player tick
+# budget.
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+jobs:
+  online-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PW_CHANNEL: chromium
+      PW_PREVIEW: '1'
+      # meta.spec.ts opens pages on GAME_URL; preview serves the sandbox build here.
+      GAME_URL: http://localhost:4173
+      # No WebGPU on the runner; force the WebGL2 path SwiftShader provides.
+      BACKEND: webgl
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright Chromium
+        working-directory: apps/client
+        run: npx playwright install --with-deps chromium
+      - name: Build the client in sandbox mode
+        run: pnpm --filter @tumble/client build:sandbox
+      - name: Run the online, meta and full-show specs
+        working-directory: apps/client
+        run: npx playwright test e2e/meta.spec.ts e2e/online.spec.ts e2e/game.spec.ts --workers=1
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-playwright-report
+          path: |
+            apps/client/playwright-report
+            apps/client/test-results
+          retention-days: 14
+
+  tick-budget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TUMBLE_PERF: '1'
+      # A quiet desktop measures ~9 ms p95 and a busy one ~18 ms; shared runners
+      # vary too, so the budget only catches real regressions while keeping a
+      # quarter of the 33 ms tick spare.
+      TUMBLE_PERF_P95_MS: '25'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: 100-player room, 60 s of play
+        run: pnpm --filter @tumble/game-server exec vitest run test/tickBudget.test.ts

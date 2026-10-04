@@ -1,5 +1,7 @@
 /**
- * Test harness: an API on in-memory PGlite + memory KV with a controllable clock.
+ * Test harness: an API with a controllable clock, on in-memory PGlite and the
+ * in-process KV, or on the Postgres and Redis named by `DATABASE_URL` and
+ * `REDIS_URL` when those are set (see `backing.ts`).
  */
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_SHOW_PLAYERS } from '@tumble/shared';
@@ -11,6 +13,7 @@ import { loadConfig } from '../src/config.ts';
 import { applyLedger } from '../src/economy/ledger.ts';
 import { HMAC_HEADERS, signInternal } from '../src/http/auth.ts';
 import type { MatchResultInput } from '../src/matches/schema.ts';
+import { createScratchDatabase, isolatedRedisKV, TEST_DATABASE_URL, TEST_REDIS_URL } from './backing.ts';
 
 /** Admin bearer used by tests. */
 export const ADMIN_TOKEN = 'test-admin-token-0123456789';
@@ -73,6 +76,18 @@ export interface TestApi extends BuiltApp {
   ban(userId: string, scope?: 'all' | 'ranked' | 'chat'): Promise<void>;
 }
 
+/** Build overrides for {@link createTestApi}. */
+export interface TestApiOptions extends Pick<
+  BuildOptions,
+  'seasonListeners' | 'payments' | 'kv' | 'database' | 'fetch' | 'sharedRateLimit'
+> {
+  /**
+   * Keep the in-process KV even when `REDIS_URL` is set, for tests that expire
+   * KV entries with the fake clock or expect pub/sub to deliver synchronously.
+   */
+  memoryKv?: boolean;
+}
+
 /**
  * Builds a fresh isolated API.
  *
@@ -83,11 +98,9 @@ export interface TestApi extends BuiltApp {
 export async function createTestApi(
   startIso = '2026-10-02T12:00:00.000Z',
   env: Record<string, string> = {},
-  extra: Pick<
-    BuildOptions,
-    'seasonListeners' | 'payments' | 'kv' | 'database' | 'fetch' | 'sharedRateLimit'
-  > = {},
+  extra: TestApiOptions = {},
 ): Promise<TestApi> {
+  const { memoryKv, ...buildOptions } = extra;
   let nowMs = Date.parse(startIso);
   const clock = {
     now: () => new Date(nowMs),
@@ -98,17 +111,45 @@ export async function createTestApi(
       nowMs = Date.parse(iso);
     },
   };
-  const config = loadConfig(
-    testEnv({
-      RATE_LIMIT_MAX: '100000',
-      ADMIN_TOKEN,
-      // Short enough for tests to watch a disconnect turn into "offline".
-      PRESENCE_GRACE_MS: '150',
-      ...env,
-    }),
-  );
+  // `DATABASE_URL` / `REDIS_URL` in `env` pick the servers for this API (empty
+  // forces PGlite / the in-process KV); otherwise the suite-wide ones apply.
+  // Either way the API gets a database and key prefix of its own. A test that
+  // brings its own database or KV (shared by two instances, a failing double)
+  // keeps it.
+  const dbServer = 'DATABASE_URL' in env ? env.DATABASE_URL || undefined : TEST_DATABASE_URL;
+  const redisServer = memoryKv ? undefined : 'REDIS_URL' in env ? env.REDIS_URL || undefined : TEST_REDIS_URL;
+  const scratch = dbServer && !extra.database ? await createScratchDatabase(dbServer) : null;
+  const kv = extra.kv ?? (redisServer ? isolatedRedisKV(redisServer) : undefined);
+  let built: BuiltApp;
   const mailer = new MemoryMailer();
-  const built = await buildApp(config, { now: clock.now, mailer, logger: false, ...extra });
+  try {
+    const config = loadConfig(
+      testEnv({
+        RATE_LIMIT_MAX: '100000',
+        ADMIN_TOKEN,
+        // Short enough for tests to watch a disconnect turn into "offline".
+        PRESENCE_GRACE_MS: '150',
+        ...env,
+        ...(scratch ? { DATABASE_URL: scratch.url } : {}),
+      }),
+    );
+    built = await buildApp(config, {
+      now: clock.now,
+      mailer,
+      logger: false,
+      ...buildOptions,
+      ...(kv ? { kv } : {}),
+    });
+  } catch (err) {
+    if (!extra.kv) await kv?.close();
+    await scratch?.drop();
+    throw err;
+  }
+  const config = built.ctx.config;
+  const close = async (): Promise<void> => {
+    await built.close();
+    await scratch?.drop();
+  };
 
   const req: TestApi['req'] = (method, url, opts = {}) =>
     built.app.inject({
@@ -169,6 +210,7 @@ export async function createTestApi(
   };
   return {
     ...built,
+    close,
     mailer,
     clock,
     req,

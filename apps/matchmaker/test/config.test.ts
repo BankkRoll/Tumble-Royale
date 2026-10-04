@@ -1,3 +1,6 @@
+import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { parseEnv } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { EnvConfigError } from '@tumble/shared/env';
 import { DEFAULT_SHOW_PLAYERS, MAX_PLAYERS } from '@tumble/shared';
@@ -66,5 +69,24 @@ describe('matchmaker config', () => {
     expect(issueNames(noRedis)).toEqual(['REDIS_URL']);
     expect(loadConfig({ ...noRedis, ALLOW_MEMORY_STORE: '1' }).memoryStoreInProduction).toBe(true);
     expect(loadConfig(prod).memoryStoreInProduction).toBe(false);
+  });
+});
+
+describe('deploy/.env from pnpm setup:env --production', () => {
+  it('boots the matchmaker in production behind the edge proxy', () => {
+    const example = parseEnv(readFileSync(new URL('../../../deploy/.env.example', import.meta.url), 'utf8'));
+    const env = Object.fromEntries(
+      Object.entries(example).map(([k, v]) => [
+        k,
+        v === 'change-me' ? randomBytes(32).toString('base64url') : v,
+      ]),
+    );
+    expect(loadConfig(env)).toMatchObject({
+      env: 'production',
+      redisUrl: 'redis://redis:6379',
+      apiUrl: 'http://api:7360',
+      allowedOrigins: ['https://example.com'],
+      memoryStoreInProduction: false,
+    });
   });
 });

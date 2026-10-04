@@ -120,23 +120,26 @@ placeholders from the examples. Tests never read `.env` files.
 
 ### Deploying
 
-Build the client with the addresses of your services; the defaults point at
-the local dev stack:
+**[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)** runs the whole game on one
+server with Docker Compose: Postgres, Redis, every service, the client and a
+Caddy proxy with automatic HTTPS, plus backups, upgrades and scaling to more
+game servers or regions. In short:
 
 ```sh
-VITE_API_URL=https://api.example.com \
-VITE_MATCHMAKER_URL=https://mm.example.com \
-VITE_GAME_SERVER_URL=wss://play.example.com/ws \
-  pnpm --filter @tumble/client build      # static files in apps/client/dist
+pnpm setup:env --production --domain play.example.com   # writes deploy/.env with fresh secrets
+docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-If `VITE_GAME_SERVER_URL` is unset, the client connects to `/gs/ws` on its
-own origin, so a reverse proxy in front of the game server also works. Run the
-servers with `NODE_ENV=production`, the four shared secrets set to the same
-strong values on every service (see [SECURITY.md](SECURITY.md)) and
-`REDIS_URL`: production requires matchmaker tickets to join a game and
-disables Gem checkout unless Stripe is configured. The "Required in
-production" group of each `.env.example` lists what to set.
+To host the pieces some other way: `pnpm build` produces the client's static
+files (`apps/client/dist`) and a bundled `dist/` per service, started with
+`pnpm --filter @tumble/<service> start`. A production client build talks to
+`/api`, `/mm` and `/gs/ws` on its own origin and reads an optional
+`/config.json` at boot, so one build serves any domain; `VITE_*` variables
+bake other addresses in instead. Run the servers with `NODE_ENV=production`,
+the four shared secrets set to the same strong values on every service (see
+[SECURITY.md](SECURITY.md)) and `REDIS_URL`: production requires matchmaker
+tickets to join a game and disables Gem checkout unless Stripe is configured.
+The "Required in production" group of each `.env.example` lists what to set.
 
 The client is a single-page app. Party invites (`/join/<code>`), OAuth and
 email sign-in returns (`/auth/*`) and Stripe returns (`/store`) must serve
@@ -206,9 +209,11 @@ packages/
 tools/
   bot-swarm/     Headless WebSocket load tester
   media/         Turns e2e captures into the README trailer and stills (ffmpeg)
+deploy/          Dockerfiles, Docker Compose stack, Caddy edge, backups
 docs/
   SPEC.md        Product brief
   ARCHITECTURE.md  Package boundaries, contracts and team rules
+  SELF_HOSTING.md  Running your own server
   design/        Levels, screens, shows, art direction, audio direction
 ```
 
@@ -269,18 +274,19 @@ the same pose with zero bandwidth.
 
 ## Status
 
-| Area                        | State                                                                                                                                            |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Foundations                 | Done: both GPU backends render, client/server Rapier bit-identical after 600 steps (`e2e/phase0.spec.ts`)                                        |
-| The Tumbler                 | Done; tuning still needs human playtesting                                                                                                       |
-| Netcode                     | Done: no steady-state corrections at 150 ms + 2% loss (unit-tested), lag-compensated grab/dive hit assist, protocol v5                           |
-| Shows                       | Done: full shows end to end in the browser (`e2e/game.spec.ts`; 100-player run pending), solo/Duos/Squads online                                 |
-| Meta & accounts             | Done: guest + OAuth/email accounts, locker, parties, matchmaking, server-granted rewards, seasons, shard shop                                    |
-| Content                     | 20 rounds, tutorial island, procedural audio. Touch controls exist but no phone frame rate has been measured                                     |
-| Ranked, store, pass, social | Done: OpenSkill ranked with soft reset, store, pass, challenges, friends, chat, private shows, moderation                                        |
-| Launch hardening            | Partly: rate limits, bans, reconnect, results outbox, metrics. Not done: long soak, load test against a deployed stack, crash reporting, hosting |
+| Area                        | State                                                                                                                                                                |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Foundations                 | Done: both GPU backends render, client/server Rapier bit-identical after 600 steps (`e2e/phase0.spec.ts`)                                                            |
+| The Tumbler                 | Done; tuning still needs human playtesting                                                                                                                           |
+| Netcode                     | Done: no steady-state corrections at 150 ms + 2% loss (unit-tested), lag-compensated grab/dive hit assist, protocol v5                                               |
+| Shows                       | Done: full shows end to end in the browser (`e2e/game.spec.ts`; 100-player run pending), solo/Duos/Squads online                                                     |
+| Meta & accounts             | Done: guest + OAuth/email accounts, locker, parties, matchmaking, server-granted rewards, seasons, shard shop                                                        |
+| Content                     | 20 rounds, tutorial island, procedural audio. Touch controls exist but no phone frame rate has been measured                                                         |
+| Ranked, store, pass, social | Done: OpenSkill ranked with soft reset, store, pass, challenges, friends, chat, private shows, moderation                                                            |
+| Launch hardening            | Partly: rate limits, bans, reconnect, results outbox, metrics, crash reporting, Docker Compose self-hosting. Not done: long soak, load test against a deployed stack |
 
-Server tick time is measured, not asserted in CI. A full 100-player room
+Server tick time is measured, and checked only nightly against a loose
+budget (`TUMBLE_PERF_P95_MS`) because shared runners vary. A full 100-player room
 (real sim, director and snapshot encoders, 100 protocol clients, Tilt Town,
 60 s of PLAYING) costs **6.4 ms p50 / 9.0 ms p95 / 26.8 ms max** per 30 Hz
 tick (sim 4.1 + snapshots 2.4 + send 0.1 ms mean) and sends **33.9 KB/s**
@@ -292,9 +298,9 @@ or over real sockets: start the game server and run
 prints the server's `/metrics` including `tumble_tick_ms` avg / p95 / max.
 Results depend on the machine.
 
-Production still needs hosting for the client and the four services, a
-Postgres database (without `DATABASE_URL` the API uses an embedded PGlite
-file), and Redis (required by the API and matchmaker in production;
-`ALLOW_MEMORY_STORE=1` runs a single instance without it). Discord/Google
+Production runs the client and services with Postgres and Redis; the
+[self-hosting guide](docs/SELF_HOSTING.md) sets all of it up with Docker
+Compose. (Without `DATABASE_URL` the API uses an embedded PGlite file, and
+`ALLOW_MEMORY_STORE=1` runs a single instance without Redis.) Discord/Google
 OAuth, Stripe and SMTP are optional: without them those sign-in methods and
 Gem checkout are simply off.

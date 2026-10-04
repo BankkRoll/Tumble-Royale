@@ -1,3 +1,6 @@
+import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { parseEnv } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { EnvConfigError } from '@tumble/shared/env';
 import { DEFAULT_SHOW_PLAYERS, MAX_PLAYERS } from '@tumble/shared';
@@ -145,5 +148,31 @@ describe('game server config', () => {
     expect(issueNames(testEnv({ METRICS_TOKEN: 'change-me-please-0123' }))).toEqual(['METRICS_TOKEN']);
     expect(issueNames(testEnv({ TRUST_PROXY: 'true' }))).toEqual(['TRUST_PROXY']);
     expect(issueNames(testEnv({ HELLO_TIMEOUT_MS: '100' }))).toEqual(['HELLO_TIMEOUT_MS']);
+  });
+});
+
+describe('deploy/.env from pnpm setup:env --production', () => {
+  it('boots the game server in production behind the edge proxy', () => {
+    const example = parseEnv(readFileSync(new URL('../../../deploy/.env.example', import.meta.url), 'utf8'));
+    const env = Object.fromEntries(
+      Object.entries(example).map(([k, v]) => [
+        k,
+        v === 'change-me' ? randomBytes(32).toString('base64url') : v,
+      ]),
+    );
+    const c = loadConfig(env);
+    expect(c).toMatchObject({
+      env: 'production',
+      allowUnticketed: false,
+      results: { apiUrl: 'http://api:7360' },
+      link: {
+        matchmakerUrl: 'http://matchmaker:7370',
+        serverId: 'gs-1',
+        publicUrl: 'wss://example.com/gs/ws',
+        region: 'na',
+        controlUrl: 'http://game-server:7350',
+      },
+      exposure: { allowedOrigins: ['https://example.com'], debug: false },
+    });
   });
 });

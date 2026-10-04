@@ -1,3 +1,6 @@
+import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { parseEnv } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { EnvConfigError } from '@tumble/shared/env';
 import { loadConfig } from '../src/config.ts';
@@ -83,5 +86,26 @@ describe('api config', () => {
 
   it('keeps zero-setup memory state outside production', () => {
     expect(loadConfig(testEnv({ NODE_ENV: 'development' })).memoryStoreInProduction).toBe(false);
+  });
+});
+
+describe('deploy/.env from pnpm setup:env --production', () => {
+  it('boots the API in production behind the edge proxy', () => {
+    const example = parseEnv(readFileSync(new URL('../../../deploy/.env.example', import.meta.url), 'utf8'));
+    const env = Object.fromEntries(
+      Object.entries(example).map(([k, v]) => [
+        k,
+        v === 'change-me' ? randomBytes(32).toString('base64url') : v,
+      ]),
+    );
+    expect(loadConfig(env)).toMatchObject({
+      env: 'production',
+      databaseUrl: expect.stringMatching(/^postgres:\/\/tumble:.+@postgres:5432\/tumble$/),
+      redisUrl: 'redis://redis:6379',
+      publicWebUrl: 'https://example.com',
+      publicApiUrl: 'https://example.com/api',
+      corsOrigins: ['https://example.com'],
+      adminToken: env.ADMIN_TOKEN,
+    });
   });
 });

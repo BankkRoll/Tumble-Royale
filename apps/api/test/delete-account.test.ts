@@ -16,7 +16,8 @@ import { buildShow, createTestApi, type TestApi, type TestUser } from './helpers
 
 let api: TestApi;
 beforeAll(async () => {
-  api = await createTestApi();
+  // Asserts realtime events right after each call: in-process pub/sub delivers synchronously.
+  api = await createTestApi(undefined, {}, { memoryKv: true });
 });
 afterAll(async () => {
   await api.close();

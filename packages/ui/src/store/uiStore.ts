@@ -254,6 +254,14 @@ export interface UIState {
   setRegionStatus: (patch: Partial<RegionStatus>) => void;
   setPhoto: (patch: Partial<PhotoModeState>) => void;
   setPreShow: (info: PreShowInfo | null) => void;
+  /**
+   * Forgets the previous show's screens (pre-show, intro, round cards,
+   * results, wall), so nothing from it (its name in the in-game menu, a stale
+   * round card) leaks into a new show. Called when a show starts; the
+   * rewards screen is left alone because Play again starts the next show
+   * from it.
+   */
+  resetShowScreens: () => void;
   setShowIntro: (info: ShowIntroInfo | null) => void;
   setRoundIntro: (info: RoundIntroInfo | null) => void;
   /**
@@ -525,6 +533,22 @@ export const ui = createStore<UIState>()((set, get) => ({
   setRegionStatus: (patch) => set({ regionStatus: { ...get().regionStatus, ...patch } }),
   setPhoto: (patch) => set({ photo: { ...get().photo, ...patch } }),
   setPreShow: (preShow) => set({ preShow }),
+  resetShowScreens: () =>
+    set({
+      preShow: null,
+      showIntro: null,
+      roundIntro: null,
+      roundLoading: null,
+      countdown: null,
+      stamps: [],
+      spectate: null,
+      results: null,
+      betweenRounds: null,
+      finalHype: null,
+      victory: null,
+      playerWall: null,
+      caption: null,
+    }),
   setShowIntro: (showIntro) => set({ showIntro }),
   setRoundIntro: (roundIntro) => set({ roundIntro }),
   setRoundLoading: (patch) =>

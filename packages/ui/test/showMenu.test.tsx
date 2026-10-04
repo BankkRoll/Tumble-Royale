@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Hud, openTutorialSkip } from '../src/hud/Hud.tsx';
 import { ShowMenuButton, showMenuButtonScreen } from '../src/hud/ShowMenuButton.tsx';
+import { InGameMenu } from '../src/screens/overlays/InGameMenu.tsx';
 import { INITIAL_CHAT } from '../src/store/chatChannels.ts';
 import {
   isTypingTarget,
@@ -132,6 +133,41 @@ describe('input ownership', () => {
         watchChoice: choice,
       }),
     ).toBe(true);
+  });
+});
+
+describe('show-scoped screen state', () => {
+  it('a new show forgets the last show, so the menu names the new one', () => {
+    ui.setState({
+      showIntro: { showName: 'Last Night Show', roundIndex: 3, roundCount: 4 },
+      betweenRounds: null,
+      caption: 'old line',
+    });
+    ui.getState().resetShowScreens();
+    const s = ui.getState();
+    expect([s.showIntro, s.preShow, s.roundIntro, s.results, s.victory, s.playerWall, s.caption]).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
+    ui.getState().setPreShow({
+      showName: 'Fresh Show',
+      roundCount: 4,
+      playersJoined: 1,
+      maxPlayers: 12,
+      startsAt: 0,
+      joinFeed: [],
+    });
+    ui.setState({ screen: 'preShow', overlay: 'inGameMenu' });
+    const html = renderToStaticMarkup(<InGameMenu />);
+    expect(html).toContain('Fresh Show');
+    expect(html).not.toContain('Last Night Show');
+    expect(html).toContain('Getting ready');
+    ui.setState({ preShow: null, overlay: 'none' });
   });
 });
 

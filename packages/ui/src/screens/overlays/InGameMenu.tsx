@@ -134,7 +134,7 @@ export function InGameMenu(): JSX.Element {
         <div className="tr-igm-head">
           <div className="tr-col tr-grow" style={{ gap: '0.15em', minWidth: 0 }}>
             <span className="tr-label">{showName}</span>
-            <h2 className="tr-title tr-h2 tr-ellipsis">{intro?.name ?? 'Round'}</h2>
+            <h2 className="tr-title tr-h2 tr-ellipsis">{intro?.name ?? 'Getting ready'}</h2>
           </div>
           <button type="button" className="tr-close" data-nav="" aria-label="Close" onClick={close}>
             <Icon name="close" size="1em" />

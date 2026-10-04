@@ -292,6 +292,7 @@ export abstract class ShowSession {
       },
       0,
     );
+    ui.getState().resetShowScreens();
     ui.getState().setShowSeat({ online: this.isOnline(), outOfShow: false });
     ui.getState().setWatchChoice(null);
     this.offs.push(

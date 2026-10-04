@@ -75,6 +75,5 @@ export function socialIntents(account: () => OnlineAccount | null): UIHandlers {
     onPartyInviteAction: withAccount(
       (a, { userId, code, action }) => void a.answerPartyInvite(userId, code, action),
     ),
-    onSendPartyChat: withAccount((a, { text }) => a.social.sendPartyChat(text)),
   };
 }

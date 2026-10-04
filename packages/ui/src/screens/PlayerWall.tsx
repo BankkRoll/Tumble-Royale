@@ -404,7 +404,6 @@ export function PlayerWall({
     const skipEvent: PlayerWallEvent = { type: 'skip', t: -1 };
     onEventRef.current?.(skipEvent);
     uiEvents.emit('playerWallEvent', skipEvent);
-    uiEvents.emit('skipPlayerWall');
     dispatch({ type: 'skip', summary, countIndex: timeline.counts.length - 1 });
     if (summary.winnerId >= 0) fireConfetti({ x: 0.5, y: 0.35, count: 120, colors: confettiSets.victory });
     const endEvent: PlayerWallEvent = { type: 'wallEnd', t: -1 };

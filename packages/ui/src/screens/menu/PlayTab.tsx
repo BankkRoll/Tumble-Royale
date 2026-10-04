@@ -241,7 +241,7 @@ export function onlineTileSub(status: OnlineStatus): string {
   return parts.length > 0 ? parts.join(' · ') : 'Real players + bot fill';
 }
 
-function ModeTiles({ disabled }: { disabled: boolean }): JSX.Element {
+function ModeTiles(): JSX.Element {
   const mode = useUI((s) => s.playMode);
   const status = useUI((s) => s.onlineStatus);
   const online = status.state === 'online';
@@ -263,7 +263,6 @@ function ModeTiles({ disabled }: { disabled: boolean }): JSX.Element {
             className={`tr-mode-tile tr-mode-tile--${m.id}${selected ? ' is-on' : ''}${unavailable ? ' is-unavailable' : ''}`}
             data-nav=""
             data-testid={`mode-${m.id}`}
-            disabled={disabled}
             onClick={() => {
               if (m.id === 'custom') {
                 openPrivateShow();
@@ -305,13 +304,7 @@ export function playlistIcon(p: Playlist): IconName {
   return 'crown';
 }
 
-function PlaylistPicker({
-  disabled,
-  playlists,
-}: {
-  disabled: boolean;
-  playlists: Playlist[];
-}): JSX.Element | null {
+function PlaylistPicker({ playlists }: { playlists: Playlist[] }): JSX.Element | null {
   const selected = useUI((s) => s.selectedPlaylist);
   const now = useNow(1000);
   const idx = Math.max(
@@ -333,7 +326,7 @@ function PlaylistPicker({
         type="button"
         className="tr-playlist-arrow"
         data-nav=""
-        disabled={disabled || playlists.length < 2}
+        disabled={playlists.length < 2}
         aria-label="Previous playlist"
         onClick={() => cycle(-1)}
       >
@@ -361,7 +354,7 @@ function PlaylistPicker({
         type="button"
         className="tr-playlist-arrow"
         data-nav=""
-        disabled={disabled || playlists.length < 2}
+        disabled={playlists.length < 2}
         aria-label="Next playlist"
         onClick={() => cycle(1)}
       >
@@ -509,7 +502,6 @@ function PlayButton({ mode, playlist }: { mode: PlayMode; playlist: Playlist | u
         className="tr-play-btn"
         autoFocusNav
         cue="ui.confirm"
-        hint="Y"
         data-testid="play"
         onClick={() => {
           ui.getState().setLocalReady(!ready);
@@ -605,8 +597,8 @@ export function StartCluster({ matchmaking = false }: { matchmaking?: boolean })
         <MatchmakingCard />
       ) : (
         <>
-          <ModeTiles disabled={false} />
-          <PlaylistPicker disabled={false} playlists={offered} />
+          <ModeTiles />
+          <PlaylistPicker playlists={offered} />
           <div className="tr-start-foot">
             <PartyRow />
             <PlayButton mode={eff} playlist={playlist} />

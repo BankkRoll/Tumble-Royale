@@ -1318,13 +1318,8 @@ export class GameApp {
         if (hadSession) this.goMenu();
         else this.leaveQueueScreen();
       },
-      onPlayAgain: () => {
-        if (this.session) {
-          this.session.quit();
-          this.session = null;
-        }
-        this.replayLastShow();
-      },
+      // Play again lives on the rewards screen, which only shows once the session has ended.
+      onPlayAgain: () => this.replayLastShow(),
       onBackToLobby: () => this.leaveToMenu(),
       onLeaveShow: () => this.leaveToMenu(),
       onEmote: ({ id }) => {

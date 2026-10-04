@@ -1,0 +1,39 @@
+# Edge proxy for deploy/docker-compose.yml: the only service with public ports.
+#
+# - Automatic HTTPS (Let's Encrypt) for SITE_ADDRESS, which compose sets to
+#   DOMAIN from deploy/.env.
+# - /api/* → API and /mm/* → matchmaker with the prefix stripped (both include
+#   their WebSockets at /api/ws and /mm/ws); /gs/ws → the game server, which
+#   serves that path itself; everything else (including /config.json) → client.
+# - No internal or metrics port is published: the services listen only on the
+#   compose network.
+# - Outside compose, point *_UPSTREAM at wherever each service listens.
+{
+	{$CADDY_GLOBAL_OPTIONS}
+}
+
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	handle_path /api/* {
+		reverse_proxy {$API_UPSTREAM:api:7360}
+	}
+
+	handle_path /mm/* {
+		reverse_proxy {$MATCHMAKER_UPSTREAM:matchmaker:7370}
+	}
+
+	handle /gs/ws {
+		# A config reload would otherwise drop every running game's sockets at once.
+		reverse_proxy {$GAME_SERVER_UPSTREAM:game-server:7350} {
+			stream_close_delay 30m
+		}
+	}
+
+	handle {
+		reverse_proxy {$CLIENT_UPSTREAM:client:8080}
+	}
+
+	# SECURITY: no access log. The API and matchmaker WebSockets carry the
+	# player's access token in the query string, which a request log would keep.
+}

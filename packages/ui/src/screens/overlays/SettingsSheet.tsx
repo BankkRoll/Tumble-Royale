@@ -9,6 +9,7 @@ import { Button, Segmented, Slider, Toggle } from '../../components/controls.tsx
 import { BIND_ACTION_LABELS, DEFAULT_KEYBINDS } from '../../store/defaults.ts';
 import { uiEvents } from '../../store/events.ts';
 import { SHOW_MENU_SCREENS } from '../../store/inputOwnership.ts';
+import { analyticsAllowed, type PrivacyNavigator } from '../../store/liveOps.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { BindAction, Keybinds, SettingsSection } from '../../store/types.ts';
 import { Icon } from '../../components/icons/index.tsx';
@@ -476,6 +477,19 @@ export function Section({ id }: { id: SettingsSection }): JSX.Element {
           </Row>
           <RegionRow />
           <AppRows />
+          <Row
+            label="Share gameplay stats"
+            hint="Anonymous play statistics (rounds, load times, frame rate) that help tune the game. Starts off when your browser sends Do Not Track"
+          >
+            <Toggle
+              label="Share gameplay stats"
+              checked={analyticsAllowed(
+                s.gameplay.analytics,
+                typeof navigator === 'undefined' ? undefined : (navigator as PrivacyNavigator),
+              )}
+              onChange={(analytics) => up('gameplay', { analytics })}
+            />
+          </Row>
           <Row label="Practice Island" hint="Coach Boing's warm-up course, any time">
             <Button
               size="sm"

@@ -27,9 +27,14 @@ URL options and the dev sandbox pages are listed in the root README.
 
 ## Deploying
 
-Set the service URLs at build time with the `VITE_*` variables in
-[`.env.example`](.env.example) (copy it to `.env`, or export them); the
-defaults point at the local dev stack.
+A production build talks to `/api`, `/mm` and `/gs/ws` on the page's own
+origin and reads an optional `/config.json` at boot
+([`src/runtimeConfig.ts`](src/runtimeConfig.ts)), so one build serves any
+domain behind a reverse proxy; the Docker image in
+[`deploy/`](../../deploy) works this way
+([self-hosting guide](../../docs/SELF_HOSTING.md)). To bake other addresses
+into the bundle instead, set the `VITE_*` variables in
+[`.env.example`](.env.example) at build time.
 
 The game handles a few paths itself, so the static host must answer them
 with `index.html`:

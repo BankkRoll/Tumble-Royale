@@ -20,7 +20,11 @@ export type StorageKey =
   /** Players muted on this device. */
   | 'mutes'
   /** Matchmaking region picked by the player or by ping. */
-  | 'region';
+  | 'region'
+  /** Last feature flags from the API (offline boots keep the operator's switches). */
+  | 'flags'
+  /** Last playlist schedule from the API and the server clock offset. */
+  | 'playlistSchedule';
 
 /**
  * The raw `localStorage` key behind a {@link StorageKey}, for matching

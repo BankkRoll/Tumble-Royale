@@ -500,6 +500,7 @@ export class ShowDirector {
         teams[i] = best;
         counts[best] = (counts[best] as number) + 1;
       }
+      this.balanceSplitParties(ids, teams, counts);
       assignTeams(teams, ids, teamCount);
     }
     return ids.map((id, i) => {
@@ -513,6 +514,54 @@ export class ShowDirector {
         ...(p.partyId !== undefined ? { partyId: p.partyId } : {}),
       };
     });
+  }
+
+  /**
+   * Whole parties cannot always split evenly (25 squads over 3 teams is
+   * 36/32/32; 9 survivors as squads of 4, 4 and 1 would be 4/4/1), so after
+   * placing parties this moves single members from the biggest team to the
+   * smallest until sizes differ by at most one. Each move takes, in order of
+   * preference, a bot over a human, a member of a party that is already split
+   * (so one party absorbs the moves instead of several each losing one), a
+   * member of the party with the most seats on that team (a squad split 3/1
+   * rather than a duo broken up), then the latest seat, so the result is
+   * deterministic and splits as few parties as it can.
+   */
+  private balanceSplitParties(ids: readonly number[], teams: number[], counts: number[]): void {
+    for (;;) {
+      let big = 0;
+      let small = 0;
+      for (let t = 1; t < counts.length; t++) {
+        if ((counts[t] as number) > (counts[big] as number)) big = t;
+        if ((counts[t] as number) < (counts[small] as number)) small = t;
+      }
+      if ((counts[big] as number) - (counts[small] as number) <= 1) return;
+      const partySeats = new Map<number, number>();
+      const split = new Set<number>();
+      ids.forEach((id, i) => {
+        const party = this.byId.get(id)?.partyId;
+        if (party === undefined) return;
+        if (teams[i] === big) partySeats.set(party, (partySeats.get(party) ?? 0) + 1);
+        else split.add(party);
+      });
+      let pick = -1;
+      let pickKey = -1;
+      ids.forEach((id, i) => {
+        if (teams[i] !== big) return;
+        const p = this.byId.get(id);
+        const party = p?.partyId;
+        const seats = party !== undefined ? (partySeats.get(party) ?? 1) : 1;
+        const isSplit = party !== undefined && split.has(party) ? 1 : 0;
+        const key = (p?.isBot ? 1 : 0) * 10_000_000 + isSplit * 1_000_000 + seats * 1_000 + i;
+        if (key > pickKey) {
+          pickKey = key;
+          pick = i;
+        }
+      });
+      teams[pick] = small;
+      counts[big] = (counts[big] as number) - 1;
+      counts[small] = (counts[small] as number) + 1;
+    }
   }
 
   private concludeRound(cur: CurrentRound): void {

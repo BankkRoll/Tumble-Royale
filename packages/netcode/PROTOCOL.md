@@ -239,6 +239,17 @@ with `TUMBLE_PERF=1`):
 
 No PLAYING tick exceeded two tick periods (67 ms) in either run.
 
+Over loopback WebSockets: the built game server and `tools/bot-swarm`
+(`--clients 100 --duration 180`) on the same 16-thread desktop, PLAYING
+window read from `/metrics`. The machine was shared with other work; the
+in-process scenario above measured 12.2 / 16.1 / 22.9 / 99.8 ms right after,
+so compare rows from the same session only.
+
+| scenario                               | tick p50 / p95 / max  | mean split (sim + snapshot + send) | per client                             |
+| -------------------------------------- | --------------------- | ---------------------------------- | -------------------------------------- |
+| 100 swarm clients, Slip 'n' Spiral     | 12.2 / 22.4 / 70.3 ms | 6.6 + 4.9 + 2.3 ms                 | 26.4 KB/s down, 1.3 KB/s up, RTT 12 ms |
+| same, `tsx` dev server, Conveyor Chaos | 14.5 / 18.3 / 24.7 ms | 6.3 + 5.7 + 2.6 ms                 | 31.9 KB/s down, 1.3 KB/s up, RTT 10 ms |
+
 ## Measured at 40 players (v4, dev capsule sim, 40 dynamic capsules + kinematic sweepers)
 
 | scenario                                                            | tick avg / p95 / max       | snapshot avg / p95    | per client                                               |

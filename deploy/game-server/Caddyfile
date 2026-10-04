@@ -1,0 +1,14 @@
+# Edge for an extra game server host (deploy/game-server/docker-compose.yml).
+# Everything goes to the game server: players' WebSockets at /ws, and the
+# matchmaker's signed POST /internal/kick (CONTROL_URL defaults to this origin).
+# /metrics needs METRICS_TOKEN and /debug/* is off in production.
+{
+	{$CADDY_GLOBAL_OPTIONS}
+}
+
+{$SITE_ADDRESS} {
+	# A config reload would otherwise drop every running game's sockets at once.
+	reverse_proxy {$GAME_SERVER_UPSTREAM:game-server:7350} {
+		stream_close_delay 30m
+	}
+}

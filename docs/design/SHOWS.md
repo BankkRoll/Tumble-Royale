@@ -54,6 +54,14 @@ Player Wall → rewards. Phases mirror `ShowPhase` / `RoundPhase` in
 | Player Wall + rewards         | 12 + 12 = 24                                |
 | **Total**                     | **≈ 665 s ≈ 11 min** (target band 9–14 min) |
 
+Measured at 100 players (Main Show, seed 5, one idle human and 99 bots on
+the real server path, `apps/game-server/test/fullShow.test.ts`), round wall
+time from round start to result: Tilt Town 100 → 60 in 172 s, Bounce Ball
+Blitz 60 → 30 in 134 s, Pattern Panic 30 → 12 in 70 s, Crown Climb 12 → 1
+in 74 s. The browser's offline Main Show (`?autoplay=1&playlist=main-show`)
+with the same seed went Tilt Town 100 → Bounce Ball Blitz 60 → Pattern
+Panic 30 → Crown Climb 12 and reached rewards.
+
 Eliminated players may **Spectate** (follow leader / friend / random, Q/E cycle),
 **Return to lobby** (rewards granted immediately for rounds played), or **Play
 again** (requeue with party). A player who leaves early still appears on the

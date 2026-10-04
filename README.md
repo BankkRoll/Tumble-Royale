@@ -120,29 +120,63 @@ placeholders from the examples. Tests never read `.env` files.
 
 ### Deploying
 
-Build the client with the addresses of your services; the defaults point at
-the local dev stack:
+**[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)** runs the whole game on one
+server with Docker Compose: Postgres, Redis, every service, the client and a
+Caddy proxy with automatic HTTPS, plus backups, upgrades and scaling to more
+game servers or regions. In short:
 
 ```sh
-VITE_API_URL=https://api.example.com \
-VITE_MATCHMAKER_URL=https://mm.example.com \
-VITE_GAME_SERVER_URL=wss://play.example.com/ws \
-  pnpm --filter @tumble/client build      # static files in apps/client/dist
+pnpm setup:env --production --domain play.example.com   # writes deploy/.env with fresh secrets
+docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-If `VITE_GAME_SERVER_URL` is unset, the client connects to `/gs/ws` on its
-own origin, so a reverse proxy in front of the game server also works. Run the
-servers with `NODE_ENV=production`, the four shared secrets set to the same
-strong values on every service (see [SECURITY.md](SECURITY.md)) and
-`REDIS_URL`: production requires matchmaker tickets to join a game and
-disables Gem checkout unless Stripe is configured. The "Required in
-production" group of each `.env.example` lists what to set.
+To host the pieces some other way: `pnpm build` produces the client's static
+files (`apps/client/dist`) and a bundled `dist/` per service, started with
+`pnpm --filter @tumble/<service> start`. A production client build talks to
+`/api`, `/mm` and `/gs/ws` on its own origin and reads an optional
+`/config.json` at boot, so one build serves any domain; `VITE_*` variables
+bake other addresses in instead. Run the servers with `NODE_ENV=production`,
+the four shared secrets set to the same strong values on every service (see
+[SECURITY.md](SECURITY.md)) and `REDIS_URL`: production requires matchmaker
+tickets to join a game and disables Gem checkout unless Stripe is configured.
+The "Required in production" group of each `.env.example` lists what to set.
 
 The client is a single-page app. Party invites (`/join/<code>`), OAuth and
 email sign-in returns (`/auth/*`) and Stripe returns (`/store`) must serve
 `index.html`. The build includes `_redirects` (Netlify, Cloudflare Pages)
 from `apps/client/public/`, and `apps/client/vercel.json` does the same on
 Vercel; other hosts need equivalent rewrites.
+
+### Live ops
+
+Operators steer a running game with `pnpm admin` (it calls the API with
+`ADMIN_TOKEN`); nothing needs a restart or a client release:
+
+```sh
+pnpm admin maintenance on --in 10 --for 30 --message "New rounds incoming!"
+pnpm admin flags set store.enabled off                  # kill switch
+pnpm admin playlists set chaos-mode --ends 2026-12-08T18:00:00Z --featured on
+pnpm admin errors top                                   # most frequent client errors
+```
+
+- **Maintenance** shows a banner ahead of time, then closes online queueing
+  and private lobbies (`503 maintenance` from the API and matchmaker) while
+  Vs Bots keeps working and running shows finish on their game servers.
+- **Feature flags** (`store.enabled`, `chat.global`, `party.lobbyGames`,
+  `replays.enabled`, `mutators.chaos`, `analytics.sample`) default to on.
+  The client fetches them at boot and on reconnect and caches them for
+  offline boots; the matchmaker and game servers read them from the API
+  over the internal HMAC channel, cached 30 s.
+- **Limited-time playlists** get a start and an end (content can ship them,
+  operators override them). The menu shows "Ends in" and "Coming soon"; the
+  matchmaker refuses a playlist outside its window, judged on the API's clock.
+- **Analytics** are a fixed list of gameplay events, batched and sampled,
+  with no identity beyond the account id; players can turn them off in
+  Settings → Gameplay, and they start off under Do Not Track or Global
+  Privacy Control. Client and server crashes go to the same table.
+
+The full reference is the Live ops section of
+[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md#6-live-ops).
 
 ### Client URL options
 
@@ -206,9 +240,11 @@ packages/
 tools/
   bot-swarm/     Headless WebSocket load tester
   media/         Turns e2e captures into the README trailer and stills (ffmpeg)
+deploy/          Dockerfiles, Docker Compose stack, Caddy edge, backups
 docs/
   SPEC.md        Product brief
   ARCHITECTURE.md  Package boundaries, contracts and team rules
+  SELF_HOSTING.md  Running your own server
   design/        Levels, screens, shows, art direction, audio direction
 ```
 
@@ -269,18 +305,19 @@ the same pose with zero bandwidth.
 
 ## Status
 
-| Area                        | State                                                                                                                                            |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Foundations                 | Done: both GPU backends render, client/server Rapier bit-identical after 600 steps (`e2e/phase0.spec.ts`)                                        |
-| The Tumbler                 | Done; tuning still needs human playtesting                                                                                                       |
-| Netcode                     | Done: no steady-state corrections at 150 ms + 2% loss (unit-tested), lag-compensated grab/dive hit assist, protocol v5                           |
-| Shows                       | Done: full shows end to end in the browser (`e2e/game.spec.ts`; 100-player run pending), solo/Duos/Squads online                                 |
-| Meta & accounts             | Done: guest + OAuth/email accounts, locker, parties, matchmaking, server-granted rewards, seasons, shard shop                                    |
-| Content                     | 20 rounds, tutorial island, procedural audio. Touch controls exist but no phone frame rate has been measured                                     |
-| Ranked, store, pass, social | Done: OpenSkill ranked with soft reset, store, pass, challenges, friends, chat, private shows, moderation                                        |
-| Launch hardening            | Partly: rate limits, bans, reconnect, results outbox, metrics. Not done: long soak, load test against a deployed stack, crash reporting, hosting |
+| Area                        | State                                                                                                                                                                |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Foundations                 | Done: both GPU backends render, client/server Rapier bit-identical after 600 steps (`e2e/phase0.spec.ts`)                                                            |
+| The Tumbler                 | Done; tuning still needs human playtesting                                                                                                                           |
+| Netcode                     | Done: no steady-state corrections at 150 ms + 2% loss (unit-tested), lag-compensated grab/dive hit assist, protocol v5                                               |
+| Shows                       | Done: full shows end to end in the browser (`e2e/game.spec.ts`; 100-player offline show verified), solo/Duos/Squads online                                           |
+| Meta & accounts             | Done: guest + OAuth/email accounts, locker, parties, matchmaking, server-granted rewards, seasons, shard shop                                                        |
+| Content                     | 20 rounds, tutorial island, procedural audio. Touch controls exist but no phone frame rate has been measured                                                         |
+| Ranked, store, pass, social | Done: OpenSkill ranked with soft reset, store, pass, challenges, friends, chat, private shows, moderation                                                            |
+| Launch hardening            | Partly: rate limits, bans, reconnect, results outbox, metrics, crash reporting, Docker Compose self-hosting. Not done: long soak, load test against a deployed stack |
 
-Server tick time is measured, not asserted in CI. A full 100-player room
+Server tick time is measured, and checked only nightly against a loose
+budget (`TUMBLE_PERF_P95_MS`) because shared runners vary. A full 100-player room
 (real sim, director and snapshot encoders, 100 protocol clients, Tilt Town,
 60 s of PLAYING) costs **6.4 ms p50 / 9.0 ms p95 / 26.8 ms max** per 30 Hz
 tick (sim 4.1 + snapshots 2.4 + send 0.1 ms mean) and sends **33.9 KB/s**
@@ -288,13 +325,28 @@ of snapshots per client; one human with 99 bots costs 8.1 ms p95. Hence
 `MAX_ROOMS=3` per process (one event loop per core). Reproduce in process
 with `TUMBLE_PERF=1 pnpm --filter @tumble/game-server exec vitest run test/tickBudget.test.ts`,
 or over real sockets: start the game server and run
-`pnpm --filter @tumble/bot-swarm start -- --clients 100 --duration 60`, which
-prints the server's `/metrics` including `tumble_tick_ms` avg / p95 / max.
-Results depend on the machine.
+`pnpm --filter @tumble/bot-swarm start -- --clients 100 --duration 180`, which
+prints the server's `/metrics` including `tumble_tick_ms` avg / p50 / p95 / max
+(60 s ends during the first round's intro; 180 s covers about two minutes of
+PLAYING). Over loopback sockets, with the built server and all 100 swarm
+clients on the same 16-thread desktop, Slip 'n' Spiral measured **12.2 ms p50
+/ 22.4 ms p95 / 70.3 ms max** (sim 6.6 + snapshots 4.9 + send 2.3 ms mean)
+and **26.4 KB/s** down per client; the machine was shared with other work, and
+the in-process benchmark run right after measured 12.2 / 16.1 ms, so expect
+sockets to add roughly a third on top of the in-process figures. Results
+depend on the machine.
 
-Production still needs hosting for the client and the four services, a
-Postgres database (without `DATABASE_URL` the API uses an embedded PGlite
-file), and Redis (required by the API and matchmaker in production;
-`ALLOW_MEMORY_STORE=1` runs a single instance without it). Discord/Google
+A whole 100-player Main Show (seed 5) runs headless through the real server
+path in `apps/game-server/test/fullShow.test.ts`, and every round plays to its
+end with a full field of bots in `packages/content/test/rounds-complete.test.ts`;
+both are opt-in with `TUMBLE_SLOW=1` (about 1.5 and 12 minutes). In the browser,
+the offline 100-player Main Show (`?autoplay=1&ts=2&playlist=main-show&seed=5`)
+reaches rewards; round 1 (Tilt Town, 100 Tumblers, ultra tier, sim at 2× speed)
+ran at 20 fps median (14 fps p10) with 270 draw calls median (355 max).
+
+Production runs the client and services with Postgres and Redis; the
+[self-hosting guide](docs/SELF_HOSTING.md) sets all of it up with Docker
+Compose. (Without `DATABASE_URL` the API uses an embedded PGlite file, and
+`ALLOW_MEMORY_STORE=1` runs a single instance without Redis.) Discord/Google
 OAuth, Stripe and SMTP are optional: without them those sign-in methods and
 Gem checkout are simply off.

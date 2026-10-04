@@ -11,6 +11,8 @@ import { useShallow } from 'zustand/react/shallow';
 import { playCue } from '../../audio-cues.ts';
 import { Bar, CurrencyPill } from '../../components/bits.tsx';
 import { Icon } from '../../components/icons/index.tsx';
+import { useNow } from '../../components/hooks.ts';
+import { maintenanceHeadline } from '../../store/liveOps.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import { MENU_TABS, type MenuTab } from '../../store/types.ts';
 import { ChallengesTab } from './ChallengesTab.tsx';
@@ -231,6 +233,34 @@ function TopBar(): JSX.Element {
   );
 }
 
+/**
+ * Announces scheduled maintenance ("Maintenance in 10 min") and explains a
+ * running one. Online play is blocked by the game meanwhile; Vs Bots still
+ * works, which the banner says so nobody thinks the whole game is down.
+ */
+export function MaintenanceBanner(): JSX.Element | null {
+  const notice = useUI((s) => s.liveOps.maintenance);
+  const now = useNow(notice?.phase === 'scheduled' ? 1000 : 30_000);
+  if (!notice) return null;
+  const active = notice.phase === 'active';
+  return (
+    <div
+      className={`tr-maintenance${active ? ' is-active' : ''}`}
+      role="status"
+      aria-live="polite"
+      data-testid="maintenance-banner"
+    >
+      <Icon name="clock" size="1.1em" />
+      <span className="tr-col" style={{ gap: '0.1em', minWidth: 0 }}>
+        <b>{maintenanceHeadline(notice, now)}</b>
+        <small className="tr-ellipsis">
+          {active ? `${notice.message} Vs Bots still works offline.` : notice.message}
+        </small>
+      </span>
+    </div>
+  );
+}
+
 function tabBody(tab: MenuTab, matchmaking: boolean): ReactNode {
   switch (tab) {
     case 'play':
@@ -341,6 +371,7 @@ export function MainMenu({ matchmaking = false }: { matchmaking?: boolean }): JS
       data-nav-scope="0"
     >
       <TopBar />
+      <MaintenanceBanner />
       <TabPanel matchmaking={matchmaking} />
       <CurrencyPanel />
       <ProfileOverlay />

@@ -150,6 +150,24 @@ export async function optionalUser(ctx: AppContext, req: FastifyRequest): Promis
 }
 
 /**
+ * The account behind an access token that did not come in a header (the
+ * analytics beacon carries it in its body). Unlike {@link optionalUser} it
+ * never throws: an expired, forged, erased or suspended token just means
+ * "anonymous", because a page that is closing cannot refresh and retry.
+ *
+ * @param ctx - Shared services.
+ * @param token - Access token, or undefined.
+ * @returns The account id, or null.
+ */
+export async function userIdFromToken(ctx: AppContext, token: string | undefined): Promise<string | null> {
+  if (!token) return null;
+  const claims = await verifyAccessToken(ctx.config.jwtSecret, token, Math.floor(ctx.now().getTime() / 1000));
+  if (!claims || (await isErased(ctx.kv, claims.sub))) return null;
+  if ((await activeBans(ctx, claims.sub)).some((b) => b.scope === 'all')) return null;
+  return claims.sub;
+}
+
+/**
  * Guards admin routes with the static `ADMIN_TOKEN`.
  *
  * @throws {ApiError} 503 when no admin token is configured, 401 on mismatch.

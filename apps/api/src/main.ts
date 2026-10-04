@@ -8,16 +8,22 @@ import { startInternalMetrics } from '@tumble/shared/metrics';
 import { buildApp } from './app.ts';
 import { SmtpMailer } from './auth/mailer.ts';
 import { loadConfig } from './config.ts';
+import type { AppContext } from './context.ts';
+import { recordServerError } from './liveops/routes.ts';
 
 const config = loadServiceConfig(resolve(import.meta.dirname, '..'), loadConfig);
+// Crashes before the database is open only reach the log and Sentry.
+let ctx: AppContext | null = null;
 // Installed before anything opens, so a signal or crash during startup is handled too.
 const life = installLifecycle({
   service: 'api',
   log: consoleLogger,
   sentryDsn: config.ops.sentryDsn,
   environment: config.env,
+  reporters: [async (err, context) => (ctx ? recordServerError(ctx, err, context) : undefined)],
 });
 const built = await buildApp(config);
+ctx = built.ctx;
 const { app } = built;
 life.setLogger(app.log);
 life.onShutdown(async () => {

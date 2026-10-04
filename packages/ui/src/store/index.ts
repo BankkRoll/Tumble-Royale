@@ -78,6 +78,13 @@ export {
   type WhisperTarget,
 } from './chatChannels.ts';
 export {
+  analyticsAllowed,
+  featureOn,
+  maintenanceHeadline,
+  privacySignal,
+  type PrivacyNavigator,
+} from './liveOps.ts';
+export {
   SHOW_MENU_SCREENS,
   isTypingTarget,
   keyboardBusy,

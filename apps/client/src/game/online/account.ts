@@ -84,6 +84,7 @@ import { JsonSocket, type TypedMessage } from './jsonSocket.ts';
 import { partyLobbyLink } from './partyLobbyLink.ts';
 import { soloNotice } from './partyPlay.ts';
 import { pollShowReward, type RewardPollResult } from './rewardPoll.ts';
+import { track } from '../liveOps/analytics.ts';
 
 const LOADOUT_SLOTS = 6;
 
@@ -739,6 +740,8 @@ export class OnlineAccount {
       this.owned.add(itemId);
       if (this.me) this.me.wallet = res.wallet;
       const item = getCosmetic(itemId);
+      if (!res.replayed)
+        track('store_purchase', { shop: shard ? 'shards' : 'store', slot: item?.slot ?? null });
       s.pushToast({
         kind: 'reward',
         title: `${item?.name ?? 'Item'} is yours!`,
@@ -750,13 +753,15 @@ export class OnlineAccount {
     } catch (err) {
       const code = err instanceof ApiError ? err.code : '';
       const body =
-        code === 'insufficient_funds'
-          ? shard
-            ? 'Not enough Crown Shards — reach a few more finals!'
-            : 'Not enough currency — play a few shows!'
-          : code === 'already_owned'
-            ? 'You already own that.'
-            : describe(err);
+        code === 'feature_disabled'
+          ? 'The store is closed for a moment. Nothing was charged; try again soon!'
+          : code === 'insufficient_funds'
+            ? shard
+              ? 'Not enough Crown Shards — reach a few more finals!'
+              : 'Not enough currency — play a few shows!'
+            : code === 'already_owned'
+              ? 'You already own that.'
+              : describe(err);
       s.showDialog({
         id: 'purchase-failed',
         kind: 'error',

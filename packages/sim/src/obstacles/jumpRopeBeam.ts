@@ -36,7 +36,8 @@ import type {
 
 // Trip response as fractions of `knockImpulse`: a hop plus a shove back against the sweep. The
 // backward part is what makes the rim risky (it slides you tangentially, i.e. slightly outward);
-// tuned so 40 bots reach a 65% cut in ~55–90 s instead of the 8–13 s a forward knock gave.
+// tuned so 40 bots reach a 65% cut in ~55–90 s instead of the 8–13 s a forward knock gave. A full
+// 100-bot field crowds the rim and reaches the cut sooner (48 s, rounds-complete.test.ts).
 const TRIP_UP = 0.5;
 const TRIP_BACK = 0.6;
 

@@ -21,6 +21,7 @@ import { randomUUID } from 'node:crypto';
 import { filterChat } from '@tumble/shared';
 import type { AppContext } from '../context.ts';
 import { activeBans } from '../http/auth.ts';
+import { requireFlag } from '../liveops/state.ts';
 import { ApiError, badRequest, forbidden } from '../http/errors.ts';
 import type { KV } from '../kv/index.ts';
 import type { SocialRef } from '../realtime/notifier.ts';
@@ -60,6 +61,7 @@ export interface GlobalChatLine {
  * await sendGlobalChat(ctx, auth.userId, 'hi all');
  */
 export async function sendGlobalChat(ctx: AppContext, userId: string, raw: unknown): Promise<GlobalChatLine> {
+  await requireFlag(ctx, 'chat.global', 'Global chat is switched off right now');
   const bans = await activeBans(ctx, userId);
   if (bans.some((b) => b.scope === 'chat' || b.scope === 'all'))
     throw forbidden('chat_banned', 'Chat is disabled on this account');

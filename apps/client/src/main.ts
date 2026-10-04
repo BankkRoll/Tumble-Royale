@@ -44,7 +44,9 @@ const reporter =
 reporter?.install(window);
 
 const run =
-  devParam(params, 'scene') === 'test' ? runTestScene(setBoot) : GameApp.boot(readConfig(), setBoot);
+  devParam(params, 'scene') === 'test'
+    ? runTestScene(setBoot)
+    : GameApp.boot(readConfig(), setBoot, { errorCount: () => reporter?.captured ?? 0 });
 
 run.then(
   () => markBooted(),

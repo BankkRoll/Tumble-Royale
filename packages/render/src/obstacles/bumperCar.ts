@@ -55,6 +55,7 @@ export const bumperCarVisual: ObstacleVisualFactory = (instance, ctx) => {
   const tailMat = toon(d, { color: '#ff5a7a', emissive: '#ff2a50', emissiveIntensity: 0.6 });
   const trimMat = toon(d, { color: PAL.white });
 
+  const mounts: Group[] = [];
   const carts: Group[] = [];
   for (let i = 0; i < p.cars; i++) {
     const cart = new Group();
@@ -92,7 +93,11 @@ export const bumperCarVisual: ObstacleVisualFactory = (instance, ctx) => {
     flag.rotation.z = -Math.PI / 2;
     flag.position.set(W * 0.3 + 0.18, H * 0.6 + 0.9, -Lc * 0.38);
     cart.add(flag);
-    root.add(cart);
+    // The mount carries the sim pose exactly; the suspension bounce lives on the cart inside it.
+    const mount = new Group();
+    mount.add(cart);
+    root.add(mount);
+    mounts.push(mount);
     carts.push(cart);
   }
 
@@ -119,10 +124,8 @@ export const bumperCarVisual: ObstacleVisualFactory = (instance, ctx) => {
     update(t) {
       bumperCarPose(t, p, samples, ctx.speedScale);
       for (let i = 0; i < p.cars; i++) {
-        const cart = carts[i]!;
-        applyPose(cart, samples[i]!);
-        // Cosmetic bounce on the suspension.
-        cart.position.y += Math.abs(Math.sin(t * 9 + i * 1.7)) * 0.05;
+        applyPose(mounts[i]!, samples[i]!);
+        carts[i]!.position.y = Math.abs(Math.sin(t * 9 + i * 1.7)) * 0.05;
       }
       setGlow(headMat, 1 + 0.2 * Math.sin(t * 12));
     },

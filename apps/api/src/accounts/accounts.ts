@@ -10,6 +10,7 @@ import {
   authIdentities,
   inventoryItems,
   loadouts,
+  nameHistory,
   playerStats,
   profiles,
   ratings,
@@ -173,8 +174,10 @@ export async function linkIdentity(
 
 /**
  * Renames a player, enforcing name rules and the change cooldown. A guest's
- * first rename (from the generated name) is free.
+ * first rename (from the generated name) is free. The previous name goes to
+ * `name_history`.
  *
+ * @param changedBy - Who asked: the player, or staff (who pass a 0 cooldown).
  * @throws {ApiError} 400 `invalid_name`, 429 `name_cooldown`.
  */
 export async function changeDisplayName(
@@ -183,6 +186,7 @@ export async function changeDisplayName(
   requested: string,
   now: Date,
   cooldownDays: number,
+  changedBy: 'player' | 'staff' = 'player',
 ): Promise<{ displayName: string; tag: string }> {
   const check = checkDisplayName(requested);
   if (!check.ok) throw badRequest('invalid_name', `Name rejected: ${check.reason}`, { reason: check.reason });
@@ -207,6 +211,7 @@ export async function changeDisplayName(
     .update(profiles)
     .set({ displayName: check.name, tag, nameChangedAt: now, updatedAt: now })
     .where(eq(profiles.userId, userId));
+  await tx.insert(nameHistory).values({ userId, displayName: p.name, tag: p.tag, changedBy, changedAt: now });
   return { displayName: check.name, tag };
 }
 

@@ -226,6 +226,7 @@ pnpm admin flags set analytics.sample on --payload 0.25
 | `replays.enabled`  | replays are not recorded, starting with the next show               |
 | `mutators.chaos`   | Chaos Mode plays without its per-show mutator                       |
 | `analytics.sample` | no analytics are stored; with `on` the payload is the sampled share |
+| `events.enabled`   | events count nothing and pay nothing; the menu says they are paused |
 
 A flag that was never set is on. `--rollout N` turns a flag on for a sticky N%
 of players (client-side features only; servers read the master switch).
@@ -246,6 +247,34 @@ and "Coming soon" with a countdown for a `--featured` one that has not
 started. The matchmaker checks the window again when a party queues, on the
 API's clock, so a show closes on time even if a server's or a player's clock
 is off.
+
+### Limited-time events
+
+Events (`packages/content/src/progression/events.ts`) ship with a window, the
+playlists they spotlight, challenges and a points track. To move or withdraw
+one:
+
+```sh
+pnpm admin events list
+pnpm admin events set frostbite-frolic --starts 2026-12-11T18:00:00Z --ends 2027-01-08T18:00:00Z
+pnpm admin events disable moonlit-mischief   # withdraw it; `enable` restores it
+pnpm admin events reset moonlit-mischief     # back to the window shipped with the game
+```
+
+A show counts toward every event live at the moment it **started** (as the
+game server reported it, capped at the API's clock), so a show that straddles
+the end still counts and its points arrive with its result. Custom lobbies
+never count. Once an event has ended, each player's next visit pays out
+everything they earned but did not claim. A disabled event, or any event
+while the `events.enabled` flag is off, counts nothing, pays nothing and
+settles nothing until it is switched back on. Event times always need an end
+(no `none`), at most 90 days after the start. Changes reach every API
+instance at once and are written to the admin audit log.
+
+To add an event, append it to `LIVE_EVENTS` with its cosmetics (source
+`event`) in `packages/content/src/cosmetics/catalog-events.ts`; the content
+tests check the window, the tiers, the reward references and the currency
+budget in [ECONOMY.md §5](design/ECONOMY.md#5-limited-time-events).
 
 ### Analytics and errors
 

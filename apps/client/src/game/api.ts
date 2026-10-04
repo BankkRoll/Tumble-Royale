@@ -752,6 +752,21 @@ export class ApiClient {
   shardShop = (): Promise<ApiShardShop> => this.request('GET', '/shop/shards');
   buyShardOffer = (offerId: string, key: string): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> =>
     this.request('POST', '/shop/shards/buy', { offerId }, { idempotencyKey: key });
+  /** Feature flags; signed in, percentage rollouts are evaluated for this account. */
+  flags = (): Promise<{ flags: Record<string, unknown> }> => this.request('GET', '/flags');
+  /** Maintenance window and the server clock (public). */
+  status = (): Promise<{ maintenance: unknown; serverTime: number }> =>
+    this.request('GET', '/status', undefined, { auth: false });
+  /** Every playlist's effective schedule and the server clock (public). */
+  playlistSchedule = (): Promise<{ playlists: unknown[]; serverTime: number }> =>
+    this.request('GET', '/playlists', undefined, { auth: false });
+  /**
+   * The stored access token without refreshing it, for `pagehide` beacons
+   * that cannot wait for a refresh. The API treats an expired one as anonymous.
+   */
+  currentAccessToken(): string | null {
+    return this.tokens?.accessToken ?? null;
+  }
   /** Live news feed (public; no sign-in needed). */
   news = (): Promise<{ posts: unknown[]; withdrawn?: string[] }> =>
     this.request('GET', '/news', undefined, { auth: false });

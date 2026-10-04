@@ -699,6 +699,20 @@ export const featureFlags = pgTable('feature_flags', {
   updatedAt: ts('updated_at').notNull().defaultNow(),
 });
 
+/**
+ * Operator overrides for bundled playlists (`PUT /internal/playlists/:id`).
+ * A row replaces the bundled schedule wholesale, so null times mean "no
+ * bound", not "inherit".
+ */
+export const playlistOverrides = pgTable('playlist_overrides', {
+  id: text('id').primaryKey(),
+  startsAt: ts('starts_at'),
+  endsAt: ts('ends_at'),
+  featured: boolean('featured').notNull().default(false),
+  hidden: boolean('hidden').notNull().default(false),
+  updatedAt: ts('updated_at').notNull().defaultNow(),
+});
+
 /** Analytics events. */
 export const events = pgTable(
   'events',

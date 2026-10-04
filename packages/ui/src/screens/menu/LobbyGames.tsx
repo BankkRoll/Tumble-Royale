@@ -15,6 +15,7 @@ import { playCue } from '../../audio-cues.ts';
 import { Icon, type IconName } from '../../components/icons/index.tsx';
 import { uiEvents } from '../../store/events.ts';
 import { keyboardBusy } from '../../store/inputOwnership.ts';
+import { featureOn } from '../../store/liveOps.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { LobbyGameHud, LobbyGameId } from '../../store/types.ts';
 
@@ -61,7 +62,10 @@ export interface LobbyGamesButtonProps {
 export const LobbyGamesButton = memo(function LobbyGamesButton({
   className,
 }: LobbyGamesButtonProps): JSX.Element | null {
-  const visible = useUI((s) => s.screen === 'menu' && s.menuTab === 'play');
+  // party.lobbyGames off hides the picker too (the API already strips game frames).
+  const visible = useUI(
+    (s) => s.screen === 'menu' && s.menuTab === 'play' && featureOn(s.liveOps.flags, 'party.lobbyGames'),
+  );
   const { open, canStart, players, running } = useUI(
     useShallow((s) => ({
       open: s.lobbyGames.pickerOpen,

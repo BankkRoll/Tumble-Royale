@@ -127,7 +127,7 @@ grant nothing.
   idempotency; an unlock is a `player_achievements` row (exactly once) and
   its currency is keyed `achievement:<id>` on the ledger. The login claim
   locks `login_streaks` and advances it with a conditional update keyed by
-  the UTC day; its currency is keyed `login:<day>`. Migration 0006 backfills
+  the UTC day; its currency is keyed `login:<day>`. Migration 0007 backfills
   achievement totals from stored match history.
 - **Ranked** (`src/ranked/rating.ts`): OpenSkill Plackett-Luce over the whole
   lobby by placement. Bots stay in the finishing order but enter the update

@@ -880,7 +880,29 @@ export interface Playlist {
   icon: string;
   /** Epoch ms for limited-time playlists. */
   endsAt?: number;
+  /** Epoch ms a featured upcoming playlist opens (set with `comingSoon`). */
+  startsAt?: number;
+  /** Announced but not open yet: shown with a countdown, cannot be played. */
+  comingSoon?: boolean;
   ranked?: boolean;
+}
+
+/** An announced or running maintenance window (times on the device clock). */
+export interface MaintenanceNotice {
+  phase: 'scheduled' | 'active';
+  message: string;
+  /** Epoch ms; null when it started without a scheduled time. */
+  startsAt: number | null;
+  /** Epoch ms of the expected end; null when open-ended. */
+  endsAt: number | null;
+}
+
+/** Operator switches the menu reflects. */
+export interface LiveOpsUiState {
+  /** Null when no maintenance is scheduled or running. */
+  maintenance: MaintenanceNotice | null;
+  /** Feature flags by key; a missing key means on. */
+  flags: Readonly<Record<string, boolean>>;
 }
 
 /** Custom lobby options (`createCustom`). */
@@ -1378,6 +1400,11 @@ export interface Settings {
     /** Off hides every chat line and quick ping from other players. */
     showChat: boolean;
     region: string;
+    /**
+     * Anonymous gameplay statistics. Null follows the browser: on, unless Do
+     * Not Track or Global Privacy Control is set. A choice made here wins.
+     */
+    analytics: boolean | null;
   };
 }
 

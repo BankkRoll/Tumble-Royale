@@ -11,8 +11,9 @@
  *   once: half-open resources (a Postgres migration transaction) roll back
  *   when their connections close with the process.
  * - `uncaughtException` / `unhandledRejection`: log at fatal, report to a
- *   Sentry-compatible DSN when configured, try a short shutdown, exit 1. A
- *   crash while handling a crash exits at once instead of looping.
+ *   Sentry-compatible DSN and any extra reporters (the API's error table),
+ *   try a short shutdown, exit 1. A crash while handling a crash exits at
+ *   once instead of looping.
  */
 import { hostname } from 'node:os';
 import { parseSentryDsn, sendToSentry } from './sentry.ts';
@@ -41,6 +42,12 @@ export interface LifecycleOptions {
   process?: Pick<NodeJS.Process, 'on' | 'exit'>;
   /** HTTP client for crash reports (tests). */
   fetch?: typeof fetch;
+  /**
+   * Extra crash sinks, run alongside Sentry (e.g. `apiErrorReporter` from
+   * `@tumble/shared/liveops-client`). Each shares the same 2 s budget and its
+   * failures are ignored.
+   */
+  reporters?: readonly ((err: unknown, context: Record<string, unknown>) => Promise<void>)[];
 }
 
 /** Handle returned by {@link installLifecycle}. */
@@ -112,26 +119,33 @@ export function installLifecycle(opts: LifecycleOptions): Lifecycle {
   };
 
   const report = async (err: unknown, context: Record<string, unknown> = {}): Promise<void> => {
-    if (!sentry) return;
-    const e = err instanceof Error ? err : new Error(String(err));
-    await Promise.race([
-      sendToSentry(
-        sentry,
-        {
-          type: e.name,
-          message: e.message,
-          ...(e.stack ? { stack: e.stack } : {}),
-          platform: 'node',
-          timestamp: new Date().getTime() / 1000,
-          ...(opts.environment ? { environment: opts.environment } : {}),
-          ...(opts.release ? { release: opts.release } : {}),
-          tags: { service: opts.service, host: hostname() },
-          extra: context,
-        },
-        opts.fetch,
-      ),
-      timeout(2000),
-    ]);
+    const sinks: Promise<unknown>[] = (opts.reporters ?? []).map((r) =>
+      Promise.resolve()
+        .then(() => r(err, context))
+        .catch(() => undefined),
+    );
+    if (sentry) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      sinks.push(
+        sendToSentry(
+          sentry,
+          {
+            type: e.name,
+            message: e.message,
+            ...(e.stack ? { stack: e.stack } : {}),
+            platform: 'node',
+            timestamp: new Date().getTime() / 1000,
+            ...(opts.environment ? { environment: opts.environment } : {}),
+            ...(opts.release ? { release: opts.release } : {}),
+            tags: { service: opts.service, host: hostname() },
+            extra: context,
+          },
+          opts.fetch,
+        ).catch(() => undefined),
+      );
+    }
+    if (sinks.length === 0) return;
+    await Promise.race([Promise.all(sinks), timeout(2000)]);
   };
 
   const shutdown = (reason: string): Promise<void> => {

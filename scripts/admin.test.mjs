@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
-import { loadEnv, parseArgs, run, toRequest } from './admin.mjs';
+import { formatErrors, loadEnv, parseArgs, run, toRequest } from './admin.mjs';
 
 function capture() {
   const out = [];
@@ -67,6 +67,97 @@ describe('toRequest', () => {
     ])
       assert.throws(() => req(argv), /./, argv.join(' '));
     assert.throws(() => parseArgs(['--token']), /needs a value/);
+  });
+});
+
+describe('live-ops commands', () => {
+  const NOW = Date.parse('2026-10-04T12:00:00.000Z');
+  const req = (argv) => {
+    const { args, opts } = parseArgs(argv);
+    return toRequest(args, opts, () => '', NOW);
+  };
+
+  it('maps playlist commands, with "none" clearing a time', () => {
+    assert.deepEqual(req(['playlists', 'list']), { method: 'GET', path: '/internal/playlists' });
+    assert.deepEqual(
+      req([
+        'playlists',
+        'set',
+        'chaos-mode',
+        '--starts',
+        '2026-12-01T18:00:00Z',
+        '--ends',
+        'none',
+        '--featured',
+        'on',
+      ]),
+      {
+        method: 'PUT',
+        path: '/internal/playlists/chaos-mode',
+        body: { startsAt: '2026-12-01T18:00:00.000Z', endsAt: null, featured: true },
+      },
+    );
+    assert.deepEqual(req(['playlists', 'hide', 'duos']).body, { hidden: true });
+    assert.deepEqual(req(['playlists', 'show', 'duos']).body, { hidden: false });
+    assert.deepEqual(req(['playlists', 'reset', 'duos']), {
+      method: 'DELETE',
+      path: '/internal/playlists/duos',
+    });
+  });
+
+  it('schedules maintenance relative to now or at fixed times', () => {
+    assert.deepEqual(req(['maintenance', 'on', '--in', '10', '--for', '30', '--message', 'Patch day']).body, {
+      enabled: true,
+      startsAt: '2026-10-04T12:10:00.000Z',
+      endsAt: '2026-10-04T12:40:00.000Z',
+      message: 'Patch day',
+    });
+    assert.deepEqual(req(['maintenance', 'on']).body, { enabled: true, startsAt: null, endsAt: null });
+    assert.deepEqual(req(['maintenance', 'on', '--for', '15']).body.endsAt, '2026-10-04T12:15:00.000Z');
+    assert.deepEqual(req(['maintenance', 'off']), { method: 'DELETE', path: '/internal/maintenance' });
+    assert.deepEqual(req(['maintenance', 'status']), { method: 'GET', path: '/status' });
+  });
+
+  it('builds the errors view query', () => {
+    assert.equal(req(['errors', 'top']).path, '/internal/errors/top');
+    assert.equal(
+      req(['errors', 'top', '--hours', '6', '--limit', '5', '--server']).path,
+      '/internal/errors/top?hours=6&limit=5&source=server',
+    );
+  });
+
+  it('rejects bad live-ops usage', () => {
+    for (const argv of [
+      ['playlists', 'set', 'duos'],
+      ['playlists', 'set', 'duos', '--ends', 'next week'],
+      ['playlists', 'set', 'duos', '--hidden', 'yes'],
+      ['playlists', 'hide'],
+      ['maintenance', 'on', '--in', '-5'],
+      ['maintenance', 'on', '--in', '5', '--starts', '2026-12-01T00:00:00Z'],
+      ['maintenance', 'on', '--for', '5', '--ends', '2026-12-01T00:00:00Z'],
+      ['errors', 'top', '--hours', '1.5'],
+    ])
+      assert.throws(() => req(argv), /./, argv.join(' '));
+  });
+
+  it('prints errors top as a readable list', () => {
+    assert.equal(formatErrors({ source: 'client', since: 'x', errors: [] }), 'No client errors since x.');
+    const text = formatErrors({
+      source: 'client',
+      since: '2026-10-03T12:00:00.000Z',
+      errors: [
+        {
+          type: 'TypeError',
+          message: 'boom',
+          occurrences: 42,
+          players: 3,
+          lastSeen: '2026-10-04T11:00:00.000Z',
+          releases: 'v1',
+        },
+      ],
+    });
+    assert.match(text, /42x {2}TypeError: boom/);
+    assert.match(text, /3 players · v1 · last 2026-10-04T11:00:00.000Z/);
   });
 });
 

@@ -355,10 +355,16 @@ function PlaylistPicker({ playlists }: { playlists: Playlist[] }): JSX.Element |
             {p.ranked ? ' · Ranked' : ''}
           </span>
         </span>
-        {p.endsAt && (
-          <span className="tr-chip tr-chip--pink tr-playlist-ends">
-            Ends in {formatRemaining(p.endsAt - now)}
+        {p.comingSoon ? (
+          <span className="tr-chip tr-chip--ink tr-playlist-ends" data-testid="playlist-coming-soon">
+            {p.startsAt ? `Coming soon · ${formatRemaining(p.startsAt - now)}` : 'Coming soon'}
           </span>
+        ) : (
+          p.endsAt && (
+            <span className="tr-chip tr-chip--pink tr-playlist-ends" data-testid="playlist-ends">
+              Ends in {formatRemaining(p.endsAt - now)}
+            </span>
+          )
         )}
       </div>
       <button
@@ -550,6 +556,14 @@ function PlayButton({ mode, playlist }: { mode: PlayMode; playlist: Playlist | u
       >
         <span className="tr-play-label">{ready ? 'Ready!' : 'Ready up'}</span>
         <small className="tr-play-sub">The leader starts the show</small>
+      </Button>
+    );
+  }
+  if (playlist?.comingSoon) {
+    return (
+      <Button variant="go" size="xl" className="tr-play-btn" disabled data-testid="play">
+        <span className="tr-play-label">Soon</span>
+        <small className="tr-play-sub">{playlist.name} has not opened yet</small>
       </Button>
     );
   }

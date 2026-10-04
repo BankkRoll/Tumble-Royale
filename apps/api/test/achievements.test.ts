@@ -266,7 +266,7 @@ describe.each(BACKENDS)('achievements ($name)', (backend) => {
     const counted = await api.ctx.db.select().from(achievementStats).where(eq(achievementStats.userId, u.id));
     await api.ctx.db.delete(achievementStats).where(eq(achievementStats.userId, u.id));
 
-    const file = fileURLToPath(new URL('../drizzle/0006_achievements_streaks.sql', import.meta.url));
+    const file = fileURLToPath(new URL('../drizzle/0007_achievements_streaks.sql', import.meta.url));
     const backfill = readFileSync(file, 'utf8').split('-- achievement-backfill')[1]!;
     await api.ctx.db.execute(sql.raw(backfill));
     await api.ctx.db.execute(sql.raw(backfill));

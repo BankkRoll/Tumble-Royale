@@ -12,6 +12,12 @@
 import { resolve } from 'node:path';
 import { loadServiceConfig } from '@tumble/shared/env';
 import { installLifecycle } from '@tumble/shared/lifecycle';
+import {
+  apiErrorReporter,
+  ApiLiveOps,
+  STATIC_LIVEOPS,
+  type LiveOpsSource,
+} from '@tumble/shared/liveops-client';
 import { trustFunction } from '@tumble/shared/proxy';
 import { loadRapier } from '@tumble/sim';
 import { loadConfig } from './config.ts';
@@ -33,12 +39,24 @@ const logger = createLogger({
   ...(config.link ? { serverId: config.link.serverId, region: config.link.region } : {}),
 });
 const log = lineLogger(logger);
+// Maintenance and kill switches come from the API that results go to; without one, nothing is ever switched off.
+const liveOps: LiveOpsSource = resultsCfg
+  ? new ApiLiveOps({ apiUrl: resultsCfg.apiUrl, secret: resultsCfg.secret, log })
+  : STATIC_LIVEOPS;
+if (liveOps instanceof ApiLiveOps) {
+  // Refreshed on a timer, not on demand: an idle server must already know about maintenance when the next join arrives.
+  void liveOps.refresh();
+  setInterval(() => void liveOps.refresh(), 30_000).unref();
+}
 // Installed before anything opens, so a signal or crash during startup is handled too.
 const life = installLifecycle({
   service: 'game-server',
   log: logger,
   sentryDsn: config.ops.sentryDsn,
   environment: config.env,
+  reporters: resultsCfg
+    ? [apiErrorReporter({ apiUrl: resultsCfg.apiUrl, secret: resultsCfg.secret, service: 'game-server' })]
+    : [],
   // The drain bounds itself; this only catches a drain that hangs.
   shutdownTimeoutMs: config.ops.drainSettleMs + config.ops.drainTimeoutMs + config.ops.outboxFlushMs + 30_000,
 });
@@ -60,6 +78,8 @@ const deps = config.devSim
       ...(config.playlistId ? { playlistId: config.playlistId } : {}),
       log,
       results,
+      // peek() never waits on the API: a stale answer is better than a stalled show start.
+      mutatorsEnabled: () => liveOps.peek().flag('mutators.chaos'),
     });
 
 const server = await startGameServer({
@@ -79,6 +99,7 @@ const server = await startGameServer({
   },
   ...(config.controlSecret ? { control: { secret: config.controlSecret } } : {}),
   ready: () => !draining,
+  acceptNewMatches: () => liveOps.peek().maintenance(Date.now()).phase !== 'active',
   helloTimeoutMs: config.exposure.helloTimeoutMs,
   http: {
     debug: config.exposure.debug,

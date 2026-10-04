@@ -48,6 +48,7 @@ import type {
   PartyState,
   PlayMode,
   PlayerWallOptions,
+  LiveOpsUiState,
   Playlist,
   PreShowInfo,
   ProfileData,
@@ -138,6 +139,8 @@ export interface UIState {
   news: NewsItem[];
   friends: Friend[];
   party: PartyState | null;
+  /** Maintenance banner and feature flags. */
+  liveOps: LiveOpsUiState;
   playlists: Playlist[];
   selectedPlaylist: string;
   localReady: boolean;
@@ -256,6 +259,8 @@ export interface UIState {
   setNews: (news: NewsItem[]) => void;
   setFriends: (friends: Friend[]) => void;
   setParty: (party: PartyState | null) => void;
+  /** Merges maintenance and flag state (the game publishes it from the API). */
+  setLiveOps: (patch: Partial<LiveOpsUiState>) => void;
   setPlaylists: (playlists: Playlist[], selected?: string) => void;
   selectPlaylist: (id: string) => void;
   setLocalReady: (ready: boolean) => void;
@@ -384,6 +389,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   news: [],
   friends: [],
   party: null,
+  liveOps: { maintenance: null, flags: {} },
   playlists: [],
   selectedPlaylist: '',
   localReady: false,
@@ -546,6 +552,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   setNews: (news) => set({ news }),
   setFriends: (friends) => set({ friends }),
   setParty: (party) => set({ party }),
+  setLiveOps: (patch) => set({ liveOps: { ...get().liveOps, ...patch } }),
   setPlaylists: (playlists, selected) =>
     set({ playlists, selectedPlaylist: selected ?? (get().selectedPlaylist || playlists[0]?.id || '') }),
   selectPlaylist: (id) => {

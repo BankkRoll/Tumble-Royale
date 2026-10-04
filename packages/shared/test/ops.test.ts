@@ -155,6 +155,41 @@ describe('installLifecycle', () => {
     h.proc.emit('unhandledRejection', new Error('again'));
     expect(h.proc.exit).toHaveBeenLastCalledWith(1);
   });
+
+  it('runs extra reporters on a crash, even when one throws or there is no DSN', async () => {
+    const h = harness();
+    const seen: [string, unknown][] = [];
+    installLifecycle({
+      service: 'svc',
+      log: h.log,
+      process: h.proc as never,
+      reporters: [
+        () => Promise.reject(new Error('reporter down')),
+        async (err, ctx) => void seen.push([(err as Error).message, ctx.kind]),
+      ],
+    });
+    h.proc.emit('unhandledRejection', new Error('lost promise'));
+    expect(await h.exited).toBe(1);
+    expect(seen).toEqual([['lost promise', 'unhandledRejection']]);
+  });
+
+  it('does not let a hung reporter hold the crash exit past its budget', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = harness();
+      installLifecycle({
+        service: 'svc',
+        log: h.log,
+        process: h.proc as never,
+        reporters: [() => new Promise(() => undefined)],
+      });
+      h.proc.emit('uncaughtException', new Error('x'));
+      await vi.advanceTimersByTimeAsync(2100);
+      expect(await h.exited).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('metrics exposure', () => {

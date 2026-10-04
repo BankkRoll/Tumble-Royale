@@ -64,6 +64,7 @@ import {
 import type { GameContext, RoundOutcomeInfo, RoundStart, SessionPlayer, SessionSummary } from './context.ts';
 import { wonShow } from './crown.ts';
 import { showMenuKeyAction } from '../inputRouting.ts';
+import { FpsSampler, track } from '../liveOps/analytics.ts';
 import { padSpectateButtons } from '../bindings.ts';
 import {
   SpectatePadCycler,
@@ -218,6 +219,12 @@ export abstract class ShowSession {
   /** Local player id (-1 before assignment). */
   protected localId = -1;
   protected showName = 'Main Show';
+  /** Analytics: `show_start` went out (pre-show can be re-entered). */
+  private startTracked = false;
+  /** Analytics: the playlist id, once the pre-show names it. */
+  private playlistId: string | null = null;
+  /** Analytics: frame times of the round being played. */
+  private readonly fpsSampler = new FpsSampler();
   protected roundCount = 3;
   /** Active round, if any. */
   protected round: ActiveRound | null = null;
@@ -537,6 +544,17 @@ export abstract class ShowSession {
    */
   quit(): void {
     if (this.ended) return;
+    // Leaving after the result is in is not a quit; the funnel only wants walk-outs.
+    if (!this.summary) {
+      track('quit_point', {
+        playlist: this.playlistId,
+        online: this.isOnline(),
+        round: this.round?.start.round.id ?? null,
+        index: this.round?.start.index ?? -1,
+        phase: this.phase,
+        fate: this.round?.fate ?? null,
+      });
+    }
     if (this.awaiting !== 'rewards' && this.localRounds().length > 0) {
       this.bankOnLeave(
         this.summary
@@ -724,6 +742,11 @@ export abstract class ShowSession {
   protected enterPreShow(seconds: number, playlist: ShowPlaylist | null): void {
     const s = ui.getState();
     if (playlist) this.roundCount = estimateRoundCount(playlist, this.order.length);
+    if (!this.startTracked) {
+      this.startTracked = true;
+      this.playlistId = playlist?.id ?? null;
+      track('show_start', { playlist: this.playlistId, online: this.isOnline(), players: this.order.length });
+    }
     const names = this.order.map((id) => (this.players.has(id) ? this.publicName(id) : ''));
     const first = this.liveJoinFeed() ? names.length : Math.min(names.length, 8);
     s.setPreShow({
@@ -793,6 +816,9 @@ export abstract class ShowSession {
    */
   protected onRoundSelected(rs: RoundStart): void {
     const prevEntrants = this.round?.start.players.length ?? this.order.length;
+    this.fpsSampler.take();
+    if (rs.players.some((p) => p.id === this.localId))
+      track('round_start', { round: rs.round.id, index: rs.index, final: rs.isFinal });
     this.round = {
       start: rs,
       source: null,
@@ -1020,6 +1046,11 @@ export abstract class ShowSession {
         `[load] ${timings.label}: ${timings.totalMs.toFixed(0)} ms, longest block ${timings.longestSliceMs.toFixed(1)} ms`,
         timings.steps,
       );
+    track('load_time', {
+      round: r.start.round.id,
+      ms: Math.round(timings.totalMs),
+      longestBlockMs: Math.round(timings.longestSliceMs),
+    });
     this.attachRoundView(r, view, source);
   }
 
@@ -1244,6 +1275,11 @@ export abstract class ShowSession {
       render3D: true,
     });
     if (r.inRound) this.recordLocalRound(qualified.has(this.localId));
+    if (r.inRound) {
+      track('round_end', { round: rs.round.id, index: rs.index, qualified: qualified.has(this.localId) });
+      const fps = this.fpsSampler.take();
+      if (fps) track('fps_bucket', { bucket: fps, round: rs.round.id, tier: this.ctx.quality.tier });
+    }
     this.afterResults(r, qualified.has(this.localId), o.qualified.length);
     const botTags = this.ctx.settings().gameplay.botTags;
     const wallPlayers = rs.players
@@ -1730,6 +1766,7 @@ export abstract class ShowSession {
 
   private roundFrame(realDt: number): void {
     const r = this.round;
+    if (r?.view && r.fate === 'playing' && this.phase === RoundPhase.Playing) this.fpsSampler.add(realDt);
     const input = this.ctx.input;
     const view = r?.view ?? null;
     const active = this.controlsActive;
@@ -1812,6 +1849,14 @@ export abstract class ShowSession {
   protected onShowEnded(summary: SessionSummary): void {
     if (this.summary) return;
     this.summary = summary;
+    track('show_end', {
+      playlist: this.playlistId,
+      online: this.isOnline(),
+      placement: summary.placements.get(this.localId) ?? null,
+      players: this.order.length,
+      rounds: summary.rounds.length,
+      crowned: wonShow(summary, this.localId),
+    });
     this.showPhaseId = ShowPhase.Victory;
     const s = ui.getState();
     s.setSpectate(null);

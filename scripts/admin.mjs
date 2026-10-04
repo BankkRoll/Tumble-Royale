@@ -37,6 +37,11 @@ Playlists (limited-time shows; times are ISO 8601, "none" clears)
   playlists set <id> [--starts <time>] [--ends <time>] [--featured on|off] [--hidden on|off]
   playlists hide <id> | playlists show <id>         withdraw or restore a playlist
   playlists reset <id>                              drop the override (back to the bundled schedule)
+Events (limited-time events; times are ISO 8601)
+  events list                                       every event with its window, phase and switch
+  events set <id> [--starts <time>] [--ends <time>] move an event's window
+  events disable <id> | events enable <id>          withdraw an event (it awards nothing) or restore it
+  events reset <id>                                 drop the override (back to the bundled window)
 Maintenance
   maintenance status
   maintenance on [--message <text>] [--in <minutes> | --starts <time>] [--for <minutes> | --ends <time>]
@@ -266,6 +271,25 @@ export function toRequest(args, opts, readFile = (f) => readFileSync(f, 'utf8'),
       };
     case 'playlists reset':
       return { method: 'DELETE', path: `/internal/playlists/${enc(need(a, '<id>'))}` };
+    case 'events list':
+      return { method: 'GET', path: '/internal/live-events' };
+    case 'events set': {
+      const body = { startsAt: timeOpt(opts, 'starts'), endsAt: timeOpt(opts, 'ends') };
+      // Unlike playlists, an event always has an end: settling its rewards depends on it.
+      if (body.startsAt === null || body.endsAt === null) throw new UsageError('event times cannot be none');
+      for (const k of Object.keys(body)) if (body[k] === undefined) delete body[k];
+      if (Object.keys(body).length === 0) throw new UsageError('events set needs --starts or --ends');
+      return { method: 'PUT', path: `/internal/live-events/${enc(need(a, '<id>'))}`, body };
+    }
+    case 'events disable':
+    case 'events enable':
+      return {
+        method: 'PUT',
+        path: `/internal/live-events/${enc(need(a, '<id>'))}`,
+        body: { enabled: action === 'enable' },
+      };
+    case 'events reset':
+      return { method: 'DELETE', path: `/internal/live-events/${enc(need(a, '<id>'))}` };
     case 'maintenance status':
       return { method: 'GET', path: '/status' };
     case 'maintenance on': {

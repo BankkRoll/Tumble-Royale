@@ -9,6 +9,7 @@
  *   API's `{ error, message }` as {@link ApiError};
  * - typed endpoint helpers mirroring `apps/api/README.md`.
  */
+import type { PlayerRewardMsg } from '@tumble/netcode';
 import type { WalletLedger } from './online/checkout.ts';
 import { tokenSubject, type AuthOutcome, type LoginProvider } from './online/returnUrl.ts';
 import { loadJson, removeJson, saveJson } from './storage.ts';
@@ -317,6 +318,16 @@ export interface ApiParty {
   playlistId: string;
   inviteUrl: string;
   maxSize: number;
+}
+
+/** `GET /party/code/:code`: who is behind an invite code. */
+export interface ApiPartyPreview {
+  code: string;
+  /** `name#tag` of the leader. */
+  leader: string | null;
+  size: number;
+  maxSize: number;
+  playlistId: string;
 }
 
 /** `GET /profile/:id`. */
@@ -686,6 +697,12 @@ export class ApiClient {
   leaderboard = (type: string, scope: 'global' | 'regional' | 'friends'): Promise<ApiLeaderboard> =>
     this.request('GET', `/leaderboards/${type}?scope=${scope}&limit=50`);
   myMatches = (): Promise<{ matches: ApiMatch[] }> => this.request('GET', '/me/matches');
+  /**
+   * The caller's reward for one show; 404 (`not_found`) until the game
+   * server's results reach the API, `reward: null` when there was none.
+   */
+  matchReward = (matchId: string): Promise<{ matchId: string; reward: PlayerRewardMsg | null }> =>
+    this.request('GET', `/me/matches/${encodeURIComponent(matchId)}/reward`);
 
   // ---------------------------------------------------------------------------
   // Social
@@ -731,6 +748,14 @@ export class ApiClient {
   party = (): Promise<{ party: ApiParty | null }> => this.request('GET', '/party');
   createParty = (): Promise<{ party: ApiParty }> => this.request('POST', '/party');
   joinParty = (code: string): Promise<{ party: ApiParty }> => this.request('POST', '/party/join', { code });
+  /** Public summary of the party behind an invite code (404 when none). */
+  partyByCode = (code: string): Promise<ApiPartyPreview> =>
+    this.request('GET', `/party/code/${encodeURIComponent(code)}`);
+  /** Leader: the matchmaker accepted the party's ticket, so the ready votes are spent. */
+  partyQueued = (): Promise<{ party: ApiParty | null }> => this.request('POST', '/party/queued');
+  /** Tells the party this player started (or finished) a show on their own. */
+  partySolo = (playing: boolean): Promise<{ party: ApiParty | null }> =>
+    this.request('POST', '/party/solo', { playing });
   leaveParty = (): Promise<void> => this.request('POST', '/party/leave');
   kickFromParty = (userId: string): Promise<{ party: ApiParty }> =>
     this.request('POST', '/party/kick', { userId });

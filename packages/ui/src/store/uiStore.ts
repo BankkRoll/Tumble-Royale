@@ -404,6 +404,8 @@ export const ui = createStore<UIState>()((set, get) => ({
     }
     if (s.wipe.phase === 'covered') {
       applyScreen(screen, 'none');
+      // Already covered (e.g. leaving while a round loads under a held wipe): swaps waiting for the cover run now.
+      uiEvents.emit('transitionCovered', { to: screen });
       set({ wipe: { ...get().wipe, phase: hold ? 'covered' : 'revealing', hold } });
       return;
     }

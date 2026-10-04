@@ -107,7 +107,7 @@ interface ActiveRound {
 const SLOWMO_SCALE = 0.3;
 const SLOWMO_SECONDS = 1.5;
 const WIPE_FALLBACK_S = 1.6;
-/** Loading screen progress refresh: each one re-renders the screen, so keep it to ~4 Hz. */
+/** Loading overlay progress refresh: each one re-renders its bar, so keep it to ~4 Hz. */
 const LOAD_UI_INTERVAL_MS = 250;
 /** "Everyone's in!" stays up this long before the intro wipe. */
 const EVERYONE_IN_S = 0.8;
@@ -896,8 +896,8 @@ export abstract class ShowSession {
     s.setRoundLoading(null);
     s.setRoundLoading({ progress: 0 });
     this.ctx.audio.game.onRoundPhase(RoundPhase.Loading, r.start.round.type, { theme: r.start.round.theme });
-    // The loading screen is opaque and shows real progress, so the wipe reveals it rather than holding.
-    this.swapUnder('roundLoading', { transition: 'wipe' }, () => {
+    // The wipe holds over the whole load (its overlay shows the progress) and reveals straight into the intro.
+    this.swapUnder('roundLoading', { transition: 'wipe', hold: true }, () => {
       r.loadRequested = true;
       // Free the previous view's GPU memory before the new round starts allocating.
       this.preShow = null;

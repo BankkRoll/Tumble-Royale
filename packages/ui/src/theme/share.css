@@ -1,0 +1,111 @@
+/*
+ * Share sheet (screens/overlays/ShareSheet.tsx): a card over the rewards
+ * screen with the card / clip options, render progress and the preview.
+ */
+
+.tr-share {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8em;
+  width: min(36em, calc(100vw - 2em));
+  max-height: calc(100% - 2em);
+  min-height: 0;
+  overflow-y: auto;
+}
+.tr-share-head {
+  gap: 0.8em;
+}
+.tr-share-tabs {
+  gap: 0.5em;
+}
+.tr-share-tab,
+.tr-share-round {
+  cursor: pointer;
+  pointer-events: auto;
+}
+.tr-share-tab.is-on,
+.tr-share-round.is-on {
+  background: var(--lemon);
+  box-shadow: 0 0 0 0.16em var(--ink);
+}
+.tr-share-round.is-qualified::before {
+  content: '';
+  width: 0.55em;
+  height: 0.55em;
+  border-radius: 50%;
+  background: var(--mint);
+  border: 0.1em solid var(--ink);
+}
+.tr-share-options {
+  gap: 0.55em;
+}
+.tr-share-toggle {
+  gap: 0.8em;
+  align-items: center;
+}
+
+/* Trimmer: the window over the whole recording, then nudge buttons around a native range. */
+.tr-share-trim {
+  position: relative;
+  height: 0.9em;
+  border-radius: 999px;
+  background: rgba(43, 26, 94, 0.18);
+  border: 0.12em solid var(--ink);
+  overflow: hidden;
+}
+.tr-share-trim-window {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--bubblegum);
+  border-inline: 0.12em solid var(--ink);
+}
+.tr-share-trim-row {
+  gap: 0.5em;
+  align-items: center;
+}
+
+.tr-share-busy,
+.tr-share-error {
+  align-items: center;
+  text-align: center;
+  gap: 0.8em;
+  padding: 1em 0;
+}
+.tr-share-busy .tr-bar {
+  width: 100%;
+}
+
+.tr-share-ready {
+  align-items: center;
+  gap: 0.6em;
+}
+.tr-share-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 46vh;
+  object-fit: contain;
+  border-radius: var(--rad-md);
+  border: 0.16em solid var(--ink);
+  background: var(--ink);
+}
+.tr-share-preview.is-tall {
+  width: auto;
+  max-width: 100%;
+}
+.tr-share-notice {
+  font-weight: 700;
+  color: var(--ink);
+}
+.tr-share-actions {
+  justify-content: center;
+  gap: 0.6em;
+}
+
+@media (max-height: 520px) {
+  .tr-share-preview {
+    max-height: 34vh;
+  }
+}

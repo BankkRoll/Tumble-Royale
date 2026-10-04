@@ -21,6 +21,7 @@ import { fireConfetti } from '../transitions/Confetti.tsx';
 import { Icon } from '../components/icons/index.tsx';
 import { RankEmblem } from './menu/ProfileTab.tsx';
 import { ReplayPicker } from './Replay.tsx';
+import { ShareButton } from './overlays/ShareSheet.tsx';
 
 const LINE_GAP = 350;
 const LINE_COUNT = 400;
@@ -124,6 +125,7 @@ function RewardsActions({ hint }: { hint?: string | undefined }): JSX.Element {
   return (
     <div className="tr-rewards-actions tr-interactive" data-nav-scope="1">
       <ReplayPicker />
+      <ShareButton />
       {hint && <span className="tr-small tr-muted">{hint}</span>}
       <Button
         variant="secondary"

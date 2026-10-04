@@ -49,6 +49,19 @@ export {
   type VisibleChatLine,
 } from './social.ts';
 export {
+  shareUI,
+  useShare,
+  CLOSED_SHARE_SHEET,
+  type ShareState,
+  type ShareOffer,
+  type ShareSheet,
+  type ShareResult,
+  type ShareStatus,
+  type ShareClipRound,
+  type ShareCardFormat,
+  type ClipSupport,
+} from './share.ts';
+export {
   CHANNEL_LABEL,
   CHANNEL_ORDER,
   CHAT_HELP,

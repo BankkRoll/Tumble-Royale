@@ -2018,7 +2018,9 @@ export abstract class ShowSession {
       return;
     }
     this.awaiting = 'rewards';
-    const rewards = this.computeRewards(this.showFacts(this.summary));
+    const facts = this.showFacts(this.summary);
+    this.ctx.onShowResult?.(facts);
+    const rewards = this.computeRewards(facts);
     const s = ui.getState();
     s.setRewards(rewards);
     if (!rewards) this.rewardsMissing();

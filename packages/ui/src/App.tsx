@@ -23,6 +23,7 @@ import { JoinCodeDialog, PrivateShowDialog } from './screens/overlays/PrivateSho
 import { FriendsSheet, NotificationsPanel } from './screens/overlays/SocialSheets.tsx';
 import { WatchChoiceLayer } from './screens/overlays/WatchChoice.tsx';
 import { ReplayLayer } from './screens/Replay.tsx';
+import { ShareLayer } from './screens/overlays/ShareSheet.tsx';
 import { ScreenLayer } from './screens/ScreenLayer.tsx';
 import { useUI } from './store/uiStore.ts';
 import { installEasingVars } from './theme/motion.ts';
@@ -110,6 +111,7 @@ export function App(): JSX.Element {
       {!photo && <WatchChoiceLayer />}
       <ToastLayer />
       <ReplayLayer />
+      <ShareLayer />
       {photo ? <PhotoModeBar /> : <OverlayLayer />}
       {!photo && <SocialLayer />}
       <DialogLayer />

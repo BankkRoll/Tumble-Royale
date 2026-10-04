@@ -108,6 +108,7 @@ import {
 import { ProfileStore } from './profile.ts';
 import { QualityManager } from './quality.ts';
 import { ReplayController } from './replay/controller.ts';
+import { ShareController } from './share/shareController.ts';
 import type { GameContext, SessionEnd } from './show/context.ts';
 import { OfflineShowSession } from './show/offline.ts';
 import { OnlineShowSession, gameServerAvailable } from './show/online.ts';
@@ -233,6 +234,8 @@ export class GameApp {
   private regionProbedAt = -Infinity;
   private readonly auth: AccountAuth;
   private readonly replays: ReplayController;
+  /** Share cards and replay clips for the show just played. */
+  private readonly share: ShareController;
   /** Flags, maintenance and playlist schedules from the API. */
   private readonly liveOps: LiveOpsController;
 
@@ -310,6 +313,19 @@ export class GameApp {
         this.memoryLog.push({ round: label, geometries: m.geometries, textures: m.textures });
       },
     });
+    this.share = new ShareController({
+      renderer,
+      createTumbler: tumblers.create,
+      look: () => this.look(),
+      playerName: () => (this.account?.active ? this.account.name : profile.name),
+      library: this.replays.library,
+      createReplayView: (data, viewPost) => this.replays.createView(data, viewPost),
+      tier: () => quality.tier,
+      toneMapping: () => quality.preset.post.toneMapping ?? 'neutral',
+      replaysEnabled: () => flag('replays.enabled'),
+      onFlagsChanged: (fn) => liveFlags.subscribe(fn),
+      track: (name, props) => track(name, props),
+    });
     this.ctx = {
       R,
       cfg,
@@ -330,6 +346,7 @@ export class GameApp {
       settings: () => ui.getState().settings,
       onEnd: (reason) => this.onSessionEnd(reason),
       replays: gatedReplays(this.replays.live, () => flag('replays.enabled')),
+      onShowResult: (facts) => this.share.showFinished(facts),
     };
     this.hooks = {
       ready: false,

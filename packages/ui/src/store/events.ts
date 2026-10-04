@@ -25,6 +25,7 @@ import type {
   TumblerColors,
 } from './types.ts';
 import type { AuthProviderId } from './account.ts';
+import type { ShareCardFormat } from './share.ts';
 
 /** Every intent the UI can emit, keyed by name with its payload. */
 export interface UIIntents {
@@ -205,6 +206,16 @@ export interface UIIntents {
   replayOpenFile: { name: string; bytes: ArrayBuffer };
   /** Replay viewer control. */
   replayCommand: ReplayCommand;
+  /** Share sheet: render the show's share card. */
+  shareCard: { format: ShareCardFormat; includeName: boolean };
+  /** Share sheet: render a clip of a recorded round (window in recording seconds). */
+  shareClip: { key: string; start: number; length: number };
+  /** Share sheet: stop the render in progress. */
+  shareCancel: undefined;
+  /** Share sheet: hand the rendered file over (Web Share, download or clipboard). */
+  shareDeliver: { action: 'share' | 'download' | 'copy' };
+  /** Share sheet closed: the rendered file can be dropped. */
+  shareClose: undefined;
 }
 
 /** Intent name. */

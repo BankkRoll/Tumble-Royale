@@ -13,7 +13,7 @@ import type { AudioBridge } from '../audioBridge.ts';
 import type { ResolvedTumblerFactory } from '../characters.ts';
 import type { GameConfig } from '../config.ts';
 import type { OnlineAccount } from '../online/account.ts';
-import type { ProfileStore } from '../profile.ts';
+import type { ProfileStore, ShowResultForProfile } from '../profile.ts';
 import type { QualityManager } from '../quality.ts';
 import type { ReplayHooks } from '../replay/live.ts';
 import type { CeremonyPost } from '../views/ceremonies.ts';
@@ -53,6 +53,8 @@ export interface GameContext {
   onEnd(reason: SessionEnd): void;
   /** Round recorder for replays (absent in tools and tests). */
   readonly replays?: ReplayHooks | null;
+  /** The show is over and its rewards are about to show: what the local player did (share cards). */
+  onShowResult?(facts: ShowResultForProfile): void;
 }
 
 /** A show participant as the session tracks them. */

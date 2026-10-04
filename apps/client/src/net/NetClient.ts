@@ -14,6 +14,7 @@ import {
   BitWriter,
   ClockSync,
   INPUT_REDUNDANCY,
+  LEAVE_CLOSE_REASON,
   MsgType,
   NetworkConditioner,
   PROTOCOL_VERSION,
@@ -274,7 +275,7 @@ export class NetClient extends TypedEmitter<NetClientEvents> {
   /** Closes for good (no reconnect). */
   close(): void {
     this.userClosed = true;
-    this.socket?.close(1000, 'bye');
+    this.socket?.close(1000, LEAVE_CLOSE_REASON);
     this.socket = null;
     this.up?.stopAutoPump();
     this.down?.stopAutoPump();

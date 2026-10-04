@@ -66,6 +66,7 @@ import { ShowSession } from '../show/session.ts';
 import { padMenuButtons } from '../bindings.ts';
 import { promptKeys, type PromptAction } from './bindings.ts';
 import { RouteFollower, routeBetween, steerTo } from './driver.ts';
+import { track } from '../liveOps/analytics.ts';
 import { grantTutorialReward } from './reward.ts';
 import { DIVE_ON_FLAT, FALL_DEMO, LINES, SCRIPT, ordinal, renderPrompt } from './script.ts';
 
@@ -300,6 +301,8 @@ export class TutorialSession extends ShowSession {
   private finish(reason: SessionEnd): void {
     if (this.finishing) return;
     this.finishing = true;
+    // Where players leave is the point of the funnel; `ready` means they saw it through.
+    track('tutorial_step', { step: 'end', from: this.stage, reason });
     this.stage = 'done';
     tutorialUi.setState({ phase: 'hidden' });
     this.ctx.onEnd(reason);
@@ -708,6 +711,7 @@ export class TutorialSession extends ShowSession {
   private beginStation(i: number): void {
     const st = PRACTICE_STATIONS[i];
     if (!st) return;
+    track('tutorial_step', { step: st.id, index: i });
     this.stationIndex = i;
     this.stationPhase = 'intro';
     this.stationTime = 0;
@@ -1122,6 +1126,7 @@ export class TutorialSession extends ShowSession {
 
   private revealRace(): void {
     if (this.stage !== 'loading' || !this.round?.view) return;
+    track('tutorial_step', { step: 'race' });
     this.stage = 'race';
     revealRound();
     // The coach is on a podium far down the track: his bubble docks bottom-left instead of floating mid-view.

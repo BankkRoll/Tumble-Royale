@@ -20,6 +20,7 @@ import { Button } from '../../components/controls.tsx';
 import { formatNumber, formatRemaining, useNow } from '../../components/hooks.ts';
 import { ItemPreview } from '../../components/ItemPreview.tsx';
 import { uiEvents } from '../../store/events.ts';
+import { featureOn } from '../../store/liveOps.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import {
   COSMETIC_SLOTS,
@@ -337,8 +338,24 @@ function CatalogSection({
   );
 }
 
-/** Store tab. */
+/**
+ * Store tab, or a closed sign while an operator has the store switched off
+ * (`store.enabled`); the API refuses purchases meanwhile anyway.
+ */
 export function StoreTab(): JSX.Element {
+  const open = useUI((s) => featureOn(s.liveOps.flags, 'store.enabled'));
+  if (!open) {
+    return (
+      <section className="tr-panel tr-col tr-interactive" data-testid="store-closed" style={{ gap: '0.4em' }}>
+        <div className="tr-title tr-h3">The store is closed for a moment</div>
+        <p className="tr-small tr-muted">Your items and currency are safe. Check back soon!</p>
+      </section>
+    );
+  }
+  return <StoreShelves />;
+}
+
+function StoreShelves(): JSX.Element {
   const store = useUI((s) => s.store);
   const deepSection = useUI((s) => s.storeSection);
   const loadout = useActiveLoadout();

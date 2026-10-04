@@ -121,6 +121,7 @@ export const DEFAULT_SETTINGS: Settings = {
     chatFilter: true,
     showChat: true,
     region: 'auto',
+    analytics: null,
   },
 };
 

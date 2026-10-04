@@ -25,6 +25,7 @@
  * - settings persistence and live application; debug panel and hooks.
  */
 import {
+  analyticsAllowed,
   bindUI,
   keyboardBusy,
   mountUI,
@@ -34,6 +35,7 @@ import {
   type CustomLobbyOptions,
   type CustomLobbyState,
   type DialogSpec,
+  type PrivacyNavigator,
   type Settings,
 } from '@tumble/ui';
 import { bindChatRouter } from './social/chatRouter.ts';
@@ -47,6 +49,7 @@ import { createTumblerController } from '@tumble/sim/character';
 import { OBSTACLE_REGISTRY } from '@tumble/sim/obstacles';
 import type { MatchDeps } from '@tumble/sim/match';
 import type { ShowPlaylist } from '@tumble/sim/show';
+import { getPlaylist } from '@tumble/content/shows';
 import { PerspectiveCamera, Scene, type WebGPURenderer } from 'three/webgpu';
 import { InputSystem } from '../input/index.ts';
 import { keymapFromKeybinds, padMenuButtons, padmapFromPadBinds } from './bindings.ts';
@@ -68,9 +71,14 @@ import {
   pushLeaderboard,
   pushLiveNews,
   pushMeta,
+  pushPlaylists,
   pushStaticMeta,
 } from './meta.ts';
 import { playlistIdForPlay, privateShow, resolvePlaylist } from './playlists.ts';
+import { Analytics, setAnalytics, track } from './liveOps/analytics.ts';
+import { LiveOpsController } from './liveOps/controller.ts';
+import { flag, gatedReplays, liveFlags } from './liveOps/flags.ts';
+import { isPlaylistLive } from './liveOps/schedule.ts';
 import { OnlineAccount } from './online/account.ts';
 import { PhotoMode } from './photo/photoMode.ts';
 import { AccountAuth } from './online/auth.ts';
@@ -129,6 +137,38 @@ function mergeSettings(base: Settings, saved: Partial<Settings> | null): Setting
     accessibility: { ...base.accessibility, ...saved.accessibility },
     gameplay: { ...base.gameplay, ...saved.gameplay },
   };
+}
+
+/** Extra wiring from `main.ts`. */
+export interface BootOptions {
+  /** Uncaught errors captured so far this page load (reported as `error_count`). */
+  errorCount?: () => number;
+}
+
+/**
+ * Installs the game's analytics: batched to `<api>/events` while the API is
+ * reachable, gated by the player's setting (and browser privacy signals) and
+ * the `analytics.sample` flag. The session's new error count goes out with
+ * the last batch when the page hides.
+ */
+function installAnalytics(cfg: GameConfig, api: ApiClient, errorCount?: () => number): void {
+  const analytics = new Analytics({
+    endpoint: () => (cfg.api && api.online ? `${cfg.apiUrl}/events` : null),
+    allowed: () => analyticsAllowed(ui.getState().settings.gameplay.analytics, navigator as PrivacyNavigator),
+    sampleRate: () => liveFlags.sampleRate(),
+    token: () => api.accessToken(),
+    tokenSync: () => api.currentAccessToken(),
+    ...(typeof navigator.sendBeacon === 'function'
+      ? { sendBeacon: (url: string, data: Blob) => navigator.sendBeacon(url, data) }
+      : {}),
+  });
+  let reported = 0;
+  analytics.install(window, document, () => {
+    const n = errorCount?.() ?? 0;
+    if (n > reported) analytics.track('error_count', { count: n - reported });
+    reported = n;
+  });
+  setAnalytics(analytics);
 }
 
 /** Party invite code from a `/join/<code>` deep link, or null. */
@@ -191,6 +231,8 @@ export class GameApp {
   private regionProbedAt = -Infinity;
   private readonly auth: AccountAuth;
   private readonly replays: ReplayController;
+  /** Flags, maintenance and playlist schedules from the API. */
+  private readonly liveOps: LiveOpsController;
 
   private constructor(
     private readonly cfg: GameConfig,
@@ -229,6 +271,11 @@ export class GameApp {
         })
       : null;
     this.mm = cfg.api && cfg.matchmaking ? new MatchmakerClient(cfg.mmUrl, api) : null;
+    this.liveOps = new LiveOpsController({
+      api: cfg.api ? api : null,
+      onPlaylists: () => pushPlaylists(this.showsPlayed()),
+      onMaintenance: () => void this.refreshOnlineStatus(),
+    });
     this.auth = new AccountAuth({
       api,
       profile,
@@ -280,7 +327,7 @@ export class GameApp {
       fps: () => this.fpsSmooth,
       settings: () => ui.getState().settings,
       onEnd: (reason) => this.onSessionEnd(reason),
-      replays: this.replays.live,
+      replays: gatedReplays(this.replays.live, () => flag('replays.enabled')),
     };
     this.hooks = {
       ready: false,
@@ -362,7 +409,11 @@ export class GameApp {
    * @param cfg - Launch config.
    * @param staticProgress - Updates the static HTML loader until the UI mounts.
    */
-  static async boot(cfg: GameConfig, staticProgress: (pct: number, label: string) => void): Promise<GameApp> {
+  static async boot(
+    cfg: GameConfig,
+    staticProgress: (pct: number, label: string) => void,
+    opts: BootOptions = {},
+  ): Promise<GameApp> {
     const uiRoot = document.getElementById('ui') as HTMLElement;
     const s = ui.getState();
     const defaults = s.settings;
@@ -454,6 +505,8 @@ export class GameApp {
     if (cfg.debug)
       createDebugPanel({ renderer, quality, stats, session: () => app.session, timeScale: app.timeScale });
     if (cfg.autoplay) installAutoplay(cfg.autoShows);
+    app.liveOps.start(window);
+    installAnalytics(cfg, api, opts.errorCount);
     if (cfg.api) void pushLiveNews(api.news);
     loadMutes();
     if (cfg.api) {
@@ -499,6 +552,8 @@ export class GameApp {
     if (!ok || !(await account.load())) return;
     if (welcome && fresh) await account.adoptWelcomeColors(welcome.colors);
     account.startRealtime();
+    // Rollouts are per account, and an offline boot may have skipped the first fetch.
+    void this.liveOps.refresh();
     publishSocialAvailability(true);
     void this.probeRegions();
     if (this.mm) {
@@ -741,6 +796,12 @@ export class GameApp {
       s.setOnlineStatus({ state: 'disabled', message: 'Online play is turned off for this session.' });
       return;
     }
+    if (!this.cfg.online && this.liveOps.maintenanceActive()) {
+      // Shown on the Play Online tile; Vs Bots stays available.
+      s.setOnlineStatus({ state: 'offline', message: this.liveOps.maintenance().message });
+      if (s.playMode === 'online') ui.setState({ playMode: 'offline' });
+      return;
+    }
     s.setOnlineStatus({ state: 'checking' });
     let up = false;
     if (this.cfg.online) up = await gameServerAvailable();
@@ -851,7 +912,9 @@ export class GameApp {
   /** Vs Bots on a playlist (the first-ever show uses the gentler starter playlist). */
   private startBotShow(playlistId: string | null): void {
     this.lastShow = { kind: 'offline', playlistId };
-    this.startOfflineShow(resolvePlaylist(playlistId, this.showsPlayed(), this.cfg.playlist ?? null));
+    // Play again (or a stale selection) can name a limited-time show that has since closed.
+    const live = playlistId && isPlaylistLive(getPlaylist(playlistId), playlistId) ? playlistId : null;
+    this.startOfflineShow(resolvePlaylist(live, this.showsPlayed(), this.cfg.playlist ?? null));
   }
 
   /** Play again: the same kind of show as last time (mode, playlist, private-show options). */
@@ -944,6 +1007,7 @@ export class GameApp {
 
   private async startShow(playlistId: string | null): Promise<void> {
     if (this.session) return;
+    if (this.canMatchmake && this.refuseForMaintenance()) return;
     this.beginShow();
     this.menu?.setIdlePlay(false);
     this.lastShow = { kind: 'auto', playlistId };
@@ -1008,6 +1072,10 @@ export class GameApp {
       void account.confirmQueued();
     } catch (err) {
       this.queued = false;
+      this.trackQueueWait('refused');
+      if (err instanceof ApiError && err.code === 'maintenance') void this.liveOps.refreshStatus();
+      if (err instanceof ApiError && err.code === 'playlist_unavailable')
+        void this.liveOps.refreshPlaylists();
       const why = queueRefusal(err instanceof ApiError ? err.code : '', errorText(err));
       s.showDialog({
         id: 'queue-failed',
@@ -1019,6 +1087,18 @@ export class GameApp {
       s.setQueue({ status: 'idle' });
       this.leaveQueueScreen();
     }
+  }
+
+  /** Reports how long the player searched (`matchmaking_wait`) as the search ends. */
+  private trackQueueWait(outcome: 'matched' | 'cancelled' | 'refused' | 'stopped'): void {
+    const q = ui.getState().queue;
+    if (q.status !== 'searching' || !q.startedAt) return;
+    track('matchmaking_wait', {
+      seconds: Math.round((Date.now() - q.startedAt) / 1000),
+      outcome,
+      playlist: ui.getState().selectedPlaylist || null,
+      region: q.region || null,
+    });
   }
 
   private showSearching(partySize: number, playlistId: string | null): void {
@@ -1056,9 +1136,18 @@ export class GameApp {
     mm.on('queue_cancelled', (m) => {
       this.queued = false;
       if (this.session) return;
+      this.trackQueueWait(m.reason === 'cancelled' ? 'cancelled' : 'stopped');
       ui.getState().setQueue({ status: 'idle' });
       if (ui.getState().screen === 'matchmaking') this.leaveQueueScreen();
-      if (m.reason && m.reason !== 'cancelled')
+      if (m.reason === 'maintenance') {
+        // The matchmaker sent everyone back when the window opened; the status poll may not have run yet.
+        void this.liveOps.refreshStatus();
+        ui.getState().pushToast({
+          kind: 'warning',
+          title: 'Down for maintenance',
+          body: 'Matchmaking is paused for maintenance. You can still play Vs Bots.',
+        });
+      } else if (m.reason && m.reason !== 'cancelled')
         ui.getState().pushToast({
           kind: 'warning',
           title: 'Matchmaking stopped',
@@ -1088,6 +1177,7 @@ export class GameApp {
       return;
     }
     if (this.session) return;
+    this.trackQueueWait('matched');
     if (ui.getState().dialog?.id === 'rejoin-show') ui.getState().closeDialog();
     this.startOnlineShow({
       url: gameSocketUrl(m.server.url),
@@ -1346,7 +1436,25 @@ export class GameApp {
     );
   }
 
+  /**
+   * Online queueing and private lobbies are closed during maintenance (the
+   * matchmaker refuses them too); explains why instead of a failed request.
+   *
+   * @returns True when refused.
+   */
+  private refuseForMaintenance(): boolean {
+    if (!this.liveOps.maintenanceActive()) return false;
+    ui.getState().showDialog({
+      id: 'maintenance',
+      kind: 'info',
+      title: 'Down for maintenance',
+      body: `${this.liveOps.maintenance().message} You can still play Vs Bots.`,
+    });
+    return true;
+  }
+
   private customUnavailable(): boolean {
+    if (this.refuseForMaintenance()) return true;
     if (this.mm?.online && this.account?.active) return false;
     ui.getState().showDialog({
       id: 'custom-offline',
@@ -1406,6 +1514,7 @@ export class GameApp {
       },
       onMenuTab: ({ tab }) => {
         if (tab !== 'play') this.menu?.setIdlePlay(false);
+        if (tab === 'store') track('store_view', { online: !!online() });
         // The Profile tab lists the latest shows; an account's history lives on the API.
         if (tab === 'profile') void online()?.history();
       },
@@ -1613,9 +1722,14 @@ export class GameApp {
         }
         void this.startShow(playlistId);
       },
-      onSelectPlaylist: ({ playlistId }) => void online()?.setPlaylist(playlistId),
+      onSelectPlaylist: ({ playlistId }) => {
+        // Browsing onto a "Coming soon" card is not a pick: the API would refuse it for the party.
+        if (s().playlists.find((p) => p.id === playlistId)?.comingSoon) return;
+        void online()?.setPlaylist(playlistId);
+      },
       onReady: ({ ready }) => void online()?.setReady(ready),
       onCancelQueue: () => {
+        this.trackQueueWait('cancelled');
         if (this.queued && this.mm) {
           this.queued = false;
           void this.mm.cancel().catch(() => undefined);

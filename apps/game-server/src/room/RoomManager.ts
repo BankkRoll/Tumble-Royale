@@ -42,6 +42,12 @@ export interface RoomManagerOptions {
   maxRooms?: number;
   /** Join ticket policy; absent = unticketed joins only (tests, old tools). */
   tickets?: TicketPolicy;
+  /**
+   * False while an operator's maintenance window is active: joins that would
+   * open a new room are refused (`Shutdown`), while running shows keep their
+   * players, rejoins and late seats. Default: always accept.
+   */
+  acceptNewMatches?: () => boolean;
 }
 
 /** How Hello tickets are checked. */
@@ -89,6 +95,7 @@ export class RoomManager {
   /** Match id → accounts the host removed; their still-valid tickets are refused. */
   private readonly bannedFromMatch = new Map<string, Set<string>>();
   private readonly tickets: TicketPolicy | null;
+  private readonly acceptNewMatches: () => boolean;
   private readonly pending = new Set<ClientSession>();
   private readonly joined: { matchId: string; userId: string }[] = [];
   private readonly limits: ConnectionLimits;
@@ -123,6 +130,7 @@ export class RoomManager {
     this.profileLogMs = opts.profileLogMs ?? 5000;
     this.maxRooms = opts.maxRooms ?? 64;
     this.tickets = opts.tickets ?? null;
+    this.acceptNewMatches = opts.acceptNewMatches ?? (() => true);
     this.scheduler = new TickScheduler({ hz: SERVER_TICK_HZ, now: deps.now }, () => this.tick());
     if (transport) transport.onConnection = (conn) => this.accept(conn);
   }
@@ -258,7 +266,9 @@ export class RoomManager {
             ? 'join ticket missing, invalid or expired'
             : reason === KickReason.RemovedByHost
               ? 'removed by the host'
-              : 'no room',
+              : reason === KickReason.Shutdown
+                ? 'not opening new matches (maintenance or shutdown)'
+                : 'no room',
         );
       }
       const room = placed;
@@ -309,6 +319,7 @@ export class RoomManager {
       }
     }
     if (!target) {
+      if (!this.acceptNewMatches()) return KickReason.Shutdown;
       if (this.rooms.size >= this.maxRooms) return null;
       const id = `r${this.nextRoomId++}`;
       const createdAtTick = this.scheduler.tick;
@@ -328,7 +339,7 @@ export class RoomManager {
     hello: Parameters<Room['join']>[1],
     claims: JoinTicketClaims,
     now: number,
-  ): Room | null {
+  ): Room | KickReasonId | null {
     const existingId = this.matchRooms.get(claims.mid);
     let room = existingId ? this.rooms.get(existingId) : undefined;
     if (room && room.state === 'closed') room = undefined;
@@ -341,6 +352,7 @@ export class RoomManager {
     // A rejoin ticket returns to a running show; without its room (this
     // process restarted, the show ended and closed) there is nothing to return to.
     if (claims.rejoin) return null;
+    if (!this.acceptNewMatches()) return KickReason.Shutdown;
     if (this.rooms.size >= this.maxRooms) return null;
     const id = `r${this.nextRoomId++}`;
     const createdAtTick = this.scheduler.tick;

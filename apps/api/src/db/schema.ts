@@ -305,6 +305,60 @@ export const paymentReversals = pgTable(
   (t) => [index('payment_reversals_charge_idx').on(t.chargeId)],
 );
 
+/**
+ * Refunds, one per purchase at most (the unique purchase id is what makes a
+ * double-submitted refund apply once).
+ *
+ * - `self_service`: a store purchase paid in Gumballs or Gems, refunded by the
+ *   player at once (`completed`); the currency comes back as a `store_refund`
+ *   ledger row with ref `refund:<purchaseId>`.
+ * - `real_money`: a Gem pack refund the player asked for, decided by staff:
+ *   `pending` → `processing` (Stripe refund issued) or `manual` (no Stripe
+ *   key: staff refund by hand) → `refunded` / `partially_refunded` once the
+ *   `charge.refunded` webhook lands; `denied`, or `failed` when Stripe refused
+ *   (staff may approve again).
+ */
+export const refunds = pgTable(
+  'refunds',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    purchaseId: uuid('purchase_id')
+      .notNull()
+      .references(() => purchases.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    status: text('status').notNull(),
+    /** `gumballs` / `gems` credited back, or the Gem pack's money currency (`usd`). */
+    currency: text('currency').notNull(),
+    /** Currency credited back, or minor units to refund for a Gem pack. */
+    amount: integer('amount').notNull(),
+    /** Cosmetic ids taken away by a self-service refund. */
+    items: jsonb('items').notNull().default([]),
+    /** The player's own words (real-money requests). */
+    playerReason: text('player_reason'),
+    /** Staff note on approval, or the reason shown to the player on denial. */
+    decisionReason: text('decision_reason'),
+    /** Staff label (`name#tag` or `operator token`) of whoever decided. */
+    decidedBy: text('decided_by'),
+    decidedAt: ts('decided_at'),
+    /** Stripe refund id (`re_…`) once Stripe accepted the refund. */
+    providerRefundId: text('provider_refund_id'),
+    /** Approvals sent to the provider; numbers the provider idempotency key so a retry after a failure is a new refund. */
+    attempts: integer('attempts').notNull().default(0),
+    lastError: text('last_error'),
+    createdAt: createdAt(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('refunds_purchase_uq').on(t.purchaseId),
+    index('refunds_user_idx').on(t.userId, t.kind, t.createdAt),
+    index('refunds_status_idx').on(t.status, t.createdAt),
+    index('refunds_provider_refund_idx').on(t.providerRefundId),
+  ],
+);
+
 /** Persisted daily store rotations (deterministic; stored for audit and support). */
 export const storeRotations = pgTable('store_rotations', {
   day: text('day').primaryKey(),

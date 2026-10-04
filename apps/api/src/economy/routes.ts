@@ -1,7 +1,8 @@
 /**
  * Store, purchases, wallet, Gem checkout, the Crown Shard shop, the Stripe
  * webhook and the admin Gem-debt write-off. Refund and chargeback handling
- * lives in `reversals.ts`.
+ * lives in `reversals.ts`; refund requests and self-service refunds in
+ * `refunds.ts` and `refundAdmin.ts`.
  *
  * Purchases are idempotent per `(user, Idempotency-Key)`: the purchase row is
  * inserted first inside the transaction, so a concurrent retry with the same
@@ -29,6 +30,8 @@ import { applyLedger, readGemDebt, type Wallet } from './ledger.ts';
 import { applyPaymentEvent, creditGemPurchase, forgiveGemDebt, notifyWallets } from './reversals.ts';
 import { recordAudit } from '../staff/audit.ts';
 import { requireStaff } from '../staff/auth.ts';
+import { registerRefundAdminRoutes } from './refundAdmin.ts';
+import { registerRefundRoutes } from './refunds.ts';
 import { registerShardShopRoutes } from './shards.ts';
 import { grantCosmetic, readWallet } from './wallet.ts';
 import { bundleQuotes, currentRotation, priceOffer, storeCatalog } from './store.ts';
@@ -360,6 +363,8 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
   });
 
   registerShardShopRoutes(app, ctx, idempotencyKey);
+  registerRefundRoutes(app, ctx);
+  registerRefundAdminRoutes(app, ctx);
 
   app.post('/webhooks/stripe', { config: { rateLimit: false } }, async (req) => {
     const sig = req.headers['stripe-signature'];

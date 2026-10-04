@@ -11,8 +11,11 @@
  * the API already refuses suspended accounts when it issues queue tickets and
  * mints tokens. The outage is logged.
  */
-import { createHmac, randomBytes } from 'node:crypto';
+import { signInternal } from '@tumble/shared/liveops-client';
 import { requestIdHeaders } from '@tumble/shared/request-id';
+
+/** Signs a body the way the API's `requireInternalSignature` expects. */
+export { signInternal };
 
 /** Ban scopes the API issues: `all` (every service), `ranked` (ranked queue), `chat` (in-game chat). */
 export type BanScope = 'all' | 'ranked' | 'chat';
@@ -43,14 +46,6 @@ export interface ApiBanLookupOptions {
   /** Clock for the cache (ms). Signatures always use the wall clock the API checks against. */
   now?: () => number;
   log?: (msg: string) => void;
-}
-
-/** Signs a body the way the API's `requireInternalSignature` expects. */
-export function signInternal(secret: string, body: string, nowMs: number): Record<string, string> {
-  const timestamp = String(nowMs);
-  const nonce = randomBytes(16).toString('hex');
-  const signature = createHmac('sha256', secret).update(`${timestamp}.${nonce}.${body}`).digest('hex');
-  return { 'x-tumble-timestamp': timestamp, 'x-tumble-nonce': nonce, 'x-tumble-signature': signature };
 }
 
 /**

@@ -595,7 +595,14 @@ export class GameApp {
     // Thumbnails only render in the menus, one per frame, so shows never hitch.
     if (!this.session) this.thumbs.pump(realDt * 1000);
     // Build slices stretch frames while covered; they say nothing about render cost.
-    if (!d.covered) this.quality.sample(realDt * 1000);
+    const lowered = d.covered ? null : this.quality.sample(realDt * 1000);
+    if (lowered) {
+      ui.getState().pushToast({
+        kind: 'info',
+        title: `Graphics lowered to ${lowered[0]?.toUpperCase()}${lowered.slice(1)}`,
+        body: 'Auto quality stepped down to keep the game smooth.',
+      });
+    }
     this.stats.set('view', `${d.kind} · ${this.quality.tier} · ${this.quality.adaptive.scale.toFixed(2)}x`);
     this.stats.update(realDt, this.renderer);
     this.hooks.frames++;

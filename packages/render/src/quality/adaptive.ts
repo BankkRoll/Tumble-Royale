@@ -103,3 +103,82 @@ export class AdaptiveResolution {
     return this.scale;
   }
 }
+
+/** Options for {@link TierGovernor}. */
+export interface TierGovernorOptions {
+  /** Target frame time in ms for the current tier. */
+  targetMs: number;
+  /** Seconds the smoothed frame time must stay over budget before stepping down. Default 8. */
+  patienceS?: number;
+  /** How far over the target counts as over budget (1.4 = 40 % slower). Default 1.4. */
+  ratio?: number;
+  /** Seconds after a step down (or a reset) before judging again. Default 6. */
+  settleS?: number;
+}
+
+/**
+ * Decides when Auto quality should step down a whole tier. Adaptive
+ * resolution only helps a GPU-bound device: a phone whose CPU cannot hold the
+ * frame rate sits at the lowest render scale and stays slow. Once resolution
+ * is spent and frames stay well over budget for a while, a cheaper tier's
+ * crowd, VFX and environment budgets are the next lever.
+ *
+ * @example
+ * const gov = new TierGovernor({ targetMs: preset.targetFrameMs });
+ * // every frame:
+ * if (gov.sample(frameMs, adaptive.scale <= preset.minRenderScale)) quality.setTier(lower);
+ */
+export class TierGovernor {
+  private ema: number;
+  private overFor = 0;
+  private settle: number;
+  private readonly opts: Required<TierGovernorOptions>;
+
+  constructor(opts: TierGovernorOptions) {
+    this.opts = { patienceS: 8, ratio: 1.4, settleS: 6, ...opts };
+    this.ema = opts.targetMs;
+    this.settle = this.opts.settleS;
+  }
+
+  /** Smoothed frame time (ms). */
+  get smoothedMs(): number {
+    return this.ema;
+  }
+
+  /**
+   * Feeds one frame.
+   *
+   * @param frameMs - Wall time since the previous frame.
+   * @param resolutionSpent - True when adaptive resolution has nothing left to give.
+   * @returns True when the caller should drop one tier now.
+   */
+  sample(frameMs: number, resolutionSpent: boolean): boolean {
+    // NOTE: unlike AdaptiveResolution this keeps slow frames (a throttled phone CPU runs at
+    // 300 ms a frame); only multi-second stalls (tab switch, debugger) are ignored.
+    if (!(frameMs > 0) || frameMs > 2000) return false;
+    const dt = frameMs / 1000;
+    this.ema += (frameMs - this.ema) * Math.min(1, dt * 2);
+    if (this.settle > 0) {
+      this.settle -= dt;
+      return false;
+    }
+    if (resolutionSpent && this.ema > this.opts.targetMs * this.opts.ratio) this.overFor += dt;
+    else this.overFor = 0;
+    if (this.overFor < this.opts.patienceS) return false;
+    this.overFor = 0;
+    this.settle = this.opts.settleS;
+    return true;
+  }
+
+  /**
+   * Starts over (tier switch).
+   *
+   * @param targetMs - The new tier's target frame time.
+   */
+  reset(targetMs: number): void {
+    this.opts.targetMs = targetMs;
+    this.ema = targetMs;
+    this.overFor = 0;
+    this.settle = this.opts.settleS;
+  }
+}

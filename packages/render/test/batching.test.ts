@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { BoxGeometry, Mesh, MeshBasicNodeMaterial, Scene, type Object3D } from 'three/webgpu';
+import {
+  BoxGeometry,
+  Mesh,
+  MeshBasicNodeMaterial,
+  Scene,
+  type MeshToonNodeMaterial,
+  type Object3D,
+} from 'three/webgpu';
 import { modelWorldMatrix, positionGeometry, positionLocal, uniform, vec4 } from 'three/tsl';
 import { getRound } from '@tumble/content/rounds';
 import { MeshBatcher } from '../src/batching/index.ts';
 import { batchability } from '../src/batching/meshBatcher.ts';
 import { getObstacleVisual } from '../src/obstacles/index.ts';
+import { setGlow } from '../src/obstacles/visual-helpers-b.ts';
+import { createToonMaterial } from '../src/materials/toon.ts';
 
 /** Drives the batcher's per-frame sync the way the renderer does (once per frame id). */
 function frame(b: MeshBatcher, id: number): void {
@@ -82,6 +91,32 @@ describe('MeshBatcher', () => {
 
     b.dispose();
     expect(meshes.every((m) => m.layers.mask !== 0)).toBe(true);
+  });
+
+  it('groups toon materials by the values their material references read', () => {
+    const scene = new Scene();
+    const meshes = Array.from({ length: 3 }, (_, i) => {
+      const m = new Mesh(new BoxGeometry(), createToonMaterial({ color: '#ff6fb5', emissive: '#ff0000' }));
+      m.position.x = i * 3;
+      scene.add(m);
+      return m;
+    });
+    const b = new MeshBatcher();
+    for (const m of meshes) b.add(m);
+    b.build();
+    scene.add(b.object);
+    expect(b.stats.batches).toBe(1);
+    frame(b, 1);
+    frame(b, 2);
+    expect(drawnMeshes(scene)).toBe(1);
+
+    // One hammer's telegraph glow ramps up: it leaves the batch, the others stay instanced.
+    setGlow(meshes[1]!.material as MeshToonNodeMaterial, 0.8);
+    frame(b, 3);
+    frame(b, 4);
+    expect(meshes[1]!.layers.mask).not.toBe(0);
+    expect(drawnMeshes(scene)).toBe(2);
+    b.dispose();
   });
 
   it('more than halves the obstacle draws of a hammer-heavy race', () => {

@@ -55,6 +55,24 @@ describe('toRequest', () => {
     assert.deepEqual(req(['user', 'rename', 'u1', 'Polite', 'Name']).body, { displayName: 'Polite Name' });
   });
 
+  it('maps the console staff and audit commands', () => {
+    assert.deepEqual(req(['staff', 'grant', 'u1', '--role', 'admin']), {
+      method: 'PUT',
+      path: '/internal/staff/u1',
+      body: { role: 'admin' },
+    });
+    assert.deepEqual(req(['staff', 'grant', 'u1']).body, { role: 'moderator' });
+    assert.deepEqual(req(['staff', 'revoke', 'u1']), { method: 'DELETE', path: '/internal/staff/u1' });
+    assert.deepEqual(req(['staff', 'list']), { method: 'GET', path: '/internal/staff' });
+    assert.equal(
+      req(['audit', '--action', 'player.', '--target', 'u1', '--limit', '5']).path,
+      '/internal/audit?action=player.&targetId=u1&limit=5',
+    );
+    assert.equal(req(['audit']).path, '/internal/audit');
+    assert.throws(() => req(['staff', 'grant', 'u1', '--role', 'owner']), /--role/);
+    assert.throws(() => req(['staff', 'grant']), /userId/);
+  });
+
   it('rejects bad usage', () => {
     for (const argv of [
       ['bans', 'add', 'u1'],

@@ -5,6 +5,7 @@
 import { StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { App } from './App.tsx';
+import { installKeyboardInset } from './hud/keyboardInset.ts';
 import { createNavigator, installKeyboardNav } from './nav/navigation.ts';
 import { setNavigator, ui } from './store/uiStore.ts';
 import { FONT_STYLESHEET_URL } from './theme/tokens.ts';
@@ -66,6 +67,7 @@ export function mountUI(rootEl: HTMLElement, opts: MountOptions = {}): UIHandle 
   const syncTouch = (): void => ui.getState().setTouch(touchQuery.matches || navigator.maxTouchPoints > 0);
   syncTouch();
   touchQuery.addEventListener('change', syncTouch);
+  const uninstallKbInset = installKeyboardInset();
 
   const root: Root = createRoot(rootEl);
   root.render(
@@ -93,6 +95,7 @@ export function mountUI(rootEl: HTMLElement, opts: MountOptions = {}): UIHandle 
       uninstallKeys?.();
       setNavigator(null);
       touchQuery.removeEventListener('change', syncTouch);
+      uninstallKbInset();
       root.unmount();
     },
   };

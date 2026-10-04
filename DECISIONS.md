@@ -129,3 +129,30 @@ ends. Completed but unclaimed ones are paid out automatically on the next
 challenges read, the same rule as unclaimed pass tiers: nothing earned is
 lost. Milestones are one append-only list whose index is the stored slot, so
 new ones can be added without disturbing anyone's progress.
+
+## The admin console is a second Vite entry, signed in through staff accounts
+
+The console lives at `/admin`, built from `apps/client/admin.html` as its own
+entry rather than a route inside the game. The game's entry eagerly imports
+the renderer, physics and audio, so a lazily loaded route would still make a
+moderator download the whole game, and a shared entry risks the console's
+code leaking into the players' bundle. A separate entry shares only React and
+the small account client with the game, and a test walks both import graphs
+to keep it that way. Plain CSS with a few copied palette colours keeps it from
+pulling `@tumble/shared` in for theming.
+
+Browsers never see `ADMIN_TOKEN`. It stays with the CLI, which grants the
+`admin` or `moderator` role to a non-guest account (`staff_members`). The
+console trades that account's normal access token for a 30-minute bearer
+token stored only in `sessionStorage`; the API keeps the session in the KV
+under the token's hash and re-reads the staff row and ban state on every
+request, so revocation is immediate and every audit row names a real person.
+Bearer headers instead of cookies make the console immune to CSRF without a
+token dance. Moderators get reports, sanctions and player pages; currency,
+cosmetics, live ops and staff management need `admin`.
+
+Every admin action, from the CLI or the console, writes one row to an
+append-only `admin_audit_log` (instead of the old `audit.admin.*` analytics
+events) inside the action's transaction, so an action without its audit row
+cannot commit. The table has no foreign keys: deleting a staff or player
+account must not delete the record of what was done to or by it.

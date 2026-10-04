@@ -10,6 +10,7 @@ import { GameApp } from './game/app.ts';
 import { readConfig } from './game/config.ts';
 import { CrashReporter } from './crashReporter.ts';
 import { DEV_TOOLS, devParam, ENDPOINTS } from './devTools.ts';
+import { installPwa } from './pwa/client.ts';
 import { loadRuntimeConfig } from './runtimeConfig.ts';
 import './game/hooks.ts';
 
@@ -21,6 +22,15 @@ const setBoot = (pct: number, label: string): void => {
 };
 
 const params = new URLSearchParams(location.search);
+
+let markBooted = (): void => {};
+// Listening starts now (Chromium may offer the install prompt mid-boot); registering waits
+// for boot, so the worker's precache download never competes with the first load.
+installPwa({
+  register: !import.meta.env.DEV && (import.meta.env.MODE !== 'sandbox' || devParam(params, 'sw') === '1'),
+  base: import.meta.env.BASE_URL,
+  after: new Promise<void>((resolve) => (markBooted = resolve)),
+});
 
 // Endpoints must be final before readConfig() and the API clients read them.
 const runtime = await loadRuntimeConfig();
@@ -38,6 +48,10 @@ const run =
     ? runTestScene(setBoot)
     : GameApp.boot(readConfig(), setBoot, { errorCount: () => reporter?.captured ?? 0 });
 
+run.then(
+  () => markBooted(),
+  () => {},
+);
 run.catch((err: unknown) => {
   console.error(err);
   // Caught here, so the global handlers never see it.

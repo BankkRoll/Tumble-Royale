@@ -22,6 +22,22 @@
 		file_server
 	}
 
+	# The admin console: its own page and bundle. It is only a client; every
+	# action is authorised by the API. These headers keep it out of frames
+	# (no clickjacking of confirm buttons), search engines and caches.
+	@admin path /admin /admin/ /admin.html
+	handle @admin {
+		rewrite * /admin.html
+		header {
+			Cache-Control "no-cache"
+			X-Frame-Options "DENY"
+			Content-Security-Policy "frame-ancestors 'none'"
+			Referrer-Policy "no-referrer"
+			X-Robots-Tag "noindex, nofollow"
+		}
+		file_server
+	}
+
 	handle {
 		# Client-routed paths (party invites, OAuth and email sign-in returns,
 		# Stripe returns) load the game's index.html.

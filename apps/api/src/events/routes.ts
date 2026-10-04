@@ -15,10 +15,12 @@
  * - `POST /live-events/:id/challenges/claim` `{ challengeId }` — pay a completed
  *   challenge's points and XP.
  *
- * Admin (`ADMIN_TOKEN`, `pnpm admin events …`):
- * - `GET /internal/live-events`, `PUT|DELETE /internal/live-events/:id` — override or
- *   reset an event's window and switch it on or off. Every change is audited
- *   and invalidates the live-ops cache on every API instance.
+ * Staff (`ADMIN_TOKEN` or a console session; `pnpm admin events …`):
+ * - `GET /internal/live-events` (moderator+) — every event's effective window.
+ * - `PUT|DELETE /internal/live-events/:id` (admin) — override or reset an
+ *   event's window and switch it on or off. Each change writes its
+ *   `admin_audit_log` row in the same transaction, then invalidates the
+ *   live-ops cache on every API instance.
  */
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
@@ -26,10 +28,11 @@ import { z } from 'zod';
 import type { CatalogEvent } from '../catalog.ts';
 import type { AppContext } from '../context.ts';
 import { eventOverrides } from '../db/schema.ts';
-import { requireAdmin, requireUser } from '../http/auth.ts';
+import { requireUser } from '../http/auth.ts';
 import { badRequest, notFound, parse } from '../http/errors.ts';
-import { audit } from '../liveops/routes.ts';
 import { invalidateLiveOps } from '../liveops/state.ts';
+import { recordAudit } from '../staff/audit.ts';
+import { requireStaff } from '../staff/auth.ts';
 import {
   claimEventChallenge,
   claimEventTier,
@@ -181,7 +184,7 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
   });
 
   app.get('/internal/live-events', async (req) => {
-    requireAdmin(ctx, req);
+    await requireStaff(ctx, req, 'moderator');
     return {
       enabled: await eventsEnabled(ctx),
       events: (await scheduledEvents(ctx)).map(adminView),
@@ -190,7 +193,7 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
   });
 
   app.put('/internal/live-events/:id', async (req) => {
-    requireAdmin(ctx, req);
+    const actor = await requireStaff(ctx, req);
     const { id } = parse(EventIdParam, req.params);
     const patch = parse(OverrideBody, req.body ?? {});
     const current = (await scheduledEvents(ctx)).find((e) => e.id === id);
@@ -207,27 +210,41 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
     if (next.endsAt.getTime() - next.startsAt.getTime() > MAX_OVERRIDE_DAYS * 86_400_000)
       throw badRequest('invalid_window', `An event may run at most ${MAX_OVERRIDE_DAYS} days`);
     const values = { ...next, updatedAt: ctx.now() };
-    await ctx.db
-      .insert(eventOverrides)
-      .values({ id, ...values })
-      .onConflictDoUpdate({ target: eventOverrides.id, set: values });
-    await invalidateLiveOps(ctx);
-    await audit(ctx, req, 'event_override', {
-      eventId: id,
-      startsAt: next.startsAt.toISOString(),
-      endsAt: next.endsAt.toISOString(),
-      enabled: next.enabled,
+    await ctx.db.transaction(async (tx) => {
+      await tx
+        .insert(eventOverrides)
+        .values({ id, ...values })
+        .onConflictDoUpdate({ target: eventOverrides.id, set: values });
+      await recordAudit(
+        ctx,
+        req,
+        actor,
+        {
+          action: 'event.override',
+          targetType: 'event',
+          targetId: id,
+          details: {
+            startsAt: next.startsAt.toISOString(),
+            endsAt: next.endsAt.toISOString(),
+            enabled: next.enabled,
+          },
+        },
+        tx,
+      );
     });
+    await invalidateLiveOps(ctx);
     return { event: adminView((await scheduledEvents(ctx)).find((e) => e.id === id)!) };
   });
 
   app.delete('/internal/live-events/:id', async (req) => {
-    requireAdmin(ctx, req);
+    const actor = await requireStaff(ctx, req);
     const { id } = parse(EventIdParam, req.params);
     if (!ctx.catalog.events.some((e) => e.id === id)) throw notFound('Event');
-    await ctx.db.delete(eventOverrides).where(eq(eventOverrides.id, id));
+    await ctx.db.transaction(async (tx) => {
+      await tx.delete(eventOverrides).where(eq(eventOverrides.id, id));
+      await recordAudit(ctx, req, actor, { action: 'event.reset', targetType: 'event', targetId: id }, tx);
+    });
     await invalidateLiveOps(ctx);
-    await audit(ctx, req, 'event_reset', { eventId: id });
     return { event: adminView((await scheduledEvents(ctx)).find((e) => e.id === id)!) };
   });
 }

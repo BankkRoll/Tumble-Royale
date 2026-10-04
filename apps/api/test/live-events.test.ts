@@ -16,7 +16,7 @@ import {
   eventMatchCredits,
   eventProgress,
   eventTierClaims,
-  events as analyticsEvents,
+  adminAuditLog,
 } from '../src/db/schema.ts';
 import { verifyLedger } from '../src/economy/ledger.ts';
 import type { MatchResultInput } from '../src/matches/schema.ts';
@@ -594,20 +594,22 @@ describe.each(BACKENDS)('live events ($name)', (backend) => {
     ).toEqual([FROST, MOON]);
     const audit = await api.ctx.db
       .select()
-      .from(analyticsEvents)
-      .where(eq(analyticsEvents.name, 'audit.admin.event_override'));
-    expect(audit.at(-1)!.props).toMatchObject({ eventId: FROST, enabled: true });
+      .from(adminAuditLog)
+      .where(eq(adminAuditLog.action, 'event.override'));
+    expect(audit.at(-1)).toMatchObject({
+      targetType: 'event',
+      targetId: FROST,
+      actorRole: 'admin',
+      details: { enabled: true, startsAt: '2026-10-02T00:00:00.000Z' },
+    });
 
     const reset = await admin('DELETE', `/internal/live-events/${FROST}`);
     expect(reset.json().event).toMatchObject({ phase: 'upcoming', overridden: false });
-    expect(
-      (
-        await api.ctx.db
-          .select()
-          .from(analyticsEvents)
-          .where(eq(analyticsEvents.name, 'audit.admin.event_reset'))
-      ).length,
-    ).toBeGreaterThan(0);
+    const resets = await api.ctx.db
+      .select()
+      .from(adminAuditLog)
+      .where(eq(adminAuditLog.action, 'event.reset'));
+    expect(resets.at(-1)).toMatchObject({ targetId: FROST });
   });
 
   it('goes away with the account', async () => {

@@ -244,6 +244,7 @@ export function effectiveMode(mode: PlayMode, online: boolean): PlayMode {
  */
 export function onlineTileSub(status: OnlineStatus): string {
   if (status.state === 'checking') return 'Checking servers…';
+  if (status.noNetwork) return "You're offline";
   if (status.state !== 'online') return 'Servers offline';
   const fmt = (n: number): string => n.toLocaleString('en-US');
   const parts: string[] = [];

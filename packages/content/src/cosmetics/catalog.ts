@@ -6,9 +6,10 @@
  * - Provides id lookup and per-slot listings.
  *
  * Prices follow one curve per rarity (pricing.ts); the themed store sets live
- * in catalog-store.ts.
+ * in catalog-store.ts; limited-time event rewards in catalog-events.ts.
  */
 import { itemMeta, type ItemPrice } from './pricing.ts';
+import { EVENT_COLLECTION } from './catalog-events.ts';
 import { STORE_COLLECTION } from './catalog-store.ts';
 import {
   CosmeticItemSchema,
@@ -2175,6 +2176,7 @@ export const COSMETICS: readonly CosmeticItem[] = [
   ...sugarRushVfx,
   ...shardExclusives,
   ...STORE_COLLECTION,
+  ...EVENT_COLLECTION,
 ].map((item) => CosmeticItemSchema.parse(item));
 
 const byId = new Map<string, CosmeticItem>();

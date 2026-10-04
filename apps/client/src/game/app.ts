@@ -25,13 +25,11 @@
  * - settings persistence and live application; debug panel and hooks.
  */
 import {
-  DEFAULT_KEYBINDS,
   bindUI,
   mountUI,
   social,
   ui,
   uiEvents,
-  type BindAction,
   type CustomLobbyOptions,
   type CustomLobbyState,
   type DialogSpec,
@@ -49,7 +47,8 @@ import { OBSTACLE_REGISTRY } from '@tumble/sim/obstacles';
 import type { MatchDeps } from '@tumble/sim/match';
 import type { ShowPlaylist } from '@tumble/sim/show';
 import { PerspectiveCamera, Scene, type WebGPURenderer } from 'three/webgpu';
-import { InputSystem, type InputAction } from '../input/index.ts';
+import { InputSystem } from '../input/index.ts';
+import { keymapFromKeybinds, padMenuButtons, padmapFromPadBinds } from './bindings.ts';
 import { GamepadNavigator, firstStandardPad } from '../input/gamepadNav.ts';
 import { StatsOverlay } from '../debug/stats.ts';
 import { checkDeterminism } from '../debug/determinism.ts';
@@ -113,23 +112,6 @@ import { swapUnderWipe } from './wipe.ts';
 import { runTutorial } from './tutorial/index.ts';
 import { shouldOfferTutorial, tutorialAnswer } from './tutorial/prompt.ts';
 
-/** UI rebindable action → input system action. */
-const BIND_TO_INPUT: Partial<Record<BindAction, InputAction>> = {
-  moveForward: 'forward',
-  moveBack: 'back',
-  moveLeft: 'left',
-  moveRight: 'right',
-  jump: 'jump',
-  dive: 'dive',
-  grab: 'grab',
-  emoteWheel: 'emoteWheel',
-  emote1: 'emote1',
-  emote2: 'emote2',
-  emote3: 'emote3',
-  emote4: 'emote4',
-  pause: 'menu',
-};
-
 /** Merges saved settings over defaults so new fields always exist. */
 function mergeSettings(base: Settings, saved: Partial<Settings> | null): Settings {
   if (!saved) return base;
@@ -139,6 +121,7 @@ function mergeSettings(base: Settings, saved: Partial<Settings> | null): Setting
       ...base.controls,
       ...saved.controls,
       keybinds: { ...base.controls.keybinds, ...saved.controls?.keybinds },
+      padBinds: { ...base.controls.padBinds, ...saved.controls?.padBinds },
     },
     audio: { ...base.audio, ...saved.audio },
     accessibility: { ...base.accessibility, ...saved.accessibility },
@@ -627,7 +610,8 @@ export class GameApp {
       typeof navigator.getGamepads === 'function' ? firstStandardPad(navigator.getGamepads()) : null;
     // Edges are tracked even during a replay so its buttons never fire here afterwards.
     const actions = this.padNav.update(pad, now, true);
-    if (replay) return;
+    // Settings → Controller is listening for a button to bind; it must not also navigate.
+    if (replay || s.padCapture) return;
     for (const a of actions) {
       this.input.lastDevice = 'gamepad';
       if (a === 'start') this.onPadStart();
@@ -1754,7 +1738,7 @@ export class GameApp {
     });
 
     const canvas = this.renderer.domElement;
-    canvas.addEventListener('pointerdown', (e) => {
+    const onStagePress = (x: number, y: number): void => {
       const st = s();
       if (
         this.session ||
@@ -1765,8 +1749,8 @@ export class GameApp {
       )
         return;
       const rect = canvas.getBoundingClientRect();
-      const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      const ny = 1 - ((e.clientY - rect.top) / rect.height) * 2;
+      const nx = ((x - rect.left) / rect.width) * 2 - 1;
+      const ny = 1 - ((y - rect.top) / rect.height) * 2;
       if (this.menu.signAt(nx, ny)) {
         st.setLobbyGames({ pickerOpen: true });
         return;
@@ -1779,7 +1763,11 @@ export class GameApp {
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       canvas.focus({ preventScroll: true });
       this.menu.setIdlePlay(true);
-    });
+    };
+    canvas.addEventListener('pointerdown', (e) => onStagePress(e.clientX, e.clientY));
+    // Touch idle play covers the stage with the camera-drag surface, which forwards taps here.
+    uiEvents.on('stageTap', ({ x, y }) => onStagePress(x, y));
+    uiEvents.on('leaveIdlePlay', () => this.menu?.setIdlePlay(false));
     // Capture phase + preventDefault: Esc only leaves idle play; menu navigation must not also treat it as Back.
     window.addEventListener(
       'keydown',
@@ -1933,16 +1921,9 @@ export class GameApp {
     this.input.settings.sensitivity = st.controls.mouseSensitivity;
     this.input.settings.invertY = st.controls.invertY;
     this.input.settings.toggleGrab = st.controls.toggleGrab;
-    for (const [bind, action] of Object.entries(BIND_TO_INPUT) as [BindAction, InputAction][]) {
-      const codes = st.controls.keybinds[bind];
-      const defaults = DEFAULT_KEYBINDS[bind];
-      // Untouched defaults keep the input layer's richer bindings (e.g. C and Right Ctrl for dive).
-      if (!codes || (codes[0] === defaults[0] && codes[1] === defaults[1])) continue;
-      this.input.setBinding(
-        action,
-        codes.filter((c) => c !== ''),
-      );
-    }
+    this.input.setKeymap(keymapFromKeybinds(st.controls.keybinds));
+    this.input.setPadMap(padmapFromPadBinds(st.controls.padBinds));
+    this.padNav.setStartButtons(padMenuButtons(st.controls.padBinds));
     const view = this.session?.roundView;
     view?.setAccessibility(st.accessibility.reduceShake, st.gameplay.nameplates, st.gameplay.streamerMode);
     view?.setBotTags(st.gameplay.botTags);

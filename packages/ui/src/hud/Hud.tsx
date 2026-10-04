@@ -7,7 +7,6 @@ import { Icon } from '../components/icons/index.tsx';
 import { openInGameMenu } from '../screens/overlays/InGameMenu.tsx';
 import { useUI } from '../store/uiStore.ts';
 import { EmoteWheel } from './EmoteWheel.tsx';
-import { TouchControls } from './TouchControls.tsx';
 import {
   CameraLockHint,
   CaptionChip,
@@ -30,8 +29,6 @@ export const Hud = memo(function Hud(): JSX.Element {
   const highContrast = useUI((s) => s.settings.accessibility.highContrastHud);
   return (
     <div className={`tr-hud${counting ? ' is-countdown' : ''}${highContrast ? ' is-contrast' : ''}`}>
-      {/* First, so every later HUD control paints above its camera-drag layer. */}
-      <TouchControls />
       <div className="tr-hud-top">
         <div className="tr-hud-tl">
           <HudTimer />

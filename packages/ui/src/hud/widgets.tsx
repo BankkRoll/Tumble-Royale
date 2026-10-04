@@ -18,7 +18,7 @@ import { squash } from '../theme/motion.ts';
 import { Icon } from '../components/icons/index.tsx';
 import { roundTypeStyle } from '../theme/tokens.ts';
 import type { BindAction, TeamScore } from '../store/types.ts';
-import { PAD_GLYPHS, controlGlyph } from './glyphs.ts';
+import { controlGlyph, movementGlyph, padGlyph } from './glyphs.ts';
 
 /** Round timer pill; turns tangerine < 30 s and bubblegum + pulsing < 10 s. */
 export const HudTimer = memo(function HudTimer(): JSX.Element | null {
@@ -232,16 +232,17 @@ const HINT_ACTIONS: [BindAction, string][] = [
 export const ControlsHint = memo(function ControlsHint(): JSX.Element | null {
   const { show, device } = useUI(useShallow((s) => ({ show: s.hud.controlsHint, device: s.hud.device })));
   const binds = useUI((s) => s.settings.controls.keybinds);
+  const padBinds = useUI((s) => s.settings.controls.padBinds);
   if (!show || device === 'touch') return null;
   return (
     <div className="tr-hud-hint" data-testid="controls-hint">
       <span className="tr-hud-hint-item">
-        <kbd>{device === 'gamepad' ? PAD_GLYPHS.moveForward : 'WASD'}</kbd>
+        <kbd>{movementGlyph(device, binds)}</kbd>
         Move
       </span>
       {HINT_ACTIONS.map(([action, label]) => (
         <span key={label} className="tr-hud-hint-item">
-          <kbd>{controlGlyph(action, device, binds)}</kbd>
+          <kbd>{controlGlyph(action, device, binds, padBinds)}</kbd>
           {label}
         </span>
       ))}
@@ -253,8 +254,11 @@ export const ControlsHint = memo(function ControlsHint(): JSX.Element | null {
 export const GrabStatus = memo(function GrabStatus(): JSX.Element | null {
   const grab = useUI((s) => s.hud.grab);
   const device = useUI((s) => s.hud.device);
+  const jumpKey = useUI((s) =>
+    controlGlyph('jump', s.hud.device, s.settings.controls.keybinds, s.settings.controls.padBinds),
+  );
   if (grab.mode === 'none') return null;
-  const mash = device === 'gamepad' ? 'Ⓐ' : device === 'touch' ? 'Jump' : 'Space';
+  const mash = device === 'touch' ? 'Jump' : jumpKey;
   const text =
     grab.mode === 'held'
       ? `Grabbed${grab.name ? ` by ${grab.name}` : ''}! Mash ${mash} to break free`
@@ -312,13 +316,14 @@ export const CountdownNumerals = memo(function CountdownNumerals(): JSX.Element 
   );
 });
 
-/** Prev/next hints per device: the rebindable keys, the pad's shoulder buttons, nothing on touch. */
+/** Prev/next hints per device: the rebindable keys, the remappable pad buttons, nothing on touch. */
 function useSpectateHints(): [string | undefined, string | undefined] {
   const device = useUI((s) => s.hud.device);
   const prev = useUI((s) => s.settings.controls.keybinds.spectatePrev[0]);
   const next = useUI((s) => s.settings.controls.keybinds.spectateNext[0]);
+  const padBinds = useUI((s) => s.settings.controls.padBinds);
   if (device === 'touch') return [undefined, undefined];
-  if (device === 'gamepad') return ['LB', 'RB'];
+  if (device === 'gamepad') return [padGlyph('spectatePrev', padBinds), padGlyph('spectateNext', padBinds)];
   return [prev ? keyLabel(prev) : undefined, next ? keyLabel(next) : undefined];
 }
 

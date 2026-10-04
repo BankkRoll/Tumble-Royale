@@ -1833,7 +1833,8 @@ export abstract class ShowSession {
     const winner = winnerId !== null ? this.players.get(winnerId) : undefined;
     this.ctx.audio.game.onShowPhase(ShowPhase.Victory, {
       localWon,
-      ...(winner ? { winnerName: winner.name } : {}),
+      // The announcer's line becomes an on-screen caption, so it gets the Streamer Mode name.
+      ...(winner && winnerId !== null ? { winnerName: this.publicName(winnerId) } : {}),
     });
     if (!winner || winnerId === null) {
       this.after(1.2, () => this.goWall());

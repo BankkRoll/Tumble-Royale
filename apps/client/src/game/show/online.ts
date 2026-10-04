@@ -313,7 +313,7 @@ export class OnlineShowSession extends ShowSession {
     if (!info) return;
     const names = this.order
       .filter((id) => this.present.has(id))
-      .map((id) => this.players.get(id)?.name ?? '');
+      .map((id) => (this.players.has(id) ? this.publicName(id) : ''));
     ui.getState().setPreShow({
       ...info,
       playersJoined: names.length,

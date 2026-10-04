@@ -677,7 +677,7 @@ export class OnlineShowSession extends ShowSession {
         if (!placements.has(id)) placements.set(id, place++);
     }
     for (const id of this.order) if (!placements.has(id)) placements.set(id, place++);
-    this.onShowEnded({ winnerId: winners[0] ?? null, rounds: outcomes, placements });
+    this.onShowEnded({ winnerId: winners[0] ?? null, winnerIds: winners, rounds: outcomes, placements });
   }
 
   private onSnapshot(s: DecodedSnapshot): void {

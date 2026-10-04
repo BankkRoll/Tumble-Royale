@@ -59,6 +59,7 @@ import {
   type PreShowView,
 } from '../views/ceremonies.ts';
 import type { GameContext, RoundOutcomeInfo, RoundStart, SessionPlayer, SessionSummary } from './context.ts';
+import { wonShow } from './crown.ts';
 import {
   PAD_SPECTATE_NEXT,
   PAD_SPECTATE_PREV,
@@ -1390,7 +1391,7 @@ export abstract class ShowSession {
           colors: p.colors,
           isBot: p.isBot,
           place,
-          crowned: this.summary?.winnerId === id,
+          crowned: this.summary ? wonShow(this.summary, id) : false,
         };
       });
   }
@@ -1789,7 +1790,7 @@ export abstract class ShowSession {
         roundId: o.roundId,
         name: o.name,
         type: o.isFinal ? ('final' as const) : o.type,
-        eliminatedIds: o.eliminated.filter((id) => !carried.has(id) && id !== summary.winnerId),
+        eliminatedIds: o.eliminated.filter((id) => !carried.has(id) && !wonShow(summary, id)),
       };
     });
     this.uiSummary = {
@@ -1799,8 +1800,9 @@ export abstract class ShowSession {
       winnerId: summary.winnerId ?? -1,
       seed: (this.round?.start.seed ?? 1) >>> 0,
     };
-    const winnerId = summary.winnerId;
-    const localWon = winnerId !== null && winnerId === this.localId;
+    const localWon = wonShow(summary, this.localId);
+    // A duo/squad partner of the Crown grabber won too: their own Tumbler headlines their victory.
+    const winnerId = localWon ? this.localId : summary.winnerId;
     const winner = winnerId !== null ? this.players.get(winnerId) : undefined;
     this.ctx.audio.game.onShowPhase(ShowPhase.Victory, {
       localWon,
@@ -1910,7 +1912,7 @@ export abstract class ShowSession {
       playlistName: this.showName,
       rounds: this.localRounds(),
       reachedFinal,
-      wonCrown: summary.winnerId === this.localId,
+      wonCrown: wonShow(summary, this.localId),
       place: summary.placements.get(this.localId) ?? this.order.length,
       participants: this.order.length,
       quit: false,

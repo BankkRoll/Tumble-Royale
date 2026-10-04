@@ -264,6 +264,32 @@ describe('analytics ingest', () => {
     expect((await post({ events: [{ name: 'client.error', props: crash }] })).statusCode).toBe(202);
   });
 
+  it('accepts the crash reporter batch exactly as the client builds it, at its size limits', async () => {
+    // Mirrors apps/client/src/crashReporter.ts: every field present, each at the client's cap.
+    const props = {
+      kind: 'unhandledrejection',
+      type: 'T'.repeat(100),
+      message: 'm'.repeat(500),
+      stack: 's'.repeat(4000),
+      source: `https://play.example.com/${'a'.repeat(270)}`.slice(0, 300),
+      line: 12,
+      col: 7,
+      path: `/${'p'.repeat(199)}`,
+      count: 40,
+      ua: 'u'.repeat(300),
+      release: 'r'.repeat(100),
+    };
+    const batch = {
+      events: Array.from({ length: 20 }, (_, i) => ({
+        name: 'client.error',
+        props: { ...props, line: i + 1 },
+      })),
+    };
+    const res = await api.req('POST', '/events', { body: batch });
+    expect(res.statusCode).toBe(202);
+    expect(res.json()).toEqual({ accepted: 20 });
+  });
+
   it('accepts sendBeacon batches as text/plain with the token in the body', async () => {
     const u = await api.guest();
     const beacon = (payload: string) =>

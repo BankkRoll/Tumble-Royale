@@ -227,6 +227,26 @@ describe('crash reporter error count', () => {
     expect(r.captured).toBe(3);
     expect(r.dropped).toBe(1);
   });
+
+  it('keeps every field within what POST /events accepts', async () => {
+    const bodies: string[] = [];
+    const r = new CrashReporter({
+      apiUrl: 'https://api.test',
+      release: 'v'.repeat(300),
+      fetch: (async (_u: string, init: RequestInit) => {
+        bodies.push(String(init.body));
+        return new Response(null, { status: 202 });
+      }) as unknown as typeof fetch,
+    });
+    const err = new Error('x'.repeat(2000));
+    err.name = 'N'.repeat(400);
+    r.capture('error', err);
+    await r.flush();
+    const props = JSON.parse(bodies[0]!).events[0].props;
+    expect(props.type).toHaveLength(100);
+    expect(props.message).toHaveLength(500);
+    expect(props.release).toHaveLength(100);
+  });
 });
 
 // -----------------------------------------------------------------------------

@@ -154,7 +154,7 @@ export class CrashReporter {
     this.recent.push(t);
     this.queue.set(key, {
       kind,
-      type: d.type,
+      type: d.type.slice(0, 100),
       message: d.message.slice(0, MAX_MESSAGE),
       ...(d.stack ? { stack: d.stack.slice(0, MAX_STACK) } : {}),
       ...(where.source ? { source: where.source.split('?')[0]!.slice(0, 300) } : {}),
@@ -198,7 +198,7 @@ export class CrashReporter {
           props: {
             ...r,
             ...(ua ? { ua } : {}),
-            ...(this.opts.release ? { release: this.opts.release } : {}),
+            ...(this.opts.release ? { release: this.opts.release.slice(0, 100) } : {}),
           },
         })),
       }),

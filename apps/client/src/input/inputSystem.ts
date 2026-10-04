@@ -279,6 +279,30 @@ export class InputSystem {
   }
 
   /**
+   * Replaces the whole keymap. Actions whose codes did not change are left
+   * alone, and when nothing changed at all held keys stay held, so settings
+   * re-applied for an unrelated change (a volume slider) never drop a key.
+   *
+   * @param map - Complete keymap (every action).
+   * @returns True when any binding changed.
+   * @example
+   * input.setKeymap(createKeymap()); // back to defaults
+   */
+  setKeymap(map: Readonly<Keymap>): boolean {
+    let changed = false;
+    for (const a of INPUT_ACTIONS) {
+      const next = map[a] ?? [];
+      if (sameList(this.keymap[a], next)) continue;
+      this.keymap[a] = [...next];
+      changed = true;
+    }
+    if (!changed) return false;
+    this.releaseAll();
+    this.rebuildCodeIndex();
+    return true;
+  }
+
+  /**
    * Applies a snapshot from the HUD's touch controls (`touchInput` intent).
    *
    * @param snapshot - Joystick vector and held buttons.
@@ -592,6 +616,10 @@ export class InputSystem {
     target.addEventListener(type, fn);
     this.unlisten.push(() => target.removeEventListener(type, fn));
   }
+}
+
+function sameList<T>(a: readonly T[], b: readonly T[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
 /** True on phones and tablets, where the first input will be a touch. */

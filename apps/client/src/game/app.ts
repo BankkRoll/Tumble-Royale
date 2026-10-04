@@ -19,13 +19,11 @@
  * - settings persistence and live application; debug panel and hooks.
  */
 import {
-  DEFAULT_KEYBINDS,
   bindUI,
   mountUI,
   social,
   ui,
   uiEvents,
-  type BindAction,
   type CustomLobbyState,
   type Settings,
 } from '@tumble/ui';
@@ -41,7 +39,8 @@ import { OBSTACLE_REGISTRY } from '@tumble/sim/obstacles';
 import type { MatchDeps } from '@tumble/sim/match';
 import type { ShowPlaylist } from '@tumble/sim/show';
 import { PerspectiveCamera, Scene, type WebGPURenderer } from 'three/webgpu';
-import { InputSystem, type InputAction } from '../input/index.ts';
+import { InputSystem } from '../input/index.ts';
+import { keymapFromKeybinds } from './bindings.ts';
 import { GamepadNavigator, firstStandardPad } from '../input/gamepadNav.ts';
 import { StatsOverlay } from '../debug/stats.ts';
 import { checkDeterminism } from '../debug/determinism.ts';
@@ -98,23 +97,6 @@ import { SceneDirector } from './views/sceneDirector.ts';
 import { ThumbnailRenderer } from './thumbnails.ts';
 import { swapUnderWipe } from './wipe.ts';
 import { runTutorial } from './tutorial/index.ts';
-
-/** UI rebindable action → input system action. */
-const BIND_TO_INPUT: Partial<Record<BindAction, InputAction>> = {
-  moveForward: 'forward',
-  moveBack: 'back',
-  moveLeft: 'left',
-  moveRight: 'right',
-  jump: 'jump',
-  dive: 'dive',
-  grab: 'grab',
-  emoteWheel: 'emoteWheel',
-  emote1: 'emote1',
-  emote2: 'emote2',
-  emote3: 'emote3',
-  emote4: 'emote4',
-  pause: 'menu',
-};
 
 /** Merges saved settings over defaults so new fields always exist. */
 function mergeSettings(base: Settings, saved: Partial<Settings> | null): Settings {
@@ -1547,16 +1529,7 @@ export class GameApp {
     this.input.settings.sensitivity = st.controls.mouseSensitivity;
     this.input.settings.invertY = st.controls.invertY;
     this.input.settings.toggleGrab = st.controls.toggleGrab;
-    for (const [bind, action] of Object.entries(BIND_TO_INPUT) as [BindAction, InputAction][]) {
-      const codes = st.controls.keybinds[bind];
-      const defaults = DEFAULT_KEYBINDS[bind];
-      // Untouched defaults keep the input layer's richer bindings (e.g. C and Right Ctrl for dive).
-      if (!codes || (codes[0] === defaults[0] && codes[1] === defaults[1])) continue;
-      this.input.setBinding(
-        action,
-        codes.filter((c) => c !== ''),
-      );
-    }
+    this.input.setKeymap(keymapFromKeybinds(st.controls.keybinds));
     const view = this.session?.roundView;
     view?.setAccessibility(st.accessibility.reduceShake, st.gameplay.nameplates, st.gameplay.streamerMode);
     view?.setBotTags(st.gameplay.botTags);

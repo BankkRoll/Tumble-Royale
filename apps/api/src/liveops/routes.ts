@@ -8,7 +8,8 @@
  * - `GET /playlists` — every bundled playlist's effective schedule and phase.
  *
  * Game servers and the matchmaker (HMAC, `INTERNAL_HMAC_SECRET`):
- * - `POST /internal/liveops` — raw flags, maintenance and playlist overrides.
+ * - `POST /internal/liveops` — raw flags, maintenance and every playlist's
+ *   effective schedule (so services need no copy of the content).
  * - `POST /internal/errors` — a crash report, stored as a `server.error` event.
  *
  * Admin (`ADMIN_TOKEN`, used by `pnpm admin`):
@@ -170,8 +171,15 @@ export function registerLiveOpsRoutes(app: FastifyInstance, ctx: AppContext): vo
   // Every matchmaker and game server polls this; HMAC proves who they are and they may share one NAT.
   app.post('/internal/liveops', { config: { rateLimit: false } }, async (req) => {
     await requireInternalSignature(ctx, req);
-    const snap = await liveOpsSnapshot(ctx);
-    return { ...snap, serverTime: ctx.now().getTime() };
+    const { flags, maintenance } = await liveOpsSnapshot(ctx);
+    const playlists = (await scheduledPlaylists(ctx)).map(({ id, startsAt, endsAt, featured, hidden }) => ({
+      id,
+      startsAt,
+      endsAt,
+      featured,
+      hidden,
+    }));
+    return { flags, maintenance, playlists, serverTime: ctx.now().getTime() };
   });
 
   app.post('/internal/errors', async (req, reply) => {

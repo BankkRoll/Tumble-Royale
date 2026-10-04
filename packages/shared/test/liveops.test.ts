@@ -190,6 +190,23 @@ describe('ApiLiveOps', () => {
     expect(live.failures).toBe(2);
   });
 
+  it('corrects for a service clock that runs behind or ahead of the API', async () => {
+    // The API is 10 s ahead of this service; maintenance starts 5 s after the API's "now".
+    const ahead = { ...snapshot, serverTime: T + 10_000 };
+    ahead.maintenance = { ...snapshot.maintenance, startsAt: iso(T + 15_000) };
+    const { live } = setup(() => Response.json(ahead));
+    const s = await live.get();
+    expect(s.offsetMs).toBe(10_000);
+    expect(s.maintenance(T + 4_999).phase).toBe('scheduled');
+    expect(s.maintenance(T + 5_000).phase).toBe('active');
+    // A playlist that ended at the API's "now" is over for this service already.
+    const ended = { ...snapshot, serverTime: T - 3000 };
+    ended.playlists = [{ id: 'duos', startsAt: null, endsAt: iso(T - 3000), featured: false, hidden: false }];
+    const behind = setup(() => Response.json(ended));
+    expect((await behind.live.get()).playlist('duos', null, T)).toBe('ended');
+    expect((await behind.live.get()).playlist('duos', null, T - 1)).toBe('live');
+  });
+
   it('answers the defaults before the first success and on malformed answers', async () => {
     const { live } = setup(() => new Response('<html>', { status: 200 }));
     const s = await live.get();

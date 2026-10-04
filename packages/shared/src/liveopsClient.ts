@@ -5,7 +5,7 @@
  * Responsibilities:
  * - Fetch the API's live-ops snapshot (`POST /internal/liveops`, HMAC-signed
  *   with `INTERNAL_HMAC_SECRET`): raw flags, the maintenance window and the
- *   playlist overrides.
+ *   effective schedule of every playlist the API knows.
  * - Cache it for `cacheMs` (30 s by default) and share one in-flight request
  *   between concurrent callers.
  * - Fail open: when the API cannot be reached the last snapshot stays in use
@@ -16,6 +16,7 @@
  */
 import { createHmac, randomBytes } from 'node:crypto';
 import {
+  clockOffset,
   FLAG_DEFAULTS,
   maintenancePhase,
   mergeSchedule,
@@ -59,6 +60,7 @@ export interface RawFlag {
 export interface LiveOpsSnapshot {
   flags: Record<string, RawFlag>;
   maintenance: MaintenanceWindow;
+  /** The API's effective schedule per playlist; ids it does not know fall back to the caller's copy. */
   playlists: PlaylistOverride[];
   /** API clock (epoch ms) when the snapshot was taken. */
   serverTime: number;
@@ -78,11 +80,22 @@ export const EMPTY_SNAPSHOT: LiveOpsSnapshot = {
  * Server-side kill switches read a flag's master `enabled` only: percentage
  * rollouts are per player (sticky buckets) and only mean something where a
  * player is known, which is the client's `GET /flags`.
+ *
+ * Times passed in are the caller's clock; `offsetMs` (measured when the
+ * snapshot was fetched) shifts them onto the API's clock, so a service whose
+ * clock drifted still opens and closes windows when the API says it should.
  */
 export class LiveOpsState {
   private readonly overrides: Map<string, PlaylistOverride>;
 
-  constructor(readonly snapshot: LiveOpsSnapshot) {
+  /**
+   * @param snapshot - What the API answered.
+   * @param offsetMs - API clock minus the caller's clock.
+   */
+  constructor(
+    readonly snapshot: LiveOpsSnapshot,
+    readonly offsetMs = 0,
+  ) {
     this.overrides = new Map(snapshot.playlists.map((p) => [p.id, p]));
   }
 
@@ -94,18 +107,19 @@ export class LiveOpsState {
 
   /** The maintenance window and its phase at `nowMs`. */
   maintenance(nowMs: number): MaintenanceWindow & { phase: MaintenancePhase } {
-    return { ...this.snapshot.maintenance, phase: maintenancePhase(this.snapshot.maintenance, nowMs) };
+    const phase = maintenancePhase(this.snapshot.maintenance, nowMs + this.offsetMs);
+    return { ...this.snapshot.maintenance, phase };
   }
 
   /**
-   * A playlist's phase with the operator override merged over its bundled schedule.
+   * A playlist's phase: the API's schedule when it sent one, else `bundled`.
    *
    * @param id - Playlist id.
    * @param bundled - The schedule shipped with content.
    * @param nowMs - The instant.
    */
   playlist(id: string, bundled: PlaylistSchedule | null | undefined, nowMs: number): PlaylistPhase {
-    return playlistPhase(mergeSchedule(bundled, this.overrides.get(id)), nowMs);
+    return playlistPhase(mergeSchedule(bundled, this.overrides.get(id)), nowMs + this.offsetMs);
   }
 }
 
@@ -237,6 +251,7 @@ export class ApiLiveOps implements LiveOpsSource {
   private async load(): Promise<LiveOpsState> {
     try {
       const body = '{}';
+      const sentAt = this.now();
       const res = await this.fetchFn(`${this.opts.apiUrl}/internal/liveops`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...signInternal(this.opts.secret, body, wallClock()) },
@@ -246,7 +261,9 @@ export class ApiLiveOps implements LiveOpsSource {
       if (!res.ok) throw new Error(`API answered ${res.status}`);
       const snap = parseSnapshot(await res.json());
       if (!snap) throw new Error('malformed live-ops snapshot');
-      this.state = new LiveOpsState(snap);
+      // Measured against the injected clock: the same one callers pass in.
+      const offset = snap.serverTime > 0 ? clockOffset(snap.serverTime, sentAt, this.now()) : 0;
+      this.state = new LiveOpsState(snap, offset);
       this.failures = 0;
     } catch (err) {
       this.failures++;

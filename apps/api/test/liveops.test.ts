@@ -196,7 +196,7 @@ describe('service snapshot and server errors', () => {
     expect(res.json()).toMatchObject({
       flags: { 'mutators.chaos': { enabled: false } },
       maintenance: { enabled: true, message: 'Soon', startsAt: iso(T + 60_000) },
-      playlists: [{ id: 'duos', hidden: true }],
+      playlists: expect.arrayContaining([expect.objectContaining({ id: 'duos', hidden: true })]),
       serverTime: T,
     });
     expect(res.json().flags.maintenance).toBeUndefined();

@@ -24,7 +24,9 @@ describe('playlist schedules', () => {
   it('accept ISO instants with offsets and reject anything else', () => {
     const base = { id: 'x', name: 'X', pool: [{ roundId: 'tilt-town' }] };
     expect(ShowPlaylistSchema.safeParse({ ...base, endsAt: '2026-12-01T00:00:00Z' }).success).toBe(true);
-    expect(ShowPlaylistSchema.safeParse({ ...base, startsAt: '2026-12-01T00:00:00+02:00' }).success).toBe(true);
+    expect(ShowPlaylistSchema.safeParse({ ...base, startsAt: '2026-12-01T00:00:00+02:00' }).success).toBe(
+      true,
+    );
     expect(ShowPlaylistSchema.safeParse({ ...base, endsAt: 'next tuesday' }).success).toBe(false);
   });
 });

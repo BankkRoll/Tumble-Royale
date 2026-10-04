@@ -143,7 +143,9 @@ export class SceneDirector {
    *   compiling in parallel off the GPU process's main thread;
    * - `pipelines`: waits for those pipelines;
    * - `upload`: the same batches again, now drawing, so the first visible
-   *   frame finds geometry, textures and bind groups on the GPU.
+   *   frame finds geometry, textures and bind groups on the GPU;
+   * - `gpu`: waits until the GPU executed those draws (WebGL2 compiles
+   *   shaders on first draw, in the GPU process).
    *
    * @param view - The fully built view (ownership transfers to the director when `warm` starts).
    * @param onHandOver - Called once the director owns the view (its next swap disposes it).
@@ -176,6 +178,13 @@ export class SceneDirector {
         name: 'upload',
         weight: 4,
         run: () => (this.current === view ? this.warmView(view) : undefined),
+      },
+      {
+        name: 'gpu',
+        weight: 2,
+        run: async () => {
+          if (this.current === view) await this.post.gpuIdle();
+        },
       },
     ];
   }

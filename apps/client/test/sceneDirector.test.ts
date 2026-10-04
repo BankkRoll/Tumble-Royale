@@ -31,8 +31,12 @@ function fakePost(batches = 3, fail = false) {
     renders: 0,
     setView: vi.fn(),
     setGrade: vi.fn(),
+    gpuWaits: 0,
     render() {
       post.renders++;
+    },
+    async gpuIdle() {
+      post.gpuWaits++;
     },
     beginWarmUp(): SceneWarmUp {
       warm.begun++;
@@ -70,7 +74,7 @@ describe('SceneDirector.precompileSteps', () => {
     const v = view();
     const handed = vi.fn();
     const steps = d.precompileSteps(v, handed);
-    expect(steps.map((s) => s.name)).toEqual(['warm', 'pipelines', 'upload']);
+    expect(steps.map((s) => s.name)).toEqual(['warm', 'pipelines', 'upload', 'gpu']);
     const progress: number[] = [];
     const t = await runLoadPipeline(steps, { ...quiet, sliceMs: 0, onProgress: (p) => progress.push(p) });
     expect(t.cancelled).toBe(false);
@@ -83,6 +87,7 @@ describe('SceneDirector.precompileSteps', () => {
     // The generator's finally restores the scene even after a complete run (cancel is idempotent).
     expect(warm.cancelled).toBe(2);
     expect(post.renders).toBe(0);
+    expect(post.gpuWaits).toBe(1);
     expect(progress.at(-1)).toBe(1);
   });
 
@@ -120,6 +125,7 @@ describe('SceneDirector.precompileSteps', () => {
     await t;
     expect(warm.nexts).toBe(2);
     expect(warm.begun).toBe(1);
+    expect(post.gpuWaits).toBe(0);
     expect(v.disposed).toBe(1);
   });
 

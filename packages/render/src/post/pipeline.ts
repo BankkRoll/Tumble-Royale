@@ -41,7 +41,7 @@ import { bloom, type default as BloomNode } from 'three/addons/tsl/display/Bloom
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 import { smaa } from 'three/addons/tsl/display/SMAANode.js';
 import type { ThemeDefinition } from '@tumble/content/themes';
-import { beginSceneWarmUp, type SceneWarmUp } from './warmUp.ts';
+import { beginSceneWarmUp, waitForGpuIdle, type SceneWarmUp } from './warmUp.ts';
 
 /**
  * Tiered TSL post-processing stack:
@@ -179,6 +179,8 @@ export interface PostPipeline {
    * @param budgetMs - Target main-thread time per {@link SceneWarmUp.next}.
    */
   beginWarmUp(budgetMs?: number): SceneWarmUp;
+  /** Resolves once the GPU executed everything submitted so far (see {@link waitForGpuIdle}). */
+  gpuIdle(): Promise<void>;
   setSettings(patch: Partial<PostSettings>): void;
   /** Applies a grade instantly. */
   setGrade(grade: GradeParams): void;
@@ -413,6 +415,9 @@ export function createPostPipeline(
         render: () => api.render(),
         ...(budgetMs !== undefined ? { budgetMs } : {}),
       });
+    },
+    gpuIdle(): Promise<void> {
+      return waitForGpuIdle(renderer);
     },
     setSettings(patch: Partial<PostSettings>): void {
       const structural =

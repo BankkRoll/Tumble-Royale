@@ -17,6 +17,58 @@ import type { Object3D, Scene, WebGPURenderer } from 'three/webgpu';
 /** Longest {@link SceneWarmUp.settle} waits before letting the scene show anyway. */
 export const WARM_UP_TIMEOUT_MS = 20_000;
 
+/** The backend surface {@link waitForGpuIdle} uses (`renderer.backend`). */
+interface BackendLike {
+  isWebGPUBackend?: boolean;
+  device?: { queue?: { onSubmittedWorkDone?: () => Promise<void> } };
+  gl?: WebGL2RenderingContext;
+}
+
+/**
+ * Resolves once the GPU has executed everything submitted so far (at most
+ * `timeoutMs`), polling without blocking the main thread.
+ *
+ * PERF: WebGL2 through ANGLE/D3D11 compiles a program's shaders on its first
+ * draw, in the GPU process: the warm-up's draws return at once, and the
+ * first visible frames then waited on seconds of compiles. Waiting for the
+ * GPU while still covered moves that wait under the loading cover.
+ *
+ * @param renderer - The renderer whose work to wait for.
+ * @param timeoutMs - Longest wait (a lost device never signals).
+ * @returns Resolves when the GPU caught up, or at the timeout.
+ */
+export function waitForGpuIdle(renderer: WebGPURenderer, timeoutMs = WARM_UP_TIMEOUT_MS): Promise<void> {
+  const backend = (renderer as unknown as { backend?: BackendLike }).backend;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+  });
+  let idle: Promise<void>;
+  const queue = backend?.device?.queue;
+  const gl = backend?.gl;
+  if (backend?.isWebGPUBackend && queue?.onSubmittedWorkDone) {
+    idle = queue.onSubmittedWorkDone();
+  } else if (gl && typeof gl.fenceSync === 'function') {
+    const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    gl.flush();
+    idle = new Promise<void>((resolve) => {
+      const poll = (): void => {
+        const status = sync ? gl.clientWaitSync(sync, 0, 0) : gl.ALREADY_SIGNALED;
+        if (status === gl.TIMEOUT_EXPIRED) {
+          setTimeout(poll, 16);
+          return;
+        }
+        if (sync) gl.deleteSync(sync);
+        resolve();
+      };
+      poll();
+    });
+  } else {
+    idle = Promise.resolve();
+  }
+  return Promise.race([idle.catch(() => {}), timeout]).finally(() => clearTimeout(timer));
+}
+
 /** The slice of three's private pipeline cache that {@link forceAsyncPipelines} redirects. */
 interface PipelineCache {
   getForRender(renderObject: unknown, promises?: Promise<void>[] | null): unknown;
@@ -146,20 +198,24 @@ function isRenderable(o: Object3D): boolean {
   return r.isMesh === true || r.isPoints === true || r.isLine === true || r.isSprite === true;
 }
 
-/** A hidden placeholder may not have geometry yet (empty trails, pooled decals); drawing it only warns. */
+type WithGeometry = Object3D & {
+  geometry?: {
+    attributes?: { position?: { count: number } };
+    index?: { count: number } | null;
+    drawRange?: { count: number };
+  };
+};
+
+/**
+ * A hidden placeholder may not have geometry yet (pooled decals); drawing it
+ * only warns. An empty draw range is fine: trails start with one and fill it
+ * as they emit, and three still builds their pipeline (it just draws nothing),
+ * which would otherwise compile on the frame a trail first shows, mid-round.
+ */
 function hasPositions(o: Object3D): boolean {
-  const g = (
-    o as Object3D & {
-      geometry?: {
-        attributes?: { position?: { count: number } };
-        index?: { count: number } | null;
-        drawRange?: { count: number };
-      };
-    }
-  ).geometry;
+  const g = (o as WithGeometry).geometry;
   if ((g?.attributes?.position?.count ?? 0) === 0) return false;
-  if (g?.index && g.index.count === 0) return false;
-  return (g?.drawRange?.count ?? 1) > 0;
+  return !(g?.index && g.index.count === 0);
 }
 
 /**
@@ -301,8 +357,13 @@ export interface SceneWarmUp {
 
 const FIRST_BATCH = 8;
 const MAX_BATCH = 256;
-/** Renders of one batch before moving on regardless (an object whose shader key never settles must not stall the load). */
-const MAX_RETRIES = 64;
+/**
+ * Shader builds one object can need (scene pass, shadow pass, back and front
+ * side): a batch renders at most this many times per object plus a few
+ * before moving on regardless, so an object whose shader key never settles
+ * can't stall the load. Every render builds at least one shader.
+ */
+const BUILDS_PER_OBJECT = 4;
 
 /**
  * Starts warming `scene` up. Call {@link SceneWarmUp.next} once per slice
@@ -389,7 +450,7 @@ export function beginSceneWarmUp(
       }
       const ms = now() - t0;
       // A batch that left objects out renders again: they draw (and build) next time.
-      if (skipped && ++retries < MAX_RETRIES) return true;
+      if (skipped && ++retries < (end - index) * BUILDS_PER_OBJECT + 8) return true;
       retries = 0;
       index = end;
       if (ms < budget / 3) batch = Math.min(MAX_BATCH, batch * 2);

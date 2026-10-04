@@ -1,7 +1,12 @@
 import { BoxGeometry, BufferGeometry, Group, Mesh, MeshBasicMaterial, PointLight, Scene } from 'three/webgpu';
 import type { Object3D, WebGPURenderer } from 'three/webgpu';
-import { describe, expect, it } from 'vitest';
-import { beginSceneWarmUp, forceAsyncPipelines, limitShaderBuilds } from '../src/post/warmUp.ts';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  beginSceneWarmUp,
+  forceAsyncPipelines,
+  limitShaderBuilds,
+  waitForGpuIdle,
+} from '../src/post/warmUp.ts';
 
 /** The private renderer surface the warm-up touches, recording what it saw. */
 class FakePipelines {
@@ -25,7 +30,14 @@ function fakeRenderer(): { renderer: WebGPURenderer; pipelines: FakePipelines; f
   return { renderer, pipelines, frames: () => frames };
 }
 
-function course(): { scene: Scene; meshes: Mesh[]; hidden: Mesh; empty: Mesh; light: PointLight } {
+function course(): {
+  scene: Scene;
+  meshes: Mesh[];
+  hidden: Mesh;
+  empty: Mesh;
+  trail: Mesh;
+  light: PointLight;
+} {
   const scene = new Scene();
   const geo = new BoxGeometry();
   const meshes: Mesh[] = [];
@@ -44,15 +56,20 @@ function course(): { scene: Scene; meshes: Mesh[]; hidden: Mesh; empty: Mesh; li
   const empty = new Mesh(new BufferGeometry(), new MeshBasicMaterial());
   empty.visible = false;
   scene.add(empty);
+  // A trail before its first emit: buffers allocated, nothing in the draw range yet.
+  const trail = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+  trail.geometry.setDrawRange(0, 0);
+  trail.visible = false;
+  scene.add(trail);
   const light = new PointLight();
   scene.add(light);
-  return { scene, meshes, hidden, empty, light };
+  return { scene, meshes, hidden, empty, trail, light };
 }
 
 describe('beginSceneWarmUp', () => {
   it('draws every object (hidden ones too) in batches and restores the scene exactly', async () => {
     const { renderer, pipelines, frames } = fakeRenderer();
-    const { scene, meshes, hidden, empty, light } = course();
+    const { scene, meshes, hidden, empty, trail, light } = course();
     meshes[0]!.frustumCulled = false;
     const seen = new Map<Object3D, number>();
     let renders = 0;
@@ -74,7 +91,7 @@ describe('beginSceneWarmUp', () => {
     while (w.next()) steps++;
     expect(w.progress).toBe(1);
     expect(steps).toBeGreaterThan(0);
-    for (const m of [...meshes, hidden]) expect(seen.get(m)).toBe(1);
+    for (const m of [...meshes, hidden, trail]) expect(seen.get(m)).toBe(1);
     expect(seen.has(empty)).toBe(false);
     expect(frames()).toBe(renders);
     expect(pipelines.calls.every((c) => Array.isArray(c))).toBe(true);
@@ -84,7 +101,8 @@ describe('beginSceneWarmUp', () => {
     expect(hidden.visible).toBe(false);
     expect(meshes[0]!.frustumCulled).toBe(false);
     expect(meshes.slice(1).every((m) => m.frustumCulled)).toBe(true);
-    expect(scene.children.every((c) => c === hidden || c === empty || c.visible)).toBe(true);
+    expect(scene.children.every((c) => c === hidden || c === empty || c === trail || c.visible)).toBe(true);
+    expect(trail.visible).toBe(false);
     expect(scene.matrixWorldAutoUpdate).toBe(true);
 
     const fractions: number[] = [];
@@ -268,5 +286,61 @@ describe('beginSceneWarmUp with a build budget', () => {
     // The first build always fits; a second while the slice is under budget (10 < 16), a third doesn't.
     expect(builtPerSlice).toEqual([2, 2, 2]);
     expect(meshes.every((m) => m.visible)).toBe(true);
+  });
+});
+
+describe('waitForGpuIdle', () => {
+  it('waits for the WebGPU queue', async () => {
+    let done = false;
+    const renderer = {
+      backend: {
+        isWebGPUBackend: true,
+        device: { queue: { onSubmittedWorkDone: () => Promise.resolve().then(() => (done = true)) } },
+      },
+    } as unknown as WebGPURenderer;
+    await waitForGpuIdle(renderer);
+    expect(done).toBe(true);
+  });
+
+  it('polls a WebGL2 fence until it signals, without blocking', async () => {
+    vi.useFakeTimers();
+    let polls = 0;
+    const deleted: unknown[] = [];
+    const gl = {
+      SYNC_GPU_COMMANDS_COMPLETE: 1,
+      TIMEOUT_EXPIRED: 2,
+      ALREADY_SIGNALED: 3,
+      fenceSync: () => ({}),
+      flush: () => {},
+      clientWaitSync: (_s: unknown, _f: number, timeout: number) => {
+        expect(timeout).toBe(0);
+        return ++polls < 3 ? 2 : 3;
+      },
+      deleteSync: (s: unknown) => deleted.push(s),
+    };
+    const idle = waitForGpuIdle({ backend: { gl } } as unknown as WebGPURenderer);
+    await vi.advanceTimersByTimeAsync(100);
+    await idle;
+    vi.useRealTimers();
+    expect(polls).toBe(3);
+    expect(deleted).toHaveLength(1);
+  });
+
+  it('gives up at the timeout when the GPU never answers', async () => {
+    vi.useFakeTimers();
+    const renderer = {
+      backend: {
+        isWebGPUBackend: true,
+        device: { queue: { onSubmittedWorkDone: () => new Promise(() => {}) } },
+      },
+    } as unknown as WebGPURenderer;
+    let resolved = false;
+    const idle = waitForGpuIdle(renderer, 500).then(() => (resolved = true));
+    await vi.advanceTimersByTimeAsync(499);
+    expect(resolved).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await idle;
+    vi.useRealTimers();
+    expect(resolved).toBe(true);
   });
 });

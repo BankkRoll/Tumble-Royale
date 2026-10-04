@@ -57,7 +57,8 @@ What a player can do today:
   a 100-tier pass, daily/weekly/seasonal/milestone challenges, 45
   achievements (some hidden), a collection log, a daily login streak,
   limited-time events with their own challenges, points track and cosmetics,
-  store, Crown Shard shop, free Gem paths, live news and notifications
+  store with self-service refunds (Gem packs go to a staff refund queue),
+  Crown Shard shop, free Gem paths, live news and notifications
 - **Watch:** keep spectating after elimination, round replays (save and
   reopen them), photo mode
 - **Input & access:** keyboard/mouse with rebinding, gamepad menus,

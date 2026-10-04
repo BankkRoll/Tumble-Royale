@@ -156,3 +156,24 @@ append-only `admin_audit_log` (instead of the old `audit.admin.*` analytics
 events) inside the action's transaction, so an action without its audit row
 cannot commit. The table has no foreign keys: deleting a staff or player
 account must not delete the record of what was done to or by it.
+
+## Refunds: self-service for currency, staff review for money
+
+Store purchases paid in Gumballs or Gems are refunded by the player at once
+(7 days, 3 a year), while Gem packs only ever become a request an admin
+approves. Currency refunds are cheap to undo and abuse is bounded by the
+limit; real money involves the payment provider, fraud and chargeback
+history, so a person decides. "Unused" was dropped as a rule because the
+game does not record what was worn in which show; the window and the yearly
+limit bound "wear it, then refund" instead.
+
+A Gem pack refund does not move Gems by itself. Approval asks Stripe to
+refund, and the existing `charge.refunded` reconciliation takes the Gems back
+(debt for any already spent, cosmetics kept), so a refund we issue and one
+issued from the Stripe dashboard or forced by a dispute follow one rule. The
+Stripe call runs after the transaction that records the decision and its
+audit row, never inside it: a slow provider cannot hold row locks, a second
+approval sees the request already `processing`, and a webhook that lands
+before Stripe answers is not overwritten. A failure goes back to staff as
+`failed`, and a retry uses a new idempotency key because Stripe would replay
+the failed refund for the old one.

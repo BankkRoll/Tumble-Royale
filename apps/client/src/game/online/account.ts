@@ -251,6 +251,9 @@ export class OnlineAccount {
   private readonly soloMembers = new Set<string>();
   /** Bumps per reward wait so a newer show cancels an older poll. */
   private rewardWait = 0;
+  /** An achievements + collection reload is running; a burst of unlock notifications shares it. */
+  private unlocksInFlight = false;
+  private unlocksQueued = false;
 
   constructor(
     readonly api: ApiClient,
@@ -749,6 +752,25 @@ export class OnlineAccount {
     } catch (err) {
       console.warn('[account] collection failed', err);
     }
+  }
+
+  /**
+   * Reloads achievements and the collection after an unlock notification. A
+   * first sign-in can unlock several backfilled achievements at once; their
+   * notifications collapse into one reload plus at most one follow-up.
+   */
+  private refreshUnlocksSoon(): void {
+    if (this.unlocksInFlight) {
+      this.unlocksQueued = true;
+      return;
+    }
+    this.unlocksInFlight = true;
+    void Promise.all([this.refreshAchievements(), this.refreshCollection()]).finally(() => {
+      this.unlocksInFlight = false;
+      if (!this.unlocksQueued) return;
+      this.unlocksQueued = false;
+      this.refreshUnlocksSoon();
+    });
   }
 
   /** Claims today's login reward; the API decides the day and the streak. */
@@ -1305,7 +1327,7 @@ export class OnlineAccount {
           ...(typeof m.body === 'string' ? { body: m.body } : {}),
           icon: achievement ? '🏅' : '🎁',
         });
-        if (achievement) void Promise.all([this.refreshAchievements(), this.refreshCollection()]);
+        if (achievement) this.refreshUnlocksSoon();
       }),
       rt.on('socket_open', () => {
         rt.send({ type: 'presence', ...this.presence });

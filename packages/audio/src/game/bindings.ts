@@ -380,6 +380,11 @@ export function createGameAudio(engine: AudioEngine, opts: GameAudioOptions = {}
         sfx('teleport.zap', e.player, e.to, 1, 0.08);
         return;
       case 'score':
+        // Individual points (score-target hunts) chime for their scorer only; team points get the horn.
+        if (e.team < 0) {
+          if (isLocal && e.delta > 0) sfx('ui.coin', e.player, undefined, 0.8);
+          return;
+        }
         if (e.delta > 0) {
           sfx('team.horn', null, undefined, 0.8);
           sfx('crowd.cheer', null, undefined, 0.5, 0.1);

@@ -6,6 +6,7 @@
 import type { GameAudio } from '@tumble/audio';
 import { teamColor, teamShape } from '@tumble/render';
 import type { RoundDefinition, RoundType } from '@tumble/shared';
+import { DEFAULT_SCORE_GOAL } from '@tumble/sim/rounds';
 import { ui, type EmoteSlot, type HudState, type ProgressMarker, type TeamScore } from '@tumble/ui';
 
 /** Seconds between HUD pushes (12 Hz, inside the store's 10–15 Hz budget). */
@@ -113,6 +114,10 @@ export class HudMapper {
       progress: 0,
       leaders: [],
       teams: [],
+      scoreGoal:
+        this.round.qualification.mode === 'scoreTarget'
+          ? (this.round.qualification.scoreGoal ?? DEFAULT_SCORE_GOAL)
+          : 0,
       controlsHint: !spectating,
       device,
       emotes,

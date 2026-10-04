@@ -6,8 +6,9 @@
  * - A *strategy* per round style picks a movement target: course following
  *   (races, crown climbs, towers), survival roaming (seek intact ground away
  *   from crowds and edges), wandering, team objectives (eggs → nest, ball →
- *   goal, zones), hunt chase/flee, and logic (move to the obstacle-provided
- *   safe spot, with skill-based memory).
+ *   goal, zones), hunt chase/flee, logic (move to the obstacle-provided
+ *   safe spot, with skill-based memory) and objective rounds (race to the spot
+ *   an obstacle names: the nearest pickup, a scoring zone, a free seat).
  * - Course legs: run legs ease into their waypoint; action legs (jump,
  *   jump-dive, dive) run through the take-off at full speed and fire when the
  *   bot crosses the take-off line or reaches a lip, checked every step. Timed
@@ -72,8 +73,13 @@ const PROBE_AHEAD = 0.75;
 const LIP_DROP = 0.7;
 /** Horizontal take-off legs at least this long may become jump-dives for bold bots. */
 const LONG_JUMP = 3.8;
+/**
+ * Logic safe spots closer than this to the last one are the same answer (a
+ * spot within a tile follows the bot as a crowd jostles it; tiles are 5 m+ apart).
+ */
+const LOGIC_SAME_SPOT = 2.6;
 
-type Strategy = 'course' | 'survive' | 'wander' | 'team' | 'hunt' | 'logic';
+type Strategy = 'course' | 'survive' | 'wander' | 'team' | 'hunt' | 'logic' | 'objective';
 
 /** One scheduled button action. */
 const enum Act {
@@ -135,8 +141,11 @@ const PLAN_WALL: readonly Unstick[] = [
   Unstick.SidestepFlip,
 ];
 
-function strategyFor(round: RoundDefinition, nav: NavGraph): Strategy {
-  switch (round.qualification.mode) {
+function strategyFor(round: RoundDefinition, nav: NavGraph, objective: boolean): Strategy {
+  const mode = round.qualification.mode;
+  if (mode === 'scoreTarget' || (objective && mode !== 'teamScore' && mode !== 'holdItem'))
+    return 'objective';
+  switch (mode) {
     case 'finish':
     case 'crownGrab':
       return 'course';
@@ -257,7 +266,7 @@ export class DefaultBotBrain implements BotBrainLike {
     this.rng = new Rng(opts.seed);
     this.p = BOT_SKILLS[opts.skill];
     this.nav = navGraphFor(opts.round);
-    this.strategy = strategyFor(opts.round, this.nav);
+    this.strategy = strategyFor(opts.round, this.nav, opts.objective ?? false);
     this.decisionPhase = ((opts.id % DECISION_TICKS) + DECISION_TICKS) % DECISION_TICKS;
     this.goalTrigger =
       opts.round.triggers.find((t) => t.kind === 'crown') ??
@@ -348,6 +357,9 @@ export class DefaultBotBrain implements BotBrainLike {
           break;
         case 'logic':
           this.decideLogic(view, self);
+          break;
+        case 'objective':
+          this.decideObjective(view, self);
           break;
       }
       this.trackStun(view, self);
@@ -1027,9 +1039,10 @@ export class DefaultBotBrain implements BotBrainLike {
     spot.y = self.pos.y;
     spot.z = self.pos.z;
     if (view.safeSpot(spot)) {
-      const changed = !(
-        Math.abs(spot.x - this.logicSpot.x) < 0.01 && Math.abs(spot.z - this.logicSpot.z) < 0.01
-      );
+      // Spots inside one tile shift as a crowd jostles the bot; only a new tile is a new answer.
+      const changed =
+        (spot.x - this.logicSpot.x) ** 2 + (spot.z - this.logicSpot.z) ** 2 > LOGIC_SAME_SPOT ** 2 ||
+        Number.isNaN(this.logicSpot.x);
       if (changed) {
         this.logicSpot.x = spot.x;
         this.logicSpot.y = spot.y;
@@ -1038,6 +1051,17 @@ export class DefaultBotBrain implements BotBrainLike {
         // A wrong guess is a nearby spot: close enough to look plausible.
         this.offset.x = this.logicKnown ? 0 : this.rng.range(-4, 4);
         this.offset.z = this.logicKnown ? 0 : this.rng.range(-4, 4);
+        if (!this.logicKnown) {
+          // Misremembering means the wrong tile, not walking off the edge of the board.
+          const probe = this.s3;
+          probe.x = spot.x + this.offset.x;
+          probe.y = spot.y + 1;
+          probe.z = spot.z + this.offset.z;
+          if (!view.groundBelow(probe, 3)) {
+            this.offset.x = -this.offset.x;
+            this.offset.z = -this.offset.z;
+          }
+        }
         this.nextRetarget = view.time + this.reactionDelay() * 2;
       }
       if (view.time >= this.nextRetarget) {
@@ -1049,6 +1073,55 @@ export class DefaultBotBrain implements BotBrainLike {
       return;
     }
     this.decideWander(view, self, 3);
+  }
+
+  /**
+   * Objective rounds: run for the spot the obstacles name (the nearest pickup,
+   * a scoring zone, a free seat). A new spot is only noticed after the bot's
+   * reaction delay, so sharp bots win close races; raised targets get a hop
+   * from close range. Standing on the spot is an intentional wait, not stuck.
+   */
+  private decideObjective(view: BotWorldView, self: BotSelfView): void {
+    const spot = this.s2;
+    spot.x = self.pos.x;
+    spot.y = self.pos.y;
+    spot.z = self.pos.z;
+    if (!view.safeSpot(spot)) {
+      this.logicKnown = false;
+      this.decideWander(view, self, 6);
+      return;
+    }
+    const moved = (spot.x - this.logicSpot.x) ** 2 + (spot.z - this.logicSpot.z) ** 2 > 0.8;
+    if (moved || !this.logicKnown) {
+      // Remember where we were heading; the new spot takes over once we react to it.
+      if (!this.logicKnown) {
+        this.offset.x = spot.x;
+        this.offset.y = spot.y;
+        this.offset.z = spot.z;
+      } else {
+        this.offset.x = this.logicSpot.x;
+        this.offset.y = this.logicSpot.y;
+        this.offset.z = this.logicSpot.z;
+      }
+      this.logicSpot.x = spot.x;
+      this.logicSpot.y = spot.y;
+      this.logicSpot.z = spot.z;
+      this.logicKnown = true;
+      this.nextRetarget = view.time + this.reactionDelay();
+    } else {
+      this.logicSpot.y = spot.y;
+    }
+    const goal = view.time >= this.nextRetarget ? this.logicSpot : this.offset;
+    this.setTarget(goal.x, goal.y, goal.z);
+    const d = Math.hypot(goal.x - self.pos.x, goal.z - self.pos.z);
+    const rise = goal.y - (self.pos.y - CENTRE_HEIGHT);
+    if (d < 0.45 && rise < 0.3) {
+      this.speed = 0;
+      return;
+    }
+    this.speed = this.p.speed;
+    if (rise > 0.35 && rise < 2.2 && d < 2.4 && self.grounded && this.act === Act.None)
+      this.schedule(view, Act.Jump, this.reactionDelay() * 0.3);
   }
 
   // ---------------------------------------------------------------------------
@@ -1104,7 +1177,12 @@ export class DefaultBotBrain implements BotBrainLike {
       }
     }
     // A knee-high lip or step we're pushing against: hop it (clumsy bots may bonk first).
-    if (this.hasTarget && this.speed > 0 && this.recover === Recover.None && this.strategy === 'course') {
+    if (
+      this.hasTarget &&
+      this.speed > 0 &&
+      this.recover === Recover.None &&
+      (this.strategy === 'course' || this.strategy === 'objective')
+    ) {
       if (
         Math.hypot(self.vel.x, self.vel.z) < 2.5 &&
         this.blockedAhead(view, self) === 1 &&

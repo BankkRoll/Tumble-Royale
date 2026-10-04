@@ -886,7 +886,11 @@ export abstract class ShowSession {
       type: rs.isFinal ? 'final' : r.type,
       theme: r.theme,
       objective: rs.isFinal && r.type === 'race' ? 'First to the finish wins the Crown!' : r.objective,
-      rules: rulesFor(r.type, rs.isFinal, rs.qualifyTarget, r.duration.seconds),
+      // A round's own card, unless a non-final round is standing in as the final (one winner).
+      rules:
+        r.rulesCard?.length && (r.type === 'final' || !rs.isFinal)
+          ? r.rulesCard
+          : rulesFor(r.type, rs.isFinal, rs.qualifyTarget, r.duration.seconds),
       tips: r.tips.length ? r.tips : ['Dive mid-jump to cover more ground!'],
       roundIndex: rs.index,
       roundCount: this.roundCount,

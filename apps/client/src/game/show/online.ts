@@ -595,6 +595,7 @@ export class OnlineShowSession extends ShowSession {
     this.roundIndex = index;
     this.fates.clear();
     this.qualifyOrder.length = 0;
+    for (const e of this.hudPlayers.values()) e.score = 0;
     this.emoteSlots.clear();
     this.course = null;
     this.courseRound = null;
@@ -725,6 +726,11 @@ export class OnlineShowSession extends ShowSession {
           this.fates.set(e.player, PlayerRoundStatus.Qualified);
           if (!this.qualifyOrder.includes(e.player)) this.qualifyOrder.push(e.player);
         } else if (e.type === 'eliminated') this.fates.set(e.player, PlayerRoundStatus.Eliminated);
+        // Score-target hunts: the obstacle's running total for that player (team -1 = individual).
+        else if (e.type === 'score' && e.team < 0) {
+          const entry = this.hudPlayers.get(e.player);
+          if (entry) entry.score = e.total;
+        }
       }
       this.onSimEvents(this.events);
       this.events.length = 0;

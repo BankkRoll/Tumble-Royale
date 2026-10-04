@@ -30,7 +30,12 @@ export {
 } from './round-time.ts';
 export { RoundTriggers } from './triggers.ts';
 export { RemoteProxy } from './proxy.ts';
-export { ObstacleOracle, type BotSafeSpotProvider } from './oracle.ts';
+export {
+  ObstacleOracle,
+  isBotObjective,
+  type BotObjectiveProvider,
+  type BotSafeSpotProvider,
+} from './oracle.ts';
 export {
   SimpleController,
   createSimpleController,

@@ -15,6 +15,7 @@ import {
   CHALLENGE_SLOTS,
   LOGIN_STREAK_CYCLE,
   LOGIN_STREAK_LADDER,
+  LoginStreakDaySchema,
   MILESTONE_CHALLENGES,
   PASS_TRACKS,
   SEASONAL_CHALLENGE_POOL,
@@ -132,7 +133,13 @@ describe('login streak ladder', () => {
     };
     const day7 = value(LOGIN_STREAK_LADDER[6]!);
     for (const d of LOGIN_STREAK_LADDER.slice(0, 6)) expect(value(d)).toBeLessThan(day7);
-    for (const d of LOGIN_STREAK_LADDER) expect(d.rewards.every((r) => r.kind !== 'cosmetic')).toBe(true);
+    for (const d of LOGIN_STREAK_LADDER)
+      expect(d.rewards.map((r): string => r.kind)).not.toContain('cosmetic');
+  });
+
+  it('refuses a cosmetic on the ladder', () => {
+    const bad = { day: 1, rewards: [{ kind: 'cosmetic', itemId: 'trail.bubbles' }] };
+    expect(LoginStreakDaySchema.safeParse(bad).success).toBe(false);
   });
 
   it('wraps every seven days', () => {

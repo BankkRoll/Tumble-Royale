@@ -7,6 +7,7 @@ import { useEffect, useRef, type JSX } from 'react';
 import { ConnectionLayer, DialogLayer, ToastLayer } from './components/system.tsx';
 import { ChatWidgetLayer } from './hud/ChatWidget.tsx';
 import { ShowMenuButton } from './hud/ShowMenuButton.tsx';
+import { CaptionChip } from './hud/widgets.tsx';
 import { Hud } from './hud/Hud.tsx';
 import { SettingsSheet } from './screens/overlays/SettingsSheet.tsx';
 import { InGameMenu } from './screens/overlays/InGameMenu.tsx';
@@ -89,6 +90,8 @@ export function App(): JSX.Element {
           <HudLayer />
           <ShowMenuButton />
           <ChatWidgetLayer />
+          {/* App-level, not in the HUD: the announcer also talks over intros, results and the wall. */}
+          <CaptionChip />
           <StampLayer />
         </div>
         <ConfettiLayer />

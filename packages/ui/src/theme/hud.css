@@ -460,6 +460,8 @@
   left: 50%;
   bottom: calc(var(--safe-b) + 5.5em);
   transform: translateX(-50%);
+  /* Above every screen, under the stamps: captions run over intros, results and the wall too. */
+  z-index: 27;
   max-width: 80vw;
   padding: 0.4em 1em;
   border-radius: 0.8em;

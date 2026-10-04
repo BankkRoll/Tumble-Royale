@@ -11,7 +11,6 @@ import { EmoteWheel } from './EmoteWheel.tsx';
 import { TouchControls } from './TouchControls.tsx';
 import {
   CameraLockHint,
-  CaptionChip,
   ControlsHint,
   CountdownNumerals,
   GrabStatus,
@@ -73,7 +72,6 @@ export const Hud = memo(function Hud(): JSX.Element {
       <CameraLockHint />
       <GrabStatus />
       <SpectateBanner />
-      <CaptionChip />
       <EmoteWheel />
       <CountdownNumerals />
       <EliminatedSheet />

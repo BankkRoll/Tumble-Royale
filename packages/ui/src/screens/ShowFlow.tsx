@@ -12,6 +12,7 @@ import { TumblerAvatar } from '../components/TumblerAvatar.tsx';
 import { useUI } from '../store/uiStore.ts';
 import { roundTypeStyle, tumblerSwatches } from '../theme/tokens.ts';
 import { fireConfetti } from '../transitions/Confetti.tsx';
+import { PreShowHint } from './PreShowHint.tsx';
 
 /** "SHOW FOUND!" burst. */
 export function MatchFoundScreen(): JSX.Element {
@@ -112,9 +113,7 @@ export function PreShowScreen(): JSX.Element | null {
         </div>
         <Bar value={info.playersJoined / info.maxPlayers} color="var(--mint)" />
       </div>
-      <div className="tr-preshow-hint">
-        <kbd>WASD</kbd> move · <kbd>Space</kbd> jump · <kbd>1–4</kbd> emote — go bonk someone while you wait!
-      </div>
+      <PreShowHint />
     </div>
   );
 }

@@ -332,6 +332,8 @@ export class MenuView implements GameView {
     if (on === this.playing) return;
     if (on && this.dressing) return;
     this.playing = on;
+    // Touch players get their on-screen controls (and the menu steps aside) from this flag.
+    ui.setState({ idlePlay: on });
     this.hangout.wake();
     this.stage.setPlayable(on);
     this.stillTime = 0;
@@ -705,6 +707,7 @@ export class MenuView implements GameView {
 
   dispose(): void {
     this.opts.input.setMouseActions(true);
+    if (this.playing) ui.setState({ idlePlay: false });
     this.games.dispose();
     this.partyLobby.dispose();
     this.lobby.dispose();

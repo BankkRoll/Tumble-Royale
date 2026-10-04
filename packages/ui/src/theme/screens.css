@@ -2883,6 +2883,9 @@
   font-weight: 700;
   min-height: 2.2em;
 }
+.tr-binds-title {
+  margin-top: 0.4em;
+}
 .tr-bind-capture {
   background: var(--lemon) !important;
   animation: tr-pulse 0.8s ease-in-out infinite;

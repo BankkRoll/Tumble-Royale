@@ -2,7 +2,7 @@
  * Reports, feature flags, analytics events, leaderboards and admin tooling.
  */
 import { createHash } from 'node:crypto';
-import { and, asc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import {
   ANALYTICS_EVENTS,
@@ -20,7 +20,6 @@ import {
   activeBans,
   invalidateBanCache,
   optionalUser,
-  requireAdmin,
   requireInternalSignature,
   requireUser,
   userIdFromToken,
@@ -29,8 +28,11 @@ import { badRequest, notFound, parse } from '../http/errors.ts';
 import { BOARD_TYPES, readLeaderboard } from '../leaderboards/service.ts';
 import { maskProfanity } from '../names/profanity.ts';
 import { invalidateLiveOps, MAINTENANCE_FLAG_KEY, serverFlag } from '../liveops/state.ts';
-import { revokeMarks } from './ban-evasion.ts';
+import { chatEvidence } from '../social/chatEvidence.ts';
 import { friendIds } from '../social/friends.ts';
+import { recordAudit } from '../staff/audit.ts';
+import { requireStaff } from '../staff/auth.ts';
+import { announceSanction, applySanction, BAN_SCOPES, liftBan, MAX_SANCTION_HOURS } from './sanctions.ts';
 
 const ReportBody = z.object({
   targetUserId: z.string().uuid(),
@@ -83,15 +85,11 @@ const BoardQuery = z.object({
 });
 const BanBody = z.object({
   userId: z.string().uuid(),
-  scope: z.enum(['all', 'ranked', 'chat']).default('all'),
-  reason: z.string().min(3).max(500),
-  durationHours: z
-    .number()
-    .int()
-    .min(1)
-    .max(24 * 365 * 10)
-    .optional(),
+  scope: z.enum(BAN_SCOPES).default('all'),
+  reason: z.string().trim().min(3).max(500),
+  durationHours: z.number().int().min(1).max(MAX_SANCTION_HOURS).optional(),
 });
+const LiftBody = z.object({ reason: z.string().trim().min(3).max(500).optional() });
 const BanLookupBody = z.object({ userIds: z.array(z.string().min(1).max(64)).min(1).max(64) });
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FlagKeyParam = z.object({ key: z.string().regex(/^[A-Za-z0-9_.-]{2,64}$/) });
@@ -127,6 +125,7 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
         matchId: body.matchId ?? null,
         reason: body.reason,
         details: body.details ? maskProfanity(body.details) : null,
+        evidence: await chatEvidence(ctx.kv, body.targetUserId, auth.userId),
       })
       .returning({ id: reports.id });
     return reply.code(201).send({ id: row?.id, status: 'open' });
@@ -211,55 +210,72 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
     return { bans: out };
   });
 
-  // --- Admin (ADMIN_TOKEN) -------------------------------------------------
-
-  app.get('/internal/reports', async (req) => {
-    requireAdmin(ctx, req);
-    const rows = await ctx.db
-      .select()
-      .from(reports)
-      .where(eq(reports.status, 'open'))
-      .orderBy(asc(reports.createdAt))
-      .limit(200);
-    return { reports: rows };
-  });
+  // --- Admin (ADMIN_TOKEN or a console session) -------------------------------
 
   app.post('/internal/bans', async (req, reply) => {
-    requireAdmin(ctx, req);
+    const actor = await requireStaff(ctx, req, 'moderator');
     const body = parse(BanBody, req.body);
+    const kind = body.scope === 'chat' ? 'mute' : body.scope === 'ranked' ? 'ranked_ban' : 'ban';
     const now = ctx.now();
-    const [row] = await ctx.db
-      .insert(bans)
-      .values({
+    const applied = await ctx.db.transaction(async (tx) => {
+      const s = await applySanction(tx, now, {
         userId: body.userId,
-        scope: body.scope,
+        kind,
         reason: body.reason,
-        expiresAt: body.durationHours ? new Date(now.getTime() + body.durationHours * 3_600_000) : null,
-      })
-      .returning();
-    await ctx.db
-      .update(reports)
-      .set({ status: 'actioned' })
-      .where(and(eq(reports.targetUserId, body.userId), eq(reports.status, 'open')));
-    await invalidateBanCache(ctx, body.userId);
+        durationHours: body.durationHours,
+        issuedBy: actor.label,
+        closeOpenReports: true,
+      });
+      await recordAudit(
+        ctx,
+        req,
+        actor,
+        {
+          action: `player.${kind}`,
+          targetType: 'user',
+          targetId: body.userId,
+          reason: body.reason,
+          details: { banId: s.banId, scope: body.scope, durationHours: body.durationHours ?? null },
+        },
+        tx,
+      );
+      return s;
+    });
+    await announceSanction(ctx, applied, body.reason);
+    const [row] = await ctx.db.select().from(bans).where(eq(bans.id, applied.banId!));
     return reply.code(201).send(row);
   });
 
   app.delete('/internal/bans/:id', async (req, reply) => {
-    requireAdmin(ctx, req);
+    const actor = await requireStaff(ctx, req, 'moderator');
     const { id } = parse(z.object({ id: z.string().uuid() }), req.params);
-    const [row] = await ctx.db
-      .update(bans)
-      .set({ revokedAt: ctx.now() })
-      .where(eq(bans.id, id))
-      .returning({ userId: bans.userId, evasionOf: bans.evasionOf });
-    if (row?.evasionOf) await revokeMarks(ctx.db, row.evasionOf, ctx.now());
-    if (row) await invalidateBanCache(ctx, row.userId);
+    // The CLI sends no body; the console sends the reason.
+    const { reason } = parse(LiftBody, req.body ?? {});
+    const lifted = await ctx.db.transaction(async (tx) => {
+      const row = await liftBan(tx, ctx.now(), id);
+      if (row && !row.alreadyLifted) {
+        await recordAudit(
+          ctx,
+          req,
+          actor,
+          {
+            action: 'player.unban',
+            targetType: 'user',
+            targetId: row.userId,
+            reason: reason ?? null,
+            details: { banId: id, scope: row.scope },
+          },
+          tx,
+        );
+      }
+      return row;
+    });
+    if (lifted) await invalidateBanCache(ctx, lifted.userId);
     return reply.code(204).send();
   });
 
   app.put('/internal/flags/:key', async (req) => {
-    requireAdmin(ctx, req);
+    const actor = await requireStaff(ctx, req);
     const { key } = parse(FlagKeyParam, req.params);
     if (key === MAINTENANCE_FLAG_KEY)
       throw badRequest(
@@ -278,11 +294,17 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
       .values({ key, ...values })
       .onConflictDoUpdate({ target: featureFlags.key, set: values });
     await invalidateLiveOps(ctx);
+    await recordAudit(ctx, req, actor, {
+      action: 'flag.set',
+      targetType: 'flag',
+      targetId: key,
+      details: { enabled: values.enabled, rolloutPercent: values.rolloutPercent, payload: values.payload },
+    });
     return { key, ...values };
   });
 
   app.get('/internal/ledger/:userId', async (req) => {
-    requireAdmin(ctx, req);
+    await requireStaff(ctx, req);
     const { userId } = parse(z.object({ userId: z.string().uuid() }), req.params);
     return verifyLedger(ctx.db, userId);
   });

@@ -6,7 +6,9 @@
  *   the deal of the day) and every other bundle;
  * - This week: the discounted weekly picks;
  * - Catalog: every item for sale, with slot chips and rarity/price/name sort;
- * - Crown Shards: the weekly royal exclusives.
+ * - Crown Shards: the weekly royal exclusives;
+ * - Purchases (online accounts): purchase history with refunds
+ *   (`PurchaseHistory.tsx`).
  *
  * Every card names its locker slot, shows owned / price / can't-afford state
  * and previews on the player's own Tumbler. Selecting an offer tries it on
@@ -33,7 +35,9 @@ import {
   type StoreSection,
 } from '../../store/types.ts';
 import { rarityLabels } from '../../theme/tokens.ts';
+import { useAccountUI } from '../../store/account.ts';
 import { DressingRoom, ItemDetail, isEquipped, useActiveLoadout } from './DressingRoom.tsx';
+import { PurchaseHistorySection } from './PurchaseHistory.tsx';
 
 /** Anything on a shelf: a Gumball/Gem offer, a bundle or a Crown Shard offer. */
 interface ShelfOffer {
@@ -62,6 +66,7 @@ const SECTION_LABELS: Readonly<Record<StoreSection, string>> = {
   week: 'This week',
   catalog: 'Catalog',
   shards: 'Crown Shards',
+  purchases: 'Purchases',
 };
 
 type SortKey = 'rarity' | 'priceLow' | 'priceHigh' | 'name';
@@ -360,6 +365,7 @@ function StoreShelves(): JSX.Element {
   const deepSection = useUI((s) => s.storeSection);
   const loadout = useActiveLoadout();
   const wallet = useWallet();
+  const online = useAccountUI((a) => a.session === 'online');
   const [section, setSection] = useState<StoreSection>(() => deepSection ?? 'today');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const now = useNow(1000);
@@ -390,6 +396,7 @@ function StoreShelves(): JSX.Element {
     ...(weekly.length > 0 ? (['week'] as const) : []),
     ...(catalog.length > 0 ? (['catalog'] as const) : []),
     ...(shards.length > 0 ? (['shards'] as const) : []),
+    ...(online ? (['purchases'] as const) : []),
   ];
   const active = sections.includes(section) ? section : 'today';
 
@@ -548,6 +555,7 @@ function StoreShelves(): JSX.Element {
               {active === 'catalog' && (
                 <CatalogSection offers={catalog} wallet={wallet} selectedId={selectedId} onSelect={select} />
               )}
+              {active === 'purchases' && <PurchaseHistorySection />}
               {active === 'shards' && shardShop && (
                 <section className="tr-col tr-shard-shop" aria-label="Crown Shards" data-testid="shard-shop">
                   <div className="tr-panel-head">

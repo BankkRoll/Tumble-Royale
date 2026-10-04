@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
-import { formatErrors, loadEnv, parseArgs, run, toRequest } from './admin.mjs';
+import { formatErrors, formatRefunds, loadEnv, parseArgs, run, toRequest } from './admin.mjs';
 
 function capture() {
   const out = [];
@@ -55,6 +55,82 @@ describe('toRequest', () => {
     assert.deepEqual(req(['user', 'rename', 'u1', 'Polite', 'Name']).body, { displayName: 'Polite Name' });
   });
 
+  it('maps the refund commands', () => {
+    const list = req([
+      'refunds',
+      'list',
+      '--status',
+      'pending',
+      '--kind',
+      'real_money',
+      '--user',
+      'u1',
+      '--limit',
+      '5',
+    ]);
+    assert.equal(list.method, 'GET');
+    assert.equal(list.path, '/internal/refunds?status=pending&kind=real_money&userId=u1&limit=5');
+    assert.equal(list.format, formatRefunds);
+    assert.equal(req(['refunds', 'list']).path, '/internal/refunds');
+    assert.deepEqual(req(['refunds', 'approve', 'r/1', '--note', 'wrong pack']), {
+      method: 'POST',
+      path: '/internal/refunds/r%2F1/approve',
+      body: { note: 'wrong pack' },
+    });
+    assert.deepEqual(req(['refunds', 'approve', 'r1']).body, {});
+    assert.deepEqual(req(['refunds', 'deny', 'r1', '--reason', 'Gems spent']), {
+      method: 'POST',
+      path: '/internal/refunds/r1/deny',
+      body: { reason: 'Gems spent' },
+    });
+    assert.throws(() => req(['refunds', 'deny', 'r1']), /--reason/);
+    assert.throws(() => req(['refunds', 'approve']), /refundId/);
+    assert.throws(() => req(['refunds', 'list', '--limit', '0']), /--limit/);
+  });
+
+  it('formats the refund queue', () => {
+    assert.equal(formatRefunds({ total: 0, refunds: [] }), 'No refunds match.');
+    const text = formatRefunds({
+      total: 3,
+      refunds: [
+        {
+          id: 'r1',
+          kind: 'real_money',
+          status: 'pending',
+          currency: 'usd',
+          amount: 999,
+          offerId: 'gems.1100',
+          createdAt: '2026-10-04T12:00:00.000Z',
+          displayName: 'Bouncy',
+          tag: '0042',
+          userId: 'u1',
+          playerReason: 'wrong pack',
+        },
+      ],
+    });
+    assert.match(text, /^1 of 3 refunds:/);
+    assert.match(text, /r1 {2}pending .*\$9\.99 {2}gems\.1100 {2}Bouncy#0042/);
+    assert.match(text, /"wrong pack"/);
+  });
+
+  it('maps the console staff and audit commands', () => {
+    assert.deepEqual(req(['staff', 'grant', 'u1', '--role', 'admin']), {
+      method: 'PUT',
+      path: '/internal/staff/u1',
+      body: { role: 'admin' },
+    });
+    assert.deepEqual(req(['staff', 'grant', 'u1']).body, { role: 'moderator' });
+    assert.deepEqual(req(['staff', 'revoke', 'u1']), { method: 'DELETE', path: '/internal/staff/u1' });
+    assert.deepEqual(req(['staff', 'list']), { method: 'GET', path: '/internal/staff' });
+    assert.equal(
+      req(['audit', '--action', 'player.', '--target', 'u1', '--limit', '5']).path,
+      '/internal/audit?action=player.&targetId=u1&limit=5',
+    );
+    assert.equal(req(['audit']).path, '/internal/audit');
+    assert.throws(() => req(['staff', 'grant', 'u1', '--role', 'owner']), /--role/);
+    assert.throws(() => req(['staff', 'grant']), /userId/);
+  });
+
   it('rejects bad usage', () => {
     for (const argv of [
       ['bans', 'add', 'u1'],
@@ -103,6 +179,43 @@ describe('live-ops commands', () => {
       method: 'DELETE',
       path: '/internal/playlists/duos',
     });
+  });
+
+  it('maps event commands', () => {
+    assert.deepEqual(req(['events', 'list']), { method: 'GET', path: '/internal/live-events' });
+    assert.deepEqual(
+      req([
+        'events',
+        'set',
+        'moonlit-mischief',
+        '--starts',
+        '2026-10-10T00:00:00Z',
+        '--ends',
+        '2026-10-20T00:00Z',
+      ]),
+      {
+        method: 'PUT',
+        path: '/internal/live-events/moonlit-mischief',
+        body: { startsAt: '2026-10-10T00:00:00.000Z', endsAt: '2026-10-20T00:00:00.000Z' },
+      },
+    );
+    assert.deepEqual(req(['events', 'set', 'moonlit-mischief', '--ends', '2026-11-05T00:00:00Z']).body, {
+      endsAt: '2026-11-05T00:00:00.000Z',
+    });
+    assert.deepEqual(req(['events', 'disable', 'moonlit-mischief']).body, { enabled: false });
+    assert.deepEqual(req(['events', 'enable', 'moonlit-mischief']).body, { enabled: true });
+    assert.deepEqual(req(['events', 'reset', 'frostbite-frolic']), {
+      method: 'DELETE',
+      path: '/internal/live-events/frostbite-frolic',
+    });
+    for (const argv of [
+      ['events', 'set', 'moonlit-mischief'],
+      ['events', 'set', 'moonlit-mischief', '--ends', 'none'],
+      ['events', 'set', 'moonlit-mischief', '--starts', 'soon'],
+      ['events', 'disable'],
+      ['events', 'reset'],
+    ])
+      assert.throws(() => req(argv), /./, argv.join(' '));
   });
 
   it('schedules maintenance relative to now or at fixed times', () => {

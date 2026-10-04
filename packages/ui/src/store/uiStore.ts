@@ -23,6 +23,7 @@ import type {
   AchievementsData,
   ChallengesData,
   CollectionData,
+  EventsData,
   LoginStreakData,
   ConnectionState,
   CustomLobbyState,
@@ -33,6 +34,7 @@ import type {
   InventoryData,
   CosmeticSlot,
   StoreSection,
+  PurchaseHistoryData,
   LeaderboardId,
   LeaderboardInfo,
   LeaderboardRow,
@@ -135,6 +137,10 @@ export interface UIState {
   achievements: AchievementsData | null;
   /** Every cosmetic with ownership and sources. */
   collection: CollectionData | null;
+  /** Limited-time events (bundled ones offline, the API's when signed in). */
+  events: EventsData | null;
+  /** What the Challenges tab shows: the challenge board or the event screen. */
+  challengesView: 'board' | 'event';
   leaderboards: Partial<Record<LeaderboardId, LeaderboardRow[]>>;
   matchHistory: MatchHistoryEntry[];
   news: NewsItem[];
@@ -167,6 +173,8 @@ export interface UIState {
   lockerSlot: CosmeticSlot | null;
   /** Section the Store should open on (set by deep links such as the Locker's empty state). */
   storeSection: StoreSection | null;
+  /** Store purchase history with refund eligibility (online accounts; null until asked for). */
+  purchaseHistory: PurchaseHistoryData | null;
 
   // --- show ----------------------------------------------------------------
   queue: QueueState;
@@ -248,6 +256,7 @@ export interface UIState {
   setWallet: (wallet: { gumballs?: number; gems?: number }) => void;
   setInventory: (inventory: InventoryData | null) => void;
   setStoreData: (store: StoreData | null) => void;
+  setPurchaseHistory: (history: PurchaseHistoryData | null) => void;
   setPass: (pass: SeasonPassData | null) => void;
   setChallenges: (challenges: ChallengesData | null) => void;
   /** Daily login streak card (null offline). */
@@ -255,6 +264,10 @@ export interface UIState {
   /** Achievements screen (null offline). */
   setAchievements: (achievements: AchievementsData | null) => void;
   setCollection: (collection: CollectionData | null) => void;
+  setEvents: (events: EventsData | null) => void;
+  setChallengesView: (view: 'board' | 'event') => void;
+  /** Opens the event screen (Challenges tab, event view). */
+  openEvents: () => void;
   setLeaderboard: (board: LeaderboardId, rows: LeaderboardRow[], info?: LeaderboardInfo) => void;
   /** Marks a board's last load as failed (`null` clears it before a retry). Rows are kept. */
   setLeaderboardError: (board: LeaderboardId, scope: LeaderboardScope, error: string | null) => void;
@@ -388,6 +401,8 @@ export const ui = createStore<UIState>()((set, get) => ({
   loginStreak: null,
   achievements: null,
   collection: null,
+  events: null,
+  challengesView: 'board',
   leaderboards: {},
   matchHistory: [],
   news: [],
@@ -409,6 +424,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   inspectedProfile: null,
   lockerSlot: null,
   storeSection: null,
+  purchaseHistory: null,
 
   queue: {
     status: 'idle',
@@ -537,11 +553,18 @@ export const ui = createStore<UIState>()((set, get) => ({
   },
   setInventory: (inventory) => set({ inventory }),
   setStoreData: (store) => set({ store }),
+  setPurchaseHistory: (purchaseHistory) => set({ purchaseHistory }),
   setPass: (pass) => set({ pass }),
   setChallenges: (challenges) => set({ challenges }),
   setLoginStreak: (loginStreak) => set({ loginStreak }),
   setAchievements: (achievements) => set({ achievements }),
   setCollection: (collection) => set({ collection }),
+  setEvents: (events) => set({ events }),
+  setChallengesView: (challengesView) => set({ challengesView }),
+  openEvents: () => {
+    set({ challengesView: 'event' });
+    get().setMenuTab('challenges');
+  },
   setLeaderboard: (board, rows, info) =>
     set({
       leaderboards: { ...get().leaderboards, [board]: rows },

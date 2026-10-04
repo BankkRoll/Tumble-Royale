@@ -55,7 +55,9 @@ What a player can do today:
   with a filter, quick pings, report / block / mute, streamer mode
 - **Progression:** accounts (guest, Discord, Google, email link), seasons,
   a 100-tier pass, daily/weekly/seasonal/milestone challenges, 45
-  achievements (some hidden), a collection log, a daily login streak, store,
+  achievements (some hidden), a collection log, a daily login streak,
+  limited-time events with their own challenges, points track and cosmetics,
+  store with self-service refunds (Gem packs go to a staff refund queue),
   Crown Shard shop, free Gem paths, live news and notifications
 - **Watch & share:** keep spectating after elimination, round replays (save and
   reopen them), photo mode, share cards for wins and deep runs, and 5–15 s
@@ -145,7 +147,7 @@ The "Required in production" group of each `.env.example` lists what to set.
 
 The client is a single-page app. Party invites (`/join/<code>`), OAuth and
 email sign-in returns (`/auth/*`) and Stripe returns (`/store`) must serve
-`index.html`. The build includes `_redirects` (Netlify, Cloudflare Pages)
+`index.html`, and `/admin` serves `admin.html`. The build includes `_redirects` (Netlify, Cloudflare Pages)
 from `apps/client/public/`, and `apps/client/vercel.json` does the same on
 Vercel; other hosts need equivalent rewrites.
 
@@ -153,6 +155,11 @@ Vercel; other hosts need equivalent rewrites.
 
 Operators steer a running game with `pnpm admin` (it calls the API with
 `ADMIN_TOKEN`); nothing needs a restart or a client release:
+
+Staff can do the same, and work the report queue, from the web console at
+`/admin`: grant a full account a role with
+`pnpm admin staff grant <userId> --role moderator|admin`, and every action is
+recorded in an audit log (see [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md#the-admin-console)).
 
 ```sh
 pnpm admin maintenance on --in 10 --for 30 --message "New rounds incoming!"
@@ -172,6 +179,9 @@ pnpm admin errors top                                   # most frequent client e
 - **Limited-time playlists** get a start and an end (content can ship them,
   operators override them). The menu shows "Ends in" and "Coming soon"; the
   matchmaker refuses a playlist outside its window, judged on the API's clock.
+- **Limited-time events** run in the same way: operators move, withdraw or
+  reset them (`pnpm admin events`), `events.enabled` pauses them all, and
+  unclaimed rewards pay out automatically after an event ends.
 - **Analytics** are a fixed list of gameplay events, batched and sampled,
   with no identity beyond the account id; players can turn them off in
   Settings → Gameplay, and they start off under Do Not Track or Global

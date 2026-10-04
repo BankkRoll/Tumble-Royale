@@ -1,7 +1,8 @@
 /**
  * Store, purchases, wallet, Gem checkout, the Crown Shard shop, the Stripe
  * webhook and the admin Gem-debt write-off. Refund and chargeback handling
- * lives in `reversals.ts`.
+ * lives in `reversals.ts`; refund requests and self-service refunds in
+ * `refunds.ts` and `refundAdmin.ts`.
  *
  * Purchases are idempotent per `(user, Idempotency-Key)`: the purchase row is
  * inserted first inside the transaction, so a concurrent retry with the same
@@ -15,7 +16,7 @@ import { z } from 'zod';
 import type { AppContext } from '../context.ts';
 import type { DbOrTx } from '../db/client.ts';
 import { currenciesLedger, inventoryItems, purchases, users } from '../db/schema.ts';
-import { optionalUser, requireAdmin, requireUser } from '../http/auth.ts';
+import { optionalUser, requireUser } from '../http/auth.ts';
 import {
   ApiError,
   badRequest,
@@ -27,6 +28,10 @@ import {
 } from '../http/errors.ts';
 import { applyLedger, readGemDebt, type Wallet } from './ledger.ts';
 import { applyPaymentEvent, creditGemPurchase, forgiveGemDebt, notifyWallets } from './reversals.ts';
+import { recordAudit } from '../staff/audit.ts';
+import { requireStaff } from '../staff/auth.ts';
+import { registerRefundAdminRoutes } from './refundAdmin.ts';
+import { registerRefundRoutes } from './refunds.ts';
 import { registerShardShopRoutes } from './shards.ts';
 import { grantCosmetic, readWallet } from './wallet.ts';
 import { bundleQuotes, currentRotation, priceOffer, storeCatalog } from './store.ts';
@@ -358,6 +363,8 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
   });
 
   registerShardShopRoutes(app, ctx, idempotencyKey);
+  registerRefundRoutes(app, ctx);
+  registerRefundAdminRoutes(app, ctx);
 
   app.post('/webhooks/stripe', { config: { rateLimit: false } }, async (req) => {
     const sig = req.headers['stripe-signature'];
@@ -370,9 +377,15 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
   });
 
   app.post('/internal/payments/debt/:userId/forgive', async (req) => {
-    requireAdmin(ctx, req);
+    const actor = await requireStaff(ctx, req);
     const { userId } = parse(z.object({ userId: z.string().uuid() }), req.params);
     const forgiven = await forgiveGemDebt(ctx, userId, `admin:${randomUUID()}`);
+    await recordAudit(ctx, req, actor, {
+      action: 'player.debt_forgive',
+      targetType: 'user',
+      targetId: userId,
+      details: { forgiven },
+    });
     return { userId, forgiven, gemDebt: await readGemDebt(ctx.db, userId) };
   });
 }

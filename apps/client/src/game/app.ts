@@ -1674,6 +1674,15 @@ export class GameApp {
           s().showDialog({ id: 'purchase-failed', kind: 'error', title: 'Purchase failed', body: msg });
         }
       },
+      onRequestPurchaseHistory: () => {
+        const a = online();
+        if (a) void a.loadPurchaseHistory();
+      },
+      onRefundPurchase: ({ purchaseId, reason }) => {
+        const a = online();
+        if (a) void a.refundPurchase(purchaseId, reason);
+        else s().pushToast({ kind: 'info', title: 'Refunds need an online account' });
+      },
       onBuyGems: ({ packId }) => {
         const a = online();
         if (a) void a.buyGems(packId);
@@ -1714,6 +1723,16 @@ export class GameApp {
         const a = online();
         if (a) void a.rerollChallenge(id);
         else s().pushToast({ kind: 'info', title: 'Rerolls need an online account', icon: '🎲' });
+      },
+      onClaimEventTier: ({ eventId, tier }) => {
+        const a = online();
+        if (a) void a.claimEventTier(eventId, tier);
+        else s().pushToast({ kind: 'info', title: 'Event rewards need an online account' });
+      },
+      onClaimEventChallenge: ({ eventId, challengeId }) => {
+        const a = online();
+        if (a) void a.claimEventChallenge(eventId, challengeId);
+        else s().pushToast({ kind: 'info', title: 'Event rewards need an online account' });
       },
       onClaimLoginStreak: () => {
         const a = online();

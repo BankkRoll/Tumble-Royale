@@ -405,8 +405,55 @@ export interface StoreData {
   catalog?: StoreOffer[];
 }
 
-/** Store tab sections. */
-export type StoreSection = 'today' | 'week' | 'catalog' | 'shards';
+/** Store tab sections. `purchases` is the online account's purchase history. */
+export type StoreSection = 'today' | 'week' | 'catalog' | 'shards' | 'purchases';
+
+/** Why a purchase cannot be refunded (the API's error codes). */
+export type RefundRefusal =
+  | 'refund_not_refundable'
+  | 'refund_not_completed'
+  | 'refund_already_refunded'
+  | 'refund_already_requested'
+  | 'refund_payment_reversed'
+  | 'refund_window_expired'
+  | 'refund_limit_reached'
+  | 'refund_item_missing';
+
+/** Where a refund stands. */
+export type RefundState =
+  'completed' | 'pending' | 'processing' | 'manual' | 'refunded' | 'partially_refunded' | 'denied' | 'failed';
+
+/** One purchase in the Store's Purchases section. */
+export interface PurchaseHistoryEntry {
+  purchaseId: string;
+  /** `cosmetic` (store item or bundle), `gem_pack`, `pass_premium` or `shard_item`. */
+  kind: string;
+  title: string;
+  /** Cosmetics the purchase gave (what a refund takes away). */
+  items: { id: string; name: string }[];
+  /** Gem packs: Gems the pack gave. */
+  gems?: number;
+  /** `gumballs` / `gems` / `crown_shards`, or `usd` (minor units) for a Gem pack. */
+  price: { currency: string; amount: number };
+  /** Epoch ms. */
+  purchasedAt: number;
+  refund: { kind: 'self_service' | 'real_money'; status: RefundState; decisionReason: string | null } | null;
+  eligibility:
+    | { eligible: true; kind: 'self_service' | 'real_money'; until: number }
+    | { eligible: false; reason: RefundRefusal; message: string; retryAt?: number };
+}
+
+/** The Store's Purchases section. */
+export interface PurchaseHistoryData {
+  status: 'loading' | 'ready' | 'error';
+  /** Why loading failed. */
+  error?: string;
+  entries: PurchaseHistoryEntry[];
+  selfRefunds: { used: number; limit: number; windowDays: number; nextAvailableAt: number | null };
+  policy: { selfServiceWindowDays: number; realMoneyWindowDays: number };
+  /** Purchase whose refund is being sent (its buttons disable). */
+  busyId?: string | null;
+}
 
 /** A Crown Shard shop offer. */
 export interface ShardOffer {
@@ -517,6 +564,68 @@ export interface LoginStreakData {
   next: { day: number; rewards: GrantView[] };
   /** The 7-day ladder for the current cycle. */
   ladder: { day: number; rewards: GrantView[]; state: 'claimed' | 'today' | 'upcoming' }[];
+}
+
+/** `upcoming` (teaser), `live` (counting shows) or `ended`. */
+export type LiveEventPhase = 'upcoming' | 'live' | 'ended';
+
+/** One step on an event's points track. */
+export interface LiveEventTierView {
+  tier: number;
+  /** Points total that unlocks it. */
+  points: number;
+  rewards: GrantView[];
+  /** `claimable` once reached and online; `claimed` once paid (claimed or settled). */
+  state: 'locked' | 'claimable' | 'claimed';
+}
+
+/** One event challenge. */
+export interface LiveEventChallengeView {
+  id: string;
+  title: string;
+  /** What it counts (drives the icon), e.g. `racesQualified`. */
+  metric: string;
+  progress: number;
+  goal: number;
+  /** Event points paid on claim. */
+  points: number;
+  /** XP paid on claim. */
+  xp: number;
+  /** Only shows in the event's featured playlists count. */
+  eventPlaylistsOnly: boolean;
+  claimed: boolean;
+}
+
+/** One limited-time event with the player's standing in it. */
+export interface LiveEventView {
+  id: string;
+  name: string;
+  description: string;
+  art: [string, string];
+  icon: string;
+  /** Epoch ms on the device clock. */
+  startsAt: number;
+  endsAt: number;
+  phase: LiveEventPhase;
+  /** Featured playlist names (shows in them earn more points). */
+  playlists: string[];
+  /** Points multiplier for the featured playlists. */
+  multiplier: number;
+  /** Points one show is worth, for the "how to earn" line. */
+  perShow: number;
+  points: number;
+  tiers: LiveEventTierView[];
+  challenges: LiveEventChallengeView[];
+}
+
+/** The events screen. */
+export interface EventsData {
+  /** Upcoming, live and recently ended events, earliest first. */
+  list: LiveEventView[];
+  /** False while operators have switched events off (`events.enabled`). */
+  enabled: boolean;
+  /** False offline or signed out: the events show, but nothing counts or can be claimed. */
+  online: boolean;
 }
 
 /** One achievement on the achievements screen. Locked hidden ones carry no details. */
@@ -1308,6 +1417,18 @@ export interface RewardsSummary {
   challenges?: { title: string; from: number; to: number; goal: number }[];
   /** Achievements this show unlocked. */
   achievements?: { id: string; title: string; description: string }[];
+  /** Points earned toward live events. */
+  events?: {
+    id: string;
+    name: string;
+    gained: number;
+    from: number;
+    to: number;
+    tierFrom: number;
+    tierTo: number;
+  }[];
+  /** Shown instead when an event is live but this show could not count (offline, bots). */
+  eventNote?: string;
 }
 
 // -----------------------------------------------------------------------------

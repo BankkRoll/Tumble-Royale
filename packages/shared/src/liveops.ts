@@ -33,6 +33,7 @@ export const FLAG_KEYS = [
   'replays.enabled',
   'mutators.chaos',
   'analytics.sample',
+  'events.enabled',
 ] as const;
 
 /** A flag the code reads. */
@@ -60,6 +61,7 @@ export const FLAG_DEFAULTS: Readonly<Record<FlagKey, FlagValue>> = {
   'replays.enabled': { enabled: true, payload: null },
   'mutators.chaos': { enabled: true, payload: null },
   'analytics.sample': { enabled: true, payload: null },
+  'events.enabled': { enabled: true, payload: null },
 };
 
 /**

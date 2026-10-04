@@ -318,3 +318,132 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* -----------------------------------------------------------------------------
+ * Limited-time events: Play tab tile and the event screen
+ * -------------------------------------------------------------------------- */
+
+.tr-event-card {
+  color: #fff;
+  background: linear-gradient(135deg, var(--art-a), var(--art-b)) !important;
+}
+.tr-event-card .tr-muted,
+.tr-event-card .tr-label {
+  color: rgb(255 255 255 / 0.85);
+}
+
+.tr-events {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8em;
+  min-height: 0;
+  overflow-y: auto;
+}
+.tr-event {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8em;
+}
+.tr-event-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9em;
+  padding: 0.9em;
+  border-radius: 1em;
+  border: 0.14em solid var(--ink);
+  color: #fff;
+  background: linear-gradient(135deg, var(--art-a), var(--art-b));
+}
+.tr-event-hero .tr-label {
+  color: rgb(255 255 255 / 0.85);
+}
+.tr-event-hero-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 3.6em;
+  height: 3.6em;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.9);
+  color: var(--ink);
+}
+.tr-event-desc {
+  margin: 0;
+  max-width: 42em;
+}
+.tr-event-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  margin: 0;
+  padding: 0.5em 0.8em;
+  border-radius: 0.7em;
+  border: 0.12em dashed var(--ink-soft);
+  background: #fffbe8;
+}
+.tr-event-points {
+  display: flex;
+  align-items: center;
+  gap: 1em;
+}
+.tr-event-track {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5em, 1fr));
+  gap: 0.6em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tr-event-tier {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4em;
+  padding: 0.6em;
+  border-radius: 0.8em;
+  border: 0.12em solid var(--ink);
+  background: #fff;
+}
+.tr-event-tier.is-locked {
+  opacity: 0.75;
+}
+.tr-event-tier.is-claimable {
+  box-shadow: 0 0 0 0.2em var(--mint);
+}
+.tr-event-tier-head {
+  display: flex;
+  justify-content: space-between;
+  align-self: stretch;
+  gap: 0.4em;
+}
+.tr-event-tier-rewards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3em;
+}
+.tr-event-challenges {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17em, 1fr));
+  gap: 0.6em;
+}
+.tr-event-challenge {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.6em;
+  border-radius: 0.8em;
+  border: 0.12em solid var(--ink);
+  background: #fff;
+}
+.tr-event-challenge.is-ready {
+  box-shadow: 0 0 0 0.2em var(--mint);
+}
+@media (max-width: 640px) {
+  .tr-event-hero {
+    flex-wrap: wrap;
+  }
+  .tr-event-points {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

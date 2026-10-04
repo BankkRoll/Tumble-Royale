@@ -4,14 +4,17 @@
  *
  * Responsibilities:
  * - load `/me`, `/inventory`, `/loadouts`, `/store`, `/gems/packs`, `/pass`,
- *   `/challenges`, `/streak`, `/achievements`, `/collection`, `/friends`,
+ *   `/challenges`, `/streak`, `/achievements`, `/collection`, `/live-events`, `/friends`,
  *   `/party` and project them onto `@tumble/ui` shapes (profile card, locker,
  *   store, pass, challenges, login streak, achievements, collection log,
  *   friends, party);
  * - locker edits persisted server-side (`PUT /loadouts/:i`, activate);
  * - purchases with an `Idempotency-Key` (store items, Gem packs via the
  *   checkout — instant with the API's fake provider in dev, a Stripe redirect
- *   otherwise), pass claims + premium, challenge claim/reroll;
+ *   otherwise), pass claims + premium, challenge claim/reroll, event tier and
+ *   event challenge claims;
+ * - purchase history and refunds (`/purchases`): self-service store refunds
+ *   and Gem pack refund requests;
  * - leaderboards and match history;
  * - social: friend requests, the party (create, join by code, ready, kick,
  *   leader's playlist, who is away playing solo) and the realtime gateway
@@ -72,7 +75,9 @@ import {
   type ApiPass,
   type ApiPassReward,
   type ApiTutorialComplete,
+  type ApiLiveEvents,
 } from '../api.ts';
+import { eventsView, rewardEventLines } from '../liveEvents.ts';
 import {
   avatarHat,
   botLoadout,
@@ -87,6 +92,7 @@ import {
 import { loadoutWithItem, profileDressing, randomizedLoadout } from '../profile.ts';
 import { SocialController } from '../social/socialController.ts';
 import { onlineStoreShelves } from '../storeOffers.ts';
+import { refundErrorText, refundToast, toPurchaseHistory } from './purchaseHistory.ts';
 import { explainGemCheckoutRefusal, gemCheckoutMode, type GemCheckoutMode } from './gemCheckout.ts';
 import type { PartyLobbyLink } from '../views/partyLobbyView.ts';
 import { JsonSocket, type TypedMessage } from './jsonSocket.ts';
@@ -348,6 +354,7 @@ export class OnlineAccount {
       this.refreshStreak(),
       this.refreshAchievements(),
       this.refreshCollection(),
+      this.refreshEvents(),
       this.refreshFriends(),
       this.refreshParty(),
       this.history(),
@@ -374,6 +381,7 @@ export class OnlineAccount {
       this.refreshStreak(),
       this.refreshAchievements(),
       this.refreshCollection(),
+      this.refreshEvents(),
       this.history(),
     ]);
   }
@@ -755,6 +763,92 @@ export class OnlineAccount {
   }
 
   /**
+   * Loads the events and the player's progress in them. Reading progress is
+   * also what pays out an ended event, so anything it settled is toasted.
+   */
+  private async refreshEvents(): Promise<void> {
+    try {
+      const sent = Date.now();
+      const [list, progress]: [ApiLiveEvents, Awaited<ReturnType<ApiClient['eventProgress']>>] =
+        await Promise.all([this.api.liveEvents(), this.api.eventProgress()]);
+      const now = Date.now();
+      ui.getState().setEvents(
+        eventsView({
+          events: list.events,
+          progress: progress.progress,
+          enabled: list.enabled && progress.enabled,
+          offsetMs: Math.round(list.serverTime - (sent + now) / 2),
+          now,
+          grant: (g) => this.grantView(g),
+        }),
+      );
+      for (const s of progress.settled) {
+        ui.getState().pushToast({
+          kind: 'reward',
+          title: `${s.name} rewards added`,
+          body: 'The event ended. Everything you earned but had not claimed is now yours.',
+          icon: '🎁',
+        });
+      }
+      if (progress.settled.length) await this.refreshWalletAndInventory();
+    } catch (err) {
+      console.warn('[account] events failed', err);
+    }
+  }
+
+  /** Re-reads the wallet and inventory only (after an event payout). */
+  private async refreshWalletAndInventory(): Promise<void> {
+    try {
+      const [me, inv] = await Promise.all([this.api.me(), this.api.inventory()]);
+      this.me = me;
+      this.owned = new Set(inv.items.map((i) => i.id));
+      this.pushProfile();
+      this.pushInventory();
+    } catch (err) {
+      console.warn('[account] wallet refresh failed', err);
+    }
+  }
+
+  /**
+   * Claims a reached tier on an event's points track.
+   *
+   * @param eventId - Event id.
+   * @param tier - Tier number.
+   */
+  async claimEventTier(eventId: string, tier: number): Promise<void> {
+    try {
+      await this.api.claimEventTier(eventId, tier);
+      ui.getState().pushToast({ kind: 'reward', title: `Event tier ${tier} claimed!`, icon: '🎁' });
+      await this.refreshProgress();
+    } catch (err) {
+      ui.getState().pushToast({ kind: 'error', title: "Couldn't claim that reward", body: describe(err) });
+      await this.refreshEvents();
+    }
+  }
+
+  /**
+   * Claims a completed event challenge (its points join the track).
+   *
+   * @param eventId - Event id.
+   * @param challengeId - Challenge id within the event.
+   */
+  async claimEventChallenge(eventId: string, challengeId: string): Promise<void> {
+    try {
+      const r = await this.api.claimEventChallenge(eventId, challengeId);
+      ui.getState().pushToast({
+        kind: 'reward',
+        title: `+${r.points} event points`,
+        ...(r.xp > 0 ? { body: `+${r.xp} XP` } : {}),
+        icon: '🎯',
+      });
+      await this.refreshProgress();
+    } catch (err) {
+      ui.getState().pushToast({ kind: 'error', title: "Couldn't claim that challenge", body: describe(err) });
+      await this.refreshEvents();
+    }
+  }
+
+  /**
    * Reloads achievements and the collection after an unlock notification. A
    * first sign-in can unlock several backfilled achievements at once; their
    * notifications collapse into one reload plus at most one follow-up.
@@ -952,6 +1046,70 @@ export class OnlineAccount {
         ...(err instanceof ApiError && err.code ? { code: err.code } : {}),
       });
     }
+  }
+
+  /** Loads Store → Purchases, keeping what is shown while it refreshes. */
+  async loadPurchaseHistory(): Promise<void> {
+    const s = ui.getState();
+    const current = s.purchaseHistory;
+    s.setPurchaseHistory(
+      current
+        ? { ...current, status: 'loading' }
+        : {
+            status: 'loading',
+            entries: [],
+            selfRefunds: { used: 0, limit: 0, windowDays: 0, nextAvailableAt: null },
+            policy: { selfServiceWindowDays: 0, realMoneyWindowDays: 0 },
+          },
+    );
+    try {
+      s.setPurchaseHistory(toPurchaseHistory(await this.api.purchaseHistory()));
+    } catch (err) {
+      const latest = ui.getState().purchaseHistory!;
+      s.setPurchaseHistory({ ...latest, status: 'error', error: refundErrorText(err) });
+    }
+  }
+
+  /**
+   * Refunds a store purchase the player confirmed, or sends a Gem pack refund
+   * request. A repeat of the same purchase is answered with the first refund,
+   * so a retried tap can never refund twice.
+   */
+  async refundPurchase(purchaseId: string, reason?: string): Promise<void> {
+    const s = ui.getState();
+    const entry = s.purchaseHistory?.entries.find((e) => e.purchaseId === purchaseId);
+    if (s.purchaseHistory) s.setPurchaseHistory({ ...s.purchaseHistory, busyId: purchaseId });
+    try {
+      const r = await this.api.refundPurchase(purchaseId, reason);
+      const credit = entry
+        ? entry.price.currency === 'usd'
+          ? `${(entry.price.amount / 100).toFixed(2)}`
+          : `${r.credit.amount.toLocaleString()} ${r.credit.currency === 'gems' ? 'Gems' : 'Gumballs'}`
+        : `${r.credit.amount} ${r.credit.currency}`;
+      const t = refundToast(r, credit);
+      s.pushToast({ kind: r.kind === 'real_money' ? 'info' : 'success', title: t.title, body: t.body });
+      if (r.kind === 'self_service') {
+        for (const id of r.items) this.owned.delete(id);
+        await this.refreshProgress();
+        const lo = await this.api.loadouts().catch(() => null);
+        if (lo) {
+          this.applyLoadouts(lo.slots, lo.activeIndex);
+          this.pushInventory();
+          this.hooks.onLookChanged();
+        }
+      }
+    } catch (err) {
+      s.showDialog({
+        id: 'refund-failed',
+        kind: 'error',
+        title: entry?.kind === 'gem_pack' ? "Couldn't send the request" : "Couldn't refund that",
+        body: refundErrorText(err),
+        ...(err instanceof ApiError && err.code ? { code: err.code } : {}),
+      });
+    }
+    await this.loadPurchaseHistory();
+    const after = ui.getState().purchaseHistory;
+    if (after) s.setPurchaseHistory({ ...after, busyId: null });
   }
 
   /** Buys a Gem pack: instant test credit with the dev fake provider, otherwise a Stripe redirect. */
@@ -1238,6 +1396,7 @@ export class OnlineAccount {
             })),
           }
         : {}),
+      ...(r.events?.length ? { events: rewardEventLines(r.events) } : {}),
       ...(r.achievements?.length
         ? {
             achievements: r.achievements.map((a) => ({

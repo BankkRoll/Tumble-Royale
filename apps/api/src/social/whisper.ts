@@ -15,6 +15,7 @@ import type { AppContext } from '../context.ts';
 import { activeBans, requireUser } from '../http/auth.ts';
 import { ApiError, badRequest, forbidden, parse } from '../http/errors.ts';
 import type { SocialRef } from '../realtime/notifier.ts';
+import { rememberChatLine } from './chatEvidence.ts';
 import { friendIds, isBlockedEitherWay, socialRef } from './friends.ts';
 
 /** Whispers allowed per {@link WHISPER_WINDOW_MS}. */
@@ -72,6 +73,7 @@ export async function sendWhisper(
     at: now,
   };
   await ctx.notifier.notifyMany([toId, fromId], { type: 'whisper', ...line });
+  await rememberChatLine(ctx.kv, fromId, { channel: 'whisper', text: line.text, at: now, to: toId });
   return line;
 }
 

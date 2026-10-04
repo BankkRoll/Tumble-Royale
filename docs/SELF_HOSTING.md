@@ -8,6 +8,7 @@ one domain:
 | Path                         | Goes to                                                |
 | ---------------------------- | ------------------------------------------------------ |
 | `https://DOMAIN/`            | the web client (static files)                          |
+| `https://DOMAIN/admin`       | the admin console ([below](#the-admin-console))        |
 | `https://DOMAIN/api/*`       | account API, including its WebSocket `/api/ws`         |
 | `https://DOMAIN/mm/*`        | matchmaker, including its WebSocket `/mm/ws`           |
 | `https://DOMAIN/gs/ws`       | game server WebSocket                                  |
@@ -90,9 +91,9 @@ Then open `https://play.example.com` and press Play.
 
 ## 4. First admin steps
 
-There are no admin accounts; admin actions use `ADMIN_TOKEN` from
-`deploy/.env`. On the server, `pnpm admin` (or `node scripts/admin.mjs`) reads
-that file and talks to `https://DOMAIN/api`:
+Admin actions use `ADMIN_TOKEN` from `deploy/.env`. On the server,
+`pnpm admin` (or `node scripts/admin.mjs`) reads that file and talks to
+`https://DOMAIN/api`:
 
 ```sh
 pnpm admin --help
@@ -109,6 +110,42 @@ to that instance directly:
 ```sh
 docker compose exec api node scripts/admin.mjs reports list
 ```
+
+### The admin console
+
+`https://DOMAIN/admin` is a web console for the same work: the report queue
+(with chat evidence and bulk decisions), player lookup and the player page,
+bans and mutes, live ops and the audit log. It is part of the client image,
+so there is nothing to enable; nobody can use it until you grant a role.
+
+1. Have the person sign in to the game with a full account (email, Discord
+   or Google; guests cannot be staff) and send you their `Name#1234`.
+2. Find their account id and grant a role:
+
+   ```sh
+   pnpm admin user lookup "Name#1234"
+   pnpm admin staff grant <userId> --role moderator   # or --role admin
+   pnpm admin staff list
+   pnpm admin staff revoke <userId>                    # takes effect at once
+   ```
+
+3. They open `https://DOMAIN/admin` in the browser where they play and press
+   **Open the console**.
+
+A **moderator** handles reports, warnings, mutes, suspensions and lifting
+them, renames and the audit log. An **admin** can also adjust currencies,
+revoke cosmetics, run live ops and manage staff. Console sessions last 30
+minutes, live only in that browser tab and end at once if the role is revoked
+or the account is suspended. Every action from the console or the CLI lands
+in the audit log, with who did it and the reason:
+
+```sh
+pnpm admin audit --limit 20
+pnpm admin audit --action player. --target <userId>
+```
+
+`ADMIN_TOKEN` still works for the CLI and acts as an admin; keep it on the
+server.
 
 ## 5. Optional features
 
@@ -128,11 +165,39 @@ settings changed).
   `https://DOMAIN/api/webhooks/stripe` in the Stripe dashboard for
   `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
   `checkout.session.async_payment_failed`, `checkout.session.expired`,
-  `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed` and
-  `charge.dispute.funds_reinstated`. The API refuses to start with a key but
-  no webhook secret, and without Stripe Gem checkout is simply off.
+  `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`,
+  `charge.dispute.funds_reinstated` and `refund.failed` (or
+  `refund.updated`). The API refuses to start with a key but no webhook
+  secret, and without Stripe Gem checkout is simply off. See
+  [Refunds](#refunds) for how Gem pack refund requests reach Stripe.
 - **Crash reports:** `SENTRY_DSN` (any Sentry-compatible service) for the
   servers; `sentryDsn` in the client overrides below for browsers.
+
+### Refunds
+
+Players refund store items bought with Gumballs or Gems themselves (Store →
+Purchases, within 7 days, 3 per year). Gem packs bought with real money are
+**requests** that land in the console's **Refunds** queue
+(`https://DOMAIN/admin#/refunds`) and in the CLI:
+
+```sh
+pnpm admin refunds list                          # awaiting a decision, oldest first
+pnpm admin refunds list --status all --user <userId>
+pnpm admin refunds approve <refundId> --note "bought the wrong pack"
+pnpm admin refunds deny <refundId> --reason "the Gems were already spent"
+```
+
+Approving needs the **admin** role. With `STRIPE_SECRET_KEY` set, approval
+asks Stripe to refund the whole payment (the restricted key needs write
+access to **Refunds**) and the request shows `processing`; the Gems are taken
+back when Stripe's `charge.refunded` webhook arrives, and the request becomes
+`refunded`. Without a key the request becomes `manual`: refund the payment
+yourself in your payment dashboard. A refund issued straight from the Stripe
+dashboard also closes a matching request. If Stripe refuses or later fails
+the refund, the request shows `failed` with the reason and can be approved
+again; Gems already taken back are not re-credited automatically (adjust
+them with the player tools if needed). Denials need a reason, which the
+player sees.
 
 ### Client overrides
 
@@ -143,7 +208,8 @@ and edit it; the client reads it at every page load, no rebuild needed.
 
 ## 6. Live ops
 
-Everything here takes effect without a restart or a client release. The API
+Everything here takes effect without a restart or a client release, and
+everything here can also be done from the admin console's **Live ops** page. The API
 is the source of truth: the matchmaker and game servers read its live-ops
 snapshot over the internal HMAC channel (cached 30 s, so allow up to half a
 minute), browsers poll `GET /status` every minute and flags and playlists
@@ -182,12 +248,13 @@ pnpm admin flags set analytics.sample on --payload 0.25
 
 | Flag               | Off means                                                           |
 | ------------------ | ------------------------------------------------------------------- |
-| `store.enabled`    | every purchase route answers 503; the Store tab shows a closed sign |
+| `store.enabled`    | every purchase and refund route answers 503; the Store tab closes   |
 | `chat.global`      | global chat closes (party, lobby and show chat are unaffected)      |
 | `party.lobbyGames` | party lobby mini-games stop and their button disappears             |
 | `replays.enabled`  | replays are not recorded, starting with the next show               |
 | `mutators.chaos`   | Chaos Mode plays without its per-show mutator                       |
 | `analytics.sample` | no analytics are stored; with `on` the payload is the sampled share |
+| `events.enabled`   | events count nothing and pay nothing; the menu says they are paused |
 
 A flag that was never set is on. `--rollout N` turns a flag on for a sticky N%
 of players (client-side features only; servers read the master switch).
@@ -208,6 +275,34 @@ and "Coming soon" with a countdown for a `--featured` one that has not
 started. The matchmaker checks the window again when a party queues, on the
 API's clock, so a show closes on time even if a server's or a player's clock
 is off.
+
+### Limited-time events
+
+Events (`packages/content/src/progression/events.ts`) ship with a window, the
+playlists they spotlight, challenges and a points track. To move or withdraw
+one:
+
+```sh
+pnpm admin events list
+pnpm admin events set frostbite-frolic --starts 2026-12-11T18:00:00Z --ends 2027-01-08T18:00:00Z
+pnpm admin events disable moonlit-mischief   # withdraw it; `enable` restores it
+pnpm admin events reset moonlit-mischief     # back to the window shipped with the game
+```
+
+A show counts toward every event live at the moment it **started** (as the
+game server reported it, capped at the API's clock), so a show that straddles
+the end still counts and its points arrive with its result. Custom lobbies
+never count. Once an event has ended, each player's next visit pays out
+everything they earned but did not claim. A disabled event, or any event
+while the `events.enabled` flag is off, counts nothing, pays nothing and
+settles nothing until it is switched back on. Event times always need an end
+(no `none`), at most 90 days after the start. Changes reach every API
+instance at once and are written to the admin audit log.
+
+To add an event, append it to `LIVE_EVENTS` with its cosmetics (source
+`event`) in `packages/content/src/cosmetics/catalog-events.ts`; the content
+tests check the window, the tiers, the reward references and the currency
+budget in [ECONOMY.md §5](design/ECONOMY.md#5-limited-time-events).
 
 ### Analytics and errors
 

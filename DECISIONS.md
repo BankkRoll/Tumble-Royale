@@ -129,3 +129,51 @@ ends. Completed but unclaimed ones are paid out automatically on the next
 challenges read, the same rule as unclaimed pass tiers: nothing earned is
 lost. Milestones are one append-only list whose index is the stored slot, so
 new ones can be added without disturbing anyone's progress.
+
+## The admin console is a second Vite entry, signed in through staff accounts
+
+The console lives at `/admin`, built from `apps/client/admin.html` as its own
+entry rather than a route inside the game. The game's entry eagerly imports
+the renderer, physics and audio, so a lazily loaded route would still make a
+moderator download the whole game, and a shared entry risks the console's
+code leaking into the players' bundle. A separate entry shares only React and
+the small account client with the game, and a test walks both import graphs
+to keep it that way. Plain CSS with a few copied palette colours keeps it from
+pulling `@tumble/shared` in for theming.
+
+Browsers never see `ADMIN_TOKEN`. It stays with the CLI, which grants the
+`admin` or `moderator` role to a non-guest account (`staff_members`). The
+console trades that account's normal access token for a 30-minute bearer
+token stored only in `sessionStorage`; the API keeps the session in the KV
+under the token's hash and re-reads the staff row and ban state on every
+request, so revocation is immediate and every audit row names a real person.
+Bearer headers instead of cookies make the console immune to CSRF without a
+token dance. Moderators get reports, sanctions and player pages; currency,
+cosmetics, live ops and staff management need `admin`.
+
+Every admin action, from the CLI or the console, writes one row to an
+append-only `admin_audit_log` (instead of the old `audit.admin.*` analytics
+events) inside the action's transaction, so an action without its audit row
+cannot commit. The table has no foreign keys: deleting a staff or player
+account must not delete the record of what was done to or by it.
+
+## Refunds: self-service for currency, staff review for money
+
+Store purchases paid in Gumballs or Gems are refunded by the player at once
+(7 days, 3 a year), while Gem packs only ever become a request an admin
+approves. Currency refunds are cheap to undo and abuse is bounded by the
+limit; real money involves the payment provider, fraud and chargeback
+history, so a person decides. "Unused" was dropped as a rule because the
+game does not record what was worn in which show; the window and the yearly
+limit bound "wear it, then refund" instead.
+
+A Gem pack refund does not move Gems by itself. Approval asks Stripe to
+refund, and the existing `charge.refunded` reconciliation takes the Gems back
+(debt for any already spent, cosmetics kept), so a refund we issue and one
+issued from the Stripe dashboard or forced by a dispute follow one rule. The
+Stripe call runs after the transaction that records the decision and its
+audit row, never inside it: a slow provider cannot hold row locks, a second
+approval sees the request already `processing`, and a webhook that lands
+before Stripe answers is not overwritten. A failure goes back to staff as
+`failed`, and a retry uses a new idempotency key because Stripe would replay
+the failed refund for the old one.

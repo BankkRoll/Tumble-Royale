@@ -2,7 +2,7 @@ import { NEWS_POSTS } from '@tumble/content/news';
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { REFRESH_TOKEN_TTL_MS } from '../src/auth/tokens.ts';
-import { events, purchases, sessions, users } from '../src/db/schema.ts';
+import { adminAuditLog, events, purchases, sessions, users } from '../src/db/schema.ts';
 import { runRetention } from '../src/ops/retention.ts';
 import { ADMIN_TOKEN, createTestApi, type TestApi } from './helpers.ts';
 
@@ -242,8 +242,12 @@ describe('admin routes', () => {
       body: { displayName: 'Another Name' },
     });
     expect(again.statusCode).toBe(200);
-    const audit = await api.ctx.db.select().from(events).where(eq(events.name, 'audit.admin.rename'));
+    const audit = await api.ctx.db
+      .select()
+      .from(adminAuditLog)
+      .where(eq(adminAuditLog.action, 'player.rename'));
     expect(audit).toHaveLength(2);
+    expect(audit[0]).toMatchObject({ actorLabel: 'operator token', targetId: u.id });
     const bad = await api.req('POST', `/internal/users/${u.id}/rename`, {
       headers: admin,
       body: { displayName: 'x' },

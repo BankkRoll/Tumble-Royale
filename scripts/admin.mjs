@@ -37,6 +37,11 @@ Playlists (limited-time shows; times are ISO 8601, "none" clears)
   playlists set <id> [--starts <time>] [--ends <time>] [--featured on|off] [--hidden on|off]
   playlists hide <id> | playlists show <id>         withdraw or restore a playlist
   playlists reset <id>                              drop the override (back to the bundled schedule)
+Events (limited-time events; times are ISO 8601)
+  events list                                       every event with its window, phase and switch
+  events set <id> [--starts <time>] [--ends <time>] move an event's window
+  events disable <id> | events enable <id>          withdraw an event (it awards nothing) or restore it
+  events reset <id>                                 drop the override (back to the bundled window)
 Maintenance
   maintenance status
   maintenance on [--message <text>] [--in <minutes> | --starts <time>] [--for <minutes> | --ends <time>]
@@ -45,9 +50,18 @@ Errors
   errors top [--hours N] [--limit N] [--server]     most frequent client (or server) errors
 Economy
   ledger check <userId>                             verify cached balances against the ledger
+Refunds (approving issues the Stripe refund when the API has a Stripe key)
+  refunds list [--status open|pending|failed|...|all] [--kind self_service|real_money] [--user <userId>] [--limit N]
+  refunds approve <refundId> [--note <text>]
+  refunds deny <refundId> --reason <text>           the reason is shown to the player
 Users
   user lookup <userId | name#1234 | email | name>
   user rename <userId> <new display name>
+Admin console (staff accounts sign in at https://DOMAIN/admin)
+  staff list
+  staff grant <userId> [--role admin|moderator]       the account must not be a guest
+  staff revoke <userId>
+  audit [--action <name|prefix.>] [--target <id>] [--limit N]   newest admin actions
 
 Options
   --api-url <url>   API base URL (default: ADMIN_API_URL, PUBLIC_API_URL, API_URL, http://127.0.0.1:7360)
@@ -261,6 +275,25 @@ export function toRequest(args, opts, readFile = (f) => readFileSync(f, 'utf8'),
       };
     case 'playlists reset':
       return { method: 'DELETE', path: `/internal/playlists/${enc(need(a, '<id>'))}` };
+    case 'events list':
+      return { method: 'GET', path: '/internal/live-events' };
+    case 'events set': {
+      const body = { startsAt: timeOpt(opts, 'starts'), endsAt: timeOpt(opts, 'ends') };
+      // Unlike playlists, an event always has an end: settling its rewards depends on it.
+      if (body.startsAt === null || body.endsAt === null) throw new UsageError('event times cannot be none');
+      for (const k of Object.keys(body)) if (body[k] === undefined) delete body[k];
+      if (Object.keys(body).length === 0) throw new UsageError('events set needs --starts or --ends');
+      return { method: 'PUT', path: `/internal/live-events/${enc(need(a, '<id>'))}`, body };
+    }
+    case 'events disable':
+    case 'events enable':
+      return {
+        method: 'PUT',
+        path: `/internal/live-events/${enc(need(a, '<id>'))}`,
+        body: { enabled: action === 'enable' },
+      };
+    case 'events reset':
+      return { method: 'DELETE', path: `/internal/live-events/${enc(need(a, '<id>'))}` };
     case 'maintenance status':
       return { method: 'GET', path: '/status' };
     case 'maintenance on': {
@@ -308,7 +341,47 @@ export function toRequest(args, opts, readFile = (f) => readFileSync(f, 'utf8'),
         path: `/internal/users/${enc(need(a, '<userId>'))}/rename`,
         body: { displayName: need(rest.join(' ').trim(), '<new display name>') },
       };
+    case 'refunds list': {
+      const q = new URLSearchParams();
+      for (const [opt, param] of [
+        ['status', 'status'],
+        ['kind', 'kind'],
+        ['user', 'userId'],
+      ]) {
+        if (typeof opts[opt] === 'string') q.set(param, opts[opt]);
+      }
+      intOpt(q, opts, 'limit');
+      return { method: 'GET', path: `/internal/refunds${q.size ? `?${q}` : ''}`, format: formatRefunds };
+    }
+    case 'refunds approve':
+      return {
+        method: 'POST',
+        path: `/internal/refunds/${enc(need(a, '<refundId>'))}/approve`,
+        body: typeof opts.note === 'string' ? { note: opts.note } : {},
+      };
+    case 'refunds deny':
+      return {
+        method: 'POST',
+        path: `/internal/refunds/${enc(need(a, '<refundId>'))}/deny`,
+        body: { reason: need(typeof opts.reason === 'string' ? opts.reason : '', '--reason') },
+      };
+    case 'staff list':
+      return { method: 'GET', path: '/internal/staff' };
+    case 'staff grant': {
+      const role = opts.role ?? 'moderator';
+      if (role !== 'admin' && role !== 'moderator') throw new UsageError('--role must be admin or moderator');
+      return { method: 'PUT', path: `/internal/staff/${enc(need(a, '<userId>'))}`, body: { role } };
+    }
+    case 'staff revoke':
+      return { method: 'DELETE', path: `/internal/staff/${enc(need(a, '<userId>'))}` };
     default:
+      if (group === 'audit') {
+        const q = new URLSearchParams();
+        if (typeof opts.action === 'string') q.set('action', opts.action);
+        if (typeof opts.target === 'string') q.set('targetId', opts.target);
+        intOpt(q, opts, 'limit');
+        return { method: 'GET', path: `/internal/audit${q.size ? `?${q}` : ''}` };
+      }
       throw new UsageError(key ? `unknown command: ${key}` : 'no command given');
   }
 }
@@ -329,6 +402,28 @@ export function formatErrors(body) {
     const release = e.releases ? ` · ${e.releases}` : '';
     lines.push(`${String(e.occurrences).padStart(7)}x  ${e.type}: ${e.message}`);
     lines.push(`          ${who}${release} · last ${e.lastSeen}`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Renders `refunds list` for a terminal: one line per refund, then the player's reason.
+ *
+ * @param {{ total: number, refunds: { id: string, kind: string, status: string, currency: string,
+ *   amount: number, offerId: string, createdAt: string, displayName?: string | null, tag?: string | null,
+ *   userId: string, playerReason?: string | null }[] }} body
+ * @returns {string}
+ */
+export function formatRefunds(body) {
+  if (!body.refunds?.length) return 'No refunds match.';
+  const lines = [`${body.refunds.length} of ${body.total} refunds:`];
+  for (const r of body.refunds) {
+    const who = r.displayName ? `${r.displayName}#${r.tag}` : r.userId;
+    const amount = r.currency === 'usd' ? `$${(r.amount / 100).toFixed(2)}` : `${r.amount} ${r.currency}`;
+    lines.push(
+      `${r.id}  ${r.status.padEnd(18)} ${r.kind.padEnd(12)} ${amount.padStart(10)}  ${r.offerId}  ${who}  ${r.createdAt}`,
+    );
+    if (r.playerReason) lines.push(`    "${r.playerReason}"`);
   }
   return lines.join('\n');
 }

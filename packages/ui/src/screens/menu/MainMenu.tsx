@@ -17,6 +17,7 @@ import { ui, useUI } from '../../store/uiStore.ts';
 import { MENU_TABS, type MenuTab } from '../../store/types.ts';
 import { ChallengesTab } from './ChallengesTab.tsx';
 import { CurrencyPanel } from './CurrencyPanel.tsx';
+import { claimableCount } from './EventsView.tsx';
 import { LeaderboardsTab } from './LeaderboardsTab.tsx';
 import { LockerTab } from './LockerTab.tsx';
 import { NewsTab } from './NewsTab.tsx';
@@ -79,7 +80,9 @@ function useTabBadges(): Partial<Record<MenuTab, number>> {
   return useUI(
     useShallow((s) => ({
       pass: claimablePass(s.pass),
-      challenges: s.challenges?.list.filter((c) => !c.claimed && c.progress >= c.goal).length ?? 0,
+      challenges:
+        (s.challenges?.list.filter((c) => !c.claimed && c.progress >= c.goal).length ?? 0) +
+        (s.events?.online ? s.events.list.map(claimableCount).reduce((a, b) => a + b, 0) : 0),
       news: s.news.filter((n) => n.unread).length,
     })),
   );

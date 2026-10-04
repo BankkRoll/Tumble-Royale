@@ -611,6 +611,8 @@ export interface LeaderboardInfo {
   source: 'api' | 'local';
   /** Epoch ms of the fetch. */
   updatedAt: number;
+  /** Why the last load failed; the board shows it with a Retry instead of spinning. */
+  error?: string;
 }
 
 /** One past show for match history. */

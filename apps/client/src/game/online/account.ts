@@ -903,18 +903,10 @@ export class OnlineAccount {
           isSelf: true,
         });
       }
-      if (rows.length === 0 && this.me)
-        rows.push({
-          rank: 1,
-          playerId: this.me.userId,
-          name: `${this.me.displayName}#${this.me.tag}`,
-          value: 0,
-          colors: this.loadout.colors,
-          isSelf: true,
-        });
       ui.getState().setLeaderboard(board, rows, { scope, source: 'api', updatedAt: Date.now() });
     } catch (err) {
       console.warn('[account] leaderboard failed', err);
+      ui.getState().setLeaderboardError(board, scope, describe(err));
     }
   }
 

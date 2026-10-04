@@ -32,6 +32,7 @@ import type {
   LeaderboardId,
   LeaderboardInfo,
   LeaderboardRow,
+  LeaderboardScope,
   LobbyGamesState,
   MatchHistoryEntry,
   MenuTab,
@@ -225,6 +226,8 @@ export interface UIState {
   setPass: (pass: SeasonPassData | null) => void;
   setChallenges: (challenges: ChallengesData | null) => void;
   setLeaderboard: (board: LeaderboardId, rows: LeaderboardRow[], info?: LeaderboardInfo) => void;
+  /** Marks a board's last load as failed (`null` clears it before a retry). Rows are kept. */
+  setLeaderboardError: (board: LeaderboardId, scope: LeaderboardScope, error: string | null) => void;
   setMatchHistory: (entries: MatchHistoryEntry[]) => void;
   setNews: (news: NewsItem[]) => void;
   setFriends: (friends: Friend[]) => void;
@@ -488,6 +491,14 @@ export const ui = createStore<UIState>()((set, get) => ({
       leaderboards: { ...get().leaderboards, [board]: rows },
       ...(info ? { leaderboardInfo: { ...get().leaderboardInfo, [board]: info } } : {}),
     }),
+  setLeaderboardError: (board, scope, error) => {
+    const prev = get().leaderboardInfo[board];
+    if (!error && !prev?.error) return;
+    const next: LeaderboardInfo = { ...(prev ?? { source: 'api', updatedAt: Date.now() }), scope };
+    if (error) next.error = error;
+    else delete next.error;
+    set({ leaderboardInfo: { ...get().leaderboardInfo, [board]: next } });
+  },
   setMatchHistory: (matchHistory) => set({ matchHistory }),
   setNews: (news) => set({ news }),
   setFriends: (friends) => set({ friends }),

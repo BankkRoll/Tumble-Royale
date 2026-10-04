@@ -216,11 +216,39 @@ function Tabs(): JSX.Element {
   );
 }
 
+/**
+ * Sends what the player typed (Enter). The input closes before the send: a
+ * command that keeps the player typing (`/p`, `/w name`, `/r`, `/help`)
+ * reopens it from the router, and closing afterwards would undo that.
+ *
+ * @param text - The input's text.
+ */
+export function submitChatInput(text: string): void {
+  social.getState().setChatDraft('');
+  setChatOpen(false);
+  if (text.trim()) uiEvents.emit('sendChat', { text });
+}
+
+/**
+ * Esc in the input: closes it and drops the draft. Closing any other way
+ * (clicking the game, a wipe) keeps the draft for the next open.
+ */
+export function cancelChatInput(): void {
+  social.getState().setChatDraft('');
+  setChatOpen(false);
+}
+
 function ChatInput(): JSX.Element {
-  const [text, setText] = useState('');
+  const text = useSocial((s) => s.chatDraft);
   const ref = useRef<HTMLInputElement>(null);
   const placeholder = useSocial((s) => chatPlaceholder(s.chat));
-  useEffect(() => ref.current?.focus(), []);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    // A restored draft continues where it stopped, not before its first letter.
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, []);
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
     // The field owns these keys: no in-game menu, no focus hop, no menu navigation.
     if (e.key === 'Enter' || e.key === 'Escape' || e.key === 'Tab') {
@@ -228,11 +256,9 @@ function ChatInput(): JSX.Element {
       e.stopPropagation();
     }
     if (e.key === 'Enter') {
-      if (text.trim()) uiEvents.emit('sendChat', { text });
-      setText('');
-      setChatOpen(false);
+      submitChatInput(text);
     } else if (e.key === 'Escape') {
-      setChatOpen(false);
+      cancelChatInput();
     } else if (e.key === 'Tab') {
       social.getState().dispatchChat({ type: 'cycle', dir: e.shiftKey ? -1 : 1 });
     }
@@ -248,7 +274,7 @@ function ChatInput(): JSX.Element {
       enterKeyHint="send"
       autoComplete="off"
       spellCheck={false}
-      onChange={(e) => setText(e.target.value)}
+      onChange={(e) => social.getState().setChatDraft(e.target.value)}
       onKeyDown={onKeyDown}
       onBlur={(e) => {
         // Clicking a tab or a name keeps the input; clicking the game closes it.

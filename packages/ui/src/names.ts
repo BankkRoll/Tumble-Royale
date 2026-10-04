@@ -124,3 +124,45 @@ export interface NamedPlayer {
 export function streamerSafeName(p: NamedPlayer, streamer: boolean): string {
   return streamer && !p.isLocal && !p.isBot && !p.isParty ? `Tumbler ${p.id + 1}` : p.name;
 }
+
+/**
+ * A stable "Tumbler N" (100–999) for someone known by an account key rather
+ * than a show seat: menu and lobby chat, private-lobby members. The same key
+ * always masks to the same number, so a conversation stays readable.
+ *
+ * @param key - Account id (or any stable per-person key).
+ * @example
+ * maskedName('u-123'); // e.g. 'Tumbler 417', the same every time
+ */
+export function maskedName(key: string): string {
+  // FNV-1a: tiny, dependency-free and well spread for short ids.
+  let h = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 0x01000193);
+  return `Tumbler ${100 + ((h >>> 0) % 900)}`;
+}
+
+/** Someone known by account key, for {@link streamerSafeKeyedName}. */
+export interface KeyedPlayer {
+  /** Account id, or `name:<name>` for players without one. */
+  key: string;
+  name: string;
+  isBot?: boolean;
+  /** Show seat when the player is in the current show, so the mask matches their nameplate. */
+  seat?: number;
+  /** You, your party or a friend: names you already know (and show elsewhere). */
+  known?: boolean;
+}
+
+/**
+ * {@link streamerSafeName} for players known by account key (chat lines,
+ * lobby members, host tools): Streamer Mode masks strangers, keeping you,
+ * your party, friends and bots. In a show the mask is the seat's
+ * "Tumbler N"; elsewhere it is {@link maskedName}.
+ *
+ * @param p - The player.
+ * @param streamer - Settings → Streamer mode.
+ */
+export function streamerSafeKeyedName(p: KeyedPlayer, streamer: boolean): string {
+  if (!streamer || p.known || p.isBot) return p.name;
+  return p.seat !== undefined ? `Tumbler ${p.seat + 1}` : maskedName(p.key);
+}

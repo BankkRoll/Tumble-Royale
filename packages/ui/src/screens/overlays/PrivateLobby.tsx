@@ -15,6 +15,7 @@
 import { MAX_PLAYERS } from '@tumble/shared';
 import { useEffect, useRef, useState, type JSX } from 'react';
 import { Button, Slider, Toggle } from '../../components/controls.tsx';
+import { useAccountName } from '../../components/hooks.ts';
 import { Icon } from '../../components/icons/index.tsx';
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
 import { uiEvents } from '../../store/events.ts';
@@ -40,9 +41,14 @@ export interface LobbyStartState {
  * Mirrors the matchmaker's start blockers so the button explains itself
  * before the host clicks.
  *
+ * @param lobby - The lobby.
+ * @param nameOf - Display name for a member (Streamer Mode masks strangers).
  * @example lobbyStartState(lobby).reason // "Waiting for players: 1/4"
  */
-export function lobbyStartState(lobby: CustomLobbyState): LobbyStartState {
+export function lobbyStartState(
+  lobby: CustomLobbyState,
+  nameOf: (m: CustomLobbyMember) => string = (m) => m.name,
+): LobbyStartState {
   const min = Math.max(1, lobby.options.minPlayers ?? 1);
   const n = lobby.players.length;
   if (n < min) return { canStart: false, reason: `Waiting for players: ${n}/${min}`, waitingOn: [] };
@@ -51,7 +57,7 @@ export function lobbyStartState(lobby: CustomLobbyState): LobbyStartState {
   return {
     canStart: true,
     reason: null,
-    waitingOn: lobby.players.filter((p) => !p.isHost && !p.ready).map((p) => p.name),
+    waitingOn: lobby.players.filter((p) => !p.isHost && !p.ready).map(nameOf),
   };
 }
 
@@ -245,12 +251,13 @@ function MemberRow({
   onArm: (id: string | null) => void;
 }): JSX.Element {
   const canManage = hostView && !m.isSelf;
+  const name = useAccountName()(m);
   return (
     <div
       className={`tr-lobby-member${m.isSelf ? ' is-self' : ''}${m.away ? ' is-away' : ''}`}
       data-testid="lobby-member"
     >
-      <PlayerButton player={{ userId: m.id, name: m.name, key: m.id }} disabled={m.isSelf}>
+      <PlayerButton player={{ userId: m.id, name, key: m.id }} disabled={m.isSelf}>
         <TumblerAvatar colors={m.colors} size="2.2em" blink={false} noShadow />
         <span className="tr-grow tr-ellipsis tr-lobby-member-name">
           {m.isHost ? (
@@ -258,12 +265,12 @@ function MemberRow({
               <Icon name="crown" size="0.95em" />
             </span>
           ) : null}
-          {m.name}
+          {name}
           {m.isSelf ? <span className="tr-muted"> (you)</span> : null}
         </span>
       </PlayerButton>
       {armed ? (
-        <span className="tr-row tr-lobby-confirm" role="group" aria-label={`Remove ${m.name}?`}>
+        <span className="tr-row tr-lobby-confirm" role="group" aria-label={`Remove ${name}?`}>
           <span className="tr-small">Remove?</span>
           <Button
             size="sm"
@@ -296,7 +303,7 @@ function MemberRow({
             <Button
               size="sm"
               variant="ghost"
-              aria-label={`Make ${m.name} the host`}
+              aria-label={`Make ${name} the host`}
               title="Make host"
               onClick={() => uiEvents.emit('transferCustomHost', { userId: m.id })}
             >
@@ -307,7 +314,7 @@ function MemberRow({
             <Button
               size="sm"
               variant="ghost"
-              aria-label={`Remove ${m.name}`}
+              aria-label={`Remove ${name}`}
               title="Remove from the show"
               data-testid="kick"
               onClick={() => onArm(m.id)}
@@ -323,6 +330,7 @@ function MemberRow({
 
 function Members({ lobby }: { lobby: CustomLobbyState }): JSX.Element {
   const [armed, setArmed] = useState<string | null>(null);
+  const nameOf = useAccountName();
   const slots = lobby.options.spectatorSlots ?? (lobby.options.spectators ? DEFAULT_SPECTATOR_SLOTS : 0);
   return (
     <section className="tr-pshow-players" aria-label="Players">
@@ -370,11 +378,11 @@ function Members({ lobby }: { lobby: CustomLobbyState }): JSX.Element {
           <div className="tr-lobby-members" data-testid="lobby-banned">
             {lobby.banned.map((b) => (
               <div key={b.id} className="tr-lobby-member is-banned">
-                <span className="tr-grow tr-ellipsis">{b.name}</span>
+                <span className="tr-grow tr-ellipsis">{nameOf(b)}</span>
                 <Button
                   size="sm"
                   variant="secondary"
-                  aria-label={`Let ${b.name} rejoin`}
+                  aria-label={`Let ${nameOf(b)} rejoin`}
                   onClick={() => uiEvents.emit('unbanCustomMember', { userId: b.id })}
                 >
                   Unban
@@ -453,7 +461,7 @@ function CodePanel({ lobby }: { lobby: CustomLobbyState }): JSX.Element {
 }
 
 function HostFooter({ lobby }: { lobby: CustomLobbyState }): JSX.Element {
-  const start = lobbyStartState(lobby);
+  const start = lobbyStartState(lobby, useAccountName());
   const [confirming, setConfirming] = useState(false);
   if (confirming && start.canStart && start.waitingOn.length > 0) {
     return (

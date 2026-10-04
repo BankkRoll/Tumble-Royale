@@ -32,7 +32,8 @@ import {
   type ChatLine,
 } from '../store/chatChannels.ts';
 import { uiEvents } from '../store/events.ts';
-import { social, useSocial, visibleChat, type VisibleChatLine } from '../store/social.ts';
+import { streamerSafeKeyedName } from '../names.ts';
+import { social, useSocial, visibleChat, type PlayerRef, type VisibleChatLine } from '../store/social.ts';
 import type { ScreenId } from '../store/types.ts';
 import { ui, useUI } from '../store/uiStore.ts';
 
@@ -134,10 +135,12 @@ function Line({
   l,
   interactive,
   rel,
+  streamer,
 }: {
   l: VisibleChatLine;
   interactive: boolean;
   rel: ReturnType<typeof useRelations>;
+  streamer: boolean;
 }): JSX.Element {
   const ch = channelOf(l);
   if (ch === 'system')
@@ -155,12 +158,27 @@ function Line({
   const who = outgoing ?? l.from;
   const friend = !!who.userId && rel.friends.has(who.userId);
   const partyMate = !!who.userId && rel.party.has(who.userId);
+  const label = streamerSafeKeyedName(
+    {
+      key: who.key,
+      name: nameTag(who),
+      ...(who.isBot ? { isBot: true } : {}),
+      ...(l.seat !== undefined && !outgoing ? { seat: l.seat } : {}),
+      known: (l.self && !outgoing) || friend || partyMate || ch === 'party',
+    },
+    streamer,
+  );
+  // The player card and its toasts must not reveal a name the line masked.
+  const target: PlayerRef =
+    label === nameTag(who)
+      ? who
+      : { key: who.key, name: label, ...(who.userId ? { userId: who.userId } : {}) };
   const name = (
     <b
       className={`tr-chat-name${partyMate ? ' is-party-mate' : ''}`}
       style={l.color && !partyMate ? { color: l.color } : undefined}
     >
-      {outgoing ? `To ${nameTag(who)}` : nameTag(who)}
+      {outgoing ? `To ${label}` : label}
       {friend && <i className="tr-chat-friend" aria-hidden="true" />}:
     </b>
   );
@@ -177,9 +195,9 @@ function Line({
         <button
           type="button"
           className="tr-chat-who"
-          aria-label={`Actions for ${who.name}${friend ? ' (friend)' : ''}`}
+          aria-label={`Actions for ${target.name}${friend ? ' (friend)' : ''}`}
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => social.getState().openPlayerMenu(who)}
+          onClick={() => social.getState().openPlayerMenu(target)}
         >
           {name}
         </button>
@@ -381,6 +399,7 @@ export const ChatWidget = memo(function ChatWidget(): JSX.Element | null {
   const chat = useSocial((s) => s.chat);
   const { open, mode, active, hint } = chat;
   const device = useUI((s) => s.hud.device);
+  const streamer = useUI((s) => s.settings.gameplay.streamerMode);
   const visible = useVisible();
   const rel = useRelations();
   const feed = useMemo(() => visible(feedLines(chat)), [visible, chat]);
@@ -409,7 +428,7 @@ export const ChatWidget = memo(function ChatWidget(): JSX.Element | null {
               !open && now - l.at > (CHAT_LINE_SECONDS - 2) * 1000 ? 'tr-chat-fade is-faded' : 'tr-chat-fade'
             }
           >
-            <Line l={l} interactive={open} rel={rel} />
+            <Line l={l} interactive={open} rel={rel} streamer={streamer} />
           </div>
         ))}
         {open && shown.length === 0 && publicRoom(chat) !== null && (

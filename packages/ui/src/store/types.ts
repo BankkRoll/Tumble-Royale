@@ -825,6 +825,11 @@ export interface ProfileData {
    * which are unknown for them.
    */
   metOffline?: MetOfflineInfo;
+  /**
+   * Opened from a name Streamer Mode masked: `name` is that mask and `tag`
+   * is `••••`, so the card never shows who it really is.
+   */
+  masked?: boolean;
   id: string;
   name: string;
   tag: string;
@@ -1894,6 +1899,8 @@ export interface HighlightPlayer {
   name: string;
   isBot: boolean;
   isLocal: boolean;
+  /** In the local player's party: keeps the name in Streamer Mode, as everywhere else. */
+  isParty?: boolean;
 }
 
 /** One automatic highlight of the show (the rewards screen's reel). */

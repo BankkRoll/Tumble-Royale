@@ -113,6 +113,8 @@ export interface UIIntents {
     name?: string;
     /** Open the full profile even for party members (whose click opens the player card). */
     direct?: boolean;
+    /** `name` is a Streamer Mode mask: the card keeps it and hides the tag. */
+    masked?: boolean;
   };
   /** News posts the player has opened (clears unread badges). */
   newsRead: { ids: string[] };

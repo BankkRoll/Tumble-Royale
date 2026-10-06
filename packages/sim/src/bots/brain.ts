@@ -6,9 +6,10 @@
  * - A *strategy* per round style picks a movement target: course following
  *   (races, crown climbs, towers), survival roaming (seek intact ground away
  *   from crowds and edges), wandering, team objectives (eggs → nest, ball →
- *   goal, zones), hunt chase/flee, logic (move to the obstacle-provided
- *   safe spot, with skill-based memory) and objective rounds (race to the spot
- *   an obstacle names: the nearest pickup, a scoring zone, a free seat).
+ *   goal with keeper, attacker and formation roles, zones), hunt chase/flee,
+ *   logic (move to the obstacle-provided safe spot, with skill-based memory
+ *   scaled by the question's difficulty) and objective rounds (race to the
+ *   spot an obstacle names: the nearest pickup, a scoring zone, a free seat).
  * - Course legs: run legs ease into their waypoint; action legs (jump,
  *   jump-dive, dive) run through the take-off at full speed and fire when the
  *   bot crosses the take-off line or reaches a lip, checked every step. Timed
@@ -73,6 +74,8 @@ const PROBE_AHEAD = 0.75;
 const LIP_DROP = 0.7;
 /** Horizontal take-off legs at least this long may become jump-dives for bold bots. */
 const LONG_JUMP = 3.8;
+/** A silly dive needs floor this far ahead (m): roughly where a standing dive lands. */
+const SILLY_DIVE_REACH = 2.5;
 /**
  * Logic safe spots closer than this to the last one are the same answer (a
  * spot within a tile follows the bot as a crowd jostles it; tiles are 5 m+ apart).
@@ -383,7 +386,7 @@ export class DefaultBotBrain implements BotBrainLike {
       this.ledgeReflex(view, self);
       this.reflexes(view, self);
       this.checkStuck(view, self);
-      this.silly(view);
+      this.silly(view, self);
     } else if (this.lineValid && this.lineChecked && this.waitObstacle === null && !this.atGoal) {
       this.stepTakeoff(view, self);
     }
@@ -1187,7 +1190,7 @@ export class DefaultBotBrain implements BotBrainLike {
     spot.x = self.pos.x;
     spot.y = self.pos.y;
     spot.z = self.pos.z;
-    if (view.safeSpot(spot)) {
+    if (view.safeSpot(spot, this.id)) {
       // Spots inside one tile shift as a crowd jostles the bot; only a new tile is a new answer.
       const changed =
         (spot.x - this.logicSpot.x) ** 2 + (spot.z - this.logicSpot.z) ** 2 > LOGIC_SAME_SPOT ** 2 ||
@@ -1196,7 +1199,9 @@ export class DefaultBotBrain implements BotBrainLike {
         this.logicSpot.x = spot.x;
         this.logicSpot.y = spot.y;
         this.logicSpot.z = spot.z;
-        this.logicKnown = this.rng.chance(this.p.memory);
+        // Skill sets how often a bot slips on the hardest questions; easy ones (a glowing answer) rarely trip anyone.
+        const difficulty = view.logicDifficulty?.() ?? 1;
+        this.logicKnown = this.rng.chance(1 - (1 - this.p.memory) * difficulty);
         // A wrong guess is a nearby spot: close enough to look plausible.
         this.offset.x = this.logicKnown ? 0 : this.rng.range(-4, 4);
         this.offset.z = this.logicKnown ? 0 : this.rng.range(-4, 4);
@@ -1214,7 +1219,16 @@ export class DefaultBotBrain implements BotBrainLike {
         this.nextRetarget = view.time + this.reactionDelay() * 2;
       }
       if (view.time >= this.nextRetarget) {
-        this.setTarget(this.logicSpot.x + this.offset.x, this.logicSpot.y, this.logicSpot.z + this.offset.z);
+        // Standing still once there: a bot leaning on its spot shoves the crowd around it off the tile.
+        this.holdSpot(
+          self,
+          this.logicSpot.x + this.offset.x,
+          this.logicSpot.y,
+          this.logicSpot.z + this.offset.z,
+        );
+        // Tiles that already dropped are holes, not a short cut.
+        const dir = this.dirTo(self.pos, this.target, this.s3);
+        if (this.speed > 0 && !this.floorAt(view, self, dir.x, dir.z)) this.speed = 0;
         return;
       }
       this.speed = 0;
@@ -1530,10 +1544,23 @@ export class DefaultBotBrain implements BotBrainLike {
   // Flavour
   // ---------------------------------------------------------------------------
 
-  private silly(view: BotWorldView): void {
+  private silly(view: BotWorldView, self: BotSelfView): void {
     if (this.act !== Act.None) return;
     if (this.rng.chance(this.p.sillyPerSecond * DECISION_TICKS * view.dt)) {
-      this.schedule(view, this.rng.chance(0.5) ? Act.Dive : Act.Jump, 0);
+      const dive = this.rng.chance(0.5);
+      // Unforced antics are for open ground: on a crowded logic tile a dive past the edge was most of the
+      // early eliminations (six or seven a board round at 100 bots).
+      if (
+        dive &&
+        !this.floorAt(
+          view,
+          self,
+          Math.sin(this.yaw) * SILLY_DIVE_REACH,
+          Math.cos(this.yaw) * SILLY_DIVE_REACH,
+        )
+      )
+        return;
+      this.schedule(view, dive ? Act.Dive : Act.Jump, 0);
     }
   }
 

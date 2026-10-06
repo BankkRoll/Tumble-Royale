@@ -21,7 +21,7 @@ What comes next, in order. Each item should land with tests, docs and a green
       reporting and Streamer Mode support.
 - [x] **Clubs**: persistent groups with a roster, roles, chat and club
       challenges.
-- [ ] **Public status page**: service health, maintenance windows and incident
+- [x] **Public status page**: service health, maintenance windows and incident
       notes, fed by the existing `/status` and live-ops data.
 
 ## 2. Other languages

@@ -11,7 +11,8 @@ import { ServerMetrics } from '../src/metrics.ts';
 import { RoomManager } from '../src/room/RoomManager.ts';
 import type { RoomConfig } from '../src/room/types.ts';
 import { signJoinTicket, type JoinTicketClaims, type TicketCustomSettings } from '../src/tickets.ts';
-import { FakeConnection, FakeMatchSim, TEST_SECRETS, TestClient, testDeps } from './helpers.ts';
+import type { FakeMatchSim } from './helpers.ts';
+import { FakeConnection, TEST_SECRETS, TestClient, testDeps } from './helpers.ts';
 
 const SECRET = TEST_SECRETS.GAME_TICKET_SECRET;
 const TICK_MS = 1000 / 30;

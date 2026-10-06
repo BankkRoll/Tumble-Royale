@@ -51,6 +51,8 @@ import { attachGateway, type Gateway } from './realtime/gateway.ts';
 import { Notifier } from './realtime/notifier.ts';
 import { registerFriendRoutes } from './social/friends.ts';
 import { registerWhisperRoutes } from './social/whisper.ts';
+import { registerCustomRoundAdminRoutes } from './rounds/admin.ts';
+import { registerCustomRoundRoutes } from './rounds/customRounds.ts';
 import { registerStaffRoutes } from './staff/routes.ts';
 import { registerPartyRoutes } from './social/party.ts';
 
@@ -291,6 +293,8 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
   registerPlayerAdminRoutes(app, ctx);
   registerClubAdminRoutes(app, ctx);
   registerStaffRoutes(app, ctx);
+  registerCustomRoundRoutes(app, ctx);
+  registerCustomRoundAdminRoutes(app, ctx);
   const gateway = attachGateway(app, ctx);
   const ops = registerOps(app, ctx, { database, gateway });
 

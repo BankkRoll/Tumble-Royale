@@ -3869,6 +3869,14 @@
   text-transform: uppercase;
   color: var(--type);
 }
+.tr-pshow-group--custom {
+  --type: #ffd23f;
+}
+.tr-pshow-roundcode {
+  display: grid;
+  gap: 0.3em;
+  margin-top: 0.6em;
+}
 .tr-pshow-rules .tr-settings-row:last-child {
   border-bottom: 0;
 }

@@ -25,6 +25,7 @@ import { createDevRoomDeps } from './devDeps.ts';
 import { drain } from './drain.ts';
 import { createLogger, lineLogger } from './logger.ts';
 import { startMatchmakerLink, type MatchmakerLink } from './matchmakerLink.ts';
+import { HttpCustomRoundSource } from './customRounds.ts';
 import { createRealRoomDeps } from './realDeps.ts';
 import { ResultsOutbox } from './outbox.ts';
 import { sendResultsOnce } from './results.ts';
@@ -80,6 +81,9 @@ const deps = config.devSim
       results,
       // peek() never waits on the API: a stale answer is better than a stalled show start.
       mutatorsEnabled: () => liveOps.peek().flag('mutators.chaos'),
+      customRounds: resultsCfg
+        ? new HttpCustomRoundSource({ apiUrl: resultsCfg.apiUrl, secret: resultsCfg.secret, log })
+        : null,
     });
 
 const server = await startGameServer({

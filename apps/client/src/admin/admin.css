@@ -553,6 +553,25 @@ a {
   gap: 12px;
 }
 
+/* Shared rounds */
+.adm-dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 8px 0 12px;
+}
+.adm-dl dt {
+  opacity: 0.7;
+}
+.adm-dl dd {
+  margin: 0;
+}
+.adm-json {
+  max-height: 360px;
+  overflow: auto;
+  font-size: 12px;
+  white-space: pre;
+}
 ol.adm-evidence {
   margin: 4px 0 0;
   padding-left: 18px;

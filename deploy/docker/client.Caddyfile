@@ -22,6 +22,15 @@
 		file_server
 	}
 
+	# The round editor: its own page and bundle, so players only download it
+	# when they open it.
+	@editor path /editor /editor/
+	handle @editor {
+		rewrite * /editor.html
+		header Cache-Control "no-cache"
+		file_server
+	}
+
 	# The admin console: its own page and bundle. It is only a client; every
 	# action is authorised by the API. These headers keep it out of frames
 	# (no clickjacking of confirm buttons), search engines and caches.

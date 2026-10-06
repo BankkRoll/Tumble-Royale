@@ -5,7 +5,8 @@
     { "source": "/auth/email", "destination": "/index.html" },
     { "source": "/auth/:path*", "destination": "/index.html" },
     { "source": "/store", "destination": "/index.html" },
-    { "source": "/admin", "destination": "/admin.html" }
+    { "source": "/admin", "destination": "/admin.html" },
+    { "source": "/editor", "destination": "/editor.html" }
   ],
   "headers": [
     {

@@ -6,7 +6,7 @@
  * - inline rename with name rules, cooldown and save feedback;
  * - linked sign-in methods: real linked state, only the methods the server
  *   has turned on, unlink only while another method remains;
- * - "Sign in to an existing Tumbler" (Discord, Google, email magic link),
+ * - "Sign in to an existing Tumbler" (every enabled OAuth provider, email magic link),
  *   hidden entirely when the server offers none;
  * - the email magic-link form and its "check your inbox" state.
  *
@@ -326,8 +326,8 @@ export function LinkedAccounts(): JSX.Element {
   if (shown.length === 0) {
     return (
       <p className="tr-small tr-muted" data-testid="linked-none">
-        This server doesn't offer Discord, Google or email sign-in yet, so your Tumbler is saved to this
-        device's guest login. Signing out or clearing this browser's data erases it.
+        This server doesn't offer any sign-in methods yet, so your Tumbler is saved to this device's guest
+        login. Signing out or clearing this browser's data erases it.
       </p>
     );
   }

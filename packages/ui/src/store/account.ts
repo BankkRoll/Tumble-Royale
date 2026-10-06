@@ -14,15 +14,18 @@ import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 
 /** Sign-in methods a server can offer besides the device guest. */
-export type AuthProviderId = 'discord' | 'google' | 'email';
+export type AuthProviderId = 'discord' | 'google' | 'github' | 'twitch' | 'apple' | 'email';
 
 /** Every portable sign-in method, in display order. */
-export const AUTH_PROVIDERS: readonly AuthProviderId[] = ['discord', 'google', 'email'];
+export const AUTH_PROVIDERS: readonly AuthProviderId[] = ['discord', 'google', 'github', 'twitch', 'apple', 'email'];
 
 /** Display names for sign-in methods. */
 export const AUTH_PROVIDER_LABELS: Record<AuthProviderId, string> = {
   discord: 'Discord',
   google: 'Google',
+  github: 'GitHub',
+  twitch: 'Twitch',
+  apple: 'Apple',
   email: 'Email',
 };
 

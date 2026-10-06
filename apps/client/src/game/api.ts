@@ -20,7 +20,7 @@ import type {
   ApiWishlistEntry,
 } from './online/gifts.ts';
 import type { ApiPurchaseHistory, ApiRefundResult } from './online/purchaseHistory.ts';
-import { tokenSubject, type AuthOutcome, type LoginProvider } from './online/returnUrl.ts';
+import { tokenSubject, type AuthOutcome, type LoginProvider, type OAuthProvider } from './online/returnUrl.ts';
 import { loadJson, removeJson, saveJson } from './storage.ts';
 
 /** Tokens returned by `/auth/guest` and `/auth/refresh`. */
@@ -85,15 +85,19 @@ export interface ApiAuthResult {
   refreshToken: string;
   user: { id: string; displayName: string; tag: string; isGuest: boolean };
   outcome: AuthOutcome;
-  provider: LoginProvider;
+  /** `link` for a one-time staff sign-in link. */
+  provider: LoginProvider | 'link';
 }
 
-/** `GET /auth/providers`. */
-export interface ApiAuthProviders {
-  discord: boolean;
-  google: boolean;
-  email: boolean;
-}
+/** `GET /auth/providers`: which sign-in methods the server has turned on. */
+export type ApiAuthProviders = Record<LoginProvider, boolean>;
+
+/**
+ * What a signed-in player asks for when leaving for a provider: `link` adds
+ * the login to this account (refused if another account owns it), `signIn`
+ * may switch the device to the account that owns it.
+ */
+export type AuthIntent = 'link' | 'signIn';
 
 /** API loadout body (content `CosmeticLoadout` + banner/footsteps). */
 export interface ApiLoadoutItems {
@@ -861,16 +865,19 @@ export class ApiClient {
   /** Redeems an email magic-link token for a session. */
   verifyEmail = (token: string): Promise<ApiAuthResult> =>
     this.request('POST', '/auth/email/verify', { token }, { auth: false });
+  /** Redeems a one-time staff sign-in link (`pnpm admin staff bootstrap` / `staff link`). */
+  verifyStaffLink = (token: string): Promise<ApiAuthResult> =>
+    this.request('POST', '/auth/staff-link', { token }, { auth: false });
   /**
-   * Starts Discord/Google sign-in. With `link` the signed-in account is sent
-   * along, so a new identity is linked to it (or the device switches to the
-   * account that already owns it).
+   * Starts an OAuth sign-in. With `link` the signed-in account is sent along
+   * with the intent: a new identity is linked to it, and one another account
+   * owns is refused (`link`) or switched to (`signIn`).
    */
-  startOAuth = (provider: 'discord' | 'google', link: boolean): Promise<{ url: string }> =>
-    this.request('POST', `/auth/${provider}/start`, undefined, { auth: link });
-  /** Emails a magic link; `link` works as for {@link ApiClient.startOAuth}. */
-  startEmail = (email: string, link: boolean): Promise<{ sent: boolean }> =>
-    this.request('POST', '/auth/email/start', { email }, { auth: link });
+  startOAuth = (provider: OAuthProvider, link: boolean, intent: AuthIntent = 'signIn'): Promise<{ url: string }> =>
+    this.request('POST', `/auth/${provider}/start`, link ? { intent } : undefined, { auth: link });
+  /** Emails a magic link; `link` and `intent` work as for {@link ApiClient.startOAuth}. */
+  startEmail = (email: string, link: boolean, intent: AuthIntent = 'signIn'): Promise<{ sent: boolean }> =>
+    this.request('POST', '/auth/email/start', link ? { email, intent } : { email }, { auth: link });
   unlinkIdentity = (provider: LoginProvider): Promise<{ linkedProviders: string[] }> =>
     this.request('DELETE', `/me/identities/${provider}`);
 

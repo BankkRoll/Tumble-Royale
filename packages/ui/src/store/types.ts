@@ -6,6 +6,7 @@
  * from `@tumble/sim` or three.js; only `@tumble/shared` types.
  */
 import type { LobbyGameKind, RoundType, TeamShape, ThemeId } from '@tumble/shared';
+import type { AuthProviderId } from './account.ts';
 
 export type { RoundType, ThemeId };
 
@@ -857,7 +858,7 @@ export interface ProfileData {
     recentForm?: ('crown' | 'final' | 'eliminated')[];
   };
   showcase?: CosmeticItem[];
-  linkedProviders?: ('discord' | 'google' | 'email')[];
+  linkedProviders?: AuthProviderId[];
   /** Crown Shards toward the next Crown. */
   crownShards?: number;
   /** Shards that make one Crown. */

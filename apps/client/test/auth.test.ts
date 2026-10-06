@@ -4,7 +4,7 @@
  */
 import { accountUi, ui, uiEvents } from '@tumble/ui';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ApiAuthResult, ApiClient } from '../src/game/api.ts';
+import { ApiError, type ApiAuthResult, type ApiClient } from '../src/game/api.ts';
 import { AccountAuth } from '../src/game/online/auth.ts';
 import type { ProfileStore } from '../src/game/profile.ts';
 
@@ -25,13 +25,16 @@ function fakes(opts: {
   guest?: boolean;
   profile?: boolean;
   exchange: ApiAuthResult;
+  at?: { pathname: string; search: string };
 }) {
   const api = {
     signedIn: opts.current !== null,
     probe: vi.fn(async () => true),
-    authProviders: vi.fn(async () => ({ discord: true, google: false, email: true })),
+    authProviders: vi.fn(async () => ({ discord: true, google: false, github: true, email: true })),
     exchangeCode: vi.fn(async () => opts.exchange),
     verifyEmail: vi.fn(async () => opts.exchange),
+    verifyStaffLink: vi.fn(async () => opts.exchange),
+    startOAuth: vi.fn(async () => ({ url: 'https://provider.example/authorize' })),
     currentUserId: vi.fn(() => opts.current),
     me: vi.fn(async () => ({ displayName: 'Guesty', isGuest: opts.guest ?? true })),
     adoptSession: vi.fn(),
@@ -52,6 +55,7 @@ function fakes(opts: {
     }),
     answerTutorial: vi.fn(),
   };
+  const navigate = vi.fn();
   const auth = new AccountAuth(
     {
       api: api as unknown as ApiClient,
@@ -59,11 +63,11 @@ function fakes(opts: {
       account: null,
       onLocalProfileChanged: () => undefined,
       reload: vi.fn(),
-      navigate: vi.fn(),
+      navigate,
     },
-    { pathname: '/auth/complete', search: '?provider=discord&code=one-time-code' },
+    opts.at ?? { pathname: '/auth/complete', search: '?provider=discord&code=one-time-code' },
   );
-  return { api, profile, auth };
+  return { api, profile, auth, navigate };
 }
 
 /** Answers the next dialog with the given button. */
@@ -89,7 +93,14 @@ describe('AccountAuth.boot', () => {
     const { auth } = fakes({ current: 'me', exchange: result('me', 'linked') });
     expect(history.replaceState).toHaveBeenCalledWith(null, '', '/');
     await auth.boot();
-    expect(accountUi.getState().providers).toEqual({ discord: true, google: false, email: true });
+    expect(accountUi.getState().providers).toEqual({
+      discord: true,
+      google: false,
+      github: true,
+      twitch: false,
+      apple: false,
+      email: true,
+    });
   });
 
   it('keeps the device token when the sign-in landed on the same account', async () => {
@@ -163,5 +174,59 @@ describe('AccountAuth.boot', () => {
     await auth.boot();
     expect(api.adoptSession).not.toHaveBeenCalled();
     expect(profile.clear).not.toHaveBeenCalled();
+  });
+});
+
+describe('staff sign-in links', () => {
+  const staffResult = (): ApiAuthResult => ({ ...result('owner', 'signedIn'), provider: 'link' });
+
+  it('redeem the token, adopt the session and open the console', async () => {
+    const { api, auth, navigate } = fakes({
+      current: null,
+      profile: false,
+      exchange: staffResult(),
+      at: { pathname: '/auth/staff', search: '?token=staff-token' },
+    });
+    await auth.boot();
+    expect(api.verifyStaffLink).toHaveBeenCalledWith('staff-token');
+    expect(api.adoptSession).toHaveBeenCalledWith(expect.objectContaining({ accessToken: 'access-owner' }), false);
+    expect(navigate).toHaveBeenCalledWith('/admin');
+  });
+
+  it('stay on the game and explain when the link has expired', async () => {
+    const { api, auth, navigate } = fakes({
+      current: null,
+      profile: false,
+      exchange: staffResult(),
+      at: { pathname: '/auth/staff', search: '?token=old' },
+    });
+    api.verifyStaffLink.mockRejectedValueOnce(new ApiError(400, 'invalid_token', 'expired'));
+    await auth.boot();
+    expect(api.adoptSession).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(ui.getState().toasts.at(-1)?.title).toBe('That sign-in link has expired');
+  });
+
+  it('do not open the console when the player keeps the guest already on this device', async () => {
+    const { auth, navigate } = fakes({
+      current: 'guest',
+      guest: true,
+      exchange: staffResult(),
+      at: { pathname: '/auth/staff', search: '?token=t' },
+    });
+    answerNextDialog('keep');
+    await auth.boot();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+});
+
+describe('leaving for a provider', () => {
+  it('sends the intent along and goes to the provider', async () => {
+    const { api, auth, navigate } = fakes({ current: null, exchange: result('me', 'linked'), at: { pathname: '/', search: '' } });
+    await auth.handle('signIn-twitch', undefined);
+    expect(api.startOAuth).toHaveBeenCalledWith('twitch', false, 'signIn');
+    expect(navigate).toHaveBeenCalledWith('https://provider.example/authorize');
+    await auth.handle('signIn-myspace', undefined);
+    expect(api.startOAuth).toHaveBeenCalledTimes(1);
   });
 });

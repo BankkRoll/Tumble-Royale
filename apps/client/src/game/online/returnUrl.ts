@@ -1,13 +1,16 @@
 /**
  * Pure helpers for the URLs the game is opened on after leaving the page:
  * OAuth returns (`/auth/complete?code|error&provider`), email magic links
- * (`/auth/email?token`) and Stripe Checkout returns
- * (`/store?checkout=success|cancel&purchase`). Kept free of DOM and network
- * access so they are unit tested directly.
+ * (`/auth/email?token`), staff sign-in links (`/auth/staff?token`) and Stripe
+ * Checkout returns (`/store?checkout=success|cancel&purchase`). Kept free of
+ * DOM and network access so they are unit tested directly.
  */
 
+/** OAuth providers (`OAUTH_PROVIDERS` in apps/api). */
+export type OAuthProvider = 'discord' | 'google' | 'github' | 'twitch' | 'apple';
+
 /** Sign-in methods with a redirect or email flow. */
-export type LoginProvider = 'discord' | 'google' | 'email';
+export type LoginProvider = OAuthProvider | 'email';
 
 /** What the server did with a completed sign-in (`AuthResult.outcome` in apps/api). */
 export type AuthOutcome = 'linked' | 'alreadyLinked' | 'switched' | 'signedIn' | 'created';
@@ -17,6 +20,7 @@ export type BootReturn =
   | { kind: 'oauth'; code: string; provider: LoginProvider | null }
   | { kind: 'oauthError'; error: string; provider: LoginProvider | null }
   | { kind: 'email'; token: string }
+  | { kind: 'staffLink'; token: string }
   | { kind: 'checkout'; status: 'success' | 'cancel'; purchaseId: string | null };
 
 /** Query parameters that belong to a return and must not survive a reload. */
@@ -26,11 +30,14 @@ const RETURN_PARAMS = ['code', 'error', 'provider', 'token', 'checkout', 'purcha
 export const PROVIDER_LABELS: Record<LoginProvider, string> = {
   discord: 'Discord',
   google: 'Google',
+  github: 'GitHub',
+  twitch: 'Twitch',
+  apple: 'Apple',
   email: 'Email',
 };
 
 function provider(v: string | null): LoginProvider | null {
-  return v === 'discord' || v === 'google' || v === 'email' ? v : null;
+  return v !== null && Object.hasOwn(PROVIDER_LABELS, v) ? (v as LoginProvider) : null;
 }
 
 /**
@@ -60,6 +67,10 @@ export function parseBootReturn(pathname: string, search: string): BootReturn | 
     return token
       ? { kind: 'email', token }
       : { kind: 'oauthError', error: 'invalid_token', provider: 'email' };
+  }
+  if (path === '/auth/staff') {
+    const token = q.get('token');
+    return token ? { kind: 'staffLink', token } : { kind: 'oauthError', error: 'invalid_link', provider: null };
   }
   if (path === '/store') {
     const status = q.get('checkout');
@@ -117,6 +128,11 @@ export function authErrorMessage(error: string, p: LoginProvider | null): Messag
       return {
         title: 'That email link has expired',
         body: 'Sign-in links work once, for 15 minutes. Ask for a new one in Settings.',
+      };
+    case 'invalid_link':
+      return {
+        title: 'That sign-in link has expired',
+        body: 'Staff sign-in links work once, for 15 minutes. Ask your server operator for a new one.',
       };
     case 'identity_in_use':
       return {

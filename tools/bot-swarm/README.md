@@ -28,5 +28,5 @@ focus hint down the course twice a second. Their traffic is reported in its
 own block:
 
 ```sh
-GAME_TICKET_SECRET=… pnpm --filter @tumble/bot-swarm start -- --clients 40 --spectators 8 --spectate-after 50 --duration 120
+GAME_TICKET_SECRET=… pnpm --filter @tumble/bot-swarm start -- --clients 100 --spectators 8 --spectate-after 50 --duration 120
 ```

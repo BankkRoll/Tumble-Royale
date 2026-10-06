@@ -24,6 +24,8 @@ export interface LightingRigOptions {
   cascades?: number;
   /** `single`: half-extent of the shadow frustum in metres. `csm`: max far distance. */
   shadowDistance?: number;
+  /** `csm`: re-render the farthest cascade only every Nth frame. Default 1 (every frame). */
+  farCascadeStride?: number;
 }
 
 /** Live lighting rig. */
@@ -122,6 +124,8 @@ export function createLightingRig(atmosphere: Atmosphere, opts: LightingRigOptio
     }
   }
 
+  const farStride = Math.max(1, Math.round(opts.farCascadeStride ?? 1));
+  let shadowFrame = 0;
   let sunScale = 1;
   let hemiScale = 1;
   let base = atmosphere;
@@ -172,6 +176,16 @@ export function createLightingRig(atmosphere: Atmosphere, opts: LightingRigOptio
       }
       sun.position.copy(target.position).addScaledVector(sunDir, SUN_DISTANCE);
       target.updateMatrixWorld();
+      // PERF: the far cascade (60-160 m on High) is the costliest shadow render and the least
+      // visible. A skipped frame keeps its previous map together with its previous shadow
+      // matrix, so static shadows stay put and moving ones lag a frame at that distance.
+      const lights =
+        farStride > 1 ? (csm as unknown as { lights?: DirectionalLight[] } | null)?.lights : undefined;
+      const far = lights?.[lights.length - 1];
+      if (far) {
+        far.shadow.autoUpdate = false;
+        far.shadow.needsUpdate = shadowFrame++ % farStride === 0;
+      }
     },
     dispose(): void {
       sun.shadow.dispose();

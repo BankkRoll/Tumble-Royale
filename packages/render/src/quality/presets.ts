@@ -31,6 +31,8 @@ export interface QualityPreset {
   cascades: number;
   /** `single`: half extent (m). `csm`: max far (m). */
   shadowDistance: number;
+  /** `csm`: the farthest cascade re-renders every Nth frame (1 = every frame). */
+  shadowFarStride: number;
   post: PostSettings;
   geometryDetail: GeometryDetail;
   environment: EnvironmentDetail;
@@ -63,6 +65,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityTier, QualityPreset>> = {
     shadowMapSize: 1024,
     cascades: 1,
     shadowDistance: 24,
+    shadowFarStride: 1,
     post: { enabled: true, aa: 'fxaa', bloom: false, outline: false, chromatic: false, resolutionScale: 0.8 },
     geometryDetail: 0,
     environment: {
@@ -91,6 +94,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityTier, QualityPreset>> = {
     shadowMapSize: 2048,
     cascades: 1,
     shadowDistance: 34,
+    shadowFarStride: 1,
     post: { enabled: true, aa: 'fxaa', bloom: true, outline: false, chromatic: true, resolutionScale: 1 },
     geometryDetail: 1,
     environment: {
@@ -119,6 +123,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityTier, QualityPreset>> = {
     shadowMapSize: 2048,
     cascades: 3,
     shadowDistance: 160,
+    shadowFarStride: 2,
     post: { enabled: true, aa: 'smaa', bloom: true, outline: false, chromatic: true, resolutionScale: 1 },
     geometryDetail: 1,
     environment: {
@@ -147,6 +152,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityTier, QualityPreset>> = {
     shadowMapSize: 4096,
     cascades: 3,
     shadowDistance: 220,
+    shadowFarStride: 2,
     post: { enabled: true, aa: 'smaa', bloom: true, outline: false, chromatic: true, resolutionScale: 1 },
     geometryDetail: 2,
     environment: {

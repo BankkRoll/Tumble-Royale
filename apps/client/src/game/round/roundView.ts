@@ -255,6 +255,7 @@ export class RoundView implements GameView {
         mapSize: preset.shadowMapSize,
         cascades: preset.cascades,
         shadowDistance: preset.shadowDistance,
+        farCascadeStride: preset.shadowFarStride,
       },
     });
     let r = steps.next();

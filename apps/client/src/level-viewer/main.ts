@@ -200,7 +200,7 @@ class LevelSession {
     }
 
     this.batcher.build();
-    this.scene.add(this.batcher.object);
+    this.batcher.attach(this.scene);
 
     for (const p of players) {
       const v = createPlaceholderTumbler(defaultLoadout(COLORS[p.id % COLORS.length]));

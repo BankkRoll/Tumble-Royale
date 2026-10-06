@@ -205,7 +205,7 @@ export class RoundView implements GameView {
         run: () => {
           for (const o of this.obstacles) this.batcher.add(o.visual.object);
           this.batcher.build();
-          this.scene.add(this.batcher.object);
+          this.batcher.attach(this.scene);
         },
       },
       { name: 'tumblers', weight: 4, run: () => this.warmTumblers() },

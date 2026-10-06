@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
   BoxGeometry,
+  Matrix4,
   Mesh,
   MeshBasicNodeMaterial,
+  OrthographicCamera,
+  PerspectiveCamera,
   Scene,
+  type Camera,
+  type InstancedMesh,
   type MeshToonNodeMaterial,
   type Object3D,
 } from 'three/webgpu';
 import { modelWorldMatrix, positionGeometry, positionLocal, uniform, vec4 } from 'three/tsl';
+import { playableCustomRound, starterRound } from '@tumble/content/custom';
 import { getRound } from '@tumble/content/rounds';
 import { MeshBatcher } from '../src/batching/index.ts';
 import { batchability } from '../src/batching/meshBatcher.ts';
@@ -143,6 +149,221 @@ describe('MeshBatcher', () => {
     }
     const after = drawnMeshes(scene);
     expect(after).toBeLessThan(before * 0.5);
+    b.dispose();
+    for (const v of visuals) v.dispose();
+  });
+});
+
+/** One render pass as three runs it: the scene's `onBeforeRender` with that pass's camera. */
+function pass(scene: Scene, camera: Camera, frameId: number): void {
+  camera.updateMatrixWorld();
+  scene.onBeforeRender({ info: { frame: frameId } } as never, scene, camera, null as never);
+}
+
+function lookingAt(x: number, z: number, far = 20): PerspectiveCamera {
+  const cam = new PerspectiveCamera(60, 1, 0.1, far);
+  cam.position.set(x, 6, z - 6);
+  cam.lookAt(x, 0, z);
+  cam.updateMatrixWorld();
+  return cam;
+}
+
+/** Batches a pass draws (not culled, some instances). */
+function batchesDrawn(b: MeshBatcher): InstancedMesh[] {
+  return (b.object.children as InstancedMesh[]).filter((m) => m.layers.mask !== 0 && m.count > 0);
+}
+
+function row(scene: Scene, zs: number[]): Mesh[] {
+  const geo = new BoxGeometry(2, 2, 2);
+  const mat = tintMaterial();
+  return zs.map((z) => {
+    const m = new Mesh(geo, mat);
+    m.position.set(0, 1, z);
+    m.castShadow = true;
+    scene.add(m);
+    return m;
+  });
+}
+
+function batched(scene: Scene, roots: Object3D[]): MeshBatcher {
+  const b = new MeshBatcher();
+  for (const r of roots) b.add(r);
+  b.build();
+  b.attach(scene);
+  scene.updateMatrixWorld();
+  // Members join on the first frame and draw through the batch from the next (see the staging in `sync`).
+  pass(scene, lookingAt(0, 0), 0);
+  return b;
+}
+
+describe('MeshBatcher culling', () => {
+  it('culls a course-long batch from passes that see none of its cells', () => {
+    const scene = new Scene();
+    const meshes = row(scene, [0, 40, 80, 120, 160, 200]);
+    const b = batched(scene, meshes);
+    expect(b.stats.batches).toBe(1);
+    pass(scene, lookingAt(0, 0), 1);
+    expect(batchesDrawn(b)).toHaveLength(1);
+    expect(batchesDrawn(b)[0]!.count).toBe(6);
+    // Between two members: the batch's overall sphere covers this spot, its cells do not.
+    pass(scene, lookingAt(0, 100, 8), 1);
+    expect(batchesDrawn(b)).toHaveLength(0);
+    pass(scene, lookingAt(0, 200), 1);
+    expect(batchesDrawn(b)).toHaveLength(1);
+    // Sources stay hidden whether or not the batch is culled: nothing draws twice or goes missing.
+    for (const m of meshes) expect(m.layers.mask).toBe(0);
+    b.dispose();
+  });
+
+  it('culls per shadow cascade (orthographic light cameras)', () => {
+    const scene = new Scene();
+    const b = batched(scene, row(scene, [0, 4, 8, 150, 154]));
+    const cascade = (z: number, half: number): OrthographicCamera => {
+      const cam = new OrthographicCamera(-half, half, half, -half, 0.1, 200);
+      cam.position.set(30, 60, z + 20);
+      cam.lookAt(0, 0, z);
+      return cam;
+    };
+    pass(scene, cascade(4, 15), 1);
+    expect(batchesDrawn(b)).toHaveLength(1);
+    pass(scene, cascade(70, 15), 1);
+    expect(batchesDrawn(b)).toHaveLength(0);
+    pass(scene, cascade(80, 120), 1);
+    expect(batchesDrawn(b)).toHaveLength(1);
+    b.dispose();
+  });
+
+  it('follows moving members and keeps drawing while the warm-up disables culling', () => {
+    const scene = new Scene();
+    const meshes = row(scene, [0, 200]);
+    const b = batched(scene, meshes);
+    const mid = lookingAt(0, 100, 8);
+    pass(scene, mid, 1);
+    expect(batchesDrawn(b)).toHaveLength(0);
+    meshes[1]!.position.z = 100;
+    scene.updateMatrixWorld();
+    pass(scene, mid, 2);
+    expect(batchesDrawn(b)).toHaveLength(1);
+
+    meshes[1]!.position.z = 200;
+    scene.updateMatrixWorld();
+    pass(scene, mid, 3);
+    expect(batchesDrawn(b)).toHaveLength(0);
+    const inst = b.object.children[0] as InstancedMesh;
+    inst.frustumCulled = false;
+    pass(scene, mid, 4);
+    expect(batchesDrawn(b)).toHaveLength(1);
+    b.dispose();
+  });
+
+  it('restores the scene hook and every source on dispose', () => {
+    const scene = new Scene();
+    const own = (): void => {};
+    scene.onBeforeRender = own;
+    const meshes = row(scene, [0, 3]);
+    const b = batched(scene, meshes);
+    expect(scene.onBeforeRender).not.toBe(own);
+    pass(scene, lookingAt(0, 0), 1);
+    b.dispose();
+    expect(scene.onBeforeRender).toBe(own);
+    for (const m of meshes) expect(m.layers.mask).toBe(1);
+    expect(b.object.parent).toBeNull();
+  });
+
+  it('batches and culls a custom round from the editor like a built-in one', () => {
+    const draft = starterRound('race');
+    const pillars = [0, 1, 2, 3, 4, 5].map((i) => ({
+      id: `pillar-${i}`,
+      type: 'bumperPillar' as const,
+      position: { x: i % 2 === 0 ? -3 : 3, y: 0, z: 8 + i * 8 },
+      params: { radius: 1, height: 2.4, bounceSpeed: 8.5, bounceLift: 2.5 },
+    }));
+    const r = playableCustomRound(
+      { ...draft, obstacles: [...draft.obstacles, ...pillars] },
+      'custom:playtest',
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const round = r.round;
+    const scene = new Scene();
+    const visuals = [];
+    for (const inst of round.obstacles) {
+      const f = getObstacleVisual(inst.type);
+      if (!f) continue;
+      const v = f(inst, { theme: round.theme, speedScale: 1, seed: 1 });
+      scene.add(v.object);
+      visuals.push(v);
+    }
+    const before = drawnMeshes(scene);
+    const b = batched(
+      scene,
+      visuals.map((v) => v.object),
+    );
+    expect(b.stats.batches).toBeGreaterThan(0);
+    const overview = lookingAt(0, 28, 400);
+    overview.position.set(0, 60, -40);
+    overview.lookAt(0, 0, 28);
+    for (let i = 1; i <= 3; i++) {
+      for (const v of visuals) v.update(1 + i / 60, 1 / 60);
+      scene.updateMatrixWorld();
+      pass(scene, overview, i);
+    }
+    expect(drawnMeshes(scene)).toBeLessThan(before);
+
+    // Parity: each batch holds exactly its hidden sources' current world matrices.
+    const m4 = new Matrix4();
+    type Internals = { batches: { mesh: InstancedMesh; members: { mesh: Mesh; instanced: unknown }[] }[] };
+    for (const { mesh: inst, members } of (b as unknown as Internals).batches) {
+      if (members.some((m) => m.instanced)) continue;
+      const shown = members.filter((m) => m.mesh.layers.mask === 0);
+      expect(inst.count).toBe(shown.length);
+      expect(inst.material).toBe(members[0]!.mesh.material);
+      for (const m of shown)
+        expect(m.mesh.geometry.attributes.position!.count).toBe(inst.geometry.attributes.position!.count);
+      for (let i = 0; i < inst.count; i++) {
+        inst.getMatrixAt(i, m4);
+        // Instance matrices are float32 copies of the float64 world matrices.
+        const same = (m: Matrix4): boolean => m.elements.every((e, k) => Math.fround(e) === m4.elements[k]);
+        expect(shown.some((m) => same(m.mesh.matrixWorld))).toBe(true);
+      }
+    }
+
+    // A camera at the far end of the course draws fewer batches than the overview.
+    const all = batchesDrawn(b).length;
+    pass(scene, lookingAt(0, 56, 10), 4);
+    expect(batchesDrawn(b).length).toBeLessThan(all);
+    b.dispose();
+    for (const v of visuals) v.dispose();
+  });
+
+  it('keeps the shadow draws of a 100-player race in check (draw-call regression)', () => {
+    const round = getRound('tilt-town') as RoundDefinition;
+    const scene = new Scene();
+    const visuals = [];
+    for (const inst of round.obstacles) {
+      const f = getObstacleVisual(inst.type);
+      if (!f) continue;
+      const v = f(inst, { theme: round.theme, speedScale: 1, seed: 1 });
+      scene.add(v.object);
+      visuals.push(v);
+    }
+    const b = batched(
+      scene,
+      visuals.map((v) => v.object),
+    );
+    for (const v of visuals) v.update(1, 1 / 60);
+    scene.updateMatrixWorld();
+    // Roughly the nearest CSM cascade at the start line on High: 60 m across around the spawn.
+    const s = round.spawn.origin;
+    const near = new OrthographicCamera(-30, 30, 30, -30, 0.1, 400);
+    near.position.set(s.x + 40, s.y + 80, s.z + 40);
+    near.lookAt(s.x, s.y, s.z + 20);
+    pass(scene, near, 1);
+    const total = b.stats.batches;
+    const drawn = batchesDrawn(b).length;
+    expect(total).toBeGreaterThan(20);
+    // Before per-pass culling every batch drew in every cascade.
+    expect(drawn).toBeLessThan(total * 0.5);
     b.dispose();
     for (const v of visuals) v.dispose();
   });

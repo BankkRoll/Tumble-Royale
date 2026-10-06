@@ -1,6 +1,6 @@
-# Tumble Royale wire protocol — v5
+# Tumble Royale wire protocol — v6
 
-`PROTOCOL_VERSION = 5` (`src/protocol.ts`). Any incompatible change bumps it;
+`PROTOCOL_VERSION = 6` (`src/protocol.ts`). Any incompatible change bumps it;
 the server rejects a Hello with a different version (`Kick{VersionMismatch}`).
 
 Transport: binary WebSocket frames (`/ws`; `/gs/ws` is also accepted for the
@@ -166,8 +166,9 @@ larger message is sent alone). Payloads:
   `showInfo` (match id, playlist, show name, queue, round estimate — once per
   connection), `showRewards` (the account API's `PlayerRewardSummary` for
   this player, forwarded after the server posted the results), `playerList`, `roundPhase`, `showPhase`,
-  `roundResults`, `showSummary`, `lobby`, `chat`, `loadingStatus` (v4);
-  client→server: `chat`, `loaded`, `loadProgress` (v4), `spectate` (sent
+  `roundResults`, `showSummary`, `lobby`, `chat`, `loadingStatus` (v4),
+  `voteOptions`, `voteTally`, `voteResult` (v6);
+  client→server: `chat`, `loaded`, `loadProgress` (v4), `castVote` (v6), `spectate` (sent
   whenever the spectated player changes; drives interest management). Clients
   may never send SimEvents.
 
@@ -189,6 +190,10 @@ larger message is sent alone). Payloads:
   removal count from 7 to 8 bits so a whole lobby can leave in one snapshot;
   spectator ids move from 64–254 to 128–254. No message changed shape.
 
+  v6: round voting. `voteOptions`, `castVote`, `voteTally` and `voteResult`
+  (see Round voting). v6 exists for the same reason as v4: a v5 server counts
+  the unknown `castVote` as a protocol violation.
+
 ### Round loading (v4)
 
 A round stays in LOADING until every connected human entrant has sent
@@ -203,6 +208,35 @@ never hold the round, and bots never load. Meanwhile the server broadcasts
 it changed, plus a 1 Hz keepalive). IntroFlyover then starts on the same
 server tick for everyone, so clients that finished early wait on their loading
 screen instead of seeing the round begin.
+
+### Round voting (v6)
+
+Between rounds the director may put the next round to a vote (SHOWS.md §2.1).
+The server is authoritative; clients only ever send `castVote`.
+
+| message       | dir | when                                                    | payload                                                                                                                       |
+| ------------- | --- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `voteOptions` | S→C | ballot opens (RESULTS starts); re-sent on (re)attach    | `roundIndex`, `options` (≤ 4 round ids), `counts`, `voted`, `eligible`, `closesInMs`, `canVote`, `yourVote`, `botsDiscounted` |
+| `castVote`    | C→S | the player picks or changes an option                   | `roundIndex`, `option`                                                                                                        |
+| `voteTally`   | S→C | ballots changed; at most 4 Hz                           | `roundIndex`, `counts`, `voted`                                                                                               |
+| `voteResult`  | S→C | ballot closed (or called off: `winner -1`, `cancelled`) | `roundIndex`, `winner`, `roundId`, `counts`, `reason`                                                                         |
+
+`voteOptions` is per connection: `canVote` is false for spectators and
+players already knocked out, and `yourVote` echoes the player's own ballot so
+a reconnect restores the selection. Validation, all silent (never a protocol
+violation): a `castVote` for another round, after the close, with an option
+out of range or a non-integer, from a spectator or eliminated player, or
+repeating the current ballot is ignored. Ballots may change until the close.
+Each connection may send 2 `castVote`/s (burst 4); extras are dropped and
+counted in `rateLimited`. A dropped connection keeps its ballot (a resume
+gets `voteOptions` again); a player who leaves for good loses it. The next
+round is then announced with the usual `joinRound`, and the round still
+waits in LOADING for every connected human (the all-loaded gate is
+unchanged).
+
+Measured msgpack payloads with three options: `voteOptions` 150 B,
+`voteTally` 45 B (at most 4/s while the ballot is open), `voteResult` 79 B,
+`castVote` 34 B.
 
 ## Clock sync (Ping/Pong)
 

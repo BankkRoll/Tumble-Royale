@@ -138,10 +138,11 @@ job is deciding who may connect to whom and never trusting a client about it:
   not all audio is refused by the API and again by the receiving client, so a
   peer cannot open video or data channels.
 - **IP exposure.** Directly connected peers see each other's IP addresses,
-  as with any WebRTC call; the first-use dialog says so. "Relay only" sets
+  as with any WebRTC call; the first-use dialog says so. Whenever the ICE
+  servers include TURN, team rooms (strangers) use
   `iceTransportPolicy: 'relay'`, so the browser gathers only TURN candidates
-  and peers see the relay's address. The API never logs or stores peer
-  addresses.
+  and peers see the relay's address. Party rooms connect directly unless the
+  player turns on "Relay only". The API never logs or stores peer addresses.
 - **TURN credentials.** The API mints TURN REST credentials
   (`expiry:userId.roomTag`, HMAC-SHA1 with `VOICE_TURN_SECRET`) valid for four
   hours, one player and one room. The secret never leaves the API and coturn.

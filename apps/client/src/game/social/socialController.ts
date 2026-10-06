@@ -40,6 +40,7 @@ import {
   type FriendsModel,
   type SocialRef,
 } from './friendsState.ts';
+import { otherPlayerName } from './streamerNames.ts';
 
 /** The realtime socket as this controller uses it. */
 export interface RealtimeLike {
@@ -127,7 +128,7 @@ export class SocialController {
         const by = m.by as SocialRef | undefined;
         ui.getState().pushToast({
           kind: 'social',
-          title: `${by?.name ?? 'Your friend'} can't join right now`,
+          title: `${otherPlayerName(by, 'Your friend')} can't join right now`,
           icon: '💌',
         });
       }),
@@ -253,9 +254,10 @@ export class SocialController {
       const r = await this.api.friendRequest(target);
       const user = { userId: r.user.userId, name: r.user.displayName, tag: r.user.tag };
       this.apply({ type: 'request_sent', user, status: r.status });
+      const name = otherPlayerName(user, 'them');
       ui.getState().pushToast({
         kind: 'social',
-        title: r.status === 'accepted' ? `${user.name} is now your friend!` : `Request sent to ${user.name}`,
+        title: r.status === 'accepted' ? `${name} is now your friend!` : `Request sent to ${name}`,
         icon: '👥',
       });
       if (r.status === 'accepted') void this.refresh();
@@ -285,7 +287,8 @@ export class SocialController {
 
   /** Removes a friend. */
   async remove(userId: string): Promise<void> {
-    const name = this.model.friends.find((f) => f.userId === userId)?.displayName ?? 'Friend';
+    const friend = this.model.friends.find((f) => f.userId === userId);
+    const name = otherPlayerName(friend && { userId, name: friend.displayName }, 'Friend');
     try {
       await this.api.removeFriend(userId);
       this.apply({ type: 'friend_removed', userId });
@@ -305,11 +308,13 @@ export class SocialController {
         ...this.model.outgoing,
         ...this.model.recent,
       ];
-      const tag = known.find((k) => k.userId === userId)?.tag ?? '';
-      this.apply({ type: 'blocked', user: { userId, name, tag } });
+      const k = known.find((x) => x.userId === userId);
+      // The UI may have handed over a Streamer Mode mask; the blocked list keeps the real name.
+      const real = k?.displayName ?? name;
+      this.apply({ type: 'blocked', user: { userId, name: real, tag: k?.tag ?? '' } });
       ui.getState().pushToast({
         kind: 'info',
-        title: `${name} is blocked`,
+        title: `${otherPlayerName({ userId, name: real }, 'Player')} is blocked`,
         body: 'Unblock any time from Friends.',
       });
     } catch (err) {

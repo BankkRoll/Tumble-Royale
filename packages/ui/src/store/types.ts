@@ -825,6 +825,11 @@ export interface ProfileData {
    * which are unknown for them.
    */
   metOffline?: MetOfflineInfo;
+  /**
+   * Opened from a name Streamer Mode masked: `name` is that mask and `tag`
+   * is `••••`, so the card never shows who it really is.
+   */
+  masked?: boolean;
   id: string;
   name: string;
   tag: string;
@@ -1751,7 +1756,10 @@ export interface VoiceSettings {
   inputDeviceId: string;
   /** Voice chat volume 0..1 (under master volume). */
   volume: number;
-  /** Connect through the TURN relay only, so peers never see this player's IP address. */
+  /**
+   * Party voice through the TURN relay too, so no peer ever sees this
+   * player's IP address (team rooms always relay when TURN exists).
+   */
   relayOnly: boolean;
   /** In team rounds, also talk to teammates outside the party. */
   teamVoice: boolean;
@@ -1891,6 +1899,8 @@ export interface HighlightPlayer {
   name: string;
   isBot: boolean;
   isLocal: boolean;
+  /** In the local player's party: keeps the name in Streamer Mode, as everywhere else. */
+  isParty?: boolean;
 }
 
 /** One automatic highlight of the show (the rewards screen's reel). */

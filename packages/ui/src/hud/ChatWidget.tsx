@@ -174,7 +174,7 @@ function Line({
   const target: PlayerRef =
     label === nameTag(who)
       ? who
-      : { key: who.key, name: label, ...(who.userId ? { userId: who.userId } : {}) };
+      : { key: who.key, name: label, ...(who.userId ? { userId: who.userId } : {}), masked: true };
   const name = (
     <b
       className={`tr-chat-name${partyMate ? ' is-party-mate' : ''}`}

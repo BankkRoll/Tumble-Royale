@@ -47,9 +47,21 @@ export function emptyBoardText(board: LeaderboardId, scope: LeaderboardScope | '
   return 'Nobody here yet — be the first!';
 }
 
+const masksRow = (row: LeaderboardRow, streamer: boolean): boolean => streamer && !row.isSelf && !row.isBot;
+
+/** Opens a row's profile card, keeping the Streamer Mode mask the board showed. */
+function inspectRow(row: LeaderboardRow, streamer: boolean): void {
+  const masked = masksRow(row, streamer);
+  uiEvents.emit('inspectPlayer', {
+    playerId: row.playerId,
+    name: masked ? `Tumbler ${row.rank}` : row.name,
+    ...(masked ? { masked: true } : {}),
+  });
+}
+
 function Row({ row, unit, pinned }: { row: LeaderboardRow; unit: string; pinned?: boolean }): JSX.Element {
   const streamer = useUI((s) => s.settings.gameplay.streamerMode);
-  const name = streamer && !row.isSelf && !row.isBot ? `Tumbler ${row.rank}` : row.name;
+  const name = masksRow(row, streamer) ? `Tumbler ${row.rank}` : row.name;
   return (
     <button
       type="button"
@@ -58,7 +70,7 @@ function Row({ row, unit, pinned }: { row: LeaderboardRow; unit: string; pinned?
       data-testid={row.isSelf ? 'lb-self' : undefined}
       onClick={() => {
         playCue('ui.click');
-        uiEvents.emit('inspectPlayer', { playerId: row.playerId, name: row.name });
+        inspectRow(row, streamer);
       }}
     >
       <span className="tr-lb-rank">
@@ -81,6 +93,7 @@ function Row({ row, unit, pinned }: { row: LeaderboardRow; unit: string; pinned?
 }
 
 function Podium({ rows, unit }: { rows: LeaderboardRow[]; unit: string }): JSX.Element | null {
+  const streamer = useUI((s) => s.settings.gameplay.streamerMode);
   const top = rows.slice(0, 3);
   if (top.length < 3) return null;
   const order = [top[1]!, top[0]!, top[2]!];
@@ -91,16 +104,16 @@ function Podium({ rows, unit }: { rows: LeaderboardRow[]; unit: string }): JSX.E
           key={r.playerId}
           type="button"
           data-nav=""
-          aria-label={`#${r.rank} ${r.name}, ${r.value} ${unit}`}
+          aria-label={`#${r.rank} ${masksRow(r, streamer) ? `Tumbler ${r.rank}` : r.name}, ${r.value} ${unit}`}
           className={`tr-podium-step is-${r.rank}${r.isSelf ? ' is-self' : ''}`}
-          onClick={() => uiEvents.emit('inspectPlayer', { playerId: r.playerId, name: r.name })}
+          onClick={() => inspectRow(r, streamer)}
         >
           <TumblerAvatar
             colors={r.colors}
             size={r.rank === 1 ? '4em' : '3.2em'}
             expression={r.rank === 1 ? 'cheer' : 'happy'}
           />
-          <b className="tr-ellipsis">{r.name}</b>
+          <b className="tr-ellipsis">{masksRow(r, streamer) ? `Tumbler ${r.rank}` : r.name}</b>
           <small>
             {formatNumber(r.value)} {unit}
           </small>

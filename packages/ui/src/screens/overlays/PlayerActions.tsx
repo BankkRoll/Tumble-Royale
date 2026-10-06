@@ -11,6 +11,7 @@ import { useState, type JSX, type ReactNode } from 'react';
 import { Button } from '../../components/controls.tsx';
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
 import { openWhisper } from '../../hud/ChatWidget.tsx';
+import { MASKED_TAG } from '../../names.ts';
 import { uiEvents } from '../../store/events.ts';
 import { PRESENCE_LABEL, social, useSocial, type PlayerRef } from '../../store/social.ts';
 import type { ReportReason } from '../../store/types.ts';
@@ -343,7 +344,8 @@ export function PlayerMenu(): JSX.Element | null {
   if (!p) return null;
   const close = (): void => social.getState().openPlayerMenu(null);
   const colors = friend?.colors ?? member?.colors;
-  const tag = p.tag ?? friend?.tag ?? member?.tag;
+  // SECURITY: a masked ref must not pull the real tag back in from the friends or party lists.
+  const tag = p.masked ? (p.tag ? MASKED_TAG : undefined) : (p.tag ?? friend?.tag ?? member?.tag);
   return (
     <div
       className="tr-dialog-wrap tr-interactive"
@@ -380,7 +382,12 @@ export function PlayerMenu(): JSX.Element | null {
             autoFocusNav
             onClick={() => {
               close();
-              uiEvents.emit('inspectPlayer', { playerId: p.userId!, name: p.name, direct: true });
+              uiEvents.emit('inspectPlayer', {
+                playerId: p.userId!,
+                name: p.name,
+                direct: true,
+                ...(p.masked ? { masked: true } : {}),
+              });
             }}
           >
             View profile

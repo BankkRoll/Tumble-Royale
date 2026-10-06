@@ -242,8 +242,9 @@ Rules worth knowing before you enable it:
   suspension ends the player's voice on every instance at once. Nothing is
   recorded; a voice report carries which room the two shared and when.
 - **Privacy:** peers connected directly see each other's IP address, as with
-  any WebRTC call. Players can turn on "Relay only (hide my IP)" to send
-  everything through your TURN relay instead.
+  any WebRTC call. With TURN configured, team rooms (strangers) always go
+  through the relay; party voice connects directly unless a player turns on
+  "Relay only (hide my IP)". Without TURN every room connects directly.
 
 ### Refunds
 

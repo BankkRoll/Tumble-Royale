@@ -73,6 +73,21 @@ describe('Analytics', () => {
     now = T;
   });
 
+  it('opting out drops what was already queued, on flush and on page hide', async () => {
+    let allowed = true;
+    const { a, sent, beacons } = make({ allowed: () => allowed });
+    expect(a.track('show_start', { playlist: 'main-show', online: true })).toBe(true);
+    allowed = false;
+    await a.flush();
+    a.flushOnHide();
+    await Promise.resolve();
+    expect(sent).toHaveLength(0);
+    expect(beacons).toHaveLength(0);
+    allowed = true;
+    await a.flush();
+    expect(sent).toHaveLength(0);
+  });
+
   it('queues allow-listed events and posts them in one batch with the account token', async () => {
     const { a, sent } = make();
     expect(a.track('show_start', { playlist: 'main-show', online: true })).toBe(true);

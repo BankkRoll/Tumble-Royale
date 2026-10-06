@@ -492,7 +492,7 @@ export function Section({ id }: { id: SettingsSection }): JSX.Element {
           <AppRows />
           <Row
             label="Share gameplay stats"
-            hint="Anonymous play statistics (rounds, load times, frame rate) that help tune the game. Starts off when your browser sends Do Not Track"
+            hint="Anonymous play statistics (rounds, load times, frame rate) and crash reports that help tune the game. Starts off when your browser sends Do Not Track"
           >
             <Toggle
               label="Share gameplay stats"

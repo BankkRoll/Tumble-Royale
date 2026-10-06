@@ -133,6 +133,8 @@ export class Analytics {
     this.timer = null;
     const all = this.queue;
     this.queue = [];
+    // Turning the setting off also takes back what was queued before it.
+    if (!this.opts.allowed()) return [];
     const batches: AnalyticsEvent[][] = [];
     for (let i = 0; i < all.length; i += ANALYTICS_LIMITS.maxBatch)
       batches.push(all.slice(i, i + ANALYTICS_LIMITS.maxBatch));

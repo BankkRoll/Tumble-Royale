@@ -221,16 +221,24 @@ function hasPositions(o: Object3D): boolean {
 /**
  * Renderables of `root` that a render can reach (every ancestor visible),
  * including ones hidden themselves: pooled VFX, spare cosmetics and other
- * parts that only appear mid-round need their pipelines too.
+ * parts that only appear mid-round need their pipelines too. A hidden leaf
+ * that can never show in this scene opts out with `userData.warmUp = false`.
  */
 function collectRenderables(root: Object3D): Object3D[] {
   const out: Object3D[] = [];
   const walk = (o: Object3D): void => {
     if (isRenderable(o)) out.push(o);
     for (const c of o.children) if (c.visible) walk(c);
-    // Hidden renderable leaves are still collected; hidden subtrees are not.
+    // Hidden renderable leaves are still collected (unless they opted out); hidden subtrees are not.
     for (const c of o.children)
-      if (!c.visible && isRenderable(c) && c.children.length === 0 && hasPositions(c)) out.push(c);
+      if (
+        !c.visible &&
+        isRenderable(c) &&
+        c.children.length === 0 &&
+        hasPositions(c) &&
+        c.userData.warmUp !== false
+      )
+        out.push(c);
   };
   walk(root);
   return out;

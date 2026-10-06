@@ -611,9 +611,25 @@ export class MeshBatcher {
 
   /** Groups the registered meshes and creates the instanced batches. */
   build(): void {
+    const steps = this.buildSliced();
+    while (!steps.next().done) {
+      // Drain.
+    }
+  }
+
+  /**
+   * {@link build} split where the main thread may pause: after each
+   * registered root is analysed and after each batch is created. Yields
+   * progress (0..1).
+   *
+   * PERF: analysing ~330 obstacle meshes (material graphs, geometry hashes)
+   * in one piece blocked a round load for 70-150 ms.
+   */
+  *buildSliced(): Generator<number> {
     if (this.built) return;
     this.built = true;
     const groups = new Map<string, Member[]>();
+    let done = 0;
     for (const root of this.roots) {
       root.updateMatrixWorld(true);
       root.traverse((o) => {
@@ -644,9 +660,11 @@ export class MeshBatcher {
           checked: [material.version, -1],
         });
       });
+      yield (++done / this.roots.length) * 0.8;
     }
-    for (const members of groups.values()) {
-      if (members.length < this.minGroup) continue;
+    const lists = [...groups.values()].filter((members) => members.length >= this.minGroup);
+    let made = 0;
+    for (const members of lists) {
       const rep = members[0]!;
       let capacity = 0;
       for (const m of members) capacity += m.instanced ? m.instanced.instanceMatrix.count : 1;
@@ -677,6 +695,7 @@ export class MeshBatcher {
         bounds: emptyBounds(8),
       });
       this.object.add(inst);
+      yield 0.8 + (++made / lists.length) * 0.2;
     }
   }
 

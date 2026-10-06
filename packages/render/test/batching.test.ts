@@ -148,6 +148,28 @@ describe('MeshBatcher', () => {
     b.dispose();
   });
 
+  it('builds in slices: one pause per registered root and per batch, same batches', () => {
+    const round = getRound('hammer-highway')!;
+    const make = (): { b: MeshBatcher; roots: number } => {
+      const b = new MeshBatcher();
+      let roots = 0;
+      for (const inst of round.obstacles) {
+        const f = getObstacleVisual(inst.type);
+        if (!f) continue;
+        b.add(f(inst, { theme: round.theme, speedScale: 1, seed: 1 }).object);
+        roots++;
+      }
+      return { b, roots };
+    };
+    const sliced = make();
+    const progress = [...sliced.b.buildSliced()];
+    const whole = make();
+    whole.b.build();
+    expect(progress.length).toBe(sliced.roots + whole.b.stats.batches);
+    expect(progress.at(-1)).toBeCloseTo(1);
+    expect(sliced.b.stats).toEqual(whole.b.stats);
+  });
+
   it('more than halves the obstacle draws of a hammer-heavy race', () => {
     const round = getRound('hammer-highway');
     expect(round).toBeTruthy();

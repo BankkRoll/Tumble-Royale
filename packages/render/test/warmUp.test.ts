@@ -119,6 +119,21 @@ describe('beginSceneWarmUp', () => {
     expect(fractions.at(-1)).toBe(1);
   });
 
+  it('skips hidden leaves that opted out (a crowd-drawn Tumbler body)', () => {
+    const { renderer } = fakeRenderer();
+    const { scene, hidden } = course();
+    hidden.userData.warmUp = false;
+    let drawn = false;
+    const w = beginSceneWarmUp(renderer, scene, {
+      render: () => {
+        if (hidden.visible) drawn = true;
+      },
+    });
+    while (w.next());
+    expect(drawn).toBe(false);
+    expect(hidden.visible).toBe(false);
+  });
+
   it('makes empty draws real while warming and restores their counts', () => {
     const { renderer } = fakeRenderer();
     const { scene, trail } = course();

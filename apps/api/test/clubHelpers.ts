@@ -22,7 +22,7 @@ export function freshIdentity(): { name: string; tag: string } {
   clubNo++;
   // Counted, not random: random digits sometimes spelled numbers the name filter
   // blocks (69, 420, 88). Each test API has its own database, so a counter is unique enough.
-  return { name: `Wobble Crew ${clubName(clubNo)}`, tag: `W${clubNo % 1000}` };
+  return { name: `Crew ${clubName(clubNo)}`, tag: `W${clubNo % 1000}` };
 }
 
 /**

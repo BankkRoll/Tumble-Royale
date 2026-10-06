@@ -104,6 +104,7 @@ import { queueRefusal, routePlay, type PlayKind } from './online/partyPlay.ts';
 import { RejoinStore, planRejoin, sessionStore, type RejoinPlan } from './online/rejoin.ts';
 import { onlineCounts, queueTarget } from './online/playerCounts.ts';
 import { QueueAttempts, enqueueParty } from './online/queueAttempt.ts';
+import { askDialog } from './askDialog.ts';
 import { MatchmakerClient, gameSocketUrl, type Lobby, type MatchFound } from './online/matchmaker.ts';
 import {
   chooseRegion,
@@ -950,19 +951,9 @@ export class GameApp {
     void this.account?.announceSolo(false);
   }
 
-  /**
-   * Shows a dialog and resolves with the pressed button id (the cancel
-   * button's id when it is dismissed).
-   */
-  private ask(spec: DialogSpec): Promise<string> {
-    return new Promise((resolve) => {
-      const off = uiEvents.on('dialogResult', ({ dialogId, buttonId }) => {
-        if (dialogId !== spec.id) return;
-        off();
-        resolve(buttonId);
-      });
-      ui.getState().showDialog(spec);
-    });
+  /** {@link askDialog}: the pressed button id, or null when another dialog replaced it. */
+  private ask(spec: DialogSpec): Promise<string | null> {
+    return askDialog(spec);
   }
 
   /**
@@ -1404,7 +1395,8 @@ export class GameApp {
       ],
     });
     // The show may have started on its own meanwhile (a replayed match_found).
-    if (this.session) return;
+    // Unanswered (another dialog took its place) is not "Leave show": the record expires by itself.
+    if (this.session || choice === null) return;
     if (choice !== 'rejoin') {
       this.rejoin.finish(plan.record.matchId);
       return;

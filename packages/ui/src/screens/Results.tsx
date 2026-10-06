@@ -160,10 +160,15 @@ export function BetweenRoundsScreen(): JSX.Element | null {
           <div className="tr-panel tr-between-next tr-enter" style={{ ['--tilt' as string]: '-2deg' }}>
             <span className="tr-label">Next up</span>
             <TypeBadge type={info.next.type} />
-            {step >= 3 ? (
+            {step >= 3 || info.next.voted ? (
               <div className="tr-title tr-h2 tr-slam">{info.next.name}</div>
             ) : (
               <div className="tr-title tr-h2 tr-between-mystery">???</div>
+            )}
+            {info.next.voted && (
+              <span className="tr-chip tr-chip--good" data-testid="between-voted">
+                <Icon name="check" size="0.9em" /> Picked by vote
+              </span>
             )}
             {info.next.isFinal && step >= 3 && (
               <span className="tr-chip tr-chip--lemon">

@@ -158,6 +158,7 @@ export function lobbyOptions(st: LobbySettings): CustomLobbyOptions {
     spectatorSlots: st.spectatorSlots,
     countdownSec: st.lobbyCountdownSec,
     minPlayers: st.minPlayers ?? 1,
+    roundVoting: st.roundVoting ?? true,
     isPrivate: true,
   };
 }
@@ -188,6 +189,7 @@ export function optionsToSettings(o: Partial<CustomLobbyOptions>): Partial<Lobby
   const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
   if (o.rounds !== undefined) out.rounds = o.rounds.slice(0, 10);
   if (o.bots !== undefined) out.bots = o.bots;
+  if (o.roundVoting !== undefined) out.roundVoting = o.roundVoting;
   if (o.maxPlayers !== undefined) out.maxPlayers = clamp(Math.round(o.maxPlayers), 2, MAX_PLAYERS);
   if (o.timerScale !== undefined) out.roundTimeScale = clamp(o.timerScale, 0.5, 2);
   if (o.countdownSec !== undefined) out.lobbyCountdownSec = clamp(Math.round(o.countdownSec), 0, 120);

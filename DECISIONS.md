@@ -241,3 +241,37 @@ connections mid-round. Signalling rides the existing authenticated realtime
 socket instead of a new endpoint, so origin checks, bans and cross-instance
 delivery come for free; the API decides room membership from server state
 and re-checks it on every relayed message.
+
+## Custom rounds: one validator, no physics, the server ships the definition
+
+Player-made rounds are untrusted data that run on the same game servers as
+built-in rounds, so one validator (`@tumble/content/custom`) runs unchanged in
+the editor, in the API on every publish and update, and on the game server
+before a show plays the round, and again on each client before it builds
+what the server sent. The editor's verdict is never trusted.
+
+The playability checks (spawn on solid ground, reachable finish) use a
+physics-free model of walkable surfaces rather than Rapier: the API does not
+ship the physics engine, and the same answer everywhere matters more than a
+precise one. The model errs toward "reachable"; a false "unreachable" would
+block a fair round, while a false "reachable" is caught by Test play.
+
+Shared rounds are not in any client build. The game server fetches the
+stored definition over the signed internal channel when a private show
+starts, holds the show in its lobby until it has it, and sends the exact
+definition in `joinRound`, so the authoritative sim and every prediction sim
+build the same round. Codes that are gone or fail validation drop out and the
+show falls back to its base playlist instead of stalling. A takedown stops a
+code for the editor, lobbies and every show created afterwards; a show
+already running finishes with its copy.
+
+Publishing needs a full (non-guest) account: shared rounds reach other
+players and must be attributable, and a guest account is one cookie clear
+away from gone. Guests still build, save locally and test play. Bots on
+custom races follow generated straight legs between checkpoints with jumps at
+gaps, and the editor says when a leg crosses a gap they cannot jump; we chose
+honest and simple over a navmesh.
+
+The editor is its own Vite entry (`/editor`): players never download it with
+the game, and it shares the origin so it can reuse the player's session and
+hand Test play rounds to the game tab through IndexedDB.

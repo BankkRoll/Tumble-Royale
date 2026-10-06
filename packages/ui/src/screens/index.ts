@@ -49,6 +49,7 @@ export {
   VictoryScreen,
   WinnerCamScreen,
 } from './Results.tsx';
+export { RoundVoteCard, RoundVoteLayer, voteAnnouncement, voteFooter } from './RoundVote.tsx';
 export { PlayerWall, PlayerWallScreen, wallGrid, type PlayerWallProps } from './PlayerWall.tsx';
 export { RewardsScreen } from './Rewards.tsx';
 export { MatchHistoryScreen } from './MatchHistory.tsx';

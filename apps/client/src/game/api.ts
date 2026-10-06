@@ -1095,4 +1095,57 @@ export class ApiClient {
    */
   queueTicket = (playlistId: string, region?: string): Promise<{ ticket: string; expiresIn: number }> =>
     this.request('POST', '/party/queue-ticket', region ? { playlistId, region } : { playlistId });
+
+  // ---------------------------------------------------------------------------
+  // Shared custom rounds
+  // ---------------------------------------------------------------------------
+
+  /** A shared round by code (anyone; the owner also sees their unpublished rounds). */
+  customRound = (code: string): Promise<ApiCustomRound> =>
+    this.request('GET', `/custom-rounds/${encodeURIComponent(code)}`, undefined, { auth: this.signedIn });
+  myCustomRounds = (): Promise<{ rounds: ApiCustomRoundSummary[]; limit: number }> =>
+    this.request('GET', '/custom-rounds/mine');
+  publishCustomRound = (round: unknown, description: string): Promise<{ round: ApiCustomRoundSummary }> =>
+    this.request('POST', '/custom-rounds', { round, description });
+  updateCustomRound = (
+    code: string,
+    round: unknown,
+    description: string,
+  ): Promise<{ round: ApiCustomRoundSummary }> =>
+    this.request('PUT', `/custom-rounds/${encodeURIComponent(code)}`, { round, description });
+  setCustomRoundPublished = (code: string, published: boolean): Promise<{ round: ApiCustomRoundSummary }> =>
+    this.request('POST', `/custom-rounds/${encodeURIComponent(code)}/${published ? 'publish' : 'unpublish'}`);
+  deleteCustomRound = (code: string): Promise<void> =>
+    this.request('DELETE', `/custom-rounds/${encodeURIComponent(code)}`);
+  reportCustomRound = (
+    code: string,
+    reason: ApiRoundReportReason,
+    details?: string,
+  ): Promise<{ id: string }> =>
+    this.request('POST', `/custom-rounds/${encodeURIComponent(code)}/report`, {
+      reason,
+      ...(details ? { details } : {}),
+    });
+}
+
+/** Why a shared round is reported. */
+export type ApiRoundReportReason = 'offensive' | 'broken' | 'spam' | 'copied' | 'other';
+
+/** A shared round in lists. */
+export interface ApiCustomRoundSummary {
+  code: string;
+  name: string;
+  description: string;
+  type: string;
+  status: 'published' | 'unpublished' | 'taken_down';
+  sizeBytes: number;
+  createdAt: string;
+  updatedAt: string;
+  takedownReason?: string | null;
+}
+
+/** `GET /custom-rounds/:code`. */
+export interface ApiCustomRound extends ApiCustomRoundSummary {
+  author: string | null;
+  definition: unknown;
 }

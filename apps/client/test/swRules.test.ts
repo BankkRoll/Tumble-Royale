@@ -67,8 +67,36 @@ describe('routeRequest', () => {
       '/config.json',
       '/admin',
       '/admin.html',
+      '/editor',
+      '/status',
+      '/status/',
+      '/status.html',
+      '/status?ref=banner',
     ])
       expect(get(p, 'navigate').kind, p).toBe('passthrough');
+  });
+
+  it('leaves the status page and its data to the network, even when files share its path', () => {
+    const withStatus: RouteContext = {
+      ...ctx,
+      // Even a stale precache that somehow holds the page must not answer it.
+      precached: new Set([...ctx.precached, 'status.html', 'assets/status-Ab12Cd.js']),
+    };
+    const at = (path: string, mode = 'cors') =>
+      routeRequest({ url: `https://play.example.com${path}`, method: 'GET', mode }, withStatus).kind;
+    expect(at('/status', 'navigate')).toBe('passthrough');
+    expect(at('/status.html', 'navigate')).toBe('passthrough');
+    expect(at('/status.html')).toBe('passthrough');
+    expect(at('/assets/status-Ab12Cd.js', 'no-cors')).toBe('passthrough');
+    for (const p of [
+      '/api/status/summary',
+      '/api/status/history',
+      '/api/status/feed.atom',
+      '/api/status/feed.json',
+    ])
+      expect(at(p), p).toBe('passthrough');
+    expect(shouldPrecache('status.html')).toBe(false);
+    expect(shouldPrecache('assets/status-Ab12Cd.js')).toBe(false);
   });
 
   it('ignores other origins and paths outside the scope', () => {

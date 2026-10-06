@@ -24,6 +24,8 @@ export interface TicketCustomSettings {
   roundTimeScale: number;
   lobbyCountdownSec: number;
   spectatorSlots: number;
+  /** "Round voting" in the lobby settings; absent from older matchmakers (treated as on). */
+  roundVoting?: boolean;
 }
 
 /** Verified join ticket claims (matchmaker `JoinTicketClaims`). */

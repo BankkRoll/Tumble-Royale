@@ -283,6 +283,15 @@ export class SwarmClient {
             this.reliable.send(
               encodeReliableMessage({ kind: 'msg', msg: { t: 'loaded', roundId: m.msg.roundId } }),
             );
+          } else if (m?.kind === 'msg' && m.msg.t === 'voteOptions' && m.msg.canVote) {
+            // One seeded ballot per vote so load tests cover the castVote path and its tally broadcasts.
+            const option = this.rng.int(0, Math.max(0, m.msg.options.length - 1));
+            this.reliable.send(
+              encodeReliableMessage({
+                kind: 'msg',
+                msg: { t: 'castVote', roundIndex: m.msg.roundIndex, option },
+              }),
+            );
           }
         });
         return;

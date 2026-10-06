@@ -5,8 +5,13 @@
  * COUNTDOWN → PLAYING (→ OVERTIME) → ROUND_END → RESULTS → TRANSITION → …
  * → Victory → Ended.
  *
- * The director owns timing, round selection, survivor bookkeeping, party
- * fate sharing and the final summary. It does not step physics: a
+ * With round voting on, the next round's ballot opens when RESULTS starts
+ * and runs alongside RESULTS and TRANSITION; the next round is the vote's
+ * winner (see {@link RoundVote}). TRANSITION only stretches when a playlist's
+ * ballot is longer than that gap.
+ *
+ * The director owns timing, round selection, voting, survivor bookkeeping,
+ * party fate sharing and the final summary. It does not step physics: a
  * {@link ShowRoundHost} creates a {@link RoundDriver} (normally a match sim)
  * that the caller steps at the fixed rate, while the director is ticked with
  * wall-clock deltas. Given the same seed, participants, host outcomes and
@@ -29,7 +34,7 @@ import { PlayerRoundStatus, type MatchPlayerInfo } from '../match/types.ts';
 import { getMutator, pickMutator } from '../mutators/index.ts';
 import { assignTeams } from '../rounds/team-score.ts';
 import { ShowPlaylistSchema, type ShowPlaylist, type ShowPlaylistInput } from './schema/index.ts';
-import { selectRound } from './selector.ts';
+import { playerFit, selectRound, selectRoundCandidates, type RoundCandidate } from './selector.ts';
 import {
   DEFAULT_SHOW_TIMINGS,
   type LoadingRoster,
@@ -44,6 +49,7 @@ import {
   type ShowSummary,
   type ShowTimings,
 } from './types.ts';
+import { RoundVote, type VoteCastResult, type VoteSnapshot } from './vote.ts';
 
 const SELECT_SALT = 0x5e1e_c7ed;
 
@@ -74,6 +80,13 @@ export interface ShowDirectorOptions {
    * the show seed.
    */
   mutatorId?: string | null;
+  /**
+   * Lets players vote on rounds between rounds when the playlist allows it
+   * (`playlist.voting.enabled`). Hosts pass the `shows.mapVoting` live-ops
+   * flag here; off (the default) keeps the plain seeded selection, drawing
+   * from the generator exactly as before voting existed.
+   */
+  voting?: boolean;
 }
 
 /** Most players a {@link LoadingRoster} names. */
@@ -129,6 +142,9 @@ export class ShowDirector {
   private readonly knockedOut: { ids: number[]; round: number }[] = [];
   private winners: number[] = [];
   private summaryCache: ShowSummary | null = null;
+  private readonly votingOn: boolean;
+  /** The ballot for the next round, from RESULTS until that round is selected. */
+  private vote: RoundVote | null = null;
 
   constructor(opts: ShowDirectorOptions) {
     this.seed = opts.seed >>> 0;
@@ -155,6 +171,7 @@ export class ShowDirector {
         : pickMutator(this.seed, this.playlist.mutators);
     this.alive = this.participants.map((p) => p.id);
     this.duration = this.timings.preShow;
+    this.votingOn = (opts.voting ?? false) && this.playlist.voting.enabled;
   }
 
   // ---------------------------------------------------------------------------
@@ -183,10 +200,57 @@ export class ShowDirector {
   tick(dt: number): void {
     if (this.showPhase === ShowPhase.Ended) return;
     this.elapsed += Math.max(0, dt);
+    this.advanceVote(Math.max(0, dt));
     // Several short phases may complete inside one large dt; carry the remainder.
     for (let guard = 0; guard < 32; guard++) {
       if (!this.advance()) break;
     }
+  }
+
+  /**
+   * A player's ballot for the next round. Ballots may change until the vote
+   * closes; anything for another round, a closed ballot, an unknown option
+   * or a player who cannot vote is ignored.
+   *
+   * @param playerId - The voter.
+   * @param roundIndex - Round the ballot is for (guards against stale clicks).
+   * @param option - Option index in the ballot's display order.
+   * @returns What happened to the ballot.
+   */
+  castVote(playerId: number, roundIndex: number, option: number): VoteCastResult {
+    const v = this.vote;
+    if (!v || v.roundIndex !== roundIndex) return 'closed';
+    const r = v.cast(playerId, option);
+    if (r === 'accepted' || r === 'changed') this.emitTally(v);
+    return r;
+  }
+
+  /**
+   * The running ballot (open, or closed and waiting for its round to be
+   * selected), for hosts re-sending it to a player who reconnected. Allocates.
+   *
+   * @returns The ballot, or null when no vote is running.
+   */
+  currentVote(): VoteSnapshot | null {
+    return this.vote?.snapshot() ?? null;
+  }
+
+  /**
+   * @param playerId - A player.
+   * @returns True if the player may vote in the running ballot.
+   */
+  canVote(playerId: number): boolean {
+    return this.vote?.canVote(playerId) ?? false;
+  }
+
+  /**
+   * The option a player picked in the running ballot.
+   *
+   * @param playerId - A player.
+   * @returns Option index, or -1.
+   */
+  ballotOf(playerId: number): number {
+    return this.vote?.ballotOf(playerId) ?? -1;
   }
 
   /** A human finished loading the current round. */
@@ -216,6 +280,7 @@ export class ShowDirector {
    */
   onPlayerConnection(playerId: number, connected: boolean): void {
     if (!this.byId.has(playerId)) return;
+    this.vote?.setConnected(playerId, connected);
     if (!connected) {
       this.offline.add(playerId);
       return;
@@ -250,6 +315,7 @@ export class ShowDirector {
   onPlayerLeft(playerId: number): void {
     if (this.left.has(playerId) || !this.byId.has(playerId)) return;
     this.left.add(playerId);
+    if (this.vote?.remove(playerId)) this.emitTally(this.vote);
     const inRound =
       this.live !== null &&
       this.roundPhase !== null &&
@@ -345,6 +411,7 @@ export class ShowDirector {
         this.concludeRound(cur);
         this.setShowPhase(ShowPhase.BetweenRounds, -1);
         this.setRoundPhase(RoundPhase.Results, t.results);
+        if (!cur.isFinal && this.alive.length > 1) this.openVote(cur.index + 1);
         return true;
       }
       case RoundPhase.Results: {
@@ -358,7 +425,7 @@ export class ShowDirector {
         return true;
       }
       case RoundPhase.Transition: {
-        if (this.elapsed < this.duration) return false;
+        if (this.elapsed < this.duration || (this.vote !== null && !this.vote.closed)) return false;
         this.elapsed -= this.duration;
         this.startNextRound();
         return true;
@@ -399,13 +466,16 @@ export class ShowDirector {
     }
     const index = this.roundIndex + 1;
     const p = this.playlist;
-    const isFinal = n <= 2 || index >= p.maxRounds - 1 || (n <= p.finalAtOrBelow && index >= p.minRounds - 1);
-    const round = selectRound(
-      p,
-      this.catalog,
-      { roundIndex: index, players: n, isFinal, previousType: this.previousType, used: this.used },
-      this.rng,
-    );
+    const isFinal = this.nextIsFinal(index, n);
+    const voted = this.takeVoteWinner(index, n, isFinal);
+    const round =
+      voted ??
+      selectRound(
+        p,
+        this.catalog,
+        { roundIndex: index, players: n, isFinal, previousType: this.previousType, used: this.used },
+        this.rng,
+      );
     if (!round) {
       this.finishShow();
       return;
@@ -445,8 +515,104 @@ export class ShowDirector {
       roundId: round.id,
       isFinal,
       mutatorId: this.mutatorId,
+      byVote: voted !== null,
     });
     this.setRoundPhase(RoundPhase.Loading, this.timings.loadingHardCap);
+  }
+
+  /** The final-round rule for round `index` entered by `n` players. */
+  private nextIsFinal(index: number, n: number): boolean {
+    const p = this.playlist;
+    return n <= 2 || index >= p.maxRounds - 1 || (n <= p.finalAtOrBelow && index >= p.minRounds - 1);
+  }
+
+  /**
+   * Opens the ballot for round `index` when voting applies: never before
+   * round 1, never for the final unless the playlist opts in, and only when
+   * the rules leave at least two rounds to choose from.
+   */
+  private openVote(index: number): void {
+    if (!this.votingOn) return;
+    const n = this.alive.length;
+    const isFinal = this.nextIsFinal(index, n);
+    const cfg = this.playlist.voting;
+    if (index <= 0 || (isFinal && !cfg.finals)) return;
+    const candidates = selectRoundCandidates(
+      this.playlist,
+      this.catalog,
+      { roundIndex: index, players: n, isFinal, previousType: this.previousType, used: this.used },
+      this.rng,
+      cfg.options,
+    );
+    if (candidates.length < 2) return;
+    const vote = new RoundVote({
+      seed: this.seed,
+      roundIndex: index,
+      isFinal,
+      candidates,
+      voters: this.alive
+        .filter((id) => !this.left.has(id))
+        .map((id) => ({ id, isBot: this.byId.get(id)?.isBot ?? true })),
+      seconds: cfg.seconds,
+      baseGap: this.timings.results + this.timings.transition,
+    });
+    for (const id of this.offline) vote.setConnected(id, false);
+    this.vote = vote;
+    this.emit({ type: 'voteOpen', vote: vote.snapshot() });
+  }
+
+  /**
+   * Runs the ballot clock. When the ballot closes while TRANSITION is already
+   * waiting on it, the time TRANSITION ran past its own length is trimmed to
+   * what came after the close, so the next round starts on the close (or on
+   * TRANSITION's own end, whichever is later) without a backlog.
+   */
+  private advanceVote(dt: number): void {
+    const v = this.vote;
+    if (!v || v.closed) return;
+    const { changed, overshoot } = v.advance(dt);
+    if (changed) this.emitTally(v);
+    if (overshoot < 0) return;
+    if (this.roundPhase === RoundPhase.Transition && this.elapsed > this.duration)
+      this.elapsed = this.duration + Math.min(this.elapsed - this.duration, overshoot);
+    this.emit({ type: 'voteClosed', roundIndex: v.roundIndex, result: v.snapshot().result });
+  }
+
+  /**
+   * The voted round for round `index`, re-checked against the field as it is
+   * now (players can leave during the vote): the ballot must have been for a
+   * final exactly when this is the final, and the round must still fit the
+   * player count. Runners-up are tried in score order before the vote is
+   * dropped for the seeded pick.
+   */
+  private takeVoteWinner(index: number, n: number, isFinal: boolean): RoundDefinition | null {
+    const v = this.vote;
+    this.vote = null;
+    if (!v || v.roundIndex !== index) return null;
+    if (!v.closed) {
+      v.close();
+      this.emit({ type: 'voteClosed', roundIndex: v.roundIndex, result: v.snapshot().result });
+    }
+    const result = v.result;
+    if (!result || v.isFinal !== isFinal) return null;
+    const order = v.options
+      .map((c, i) => ({ c, i, score: i === result.winner ? Infinity : (result.scores[i] ?? 0) }))
+      .sort((a, b) => b.score - a.score || a.i - b.i);
+    const fits = (c: RoundCandidate): boolean => playerFit(c.round, n) > 0 && !this.used.has(c.round.id);
+    return order.find((o) => fits(o.c))?.c.round ?? null;
+  }
+
+  /** Calls off a running ballot (the show is ending). */
+  private cancelVote(): void {
+    const v = this.vote;
+    if (!v) return;
+    this.vote = null;
+    if (!v.closed) this.emit({ type: 'voteClosed', roundIndex: v.roundIndex, result: null });
+  }
+
+  private emitTally(v: RoundVote): void {
+    const snap = v.snapshot();
+    this.emit({ type: 'voteTally', roundIndex: v.roundIndex, counts: snap.counts, voted: snap.voted });
   }
 
   /**
@@ -634,6 +800,7 @@ export class ShowDirector {
   }
 
   private finishShow(): void {
+    this.cancelVote();
     this.disposeCurrent();
     if (this.winners.length === 0 && this.alive.length === 1)
       this.winners = this.crownFor(this.alive[0] as number);

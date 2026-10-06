@@ -20,9 +20,11 @@
  * emotes.
  */
 import { MAIN_SHOW, getPlaylist } from '@tumble/content/shows';
-import { getRound } from '@tumble/content/rounds';
+import { isCustomRoundId } from '@tumble/content/custom';
+import { lookupRound, registerCustomRound } from '../../customRounds/registry.ts';
 import {
   KickReason,
+  VOTE_MAX_OPTIONS,
   type DecodedSnapshot,
   type JoinRoundMsg,
   type LoadingStatusMsg,
@@ -323,6 +325,10 @@ export class OnlineShowSession extends ShowSession {
     return out;
   }
 
+  protected override sendVote(roundIndex: number, option: number): void {
+    this.net.sendLowFreq({ t: 'castVote', roundIndex, option });
+  }
+
   protected override onSpectateTarget(id: number): void {
     this.net.sendLowFreq({ t: 'spectate', target: id });
   }
@@ -399,6 +405,27 @@ export class OnlineShowSession extends ShowSession {
         if (m.t === 'showInfo') this.onShowInfo(m);
         else if (m.t === 'showRewards') this.apiReward = m.reward;
         else if (m.t === 'loadingStatus') this.onLoadingStatus(m);
+        else if (m.t === 'voteOptions')
+          this.onVoteOpen({
+            roundIndex: m.roundIndex,
+            isFinal: m.isFinal,
+            options: m.options.slice(0, VOTE_MAX_OPTIONS),
+            counts: m.counts,
+            voted: m.voted,
+            eligible: m.eligible,
+            closesIn: m.closesInMs / 1000,
+            canVote: m.canVote && !isSpectatorId(this.localId),
+            myVote: m.yourVote,
+            botsDiscounted: m.botsDiscounted,
+          });
+        else if (m.t === 'voteTally') this.onVoteTally(m.roundIndex, m.counts, m.voted);
+        else if (m.t === 'voteResult')
+          this.onVoteResult(
+            m.roundIndex,
+            m.reason === 'cancelled'
+              ? null
+              : { roundIndex: m.roundIndex, winner: m.winner, counts: m.counts, reason: m.reason },
+          );
         else if (m.t === 'showPhase' && m.phase === ShowPhase.PreShow && m.startsInMs !== undefined) {
           this.showStarted = true;
           this.preShowSeconds = m.startsInMs / 1000;
@@ -434,7 +461,7 @@ export class OnlineShowSession extends ShowSession {
   }
 
   private createPredictSim(join: JoinRoundMsg): MatchSim {
-    const round = join.lobby ? PRE_SHOW_LOBBY_ROUND : getRound(join.roundId);
+    const round = join.lobby ? PRE_SHOW_LOBBY_ROUND : lookupRound(join.roundId);
     if (!round) throw new Error(`Unknown round "${join.roundId}" from the server`);
     const sim = createMatchSim(
       {
@@ -564,7 +591,14 @@ export class OnlineShowSession extends ShowSession {
       return;
     }
     this.lobbyLive = false;
-    const round = getRound(j.roundId);
+    if (j.round && isCustomRoundId(j.roundId)) {
+      const custom = registerCustomRound(j.round, j.roundId);
+      if (!custom.ok) {
+        this.fail(`The shared round ${j.roundId.slice(7)} could not be loaded`);
+        return;
+      }
+    }
+    const round = lookupRound(j.roundId);
     if (!round) {
       this.fail(`This build doesn't have the round "${j.roundId}"`);
       return;
@@ -658,7 +692,7 @@ export class OnlineShowSession extends ShowSession {
   }
 
   private onResults(roundId: string, results: RoundResultEntry[]): void {
-    const round = getRound(roundId);
+    const round = lookupRound(roundId);
     const q = results
       .filter((r) => r.status === PlayerRoundStatus.Qualified)
       .sort((a, b) => a.place - b.place);
@@ -682,7 +716,7 @@ export class OnlineShowSession extends ShowSession {
         ? this.outcomes.slice()
         : rounds.map((r, i) => {
             const entrants = i === 0 ? this.order : (rounds[i - 1]?.qualified ?? []);
-            const round = getRound(r.roundId);
+            const round = lookupRound(r.roundId);
             const q = new Set(r.qualified);
             return {
               roundId: r.roundId,

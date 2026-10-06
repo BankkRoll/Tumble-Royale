@@ -25,6 +25,7 @@
 10. [Cross-round summary tables](#10-cross-round-summary)
 11. [Schema wish list](#11-schema-wish-list)
 12. [Post-launch rounds](#12-post-launch-rounds) — H2 Comet Catch · H3 Sunbeam Squabble · L2 Colour Cauldron · L3 Trail Tracer · F5 Throne Rush
+13. [Player-made rounds (round editor)](#13-player-made-rounds-round-editor)
 
 ---
 
@@ -4780,6 +4781,56 @@ duel to a full lobby; the per-round tests pin the numbers.
 | Bots          | Roam while the floor is plain, then run (and hop) to the nearest free throne                                                                                                                                                                                                                                                                                            |
 | Variations    | `royal-court` · `quickstep` · `harsh-court` (a third left out) · `royal-guards` (two orbiting bumpers between the rings)                                                                                                                                                                                                                                                |
 | Measured      | 15 bots: winner at ~45–80 s                                                                                                                                                                                                                                                                                                                                             |
+
+---
+
+## 13. Player-made rounds (round editor)
+
+The round editor (`/editor`, `apps/client/src/editor`) builds rounds in the
+same `RoundDefinition` format as this document, from the §1.5 standard
+pieces (as "level parts") and the §2 obstacle library. Rules shared by the
+editor, the API and game servers live in `@tumble/content/custom`.
+
+**What can be built.** Races (`finish`), survivals (`survive`), hunts
+(`scoreTarget`, with a Comet Field or Sunbeam Zones) and logic rounds
+(`logicSurvive`, with a Pattern Panic Board or Puzzle Floor). Team rounds,
+hold-item hunts and finals stay hand-made: paint grids, goals, prop spawners
+and the throne floor are not in the palette. No variations and no custom
+rules card; every custom round admits 1–100 players.
+
+**Checks** (errors block Test play and sharing):
+
+| Check            | Rule                                                                                                                                    |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Schema           | `RoundDefinitionSchema`, then each obstacle's own params schema                                                                         |
+| Budgets          | ≤ 64 KB JSON, ≤ 300 level parts, ≤ 48 obstacles, ≤ ~500 obstacle colliders (tile grids count per tile), ≤ 32 triggers, ≤ 12 checkpoints |
+| Bounds           | Everything inside `bounds` (≤ 600 × 200 × 600 m; the editor fits them with the §1.6 margins); kill plane ≥ 2 m under the lowest floor   |
+| Spawn            | All 100 slots of the spawn grid stand on a solid surface (within 1.5 m below)                                                           |
+| Reachable finish | Races: some surface touching the finish trigger is reachable from the spawn surfaces (see below); checkpoints out of reach warn         |
+| Text             | Name 3–32, objective ≤ 80, ≤ 3 tips ≤ 80; nothing the chat filter masks                                                                 |
+| Time             | 30–300 s, overtime ≤ 60 s, 10–90 % qualify, hunt target 1–50                                                                            |
+
+**Reachability model.** No physics engine: every solid piece and platform-like
+obstacle (§2 origin convention: `position` is the top surface) becomes a
+footprint with the height range of its top. A Tumbler gets from A to B when
+B's lowest point is at most 2.6 m above A's highest (grab-climb, §0) plus any
+launch boost (bounce pads, bouncy pieces), and the gap is at most
+6.5 m − 1 m per metre of rise, or 6.5 m + 0.8 m per metre of drop (cap 9 m).
+Moving platforms count over their whole path, teleporters link their pads.
+Footprints of rotated or unknown-orientation obstacles are taken generously,
+so the check errs toward "reachable": Test play finds the rest.
+
+**Bots.** Races get straight bot legs: spawn → checkpoints in number order →
+finish, with a take-off point before each gap (jump, or jump + dive past
+4.25 m) and a landing point after it. A leg over a gap no jump crosses is a
+warning ("bots will fall here"); add checkpoints to steer them. Survival,
+hunt and logic rounds have no route: bots roam, dodge and chase objectives
+as in the shipped rounds of those types.
+
+**Sharing.** A shared round gets an 8-character code (no 0/O, 1/I/L, U). In a
+private show the host adds it by code; the game server fetches the stored
+definition, validates it again and sends the exact definition to clients in
+`joinRound`, so every machine builds the same round from the same data.
 
 ---
 

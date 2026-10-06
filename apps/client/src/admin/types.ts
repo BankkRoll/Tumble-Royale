@@ -331,6 +331,36 @@ export interface RefundDetail {
   provider: 'stripe' | 'fake' | 'disabled';
 }
 
+/** A shared custom round in the moderation list (`GET /internal/custom-rounds`). */
+export interface SharedRoundRow {
+  code: string;
+  name: string;
+  description: string;
+  type: string;
+  status: 'published' | 'unpublished' | 'taken_down';
+  sizeBytes: number;
+  createdAt: string;
+  updatedAt: string;
+  takedownReason?: string | null;
+  ownerId: string;
+  author: string | null;
+  openReports: number;
+  takenDownBy: string | null;
+  takenDownAt: string | null;
+}
+
+/** `GET /internal/custom-rounds/:code`. */
+export interface SharedRoundDetail {
+  round: Omit<SharedRoundRow, 'openReports'> & { definition: unknown };
+  reports: {
+    id: string;
+    reason: string;
+    details: string | null;
+    status: 'open' | 'actioned' | 'dismissed';
+    createdAt: string;
+    reporter: { id: string; name: string | null };
+  }[];
+}
 /** A club in the console's list. */
 export interface ClubListRow {
   id: string;

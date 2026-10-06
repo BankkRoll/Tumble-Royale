@@ -1,6 +1,7 @@
 import type { RoundDefinition, RoundPhaseId, RoundType, ShowPhaseId } from '@tumble/shared';
 import type { BotSkill } from '../bots/types.ts';
 import type { MatchPlayerInfo, RoundStatus } from '../match/types.ts';
+import type { VoteResult, VoteSnapshot } from './vote.ts';
 
 /** Someone in the show. */
 export interface ShowParticipant {
@@ -174,7 +175,18 @@ export type ShowEvent =
       isFinal: boolean;
       /** The show's mutator id, or null. */
       mutatorId: string | null;
+      /** The round won a vote (false: the director's own seeded pick). */
+      byVote: boolean;
     }
+  /** A ballot for the next round opened (at the start of RESULTS). */
+  | { type: 'voteOpen'; vote: VoteSnapshot }
+  /** Ballots changed (cast, changed, or a voter left). */
+  | { type: 'voteTally'; roundIndex: number; counts: number[]; voted: number }
+  /**
+   * The ballot closed. `result` is null when the vote was called off (the
+   * show ended, or the field changed so much the ballot no longer applied).
+   */
+  | { type: 'voteClosed'; roundIndex: number; result: VoteResult | null }
   | { type: 'roundPhase'; phase: RoundPhaseId; roundIndex: number; roundId: string }
   | { type: 'roundResult'; outcome: RoundOutcome }
   | { type: 'ended'; summary: ShowSummary };

@@ -73,9 +73,11 @@ describe('lobbyOptions', () => {
       spectatorSlots: 2,
       countdownSec: 20,
       minPlayers: 3,
+      roundVoting: true,
       isPrivate: true,
     });
     expect(o.rounds).not.toBe(l.settings.rounds);
+    expect(lobbyOptions({ ...l.settings, roundVoting: false }).roundVoting).toBe(false);
   });
 });
 
@@ -192,5 +194,6 @@ describe('optionsToSettings', () => {
     expect(optionsToSettings({ spectators: false })).toEqual({ spectatorSlots: 0 });
     expect(optionsToSettings({ spectators: true })).toEqual({ spectatorSlots: 2 });
     expect(optionsToSettings({ bots: false })).toEqual({ bots: false });
+    expect(optionsToSettings({ roundVoting: false })).toEqual({ roundVoting: false });
   });
 });

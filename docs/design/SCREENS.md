@@ -532,7 +532,8 @@ Intents: `clubRefresh`, `clubCreate`, `clubSearch`, `clubJoin`,
 ### 5.9 Private show (overlays `privateShow`, `joinCode`)
 
 A dialog, not a screen. **Setup**: round picker, house rules (fill with
-bots, players 2–60, round length ×0.5–×2, allow spectators); footer **Have a
+bots, round voting, players 2–60, round length ×0.5–×2, allow spectators);
+footer **Have a
 code?** (→ `joinCode`), **Invite friends** (`createCustom`; disabled with a
 note when offline) and **Play with bots** (`playCustomOffline`, always
 works). Closing the dialog keeps a joined lobby.
@@ -545,7 +546,8 @@ private-show dialog and the friends sheet.
 
 - Code panel with Copy (masked in streamer mode). Host: Lock/Unlock
   (`lockCustom`), New code (`newCustomCode`).
-- Host settings apply live (`updateCustom`, debounced): rounds, bots, max
+- Host settings apply live (`updateCustom`, debounced): rounds, bots, round
+  voting (players vote between the picked rounds; SHOWS.md §2.1), max
   players, players needed to start, round length, pre-show countdown,
   spectators and spectator slots. Members see a read-only summary.
 - Member rows: Make host (`transferCustomHost`), Remove → confirm
@@ -776,12 +778,43 @@ whistle cue `ui.stamp.roundOver`; or "TIME'S UP!" for timed rounds.
   with a pause + stamp. Summary chips: "26 QUALIFIED · 14 ELIMINATED".
 - **3D**: blurred podium scene or the level from above.
 
+### 9.11a Round vote (over `roundResults`, store `roundVote`)
+
+From round 2 (SHOWS.md §2.1), a sticker panel docks above the results tallies:
+"VOTE FOR THE NEXT ROUND" (or "VOTE FOR THE FINAL"), a countdown chip and one
+card per candidate (2–4). Each card: a thumbnail swatch in the round's theme
+colours with its type icon, type badge, name, one-line objective, a live count
+bar and "N votes". Your pick gets a lemon ring and a "YOUR PICK" tag; you can
+change it until the close. The footer says "12 of 30 voted" and, when bots
+are discounted, "bot votes count for less than yours".
+
+- **Input**: click/tap a card; arrows/pad move focus between cards (the panel
+  is nav scope 7, first card autofocused) and Enter/A votes; number keys 1–4
+  vote directly. Only a player who can vote gets focus pulled to the ballot.
+- **Read-only**: knocked-out players and spectators see the same cards
+  disabled with the live counts ("only players still in the show can vote");
+  no focus trap, so the watch choice (scope 8) and replay button keep working.
+- **Reveal**: when the ballot closes the title becomes "NEXT UP!", the winner
+  card pops (lemon/orange, crown "WINNER" tag, cue `ui.stamp`) and the others
+  dim; the footer explains a tie or an empty ballot. The between-rounds card
+  then names the voted round at once with a "Picked by vote" chip, before the
+  wipe.
+- **Phones / portrait**: cards stack as rows (swatch left, name and bar right,
+  count at the end); objectives hide.
+- **Accessibility**: each card's label reads name, type, objective, votes and
+  "Your pick"/"Winner"; a polite status line announces the ballot when it
+  opens and the winner when it closes (never each tally). Captions: the
+  announcer says "Vote for the next round!" and "Next up: <round>!" (spoken
+  only with the spoken announcer turned on). Reduce Motion keeps the global
+  short fades. Intent: `castVote { roundIndex, option }`.
+
 ### 9.12 Between rounds — `betweenRounds`
 
 "PLAYERS REMAINING" with a huge rolling counter `40 → 26`, round progress
 gumdrops filling, then **NEXT UP** tease card: type badge + "???" silhouette
-which shakes then reveals the round name. Cue `ui.reward` per counter tick,
-`ui.stamp` on reveal. Then wipe → `roundLoading`.
+which shakes then reveals the round name. A round picked by vote skips the
+tease: its name shows at once with a "Picked by vote" chip. Cue `ui.reward`
+per counter tick, `ui.stamp` on reveal. Then wipe → `roundLoading`.
 
 ### 9.13 FINAL ROUND hype — `finalHype`
 
@@ -1006,7 +1039,7 @@ Overlays (`OverlayId`): `settings`, `friends`, `notifications`,
 `privateShow`, `joinCode`, `inGameMenu`.
 
 Sub-states are store fields, not screens: `menuTab`, `overlay`,
-`countdown`, `stamps`, `hud.localStatus`, `eliminatedSheet`, `spectate`,
+`countdown`, `stamps`, `hud.localStatus`, `eliminatedSheet`, `roundVote`, `spectate`,
 `dialog`, `connection`, the private lobby, the replay viewer and photo mode.
 
 ## 14. The full show flow (happy path)
@@ -1016,32 +1049,33 @@ boot ─wipe→ splash ─wipe→ welcome → tutorialPrompt ─wipe→ menu
 menu(play) → matchmaking → matchFound ─wipe(cover: load preshow scene)→ preShow
 preShow ─wipe→ showIntro → roundLoading(hold) ─release→ roundIntro → rules
 → round[countdown 3-2-1 GO] → round[playing] → stamp qualified|eliminated
-→ stamp roundOver → roundResults → betweenRounds ─wipe→ roundLoading …
+→ stamp roundOver → roundResults (+ round vote) → betweenRounds ─wipe→ roundLoading …
 … (final) finalHype → roundLoading → roundIntro → rules → round
 → victory | winnerCam ─wipe→ playerWall → rewards → (playAgain → matchmaking) | menu
 ```
 
 ## 15. Timing table (auto-play preview uses these)
 
-| Step               | Duration              |
-| ------------------ | --------------------- |
-| splash logo settle | 1.6 s                 |
-| matchmaking (mock) | 4–6 s                 |
-| match found burst  | 1.4 s                 |
-| pre-show           | 6 s (mock; real 25 s) |
-| show intro         | 2.2 s                 |
-| round loading      | 1.2 s                 |
-| flyover card       | 4 s                   |
-| rules              | 2.6 s                 |
-| countdown          | 4 s                   |
-| round (mock)       | 12–16 s               |
-| stamps             | 1.8 s each            |
-| results            | 4.5 s                 |
-| between rounds     | 3.6 s                 |
-| final hype         | 3 s                   |
-| victory            | 5 s                   |
-| player wall        | ~20 s                 |
-| rewards            | ~8 s                  |
+| Step               | Duration                                |
+| ------------------ | --------------------------------------- |
+| splash logo settle | 1.6 s                                   |
+| matchmaking (mock) | 4–6 s                                   |
+| match found burst  | 1.4 s                                   |
+| pre-show           | 6 s (mock; real 25 s)                   |
+| show intro         | 2.2 s                                   |
+| round loading      | 1.2 s                                   |
+| flyover card       | 4 s                                     |
+| rules              | 2.6 s                                   |
+| countdown          | 4 s                                     |
+| round (mock)       | 12–16 s                                 |
+| stamps             | 1.8 s each                              |
+| results            | 4.5 s                                   |
+| round vote         | up to 8 s, over results (open → reveal) |
+| between rounds     | 3.6 s                                   |
+| final hype         | 3 s                                     |
+| victory            | 5 s                                     |
+| player wall        | ~20 s                                   |
+| rewards            | ~8 s                                    |
 
 ## 16. Copy voice
 
@@ -1052,12 +1086,13 @@ games. Random funny bot names are generated from candy/wobble syllables
 
 ## 17. Accessibility matrix
 
-| Setting                                           | Effect                                                                                         |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Colour-blind (protanopia/deuteranopia/tritanopia) | swaps good/bad/warn + team colours; qualified/eliminated also differ by icon (✓/✗) and pattern |
-| Reduce Motion                                     | no springs/rotation/parallax/shake; wipes cross-fade; falls short fade                         |
-| Reduce Flashing                                   | no flashes/strobes; confetti × 0.4; stamps don't flash                                         |
-| UI Scale 80–140%                                  | root font-size multiplier (all `em`)                                                           |
-| High-contrast HUD                                 | HUD chips gain solid ink backgrounds                                                           |
-| Captions                                          | announcer lines appear as caption chips (bottom-centre)                                        |
-| Streamer Mode                                     | hides other players' names (→ "Tumbler N"), party/lobby codes masked                           |
+| Setting                                           | Effect                                                                                               |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Colour-blind (protanopia/deuteranopia/tritanopia) | swaps good/bad/warn + team colours; qualified/eliminated also differ by icon (✓/✗) and pattern       |
+| Reduce Motion                                     | no springs/rotation/parallax/shake; wipes cross-fade; falls short fade                               |
+| Reduce Flashing                                   | no flashes/strobes; confetti × 0.4; stamps don't flash                                               |
+| UI Scale 80–140%                                  | root font-size multiplier (all `em`)                                                                 |
+| High-contrast HUD                                 | HUD chips gain solid ink backgrounds                                                                 |
+| Captions                                          | announcer lines appear as caption chips (bottom-centre)                                              |
+| Streamer Mode                                     | hides other players' names (→ "Tumbler N"), party/lobby codes masked; the vote card names no players |
+| Screen readers                                    | the round vote announces its ballot and winner in a polite status line; cards carry full labels      |

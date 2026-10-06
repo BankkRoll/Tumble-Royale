@@ -39,6 +39,8 @@ export interface LobbySettings {
   spectatorSlots: number;
   /** Players needed before the host can start (absent on older matchmakers). */
   minPlayers?: number;
+  /** Round voting (absent on older matchmakers: on). */
+  roundVoting?: boolean;
 }
 
 /** A member's seat (matchmaker `LobbySeat`; newer fields are optional for older matchmakers). */

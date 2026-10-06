@@ -19,6 +19,7 @@ import { uiEvents } from './events.ts';
 import { overlayAfterScreenChange } from './inputOwnership.ts';
 import type {
   BetweenRoundsInfo,
+  RoundVoteState,
   BootState,
   AchievementsData,
   ChallengesData,
@@ -66,6 +67,7 @@ import type {
   ReplayRoundEntry,
   ReplayViewerState,
   RewardsSummary,
+  CustomRoundLookup,
   RoundCatalogEntry,
   RoundIntroInfo,
   RoundLoadingState,
@@ -160,6 +162,8 @@ export interface UIState {
   lobbyGames: LobbyGamesState;
   customLobby: CustomLobbyState | null;
   roundCatalog: RoundCatalogEntry[];
+  /** The last shared-round code lookup from a round picker. */
+  customRoundLookup: CustomRoundLookup;
   /** Rendered cosmetic thumbnails (data/blob URLs) by item id; cards fall back to the emoji icon. */
   thumbnails: Record<string, string>;
   /** Top-bar currency popover. */
@@ -215,6 +219,8 @@ export interface UIState {
   emoteWheelOpen: boolean;
   results: RoundResults | null;
   betweenRounds: BetweenRoundsInfo | null;
+  /** The next round's ballot between rounds (null when no vote is running). */
+  roundVote: RoundVoteState | null;
   finalHype: FinalHypeInfo | null;
   victory: VictoryInfo | null;
   playerWall: ShowSummary | null;
@@ -303,6 +309,9 @@ export interface UIState {
   setLobbyGames: (patch: Partial<LobbyGamesState>) => void;
   setCustomLobby: (lobby: CustomLobbyState | null) => void;
   setRoundCatalog: (rounds: RoundCatalogEntry[]) => void;
+  /** Adds (or refreshes) a shared custom round in the pickers. */
+  addCustomRoundEntry: (entry: RoundCatalogEntry) => void;
+  setCustomRoundLookup: (lookup: CustomRoundLookup) => void;
   /** Adds rendered thumbnails (merged into `thumbnails`). */
   setThumbnails: (thumbs: Record<string, string>) => void;
   setCurrencyPanel: (panel: 'none' | 'gumballs' | 'gems') => void;
@@ -353,6 +362,10 @@ export interface UIState {
   setEmoteWheel: (open: boolean) => void;
   setResults: (results: RoundResults | null) => void;
   setBetweenRounds: (info: BetweenRoundsInfo | null) => void;
+  /** Replaces the round vote (null hides the card). */
+  setRoundVote: (vote: RoundVoteState | null) => void;
+  /** Merges into the running round vote; ignored when none is running. */
+  patchRoundVote: (patch: Partial<RoundVoteState>) => void;
   setFinalHype: (info: FinalHypeInfo | null) => void;
   setVictory: (info: VictoryInfo | null) => void;
   /** Loads the end-of-show wall; call before `setScreen('playerWall')`. */
@@ -436,6 +449,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   lobbyGames: { pickerOpen: false, canStart: true, players: 1, hud: null },
   customLobby: null,
   roundCatalog: [],
+  customRoundLookup: { status: 'idle' },
   thumbnails: {},
   currencyPanel: 'none',
   playMode: 'offline',
@@ -476,6 +490,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   emoteWheelOpen: false,
   results: null,
   betweenRounds: null,
+  roundVote: null,
   finalHype: null,
   victory: null,
   playerWall: null,
@@ -623,6 +638,9 @@ export const ui = createStore<UIState>()((set, get) => ({
   setLobbyGames: (patch) => set({ lobbyGames: { ...get().lobbyGames, ...patch } }),
   setCustomLobby: (customLobby) => set({ customLobby }),
   setRoundCatalog: (roundCatalog) => set({ roundCatalog }),
+  addCustomRoundEntry: (entry) =>
+    set((s) => ({ roundCatalog: [...s.roundCatalog.filter((r) => r.id !== entry.id), entry] })),
+  setCustomRoundLookup: (customRoundLookup) => set({ customRoundLookup }),
   setThumbnails: (thumbs) => set({ thumbnails: { ...get().thumbnails, ...thumbs } }),
   setCurrencyPanel: (currencyPanel) => set({ currencyPanel }),
   setPlayMode: (playMode) => {
@@ -661,6 +679,7 @@ export const ui = createStore<UIState>()((set, get) => ({
       spectate: null,
       results: null,
       betweenRounds: null,
+      roundVote: null,
       finalHype: null,
       victory: null,
       playerWall: null,
@@ -717,6 +736,11 @@ export const ui = createStore<UIState>()((set, get) => ({
   setEmoteWheel: (emoteWheelOpen) => set({ emoteWheelOpen }),
   setResults: (results) => set({ results }),
   setBetweenRounds: (betweenRounds) => set({ betweenRounds }),
+  setRoundVote: (roundVote) => set({ roundVote }),
+  patchRoundVote: (patch) => {
+    const cur = get().roundVote;
+    if (cur) set({ roundVote: { ...cur, ...patch } });
+  },
   setFinalHype: (finalHype) => set({ finalHype }),
   setVictory: (victory) => set({ victory }),
   setPlayerWall: (playerWall, opts) =>

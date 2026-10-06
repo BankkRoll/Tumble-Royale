@@ -36,6 +36,8 @@ const OpsEnvSchema = z.object({
   RETENTION_SESSION_GRACE_DAYS: z.coerce.number().int().min(1).default(7),
   RETENTION_EVENTS_DAYS: z.coerce.number().int().min(0).default(90),
   RETENTION_GUEST_DAYS: z.coerce.number().int().min(0).default(0),
+  MATCHMAKER_URL: optionalString.pipe(z.string().url().optional()),
+  STATUS_SAMPLE_SECONDS: z.coerce.number().int().min(0).max(3600).default(60),
 });
 
 const EnvSchema = z.object({
@@ -170,6 +172,20 @@ export interface ApiOpsConfig {
   /** Sentry-compatible DSN for crash reports. */
   sentryDsn: string | undefined;
   retention: RetentionConfig;
+  /** Public status page. */
+  status: StatusConfig;
+}
+
+/** Public status page settings. */
+export interface StatusConfig {
+  /**
+   * Matchmaker base URL the API probes for the Matchmaking and Game servers
+   * components (`MATCHMAKER_URL`, the same variable the game servers read);
+   * absent → those components are not shown.
+   */
+  matchmakerUrl: string | undefined;
+  /** Uptime sampling interval (`STATUS_SAMPLE_SECONDS`, 60; 0 = no history). */
+  sampleIntervalMs: number;
 }
 
 const ICE_URL = /^(stun|turn|turns):[^\s,]+$/;
@@ -300,6 +316,10 @@ export function loadConfig(env: Env = process.env): ApiConfig {
         sessionGraceDays: e.RETENTION_SESSION_GRACE_DAYS,
         eventsDays: e.RETENTION_EVENTS_DAYS,
         guestDays: e.RETENTION_GUEST_DAYS,
+      },
+      status: {
+        matchmakerUrl: e.MATCHMAKER_URL?.replace(/\/$/, ''),
+        sampleIntervalMs: e.NODE_ENV === 'test' ? 0 : e.STATUS_SAMPLE_SECONDS * 1000,
       },
     },
     voice,

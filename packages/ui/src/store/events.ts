@@ -50,6 +50,8 @@ export interface UIIntents {
   retryOnline: undefined;
   /** Host an offline custom show vs bots with the picked rounds. */
   playCustomOffline: { options: CustomLobbyOptions };
+  /** Look up a shared custom round by its share code for the round picker. */
+  customRoundLookup: { code: string };
   cancelQueue: undefined;
   ready: { ready: boolean };
   /** Preview an item on the 3D Tumbler (`itemId` null = clear). */
@@ -133,6 +135,8 @@ export interface UIIntents {
   };
   spectate: undefined;
   spectateNext: { dir: 1 | -1 };
+  /** Vote (or change the vote) for the next round on the between-rounds card. */
+  castVote: { roundIndex: number; option: number };
   playAgain: undefined;
   backToLobby: undefined;
   emote: { slot: number; id: string };

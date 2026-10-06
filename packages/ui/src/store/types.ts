@@ -1171,6 +1171,8 @@ export interface CustomLobbyOptions {
   countdownSec?: number;
   /** Players needed before the host can start (bots fill the rest). */
   minPlayers?: number;
+  /** Players vote on each next round, between the picked rounds (absent: on). */
+  roundVoting?: boolean;
 }
 
 /** A member of a custom lobby as the lobby view shows them. */
@@ -1202,11 +1204,22 @@ export interface CustomLobbyState {
   started?: boolean;
 }
 
-/** A selectable round for the custom lobby picker. */
+/** Result of looking up a shared custom round by code (private show round picker). */
+export type CustomRoundLookup =
+  | { status: 'idle' }
+  | { status: 'loading'; code: string }
+  | { status: 'ok'; code: string; id: string }
+  | { status: 'error'; code: string; message: string };
+
+/** A round the private show pickers offer. */
 export interface RoundCatalogEntry {
   id: string;
   name: string;
   type: RoundType;
+  /** A shared custom round looked up by code (`id` is `custom:<CODE>`). */
+  custom?: boolean;
+  /** Custom rounds: `name#tag` of the creator. */
+  author?: string;
 }
 
 // -----------------------------------------------------------------------------
@@ -1444,7 +1457,49 @@ export interface BetweenRoundsInfo {
   remaining: number;
   roundIndex: number;
   roundCount: number;
-  next: { name: string; type: RoundType; isFinal: boolean };
+  /** `voted`: the players picked it, so the card names it at once instead of teasing "???". */
+  next: { name: string; type: RoundType; isFinal: boolean; voted?: boolean };
+}
+
+/** One round on the between-rounds vote card. */
+export interface RoundVoteOption {
+  roundId: string;
+  name: string;
+  type: RoundType;
+  /** One-line objective. */
+  objective: string;
+  /** Two colours for the card's thumbnail swatch (the round's theme). */
+  colors: [string, string];
+}
+
+/** How a closed round vote was decided. */
+export type RoundVoteReason = 'votes' | 'tie' | 'noVotes';
+
+/**
+ * The between-rounds round vote (SCREENS.md §9.11a): the next round's ballot
+ * over the results wall, then the winner reveal before the wipe.
+ */
+export interface RoundVoteState {
+  /** Round the ballot is for (sent back with every vote). */
+  roundIndex: number;
+  isFinal: boolean;
+  options: RoundVoteOption[];
+  /** Ballots per option. */
+  counts: number[];
+  /** Ballots cast. */
+  voted: number;
+  /** Players allowed to vote. */
+  eligible: number;
+  /** Epoch ms when the ballot closes at the latest. */
+  closesAt: number;
+  /** The local player may vote (false once knocked out, and for spectators). */
+  canVote: boolean;
+  /** The local player's pick, or -1. */
+  myVote: number;
+  /** Bot ballots count for less than a player's (the card says so). */
+  botsDiscounted: boolean;
+  /** Set once the ballot closed. */
+  result: { winner: number; reason: RoundVoteReason } | null;
 }
 
 /** Victory / winner-cam payload. */

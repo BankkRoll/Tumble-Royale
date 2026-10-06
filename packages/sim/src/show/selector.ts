@@ -15,6 +15,13 @@ export interface RoundSelectContext {
   used: ReadonlySet<string>;
 }
 
+/** One round the rules allow, with its selection weight. */
+export interface RoundCandidate {
+  round: RoundDefinition;
+  /** Pool weight × type weight × player-count fit; bots vote by it. */
+  weight: number;
+}
+
 interface Candidate {
   round: RoundDefinition;
   weight: number;
@@ -31,24 +38,15 @@ export function playerFit(round: RoundDefinition, n: number): number {
 }
 
 /**
- * Picks the next round with the show rules from the spec:
- * round 1 is the playlist's first type (race), no type twice in a row, no
- * round twice per show, weighted by player-count fit, and a final-type round
- * for the final. Constraints relax in that order of importance when the pool
- * cannot satisfy them all, so a show never stalls on a thin catalogue.
- *
- * @param playlist - Validated playlist.
- * @param catalog - Every available round by id; pool ids missing here are skipped.
- * @param ctx - Show position.
- * @param rng - The show's selection generator.
- * @returns The chosen round, or null if the catalogue is empty.
+ * The strictest constraint tier with any positive weight: every round the
+ * show rules allow right now, with its selection weight (zero weights kept so
+ * a draw over the list matches the original selector exactly).
  */
-export function selectRound(
+function eligibleTier(
   playlist: ShowPlaylist,
   catalog: ReadonlyMap<string, RoundDefinition>,
   ctx: RoundSelectContext,
-  rng: Rng,
-): RoundDefinition | null {
+): RoundCandidate[] {
   const pool: Candidate[] = [];
   for (const entry of playlist.pool) {
     const round = catalog.get(entry.roundId);
@@ -88,9 +86,66 @@ export function selectRound(
     const list = tier.from.filter(tier.keep);
     const weights = list.map((c) => c.weight * tier.score(c));
     if (!weights.some((w) => w > 0)) continue;
-    return (list[rng.weightedIndex(weights)] as Candidate).round;
+    return list.map((c, i) => ({ round: c.round, weight: weights[i] as number }));
   }
-  return null;
+  return [];
+}
+
+/**
+ * Picks the next round with the show rules from the spec:
+ * round 1 is the playlist's first type (race), no type twice in a row, no
+ * round twice per show, weighted by player-count fit, and a final-type round
+ * for the final. Constraints relax in that order of importance when the pool
+ * cannot satisfy them all, so a show never stalls on a thin catalogue.
+ *
+ * @param playlist - Validated playlist.
+ * @param catalog - Every available round by id; pool ids missing here are skipped.
+ * @param ctx - Show position.
+ * @param rng - The show's selection generator.
+ * @returns The chosen round, or null if the catalogue is empty.
+ */
+export function selectRound(
+  playlist: ShowPlaylist,
+  catalog: ReadonlyMap<string, RoundDefinition>,
+  ctx: RoundSelectContext,
+  rng: Rng,
+): RoundDefinition | null {
+  const tier = eligibleTier(playlist, catalog, ctx);
+  if (tier.length === 0) return null;
+  return (tier[rng.weightedIndex(tier.map((c) => c.weight))] as RoundCandidate).round;
+}
+
+/**
+ * The ballot for a round vote: up to `count` distinct rounds drawn by weight
+ * without replacement from the same constraint tier {@link selectRound}
+ * would pick from, so a vote only ever chooses between rounds the director
+ * could have picked itself. When the tier is thin the ballot is shorter; it
+ * is never padded from a looser tier.
+ *
+ * @param playlist - Validated playlist.
+ * @param catalog - Every available round by id.
+ * @param ctx - Show position.
+ * @param rng - The show's selection generator.
+ * @param count - Ballot size.
+ * @returns At most `count` candidates in draw order; empty only for an empty catalogue.
+ * @example
+ * const ballot = selectRoundCandidates(playlist, catalog, ctx, rng, 3);
+ * if (ballot.length >= 2) openBallot(ballot);
+ */
+export function selectRoundCandidates(
+  playlist: ShowPlaylist,
+  catalog: ReadonlyMap<string, RoundDefinition>,
+  ctx: RoundSelectContext,
+  rng: Rng,
+  count: number,
+): RoundCandidate[] {
+  const left = eligibleTier(playlist, catalog, ctx).filter((c) => c.weight > 0);
+  const out: RoundCandidate[] = [];
+  while (out.length < count && left.length > 0) {
+    const i = rng.weightedIndex(left.map((c) => c.weight));
+    out.push(left.splice(i, 1)[0] as RoundCandidate);
+  }
+  return out;
 }
 
 function catalogCandidates(catalog: ReadonlyMap<string, RoundDefinition>): Candidate[] {

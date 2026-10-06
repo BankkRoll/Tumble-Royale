@@ -1236,3 +1236,129 @@ export const events = pgTable(
   },
   (t) => [index('events_name_idx').on(t.name, t.createdAt)],
 );
+
+// -----------------------------------------------------------------------------
+// Public status page
+// -----------------------------------------------------------------------------
+
+/**
+ * Incidents shown on the public status page. Who opened or updated one is in
+ * `admin_audit_log`, never here, so nothing in this table is private.
+ */
+export const statusIncidents = pgTable(
+  'status_incidents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    title: text('title').notNull(),
+    /** `minor`, `major` or `critical`. */
+    impact: text('impact').notNull(),
+    /** `investigating`, `identified`, `monitoring` or `resolved`. */
+    status: text('status').notNull(),
+    /** Component ids (`api`, `gameservers:eu`, …); empty means the service as a whole. */
+    components: jsonb('components').$type<string[]>().notNull(),
+    startedAt: ts('started_at').notNull().defaultNow(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+    resolvedAt: ts('resolved_at'),
+  },
+  (t) => [
+    index('status_incidents_started_idx').on(t.startedAt),
+    index('status_incidents_resolved_idx').on(t.resolvedAt),
+  ],
+);
+
+/** Public, timestamped updates on an incident. */
+export const statusIncidentUpdates = pgTable(
+  'status_incident_updates',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    incidentId: uuid('incident_id')
+      .notNull()
+      .references(() => statusIncidents.id, { onDelete: 'cascade' }),
+    status: text('status').notNull(),
+    /** Plain text, escaped by every renderer. */
+    message: text('message').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('status_incident_updates_incident_idx').on(t.incidentId, t.createdAt)],
+);
+
+/**
+ * Uptime samples per component per UTC day (`YYYY-MM-DD`), counted by state.
+ * One sampler pass per interval across all API instances adds one sample to
+ * each component; rows older than 90 days are pruned.
+ */
+export const statusUptime = pgTable(
+  'status_uptime',
+  {
+    component: text('component').notNull(),
+    day: text('day').notNull(),
+    samples: integer('samples').notNull().default(0),
+    operational: integer('operational').notNull().default(0),
+    degraded: integer('degraded').notNull().default(0),
+    partial: integer('partial').notNull().default(0),
+    major: integer('major').notNull().default(0),
+    maintenance: integer('maintenance').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.component, t.day] }), index('status_uptime_day_idx').on(t.day)],
+);
+
+// -----------------------------------------------------------------------------
+// Custom rounds
+// -----------------------------------------------------------------------------
+
+/**
+ * Rounds players built in the editor and shared by code. `definition` is the
+ * validated round (defaults applied, id `custom:<code>`), re-validated on
+ * every write. `status`: `published` (the code works), `unpublished` (owner
+ * hid it), `taken_down` (staff removed it; only staff can restore it).
+ */
+export const customRounds = pgTable(
+  'custom_rounds',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Share code (8 characters, unambiguous alphabet). */
+    code: text('code').notNull(),
+    ownerId: uuid('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description').notNull().default(''),
+    roundType: text('round_type').notNull(),
+    definition: jsonb('definition').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    status: text('status').notNull().default('published'),
+    takedownReason: text('takedown_reason'),
+    takenDownBy: text('taken_down_by'),
+    takenDownAt: ts('taken_down_at'),
+    createdAt: createdAt(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('custom_rounds_code_uq').on(t.code),
+    index('custom_rounds_owner_idx').on(t.ownerId, t.createdAt),
+    index('custom_rounds_status_idx').on(t.status, t.createdAt),
+  ],
+);
+
+/** Player reports against a shared round (the round, not its author: `reports` covers players). */
+export const customRoundReports = pgTable(
+  'custom_round_reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    roundId: uuid('round_id')
+      .notNull()
+      .references(() => customRounds.id, { onDelete: 'cascade' }),
+    reporterId: uuid('reporter_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    reason: text('reason').notNull(),
+    details: text('details'),
+    /** `open`, `actioned` (round taken down) or `dismissed`. */
+    status: text('status').notNull().default('open'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('custom_round_reports_once_uq').on(t.roundId, t.reporterId),
+    index('custom_round_reports_status_idx').on(t.status, t.createdAt),
+  ],
+);

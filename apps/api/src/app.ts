@@ -51,7 +51,11 @@ import { attachGateway, type Gateway } from './realtime/gateway.ts';
 import { Notifier } from './realtime/notifier.ts';
 import { registerFriendRoutes } from './social/friends.ts';
 import { registerWhisperRoutes } from './social/whisper.ts';
+import { registerCustomRoundAdminRoutes } from './rounds/admin.ts';
+import { registerCustomRoundRoutes } from './rounds/customRounds.ts';
 import { registerStaffRoutes } from './staff/routes.ts';
+import { registerStatusRoutes } from './status/routes.ts';
+import { createStatusService, type StatusService, type StatusServiceOptions } from './status/service.ts';
 import { registerPartyRoutes } from './social/party.ts';
 import { registerVoiceRoutes } from './voice/routes.ts';
 
@@ -73,6 +77,8 @@ export interface BuildOptions {
   logger?: boolean;
   /** Count rate limits in the KV (default: when REDIS_URL is set). */
   sharedRateLimit?: boolean;
+  /** Status page tunables (probe timeouts, cache lifetimes, sampling). */
+  status?: Partial<StatusServiceOptions>;
 }
 
 /** A built API ready to `listen()` or `inject()`. */
@@ -83,6 +89,8 @@ export interface BuiltApp {
   gateway: Gateway;
   /** Readiness, metrics and the retention job. */
   ops: Ops;
+  /** Public status page: summary cache and uptime sampler. */
+  status: StatusService;
   close(): Promise<void>;
 }
 
@@ -293,6 +301,10 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
   registerPlayerAdminRoutes(app, ctx);
   registerClubAdminRoutes(app, ctx);
   registerStaffRoutes(app, ctx);
+  const status = createStatusService(ctx, opts.status);
+  registerStatusRoutes(app, ctx, status);
+  registerCustomRoundRoutes(app, ctx);
+  registerCustomRoundAdminRoutes(app, ctx);
   const gateway = attachGateway(app, ctx);
   const ops = registerOps(app, ctx, { database, gateway });
 
@@ -302,9 +314,11 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
     database,
     gateway,
     ops,
+    status,
     close: async () => {
       clearInterval(seasonTimer);
       ops.close();
+      await status.close();
       await gateway.close();
       await app.close();
       await kv.close();

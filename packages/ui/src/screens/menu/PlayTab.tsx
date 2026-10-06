@@ -26,6 +26,7 @@ import { Icon, challengeIcon, type IconName } from '../../components/icons/index
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
 import { uiEvents } from '../../store/events.ts';
 import { social } from '../../store/social.ts';
+import { STATUS_PAGE_URL } from '../../store/liveOps.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type {
   OnlineStatus,
@@ -306,6 +307,24 @@ function ModeTiles(): JSX.Element {
         );
       })}
     </div>
+  );
+}
+
+/**
+ * "Servers offline? See the status page." Shown only when the device is
+ * online but our servers are not: with no network at all the page would not
+ * load either.
+ */
+export function ServerStatusLink(): JSX.Element | null {
+  const status = useUI((s) => s.onlineStatus);
+  if (status.state !== 'offline' || status.noNetwork) return null;
+  return (
+    <p className="tr-status-link" data-testid="server-status-link">
+      Can’t reach the servers?{' '}
+      <a href={STATUS_PAGE_URL} target="_blank" rel="noopener">
+        Check the service status
+      </a>
+    </p>
   );
 }
 
@@ -662,6 +681,7 @@ export function StartCluster({ matchmaking = false }: { matchmaking?: boolean })
       ) : (
         <>
           <ModeTiles />
+          <ServerStatusLink />
           <PlaylistPicker playlists={offered} />
           <div className="tr-start-foot">
             <PartyRow />

@@ -5,10 +5,10 @@ What comes next, in order. Each item should land with tests, docs and a green
 
 ## 1. Wave 4 features
 
-- [ ] **Round editor with sharing**: build rounds from the existing obstacle
+- [x] **Round editor with sharing**: build rounds from the existing obstacle
       kits, validate them against `RoundDefinitionSchema`, test-play locally,
       share by code, and moderate shared rounds from the admin console.
-- [ ] **Map voting**: players vote between round candidates during a show
+- [x] **Map voting**: players vote between round candidates during a show
       transition; the server decides, ties broken by seed.
 - [ ] **Elimination replay and highlights**: a short replay of how the player
       was eliminated, and automatic highlight moments built on the replay and
@@ -21,7 +21,7 @@ What comes next, in order. Each item should land with tests, docs and a green
       reporting and Streamer Mode support.
 - [x] **Clubs**: persistent groups with a roster, roles, chat and club
       challenges.
-- [ ] **Public status page**: service health, maintenance windows and incident
+- [x] **Public status page**: service health, maintenance windows and incident
       notes, fed by the existing `/status` and live-ops data.
 
 ## 2. Other languages

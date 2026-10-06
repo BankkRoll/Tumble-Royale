@@ -172,7 +172,8 @@ pnpm admin errors top                                   # most frequent client e
   and private lobbies (`503 maintenance` from the API and matchmaker) while
   Vs Bots keeps working and running shows finish on their game servers.
 - **Feature flags** (`store.enabled`, `chat.global`, `party.lobbyGames`,
-  `replays.enabled`, `mutators.chaos`, `analytics.sample`) default to on.
+  `replays.enabled`, `mutators.chaos`, `analytics.sample`, `events.enabled`,
+  `shows.mapVoting`) default to on.
   The client fetches them at boot and on reconnect and caches them for
   offline boots; the matchmaker and game servers read them from the API
   over the internal HMAC channel, cached 30 s.

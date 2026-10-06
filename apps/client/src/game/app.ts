@@ -104,6 +104,7 @@ import { queueRefusal, routePlay, type PlayKind } from './online/partyPlay.ts';
 import { RejoinStore, planRejoin, sessionStore, type RejoinPlan } from './online/rejoin.ts';
 import { onlineCounts, queueTarget } from './online/playerCounts.ts';
 import { QueueAttempts, enqueueParty } from './online/queueAttempt.ts';
+import { SignInQueue } from './online/signInQueue.ts';
 import { askDialog } from './askDialog.ts';
 import { MatchmakerClient, gameSocketUrl, type Lobby, type MatchFound } from './online/matchmaker.ts';
 import {
@@ -205,6 +206,8 @@ export class GameApp {
   private queued = false;
   private readonly queueAttempts = new QueueAttempts();
   private probingServer = false;
+  private readonly signIns = new SignInQueue();
+  private matchmakerBound = false;
   private pendingJoin: string | null = deepLinkCode();
   private lobby: Lobby | null = null;
   /** A lobby arrived (e.g. restored after a reload) before the menu was up; open it there. */
@@ -561,9 +564,17 @@ export class GameApp {
    * Signs in (resume, or a fresh guest after the welcome screen) and loads the
    * account. Offline play continues untouched when anything fails.
    *
+   * Runs through {@link SignInQueue}: never two at once.
+   *
    * @param welcome - Name and colours from the welcome screen for a brand new guest.
    */
-  private async connectAccount(
+  private connectAccount(
+    welcome: { name: string; colors: Parameters<ProfileStore['create']>[1] } | null,
+  ): Promise<void> {
+    return this.signIns.run(() => this.connectAccountOnce(welcome), welcome === null);
+  }
+
+  private async connectAccountOnce(
     welcome: { name: string; colors: Parameters<ProfileStore['create']>[1] } | null,
   ): Promise<void> {
     const account = this.account;
@@ -1258,7 +1269,8 @@ export class GameApp {
   /** Subscribes to the matchmaker stream (queue status, match found, custom lobbies). */
   private bindMatchmaker(): void {
     const mm = this.mm;
-    if (!mm) return;
+    if (!mm || this.matchmakerBound) return;
+    this.matchmakerBound = true;
     mm.on('queued', (m) => {
       if (this.queueAttempts.ignoringQueued) return;
       this.queued = true;

@@ -265,7 +265,7 @@ function matchmakerStub(): MatchmakerStub {
           signal?.addEventListener('abort', () => reject(new Error('aborted'))),
         );
       if (stub.mode === 'error') throw new Error('ECONNREFUSED 10.0.0.7:7370');
-      if (stub.mode === 'slow') await new Promise((r) => setTimeout(r, 80));
+      if (stub.mode === 'slow') await new Promise((r) => setTimeout(r, 400));
       if (url === `${MM}/health`) return Response.json({ ok: true, servers: 5, queued: 3 });
       if (url === `${MM}/internal/capacity`) {
         const h = new Headers(init?.headers);
@@ -294,7 +294,7 @@ async function statusApi(
     {
       fetch: stub.fetch,
       ...(opts.kv ? { kv: opts.kv } : {}),
-      status: { timeoutMs: 300, slowMs: 50, ...opts.status },
+      status: { timeoutMs: 3000, slowMs: 1500, ...opts.status },
     },
   );
   apis.push(api);
@@ -369,7 +369,7 @@ describe('GET /status/summary', () => {
   it('treats a hung matchmaker as down once the probe times out', async () => {
     const stub = matchmakerStub();
     stub.mode = 'hang';
-    const { api } = await statusApi({ stub });
+    const { api } = await statusApi({ stub, status: { timeoutMs: 300 } });
     const started = Date.now();
     const s = await summaryOf(api);
     expect(Date.now() - started).toBeLessThan(3000);
@@ -379,7 +379,8 @@ describe('GET /status/summary', () => {
   it('treats a slow matchmaker as degraded, not down', async () => {
     const stub = matchmakerStub();
     stub.mode = 'slow';
-    const { api } = await statusApi({ stub });
+    // The threshold sits well under the stub's 400 ms delay and its 3 s timeout.
+    const { api } = await statusApi({ stub, status: { slowMs: 150 } });
     expect(states(await summaryOf(api)).matchmaking).toBe('degraded');
   });
 

@@ -24,14 +24,7 @@ What comes next, in order. Each item should land with tests, docs and a green
 - [x] **Public status page**: service health, maintenance windows and incident
       notes, fed by the existing `/status` and live-ops data.
 
-## 2. Other languages
-
-- [ ] Add a translation system (there is none yet), move every UI, caption and
-      rules-card string into it, and ship at least one more language. Run it
-      when few other UI changes are in flight, since it touches nearly every
-      screen.
-
-## 3. Follow-ups from the last wave
+## 2. Follow-ups from the last wave
 
 - [ ] **Render performance**: 100 players reach 54 fps median on Ultra and 69 on
       High, but the High p10 is about 33 fps and frames over 50 ms remain. Next
@@ -58,7 +51,7 @@ What comes next, in order. Each item should land with tests, docs and a green
 - [ ] **Economy**: add the login streak, seasonal challenge and event Gems to
       the season budget table in `docs/ECONOMY.md`.
 
-## 4. Full re-review
+## 3. Full re-review
 
 - [ ] Review every feature, flow, screen, endpoint and setting for missing,
       half-built or buggy behaviour, plus a dedicated security pass (auth,
@@ -66,7 +59,7 @@ What comes next, in order. Each item should land with tests, docs and a green
       abuse, payments and refunds, admin routes, secrets, dependencies).
 - [ ] Fix everything found, then review again until a pass comes back clean.
 
-## 5. Final check and release
+## 4. Final check and release
 
 - [ ] Every root and package script runs (`dev`, `build`, `test`, `lint`,
       `format`, `setup:env` including `--production`, `admin`, migrations).

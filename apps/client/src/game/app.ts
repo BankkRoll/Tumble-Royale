@@ -105,6 +105,7 @@ import { RejoinStore, planRejoin, sessionStore, type RejoinPlan } from './online
 import { onlineCounts, queueTarget } from './online/playerCounts.ts';
 import { QueueAttempts, enqueueParty } from './online/queueAttempt.ts';
 import { SignInQueue } from './online/signInQueue.ts';
+import { OnlineStatusCheck } from './online/onlineStatus.ts';
 import { askDialog } from './askDialog.ts';
 import { MatchmakerClient, gameSocketUrl, type Lobby, type MatchFound } from './online/matchmaker.ts';
 import {
@@ -207,6 +208,19 @@ export class GameApp {
   private readonly queueAttempts = new QueueAttempts();
   private probingServer = false;
   private readonly signIns = new SignInQueue();
+  private readonly onlineStatus = new OnlineStatusCheck({
+    disabled: () => !this.cfg.api && !this.cfg.online,
+    networkUp: () => navigator.onLine,
+    maintenance: () =>
+      !this.cfg.online && this.liveOps.maintenanceActive() ? this.liveOps.maintenance().message : null,
+    probe: async () => {
+      if (this.cfg.online) return { up: await gameServerAvailable() };
+      const mm = this.account?.active ? this.mm : null;
+      if (!mm || !(await mm.probe())) return { up: false };
+      return { up: true, counts: onlineCounts(await mm.stats(), mm.searching) };
+    },
+    publish: (status) => ui.getState().setOnlineStatus(status),
+  });
   private matchmakerBound = false;
   private pendingJoin: string | null = deepLinkCode();
   private lobby: Lobby | null = null;
@@ -848,40 +862,11 @@ export class GameApp {
    * publishes it to the Play tab's mode tiles.
    */
   async refreshOnlineStatus(): Promise<void> {
+    const status = await this.onlineStatus.refresh();
+    if (!status || status.state === 'checking') return;
     const s = ui.getState();
-    if (!this.cfg.api && !this.cfg.online) {
-      s.setOnlineStatus({ state: 'disabled', message: 'Online play is turned off for this session.' });
-      return;
-    }
-    // NOTE: `onLine === false` is reliable (no network at all); `true` only means "maybe", so probe then.
-    if (!navigator.onLine) {
-      s.setOnlineStatus({
-        state: 'offline',
-        noNetwork: true,
-        message: "You're offline. Shows against bots still work.",
-      });
-      if (s.playMode === 'online') ui.setState({ playMode: 'offline' });
-      return;
-    }
-    if (!this.cfg.online && this.liveOps.maintenanceActive()) {
-      // Shown on the Play Online tile; Vs Bots stays available.
-      s.setOnlineStatus({ state: 'offline', message: this.liveOps.maintenance().message });
-      if (s.playMode === 'online') ui.setState({ playMode: 'offline' });
-      return;
-    }
-    s.setOnlineStatus({ state: 'checking' });
-    let up = false;
-    if (this.cfg.online) up = await gameServerAvailable();
-    else if (this.account?.active && this.mm) up = await this.mm.probe();
-    const mm = up && !this.cfg.online ? this.mm : null;
-    const counts = mm ? onlineCounts(await mm.stats(), mm.searching) : {};
-    s.setOnlineStatus(
-      up
-        ? { state: 'online', ...counts }
-        : { state: 'offline', message: 'The game servers are offline right now.' },
-    );
-    if (up && !this.modePicked) s.setPlayMode('online');
-    if (!up && s.playMode === 'online') ui.setState({ playMode: 'offline' });
+    if (status.state === 'online' && !this.modePicked) s.setPlayMode('online');
+    if (status.state === 'offline' && s.playMode === 'online') ui.setState({ playMode: 'offline' });
   }
 
   /**

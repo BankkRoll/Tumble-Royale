@@ -27,7 +27,7 @@ import { keyLabel } from './SettingsSheet.tsx';
 export const VOICE_INTRO_TEXT =
   'Voice chat connects you directly to the players in your party (and, if you allow it, your team in team rounds). ' +
   'Your browser will ask for your microphone next. Push-to-talk is on by default. ' +
-  'Players you talk to can see your IP address unless you turn on "Relay only". ' +
+  'Party mates you talk to can see your IP address unless you turn on "Relay only"; team voice always goes through the relay when the server has one. ' +
   'Nothing you say is recorded; you can mute or report anyone from Settings → Voice.';
 
 const STATUS_TEXT: Record<VoiceStatus, string> = {
@@ -284,7 +284,7 @@ export function VoiceSection(): JSX.Element {
         label="Relay only (hide my IP)"
         hint={
           relay
-            ? 'Connects through the server so players never see your IP address. Adds a little delay.'
+            ? 'Team voice always goes through the server. This does the same for your party, so nobody sees your IP address. Adds a little delay.'
             : 'This server has no relay, so this is unavailable.'
         }
       >

@@ -70,7 +70,14 @@ export function socialErrorText(err: unknown): string {
 }
 
 /** Chat refusals from the gateway, shown as the inline hint. */
-const CHAT_ERRORS = new Set(['chat_rate', 'chat_banned', 'empty_message', 'not_friends', 'self_whisper']);
+const CHAT_ERRORS = new Set([
+  'chat_rate',
+  'chat_banned',
+  'chat_too_new',
+  'empty_message',
+  'not_friends',
+  'self_whisper',
+]);
 
 const REALTIME_EVENTS = [
   'presence',

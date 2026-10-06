@@ -129,6 +129,14 @@ export async function createTestApi(
         ADMIN_TOKEN,
         // Short enough for tests to watch a disconnect turn into "offline".
         PRESENCE_GRACE_MS: '150',
+        // Every test socket and chat line comes from 127.0.0.1, and suites mint
+        // fresh guests by the dozen; abuse tests lower these again.
+        WS_IP_UPGRADES_PER_MINUTE: '100000',
+        WS_USER_UPGRADES_PER_MINUTE: '100000',
+        WS_MAX_SOCKETS_PER_IP: '100000',
+        GUEST_SIGNUPS_PER_IP_HOUR: '100000',
+        GLOBAL_CHAT_MIN_ACCOUNT_AGE_MINUTES: '0',
+        GLOBAL_CHAT_IP_MAX: '100000',
         ...env,
         ...(scratch ? { DATABASE_URL: scratch.url } : {}),
       }),

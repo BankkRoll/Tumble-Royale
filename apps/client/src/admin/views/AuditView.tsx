@@ -17,6 +17,7 @@ const KINDS: [string, string][] = [
   ['news.', 'news'],
   ['staff.', 'staff'],
   ['refund.', 'refunds'],
+  ['gift.', 'gifts'],
   ['session.', 'sign-ins'],
 ];
 

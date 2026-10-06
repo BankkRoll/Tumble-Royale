@@ -18,6 +18,7 @@ import { PlayersView } from './views/PlayerView.tsx';
 import { RefundsView } from './views/RefundsView.tsx';
 import { ReportsView } from './views/ReportsView.tsx';
 import { SanctionsView } from './views/SanctionsView.tsx';
+import { SharedRoundsView } from './views/SharedRoundsView.tsx';
 
 /** What the shell needs from the page. */
 export interface AdminAppProps {
@@ -35,6 +36,7 @@ const NAV: { view: Route['view']; label: string; adminOnly?: boolean }[] = [
   { view: 'players', label: 'Players' },
   { view: 'sanctions', label: 'Sanctions' },
   { view: 'refunds', label: 'Refunds' },
+  { view: 'rounds', label: 'Shared rounds' },
   { view: 'liveops', label: 'Live ops', adminOnly: true },
   { view: 'audit', label: 'Audit log' },
 ];
@@ -169,6 +171,7 @@ export function AdminApp(props: AdminAppProps) {
         )}
         {route.view === 'sanctions' && <SanctionsView />}
         {route.view === 'refunds' && <RefundsView key={route.id ?? ''} id={route.id} />}
+        {route.view === 'rounds' && <SharedRoundsView key={route.code ?? ''} code={route.code} />}
         {route.view === 'liveops' && <LiveOpsView />}
         {route.view === 'audit' && <AuditView key={route.target ?? ''} target={route.target} />}
       </main>

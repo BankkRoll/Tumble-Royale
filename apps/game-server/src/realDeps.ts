@@ -14,6 +14,7 @@ import { OBSTACLE_REGISTRY } from '@tumble/sim/obstacles';
 import { PRE_SHOW_LOBBY_ROUND, ShowPlaylistSchema, type ShowPlaylist } from '@tumble/sim/show';
 import type { MatchSettings, RoomDeps } from './room/types.ts';
 import type { ResultsSink } from './results.ts';
+import type { VoiceTeamsSink } from './voiceTeams.ts';
 import { ShowDirectorController, type ShowDirectorControllerOptions } from './show/ShowDirectorController.ts';
 
 /** Options for {@link createRealRoomDeps}. */
@@ -23,6 +24,8 @@ export interface RealDepsOptions {
   log?: (msg: string) => void;
   /** Results reporting for matchmade shows. */
   results?: ResultsSink | null;
+  /** Team assignments for team voice (see `voiceTeams.ts`). */
+  voiceTeams?: VoiceTeamsSink | null;
   /**
    * The `mutators.chaos` kill switch, read when each show starts: false plays
    * mutator playlists (Chaos Mode) without their twist. Default: on.
@@ -132,6 +135,7 @@ export function createRealRoomDeps(R: Rapier, opts: RealDepsOptions = {}): RoomD
     now: () => performance.now(),
     randomSeed: () => randomInt(0, 2 ** 31),
     results: opts.results ?? null,
+    voiceTeams: opts.voiceTeams ?? null,
     ...(opts.log ? { log: opts.log } : {}),
   };
 }

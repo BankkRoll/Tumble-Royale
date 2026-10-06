@@ -29,6 +29,7 @@ import { createRealRoomDeps } from './realDeps.ts';
 import { ResultsOutbox } from './outbox.ts';
 import { sendResultsOnce } from './results.ts';
 import { startGameServer } from './server.ts';
+import { HttpVoiceTeams } from './voiceTeams.ts';
 
 const config = loadServiceConfig(resolve(import.meta.dirname, '..'), loadConfig);
 const production = config.env === 'production';
@@ -78,6 +79,9 @@ const deps = config.devSim
       ...(config.playlistId ? { playlistId: config.playlistId } : {}),
       log,
       results,
+      voiceTeams: resultsCfg
+        ? new HttpVoiceTeams({ apiUrl: resultsCfg.apiUrl, secret: resultsCfg.secret, log })
+        : null,
       // peek() never waits on the API: a stale answer is better than a stalled show start.
       mutatorsEnabled: () => liveOps.peek().flag('mutators.chaos'),
     });

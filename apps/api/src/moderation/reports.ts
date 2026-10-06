@@ -5,7 +5,7 @@
  *   match, oldest first by default, with both players' names, the target's
  *   other open reports and active sanctions, and the captured chat evidence.
  * - `POST /internal/reports/action` — one decision for up to 100 reports:
- *   dismiss or resolve them, or warn, mute, suspend or permanently ban every
+ *   dismiss or resolve them, or warn, mute (chat or voice), suspend or permanently ban every
  *   player they target. A reason is required and lands in the audit log.
  *
  * Sanctions commit with their report updates and audit rows in one
@@ -34,12 +34,16 @@ export const REPORT_REASONS = [
   'offensive_name',
   'griefing',
   'spam',
+  /** Something said in voice chat; evidence is room and time metadata only (no recording exists). */
+  'voice',
   'other',
 ] as const;
 /** Report statuses. */
 export const REPORT_STATUSES = ['open', 'resolved', 'dismissed', 'actioned'] as const;
 /** Decisions `POST /internal/reports/action` takes. */
-export const REPORT_ACTIONS = ['dismiss', 'resolve', 'warn', 'mute', 'ban'] as const;
+export const REPORT_ACTIONS = ['dismiss', 'resolve', 'warn', 'mute', 'voice_mute', 'ban'] as const;
+/** Actions that take a duration (a ban without one is permanent). */
+const TIMED = new Set<string>(['mute', 'voice_mute', 'ban']);
 
 const UUID = z.string().uuid();
 const ListQuery = z.object({
@@ -61,12 +65,12 @@ const ActionBody = z
     durationHours: z.number().int().min(1).max(MAX_SANCTION_HOURS).optional(),
   })
   .strict()
-  .refine((b) => b.action !== 'mute' || b.durationHours !== undefined, {
+  .refine((b) => (b.action !== 'mute' && b.action !== 'voice_mute') || b.durationHours !== undefined, {
     message: 'a mute needs durationHours',
     path: ['durationHours'],
   })
-  .refine((b) => b.durationHours === undefined || b.action === 'mute' || b.action === 'ban', {
-    message: 'durationHours only applies to mute and ban',
+  .refine((b) => b.durationHours === undefined || TIMED.has(b.action), {
+    message: 'durationHours only applies to mutes and bans',
     path: ['durationHours'],
   });
 
@@ -164,7 +168,7 @@ export function registerReportRoutes(app: FastifyInstance, ctx: AppContext): voi
         const out: AppliedSanction[] = [];
         const status =
           body.action === 'dismiss' ? 'dismissed' : body.action === 'resolve' ? 'resolved' : 'actioned';
-        if (body.action === 'warn' || body.action === 'mute' || body.action === 'ban') {
+        if (body.action !== 'dismiss' && body.action !== 'resolve') {
           const byTarget = new Map<string, string[]>();
           for (const r of found)
             byTarget.set(r.targetUserId, [...(byTarget.get(r.targetUserId) ?? []), r.id]);

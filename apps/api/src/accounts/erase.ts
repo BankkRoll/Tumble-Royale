@@ -29,6 +29,7 @@ import { notFound } from '../http/errors.ts';
 import { removeFromLeaderboards } from '../leaderboards/service.ts';
 import { retainBans } from '../moderation/ban-evasion.ts';
 import { forgetChatLines } from '../social/chatEvidence.ts';
+import { forgetVoice } from '../voice/service.ts';
 import { friendIds } from '../social/friends.ts';
 import { PartyService } from '../social/party.ts';
 import { setPresence } from '../social/presence.ts';
@@ -91,6 +92,7 @@ export async function deleteAccount(
 
   await markErased(ctx.kv, userId);
   await forgetChatLines(ctx.kv, userId);
+  await forgetVoice(ctx, userId);
   await invalidateBanCache(ctx, userId);
   await setPresence(ctx.kv, userId, 'offline', now.getTime());
   await removeFromLeaderboards(ctx, userId, user.region);

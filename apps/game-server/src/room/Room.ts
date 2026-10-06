@@ -293,6 +293,8 @@ export class Room {
   private showStartedAtWall = 0;
   private readonly roundRecords: RoundRecord[] = [];
   private currentPlan: ShowRoundPlan | null = null;
+  /** Teams of the current round were sent to the API and still need clearing. */
+  private voiceTeamsReported = false;
   /** Rewards per user id once the API answered (replayed to late reconnects). */
   private readonly rewardsByUser = new Map<string, Record<string, unknown> | null>();
   private rewardsDone = false;
@@ -1147,12 +1149,14 @@ export class Room {
         case 'roundEnd':
           this.broadcast({ t: 'roundResults', roundId: e.roundId, results: e.results });
           this.recordRound(e.roundId, e.results, now);
+          this.reportVoiceTeams(null);
           break;
         case 'showEnd':
           this.broadcast({ t: 'showSummary', winners: e.winners, rounds: e.rounds });
           this.state = 'ended';
           this.endedAt = now;
           this.reportResults(e.winners);
+          this.reportVoiceTeams(null);
           break;
       }
     }
@@ -1223,6 +1227,24 @@ export class Room {
     this.log(
       `[room ${this.id}] round ${round.id} (stage ${plan.stage}) with ${players.length} players, epoch ${this.epoch}`,
     );
+    this.reportVoiceTeams(players);
+  }
+
+  /**
+   * Tells the API who is on which team this round (team voice), or that the
+   * last team round is over. Only humans with an account are sent.
+   */
+  private reportVoiceTeams(players: readonly MatchPlayerInfo[] | null): void {
+    const sink = this.deps.voiceTeams;
+    if (!sink) return;
+    const entries = (players ?? []).flatMap((p) => {
+      const slot = this.slots.get(p.id);
+      if (p.team < 0 || !slot?.userId || slot.isBot) return [];
+      return [{ userId: slot.userId, team: p.team, partyId: slot.queuePartyId }];
+    });
+    if (entries.length === 0 && !this.voiceTeamsReported) return;
+    this.voiceTeamsReported = entries.length > 0;
+    sink.report(this.id, Math.max(0, this.roundIndex), entries);
   }
 
   private hasHeldSeats(): boolean {

@@ -13,3 +13,4 @@ export * from './chat/chat.ts';
 export * from './social/partyLobby.ts';
 export * from './social/lobbyGame.ts';
 export * from './social/clubs.ts';
+export * from './social/voice.ts';

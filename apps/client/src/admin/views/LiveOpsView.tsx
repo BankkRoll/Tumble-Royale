@@ -2,7 +2,7 @@
  * Live ops for admins: the maintenance window, feature flags, playlist
  * overrides and the most frequent client and server errors.
  */
-import { FLAG_KEYS } from '@tumble/shared/liveops';
+import { FLAG_DEFAULTS, FLAG_KEYS } from '@tumble/shared/liveops';
 import { useState } from 'react';
 import { Badge, StateBlock, useConsole, useLoad } from '../components.tsx';
 import { fromLocalInput, isAdmin, query, relativeTime, shortTime, toLocalInput } from '../format.ts';
@@ -12,7 +12,7 @@ import type { ErrorGroup, FlagRow, MaintenanceView, PlaylistRow } from '../types
 const MAINTENANCE_KEY = 'maintenance';
 
 /**
- * Every flag worth showing: the ones the code reads (on when never set) plus
+ * Every flag worth showing: the ones the code reads (at their default when never set) plus
  * any other stored keys.
  *
  * @param stored - Rows from `GET /internal/flags`.
@@ -20,7 +20,14 @@ const MAINTENANCE_KEY = 'maintenance';
 export function flagList(stored: readonly FlagRow[]): (FlagRow & { stored: boolean })[] {
   const out = new Map<string, FlagRow & { stored: boolean }>();
   for (const key of FLAG_KEYS)
-    out.set(key, { key, enabled: true, rolloutPercent: 100, payload: null, updatedAt: '', stored: false });
+    out.set(key, {
+      key,
+      enabled: FLAG_DEFAULTS[key].enabled,
+      rolloutPercent: 100,
+      payload: null,
+      updatedAt: '',
+      stored: false,
+    });
   for (const f of stored) if (f.key !== MAINTENANCE_KEY) out.set(f.key, { ...f, stored: true });
   return [...out.values()].sort((a, b) => a.key.localeCompare(b.key));
 }

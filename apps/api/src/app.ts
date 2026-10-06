@@ -53,6 +53,7 @@ import { registerFriendRoutes } from './social/friends.ts';
 import { registerWhisperRoutes } from './social/whisper.ts';
 import { registerStaffRoutes } from './staff/routes.ts';
 import { registerPartyRoutes } from './social/party.ts';
+import { registerVoiceRoutes } from './voice/routes.ts';
 
 /** Optional dependency overrides (tests). */
 export interface BuildOptions {
@@ -283,6 +284,7 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
   registerFriendRoutes(app, ctx);
   registerWhisperRoutes(app, ctx);
   registerPartyRoutes(app, ctx);
+  registerVoiceRoutes(app, ctx);
   registerClubRoutes(app, ctx);
   registerModerationRoutes(app, ctx);
   registerNewsRoutes(app, ctx);

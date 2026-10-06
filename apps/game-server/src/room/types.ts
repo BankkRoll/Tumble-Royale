@@ -20,6 +20,7 @@ import {
   type ShowPhaseId,
 } from '@tumble/shared';
 import type { ResultsSink } from '../results.ts';
+import type { VoiceTeamsSink } from '../voiceTeams.ts';
 import type { TicketCustomSettings } from '../tickets.ts';
 
 /** A matchmade show: what the join tickets said about it. */
@@ -177,6 +178,8 @@ export interface RoomDeps {
   log?: (msg: string) => void;
   /** Posts matchmade show results to the account API; null/absent disables reporting. */
   results?: ResultsSink | null;
+  /** Tells the account API who is on which team in team rounds (team voice); null/absent disables it. */
+  voiceTeams?: VoiceTeamsSink | null;
   /** Playlist display name and round estimate for the `showInfo` message. */
   describePlaylist?: (
     playlistId: string | null,

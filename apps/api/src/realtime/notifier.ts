@@ -2,7 +2,7 @@
  * Fan-out of realtime events to users via KV pub/sub. Any API instance can
  * publish; whichever instance holds the user's WebSocket delivers it.
  */
-import type { PartyLobbyEvent } from '@tumble/shared';
+import type { PartyLobbyEvent, VoiceServerEvent } from '@tumble/shared';
 import type { KV } from '../kv/index.ts';
 
 /** Presence states shown in friends lists. */
@@ -128,7 +128,9 @@ export type RealtimeEvent =
       autoAccepted?: boolean;
     }
   /** Wished-for items are in the day's store (at most once per UTC day). */
-  | { type: 'wishlist_in_store'; day: string; items: { itemId: string; title: string }[] };
+  | { type: 'wishlist_in_store'; day: string; items: { itemId: string; title: string }[] }
+  /** Voice room, relayed signalling and session end (see `voice/service.ts`). */
+  | VoiceServerEvent;
 
 /** Channel name for a user's personal event stream. */
 export const userChannel = (userId: string): string => `user:${userId}`;

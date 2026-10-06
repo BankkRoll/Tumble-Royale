@@ -198,7 +198,10 @@ describe('end-of-round causes', () => {
   });
 
   it('a mid-round knock-out without a fall (a forfeit) is generic, never a missed cut', () => {
-    const c = attributeElimination([out(30)], ctx({ roundType: 'race', eliminatedAt: 30, atRoundEnd: false }));
+    const c = attributeElimination(
+      [out(30)],
+      ctx({ roundType: 'race', eliminatedAt: 30, atRoundEnd: false }),
+    );
     expect(c).toEqual({ kind: 'unknown', at: 30 });
   });
 

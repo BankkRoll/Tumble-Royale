@@ -521,7 +521,20 @@ describe('patternBoard', () => {
         expect(tile).toBeGreaterThanOrEqual(0);
         expect(r.safeMask & (1 << tile), `round ${r.number}`).not.toBe(0);
       }
+      // Keyed bots: a correct tile each, split over at least two answers when there are two.
+      const used = new Set<number>();
+      for (let key = 0; key < 40; key++) {
+        expect(rt.botSafeSpot(r.decideAt + 0.5, out, key)).toBe(true);
+        const tile = patternTileAt(out.x, out.z, params);
+        expect(r.safeMask & (1 << tile), `round ${r.number} key ${key}`).not.toBe(0);
+        used.add(tile);
+      }
+      expect(used.size).toBeGreaterThanOrEqual(Math.min(2, safeTiles(r).length));
     }
+    expect(rt.botDifficulty(rt.schedule[0]!.start + 0.1)).toBeLessThan(0.1);
+    expect(rt.botDifficulty(rt.schedule[5]!.start + 0.1)).toBeGreaterThan(
+      rt.botDifficulty(rt.schedule[1]!.start + 0.1),
+    );
     rt.dispose();
   });
 

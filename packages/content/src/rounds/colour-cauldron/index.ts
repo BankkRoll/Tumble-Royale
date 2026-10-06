@@ -155,6 +155,7 @@ export default defineRound({
         tileSize: TILE,
         gap: GAP,
         memoryFrom: 4,
+        playersPerSafeTile: 20,
         screen: { x: 0, y: 11, z: 21.4, width: 22, height: 10 },
       },
     },
@@ -204,6 +205,7 @@ export default defineRound({
   designNotes:
     'puzzleFloor (mix): seeded boards with the answer colour on 5 → 2 tiles (never all in one line), every other colour at ' +
     'least twice, never the same answer twice running. Reading time 9 s → 4.5 s ÷ stage speed (floor 3.5 s), shake 0.8 s, ' +
-    'down 1.8 s. A drop that would leave nobody on an answer tile is voided. Bots learn the answer 40 % into reading and ' +
-    'apply their own memory. Quota end (survive rules) at 60 %.',
+    'down 1.8 s; big fields get at least one answer tile per 20 entrants (up to 6) in the first three board rounds. A drop ' +
+    'that would leave nobody on an answer tile is voided. Bots learn the answer 40 % into reading and ' +
+    'apply their own memory, scaled by how hard the question is. Quota end (survive rules) at 60 %.',
 });

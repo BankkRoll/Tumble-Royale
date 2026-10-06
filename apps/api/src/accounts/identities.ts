@@ -14,7 +14,7 @@ import { conflict, notFound, parse } from '../http/errors.ts';
  * Sign-in methods that work on any device. The `device` identity only signs
  * back in on the browser holding its secret, so it never counts as a fallback.
  */
-export const PORTABLE_PROVIDERS = ['discord', 'google', 'email'] as const;
+export const PORTABLE_PROVIDERS = ['discord', 'google', 'github', 'twitch', 'apple', 'email'] as const;
 
 const ProviderParam = z.object({ provider: z.enum(PORTABLE_PROVIDERS) });
 
@@ -53,7 +53,13 @@ export function registerIdentityRoutes(app: FastifyInstance, ctx: AppContext): v
       // `users.email` lets a later sign-in with the same address find this
       // account; keep it only while an email identity still vouches for it,
       // otherwise unlinking would not actually stop that address signing in.
-      const email = remaining.find((r) => r.provider === 'email')?.subject ?? null;
+      let email = remaining.find((r) => r.provider === 'email')?.subject ?? null;
+      if (email) {
+        // users.email is unique: another account may have taken the address
+        // since, and writing it here would fail the whole unlink.
+        const [holder] = await tx.select({ id: users.id }).from(users).where(eq(users.email, email));
+        if (holder && holder.id !== auth.userId) email = null;
+      }
       await tx.update(users).set({ email }).where(eq(users.id, auth.userId));
       return { linkedProviders: [...new Set(remaining.map((r) => r.provider))] };
     });

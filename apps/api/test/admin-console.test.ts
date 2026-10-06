@@ -5,7 +5,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { adminAuditLog, inventoryItems, loadouts, nameHistory } from '../src/db/schema.ts';
 import { openDatabase } from '../src/db/client.ts';
 import { createKV } from '../src/kv/index.ts';
@@ -320,7 +320,7 @@ describe('report queue', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().sanctions).toEqual([expect.objectContaining({ userId: target.id, kind: 'warn' })]);
-    expect(seen.some((m) => m.includes('keep chat friendly'))).toBe(true);
+    await vi.waitFor(() => expect(seen.some((m) => m.includes('keep chat friendly'))).toBe(true));
     const page = await asToken(mod.session)('GET', `/internal/users/${target.id}`);
     expect(page.json().warnings).toEqual([expect.objectContaining({ reason: 'keep chat friendly' })]);
     expect(page.json().reportsAgainst.byStatus).toMatchObject({ actioned: 2 });

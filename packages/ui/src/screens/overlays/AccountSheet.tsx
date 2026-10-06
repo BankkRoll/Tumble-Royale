@@ -6,7 +6,7 @@
  * - inline rename with name rules, cooldown and save feedback;
  * - linked sign-in methods: real linked state, only the methods the server
  *   has turned on, unlink only while another method remains;
- * - "Sign in to an existing Tumbler" (Discord, Google, email magic link),
+ * - "Sign in to an existing Tumbler" (every enabled OAuth provider, email magic link),
  *   hidden entirely when the server offers none;
  * - the email magic-link form and its "check your inbox" state.
  *
@@ -310,9 +310,11 @@ export function LinkedAccounts(): JSX.Element {
   if (session !== 'online') {
     return (
       <p className="tr-small tr-muted" data-testid="linked-offline">
-        {session === 'unreachable'
-          ? "Can't reach the servers right now, so logins can't be changed. Your Tumbler is safe."
-          : "Accounts are offline, so this Tumbler is saved on this device only. Signing out or clearing this browser's data erases it."}
+        {session === 'expired'
+          ? 'Your session on this device expired. Sign in again below to get back to this Tumbler; nothing on it was lost.'
+          : session === 'unreachable'
+            ? "Can't reach the servers right now, so logins can't be changed. Your Tumbler is safe."
+            : "Accounts are offline, so this Tumbler is saved on this device only. Signing out or clearing this browser's data erases it."}
       </p>
     );
   }
@@ -326,8 +328,8 @@ export function LinkedAccounts(): JSX.Element {
   if (shown.length === 0) {
     return (
       <p className="tr-small tr-muted" data-testid="linked-none">
-        This server doesn't offer Discord, Google or email sign-in yet, so your Tumbler is saved to this
-        device's guest login. Signing out or clearing this browser's data erases it.
+        This server doesn't offer any sign-in methods yet, so your Tumbler is saved to this device's guest
+        login. Signing out or clearing this browser's data erases it.
       </p>
     );
   }
@@ -464,7 +466,8 @@ export function AccountSection(): JSX.Element {
   const providers = useAccountUI((s) => s.providers);
   const session = useAccountUI((s) => s.session);
   const deleting = useAccountUI((s) => s.pending === 'deleteAccount');
-  const signInAvailable = session === 'online' && enabledProviders(providers).length > 0;
+  const signInAvailable =
+    (session === 'online' || session === 'expired') && enabledProviders(providers).length > 0;
   return (
     <>
       <SettingsRow label="Display name">

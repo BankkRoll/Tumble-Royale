@@ -159,7 +159,7 @@ export function TumbleWipe(): JSX.Element | null {
 
   if (phase === 'idle') return null;
   return (
-    <div className="tr-wipe" aria-hidden>
+    <div className="tr-wipe" data-phase={phase} aria-hidden>
       <div className="tr-wipe-bands">
         {BANDS.map((c, i) => (
           <div

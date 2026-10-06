@@ -66,6 +66,9 @@ Users
   user lookup <userId | name#1234 | email | name>
   user rename <userId> <new display name>
 Admin console (staff accounts sign in at https://DOMAIN/admin)
+  staff bootstrap --email <address> [--name <name>]   first admin: find or create the account, make it
+                                                      admin, print a one-time sign-in link (15 min)
+  staff link <userId>                                 a new one-time sign-in link for a staff account
   staff list
   staff grant <userId> [--role admin|moderator]       the account must not be a guest
   staff revoke <userId>
@@ -486,6 +489,22 @@ export function toRequest(args, opts, readFile = (f) => readFileSync(f, 'utf8'),
         path: `/internal/refunds/${enc(need(a, '<refundId>'))}/deny`,
         body: { reason: need(typeof opts.reason === 'string' ? opts.reason : '', '--reason') },
       };
+    case 'staff bootstrap': {
+      const email = need(textOpt(opts, 'email'), '--email');
+      const name = textOpt(opts, 'name');
+      return {
+        method: 'POST',
+        path: '/internal/staff/bootstrap',
+        body: { email, ...(name ? { displayName: name } : {}) },
+        format: formatStaffLink,
+      };
+    }
+    case 'staff link':
+      return {
+        method: 'POST',
+        path: `/internal/staff/${enc(need(a, '<userId>'))}/link`,
+        format: formatStaffLink,
+      };
     case 'staff list':
       return { method: 'GET', path: '/internal/staff' };
     case 'staff grant': {
@@ -524,6 +543,32 @@ export function formatErrors(body) {
     lines.push(`${String(e.occurrences).padStart(7)}x  ${e.type}: ${e.message}`);
     lines.push(`          ${who}${release} · last ${e.lastSeen}`);
   }
+  return lines.join('\n');
+}
+
+/**
+ * Renders `staff bootstrap` and `staff link`: who the link signs in, and the link.
+ *
+ * @param {{ userId: string, label?: string | null, email?: string, created?: boolean, role: string,
+ *   link: string, expiresAt: string }} body
+ * @returns {string}
+ */
+export function formatStaffLink(body) {
+  const lines = [];
+  if (body.email !== undefined) {
+    const who = body.label ? `${body.label} (${body.userId})` : body.userId;
+    lines.push(`${body.created ? 'Created' : 'Found'} ${who} for ${body.email}; role: ${body.role}.`);
+  } else {
+    lines.push(`Sign-in link for ${body.userId} (${body.role}).`);
+  }
+  lines.push(
+    '',
+    'Open this link in the browser you will administer from. It works once, until',
+    `${body.expiresAt}, and signs that browser in to the game; then open /admin.`,
+    'Do not share it: anyone holding it can act as this account.',
+    '',
+    `  ${body.link}`,
+  );
   return lines.join('\n');
 }
 

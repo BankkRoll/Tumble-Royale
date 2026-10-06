@@ -106,34 +106,45 @@ export function productionEnv({ domain, email = '', secret }) {
   const s = Object.fromEntries(PRODUCTION_SECRETS.map((name) => [name, secret(name)]));
   return `# Production settings for deploy/docker-compose.yml, written by
 # \`pnpm setup:env --production --domain <domain>\`. Compose reads this file for
-# the \${VARIABLES} in docker-compose.yml and as every service's environment.
+# the \${VARIABLES} in docker-compose.yml and as every service's environment,
+# so a variable set here reaches the API, matchmaker and game server alike.
 # It holds every secret of the deployment: keep it private and backed up.
+#
+# REQUIRED lines are set for you. OPTIONAL lines show their default; uncomment
+# one and fill it in to change it, then run \`docker compose up -d\`.
+# docs/SELF_HOSTING.md, "Environment reference", documents every variable.
 
 # --- Site ---------------------------------------------------------------------
-# Public hostname; its DNS A/AAAA records must point at this server.
+# REQUIRED. Public hostname; its DNS A/AAAA records must point at this server.
 DOMAIN=${domain}
-# Let's Encrypt account email for certificate expiry notices (optional).
+# OPTIONAL. Let's Encrypt account email for certificate expiry notices.
 ACME_EMAIL=${email}
+# REQUIRED. production turns on every production safety check.
 NODE_ENV=production
+# REQUIRED. Where players open the game; sign-in links and redirects land here.
 PUBLIC_WEB_URL=${web}
-# OAuth redirect URIs are built from it: ${web}/api/auth/<provider>/callback
+# REQUIRED. Public API origin; OAuth redirect URIs are built from it:
+# ${web}/api/auth/<provider>/callback
 PUBLIC_API_URL=${web}/api
-# Advertised to the matchmaker; players connect here through Caddy.
+# REQUIRED. Advertised to the matchmaker; players connect here through Caddy.
 PUBLIC_WS_URL=wss://${domain}/gs/ws
-# Browser origins allowed by the API (CORS_ORIGINS) and by the matchmaker and
-# game server (ALLOWED_ORIGINS).
+# REQUIRED. Browser origins allowed by the API (CORS_ORIGINS) and by the
+# matchmaker and game server (ALLOWED_ORIGINS); comma-separated.
 CORS_ORIGINS=${web}
 ALLOWED_ORIGINS=${web}
-# Caddy is the one proxy in front of every service; trust its X-Forwarded-For.
+# REQUIRED. Caddy is the one proxy in front of every service; trust its X-Forwarded-For.
 TRUST_PROXY=1
 
-# --- Secrets ------------------------------------------------------------------
-# Shared by the services; a new JWT_SECRET signs every player out.
+# --- Secrets (REQUIRED, generated) --------------------------------------------
+# Signs access tokens (API) and is verified by the matchmaker; a new value signs every player out.
 JWT_SECRET=${s.JWT_SECRET}
+# Signs game server results and matchmaker ban lookups sent to the API.
 INTERNAL_HMAC_SECRET=${s.INTERNAL_HMAC_SECRET}
+# Signs matchmaker join tickets; game servers verify them.
 GAME_TICKET_SECRET=${s.GAME_TICKET_SECRET}
+# Game servers present it to register with the matchmaker; it also signs kicks.
 GAME_SERVER_SECRET=${s.GAME_SERVER_SECRET}
-# Bearer for \`pnpm admin\` and the API's /internal admin routes.
+# Bearer for \`pnpm admin\` and the API's /internal admin routes (acts as admin).
 ADMIN_TOKEN=${s.ADMIN_TOKEN}
 # Bearer for /metrics on the API and matchmaker (${web}/api/metrics, /mm/metrics).
 METRICS_TOKEN=${s.METRICS_TOKEN}
@@ -141,47 +152,188 @@ METRICS_TOKEN=${s.METRICS_TOKEN}
 VOICE_TURN_SECRET=${s.VOICE_TURN_SECRET}
 
 # --- Datastores ---------------------------------------------------------------
+# OPTIONAL (default: tumble). Postgres role and database the compose file creates.
 POSTGRES_USER=tumble
 POSTGRES_DB=tumble
-# Postgres applies it only when its volume is first created; to change it later,
-# ALTER USER in psql first, then update it here and in DATABASE_URL.
+# REQUIRED. Postgres applies it only when its volume is first created; to change
+# it later, ALTER USER in psql first, then update it here and in DATABASE_URL.
 POSTGRES_PASSWORD=${s.POSTGRES_PASSWORD}
+# REQUIRED. The API's database.
 DATABASE_URL=postgres://tumble:${s.POSTGRES_PASSWORD}@postgres:5432/tumble
+# REQUIRED. Parties, presence, leaderboards, queues and pub/sub for the API and matchmaker.
 REDIS_URL=redis://redis:6379
 
 # --- Services inside the compose network --------------------------------------
+# REQUIRED. The API, as the matchmaker and game server reach it.
 API_URL=http://api:7360
+# REQUIRED. The matchmaker the game server registers with (the API also probes it for /status).
 MATCHMAKER_URL=http://matchmaker:7370
-# This game server's identity; every extra game server needs its own values
-# (docs/SELF_HOSTING.md, "Scaling").
+# REQUIRED. This game server's identity; every extra game server needs its own
+# values (docs/SELF_HOSTING.md, "Scaling"). REGION: na | eu | asia | sa | oce.
 SERVER_ID=gs-1
 REGION=na
+# OPTIONAL. Where the matchmaker reaches this game server's kick endpoint
+# (default: PUBLIC_WS_URL without its /ws).
 CONTROL_URL=http://game-server:7350
 
 # --- Backups ------------------------------------------------------------------
-# pg_dump every BACKUP_INTERVAL_HOURS into the backups volume; dumps older than
-# BACKUP_KEEP_DAYS are deleted.
+# OPTIONAL. pg_dump every BACKUP_INTERVAL_HOURS into the backups volume; dumps
+# older than BACKUP_KEEP_DAYS are deleted.
 BACKUP_INTERVAL_HOURS=24
 BACKUP_KEEP_DAYS=14
 
-# --- Optional features (uncomment, fill in, then docker compose up -d) ---------
-# Discord / Google sign-in. Redirect URI: ${web}/api/auth/<discord|google>/callback
+# --- Sign-in (OPTIONAL; each method turns on when its keys are set) -----------
+# Guests always work. Register these exact redirect URIs with each provider;
+# docs/ADMIN.md, "Sign-in providers", shows how to create each app.
+# Discord: ${web}/api/auth/discord/callback
 # DISCORD_CLIENT_ID=
 # DISCORD_CLIENT_SECRET=
+# Google: ${web}/api/auth/google/callback
 # GOOGLE_CLIENT_ID=
 # GOOGLE_CLIENT_SECRET=
-# Email sign-in: smtp://user:pass@host:587 (STARTTLS) or smtps://user:pass@host:465.
+# GitHub (OAuth app): ${web}/api/auth/github/callback
+# GITHUB_CLIENT_ID=
+# GITHUB_CLIENT_SECRET=
+# Twitch: ${web}/api/auth/twitch/callback
+# TWITCH_CLIENT_ID=
+# TWITCH_CLIENT_SECRET=
+# Sign in with Apple: Services ID, team id, key id and the .p8 key's contents
+# (one line, newlines written as \\n). Return URL: ${web}/api/auth/apple/callback
+# APPLE_CLIENT_ID=
+# APPLE_TEAM_ID=
+# APPLE_KEY_ID=
+# APPLE_PRIVATE_KEY=
+# Email magic links: smtp://user:pass@host:587 (STARTTLS) or
+# smtps://user:pass@host:465. Without it production has no email sign-in.
+# SMTP_FROM defaults to the line below.
 # SMTP_URL=
 # SMTP_FROM=Tumble Royale <no-reply@${domain}>
-# Stripe Checkout for Gem packs. Webhook endpoint: ${web}/api/webhooks/stripe
+
+# --- Payments (OPTIONAL) ------------------------------------------------------
+# Stripe Checkout for Gem packs; set both or neither (without them Gem
+# checkout is off). Webhook endpoint: ${web}/api/webhooks/stripe
 # STRIPE_SECRET_KEY=
 # STRIPE_WEBHOOK_SECRET=
-# Sentry-compatible DSN for server crash reports.
-# SENTRY_DSN=
-# Voice chat (docs/SELF_HOSTING.md, "Voice chat"): start the relay with
+
+# --- Voice chat (OPTIONAL) ----------------------------------------------------
+# docs/SELF_HOSTING.md, "Voice chat": start the relay with
 # \`docker compose --profile voice up -d\`, open 3478/udp+tcp and 49160-49200/udp,
 # then switch the voice.enabled flag on. Without a TURN URL voice stays hidden.
 # VOICE_ICE_SERVERS=stun:${domain}:3478,turn:${domain}:3478?transport=udp,turn:${domain}:3478?transport=tcp
+# Default 1 in production: voice needs a TURN relay. 0 allows direct peer connections only.
+# VOICE_REQUIRE_TURN=1
+
+# --- Admin CLI (OPTIONAL) -----------------------------------------------------
+# API that \`pnpm admin\` talks to (default: PUBLIC_API_URL).
+# ADMIN_API_URL=${web}/api
+
+# --- Monitoring (OPTIONAL) ----------------------------------------------------
+# Sentry-compatible DSN for server crash reports (every service).
+# SENTRY_DSN=
+# fatal | error | warn | info | debug | trace | silent (default: info, every service).
+# LOG_LEVEL=info
+# A private /metrics listener without auth on this port (default: none); keep it off the internet.
+# INTERNAL_PORT=9100
+# INTERNAL_HOST=0.0.0.0
+# Status page uptime sampling interval in seconds (default: 60; 0 = no history).
+# STATUS_SAMPLE_SECONDS=60
+
+# --- API tuning (OPTIONAL) ----------------------------------------------------
+# Requests per minute per player or IP. Read by the API (default 300) AND the
+# matchmaker (default 120): setting it here sets both.
+# RATE_LIMIT_MAX=300
+# Days between display name changes (default: 30).
+# NAME_CHANGE_COOLDOWN_DAYS=30
+# How long a player stays online after their last connection closes, in ms (default: 8000).
+# PRESENCE_GRACE_MS=8000
+# Postgres pool size per API instance (default: 10).
+# DB_POOL_MAX=10
+# Retention job: run interval, days past expiry before sessions go, non-audit
+# event age, and guest accounts unused this long (0 = keep forever).
+# RETENTION_INTERVAL_MINUTES=360
+# RETENTION_SESSION_GRACE_DAYS=7
+# RETENTION_EVENTS_DAYS=90
+# RETENTION_GUEST_DAYS=0
+# 1 runs without Redis or Postgres (single instance only; state in memory or PGLITE_DIR).
+# ALLOW_MEMORY_STORE=
+# ALLOW_EMBEDDED_DB=
+# PGLITE_DIR=./.data/pglite
+
+# --- Matchmaker tuning (OPTIONAL) ---------------------------------------------
+# Lobby size when a ticket does not set one (default: 100).
+# TARGET_SIZE=100
+# Release a lobby with bots after this wait; the shorter one once HOT_THRESHOLD
+# players search a region (defaults: 25000, 12000, 200).
+# MAX_WAIT_MS=25000
+# HOT_MAX_WAIT_MS=12000
+# HOT_THRESHOLD=200
+# How long a ready lobby waits for a server in its own region (default: 10000 ms).
+# REGION_FALLBACK_MS=10000
+# Queue and lobby changes per minute per player (default: 30).
+# USER_RATE_LIMIT_MAX=30
+# Matchmaking tick in ms (default: 500).
+# TICK_MS=500
+# Game server used while none has registered (default: none in production).
+# DEFAULT_GAME_SERVER_URL=
+# 1 lets the matchmaker and game server run in production without the API
+# (no ban checks, live ops or results). Compose always has the API, so leave it.
+# ALLOW_STANDALONE=
+
+# --- Game server tuning (OPTIONAL) --------------------------------------------
+# Show size for unticketed rooms (default/max: 100), rooms per process (default: 3)
+# and seats advertised to the matchmaker (default: MAX_ROOMS x ROOM_CAPACITY).
+# ROOM_CAPACITY=100
+# MAX_ROOMS=3
+# SERVER_CAPACITY=
+# Bot fill wait after the first human (default: 25000 ms); start early at this many humans.
+# FILL_WAIT_MS=25000
+# START_AT_HUMANS=
+# Matchmade rooms start when every ticketed human joined, or after this (default: 15000 ms).
+# TICKET_FILL_WAIT_MS=15000
+# Playlist for unticketed shows (default: Main Show).
+# PLAYLIST=
+# 1 accepts players without a matchmaker ticket (default: 0 in production).
+# ALLOW_UNTICKETED=0
+# 0 stops reporting results to the API (default: 1).
+# REPORT_RESULTS=1
+# Hello deadline for new sockets (default: 5000 ms) and unhandshaken sockets per IP (default: 8).
+# HELLO_TIMEOUT_MS=5000
+# MAX_PENDING_PER_IP=8
+# SIGTERM drain: wait for late players, let shows finish, retry undelivered
+# results. stop_grace_period in docker-compose.yml must exceed their sum.
+# DRAIN_SETTLE_MS=15000
+# DRAIN_TIMEOUT_MS=900000
+# OUTBOX_FLUSH_MS=15000
+
+# --- Edge and images (OPTIONAL) -----------------------------------------------
+# Image tag to build and run (default: latest).
+# TAG=latest
+# Caddy site address and global options (defaults: DOMAIN, and the ACME_EMAIL line).
+# SITE_ADDRESS=${domain}
+# CADDY_GLOBAL_OPTIONS=
+# Where Caddy proxies /api, /mm, /gs/ws and everything else (defaults: the compose services).
+# API_UPSTREAM=api:7360
+# MATCHMAKER_UPSTREAM=matchmaker:7370
+# GAME_SERVER_UPSTREAM=game-server:7350
+# CLIENT_UPSTREAM=client:8080
+
+# --- Set by the images and docker-compose.yml (reference only; leave commented)
+# Each image sets its own PORT (API 7360, matchmaker 7370, game server 7350),
+# which Caddy and the other services expect; one value here would set all three.
+# HOST=0.0.0.0
+# PORT=
+# The one-shot migrate service applies migrations, so the API skips them at boot.
+# MIGRATE_ON_BOOT=0
+# Volumes: the game server's results outbox and the backup dumps.
+# RESULTS_OUTBOX_DIR=/data/results-outbox
+# BACKUP_DIR=/backups
+
+# --- Development only (refused or meaningless in production) ------------------
+# DEV_ADMIN_EMAIL: seeds a local admin and logs a sign-in link (\`pnpm dev\` only).
+# GS_DEV / PLAY_SECONDS: the game server's capsule stand-in sim for load tests.
+# DEV_ADMIN_EMAIL=
+# GS_DEV=
+# PLAY_SECONDS=
 `;
 }
 

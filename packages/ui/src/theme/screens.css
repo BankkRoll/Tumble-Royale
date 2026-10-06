@@ -93,6 +93,10 @@
   overflow: hidden;
   contain: strict;
 }
+/* The new screen is already live under the rising bands. */
+.tr-wipe[data-phase='revealing'] {
+  pointer-events: none;
+}
 /* Skewed as a group (animations own each band's transform); wider than the
    viewport so the slanted edges still cover both sides. */
 .tr-wipe-bands {

@@ -58,8 +58,9 @@ export function SignIn(props: { onSignIn(): void; busy: boolean; error: string |
       <div className="adm-card">
         <h1>Tumble Royale admin</h1>
         <p>
-          Sign in to the game with your staff account (email, Discord or Google, not a guest), then open the
-          console here. Sessions last 30 minutes and end when you close this tab.
+          Sign in to the game with your staff account (any linked login, not a guest), or open the one-time
+          link from <code>pnpm admin staff link</code>, then open the console here. Sessions last 30 minutes
+          and end when you close this tab.
         </p>
         {props.error && (
           <p className="adm-inline-error" role="alert">

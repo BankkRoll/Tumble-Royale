@@ -1,5 +1,5 @@
 import { eq, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   authIdentities,
   currenciesLedger,
@@ -88,7 +88,7 @@ describe('DELETE /me', () => {
     const [audit] = await db.select().from(events).where(eq(events.name, 'audit.account_deleted'));
     expect(audit).toMatchObject({ userId: doomed.id });
 
-    expect(seen).toContainEqual({ type: 'friend_removed', userId: doomed.id });
+    await vi.waitFor(() => expect(seen).toContainEqual({ type: 'friend_removed', userId: doomed.id }));
     const party = (await api.req('GET', '/party', { token: friend.accessToken })).json().party;
     expect(party.members.map((m: { userId: string }) => m.userId)).toEqual([friend.id]);
     const board = (await api.req('GET', '/leaderboards/crowns', { token: friend.accessToken })).json();

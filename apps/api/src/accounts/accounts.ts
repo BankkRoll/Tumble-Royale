@@ -20,7 +20,7 @@ import { ApiError, badRequest, notFound } from '../http/errors.ts';
 import { checkDisplayName, generateGuestName, randomTag } from '../names/display-name.ts';
 
 /** Identity providers. `device` is the guest device secret. */
-export type IdentityProvider = 'device' | 'discord' | 'google' | 'email';
+export type IdentityProvider = 'device' | 'discord' | 'google' | 'github' | 'twitch' | 'apple' | 'email';
 
 /** Regions accepted for accounts and matchmaking. */
 export const REGIONS = ['na', 'eu', 'asia', 'sa', 'oce'] as const;
@@ -164,6 +164,7 @@ export async function linkIdentity(
   if (!owner) await tx.insert(authIdentities).values({ userId, provider, subject });
   if (provider !== 'device') {
     const patch: { isGuest: boolean; email?: string } = { isGuest: false };
+    email = email?.toLowerCase();
     if (email) {
       const [clash] = await tx.select({ id: users.id }).from(users).where(eq(users.email, email));
       if (!clash || clash.id === userId) patch.email = email;

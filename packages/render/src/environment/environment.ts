@@ -128,6 +128,27 @@ export interface Environment {
  * // per frame: env.update(dt, camera, playerPos);
  */
 export function createEnvironment(theme: ThemeDefinition, opts: EnvironmentOptions = {}): Environment {
+  const steps = createEnvironmentSliced(theme, opts);
+  let r = steps.next();
+  while (!r.done) r = steps.next();
+  return r.value;
+}
+
+/**
+ * {@link createEnvironment} split where the main thread may pause: it yields
+ * its progress (0..1) after the sky and lights, the clouds, the islands, the
+ * sky traffic and the stands, and returns the environment.
+ *
+ * PERF: built in one piece it blocked the round load for 30-110 ms.
+ *
+ * @param theme - Theme definition.
+ * @param opts - Weather, bounds, detail and lighting options.
+ * @returns A generator whose return value is the environment.
+ */
+export function* createEnvironmentSliced(
+  theme: ThemeDefinition,
+  opts: EnvironmentOptions = {},
+): Generator<number, Environment> {
   const detail: EnvironmentDetail = { ...DEFAULT_ENVIRONMENT_DETAIL, ...opts.detail };
   const seed = opts.seed ?? 1;
   let weather: Weather = opts.weather ?? theme.weather.default;
@@ -144,6 +165,7 @@ export function createEnvironment(theme: ThemeDefinition, opts: EnvironmentOptio
   const sky = createThemedSky(atmosphere, 900);
   const lights = createLightingRig(atmosphere, opts.lighting);
   object.add(sky.object, lights.object);
+  yield 0.15;
 
   const cloudRoot = new Group();
   cloudRoot.position.copy(center);
@@ -162,6 +184,7 @@ export function createEnvironment(theme: ThemeDefinition, opts: EnvironmentOptio
     cloudRoot.add(clouds.object);
     object.add(cloudRoot);
   }
+  yield 0.3;
 
   let props: PropBatch | null = null;
   let islands: IslandSpec[] = [];
@@ -179,6 +202,7 @@ export function createEnvironment(theme: ThemeDefinition, opts: EnvironmentOptio
     props = builder.build(false);
     for (const m of props.meshes) object.add(m);
   }
+  yield 0.55;
 
   let traffic: SkyTraffic | null = null;
   if (theme.decor.balloons && (detail.balloons > 0 || detail.blimps > 0)) {
@@ -194,6 +218,7 @@ export function createEnvironment(theme: ThemeDefinition, opts: EnvironmentOptio
     });
     for (const m of traffic.meshes) object.add(m);
   }
+  yield 0.7;
 
   let crowd: Crowd | null = null;
   let stands: readonly CrowdStandPlacement[] = [];
@@ -229,6 +254,7 @@ export function createEnvironment(theme: ThemeDefinition, opts: EnvironmentOptio
       object.add(crowd.object);
     }
   }
+  yield 0.85;
 
   const weatherLayer: WeatherLayer = createWeather(atmosphere, {
     precipitation: detail.precipitation,

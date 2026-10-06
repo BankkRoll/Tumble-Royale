@@ -4,7 +4,7 @@
  */
 import type { AddressInfo } from 'node:net';
 import { encodeLobbyFrame, PARTY_LOBBY_LIMITS, type LobbyPose } from '@tumble/shared';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { PartyLobbyRelay } from '../src/realtime/partyLobby.ts';
 import { userChannel } from '../src/realtime/notifier.ts';
@@ -194,7 +194,7 @@ describe('party lobby relay', () => {
       outcomes.push(await r.handle(a.id, encodeLobbyFrame(pose(), i), 100));
     expect(outcomes.filter((o) => o === 'relayed')).toHaveLength(PARTY_LOBBY_LIMITS.rateBurst);
     expect(outcomes.at(-1)).toBe('rate_limited');
-    expect(got).toHaveLength(PARTY_LOBBY_LIMITS.rateBurst);
+    await vi.waitFor(() => expect(got).toHaveLength(PARTY_LOBBY_LIMITS.rateBurst));
 
     api.clock.advance(1000);
     expect(await r.handle(a.id, encodeLobbyFrame(pose(), 99), 100)).toBe('relayed');
@@ -227,7 +227,7 @@ describe('party lobby relay', () => {
     const pricey = api.ctx.catalog.cosmetics.find((c) => c.slot === 'headwear' && c.source === 'store');
     await r.handle(a.id, encodeLobbyFrame(pose(), 4, { ...look, headwear: pricey!.id }), 600);
 
-    expect(got.map((e) => e.seq)).toEqual([1, 2, 3, 4]);
+    await vi.waitFor(() => expect(got.map((e) => e.seq)).toEqual([1, 2, 3, 4]));
     expect(got[0]!.look).toEqual(look);
     expect(got.slice(1).every((e) => e.look === undefined)).toBe(true);
   });

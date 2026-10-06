@@ -177,7 +177,7 @@ export class SceneDirector {
         // first-draw uploads would land on the first visible frame. Same batches, now all drawing.
         name: 'upload',
         weight: 4,
-        run: () => (this.current === view ? this.warmView(view) : undefined),
+        run: () => (this.current === view ? this.warmView(view, undefined, true) : undefined),
       },
       {
         name: 'gpu',
@@ -189,11 +189,15 @@ export class SceneDirector {
     ];
   }
 
-  private *warmView(view: GameView, started?: (w: SceneWarmUp) => void): Generator<number> {
+  private *warmView(
+    view: GameView,
+    started?: (w: SceneWarmUp) => void,
+    paceFirstDraws = false,
+  ): Generator<number> {
     if (this.current !== view) this.show(view);
     this.hidden = true;
     view.camera.updateMatrixWorld();
-    const w = this.post.beginWarmUp();
+    const w = this.post.beginWarmUp(undefined, paceFirstDraws);
     started?.(w);
     try {
       while (this.current === view && w.next()) yield w.progress;

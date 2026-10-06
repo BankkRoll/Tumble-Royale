@@ -12,6 +12,8 @@ export type StorageKey =
   | 'settings'
   | 'quality'
   | 'auth'
+  /** Nonce of a sign-in this browser started (OAuth or magic link), until redeemed. */
+  | 'authBinding'
   | 'newsRead'
   /** Last live news feed from the API (offline fallback over the bundled posts). */
   | 'newsLive'

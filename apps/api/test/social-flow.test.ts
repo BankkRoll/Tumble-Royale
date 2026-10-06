@@ -250,7 +250,7 @@ describe('friend system end to end', () => {
     expect((await say(lead, 'and we are back')).statusCode).toBe(200);
 
     await api.req('POST', '/internal/bans', {
-      headers: { authorization: 'Bearer test-admin-token-0123456789' },
+      headers: { authorization: 'Bearer test-admin-token-0123456789-abcdefghij' },
       body: { userId: pal.id, scope: 'chat', reason: 'spam in party chat', durationHours: 1 },
     });
     expect((await say(pal, 'hello?')).json().error).toBe('chat_banned');

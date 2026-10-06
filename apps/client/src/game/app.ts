@@ -57,7 +57,7 @@ import { keymapFromKeybinds, padMenuButtons, padmapFromPadBinds } from './bindin
 import { GamepadNavigator, firstStandardPad } from '../input/gamepadNav.ts';
 import { StatsOverlay } from '../debug/stats.ts';
 import { checkDeterminism } from '../debug/determinism.ts';
-import { drawBreakdown } from '../debug/drawBreakdown.ts';
+import { drawBreakdown, recordDrawPasses } from '../debug/drawBreakdown.ts';
 import { DEV_TOOLS } from '../devTools.ts';
 import { ApiClient, ApiError } from './api.ts';
 import { AudioBridge } from './audioBridge.ts';
@@ -388,6 +388,10 @@ export class GameApp {
             drawBreakdown: () => {
               const v = this.director.view;
               return v ? drawBreakdown(v.scene, v.camera) : {};
+            },
+            drawPasses: () => {
+              const v = this.director.view;
+              return v ? recordDrawPasses(renderer, v.camera) : Promise.resolve({});
             },
           }
         : {}),

@@ -4,8 +4,8 @@
  * party members through the realtime gateway.
  *
  * Responsibilities:
- * - drop frames from users not in a party, oversized frames and frames over
- *   the per-user rate (token bucket);
+ * - drop frames from suspended users, users not in a party, oversized frames
+ *   and frames over the per-user rate (token bucket);
  * - validate/clamp with the shared {@link sanitizeLobbyFrame} (finite numbers,
  *   platform bounds, catalog emotes);
  * - accept a look only if it passes the same catalog + ownership checks as a
@@ -32,13 +32,15 @@ import {
 } from '@tumble/shared';
 import { ownedSet } from '../accounts/routes.ts';
 import type { AppContext } from '../context.ts';
+import { activeBans } from '../http/auth.ts';
 import { ApiError } from '../http/errors.ts';
 import { serverFlag } from '../liveops/state.ts';
 import { LoadoutItemsSchema, validateLoadout } from '../inventory/loadout.ts';
 import type { PartyService } from '../social/party.ts';
 
 /** Why a frame was not relayed (tests and metrics). */
-export type PartyLobbyOutcome = 'relayed' | 'no_party' | 'rate_limited' | 'invalid' | 'too_large';
+export type PartyLobbyOutcome =
+  'relayed' | 'no_party' | 'rate_limited' | 'invalid' | 'too_large' | 'suspended';
 
 interface Bucket {
   tokens: number;
@@ -79,6 +81,8 @@ export class PartyLobbyRelay {
     const now = this.ctx.now().getTime();
     const bucket = this.take(userId, now);
     if (!bucket) return 'rate_limited';
+    // SECURITY: the socket may predate the ban; the cached lookup keeps this cheap per frame.
+    if ((await activeBans(this.ctx, userId)).some((b) => b.scope === 'all')) return 'suspended';
     const frame = sanitizeLobbyFrame(raw, (id) => this.ctx.cosmetics.get(id)?.slot === 'emote');
     if (!frame) return 'invalid';
     const party = await this.parties.current(userId);

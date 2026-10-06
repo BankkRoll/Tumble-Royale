@@ -80,6 +80,7 @@ import type {
   ShowController,
   ShowEvent,
   ShowRoundPlan,
+  ShowVote,
 } from './types.ts';
 
 /** Lifecycle of a room. */
@@ -203,6 +204,8 @@ const SPECTATOR_ID_BASE = MAX_ENTITIES;
 const LOADING_STATUS_INTERVAL_MS = 500;
 /** …and at least this often while a round loads, even when nothing changed. */
 const LOADING_STATUS_KEEPALIVE_MS = 1000;
+/** `voteTally` goes out at most this often (4 Hz); a burst of ballots folds into one. */
+const VOTE_TALLY_INTERVAL_MS = 250;
 const BOT_NAMES_A = [
   'Bouncy',
   'Wobbly',
@@ -299,6 +302,9 @@ export class Room {
   private loadingPolledAt = -Infinity;
   private loadingSentAt = -Infinity;
   private loadingKey = '';
+  /** Newest vote tally not broadcast yet. */
+  private pendingTally: LowFreqMessage | null = null;
+  private tallySentAt = -Infinity;
   /** The running sim is the pre-show platform, not a show round. */
   private lobbyActive = false;
   /** Server tick at which the pre-show countdown ends (-1 before the show starts). */
@@ -664,6 +670,7 @@ export class Room {
     this.show.onTick(1 / SERVER_TICK_HZ, { status: this.status, presentPlayers: this.presentPlayers });
     this.applyShowEvents(this.show.drainEvents(), now);
     this.updateLoadingStatus(now);
+    this.flushVoteTally(now);
 
     const tSnap = performance.now();
     const every = this.config.snapshotEvery * (this.lobbyActive ? this.config.lobbySnapshotDivisor : 1);
@@ -1112,6 +1119,16 @@ export class Room {
         if (this.round && msg.roundId === this.round.id && !this.lobbyActive)
           this.show.onPlayerLoaded?.(slot.id);
         return;
+      case 'castVote':
+        // Stale, malformed or ineligible ballots are dropped quietly: a vote is never worth a kick.
+        if (slot.spectator || !this.show.castVote) return;
+        if (!session.guard.admitVote(now)) {
+          this.metrics.rateLimited++;
+          return;
+        }
+        if (typeof msg.roundIndex !== 'number' || typeof msg.option !== 'number') return;
+        this.show.castVote(slot.id, msg.roundIndex, msg.option);
+        return;
       case 'loadProgress':
         if (slot.spectator || typeof msg.pct !== 'number' || !Number.isFinite(msg.pct)) return;
         if (this.round && msg.roundId === this.round.id && !this.lobbyActive)
@@ -1148,6 +1165,25 @@ export class Room {
           this.broadcast({ t: 'roundResults', roundId: e.roundId, results: e.results });
           this.recordRound(e.roundId, e.results, now);
           break;
+        case 'voteOpen':
+          this.pendingTally = null;
+          for (const s of this.sessions) s.sendLowFreq(this.voteOptionsFor(s, e.vote));
+          break;
+        case 'voteTally':
+          this.pendingTally = { t: 'voteTally', roundIndex: e.roundIndex, counts: e.counts, voted: e.voted };
+          break;
+        case 'voteResult':
+          // The result carries the final counts; a tally still queued would only arrive after it.
+          this.pendingTally = null;
+          this.broadcast({
+            t: 'voteResult',
+            roundIndex: e.roundIndex,
+            winner: e.winner,
+            roundId: e.roundId,
+            counts: e.counts,
+            reason: e.reason,
+          });
+          break;
         case 'showEnd':
           this.broadcast({ t: 'showSummary', winners: e.winners, rounds: e.rounds });
           this.state = 'ended';
@@ -1182,6 +1218,32 @@ export class Room {
       total: st.total,
       waitingOn: st.waitingOn.slice(0, LOADING_STATUS_MAX_WAITING),
     });
+  }
+
+  /** Broadcasts the newest queued vote tally, at most {@link VOTE_TALLY_INTERVAL_MS} apart. */
+  private flushVoteTally(now: number): void {
+    if (!this.pendingTally || now - this.tallySentAt < VOTE_TALLY_INTERVAL_MS) return;
+    this.broadcast(this.pendingTally);
+    this.pendingTally = null;
+    this.tallySentAt = now;
+  }
+
+  /** The ballot as one connection sees it: whether its player may vote and what they picked. */
+  private voteOptionsFor(session: ClientSession, vote: ShowVote): LowFreqMessage {
+    const slot = this.slots.get(session.playerId);
+    const voter = slot && !slot.spectator ? slot.id : -1;
+    return {
+      t: 'voteOptions',
+      roundIndex: vote.roundIndex,
+      options: vote.options,
+      counts: vote.counts,
+      voted: vote.voted,
+      eligible: vote.eligible,
+      closesInMs: Math.round(vote.closesIn * 1000),
+      canVote: voter >= 0 && (this.show.canVote?.(voter) ?? false),
+      yourVote: voter >= 0 ? (this.show.ballotOf?.(voter) ?? -1) : -1,
+      botsDiscounted: vote.botsDiscounted,
+    };
   }
 
   private startRound(plan: ShowRoundPlan): void {
@@ -1326,6 +1388,11 @@ export class Room {
     this.broadcastPlayerList();
     if (this.sim && this.status && !this.lobbyActive)
       session.sendLowFreq({ t: 'roundPhase', phase: this.status.phase, time: this.sim.time });
+    const vote = this.show.currentVote?.();
+    if (vote) {
+      session.sendLowFreq(this.voteOptionsFor(session, vote));
+      if (vote.result) session.sendLowFreq({ t: 'voteResult', roundIndex: vote.roundIndex, ...vote.result });
+    }
     this.flushSession(session, performance.now());
   }
 

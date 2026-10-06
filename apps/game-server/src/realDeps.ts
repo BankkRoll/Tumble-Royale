@@ -28,6 +28,11 @@ export interface RealDepsOptions {
    * mutator playlists (Chaos Mode) without their twist. Default: on.
    */
   mutatorsEnabled?: () => boolean;
+  /**
+   * The `shows.mapVoting` kill switch, read when each show starts: false
+   * plays every round from the seed, as before voting existed. Default: on.
+   */
+  votingEnabled?: () => boolean;
 }
 
 /**
@@ -46,7 +51,9 @@ function estimateRoundCount(p: ShowPlaylist, players: number): number {
 /**
  * The playlist a match plays. A custom lobby's host-picked rounds become the
  * pool (finals from the base playlist are kept when none was picked, so the
- * show can still end on a final).
+ * show can still end on a final). Host picks override round voting: the host
+ * already chose, so a picked show never votes. Without picks, the lobby's
+ * "Round voting" setting (on unless the ticket says otherwise) applies.
  */
 export function playlistForMatch(
   defaultId: string | undefined,
@@ -55,7 +62,9 @@ export function playlistForMatch(
   const id = match?.custom?.playlistId ?? match?.playlistId ?? defaultId;
   const base = ShowPlaylistSchema.parse((id && getPlaylist(id)) || MAIN_SHOW);
   const picks = (match?.custom?.rounds ?? []).filter((r) => getRound(r));
-  if (picks.length === 0) return base;
+  const voteOff = match?.custom?.roundVoting === false || picks.length > 0;
+  const voting = voteOff ? { ...base.voting, enabled: false } : base.voting;
+  if (picks.length === 0) return { ...base, voting };
   const pickedFinal = picks.some((r) => getRound(r)?.type === 'final');
   const finals = pickedFinal ? [] : base.pool.filter((e) => getRound(e.roundId)?.type === 'final');
   const firstType = getRound(picks[0]!)?.type;
@@ -67,6 +76,7 @@ export function playlistForMatch(
     minRounds: Math.min(base.minRounds, count),
     maxRounds: count,
     ...(firstType && firstType !== 'final' ? { firstRoundType: firstType } : {}),
+    voting,
   };
 }
 
@@ -117,6 +127,7 @@ export function createRealRoomDeps(R: Rapier, opts: RealDepsOptions = {}): RoomD
         rounds,
         ...customShowOptions(match),
         ...(opts.mutatorsEnabled?.() === false ? { mutatorId: null } : {}),
+        voting: opts.votingEnabled?.() ?? true,
       }),
     lobbyRound: PRE_SHOW_LOBBY_ROUND,
     describePlaylist: (playlistId, players) => {

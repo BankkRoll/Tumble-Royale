@@ -80,6 +80,7 @@ const deps = config.devSim
       results,
       // peek() never waits on the API: a stale answer is better than a stalled show start.
       mutatorsEnabled: () => liveOps.peek().flag('mutators.chaos'),
+      votingEnabled: () => liveOps.peek().flag('shows.mapVoting'),
     });
 
 const server = await startGameServer({

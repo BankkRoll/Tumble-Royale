@@ -20,6 +20,7 @@ import {
   type RoundStartInfo,
   type ShowDirectorOptions,
   type ShowEvent as DirectorEvent,
+  type VoteSnapshot,
 } from '@tumble/sim/show';
 import { RoundPhase, ShowPhase, type ShowPhaseId } from '@tumble/shared';
 import type {
@@ -28,6 +29,7 @@ import type {
   ShowLoadingStatus,
   ShowRoundPlan,
   ShowTickContext,
+  ShowVote,
 } from '../room/types.ts';
 
 /** Show configuration forwarded to the director. */
@@ -41,9 +43,34 @@ export interface ShowDirectorControllerOptions {
   roundTimeScale?: number;
   /** Forces the show mutator; omit to let the director pick from the playlist. */
   mutatorId?: string | null;
+  /**
+   * Round voting (the `shows.mapVoting` flag when the show starts); the
+   * playlist must allow it too. Default: off.
+   */
+  voting?: boolean;
 }
 
 const EMPTY_PLAYERS: RoundStatus['players'] = new Map();
+
+function toShowVote(v: VoteSnapshot): ShowVote {
+  return {
+    roundIndex: v.roundIndex,
+    options: v.options,
+    counts: v.counts,
+    voted: v.voted,
+    eligible: v.eligible,
+    closesIn: v.closesIn,
+    botsDiscounted: v.botsDiscounted,
+    result: v.result
+      ? {
+          winner: v.result.winner,
+          roundId: v.result.roundId,
+          counts: v.result.counts,
+          reason: v.result.reason,
+        }
+      : null,
+  };
+}
 
 /**
  * Real show flow for production rooms.
@@ -100,6 +127,7 @@ export class ShowDirectorController implements ShowController {
         : {}),
       ...(this.opts.roundTimeScale !== undefined ? { roundTimeScale: this.opts.roundTimeScale } : {}),
       ...(this.opts.mutatorId !== undefined ? { mutatorId: this.opts.mutatorId } : {}),
+      ...(this.opts.voting !== undefined ? { voting: this.opts.voting } : {}),
     });
     this.director.on((e) => this.onDirectorEvent(e));
   }
@@ -135,6 +163,23 @@ export class ShowDirectorController implements ShowController {
 
   currentRound(): ShowRoundPlan | null {
     return this.plan;
+  }
+
+  castVote(playerId: number, roundIndex: number, option: number): void {
+    this.director?.castVote(playerId, roundIndex, option);
+  }
+
+  currentVote(): ShowVote | null {
+    const v = this.director?.currentVote();
+    return v ? toShowVote(v) : null;
+  }
+
+  canVote(playerId: number): boolean {
+    return this.director?.canVote(playerId) ?? false;
+  }
+
+  ballotOf(playerId: number): number {
+    return this.director?.ballotOf(playerId) ?? -1;
   }
 
   drainEvents(): ShowEvent[] {
@@ -202,6 +247,33 @@ export class ShowDirectorController implements ShowController {
         this.events.push({ type: 'roundEnd', roundId: o.roundId, results });
         return;
       }
+      case 'voteOpen':
+        this.events.push({ type: 'voteOpen', vote: toShowVote(e.vote) });
+        return;
+      case 'voteTally':
+        this.events.push({ type: 'voteTally', roundIndex: e.roundIndex, counts: e.counts, voted: e.voted });
+        return;
+      case 'voteClosed':
+        this.events.push(
+          e.result
+            ? {
+                type: 'voteResult',
+                roundIndex: e.roundIndex,
+                winner: e.result.winner,
+                roundId: e.result.roundId,
+                counts: e.result.counts,
+                reason: e.result.reason,
+              }
+            : {
+                type: 'voteResult',
+                roundIndex: e.roundIndex,
+                winner: -1,
+                roundId: '',
+                counts: [],
+                reason: 'cancelled',
+              },
+        );
+        return;
       case 'ended':
         this.events.push({
           type: 'showEnd',

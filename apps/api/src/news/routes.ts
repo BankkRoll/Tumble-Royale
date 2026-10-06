@@ -7,7 +7,7 @@
  * offline fallback and merge this feed over it.
  */
 import { NEWS_POSTS, NewsPostSchema, type NewsPost } from '@tumble/content/news';
-import { desc, sql } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.ts';
@@ -32,29 +32,41 @@ export const LiveNewsPostSchema = NewsPostSchema.extend({
 /** Body of `POST /internal/news`. */
 export type LiveNewsPostInput = z.input<typeof LiveNewsPostSchema>;
 
+/** Most live posts served; withdrawals are always all listed. */
+const FEED_LIMIT = 200;
+
 /**
  * The merged feed, newest first: stored posts replace bundled posts with the
  * same id, hidden stored posts remove them (and are listed in `withdrawn`).
+ * A post dated in the future is held back until its date, so news can be
+ * scheduled.
  *
  * @param ctx - API context.
  */
 export async function newsFeed(ctx: AppContext): Promise<{ posts: NewsPost[]; withdrawn: string[] }> {
-  const rows = await ctx.db.select().from(newsPosts).orderBy(desc(newsPosts.publishedAt)).limit(200);
+  const [rows, hiddenRows] = await Promise.all([
+    ctx.db
+      .select()
+      .from(newsPosts)
+      .where(eq(newsPosts.hidden, false))
+      .orderBy(desc(newsPosts.publishedAt))
+      .limit(FEED_LIMIT),
+    // Every withdrawal, however old: a client may still hold its bundled copy.
+    ctx.db.select({ id: newsPosts.id }).from(newsPosts).where(eq(newsPosts.hidden, true)),
+  ]);
   const byId = new Map<string, NewsPost>(NEWS_POSTS.map((p) => [p.id, p]));
-  const withdrawn: string[] = [];
   for (const r of rows) {
-    if (r.hidden) {
-      byId.delete(r.id);
-      withdrawn.push(r.id);
-      continue;
-    }
     const post = LiveNewsPostSchema.safeParse(r.data);
     if (post.success) {
       const { hidden: _hidden, ...rest } = post.data;
       byId.set(r.id, rest);
     }
   }
-  return { posts: [...byId.values()].sort((a, b) => b.date.localeCompare(a.date)), withdrawn };
+  const withdrawn = hiddenRows.map((r) => r.id);
+  for (const id of withdrawn) byId.delete(id);
+  const now = ctx.now().getTime();
+  const posts = [...byId.values()].filter((p) => !(Date.parse(p.date) > now));
+  return { posts: posts.sort((a, b) => b.date.localeCompare(a.date)), withdrawn };
 }
 
 /**
@@ -76,14 +88,16 @@ export function registerNewsRoutes(app: FastifyInstance, ctx: AppContext): void 
     const actor = await requireStaff(ctx, req);
     const post = parse(LiveNewsPostSchema, req.body);
     const now = ctx.now();
+    const [prev] = await ctx.db.select({ id: newsPosts.id }).from(newsPosts).where(eq(newsPosts.id, post.id));
     await ctx.db
       .insert(newsPosts)
       .values({ id: post.id, data: post, hidden: post.hidden ?? false, publishedAt: now, updatedAt: now })
       .onConflictDoUpdate({
         target: newsPosts.id,
-        set: { data: post, hidden: post.hidden ?? false, updatedAt: sql`now()` },
+        set: { data: post, hidden: post.hidden ?? false, updatedAt: now },
       });
     await recordAudit(ctx, req, actor, { action: 'news.publish', targetType: 'news', targetId: post.id });
-    return reply.code(201).send({ post });
+    // 201 only when this created the post; a correction or withdrawal is an update.
+    return reply.code(prev ? 200 : 201).send({ post });
   });
 }

@@ -21,7 +21,7 @@ export const TEST_NONCE = 'test-browser-nonce-0123456789';
 export const TEST_BINDING = createHash('sha256').update(TEST_NONCE).digest('hex');
 
 /** Admin bearer used by tests. */
-export const ADMIN_TOKEN = 'test-admin-token-0123456789';
+export const ADMIN_TOKEN = 'test-admin-token-0123456789-abcdefghij';
 
 /** Explicit secrets for tests, which never read `.env` files. */
 export const TEST_SECRETS = {

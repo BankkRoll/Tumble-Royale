@@ -139,7 +139,7 @@ describe('guest auth', () => {
   it('blocks banned users', async () => {
     const u = await api.guest();
     const ban = await api.req('POST', '/internal/bans', {
-      headers: { authorization: 'Bearer test-admin-token-0123456789' },
+      headers: { authorization: 'Bearer test-admin-token-0123456789-abcdefghij' },
       body: { userId: u.id, reason: 'testing bans', durationHours: 1 },
     });
     expect(ban.statusCode).toBe(201);

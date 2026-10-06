@@ -16,7 +16,12 @@ const issueNames = (env: Record<string, string | undefined>): string[] => {
   return [];
 };
 
-const prod = testEnv({ NODE_ENV: 'production', DATABASE_URL: 'postgres://db/tumble' });
+const prod = testEnv({
+  NODE_ENV: 'production',
+  DATABASE_URL: 'postgres://db/tumble',
+  PUBLIC_WEB_URL: 'https://play.example',
+  PUBLIC_API_URL: 'https://play.example/api',
+});
 
 describe('api config', () => {
   it('requires secrets in every environment and reports all problems at once', () => {
@@ -39,6 +44,19 @@ describe('api config', () => {
     expect(issueNames(prod)).toEqual(['REDIS_URL']);
     expect(loadConfig({ ...prod, REDIS_URL: 'redis://r' }).memoryStoreInProduction).toBe(false);
     expect(loadConfig({ ...prod, ALLOW_MEMORY_STORE: '1' }).memoryStoreInProduction).toBe(true);
+  });
+
+  it('requires the public URLs in production instead of defaulting to localhost', () => {
+    const bare = { ...prod, REDIS_URL: 'redis://r', PUBLIC_WEB_URL: undefined, PUBLIC_API_URL: undefined };
+    expect(issueNames(bare)).toEqual(['PUBLIC_WEB_URL', 'PUBLIC_API_URL']);
+    expect(issueNames({ ...prod, REDIS_URL: 'redis://r' })).toEqual([]);
+  });
+
+  it('bounds the retention interval below the timer limit', () => {
+    expect(issueNames(testEnv({ RETENTION_INTERVAL_MINUTES: '40000' }))).toEqual([
+      'RETENTION_INTERVAL_MINUTES',
+    ]);
+    expect(issueNames(testEnv({ RETENTION_INTERVAL_MINUTES: '35000' }))).toEqual([]);
   });
 
   it('refuses the embedded database in production unless explicitly allowed', () => {
@@ -138,9 +156,9 @@ describe('ADMIN_TOKEN', () => {
     expect(loadConfig(testEnv({ ADMIN_TOKEN: '  ' })).adminToken).toBeUndefined();
     expect(issueNames(testEnv({ ADMIN_TOKEN: 'change-me' }))).toEqual(['ADMIN_TOKEN']);
     expect(issueNames(testEnv({ ADMIN_TOKEN: 'short' }))).toEqual(['ADMIN_TOKEN']);
-    expect(loadConfig(testEnv({ ADMIN_TOKEN: 'a-long-enough-admin-token' })).adminToken).toBe(
-      'a-long-enough-admin-token',
-    );
+    expect(
+      loadConfig(testEnv({ ADMIN_TOKEN: 'a-long-enough-admin-token-0123456789abcdef' })).adminToken,
+    ).toBe('a-long-enough-admin-token-0123456789abcdef');
   });
 });
 

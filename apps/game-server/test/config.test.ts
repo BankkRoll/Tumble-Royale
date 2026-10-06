@@ -80,7 +80,7 @@ describe('game server config', () => {
   });
 
   it('reports results in production only when API_URL is set', () => {
-    const prod = testEnv({ NODE_ENV: 'production', INTERNAL_HMAC_SECRET: undefined });
+    const prod = testEnv({ NODE_ENV: 'production', INTERNAL_HMAC_SECRET: undefined, ALLOW_STANDALONE: '1' });
     expect(loadConfig(prod).results).toBeNull();
     expect(loadConfig(prod).allowUnticketed).toBe(false);
     expect(issueNames({ ...prod, API_URL: 'https://api' })).toEqual(['INTERNAL_HMAC_SECRET']);
@@ -92,6 +92,17 @@ describe('game server config', () => {
         RESULTS_OUTBOX_DIR: '/var/lib/tumble/outbox',
       }).results,
     ).toMatchObject({ apiUrl: 'https://api', outboxDir: '/var/lib/tumble/outbox' });
+  });
+
+  it('requires results reporting in production unless explicitly standalone', () => {
+    const prod = testEnv({ NODE_ENV: 'production', INTERNAL_HMAC_SECRET: undefined });
+    expect(issueNames(prod)).toEqual(['API_URL']);
+    expect(issueNames({ ...prod, REPORT_RESULTS: '0' })).toEqual(['REPORT_RESULTS']);
+    expect(issueNames({ ...prod, ALLOW_STANDALONE: '1' })).toEqual([]);
+  });
+
+  it('bounds timer settings below the setTimeout limit', () => {
+    expect(issueNames(testEnv({ DRAIN_TIMEOUT_MS: '3000000000' }))).toEqual(['DRAIN_TIMEOUT_MS']);
   });
 
   it('links to the matchmaker only with a URL, and then requires the server secret', () => {
@@ -121,7 +132,12 @@ describe('game server config', () => {
       maxPendingPerIp: 8,
     });
     const prod = loadConfig(
-      testEnv({ NODE_ENV: 'production', PUBLIC_WEB_URL: 'https://play.example/', ALLOW_UNTICKETED: '0' }),
+      testEnv({
+        NODE_ENV: 'production',
+        PUBLIC_WEB_URL: 'https://play.example/',
+        ALLOW_UNTICKETED: '0',
+        ALLOW_STANDALONE: '1',
+      }),
     ).exposure;
     expect(prod).toMatchObject({ debug: false, allowedOrigins: ['https://play.example'] });
     const custom = loadConfig(

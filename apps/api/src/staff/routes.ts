@@ -27,15 +27,16 @@ import { and, desc, eq, like, lt, type SQL } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthResult } from '../auth/routes.ts';
-import { startSession } from '../auth/sessions.ts';
+import { sessionFamily, startSession } from '../auth/sessions.ts';
 import type { AppContext } from '../context.ts';
 import { adminAuditLog, profiles, staffMembers, users } from '../db/schema.ts';
 import { requireUser } from '../http/auth.ts';
-import { badRequest, forbidden, notFound, parse } from '../http/errors.ts';
+import { badRequest, forbidden, notFound, parse, unauthorized } from '../http/errors.ts';
 import { AUTH_RATE, ipRateKey } from '../http/rate-limit.ts';
 import { recordAudit } from './audit.ts';
 import { bootstrapAdmin, issueStaffLink, redeemStaffLink, requireLinkableStaff } from './bootstrap.ts';
 import {
+  CONSOLE_REAUTH_MS,
   createStaffSession,
   endStaffSession,
   requireStaff,
@@ -102,17 +103,26 @@ async function requireOperatorToken(ctx: AppContext, req: FastifyRequest): Promi
  */
 export function registerStaffRoutes(app: FastifyInstance, ctx: AppContext): void {
   // SECURITY: the only door from a player session into the console. The
-  // access token proves the account; the staff row, checked here and again on
-  // every console request, proves the role. Limited per IP like sign-in.
+  // access token proves the account, its session must still be signed in and
+  // recent, and the staff row, checked here and again on every console
+  // request, proves the role. Limited per IP like sign-in.
   app.post('/admin/session', { config: AUTH_RATE }, async (req, reply) => {
     const auth = await requireUser(ctx, req);
+    const family = await sessionFamily(ctx.db, auth.sessionId, ctx.now());
+    if (!family?.alive) throw unauthorized('This game session was signed out; sign in again');
     const [user] = await ctx.db
       .select({ isGuest: users.isGuest })
       .from(users)
       .where(eq(users.id, auth.userId));
     const staff = user && !user.isGuest ? await staffRoleOf(ctx, auth.userId) : null;
     if (!staff) throw forbidden('not_staff', 'This account has no admin console access');
-    const session = await createStaffSession(ctx, auth.userId);
+    if (ctx.now().getTime() - family.signedInAt.getTime() > CONSOLE_REAUTH_MS) {
+      throw forbidden(
+        'reauth_required',
+        'For the console, sign out of the game and sign in again (or open a new staff link), then retry within 10 minutes',
+      );
+    }
+    const session = await createStaffSession(ctx, auth.userId, family.familyId);
     const actor: StaffActor = { kind: 'staff', userId: auth.userId, label: staff.label, role: staff.role };
     await recordAudit(ctx, req, actor, {
       action: 'session.start',

@@ -551,7 +551,9 @@ function usageCommands(usage) {
   const commands = [];
   for (const line of body.split('\n')) {
     if (!/^ {2}[a-z]/.test(line)) continue;
-    for (const part of line.trim().split(/\s+\|\s+/)) {
+    // Usage text first, then two or more spaces and a description; " | " joins two commands.
+    const syntax = line.trim().split(/\s{2,}/)[0] ?? '';
+    for (const part of syntax.split(/\s+\|\s+(?=[a-z]+ [a-z])/)) {
       const words = [];
       for (const w of part.split(/\s+/)) {
         if (!/^[a-z]+$/.test(w)) break;

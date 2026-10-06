@@ -675,7 +675,7 @@ development-only settings.
 | `INTERNAL_HMAC_SECRET` | API, matchmaker, game server | yes (16+)             | none    | Signs results and internal calls to the API                         |
 | `GAME_TICKET_SECRET`   | matchmaker, game server      | yes (16+)             | none    | Signs join tickets                                                  |
 | `GAME_SERVER_SECRET`   | matchmaker, game server      | yes (16+)             | none    | Game servers register with it; it also signs kicks                  |
-| `ADMIN_TOKEN`          | API, `pnpm admin`            | for the CLI (16+)     | none    | Operator bearer for `/internal/*`; acts as admin; mints staff links |
+| `ADMIN_TOKEN`          | API, `pnpm admin`            | for the CLI (32+)     | none    | Operator bearer for `/internal/*`; acts as admin; mints staff links |
 | `METRICS_TOKEN`        | API, matchmaker, game server | no (16+)              | none    | Bearer for `/metrics` (and `/rooms` on game servers)                |
 | `VOICE_TURN_SECRET`    | API, coturn                  | with a TURN URL (16+) | none    | Shared TURN REST secret; players only get short-lived credentials   |
 
@@ -704,6 +704,7 @@ development-only settings.
 | `REGION`                  | game server                           | no (set one)               | `na`                           | `na`, `eu`, `asia`, `sa` or `oce`                                     |
 | `CONTROL_URL`             | game server                           | no                         | `PUBLIC_WS_URL` minus `/ws`    | Where the matchmaker sends host kicks                                 |
 | `DEFAULT_GAME_SERVER_URL` | matchmaker                            | no                         | `ws://localhost:7350` in dev   | Game server used while none has registered                            |
+| `ALLOW_STANDALONE`        | matchmaker, game server               | no                         | off                            | `1` runs production without the API: no bans, live ops or results     |
 | `ROOM_CAPACITY`           | game server                           | no                         | `100`                          | Show size for unticketed rooms (max 100)                              |
 | `MAX_ROOMS`               | game server                           | no                         | `3`                            | Concurrent rooms per process (about one per core)                     |
 | `SERVER_CAPACITY`         | game server                           | no                         | `MAX_ROOMS × ROOM_CAPACITY`    | Seats advertised to the matchmaker                                    |
@@ -764,7 +765,7 @@ development-only settings.
 | `NAME_CHANGE_COOLDOWN_DAYS`    | API                  | no   | `30`                             | Days between display name changes                                  |
 | `PRESENCE_GRACE_MS`            | API                  | no   | `8000`                           | How long a player stays online after disconnecting                 |
 | `STATUS_SAMPLE_SECONDS`        | API                  | no   | `60`                             | Status page uptime sampling; `0` keeps no history                  |
-| `RETENTION_INTERVAL_MINUTES`   | API                  | no   | `360`                            | Retention job interval (`0` never runs it)                         |
+| `RETENTION_INTERVAL_MINUTES`   | API                  | no   | `360`                            | Retention job interval (`0` never, at most 35000)                  |
 | `RETENTION_SESSION_GRACE_DAYS` | API                  | no   | `7`                              | Delete sessions this long after they expired                       |
 | `RETENTION_EVENTS_DAYS`        | API                  | no   | `90`                             | Delete analytics events older than this (`0` keeps them)           |
 | `RETENTION_GUEST_DAYS`         | API                  | no   | `0` (keep)                       | Delete guest accounts unused this long                             |

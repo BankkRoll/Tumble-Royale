@@ -183,6 +183,36 @@ describe('staff sign-in links', () => {
   });
 });
 
+describe('console sessions follow the game session', () => {
+  async function signedInAdmin() {
+    const b = (await asAdmin('POST', '/internal/staff/bootstrap', { email: address() })).json();
+    return (await redeem(tokenOf(b.link))).json() as { accessToken: string; refreshToken: string };
+  }
+  const openConsole = (accessToken: string) =>
+    api.req('POST', '/admin/session', { token: accessToken, ip: freshIp() });
+
+  it('end when the player signs out of the game', async () => {
+    const s = await signedInAdmin();
+    const console = (await openConsole(s.accessToken)).json().token as string;
+    expect((await api.req('GET', '/internal/admin/me', { token: console })).statusCode).toBe(200);
+    await api.req('POST', '/auth/logout', { body: { refreshToken: s.refreshToken } });
+    expect((await api.req('GET', '/internal/admin/me', { token: console })).statusCode).toBe(401);
+    // The still-unexpired access token cannot open a new one either.
+    expect((await openConsole(s.accessToken)).statusCode).toBe(401);
+  });
+
+  it('need a recent sign-in, not just a valid access token', async () => {
+    const s = await signedInAdmin();
+    api.clock.advance(11 * 60_000);
+    const refreshed = (
+      await api.req('POST', '/auth/refresh', { body: { refreshToken: s.refreshToken }, ip: freshIp() })
+    ).json();
+    const res = await openConsole(refreshed.accessToken);
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe('reauth_required');
+  });
+});
+
 describe('development seed (DEV_ADMIN_EMAIL)', () => {
   it('makes the address admin only while no staff exist, and logs a fresh link each boot', async () => {
     const fresh = await createTestApi('2026-10-06T09:00:00.000Z', {}, { memoryKv: true });

@@ -275,6 +275,9 @@ BACKUP_KEEP_DAYS=14
 # TICK_MS=500
 # Game server used while none has registered (default: none in production).
 # DEFAULT_GAME_SERVER_URL=
+# 1 lets the matchmaker and game server run in production without the API
+# (no ban checks, live ops or results). Compose always has the API, so leave it.
+# ALLOW_STANDALONE=
 
 # --- Game server tuning (OPTIONAL) --------------------------------------------
 # Show size for unticketed rooms (default/max: 100), rooms per process (default: 3)

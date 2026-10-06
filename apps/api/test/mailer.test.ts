@@ -13,6 +13,7 @@ import { TEST_BINDING, testEnv } from './helpers.ts';
 const PROD = testEnv({
   NODE_ENV: 'production',
   PUBLIC_WEB_URL: 'https://play.example.com',
+  PUBLIC_API_URL: 'https://play.example.com/api',
   ALLOW_MEMORY_STORE: '1',
   ALLOW_EMBEDDED_DB: '1',
 });

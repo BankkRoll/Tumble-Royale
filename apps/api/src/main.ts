@@ -53,12 +53,10 @@ if (built.ctx.mailer instanceof SmtpMailer) {
 } else if (built.ctx.mailer.id === 'disabled') {
   app.log.info('Email sign-in disabled (SMTP_URL unset)');
 }
-if (!config.stripe) {
-  app.log.info(
-    config.env === 'production'
-      ? 'Stripe disabled: Gem checkout is off (set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET)'
-      : 'Stripe disabled: Gem checkouts complete instantly via the fake provider',
-  );
+if (built.ctx.payments.id === 'fake') {
+  app.log.info('Stripe disabled: Gem checkouts complete instantly via the fake provider');
+} else if (built.ctx.payments.id === 'disabled') {
+  app.log.info('Stripe disabled: Gem checkout is off (set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET)');
 }
 
 await app.listen({ host: config.host, port: config.port });

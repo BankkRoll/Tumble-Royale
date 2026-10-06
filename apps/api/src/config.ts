@@ -35,7 +35,8 @@ const OpsEnvSchema = z.object({
   ALLOW_EMBEDDED_DB: flag,
   MIGRATE_ON_BOOT: flag,
   SENTRY_DSN: optionalString,
-  RETENTION_INTERVAL_MINUTES: z.coerce.number().int().min(0).default(360),
+  // setInterval clamps delays over 2^31-1 ms (~24.8 days) to 1 ms; 35000 min stays below.
+  RETENTION_INTERVAL_MINUTES: z.coerce.number().int().min(0).max(35_000).default(360),
   RETENTION_SESSION_GRACE_DAYS: z.coerce.number().int().min(1).default(7),
   RETENTION_EVENTS_DAYS: z.coerce.number().int().min(0).default(90),
   RETENTION_GUEST_DAYS: z.coerce.number().int().min(0).default(0),
@@ -322,6 +323,14 @@ export function loadConfig(env: Env = process.env): ApiConfig {
         'Set ALLOW_MEMORY_STORE=1 to run a single instance on memory anyway.',
     );
   }
+  if (e.NODE_ENV === 'production') {
+    // The localhost defaults would put localhost into every OAuth redirect,
+    // magic link and CORS rule of a real deployment.
+    for (const name of ['PUBLIC_WEB_URL', 'PUBLIC_API_URL'] as const) {
+      if (!issues.optional(name))
+        issues.add(name, 'is required in production (the public https origin players and providers use)');
+    }
+  }
   if (e.NODE_ENV === 'production' && !e.DATABASE_URL && e.ALLOW_EMBEDDED_DB !== '1') {
     issues.add(
       'DATABASE_URL',
@@ -345,7 +354,7 @@ export function loadConfig(env: Env = process.env): ApiConfig {
   // SECURITY: ADMIN_TOKEN is optional, but when set it is a full admin
   // credential, so a copied `change-me` or a short value must not boot.
   const adminToken =
-    issues.optional('ADMIN_TOKEN') === undefined ? undefined : issues.secret('ADMIN_TOKEN', 16) || undefined;
+    issues.optional('ADMIN_TOKEN') === undefined ? undefined : issues.secret('ADMIN_TOKEN', 32) || undefined;
   const oauth = {
     discord: pair(issues, 'DISCORD'),
     google: pair(issues, 'GOOGLE'),

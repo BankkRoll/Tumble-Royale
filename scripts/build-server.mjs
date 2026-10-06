@@ -12,7 +12,8 @@
  *   WASM payloads they locate relative to their own files (PGlite, Rapier,
  *   pg's optional native binding), which breaks when inlined.
  * - Each external must be a direct dependency of the service: a production
- *   install (`pnpm deploy --prod`) only links those next to `dist/`, so an
+ *   install (`pnpm install --prod --filter <service>` in the container images)
+ *   only links those next to `dist/`, so an
  *   import that only resolves through a workspace package would crash at boot.
  *   The build fails instead of shipping that.
  *

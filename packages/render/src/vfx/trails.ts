@@ -19,8 +19,9 @@ import { COLORS, GOLD_COLORS, RAINBOW_COLORS, hexColor } from './palette.ts';
  * Cosmetic trail ribbons.
  *
  * Responsibilities:
- * - A fixed pool of ribbons, each its own mesh (one draw call per active trail)
- *   sharing a single node material so they compile once.
+ * - A fixed pool of ribbons sharing one mesh: each owns a vertex range of a
+ *   single geometry, and the index list is rebuilt every frame from the
+ *   active ones, so any number of trails is one draw call.
  * - Per trail, a ring of timestamped points; the head follows the emitter and
  *   a new point is committed every few centimetres.
  * - Each frame, active ribbons are rebuilt as camera-facing strips into
@@ -100,14 +101,17 @@ function samplePalette(stops: readonly Color[], t: number, out: Color): Color {
   return out.copy(a).lerp(b, x - i);
 }
 
+/** Vertex attributes every ribbon writes into (one range per ribbon). */
+interface TrailBuffers {
+  positions: BufferAttribute;
+  colors: BufferAttribute;
+  data: BufferAttribute;
+}
+
 class Trail {
-  readonly mesh: Mesh;
   readonly points = new Float32Array(POINTS * 4);
   readonly dist = new Float32Array(POINTS);
   readonly baseColor = new Color(1, 1, 1);
-  private readonly positions: BufferAttribute;
-  private readonly colors: BufferAttribute;
-  private readonly data: BufferAttribute;
   head = 0;
   count = 0;
   style = 0;
@@ -120,22 +124,14 @@ class Trail {
   ey = 0;
   ez = 0;
 
-  constructor(material: MeshBasicNodeMaterial, index: BufferAttribute) {
-    const geo = new BufferGeometry();
-    this.positions = new BufferAttribute(new Float32Array(POINTS * 2 * 3), 3).setUsage(DynamicDrawUsage);
-    this.colors = new BufferAttribute(new Float32Array(POINTS * 2 * 4), 4).setUsage(DynamicDrawUsage);
-    this.data = new BufferAttribute(new Float32Array(POINTS * 2 * 4), 4).setUsage(DynamicDrawUsage);
-    geo.setAttribute('position', this.positions);
-    geo.setAttribute('aTrailColor', this.colors);
-    geo.setAttribute('aTrail', this.data);
-    geo.setIndex(index);
-    geo.setDrawRange(0, 0);
-    this.mesh = new Mesh(geo, material);
-    this.mesh.frustumCulled = false;
-    this.mesh.visible = false;
-    this.mesh.renderOrder = 10;
-    this.mesh.name = 'vfx-trail';
-  }
+  /**
+   * @param buffers - The shared vertex attributes.
+   * @param base - This ribbon's first vertex in them.
+   */
+  constructor(
+    private readonly buffers: TrailBuffers,
+    readonly base: number,
+  ) {}
 
   start(style: number, color: Color | null, now: number): void {
     this.style = style;
@@ -190,8 +186,13 @@ class Trail {
     this.lastCommit = now;
   }
 
-  /** Rebuilds the strip. Returns false once fully faded after release. */
-  build(now: number, emit: TrailEmitter): boolean {
+  /**
+   * Rebuilds the strip into this ribbon's vertex range.
+   *
+   * @returns Points written (the strip has `points - 1` quads; under 2 draws
+   *   nothing), or -1 once fully faded after release.
+   */
+  build(now: number, emit: TrailEmitter): number {
     const look = LOOKS[this.style] ?? LOOKS[5]!;
     const p = this.points;
     if (this.emitting) {
@@ -204,15 +205,12 @@ class Trail {
       if (now - (p[idx * 4 + 3] ?? 0) > look.life) break;
       m++;
     }
-    if (m < 2) {
-      this.mesh.visible = false;
-      this.mesh.geometry.setDrawRange(0, 0);
-      return this.emitting;
-    }
+    if (m < 2) return this.emitting ? 0 : -1;
 
-    const pos = this.positions.array as Float32Array;
-    const col = this.colors.array as Float32Array;
-    const dat = this.data.array as Float32Array;
+    const { positions, colors, data } = this.buffers;
+    const pos = positions.array as Float32Array;
+    const col = colors.array as Float32Array;
+    const dat = data.array as Float32Array;
     lastSide.set(0, 1, 0);
     for (let i = 0; i < m; i++) {
       const idx = (this.head - i + POINTS) % POINTS;
@@ -242,7 +240,7 @@ class Trail {
       const alpha = look.alpha * Math.pow(1 - u, 1.25) * (i === 0 ? 0.6 : 1);
 
       this.styleColor(u, tmpColor);
-      const v = i * 2;
+      const v = this.base + i * 2;
       const dist = this.dist[idx] ?? 0;
       for (let s = 0; s < 2; s++) {
         const sign = s === 0 ? -1 : 1;
@@ -262,17 +260,9 @@ class Trail {
       }
     }
     const verts = m * 2;
-    this.positions.clearUpdateRanges();
-    this.positions.addUpdateRange(0, verts * 3);
-    this.positions.needsUpdate = true;
-    this.colors.clearUpdateRanges();
-    this.colors.addUpdateRange(0, verts * 4);
-    this.colors.needsUpdate = true;
-    this.data.clearUpdateRanges();
-    this.data.addUpdateRange(0, verts * 4);
-    this.data.needsUpdate = true;
-    this.mesh.geometry.setDrawRange(0, (m - 1) * 6);
-    this.mesh.visible = true;
+    positions.addUpdateRange(this.base * 3, verts * 3);
+    colors.addUpdateRange(this.base * 4, verts * 4);
+    data.addUpdateRange(this.base * 4, verts * 4);
 
     if (this.emitting && (this.style === 1 || this.style === 2)) {
       this.emitClock += 1;
@@ -285,7 +275,7 @@ class Trail {
         emit(this.style, this.ex, this.ey, this.ez, c);
       }
     }
-    return true;
+    return m;
   }
 
   private styleColor(u: number, out: Color): Color {
@@ -315,7 +305,10 @@ class Trail {
 export class TrailPool {
   private readonly trails: Trail[] = [];
   private readonly material: MeshBasicNodeMaterial;
+  private readonly buffers: TrailBuffers;
   private readonly index: BufferAttribute;
+  /** Every ribbon, as one draw. */
+  private readonly mesh: Mesh;
   private limit: number;
   private now = 0;
 
@@ -334,18 +327,30 @@ export class TrailPool {
     private readonly emit: TrailEmitter,
   ) {
     this.limit = Math.min(capacity, limit);
-    const idx = new Uint16Array((POINTS - 1) * 6);
-    for (let i = 0; i < POINTS - 1; i++) {
-      const a = i * 2;
-      idx.set([a, a + 1, a + 2, a + 1, a + 3, a + 2], i * 6);
-    }
-    this.index = new BufferAttribute(idx, 1);
+    const verts = Math.max(1, capacity) * POINTS * 2;
+    const attr = (size: number): BufferAttribute =>
+      new BufferAttribute(new Float32Array(verts * size), size).setUsage(DynamicDrawUsage);
+    this.buffers = { positions: attr(3), colors: attr(4), data: attr(4) };
+    // PERF: one draw for every ribbon. Each trail used to be its own mesh: 12-16 transparent
+    // draws a frame on High/Ultra once a 100-player race spreads out.
+    const IndexArray = verts > 65535 ? Uint32Array : Uint16Array;
+    this.index = new BufferAttribute(new IndexArray(Math.max(1, capacity) * (POINTS - 1) * 6), 1).setUsage(
+      DynamicDrawUsage,
+    );
+    const geo = new BufferGeometry();
+    geo.setAttribute('position', this.buffers.positions);
+    geo.setAttribute('aTrailColor', this.buffers.colors);
+    geo.setAttribute('aTrail', this.buffers.data);
+    geo.setIndex(this.index);
+    geo.setDrawRange(0, 0);
     this.material = buildMaterial(time);
-    for (let i = 0; i < capacity; i++) {
-      const t = new Trail(this.material, this.index);
-      this.trails.push(t);
-      parent.add(t.mesh);
-    }
+    this.mesh = new Mesh(geo, this.material);
+    this.mesh.frustumCulled = false;
+    this.mesh.visible = false;
+    this.mesh.renderOrder = 10;
+    this.mesh.name = 'vfx-trail';
+    parent.add(this.mesh);
+    for (let i = 0; i < capacity; i++) this.trails.push(new Trail(this.buffers, i * POINTS * 2));
   }
 
   /**
@@ -398,13 +403,38 @@ export class TrailPool {
   update(now: number, camera: Camera): void {
     this.now = now;
     camPos.setFromMatrixPosition(camera.matrixWorld);
+    const { positions, colors, data } = this.buffers;
+    positions.clearUpdateRanges();
+    colors.clearUpdateRanges();
+    data.clearUpdateRanges();
+    const idx = this.index.array as Uint16Array | Uint32Array;
+    let n = 0;
     for (const t of this.trails) {
       if (!t.active) continue;
-      if (!t.build(now, this.emit)) {
+      const m = t.build(now, this.emit);
+      if (m < 0) {
         t.active = false;
-        t.mesh.visible = false;
+        continue;
+      }
+      for (let i = 0; i < m - 1; i++, n += 6) {
+        const a = t.base + i * 2;
+        idx[n] = a;
+        idx[n + 1] = a + 1;
+        idx[n + 2] = a + 2;
+        idx[n + 3] = a + 1;
+        idx[n + 4] = a + 3;
+        idx[n + 5] = a + 2;
       }
     }
+    this.mesh.visible = n > 0;
+    this.mesh.geometry.setDrawRange(0, n);
+    if (n === 0) return;
+    positions.needsUpdate = true;
+    colors.needsUpdate = true;
+    data.needsUpdate = true;
+    this.index.clearUpdateRanges();
+    this.index.addUpdateRange(0, n);
+    this.index.needsUpdate = true;
   }
 
   /** Ends every trail immediately (outstanding handles become inert). */
@@ -413,16 +443,15 @@ export class TrailPool {
       t.active = false;
       t.emitting = false;
       t.generation++;
-      t.mesh.visible = false;
     }
+    this.mesh.visible = false;
+    this.mesh.geometry.setDrawRange(0, 0);
   }
 
   /** Frees GPU resources. */
   dispose(): void {
-    for (const t of this.trails) {
-      t.mesh.geometry.dispose();
-      this.parent.remove(t.mesh);
-    }
+    this.mesh.geometry.dispose();
+    this.parent.remove(this.mesh);
     this.material.dispose();
   }
 }

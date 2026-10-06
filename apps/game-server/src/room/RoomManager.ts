@@ -72,7 +72,7 @@ const MAX_PENDING_JOINS = 10_000;
 
 /** Load summary sent to the matchmaker on every heartbeat. */
 export interface CapacityReport {
-  /** Seats in use, humans and bots (matchmade rooms count their full planned size). */
+  /** Seats in use: humans, bots and spectators (matchmade rooms count at least their planned size). */
   load: number;
   rooms: number;
   /** Match ids of ticketed rooms, so the matchmaker can release their reservations. */
@@ -140,11 +140,18 @@ export class RoomManager {
     this.scheduler.start();
   }
 
-  /** Stops ticking and closes every room. */
-  stop(): void {
+  /**
+   * Stops ticking and closes every room. Shows still running report the
+   * rounds played so far (see {@link Room.abort}).
+   *
+   * @returns Settles once those reports reached the results sink.
+   */
+  async stop(): Promise<void> {
     this.scheduler.stop();
-    for (const r of this.rooms.values()) r.dispose();
+    const reports = [...this.rooms.values()].map((r) => r.abort());
     this.rooms.clear();
+    this.matchRooms.clear();
+    await Promise.allSettled(reports);
   }
 
   /** Summaries for `/rooms`. */
@@ -201,7 +208,8 @@ export class RoomManager {
       if (room.state === 'closed') continue;
       const info = room.info();
       const live = info.humans + info.bots;
-      load += room.match ? Math.max(live, room.match.humans + room.match.bots) : live;
+      // The matchmaker reserved spectator seats on top of the show size; they stay taken once released.
+      load += (room.match ? Math.max(live, room.match.humans + room.match.bots) : live) + info.spectators;
       if (room.match) matches.push(room.match.matchId);
     }
     return { load, rooms: this.rooms.size, matches };
@@ -344,7 +352,7 @@ export class RoomManager {
     let room = existingId ? this.rooms.get(existingId) : undefined;
     if (room && room.state === 'closed') room = undefined;
     if (room) {
-      if (room.rejoinUser(session, claims.sub)) return this.noteJoined(claims, room);
+      if (room.rejoinUser(session, claims.sub, claims.mute === true)) return this.noteJoined(claims, room);
       if (room.state === 'ended') return null;
       if (room.join(session, hello, now, claims) < 0) return null;
       return this.noteJoined(claims, room);
@@ -418,7 +426,7 @@ export class RoomManager {
         );
         this.metrics.roomCrashes++;
         try {
-          room.dispose();
+          void room.abort();
         } catch {
           room.state = 'closed';
         }

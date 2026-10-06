@@ -45,6 +45,13 @@ export interface MatchmakerLinkOptions {
 export interface MatchmakerLink {
   /** Sends one registration or heartbeat now (tests; the timer does this every 5 s). */
   beat(): Promise<void>;
+  /**
+   * Reports the server as draining (now and on every later heartbeat): the
+   * matchmaker places no new matches here but keeps routing rejoins and
+   * kicks to the shows still running.
+   */
+  drain(): Promise<void>;
+  /** Stops heartbeating and deregisters. */
   stop(): Promise<void>;
 }
 
@@ -60,6 +67,9 @@ export function startMatchmakerLink(opts: MatchmakerLinkOptions): MatchmakerLink
   const headers = { authorization: `Bearer ${opts.secret}`, 'content-type': 'application/json' };
   const fetchFn = opts.fetch ?? fetch;
   let registered = false;
+  let draining = false;
+  let stopped = false;
+  let inflight: Promise<void> | null = null;
   // Joins from a failed heartbeat ride along on the next one.
   let unsent: { matchId: string; userId: string }[] = [];
   const call = async (path: string, method: string, body?: unknown): Promise<boolean> => {
@@ -75,7 +85,8 @@ export function startMatchmakerLink(opts: MatchmakerLinkOptions): MatchmakerLink
       return false;
     }
   };
-  const beat = async (): Promise<void> => {
+  const beatOnce = async (): Promise<void> => {
+    if (stopped) return;
     const r = opts.report();
     if (!registered) {
       registered = await call('/servers/register', 'POST', {
@@ -88,6 +99,7 @@ export function startMatchmakerLink(opts: MatchmakerLinkOptions): MatchmakerLink
         rooms: r.rooms,
         ...(opts.maxRooms !== undefined ? { maxRooms: opts.maxRooms } : {}),
         ...(opts.humans ? { humans: opts.humans() } : {}),
+        ...(draining ? { draining: true } : {}),
       });
       if (registered) opts.log?.(`[matchmaker] registered ${opts.serverId} at ${opts.publicUrl}`);
       return;
@@ -104,20 +116,36 @@ export function startMatchmakerLink(opts: MatchmakerLinkOptions): MatchmakerLink
         ...(opts.humans ? { humans: opts.humans() } : {}),
         ...(opts.outbox ? { outbox: opts.outbox() } : {}),
         ...(joined.length ? { joined } : {}),
+        ...(draining ? { draining: true } : {}),
       }))
     ) {
       registered = false;
       unsent = joined;
     }
   };
+  // One beat at a time, so stop() can wait for a registration in flight instead of racing its DELETE.
+  const beat = (): Promise<void> => {
+    inflight ??= beatOnce().finally(() => {
+      inflight = null;
+    });
+    return inflight;
+  };
   void beat();
   const timer = setInterval(() => void beat(), opts.intervalMs ?? 5000);
   timer.unref?.();
   return {
     beat,
+    async drain(): Promise<void> {
+      draining = true;
+      await inflight;
+      await beat();
+    },
     async stop(): Promise<void> {
       clearInterval(timer);
-      if (registered) await call(`/servers/${encodeURIComponent(opts.serverId)}`, 'DELETE');
+      await inflight;
+      stopped = true;
+      // Unconditional: a registration whose answer was lost still left an entry behind.
+      await call(`/servers/${encodeURIComponent(opts.serverId)}`, 'DELETE');
     },
   };
 }

@@ -59,6 +59,8 @@ export interface ResultRound {
 /** The posted body (`MatchResultSchema`). */
 export interface MatchResultPayload {
   matchId: string;
+  /** `SERVER_ID` of the reporting server; the API checks it against the match's placement. */
+  serverId?: string;
   queue: 'casual' | 'ranked' | 'custom';
   playlistId: string;
   region: string;

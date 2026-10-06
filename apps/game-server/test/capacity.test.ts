@@ -112,6 +112,38 @@ describe('matchmaker link', () => {
     expect(calls[2]?.url).toBe('http://mm.test/servers/gs-a');
   });
 
+  it('keeps heartbeating as draining and deregisters only on stop', async () => {
+    const calls: { url: string; method: string; body: Record<string, unknown> }[] = [];
+    const fakeFetch = (async (url: string, init: RequestInit) => {
+      calls.push({
+        url,
+        method: String(init.method),
+        body: init.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {},
+      });
+      return new Response('{}', { status: 200 });
+    }) as typeof fetch;
+    const link = startMatchmakerLink({
+      matchmakerUrl: 'http://mm.test',
+      secret: 'secret',
+      serverId: 'gs-a',
+      publicUrl: 'ws://gs-a/ws',
+      region: 'eu',
+      capacity: 400,
+      report: () => ({ load: 40, rooms: 1, matches: ['m_1'] }),
+      fetch: fakeFetch,
+      intervalMs: 60_000,
+    });
+    await link.drain();
+    await link.beat();
+    expect(calls.map((c) => c.method)).toEqual(['POST', 'POST', 'POST']);
+    expect(calls[1]).toMatchObject({ url: 'http://mm.test/servers/heartbeat', body: { draining: true } });
+    expect(calls[2]?.body.draining).toBe(true);
+    await link.stop();
+    expect(calls.at(-1)).toMatchObject({ url: 'http://mm.test/servers/gs-a', method: 'DELETE' });
+    await link.beat();
+    expect(calls).toHaveLength(4);
+  });
+
   it('reports ticketed joins on the heartbeat and carries them over a failed one', async () => {
     const heartbeats: Record<string, unknown>[] = [];
     let fail = false;

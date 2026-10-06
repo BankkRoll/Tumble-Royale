@@ -27,6 +27,8 @@ export interface RealDepsOptions {
   log?: (msg: string) => void;
   /** Results reporting for matchmade shows. */
   results?: ResultsSink | null;
+  /** This server's matchmaker id (`SERVER_ID`), sent with results. */
+  serverId?: string;
   /** Team assignments for team voice (see `voiceTeams.ts`). */
   voiceTeams?: VoiceTeamsSink | null;
   /**
@@ -159,6 +161,7 @@ export function createRealRoomDeps(R: Rapier, opts: RealDepsOptions = {}): RoomD
     randomSeed: () => randomInt(0, 2 ** 31),
     results: opts.results ?? null,
     voiceTeams: opts.voiceTeams ?? null,
+    ...(opts.serverId ? { serverId: opts.serverId } : {}),
     ...(opts.log ? { log: opts.log } : {}),
   };
 }

@@ -80,6 +80,7 @@ const deps = config.devSim
       ...(config.playlistId ? { playlistId: config.playlistId } : {}),
       log,
       results,
+      ...(config.link ? { serverId: config.link.serverId } : {}),
       voiceTeams: resultsCfg
         ? new HttpVoiceTeams({ apiUrl: resultsCfg.apiUrl, secret: resultsCfg.secret, log })
         : null,

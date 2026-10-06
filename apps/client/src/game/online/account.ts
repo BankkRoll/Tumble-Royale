@@ -93,6 +93,7 @@ import {
 import { loadoutWithItem, profileDressing, randomizedLoadout } from '../profile.ts';
 import { ClubController } from '../social/clubController.ts';
 import { SocialController, type RealtimeLike } from '../social/socialController.ts';
+import { otherPlayerName } from '../social/streamerNames.ts';
 import { onlineStoreShelves } from '../storeOffers.ts';
 import {
   giftErrorText,
@@ -1724,10 +1725,10 @@ export class OnlineAccount {
         this.pushProfile();
       }),
       rt.on('friend_accepted', (m) => {
-        const by = m.by as { name?: string } | undefined;
+        const by = m.by as { userId?: string; name?: string } | undefined;
         ui.getState().pushToast({
           kind: 'social',
-          title: `${by?.name ?? 'Someone'} is now your friend!`,
+          title: `${otherPlayerName(by, 'Someone')} is now your friend!`,
           icon: '🤝',
         });
       }),
@@ -1851,13 +1852,14 @@ export class OnlineAccount {
   private onFriendRequest(m: TypedMessage): void {
     const from = m.from as { userId: string; name: string; tag: string } | undefined;
     if (!from) return;
-    this.addNotification('friendRequest', `${from.name}#${from.tag} wants to be friends`, undefined, {
+    const title = `${otherPlayerName(from, 'Someone', true)} wants to be friends`;
+    this.addNotification('friendRequest', title, undefined, {
       kind: 'friendRequest',
       userId: from.userId,
     });
     ui.getState().pushToast({
       kind: 'social',
-      title: `${from.name}#${from.tag} wants to be friends`,
+      title,
       icon: '🤝',
       durationMs: 0,
       actions: [
@@ -1871,14 +1873,15 @@ export class OnlineAccount {
     const from = m.from as { userId: string; name: string; tag: string } | undefined;
     const code = String(m.code ?? '');
     if (!code || !from) return;
-    this.addNotification('invite', `${from.name} invited you to their party`, undefined, {
+    const title = `${otherPlayerName(from, 'Someone')} invited you to their party`;
+    this.addNotification('invite', title, undefined, {
       kind: 'partyInvite',
       userId: from.userId,
       code,
     });
     ui.getState().pushToast({
       kind: 'social',
-      title: `${from.name} invited you to their party`,
+      title,
       icon: '💌',
       durationMs: 0,
       actions: [

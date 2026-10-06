@@ -18,7 +18,9 @@
 import {
   bindUI,
   CHAT_HELP,
+  maskedName,
   parseChatInput,
+  seatName,
   social,
   ui,
   uiEvents,
@@ -123,17 +125,42 @@ function findFriend(name: string): WhisperTarget | null {
   return f ? { userId: f.id, name: f.name, tag: f.tag } : null;
 }
 
-/** Anyone the player can see by name: chat senders, friends, party and lobby members. */
-function findMuteKey(name: string): { key: string; name: string } | null {
+/**
+ * Anyone the player can see by name: chat senders, friends, party and lobby
+ * members, also by the "Tumbler N" mask Streamer Mode shows for them.
+ *
+ * @param name - What the player typed after `/mute`.
+ * @returns The mute key and the name to confirm with, or null.
+ */
+export function findMuteKey(name: string): { key: string; name: string } | null {
   const q = norm(name);
   const lines = social.getState().chat.lines;
+  const s = ui.getState();
+  // Streamer Mode shows strangers as "Tumbler N" (their seat in a show, else a stable
+  // per-account number), so that is the name the player types back. Matching the mask
+  // keeps the confirmation toast on the mask too.
+  if (s.settings.gameplay.streamerMode) {
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const l = lines[i]!;
+      if (l.from.key === 'system' || l.from.isBot) continue;
+      const label = [l.seat !== undefined ? seatName(l.seat) : null, maskedName(l.from.key)].find(
+        (m) => m !== null && norm(m) === q,
+      );
+      if (label) return { key: l.from.key, name: label };
+    }
+    const masked = [
+      ...s.friends.map((f) => f.id),
+      ...(s.customLobby?.players ?? []).map((m) => m.id),
+      ...(s.customLobby?.spectators ?? []).map((m) => m.id),
+    ].find((id) => norm(maskedName(id)) === q);
+    if (masked) return { key: masked, name: maskedName(masked) };
+  }
   for (let i = lines.length - 1; i >= 0; i--) {
     const from = lines[i]!.from;
     if (from.key === 'system') continue;
     if (norm(from.name) === q || (from.tag && `${norm(from.name)}#${from.tag}` === q))
       return { key: from.key, name: from.name };
   }
-  const s = ui.getState();
   const friend = s.friends.find((f) => norm(f.name) === q || `${norm(f.name)}#${f.tag}` === q);
   if (friend) return { key: friend.id, name: friend.name };
   const member =

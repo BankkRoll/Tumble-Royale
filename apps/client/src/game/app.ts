@@ -721,6 +721,7 @@ export class GameApp {
     const replay = s.replay !== null || s.elimReplay !== null;
     const padToMenu = menuOwnsPad(s, this.menu?.idlePlaying ?? false);
     this.input.setGamepadGameplay(!padToMenu);
+    this.input.setKeyboardGameplay(!padToMenu);
     const pad =
       typeof navigator.getGamepads === 'function' ? firstStandardPad(navigator.getGamepads()) : null;
     // Edges are tracked even during a replay so its buttons never fire here afterwards.

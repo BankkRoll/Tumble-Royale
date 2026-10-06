@@ -88,3 +88,29 @@ is served with `X-Frame-Options: DENY` and `frame-ancestors 'none'` so its
 confirm buttons cannot be clickjacked. Every admin action is written to the
 append-only `admin_audit_log`. Report evidence only includes the reported
 player's public global chat and whispers they sent to the reporter.
+
+### Clubs and abuse
+
+Clubs (persistent groups with a chat) are a new place for abuse, so the API
+treats every club input as untrusted:
+
+- Only full accounts take part; founding also needs an account at least three
+  days old, so throwaway guests cannot squat names or flood club chat.
+- Club names, tags and descriptions go through the shared profanity filter,
+  reserved staff-like names are refused, and emblems can only use the banner
+  motifs and the Tumbler palette.
+- Club chat uses the same filter, mute and suspension checks as every other
+  channel (read through the ban cache that every instance drops the moment a
+  moderator acts), a per-account rate limit held in the shared KV, and never
+  reaches members who blocked the sender.
+- Every club route is rate limited, role-checked on the server
+  (`CLUB_PERMISSIONS`), and switchable off with `clubs.enabled`.
+- Reports carry evidence: a club report snapshots the name, tag, description
+  and emblem, and attaches recent club chat only when the reporter is a
+  member who could read it; a player report attaches club chat only from the
+  reporter's own club. Club chat is deleted after 30 days.
+- Moderators can rename, reset to a neutral name, clear the description,
+  reset the emblem or disband a club from the console; each action needs a
+  reason and is written to `admin_audit_log` in the same transaction.
+- Goal rewards are paid once per player, week and goal, whichever club the
+  player is in, so hopping between clubs cannot farm them.

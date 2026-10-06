@@ -13,6 +13,7 @@ import {
 import { z } from 'zod';
 import { accountRegion, RegionSchema } from '../accounts/accounts.ts';
 import { isErased } from '../accounts/tombstone.ts';
+import { membershipOf } from '../clubs/service.ts';
 import type { AppContext } from '../context.ts';
 import { bans, events, featureFlags, reports, users } from '../db/schema.ts';
 import { verifyLedger } from '../economy/ledger.ts';
@@ -125,7 +126,12 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
         matchId: body.matchId ?? null,
         reason: body.reason,
         details: body.details ? maskProfanity(body.details) : null,
-        evidence: await chatEvidence(ctx.kv, body.targetUserId, auth.userId),
+        evidence: await chatEvidence(
+          ctx.kv,
+          body.targetUserId,
+          auth.userId,
+          (await membershipOf(ctx.db, auth.userId))?.clubId ?? null,
+        ),
       })
       .returning({ id: reports.id });
     return reply.code(201).send({ id: row?.id, status: 'open' });

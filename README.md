@@ -53,6 +53,10 @@ What a player can do today:
   kick/ban, lock, transfer host, ready checks and spectator slots
 - **Social:** friends (requests, presence, join), party and in-show text chat
   with a filter, quick pings, report / block / mute, streamer mode
+- **Clubs:** persistent groups of up to 50 with owner / officer / member
+  roles, open, request or invite-only joining, a club chat, club tags beside
+  names, "Party up" with online members, weekly club goals that pay everyone
+  who played, discovery and moderation from the admin console
 - **Progression:** accounts (guest, Discord, Google, email link), seasons,
   a 100-tier pass, daily/weekly/seasonal/milestone challenges, 45
   achievements (some hidden), a collection log, a daily login streak,
@@ -173,7 +177,10 @@ pnpm admin errors top                                   # most frequent client e
   and private lobbies (`503 maintenance` from the API and matchmaker) while
   Vs Bots keeps working and running shows finish on their game servers.
 - **Feature flags** (`store.enabled`, `chat.global`, `party.lobbyGames`,
-  `replays.enabled`, `mutators.chaos`, `analytics.sample`) default to on.
+  `replays.enabled`, `mutators.chaos`, `analytics.sample`, `events.enabled`,
+  `clubs.enabled`) default to on. With `clubs.enabled` off every club route
+  answers `503 feature_disabled`, club chat stops and shows stop counting
+  toward club goals; clubs and their members are kept.
   The client fetches them at boot and on reconnect and caches them for
   offline boots; the matchmaker and game servers read them from the API
   over the internal HMAC channel, cached 30 s.

@@ -7,8 +7,9 @@
  *
  * Client → server: `{type:'ping'}`, `{type:'presence', status, playlistId?,
  * lobbyCode?}`, `{type:'party_chat', text}`, `{type:'whisper', to, text}`,
- * `{type:'global_chat', text}` and `{type:'party_lobby', …}` (relayed to fellow
- * party members, see `partyLobby.ts`). Server → client: `RealtimeEvent`s plus
+ * `{type:'global_chat', text}`, `{type:'club_chat', text}` and
+ * `{type:'party_lobby', …}` (relayed to fellow party members, see
+ * `partyLobby.ts`). Server → client: `RealtimeEvent`s plus
  * `{type:'hello'}`, `{type:'pong'}`, `{type:'global_chat', ...line}` (every
  * connection), `{type:'global_chat_history', lines}` (once, after `hello`)
  * and `{type:'error', code, message}` for refused client messages.
@@ -30,6 +31,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { z } from 'zod';
 import { isErased } from '../accounts/tombstone.ts';
 import { verifyAccessToken } from '../auth/tokens.ts';
+import { sendClubChat } from '../clubs/chat.ts';
 import type { AppContext } from '../context.ts';
 import { activeBans } from '../http/auth.ts';
 import { ApiError } from '../http/errors.ts';
@@ -56,6 +58,7 @@ const ClientMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('party_chat'), text: z.string().max(500) }),
   z.object({ type: z.literal('whisper'), to: z.string().uuid(), text: z.string().max(500) }),
   z.object({ type: z.literal('global_chat'), text: z.string().max(500) }),
+  z.object({ type: z.literal('club_chat'), text: z.string().max(500) }),
 ]);
 
 const HEARTBEAT_MS = 30_000;
@@ -214,6 +217,7 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
           try {
             if (parsed.type === 'whisper') await sendWhisper(ctx, userId, parsed.to, parsed.text);
             else if (parsed.type === 'global_chat') await sendGlobalChat(ctx, userId, parsed.text);
+            else if (parsed.type === 'club_chat') await sendClubChat(ctx, userId, parsed.text);
             else await sendPartyChat(ctx, parties, userId, parsed.text);
           } catch (err) {
             if (err instanceof ApiError) send(ws, { type: 'error', code: err.code, message: err.message });

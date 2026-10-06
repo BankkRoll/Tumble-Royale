@@ -329,6 +329,60 @@ export interface RefundDetail {
   provider: 'stripe' | 'fake' | 'disabled';
 }
 
+/** A club in the console's list. */
+export interface ClubListRow {
+  id: string;
+  name: string;
+  tag: string;
+  description: string;
+  joinMode: string;
+  memberCount: number;
+  maxMembers: number;
+  lastActivityAt: string;
+  createdAt: string;
+  disbandedAt: string | null;
+  openReports: number;
+}
+
+/** A club chat line kept as evidence. */
+export interface ClubChatEvidence {
+  id: string;
+  from: { userId: string; name: string; tag: string };
+  text: string;
+  masked?: string;
+  at: number;
+}
+
+/** A report against a club. */
+export interface ClubReportRow {
+  id: string;
+  reason: string;
+  details: string | null;
+  status: string;
+  snapshot: { name: string; tag: string; description: string };
+  evidence: ClubChatEvidence[] | null;
+  createdAt: string;
+  reporterId: string;
+  reporterName: string | null;
+  reporterTag: string | null;
+}
+
+/** `GET /internal/clubs/:id`. */
+export interface ClubDetail {
+  club: Omit<ClubListRow, 'openReports'> & { disbandReason: string | null };
+  members: {
+    userId: string;
+    displayName: string;
+    tag: string;
+    role: string;
+    presence: string;
+    joinedAt: string;
+  }[];
+  chat: ClubChatEvidence[];
+  reports: ClubReportRow[];
+  audit: AuditEntry[];
+}
+
 /** Gift statuses (`apps/api/src/economy/gifts.ts`). */
 export type GiftStatus = 'pending' | 'opened' | 'declined' | 'cancelled' | 'returned' | 'reversed';
 

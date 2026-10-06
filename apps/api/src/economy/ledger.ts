@@ -33,6 +33,8 @@ export type LedgerReason =
   | 'achievement_reward'
   /** A limited-time event tier or challenge (ref `event:<eventId>:<tier>` or `event:<eventId>:challenge:<id>`). */
   | 'event_reward'
+  /** A weekly club goal (ref `club:<clubId>:<YYYY-Www>:<goalId>`). */
+  | 'club_reward'
   /** A daily login claim (ref `login:<YYYY-MM-DD>`). */
   | 'login_reward'
   | 'shard_conversion'

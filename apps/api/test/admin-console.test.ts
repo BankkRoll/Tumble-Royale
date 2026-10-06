@@ -147,6 +147,15 @@ describe('authorisation of every admin route', () => {
     ['POST', `/internal/users/${uuid}/rename`, { displayName: 'Polite' }],
     ['POST', `/internal/users/${uuid}/warn`, { reason: 'nope' }],
     ['POST', `/internal/users/${uuid}/reset-name`, { reason: 'nope' }],
+    ['GET', '/internal/clubs'],
+    ['GET', `/internal/clubs/${uuid}`],
+    ['POST', `/internal/clubs/${uuid}/rename`, { name: 'Polite Club', reason: 'nope' }],
+    ['POST', `/internal/clubs/${uuid}/reset-name`, { reason: 'nope' }],
+    ['POST', `/internal/clubs/${uuid}/clear-description`, { reason: 'nope' }],
+    ['POST', `/internal/clubs/${uuid}/reset-emblem`, { reason: 'nope' }],
+    ['POST', `/internal/clubs/${uuid}/disband`, { reason: 'nope' }],
+    ['GET', '/internal/club-reports'],
+    ['POST', '/internal/club-reports/action', { reportIds: [uuid], action: 'dismiss', reason: 'nope' }],
     ['GET', '/internal/audit'],
   ];
   const adminRoutes: [Method, string, unknown?][] = [

@@ -24,6 +24,7 @@ import type {
   SettingsSection,
   TumblerColors,
 } from './types.ts';
+import type { ClubEmblem, ClubJoinMode, ClubReportReason } from '@tumble/shared';
 import type { AuthProviderId } from './account.ts';
 import type { ShareCardFormat } from './share.ts';
 
@@ -191,6 +192,50 @@ export interface UIIntents {
   joinFriend: { userId: string };
   /** Answer a party invite from the notifications panel. */
   partyInviteAction: { userId: string; code: string; action: 'join' | 'decline' };
+  /** Reload the player's club, invites and requests (the club section opened, Retry). */
+  clubRefresh: undefined;
+  /** Found a club (fields already checked against the shared club rules). */
+  clubCreate: {
+    name: string;
+    tag: string;
+    description: string;
+    emblem: ClubEmblem;
+    joinMode: ClubJoinMode;
+  };
+  /** Club search by name or tag (debounced by the UI); also loads the recommended list. */
+  clubSearch: { query: string };
+  /** Join an open club, or ask to join a request-only one. */
+  clubJoin: { clubId: string };
+  /** Withdraw a join request. */
+  clubCancelRequest: { clubId: string };
+  /** Answer a club invite. */
+  clubInviteAnswer: { clubId: string; accept: boolean };
+  /** Officers: answer a join request. */
+  clubRequestAnswer: { userId: string; accept: boolean };
+  /** Officers: invite a friend. */
+  clubInvite: { userId: string };
+  /** Edit the club (only the fields given). */
+  clubEdit: {
+    name?: string;
+    tag?: string;
+    description?: string;
+    emblem?: ClubEmblem;
+    joinMode?: ClubJoinMode;
+  };
+  /** Kick (already confirmed), change a role, or hand over ownership (already confirmed). */
+  clubMember: { userId: string; action: 'kick' | 'officer' | 'member' | 'transfer' };
+  /** Leave the club, or disband it (owner); already confirmed. */
+  clubLeave: { disband?: boolean };
+  /** Load the weekly goals tab. */
+  clubGoals: undefined;
+  /** Claim a completed weekly goal. */
+  clubClaim: { week: string; goalId: string };
+  /** Invite an online club mate into the party. */
+  clubPartyUp: { userId: string };
+  /** Club chat from the club page's own input. */
+  clubChat: { text: string };
+  /** Report a club. */
+  clubReport: { clubId: string; reason: ClubReportReason; details?: string };
   /** In-show text chat (online shows only). */
   sendChat: { text: string };
   /** The in-show chat input opened or closed (the game frees the mouse and held keys). */

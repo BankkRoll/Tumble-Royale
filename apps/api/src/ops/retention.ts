@@ -7,6 +7,8 @@
  *   what refresh-token reuse detection compares against.
  * - Delete analytics events older than `RETENTION_EVENTS_DAYS`, except
  *   `audit.*` events (account-deletion records), which are kept.
+ * - Delete club chat older than {@link CLUB_CHAT_RETENTION_DAYS}; a club report
+ *   already holds its own copy of the lines it was filed over.
  * - Optionally (`RETENTION_GUEST_DAYS` > 0) delete guest accounts nobody has
  *   used for that long, through the same path as `DELETE /me`. A guest is
  *   only stale when it has no live session, never paid for anything and has
@@ -20,10 +22,12 @@ import { and, eq, inArray, lt, notLike, sql } from 'drizzle-orm';
 import { deleteAccount } from '../accounts/erase.ts';
 import type { RetentionConfig } from '../config.ts';
 import type { AppContext } from '../context.ts';
-import { bans, events, purchases, sessions, users } from '../db/schema.ts';
+import { bans, clubMessages, events, purchases, sessions, users } from '../db/schema.ts';
 import { settleExpiredGifts } from '../economy/gifts.ts';
 
 const DAY_MS = 86_400_000;
+/** Club chat kept for history and report evidence. */
+export const CLUB_CHAT_RETENTION_DAYS = 30;
 const LOCK_KEY = 'ops:retention:lock';
 /** Rows per delete statement. */
 const BATCH = 5000;
@@ -37,6 +41,7 @@ export interface RetentionResult {
   sessions: number;
   events: number;
   guests: number;
+  clubMessages: number;
   /** Overdue gifts auto-accepted (or returned). */
   gifts: number;
   /** False when another instance held the lock and nothing ran. */
@@ -98,7 +103,7 @@ export async function runRetention(ctx: AppContext, policy: RetentionConfig): Pr
   const owner = globalThis.crypto.randomUUID();
   // Longer than any sane run; a crashed holder's lock simply expires.
   if (!(await ctx.kv.setNX(LOCK_KEY, owner, 30 * 60_000)))
-    return { sessions: 0, events: 0, guests: 0, gifts: 0, ran: false };
+    return { sessions: 0, events: 0, guests: 0, clubMessages: 0, gifts: 0, ran: false };
   try {
     const now = ctx.now().getTime();
     const sessionCutoff = new Date(now - policy.sessionGraceDays * DAY_MS);
@@ -129,6 +134,20 @@ export async function runRetention(ctx: AppContext, policy: RetentionConfig): Pr
       });
     }
 
+    const chatCutoff = new Date(now - CLUB_CHAT_RETENTION_DAYS * DAY_MS);
+    const deletedClubMessages = await batched(async () => {
+      const ids = ctx.db
+        .select({ id: clubMessages.id })
+        .from(clubMessages)
+        .where(lt(clubMessages.createdAt, chatCutoff))
+        .limit(BATCH);
+      const rows = await ctx.db
+        .delete(clubMessages)
+        .where(and(inArray(clubMessages.id, ids), lt(clubMessages.createdAt, chatCutoff)))
+        .returning({ id: clubMessages.id });
+      return rows.length;
+    });
+
     let deletedGuests = 0;
     if (policy.guestDays > 0) {
       const cutoff = new Date(now - policy.guestDays * DAY_MS);
@@ -148,6 +167,7 @@ export async function runRetention(ctx: AppContext, policy: RetentionConfig): Pr
       sessions: deletedSessions,
       events: deletedEvents,
       guests: deletedGuests,
+      clubMessages: deletedClubMessages,
       gifts: settledGifts,
       ran: true,
     };

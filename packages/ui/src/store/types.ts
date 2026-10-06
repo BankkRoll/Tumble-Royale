@@ -232,8 +232,11 @@ export interface NotificationItem {
   /** Epoch ms. */
   time: number;
   read?: boolean;
-  /** Inline Accept/Decline (friend request) or Join/Decline (party invite) buttons. */
-  action?: { kind: 'friendRequest'; userId: string } | { kind: 'partyInvite'; userId: string; code: string };
+  /** Inline Accept/Decline (friend request) or Join/Decline (party or club invite) buttons. */
+  action?:
+    | { kind: 'friendRequest'; userId: string }
+    | { kind: 'partyInvite'; userId: string; code: string }
+    | { kind: 'clubInvite'; clubId: string };
   /** Set once the action was taken ("Accepted", "Declined"…); hides the buttons. */
   resolved?: string;
 }

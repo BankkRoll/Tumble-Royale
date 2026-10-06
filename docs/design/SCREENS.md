@@ -508,6 +508,27 @@ Intents: `inviteFriend`, `copyInvite`, `promotePartyMember`,
 `joinFriend`, `inspectPlayer`, `mutePlayer`, `blockPlayer`, `unblockPlayer`,
 `reportPlayer`.
 
+**Club section** (`ClubPanel.tsx`, a "Friends & party | Club" switch at the
+top of the panel). Without a club: invites (Join / Decline), requests waiting
+on a club (Cancel), search by name or tag, recommended open and active clubs,
+and "Found a club" (name, tag, description, who can join, emblem from the
+banner motifs and the Tumbler palette; the shared rules are checked inline;
+guests see why they cannot join yet). In a club: emblem, name, `[TAG]`,
+members and role, then tabs Roster (presence, role chips, Party up for online
+members, Manage for lower roles: make officer / member, make owner, remove,
+plus invite friends for officers), Chat, Goals (three weekly goals with
+progress bars, Collect, the week's contribution board), Requests (officers,
+with a count) and Settings (name and tag for the owner, join mode,
+description and emblem for officers, leave, disband, report). Loading, error
+with Retry, empty and "switched off" states are explicit. Streamer Mode hides
+other players' `#tag` and club tags. Club chat also appears as a Club tab in
+the chat widget (`/c`).
+
+Intents: `clubRefresh`, `clubCreate`, `clubSearch`, `clubJoin`,
+`clubCancelRequest`, `clubInviteAnswer`, `clubRequestAnswer`, `clubInvite`,
+`clubEdit`, `clubMember`, `clubLeave`, `clubGoals`, `clubClaim`,
+`clubPartyUp`, `clubChat`, `clubReport`.
+
 ### 5.9 Private show (overlays `privateShow`, `joinCode`)
 
 A dialog, not a screen. **Setup**: round picker, house rules (fill with

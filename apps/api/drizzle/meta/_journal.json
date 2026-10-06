@@ -85,6 +85,13 @@
       "when": 1791293684108,
       "tag": "0011_gifts_wishlist",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791295950778,
+      "tag": "0012_clubs",
+      "breakpoints": true
     }
   ]
 }

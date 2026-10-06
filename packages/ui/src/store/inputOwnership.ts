@@ -51,8 +51,19 @@ export function watchChoiceVisible(
 }
 
 /**
+ * Whether a social panel that lives outside the overlay slot is open: the
+ * gamepad quick-chat picker, the player card or the report dialog. They float
+ * over rounds too, and are driven by menu navigation like any overlay.
+ */
+export function socialOwnsInput(): boolean {
+  const s = social.getState();
+  return (s.chat.open && s.chat.mode === 'quick') || s.playerMenu !== null || s.reportTarget !== null;
+}
+
+/**
  * Whether menu navigation owns the keys and the pad: menu screens, dialogs,
- * overlays and the watch choice. Gameplay ignores the pad meanwhile.
+ * overlays, the watch choice and the floating social panels
+ * ({@link socialOwnsInput}). Gameplay ignores the keys and the pad meanwhile.
  *
  * @param s - UI state.
  */
@@ -61,7 +72,9 @@ export function menuOwnsInput(
     elimReplay?: UIState['elimReplay'];
   },
 ): boolean {
-  return s.inputMode === 'menu' || s.dialog !== null || s.overlay !== 'none' || watchChoiceVisible(s);
+  return (
+    s.inputMode === 'menu' || s.dialog !== null || s.overlay !== 'none' || watchChoiceVisible(s) || socialOwnsInput()
+  );
 }
 
 /** Input types that take no typed text (keys there are still hotkeys). */

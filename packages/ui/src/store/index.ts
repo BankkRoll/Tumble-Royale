@@ -131,6 +131,7 @@ export {
   isTypingTarget,
   keyboardBusy,
   menuOwnsInput,
+  socialOwnsInput,
   overlayAfterScreenChange,
   watchChoiceVisible,
 } from './inputOwnership.ts';

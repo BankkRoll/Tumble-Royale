@@ -134,6 +134,38 @@ describe('input ownership', () => {
       }),
     ).toBe(true);
   });
+
+  it('gives the keys and pad to quick chat, the player card and the report dialog in a round', () => {
+    const round = {
+      inputMode: 'game' as const,
+      dialog: null,
+      overlay: 'none' as const,
+      screen: 'round' as const,
+      eliminatedSheet: false,
+      watchChoice: null,
+    };
+    const player = { key: 'u1', name: 'Mallow' };
+    try {
+      expect(menuOwnsInput(round)).toBe(false);
+      social.getState().dispatchChat({ type: 'open', mode: 'quick' });
+      expect(menuOwnsInput(round)).toBe(true);
+      social.getState().dispatchChat({ type: 'close' });
+      // The text field keeps its own keys; the pad is not the menu's then.
+      social.getState().dispatchChat({ type: 'open', mode: 'text' });
+      expect(menuOwnsInput(round)).toBe(false);
+      social.getState().dispatchChat({ type: 'close' });
+      social.getState().openPlayerMenu(player);
+      expect(menuOwnsInput(round)).toBe(true);
+      social.getState().openReport(player);
+      expect(menuOwnsInput(round)).toBe(true);
+      social.getState().openReport(null);
+      expect(menuOwnsInput(round)).toBe(false);
+    } finally {
+      social.getState().dispatchChat({ type: 'close' });
+      social.getState().openPlayerMenu(null);
+      social.getState().openReport(null);
+    }
+  });
 });
 
 describe('show-scoped screen state', () => {

@@ -78,6 +78,13 @@
       "when": 1791129313000,
       "tag": "0010_refunds",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791294286938,
+      "tag": "0011_custom_rounds",
+      "breakpoints": true
     }
   ]
 }

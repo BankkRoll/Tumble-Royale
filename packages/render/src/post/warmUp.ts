@@ -140,12 +140,15 @@ interface RendererInternals {
  * @param renderer - The renderer about to draw a warm-up frame.
  * @param mayBuild - Whether another new shader still fits this slice.
  * @param onSkip - Called for every object left out.
+ * @param firstDraws - When given, the first draw of every render pipeline counts as a build too
+ *   (and the pipelines drawn are added to it).
  * @returns Removes the wrapper.
  */
 export function limitShaderBuilds(
   renderer: WebGPURenderer,
   mayBuild: () => boolean,
   onSkip: () => void,
+  firstDraws?: Set<unknown>,
 ): () => void {
   const r = renderer as unknown as RendererInternals;
   const objects = r._objects;
@@ -167,11 +170,15 @@ export function limitShaderBuilds(
       passId,
     );
     const built = nodes.get(ro).nodeBuilderState !== undefined || cache.has(ro.initialCacheKey);
-    if (!built && !mayBuild()) {
+    const pipeline = (ro as { pipeline?: unknown }).pipeline;
+    const fresh = firstDraws !== undefined && pipeline != null && !firstDraws.has(pipeline);
+    if ((!built || fresh) && !mayBuild()) {
       onSkip();
       return;
     }
     direct.apply(this, args);
+    const drawn = (ro as { pipeline?: unknown }).pipeline;
+    if (firstDraws && drawn != null) firstDraws.add(drawn);
   };
   return () => {
     delete r._renderObjectDirect;
@@ -386,6 +393,14 @@ export interface SceneWarmUpOptions {
   now?: () => number;
   /** Target main-thread time per {@link SceneWarmUp.next} (ms). */
   budgetMs?: number;
+  /**
+   * Spend the slice budget on first draws of each render pipeline as well as on shader builds.
+   *
+   * PERF: on WebGL2 (ANGLE/D3D11) the first real draw of a program compiles its driver shaders in
+   * the GPU process, and the next synchronous GL call waits for all of it: drawing every object of
+   * a round in one go blocked the main thread for 9-10 s. Paced, each slice waits for a few.
+   */
+  paceFirstDraws?: boolean;
 }
 
 /** A warm-up in progress. */
@@ -456,6 +471,7 @@ export function beginSceneWarmUp(
   let batch = FIRST_BATCH;
   let retries = 0;
   let active = true;
+  const firstDraws = opts.paceFirstDraws ? new Set<unknown>() : undefined;
   for (const o of objects) {
     o.visible = false;
     o.frustumCulled = false;
@@ -496,6 +512,7 @@ export function beginSceneWarmUp(
         () => {
           skipped = true;
         },
+        firstDraws,
       );
       try {
         opts.render();

@@ -295,6 +295,37 @@ describe('limitShaderBuilds', () => {
     expect(Object.prototype.hasOwnProperty.call(raw, '_renderObjectDirect')).toBe(false);
   });
 
+  it('can also budget the first draw of each pipeline (WebGL2 compiles on first draw)', () => {
+    const drawn: Mesh[] = [];
+    const raw = {
+      _currentRenderContext: {},
+      // Every shader is built already; each material stands for its own pipeline.
+      _objects: { get: (object: Mesh) => ({ initialCacheKey: 'built', pipeline: object.material }) },
+      _nodes: { nodeBuilderCache: new Map([['built', {}]]), get: () => ({ nodeBuilderState: {} }) },
+      _renderObjectDirect(object: Mesh): void {
+        drawn.push(object);
+      },
+    };
+    const a = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+    const b = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+    const c = new Mesh(new BoxGeometry(), a.material);
+    const seen = new Set<unknown>();
+    let budget = 1;
+    let skips = 0;
+    const restore = limitShaderBuilds(
+      raw as unknown as WebGPURenderer,
+      () => budget-- > 0,
+      () => skips++,
+      seen,
+    );
+    for (const m of [a, b, c]) raw._renderObjectDirect(m);
+    restore();
+    expect(drawn).toEqual([a, c]);
+    expect(skips).toBe(1);
+    expect(seen.has(a.material)).toBe(true);
+    expect(seen.has(b.material)).toBe(false);
+  });
+
   it('is a no-op on renderers without the private managers', () => {
     const restore = limitShaderBuilds(
       {} as WebGPURenderer,

@@ -37,6 +37,7 @@ beforeAll(async () => {
 });
 
 const IDS = ['comet-catch', 'sunbeam-squabble', 'colour-cauldron', 'trail-tracer', 'throne-rush'];
+const LOGIC_IDS = new Set(['colour-cauldron', 'trail-tracer']);
 
 function round(id: string): RoundDefinition {
   const r = getRound(id);
@@ -162,9 +163,25 @@ describe.each(IDS)('%s', (id) => {
     const st = sim.getStatus();
     expect(st.finished).toBe(true);
     expect(st.qualifiedCount + st.eliminatedCount).toBe(n);
-    expect(st.qualifiedCount).toBe(computeQualifyTarget(r, n));
+    // A logic round only cuts when someone picks wrong; when every bot answers
+    // right to the buzzer, all survivors qualify. The cut rate is pinned below.
+    if (LOGIC_IDS.has(id)) expect(st.qualifiedCount).toBeGreaterThanOrEqual(computeQualifyTarget(r, n));
+    else expect(st.qualifiedCount).toBe(computeQualifyTarget(r, n));
     sim.dispose();
   });
+
+  if (LOGIC_IDS.has(id))
+    it('cuts a two-bot field on most seeds', () => {
+      const r = round(id);
+      let cut = 0;
+      for (let seed = 1; seed <= 20; seed++) {
+        const sim = build(r, { n: 2, real: true, seed });
+        runFull(sim);
+        if (sim.getStatus().qualifiedCount === computeQualifyTarget(r, 2)) cut++;
+        sim.dispose();
+      }
+      expect(cut).toBeGreaterThanOrEqual(16);
+    }, 120_000);
 
   it('same seed, same outcome', () => {
     const r = round(id);

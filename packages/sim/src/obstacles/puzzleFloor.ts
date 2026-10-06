@@ -432,10 +432,13 @@ export interface PuzzleFloorView {
 }
 
 const WORD_BITS = 30;
+/** Fields this size and up get the full-field slip easing; smaller ones slip more. */
+const SLIP_EASE_FIELD = 60;
 
 /** Live puzzle floor. */
 export class PuzzleFloorRuntime extends RuntimeBase implements PuzzleFloorView {
   readonly schedule: PuzzleRound[];
+  private readonly entrants: number;
   private readonly tiles: Collider[] = [];
   private readonly tileEnabled: boolean[] = [];
   private readonly seams: PatternSeam[];
@@ -456,7 +459,8 @@ export class PuzzleFloorRuntime extends RuntimeBase implements PuzzleFloorView {
     const p = params;
     const { R } = ctx;
     this.authoritative = ctx.authoritative ?? true;
-    this.schedule = buildPuzzleSchedule(p, ctx.speedScale, ctx.rng, ctx.entrants ?? 0);
+    this.entrants = ctx.entrants ?? 0;
+    this.schedule = buildPuzzleSchedule(p, ctx.speedScale, ctx.rng, this.entrants);
     this.voided = new Uint8Array(this.schedule.length);
     this.judged = new Uint8Array(this.schedule.length);
     const board = this.addBody(R.RigidBodyDesc.fixed());
@@ -638,7 +642,10 @@ export class PuzzleFloorRuntime extends RuntimeBase implements PuzzleFloorView {
       0.12 * (r.number - 1) +
       (r.memory ? 0.15 : 0) +
       (r.op === MixOp.Subtract && this.params.puzzle === 'mix' ? 0.05 : 0);
-    return Math.min(1, d / this.params.thinkScale);
+    // A small field only thins out through bot slips; easing them like a full
+    // field's let a two-bot round run to the buzzer with nobody cut.
+    const smallField = this.entrants > 0 ? Math.max(0, 1 - this.entrants / SLIP_EASE_FIELD) : 0;
+    return Math.min(1, Math.max(d / this.params.thinkScale, smallField));
   }
 
   telegraph(t: number): number {

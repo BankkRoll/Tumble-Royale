@@ -1019,6 +1019,7 @@ export abstract class ShowSession {
           loadout: sp?.loadout ?? null,
         };
       }),
+      partyMates: rs.players.filter((p) => this.isPartyMate(p.id)).map((p) => p.id),
     };
   }
 

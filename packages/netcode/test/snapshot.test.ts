@@ -276,6 +276,44 @@ describe('snapshot delta compression', () => {
     expect(farSent).toBeLessThan(30);
   });
 
+  it('measures distance from a free camera focus for a spectator with no entity (v7)', () => {
+    const rng = new Rng(9);
+    const sim = makeSim(2, rng);
+    sim.states[0]!.pos = { x: 0, y: 1, z: 0 };
+    sim.states[1]!.pos = { x: 0, y: 1, z: 200 };
+    const table = new EntityTable();
+    const obstacles = new ObstacleTable([]);
+    const sends = (focus: { x: number; y: number; z: number } | null): number[] => {
+      const enc = new SnapshotEncoder();
+      const dec = new SnapshotDecoder();
+      const w = new BitWriter();
+      const r = new BitReader();
+      const out = createDecodedSnapshot();
+      const counts = [0, 0];
+      for (let tick = 1; tick <= 60; tick++) {
+        for (const [i, st] of sim.states.entries()) {
+          st.pos.x = Math.sin(tick + i) * 3;
+          st.vel.x = (tick + i) % 5;
+          st.stateTime += 1 / 30;
+        }
+        const frame = { ...frameFor(sim, table, tick, tick, obstacles), leaders: [] };
+        enc.encode(w.reset(), frame, { playerId: -1, spectateTarget: -1, ackedInputSeq: -1, focus });
+        r.reset(w.finish().slice());
+        r.readBits(8);
+        expect(dec.decode(r, q, out)).toBe('ok');
+        enc.ack(out.snapshotId);
+        for (let k = 0; k < out.entityCount; k++) counts[out.entities[k]!.id]!++;
+      }
+      return counts;
+    };
+    // No focus: a pure spectator gets everyone at full rate (coarse, but bounded by the byte budget).
+    expect(sends(null)).toEqual([60, 60]);
+    // Focus on the far Tumbler: it is near now, the one at the origin drops to the distance rate.
+    const [near0, far1] = sends({ x: 0, y: 1, z: 200 });
+    expect(far1).toBe(60);
+    expect(near0).toBeLessThan(30);
+  });
+
   it('new epochs need a full snapshot; deltas against an unknown baseline are rejected', () => {
     const rng = new Rng(2);
     const sim = makeSim(4, rng);

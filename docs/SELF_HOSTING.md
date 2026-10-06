@@ -487,8 +487,11 @@ Every game server needs:
 | `REGION`        | `eu`                         | `na`, `eu`, `asia`, `sa` or `oce`                                             |
 | `CONTROL_URL`   | (derived)                    | where the matchmaker sends host kicks; defaults to the `PUBLIC_WS_URL` origin |
 
-and the same `GAME_TICKET_SECRET`, `GAME_SERVER_SECRET` and
-`INTERNAL_HMAC_SECRET` as the main server.
+and the same `GAME_TICKET_SECRET` and `GAME_SERVER_SECRET` as the main
+server, plus the main server's `GAME_SERVER_HMAC_SECRET` (see
+[Service keys](#service-keys)). Older setups give game servers
+`INTERNAL_HMAC_SECRET` instead; that still works, but it hands every game
+server host the key all internal API routes trust.
 
 **On another host** (more capacity, or closer to players in another region):
 
@@ -533,6 +536,45 @@ gs2.play.example.com {
 	reverse_proxy game-server-2:7350
 }
 ```
+
+### Service keys
+
+Services sign their calls to each other with HMAC keys over the method,
+path, timestamp, a single-use nonce and the body:
+
+| Key                       | Held by                       | Accepted for                                                                             |
+| ------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------- |
+| `INTERNAL_HMAC_SECRET`    | API, matchmaker               | every internal route (ban lookups, live ops, capacity, placements, …)                    |
+| `GAME_SERVER_HMAC_SECRET` | API, every game server        | only what game servers call: results, team voice, custom rounds, live ops, crash reports |
+| `GAME_SERVER_SECRET`      | matchmaker, every game server | game-server registration and heartbeats, host kicks                                      |
+| `GAME_TICKET_SECRET`      | matchmaker, every game server | join tickets                                                                             |
+
+The API also checks every show result against the matchmaker's placement
+before granting anything (the match must have been placed on the reporting
+server, in that queue, with those accounts), so a leaked game-server key
+cannot invent matches. This needs `MATCHMAKER_URL` on the API (the compose
+file's `deploy/.env` has it).
+
+Inside the compose stack, Postgres and Redis sit on an internal network the
+game server is not attached to, the matchmaker and game server receive only
+the variables they read, and Redis requires `REDIS_PASSWORD` when it is set.
+
+**Moving an existing deployment over** (no downtime needed):
+
+1. Generate two secrets (`openssl rand -hex 32`) and add them to
+   `deploy/.env` as `GAME_SERVER_HMAC_SECRET` and `REDIS_PASSWORD`.
+2. If game servers on other hosts run an older release, also set
+   `INTERNAL_HMAC_ALLOW_V1=1`: they sign without the method and path, and
+   the API refuses that otherwise. Their results wait in their outbox, not
+   lost, until either side is upgraded.
+3. `docker compose up -d` recreates Redis with the password and the
+   services with their new environment.
+4. On every other game server host, replace `INTERNAL_HMAC_SECRET` with
+   `GAME_SERVER_HMAC_SECRET` in `deploy/game-server/.env`, upgrade and
+   restart it.
+5. Once all of them run the new release, remove `INTERNAL_HMAC_ALLOW_V1`.
+   If a game server host had `INTERNAL_HMAC_SECRET`, rotate it on the API
+   and matchmaker.
 
 ## Upgrades
 

@@ -224,6 +224,21 @@ describe('ring buffer', () => {
     expect(tape.newestTime).toBeGreaterThan(119.9);
   });
 
+  it('stays under 1 MB for a 100-player round, whatever its length', () => {
+    const ids = Array.from({ length: 100 }, (_, i) => i);
+    const tape = new ReplayTape(ids);
+    const net = new Map(
+      Array.from({ length: 40 }, (_, i) => [`o${i}`, [1, 2, 3, 4, 5, 6]] as [string, number[]]),
+    );
+    for (let k = 0; k < 20 * 300; k++) {
+      const t = k / 20;
+      tape.frame(t, (id, out) => truth(id, t, 1e9, out), null, net);
+      tape.event(t, { type: 'jump', player: k % 100, pos: { x: 0, y: 0, z: 0 } });
+    }
+    expect(tape.length).toBe(tape.capacity);
+    expect(tape.memoryBytes).toBeLessThan(1024 * 1024);
+  });
+
   it('samples on the rate grid only', () => {
     const tape = new ReplayTape([0]);
     let written = 0;

@@ -74,9 +74,12 @@ What a player can do today:
   store with self-service refunds (Gem packs go to a staff refund queue),
   gifting store items to friends and wish lists friends can gift from,
   Crown Shard shop, free Gem paths, live news and notifications
-- **Watch & share:** keep spectating after elimination, round replays (save and
-  reopen them), photo mode, share cards for wins and deep runs, and 5–15 s
-  clips of any recorded round, all made on the device (no upload)
+- **Watch & share:** a short "How you went out" replay after a knock-out
+  (slowed at the decisive moment, with the cause), automatic highlights of
+  each show on the rewards screen, keep spectating after elimination, round
+  replays (save and reopen them), photo mode, share cards for wins and deep
+  runs, and 5–15 s clips of any recorded round or highlight, all made on the
+  device (no upload)
 - **Input & access:** keyboard/mouse with rebinding, gamepad menus,
   single-layer touch controls, vibration, colour-blind palettes (also in 3D),
   captions and an opt-in spoken announcer

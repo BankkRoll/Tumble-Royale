@@ -115,6 +115,7 @@ gold). Cue `ui.confetti`.
      ├─ WatchChoiceLayer keep watching / leave after elimination
      ├─ ToastLayer       top-right cards + left feed
      ├─ ReplayLayer      replay viewer
+     ├─ ElimReplayLayer  "How you went out" after a knock-out
      ├─ ShareLayer       share sheet (card / clip, progress, preview)
      ├─ OverlayLayer     settings, friends, notifications, privateShow, joinCode, inGameMenu
      │   (PhotoModeBar replaces it in photo mode)
@@ -389,6 +390,8 @@ clicks each top-level control and asserts the destination.
 | All news / Esc                  | News reader       | back to the list                                                                                                                                          |
 | Eliminated choice               | show flow         | Keep watching (`spectate`, auto after a countdown) or Leave show (`leaveShow`)                                                                            |
 | Results / Rewards               | show flow         | Watch replay (`replayOpen`), Share (§9.19), Back to lobby (`backToLobby`), Play again (`playAgain`, same mode), Continue (`continue`)                     |
+| Elimination replay              | show flow         | Skip (`elimReplaySkip`; any key, click or pad button also skips)                                                                                          |
+| Highlights (rewards)            | show flow         | Watch / Play all (`highlightPlay`), Share (`highlightShare` + the share sheet on the highlight)                                                           |
 | Open replay file                | Profile / History | `replayOpenFile` (a saved `.tumblereplay`)                                                                                                                |
 
 ---
@@ -583,7 +586,8 @@ Full-height sheet with text-only tabs:
   Reduce camera shake, Captions, Spoken announcer (off by default), UI scale,
   High-contrast HUD.
 - **Gameplay**: nameplates, Streamer mode (hides other players' names and
-  lobby codes), show ping, auto-spectate, **Show bot tags**, **Show chat**
+  lobby codes), show ping, auto-spectate, **Elimination replay** (on by
+  default; a still frame under Reduce Motion), **Show bot tags**, **Show chat**
   (off also hides quick pings), **Chat filter** (masks swearing; slurs are
   always hidden), **Region** (Auto or a fixed region, each with its measured
   ping; `probeRegions` when shown).
@@ -742,6 +746,25 @@ screens): **Keep watching** (auto-selected after a countdown) or **Leave
 show**, with a rewards note and "N still in the show".
 Intents: `spectate`, `leaveShow`.
 
+### 9.8a How you went out (`ElimReplayLayer`, store `elimReplay`)
+
+Where the choice sheet would slide in, the replay of the last ~7.5 s plays
+first (`docs/design/REPLAYS.md`): letterbox bars, "REPLAY · HOW YOU WENT
+OUT" at the top, the cause as a tangerine sticker over the lower third
+("Knocked off by a sweeper", "Grabbed by Bean", "Missed the cut by 0.4 s";
+other players' names follow Streamer Mode) announced once through a polite
+live region, a Slow-mo chip while the decisive moment plays, a progress bar,
+"Press any key to skip" (touch: "Tap to skip") and a Skip button. Any key,
+click, tap or pad button skips (`elimReplaySkip` for the button); keys and
+buttons still held from playing do not. While it builds, only the bottom
+bar and the cause show ("Loading replay…"). Reduce Motion shows a single
+still frame of the decisive moment for 4 s instead. The screen, HUD and
+stamps underneath are hidden; the keep-watching choice is offered as usual
+(its countdown runs) but stays hidden until the replay ends. Knock-outs at
+the end of a round (the cut, a team loss, time up) play it over the results
+wall instead. Off in Settings → Gameplay → Elimination replay, and while
+`replays.enabled` is off.
+
 ### 9.9 Spectating banner
 
 Bottom-centre bar: ◀ Q · player card (avatar, name, place/score, "Qualified ✓"
@@ -838,8 +861,11 @@ Exit, scrub bar with qualify/elimination markers, play/pause, ±5 s, speed
 0.25–2×, cameras Follow / Free / Your view, previous/next player, Save replay.
 Keys: Space, ←/→ seek, ↑/↓ speed, C camera, WASD free camera. Opened from
 round results (Watch replay), the rewards picker, the in-game menu (live
-round) and Profile / Match history (open a `.tumblereplay` file). Intents:
-`replayOpen`, `replayOpenLive`, `replayOpenFile`, `replayCommand`.
+round), the rewards highlights (§11) and Profile / Match history (open a
+`.tumblereplay` file). Playing highlights adds "Highlight 2/5 · …" under the
+title and moves on to the next one at the end of each segment; scrubbing
+hands control back to the player. Intents: `replayOpen`, `replayOpenLive`,
+`replayOpenFile`, `replayCommand`, `highlightPlay`.
 
 ### 9.18 Photo mode
 
@@ -859,7 +885,9 @@ clip. A modal card with two tabs:
   (`shareCard`).
 - **Clip:** recorded rounds as chips (defaults to the won final, else the
   latest qualified round), length 5 / 10 / 15 s and a start trimmer (range
-  plus ±1 s buttons for pad and keys). Make clip (`shareClip`). Hidden while
+  plus ±1 s buttons for pad and keys). A highlight's Share button opens this
+  tab on the highlight instead (its round, 5 s centred on its segment). Make
+  clip (`shareClip`). Hidden while
   `replays.enabled` is off; a browser that cannot record video gets an
   explanation instead.
 
@@ -974,6 +1002,16 @@ is a pill at the bottom-centre above the safe-area.
   5. **Ranked** (if present): emblem with RP bar, "+24 RP" floating up; tier-up
      promotes with a stamp "PROMOTED: GOLD II".
 - Skip: any key fast-forwards the current step; second press completes all.
+- **Highlights** (above the replay chips; `HighlightsReel`, store
+  `highlights`): up to six cards, best first, each with an icon, a heading
+  (Crowned, Photo finish, Last-gasp qualify, Big fall, Grab chain, Comeback,
+  Clutch survival, Decider), one line on what happened (names follow
+  Streamer Mode; "you" for the player) and the round, plus Watch
+  (`highlightPlay` with one id) and Share (opens the clip tab on it,
+  `highlightShare`; only where a clip can be made). **Play all** runs them
+  back to back in the replay viewer. "No highlights this show" when rounds
+  were recorded but nothing stood out; hidden entirely while
+  `replays.enabled` is off or nothing was recorded.
 - `music.rewards`.
 
 ---

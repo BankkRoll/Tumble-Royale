@@ -9,10 +9,20 @@ function run(g: TierGovernor, ms: number, seconds: number, spent = true): number
 }
 
 describe('TierGovernor', () => {
-  it('steps down after frames stay well over budget with resolution spent', () => {
+  it('steps down after frames stay well over budget (1.8x) with resolution spent', () => {
     const g = new TierGovernor({ targetMs: 1000 / 60, patienceS: 8, settleS: 6 });
-    expect(run(g, 40, 10)).toBe(0); // settling, then still waiting out the patience
-    expect(run(g, 40, 6)).toBe(1);
+    expect(run(g, 30, 10)).toBe(0); // settling, then still waiting out the patience
+    expect(run(g, 30, 6)).toBe(1);
+  });
+
+  it('steps down sooner when frames take twice the budget', () => {
+    const g = new TierGovernor({ targetMs: 1000 / 60, patienceS: 8, settleS: 6 });
+    expect(run(g, 40, 6)).toBe(0); // settling
+    expect(run(g, 40, 3.5)).toBe(1); // 40 ms is 2.4x a 60 fps budget: 3 s of patience
+    const h = new TierGovernor({ targetMs: 1000 / 60, patienceS: 8, settleS: 6 });
+    expect(run(h, 25, 6)).toBe(0);
+    expect(run(h, 25, 3.5)).toBe(0); // 1.5x: still the full 8 s
+    expect(run(h, 25, 5)).toBe(1);
   });
 
   it('keeps the tier while adaptive resolution still has room', () => {

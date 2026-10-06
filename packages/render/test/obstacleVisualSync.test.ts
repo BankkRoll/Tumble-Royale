@@ -161,7 +161,9 @@ function key16(e: ArrayLike<number>, offset = 0): string {
 /** Every batched source mesh must be drawn by some batch at its current world matrix. */
 function checkBatches(batcher: MeshBatcher, roots: readonly Object3D[]): string[] {
   const drawn = new Set<string>();
+  // Batches and the one-instance stand-ins of diverging sources; hidden stand-ins draw nothing.
   for (const b of batcher.object.children as InstancedMesh[]) {
+    if (!b.visible) continue;
     const arr = b.instanceMatrix.array as Float32Array;
     for (let i = 0; i < b.count; i++) drawn.add(key16(arr, i * 16));
   }
@@ -227,8 +229,6 @@ function audit(round: RoundDefinition, cfg: Config): { problems: string[]; bodie
     sim.step();
     for (const tr of tracked) tr.visual.update(t, SIM_DT, tr.rt);
     scene.updateMatrixWorld(true);
-    // A source joining a batch draws itself on its first frame and through the batch from the next.
-    syncBatches(batcher, ++frame);
     syncBatches(batcher, ++frame);
     for (const tr of tracked) compare(tr, sim.round.killY);
     for (const p of checkBatches(

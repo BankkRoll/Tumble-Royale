@@ -311,17 +311,60 @@ export function createStatusService(
 export async function recordSample(ctx: AppContext, s: StatusSummary, nowMs: number): Promise<void> {
   const day = dayKey(nowMs);
   const rows = s.components.map((c) => {
-    const row: { component: string; day: string } & UptimeCounts = {
-      component: c.id,
-      day,
-      ...NO_SAMPLES,
-      samples: 1,
-    };
+    const row: UptimeRow = { component: c.id, day, ...NO_SAMPLES, samples: 1 };
     const key = countKey(c.state);
     if (key) row[key] = 1;
     return row;
   });
   if (rows.length === 0) return;
+  try {
+    await flushBufferedSamples(ctx);
+    await writeSample(ctx, rows);
+  } catch (err) {
+    // The database being down is exactly what uptime must record: keep the
+    // sample in KV and write it with the first sample that gets through.
+    await bufferSample(ctx, nowMs, rows).catch(() => undefined);
+    throw err;
+  }
+  await ctx.db.delete(statusUptime).where(lt(statusUptime.day, dayRange(nowMs)[0]!));
+}
+
+type UptimeRow = { component: string; day: string } & UptimeCounts;
+
+/** KV list of buffered sample times; each sample lives under its own key. */
+const BUFFER_INDEX = 'status:buffer:index';
+const bufferKey = (ms: number): string => `status:buffer:${ms}`;
+/** Samples kept while the database is unreachable (a few days at one a minute). */
+const BUFFER_MAX = 5000;
+const BUFFER_TTL_MS = 7 * 86_400_000;
+
+async function bufferedTimes(ctx: AppContext): Promise<number[]> {
+  const raw = await ctx.kv.get(BUFFER_INDEX);
+  const list: unknown = raw ? JSON.parse(raw) : [];
+  return Array.isArray(list) ? list.filter((n): n is number => typeof n === 'number') : [];
+}
+
+async function bufferSample(ctx: AppContext, nowMs: number, rows: UptimeRow[]): Promise<void> {
+  await ctx.kv.set(bufferKey(nowMs), JSON.stringify(rows), BUFFER_TTL_MS);
+  // NOTE: read-modify-write without a lock is fine: the sampler runs once per
+  // slot across all instances (`status:sample:<slot>`).
+  const times = [...(await bufferedTimes(ctx)), nowMs].slice(-BUFFER_MAX);
+  await ctx.kv.set(BUFFER_INDEX, JSON.stringify(times), BUFFER_TTL_MS);
+}
+
+/** Writes samples buffered during a database outage, oldest first. */
+async function flushBufferedSamples(ctx: AppContext): Promise<void> {
+  const times = await bufferedTimes(ctx);
+  if (times.length === 0) return;
+  for (let i = 0; i < times.length; i++) {
+    const raw = await ctx.kv.get(bufferKey(times[i]!));
+    if (raw) await writeSample(ctx, JSON.parse(raw) as UptimeRow[]);
+    await ctx.kv.del(bufferKey(times[i]!));
+    await ctx.kv.set(BUFFER_INDEX, JSON.stringify(times.slice(i + 1)), BUFFER_TTL_MS);
+  }
+}
+
+async function writeSample(ctx: AppContext, rows: UptimeRow[]): Promise<void> {
   const add = (col: keyof UptimeCounts) => sql.raw(`"status_uptime"."${col}" + excluded."${col}"`);
   await ctx.db
     .insert(statusUptime)
@@ -337,7 +380,6 @@ export async function recordSample(ctx: AppContext, s: StatusSummary, nowMs: num
         maintenance: add('maintenance'),
       },
     });
-  await ctx.db.delete(statusUptime).where(lt(statusUptime.day, dayRange(nowMs)[0]!));
 }
 
 /**

@@ -9,10 +9,10 @@ import {
   type IncidentStatus,
   type PublicIncident,
 } from '@tumble/shared/status';
-import { and, count, desc, eq, gte, inArray, isNull, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNull, or, type SQL } from 'drizzle-orm';
 import type { DbOrTx } from '../db/client.ts';
 import { statusIncidents, statusIncidentUpdates } from '../db/schema.ts';
-import { ApiError, notFound } from '../http/errors.ts';
+import { ApiError, conflict, notFound } from '../http/errors.ts';
 
 type IncidentRow = typeof statusIncidents.$inferSelect;
 
@@ -36,7 +36,16 @@ export interface IncidentQuery {
 export async function listIncidents(db: DbOrTx, q: IncidentQuery): Promise<PublicIncident[]> {
   const where: SQL[] = [];
   if (q.activeOnly) where.push(isNull(statusIncidents.resolvedAt));
-  if (q.since) where.push(gte(statusIncidents.startedAt, q.since));
+  // An incident belongs to a window when it overlapped it: one opened long
+  // before and still open (or resolved inside the window) counts too.
+  if (q.since)
+    where.push(
+      or(
+        gte(statusIncidents.startedAt, q.since),
+        isNull(statusIncidents.resolvedAt),
+        gte(statusIncidents.resolvedAt, q.since),
+      )!,
+    );
   const rows = await db
     .select()
     .from(statusIncidents)
@@ -145,7 +154,8 @@ export interface IncidentUpdate {
  * @param input - Validated, cleaned input.
  * @param now - Clock.
  * @returns The incident before the update.
- * @throws {ApiError} 404 unknown incident, 409 `too_many_updates`.
+ * @throws {ApiError} 404 unknown incident, 409 `too_many_updates`, 409
+ *   `incident_resolved` when resolving one that is already resolved.
  */
 export async function updateIncident(
   tx: DbOrTx,
@@ -156,6 +166,8 @@ export async function updateIncident(
   // Row lock: two staff updating at once get a consistent resolved_at and count.
   const [current] = await tx.select().from(statusIncidents).where(eq(statusIncidents.id, id)).for('update');
   if (!current) throw notFound('Incident');
+  if (input.status === 'resolved' && current.resolvedAt)
+    throw conflict('incident_resolved', 'This incident is already resolved');
   const [{ n } = { n: 0 }] = await tx
     .select({ n: count() })
     .from(statusIncidentUpdates)

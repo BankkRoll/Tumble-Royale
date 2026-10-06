@@ -183,6 +183,13 @@ interface PendingEffects {
   notified: boolean;
 }
 
+/**
+ * Days a show's record is kept (`ops/retention.ts` prunes older ones). A
+ * report older than this is refused: its `matches` row may already be gone,
+ * so it could not be recognised as a replay and would pay out again.
+ */
+export const MATCH_HISTORY_RETENTION_DAYS = 365;
+
 /** Boards a Crown moves (the streak only ever grows on a win). */
 const CROWN_BOARDS: readonly BoardType[] = ['crowns', 'crowns_weekly', 'crowns_all_time', 'win_streak'];
 
@@ -323,6 +330,8 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
   checkConsistency(m);
   const stored = await replayStored(ctx, m.matchId);
   if (stored) return stored;
+  if (Date.parse(m.endedAt) < ctx.now().getTime() - MATCH_HISTORY_RETENTION_DAYS * 86_400_000)
+    throw badRequest('result_too_old', 'This show ended too long ago to be recorded');
 
   const seasonId = m.seasonId ?? ctx.catalog.season.id;
   // Only the live season is ever seeded: a late result for an old season must

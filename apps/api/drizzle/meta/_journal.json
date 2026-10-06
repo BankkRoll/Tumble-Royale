@@ -113,6 +113,13 @@
       "when": 1791306479902,
       "tag": "0015_payment_snapshot_tutorial_grant",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791311113017,
+      "tag": "0016_retention_indexes_invite_fk",
+      "breakpoints": true
     }
   ]
 }

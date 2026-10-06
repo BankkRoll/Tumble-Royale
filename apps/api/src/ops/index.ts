@@ -16,7 +16,7 @@ import type { AppContext } from '../context.ts';
 import type { Database } from '../db/client.ts';
 import type { Gateway } from '../realtime/gateway.ts';
 import { createApiMetrics, registerMetrics, type ApiMetrics } from './metrics.ts';
-import { runRetention } from './retention.ts';
+import { RETENTION_KINDS, runRetention } from './retention.ts';
 
 /** Fastify options that make `req.id` the correlation id. */
 export const requestIdOptions = {
@@ -94,10 +94,8 @@ export function registerOps(
       const r = await runRetention(ctx, policy);
       metrics.retentionRuns.inc({ outcome: r.ran ? 'ok' : 'skipped' });
       if (!r.ran) return r;
-      metrics.retentionDeleted.inc({ kind: 'sessions' }, r.sessions);
-      metrics.retentionDeleted.inc({ kind: 'events' }, r.events);
-      metrics.retentionDeleted.inc({ kind: 'guests' }, r.guests);
-      if (r.sessions || r.events || r.guests || r.gifts)
+      for (const kind of RETENTION_KINDS) metrics.retentionDeleted.inc({ kind }, r[kind]);
+      if (RETENTION_KINDS.some((kind) => r[kind] > 0))
         app.log.info({ retention: r }, 'retention pass deleted rows or settled gifts');
       return r;
     } catch (err) {

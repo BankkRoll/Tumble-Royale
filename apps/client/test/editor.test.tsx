@@ -8,7 +8,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { starterRound, validateCustomRound } from '@tumble/content/custom';
 import { PLAYTEST_DRAFT_ID, memoryDrafts } from '../src/customRounds/drafts.ts';
 import { humanize, paramFields, readField } from '../src/editor/forms.ts';
@@ -285,6 +285,58 @@ describe('editor store', () => {
     expect(other.getState().status?.tone).toBe('error');
     await other.getState().openDraft(s.getState().draftId);
     expect(other.getState().round.name).toBe('Bouncy Bridges');
+  });
+
+  it('a share that lands after another round was opened stays with the round that was shared', async () => {
+    const drafts = memoryDrafts();
+    let release!: () => void;
+    const { api } = fakeApi({
+      publish: () =>
+        new Promise((resolve) => {
+          release = () =>
+            resolve({
+              code: 'K7MQ2X9A',
+              name: 'My Race',
+              description: '',
+              type: 'race',
+              status: 'published',
+              updatedAt: '2026-10-06T12:00:00.000Z',
+            });
+        }),
+    });
+    const s = store(api, drafts);
+    const sharedId = s.getState().draftId;
+    const sharing = s.getState().publish();
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    // The file controls are off while sharing; a round opened anyway (another tab's draft) is not touched.
+    s.getState().newRound('survival');
+    expect(s.getState().draftId).toBe(sharedId);
+    s.setState({ draftId: 'other', sharedCode: null });
+    release();
+    expect(await sharing).toBe('K7MQ2X9A');
+    expect(s.getState().sharedCode).toBeNull();
+    expect((await drafts.get(sharedId))?.sharedCode).toBe('K7MQ2X9A');
+    expect(s.getState().busy).toBe(false);
+  });
+
+  it('a code that loads after another round was opened does not replace it', async () => {
+    let release!: () => void;
+    const s = store(
+      fakeApi({
+        fetchRound: (code) =>
+          new Promise((resolve) => {
+            release = () =>
+              resolve({ code, name: 'Their Race', description: '', author: null, definition: starterRound() });
+          }),
+      }).api,
+    );
+    const loading = s.getState().loadByCode('K7MQ2X9A');
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    s.setState({ draftId: 'other' });
+    release();
+    expect(await loading).toBe(false);
+    expect(s.getState().viewing).toBeNull();
+    expect(s.getState().busy).toBe(false);
   });
 
   it('publishes, then updates the same code', async () => {

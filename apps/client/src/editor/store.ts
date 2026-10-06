@@ -383,14 +383,16 @@ export function createEditorStore(deps: EditorDeps): StoreApi<EditorState> {
       },
       setType: (type) => commit(setRoundType(get().round, type)),
 
-      newRound: (type = 'race') =>
+      newRound: (type = 'race') => {
+        if (get().busy) return;
         load(starterRound(type), {
           draftId: newId(),
           description: '',
           sharedCode: null,
           viewing: null,
           status: null,
-        }),
+        });
+      },
       refreshDrafts: async () => {
         try {
           set({ drafts: await deps.drafts.list() });
@@ -415,6 +417,7 @@ export function createEditorStore(deps: EditorDeps): StoreApi<EditorState> {
         }
       },
       openDraft: async (id) => {
+        if (get().busy) return;
         const d = await deps.drafts.get(id);
         if (!d) return;
         load(d.round, {
@@ -472,9 +475,15 @@ export function createEditorStore(deps: EditorDeps): StoreApi<EditorState> {
           set({ status: { tone: 'error', text: 'Sharing needs the online service' } });
           return false;
         }
+        const from = get().draftId;
         set({ busy: true });
         try {
           const shared = await deps.api.fetchRound(code);
+          // Another round was opened while this one loaded: it keeps the editor.
+          if (get().draftId !== from) {
+            set({ busy: false });
+            return false;
+          }
           load(shared.definition as RoundDefinitionInput, {
             draftId: newId(),
             description: shared.description,
@@ -523,6 +532,7 @@ export function createEditorStore(deps: EditorDeps): StoreApi<EditorState> {
           set({ status: { tone: 'error', text: 'Fix the errors before sharing' } });
           return null;
         }
+        const draftId = s.draftId;
         set({ busy: true, status: { tone: 'info', text: 'Sharing…' } });
         try {
           if ((await deps.api.isGuest()) === true) {
@@ -535,6 +545,18 @@ export function createEditorStore(deps: EditorDeps): StoreApi<EditorState> {
           const summary = s.sharedCode
             ? await deps.api.update(s.sharedCode, round, s.description)
             : await deps.api.publish(round, s.description);
+          if (get().draftId !== draftId) {
+            // Another round was opened meanwhile: the code belongs to the draft that was shared, so
+            // the next Update from the open one doesn't overwrite this shared round.
+            const stored = await deps.drafts.get(draftId).catch(() => null);
+            await deps.drafts
+              .put(stored ? { ...stored, sharedCode: summary.code } : draftOf({ ...s, sharedCode: summary.code }, round))
+              .catch(() => undefined);
+            set({ busy: false, status: { tone: 'ok', text: `Shared ${String(round.name)} as ${summary.code}` } });
+            void get().refreshDrafts();
+            void get().refreshShared();
+            return summary.code;
+          }
           set({
             sharedCode: summary.code,
             busy: false,

@@ -4,6 +4,8 @@
  * (static piece presets) players build courses from.
  */
 import type { StaticPiece } from '@tumble/shared';
+import { getObstacleModule } from '@tumble/sim/obstacles';
+import { z } from 'zod';
 import type { CustomRoundType } from './limits.ts';
 
 /** Obstacles that only work inside hand-made team, hold-item or final logic. */
@@ -173,3 +175,27 @@ export const LEVEL_PARTS: readonly LevelPart[] = [
     { decorative: true, color: 'accent' },
   ),
 ];
+
+const jsonSchemas = new Map<string, unknown>();
+
+/**
+ * An obstacle's params as JSON Schema (input side: defaults listed, every
+ * param optional), for tools that generate forms. Cached per type.
+ *
+ * @param type - Obstacle module id.
+ * @returns The schema, or null for an unknown type.
+ */
+export function obstacleParamJsonSchema(type: string): unknown {
+  const hit = jsonSchemas.get(type);
+  if (hit !== undefined) return hit;
+  const mod = getObstacleModule(type);
+  if (!mod) return null;
+  let json: unknown;
+  try {
+    json = z.toJSONSchema(mod.schema, { io: 'input', unrepresentable: 'any' });
+  } catch {
+    json = {};
+  }
+  jsonSchemas.set(type, json);
+  return json;
+}

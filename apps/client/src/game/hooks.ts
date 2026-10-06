@@ -35,6 +35,8 @@ export interface TumbleHooks {
   drawCalls?: () => number;
   /** Renderables the active view draws this frame, by name (dev and sandbox builds only). */
   drawBreakdown?: () => Record<string, number>;
+  /** What the next frame actually draws, per pass (`main`, `shadow:<n>`, `post`), by name (dev and sandbox builds only). */
+  drawPasses?: () => Promise<Record<string, Record<string, number>>>;
   /** Smoothed wall time of one offline sim step in ms; 0 outside an offline show (game only). */
   simStepMs?: () => number;
   /** Tumblers in the current round (game only). */

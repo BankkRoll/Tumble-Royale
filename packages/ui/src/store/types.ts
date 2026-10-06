@@ -1077,11 +1077,22 @@ export interface CustomLobbyState {
   started?: boolean;
 }
 
-/** A selectable round for the custom lobby picker. */
+/** Result of looking up a shared custom round by code (private show round picker). */
+export type CustomRoundLookup =
+  | { status: 'idle' }
+  | { status: 'loading'; code: string }
+  | { status: 'ok'; code: string; id: string }
+  | { status: 'error'; code: string; message: string };
+
+/** A round the private show pickers offer. */
 export interface RoundCatalogEntry {
   id: string;
   name: string;
   type: RoundType;
+  /** A shared custom round looked up by code (`id` is `custom:<CODE>`). */
+  custom?: boolean;
+  /** Custom rounds: `name#tag` of the creator. */
+  author?: string;
 }
 
 // -----------------------------------------------------------------------------

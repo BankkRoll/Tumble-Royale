@@ -12,7 +12,7 @@
  *   wheel and touch drag / pinch;
  * - saves the open recording as a file and loads files back (validated).
  */
-import { getRound } from '@tumble/content/rounds';
+import { lookupRound } from '../../customRounds/registry.ts';
 import type { QualityPreset } from '@tumble/render/quality';
 import type { CreateTumblerVisual, TumblerLoadout } from '@tumble/render/scenes';
 import type { Rapier } from '@tumble/sim';
@@ -222,7 +222,7 @@ export class ReplayController {
    */
   createView(data: ReplayData, post: CeremonyPost = this.deps.post): ReplayView {
     const h = data.header;
-    const round = getRound(h.roundId);
+    const round = lookupRound(h.roundId);
     if (!round)
       throw new ReplayFileError(
         'header',
@@ -257,7 +257,7 @@ export class ReplayController {
   open(data: ReplayData, origin: 'show' | 'file'): boolean {
     if (this.view) this.exit();
     const h = data.header;
-    if (!getRound(h.roundId)) {
+    if (!lookupRound(h.roundId)) {
       ui.getState().showDialog({
         id: 'replay-open-failed',
         kind: 'error',

@@ -38,13 +38,14 @@ import {
 } from '@tumble/shared';
 import type { AppContext } from '../context.ts';
 import type { DbOrTx } from '../db/client.ts';
+import { lockXact } from '../db/locks.ts';
 import { clubInvites, clubMembers, clubReports, clubs, profiles } from '../db/schema.ts';
 import { readWallet } from '../economy/wallet.ts';
 import { requireUser } from '../http/auth.ts';
 import { badRequest, conflict, forbidden, isUniqueViolation, notFound, parse } from '../http/errors.ts';
 import { requireFlag } from '../liveops/state.ts';
 import { maskProfanity } from '../names/profanity.ts';
-import { isBlockedEitherWay, friendIds, socialRef } from '../social/friends.ts';
+import { blockedEitherWay, isBlockedEitherWay, friendIds, socialRef } from '../social/friends.ts';
 import { MAX_PARTY_SIZE, PartyService } from '../social/party.ts';
 import { getPresence } from '../social/presence.ts';
 import { CLUBS_OFF_MESSAGE, clubChatHistory, recentClubMessages, sendClubChat } from './chat.ts';
@@ -221,8 +222,9 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
     };
   };
 
-  /** Join requests waiting on a club (officers see these). */
-  const requestsOf = async (clubId: string) => {
+  /** Join requests waiting on a club, minus anyone in a blocked pair with the viewing officer. */
+  const requestsOf = async (clubId: string, viewerId: string) => {
+    const hidden = await blockedEitherWay(ctx.db, viewerId);
     const rows = await ctx.db
       .select({
         userId: clubInvites.userId,
@@ -235,7 +237,7 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
       .innerJoin(profiles, eq(profiles.userId, clubInvites.userId))
       .where(and(eq(clubInvites.clubId, clubId), eq(clubInvites.kind, 'request')))
       .orderBy(clubInvites.createdAt);
-    return rows.map((r) => ({ ...r, at: r.at.toISOString() }));
+    return rows.filter((r) => !hidden.has(r.userId)).map((r) => ({ ...r, at: r.at.toISOString() }));
   };
 
   /** Puts a player into a club and tells everyone who should know. */
@@ -287,7 +289,7 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
     return {
       club: { ...clubCard(club), members: await roster(ctx, club.id) },
       role: m.role,
-      joinRequests: clubCan(m.role, 'acceptRequest') ? await requestsOf(club.id) : [],
+      joinRequests: clubCan(m.role, 'acceptRequest') ? await requestsOf(club.id, auth.userId) : [],
       ...mine,
     };
   });
@@ -459,12 +461,14 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
   app.delete('/clubs/:id/request', { config: MUTATE }, async (req, reply) => {
     const auth = await player(req);
     const { id } = parse(IdParams, req.params);
-    await ctx.db
+    const gone = await ctx.db
       .delete(clubInvites)
       .where(
         and(eq(clubInvites.clubId, id), eq(clubInvites.userId, auth.userId), eq(clubInvites.kind, 'request')),
-      );
-    await notifyClub(ctx, id, { type: 'club_update', clubId: id });
+      )
+      .returning({ clubId: clubInvites.clubId });
+    // SECURITY: without a request of their own, anyone could make any club's members refetch on demand.
+    if (gone.length) await notifyClub(ctx, id, { type: 'club_update', clubId: id });
     return reply.code(204).send();
   });
 
@@ -743,19 +747,37 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
       // SECURITY: chat is attached only for a member, who could read it; outsiders report what is public.
       const evidence =
         m?.clubId === id ? await recentClubMessages(ctx, id, CLUB_REPORT_EVIDENCE_LINES) : null;
-      const [row] = await ctx.db
-        .insert(clubReports)
-        .values({
-          reporterId: auth.userId,
-          clubId: id,
-          reason: body.reason,
-          details: body.details ? maskProfanity(body.details) : null,
-          snapshot: { name: club.name, tag: club.tag, description: club.description, emblem: club.emblem },
-          evidence: evidence?.length ? evidence : null,
-          createdAt: ctx.now(),
-        })
-        .returning({ id: clubReports.id });
-      return reply.code(201).send({ id: row!.id, status: 'open' });
+      const filed = await ctx.db.transaction(async (tx) => {
+        // Repeats of the same open report would only flood the moderation queue; hand back the first.
+        await lockXact(tx, 'club-report', auth.userId, id, body.reason);
+        const [open] = await tx
+          .select({ id: clubReports.id })
+          .from(clubReports)
+          .where(
+            and(
+              eq(clubReports.reporterId, auth.userId),
+              eq(clubReports.clubId, id),
+              eq(clubReports.reason, body.reason),
+              eq(clubReports.status, 'open'),
+            ),
+          )
+          .limit(1);
+        if (open) return { id: open.id, created: false };
+        const [row] = await tx
+          .insert(clubReports)
+          .values({
+            reporterId: auth.userId,
+            clubId: id,
+            reason: body.reason,
+            details: body.details ? maskProfanity(body.details) : null,
+            snapshot: { name: club.name, tag: club.tag, description: club.description, emblem: club.emblem },
+            evidence: evidence?.length ? evidence : null,
+            createdAt: ctx.now(),
+          })
+          .returning({ id: clubReports.id });
+        return { id: row!.id, created: true };
+      });
+      return reply.code(filed.created ? 201 : 200).send({ id: filed.id, status: 'open' });
     },
   );
 }

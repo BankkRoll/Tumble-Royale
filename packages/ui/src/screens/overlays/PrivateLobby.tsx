@@ -185,6 +185,14 @@ function HostSettings({ lobby }: { lobby: CustomLobbyState }): JSX.Element {
         <Toggle label="Bots" checked={o.bots} onChange={(bots) => change({ bots })} />
       </div>
       <div className="tr-settings-row">
+        <span>Round voting</span>
+        <Toggle
+          label="Round voting"
+          checked={o.roundVoting !== false}
+          onChange={(roundVoting) => change({ roundVoting })}
+        />
+      </div>
+      <div className="tr-settings-row">
         <span>Max players</span>
         <Slider
           label="Max players"
@@ -271,6 +279,7 @@ function SettingsSummary({ lobby }: { lobby: CustomLobbyState }): JSX.Element {
     ['Max players', String(o.maxPlayers)],
     ['Players needed to start', String(o.minPlayers ?? 1)],
     ['Bots fill empty spots', o.bots ? 'Yes' : 'No'],
+    ['Round voting', o.roundVoting === false ? 'Off' : 'On'],
     ['Round length', `×${o.timerScale}`],
     ['Pre-show countdown', `${o.countdownSec ?? 10}s`],
     ['Spectator slots', slots > 0 ? String(slots) : 'Off'],

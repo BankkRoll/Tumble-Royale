@@ -1046,6 +1046,8 @@ export interface CustomLobbyOptions {
   countdownSec?: number;
   /** Players needed before the host can start (bots fill the rest). */
   minPlayers?: number;
+  /** Players vote on each next round, between the picked rounds (absent: on). */
+  roundVoting?: boolean;
 }
 
 /** A member of a custom lobby as the lobby view shows them. */

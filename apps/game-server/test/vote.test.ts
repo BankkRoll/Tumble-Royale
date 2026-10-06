@@ -7,6 +7,7 @@
  * sims.
  */
 import { describe, expect, it } from 'vitest';
+import { getRound } from '@tumble/content/rounds';
 import type { LowFreqMessage, MatchSimOptions, RoundStatus } from '@tumble/netcode';
 import { PlayerRoundStatus, createTestArenaRound } from '@tumble/sim/match';
 import { RoundPhase, type RoundDefinition } from '@tumble/shared';
@@ -348,16 +349,19 @@ describe('private lobby round voting', () => {
     },
   });
 
-  it('votes unless the host turned it off or picked the rounds', () => {
+  it('votes unless the host turned it off, and only ever between the host’s picks', () => {
     expect(playlistForMatch('main-show', null).voting.enabled).toBe(true);
     expect(playlistForMatch('main-show', match({})).voting.enabled).toBe(true);
     expect(playlistForMatch('main-show', match({ roundVoting: true })).voting.enabled).toBe(true);
     expect(playlistForMatch('main-show', match({ roundVoting: false })).voting.enabled).toBe(false);
-    const picked = playlistForMatch(
-      'main-show',
-      match({ rounds: ['tilt-town', 'tile-panic'], roundVoting: true }),
+    const picks = ['tilt-town', 'tile-panic', 'egg-heist'];
+    const picked = playlistForMatch('main-show', match({ rounds: picks }));
+    expect(picked.voting.enabled).toBe(true);
+    // The ballot draws from the pool, which is the picks plus the base playlist's finals.
+    const nonFinals = picked.pool.map((e) => e.roundId).filter((id) => getRound(id)?.type !== 'final');
+    expect(nonFinals.sort()).toEqual([...picks].sort());
+    expect(playlistForMatch('main-show', match({ rounds: picks, roundVoting: false })).voting.enabled).toBe(
+      false,
     );
-    expect(picked.voting.enabled).toBe(false);
-    expect(picked.pool.map((e) => e.roundId)).toContain('tilt-town');
   });
 });

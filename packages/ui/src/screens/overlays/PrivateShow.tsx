@@ -175,6 +175,7 @@ function SetupView(): JSX.Element {
     timerScale: 1,
     spectators: true,
     isPrivate: true,
+    roundVoting: true,
   });
   const patch = (p: Partial<CustomLobbyOptions>): void => setOpts((o) => ({ ...o, ...p }));
   const none = opts.rounds.length === 0;
@@ -194,6 +195,14 @@ function SetupView(): JSX.Element {
               team rounds).
             </span>
           )}
+          <div className="tr-settings-row">
+            <span>Round voting</span>
+            <Toggle
+              label="Round voting"
+              checked={opts.roundVoting !== false}
+              onChange={(roundVoting) => patch({ roundVoting })}
+            />
+          </div>
           <div className="tr-settings-row">
             <span>Players</span>
             <Slider

@@ -90,6 +90,7 @@ import {
   uiPatternToContent,
 } from '../cosmetics.ts';
 import { loadoutWithItem, profileDressing, randomizedLoadout } from '../profile.ts';
+import { ClubController } from '../social/clubController.ts';
 import { SocialController } from '../social/socialController.ts';
 import { onlineStoreShelves } from '../storeOffers.ts';
 import { refundErrorText, refundToast, toPurchaseHistory } from './purchaseHistory.ts';
@@ -242,6 +243,8 @@ export class OnlineAccount {
   private notifications: NotificationItem[] = [];
   /** Friends, requests, blocking, reports and party chat. */
   readonly social: SocialController;
+  /** The player's club, its chat and goals. */
+  readonly clubs: ClubController;
   /** Party members' live menu Tumblers over the realtime gateway. */
   readonly lobbyLink: PartyLobbyLink;
   /** Last reported presence, re-sent whenever the gateway reconnects. */
@@ -279,6 +282,11 @@ export class OnlineAccount {
       colorsOf: (id) => this.colorsOf(id),
       applyParty: (p) => this.applyParty(p),
       partyId: () => this.party?.id ?? null,
+    });
+    this.clubs = new ClubController(api, this.realtime, {
+      userId: () => this.userId,
+      applyParty: (p) => this.applyParty(p),
+      notify: (kind, title, body, action) => this.addNotification(kind, title, body, action),
     });
   }
 
@@ -1417,6 +1425,7 @@ export class OnlineAccount {
   startRealtime(): void {
     const rt = this.realtime;
     this.social.bind();
+    this.clubs.bind();
     this.offs.push(
       rt.on('wallet', (m) => {
         if (!this.me) return;
@@ -1538,7 +1547,8 @@ export class OnlineAccount {
   private resolveNotifications(userId: string, label: string, kind?: 'friendRequest' | 'partyInvite'): void {
     let changed = false;
     this.notifications = this.notifications.map((n) => {
-      if (!n.action || n.resolved || n.action.userId !== userId || (kind && n.action.kind !== kind)) return n;
+      const who = n.action && 'userId' in n.action ? n.action.userId : null;
+      if (!n.action || n.resolved || who !== userId || (kind && n.action.kind !== kind)) return n;
       changed = true;
       return { ...n, resolved: label, read: true };
     });
@@ -1610,6 +1620,7 @@ export class OnlineAccount {
       this.social.declineInvite(arg);
       return true;
     }
+    if (this.clubs.handleToastAction(actionId)) return true;
     return kind === 'party-ignore';
   }
 
@@ -1918,6 +1929,7 @@ export class OnlineAccount {
     for (const off of this.offs) off();
     this.offs.length = 0;
     this.social.dispose();
+    this.clubs.dispose();
     this.realtime.stop();
   }
 }

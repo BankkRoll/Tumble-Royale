@@ -10,6 +10,7 @@
  * - typed endpoint helpers mirroring `apps/api/README.md`.
  */
 import type { PlayerRewardMsg } from '@tumble/netcode';
+import type { ClubEmblemMotif, ClubJoinMode, ClubRole } from '@tumble/shared';
 import type { WalletLedger } from './online/checkout.ts';
 import type { ApiPurchaseHistory, ApiRefundResult } from './online/purchaseHistory.ts';
 import { tokenSubject, type AuthOutcome, type LoginProvider } from './online/returnUrl.ts';
@@ -451,6 +452,73 @@ export interface ApiParty {
   playlistId: string;
   inviteUrl: string;
   maxSize: number;
+}
+
+/** A club as other players see it. */
+export interface ApiClubCard {
+  id: string;
+  name: string;
+  tag: string;
+  description: string;
+  emblem: { motif: ClubEmblemMotif; primary: string; secondary: string };
+  joinMode: ClubJoinMode;
+  memberCount: number;
+  maxMembers: number;
+}
+
+/** `GET /clubs/me`. */
+export interface ApiMyClub {
+  club:
+    | (ApiClubCard & {
+        members: {
+          userId: string;
+          displayName: string;
+          tag: string;
+          level: number;
+          role: ClubRole;
+          presence: string;
+        }[];
+      })
+    | null;
+  role: ClubRole | null;
+  joinRequests?: { userId: string; displayName: string; tag: string; level: number; at: string }[];
+  invites: { club: ApiClubCard; from: { userId: string; name: string; tag: string } | null }[];
+  requests: { club: ApiClubCard }[];
+}
+
+/** A club chat line. */
+export interface ApiClubChatLine {
+  id: string;
+  clubId: string;
+  from: { userId: string; name: string; tag: string; club?: string };
+  text: string;
+  masked?: string;
+  at: number;
+}
+
+/** `GET /clubs/me/goals`. */
+export interface ApiClubGoals {
+  week: string;
+  refreshesAt: string;
+  eligible: boolean;
+  goals: {
+    goalId: string;
+    title: string;
+    progress: number;
+    target: number;
+    completed: boolean;
+    claimed: boolean;
+    reward: { xp: number; gumballs: number };
+  }[];
+  contributions: {
+    userId: string;
+    displayName: string;
+    tag: string;
+    shows: number;
+    rounds: number;
+    crowns: number;
+  }[];
+  settled: { goalId: string; title: string; xp: number; gumballs: number }[];
 }
 
 /** `GET /party/code/:code`: who is behind an invite code. */
@@ -936,6 +1004,56 @@ export class ApiClient {
     this.request('POST', '/party/playlist', { playlistId });
   inviteToParty = (userId: string): Promise<{ party: ApiParty }> =>
     this.request('POST', '/party/invite', { userId });
+
+  // ---------------------------------------------------------------------------
+  // Clubs
+  // ---------------------------------------------------------------------------
+
+  myClub = (): Promise<ApiMyClub> => this.request('GET', '/clubs/me');
+  createClub = (body: {
+    name: string;
+    tag: string;
+    description: string;
+    emblem: ApiClubCard['emblem'];
+    joinMode: ApiClubCard['joinMode'];
+  }): Promise<{ club: ApiClubCard }> => this.request('POST', '/clubs', body);
+  editClub = (patch: Record<string, unknown>): Promise<{ club: ApiClubCard }> =>
+    this.request('PATCH', '/clubs/me', patch);
+  searchClubs = (q: string): Promise<{ clubs: ApiClubCard[] }> =>
+    this.request('GET', `/clubs/search?q=${encodeURIComponent(q)}`);
+  recommendedClubs = (): Promise<{ clubs: ApiClubCard[] }> => this.request('GET', '/clubs/recommended');
+  joinClub = (clubId: string): Promise<{ status: 'joined' | 'requested'; club: ApiClubCard }> =>
+    this.request('POST', `/clubs/${encodeURIComponent(clubId)}/join`);
+  cancelClubRequest = (clubId: string): Promise<void> =>
+    this.request('DELETE', `/clubs/${encodeURIComponent(clubId)}/request`);
+  answerClubInvite = (clubId: string, accept: boolean): Promise<unknown> =>
+    this.request('POST', `/clubs/invites/${encodeURIComponent(clubId)}/${accept ? 'accept' : 'decline'}`);
+  answerClubRequest = (userId: string, accept: boolean): Promise<unknown> =>
+    this.request('POST', `/clubs/me/requests/${encodeURIComponent(userId)}/${accept ? 'accept' : 'decline'}`);
+  inviteToClub = (userId: string): Promise<unknown> => this.request('POST', '/clubs/me/invites', { userId });
+  kickFromClub = (userId: string): Promise<void> =>
+    this.request('POST', `/clubs/me/members/${encodeURIComponent(userId)}/kick`);
+  setClubRole = (userId: string, role: 'officer' | 'member'): Promise<unknown> =>
+    this.request('POST', `/clubs/me/members/${encodeURIComponent(userId)}/role`, { role });
+  transferClub = (userId: string): Promise<unknown> => this.request('POST', '/clubs/me/transfer', { userId });
+  leaveClub = (): Promise<void> => this.request('POST', '/clubs/me/leave');
+  disbandClub = (): Promise<void> => this.request('POST', '/clubs/me/disband');
+  clubChatHistory = (): Promise<{ clubId: string; lines: ApiClubChatLine[] }> =>
+    this.request('GET', '/clubs/me/chat');
+  clubChat = (text: string): Promise<{ message: ApiClubChatLine }> =>
+    this.request('POST', '/clubs/me/chat', { text });
+  clubGoals = (): Promise<ApiClubGoals> => this.request('GET', '/clubs/me/goals');
+  claimClubGoal = (week: string, goalId: string): Promise<unknown> =>
+    this.request('POST', '/clubs/me/goals/claim', { week, goalId });
+  clubPartyUp = (userId: string): Promise<{ party: ApiParty }> =>
+    this.request('POST', '/clubs/me/party-up', { userId });
+  reportClub = (clubId: string, reason: string, details?: string): Promise<{ id: string }> =>
+    this.request(
+      'POST',
+      `/clubs/${encodeURIComponent(clubId)}/report`,
+      details ? { reason, details } : { reason },
+    );
+
   /**
    * Party queue ticket. `region` is the client's measured pick (Settings →
    * Region); the API also reads it from the account after `PATCH /me`.

@@ -52,6 +52,25 @@ function confirm(id: string, title: string, body: string, label: string, onYes: 
 }
 
 /**
+ * Asks before a destructive action (club kicks, hand-overs, leaving).
+ *
+ * @param id - Dialog id.
+ * @param title - Question.
+ * @param body - What will happen.
+ * @param label - Confirm button label.
+ * @param onYes - Runs when confirmed.
+ */
+export function confirmAction(
+  id: string,
+  title: string,
+  body: string,
+  label: string,
+  onYes: () => void,
+): void {
+  confirm(id, title, body, label, onYes);
+}
+
+/**
  * Asks before removing a friend.
  *
  * @param userId - Friend's account id.

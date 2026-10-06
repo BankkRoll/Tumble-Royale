@@ -132,24 +132,7 @@ import { swapUnderWipe } from './wipe.ts';
 import { runTutorial } from './tutorial/index.ts';
 import { shouldOfferTutorial, tutorialAnswer } from './tutorial/prompt.ts';
 import { menuOwnsPad, padStartAction, showMenuKeyAction, type RoutingContext } from './inputRouting.ts';
-
-/** Merges saved settings over defaults so new fields always exist. */
-function mergeSettings(base: Settings, saved: Partial<Settings> | null): Settings {
-  if (!saved) return base;
-  return {
-    graphics: { ...base.graphics, ...saved.graphics },
-    controls: {
-      ...base.controls,
-      ...saved.controls,
-      keybinds: { ...base.controls.keybinds, ...saved.controls?.keybinds },
-      padBinds: { ...base.controls.padBinds, ...saved.controls?.padBinds },
-    },
-    audio: { ...base.audio, ...saved.audio },
-    accessibility: { ...base.accessibility, ...saved.accessibility },
-    gameplay: { ...base.gameplay, ...saved.gameplay },
-    voice: { ...base.voice, ...saved.voice },
-  };
-}
+import { mergeSettings } from './settingsMerge.ts';
 
 /** Extra wiring from `main.ts`. */
 export interface BootOptions {

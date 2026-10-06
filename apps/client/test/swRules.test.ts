@@ -158,6 +158,9 @@ describe('shouldPrecache', () => {
       'admin.html',
       'assets/admin-Dkd5BaaA.js',
       'assets/admin-C9yXQ9rg.css',
+      'editor.html',
+      'assets/editor-Bq3xZ1aa.js',
+      'assets/editor-Kp9wQ2bb.css',
       '.well-known/x',
     ])
       expect(shouldPrecache(f), f).toBe(false);

@@ -15,6 +15,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { MAX_PLAYERS } from '@tumble/shared';
 import {
   ApiLiveOps,
+  INTERNAL_SIG_WINDOW_MS,
   STATIC_LIVEOPS,
   verifyInternal,
   type LiveOpsSource,
@@ -24,7 +25,7 @@ import { z } from 'zod';
 import { ApiBanLookup, NO_BANS, type BanLookup } from './bans.ts';
 import type { MatchmakerConfig } from './config.ts';
 import type { GameControl } from './gameControl.ts';
-import { DEFAULT_CUSTOM, Matchmaker, MMError, userChannel } from './matchmaker.ts';
+import { DEFAULT_CUSTOM, Matchmaker, MMError, queueTicketId, userChannel } from './matchmaker.ts';
 import { registerOps, requestIdOptions, type MatchmakerOps } from './ops.ts';
 import { SharedRateLimiter } from './rateLimit.ts';
 import { capacityByRegion } from './servers.ts';
@@ -65,6 +66,8 @@ const RegisterBody = z.object({
   humans: z.number().int().min(0).optional(),
   maxRooms: z.number().int().min(1).max(10_000).optional(),
   rooms: z.number().int().min(0).optional(),
+  /** Registering while already draining (the matchmaker restarted during a drain). */
+  draining: z.boolean().optional(),
 });
 const HeartbeatBody = z.object({
   serverId: z.string().min(1).max(64),
@@ -80,6 +83,8 @@ const HeartbeatBody = z.object({
     .optional(),
   /** Show results the server has not delivered to the API yet. */
   outbox: z.number().int().min(0).optional(),
+  /** Shutting down: no new matches, running shows stay reachable. */
+  draining: z.boolean().optional(),
 });
 const RejoinBody = z.object({ matchId: z.string().min(1).max(64) });
 const SettingsSchema = z
@@ -267,16 +272,42 @@ export async function buildMatchmaker(
     return mm.stats();
   });
 
-  // The API's public status page asks this for live game-server capacity per region.
-  // SECURITY: HMAC-signed with INTERNAL_HMAC_SECRET; it is read-only, so the
-  // signature is checked without a nonce store (a replay only repeats counts).
-  app.get('/internal/capacity', async (req, reply) => {
+  /**
+   * SECURITY: checks an API call signed with INTERNAL_HMAC_SECRET over this
+   * method, path and body, and spends its nonce so it cannot be replayed.
+   *
+   * @returns False when internal calls are not configured (answer 404).
+   * @throws {MMError} 401 `bad_signature` / `replayed_request`.
+   */
+  const internalCall = async (req: FastifyRequest, path: string): Promise<boolean> => {
     const secret = cfg.internalHmacSecret;
-    if (!secret) return reply.code(404).send({ error: 'not_found', message: 'Not found' });
-    if (!verifyInternal(secret, req.headers, '', now()))
-      throw new MMError(401, 'bad_signature', 'Invalid internal signature');
+    if (!secret) return false;
+    const ok = verifyInternal(secret, req.headers, '', now(), { method: req.method, path });
+    if (!ok) throw new MMError(401, 'bad_signature', 'Invalid internal signature');
+    if (!(await store.setNX(`nonce:${ok.nonce}`, '1', INTERNAL_SIG_WINDOW_MS * 2)))
+      throw new MMError(401, 'replayed_request', 'Nonce already used');
+    return true;
+  };
+
+  // The API's public status page asks this for live game-server capacity per region.
+  app.get('/internal/capacity', async (req, reply) => {
+    if (!(await internalCall(req, '/internal/capacity')))
+      return reply.code(404).send({ error: 'not_found', message: 'Not found' });
     reply.header('cache-control', 'no-store');
     return { regions: capacityByRegion(await mm.servers()) };
+  });
+
+  // The API checks show results against this before granting anything: the
+  // reporting server must be the one the match was placed on, and every
+  // account in the results must have been sent there.
+  app.get('/internal/matches/:id/placement', async (req, reply) => {
+    const { id } = parse(z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/) }), req.params);
+    if (!(await internalCall(req, `/internal/matches/${id}/placement`)))
+      return reply.code(404).send({ error: 'not_found', message: 'Not found' });
+    reply.header('cache-control', 'no-store');
+    const placement = await mm.getPlacement(id);
+    if (!placement) throw new MMError(404, 'unknown_match', 'No match placed with that id');
+    return placement;
   });
 
   // --- Queue -----------------------------------------------------------------
@@ -290,7 +321,7 @@ export async function buildMatchmaker(
         'invalid_ticket',
         'Queue ticket invalid or expired; request a new one from the API',
       );
-    const entry = await mm.enqueue(p, t);
+    const entry = await mm.enqueue(p, t, queueTicketId(ticket));
     return { entryId: entry.id, status: await mm.status(p.userId) };
   });
 
@@ -335,6 +366,7 @@ export async function buildMatchmaker(
       ...(b.humans !== undefined ? { humans: b.humans } : {}),
       ...(b.maxRooms !== undefined ? { maxRooms: b.maxRooms } : {}),
       ...(b.rooms !== undefined ? { rooms: b.rooms } : {}),
+      ...(b.draining ? { draining: true } : {}),
     });
   });
 
@@ -348,6 +380,7 @@ export async function buildMatchmaker(
       ...(b.rooms !== undefined ? { rooms: b.rooms } : {}),
       ...(b.matches ? { matches: b.matches } : {}),
       ...(b.joined ? { joined: b.joined } : {}),
+      ...(b.draining ? { draining: true } : {}),
     });
   });
 
@@ -382,8 +415,8 @@ export async function buildMatchmaker(
   });
 
   app.get('/lobbies/:code', async (req) => {
-    await player(req);
-    return { lobby: await mm.getLobby(parse(CodeParam, req.params).code) };
+    const p = await player(req);
+    return { lobby: await mm.viewLobby(p.userId, parse(CodeParam, req.params).code) };
   });
 
   app.post('/lobbies/:code/join', async (req) => {

@@ -34,6 +34,12 @@ export interface MMStore {
    */
   hitWindow(key: string, windowMs: number): Promise<{ count: number; ttlMs: number }>;
   del(key: string): Promise<void>;
+  /**
+   * Resets the TTL of an existing key.
+   *
+   * @returns False when the key does not exist.
+   */
+  expire(key: string, ttlMs: number): Promise<boolean>;
   hset(hash: string, field: string, value: string): Promise<void>;
   /**
    * Removes one hash field.
@@ -58,6 +64,13 @@ export class MemoryStore implements MMStore {
   constructor(private readonly now: () => number = Date.now) {}
 
   async get(key: string): Promise<string | null> {
+    return this.read(key);
+  }
+
+  // NOTE: the conditional operations below read and write without an await in
+  // between. An await would let a concurrent caller interleave, and two
+  // setNX calls could then both take the same lock (Redis runs them atomically).
+  private read(key: string): string | null {
     const e = this.kv.get(key);
     if (!e) return null;
     if (e.exp <= this.now()) {
@@ -67,25 +80,29 @@ export class MemoryStore implements MMStore {
     return e.v;
   }
 
-  async set(key: string, value: string, ttlMs?: number): Promise<void> {
+  private write(key: string, value: string, ttlMs?: number): void {
     this.kv.set(key, { v: value, exp: ttlMs ? this.now() + ttlMs : Number.POSITIVE_INFINITY });
   }
 
+  async set(key: string, value: string, ttlMs?: number): Promise<void> {
+    this.write(key, value, ttlMs);
+  }
+
   async setNX(key: string, value: string, ttlMs: number): Promise<boolean> {
-    if ((await this.get(key)) !== null) return false;
-    await this.set(key, value, ttlMs);
+    if (this.read(key) !== null) return false;
+    this.write(key, value, ttlMs);
     return true;
   }
 
   async delIfEquals(key: string, value: string): Promise<boolean> {
-    if ((await this.get(key)) !== value) return false;
+    if (this.read(key) !== value) return false;
     this.kv.delete(key);
     return true;
   }
 
   async expireIfEquals(key: string, value: string, ttlMs: number): Promise<boolean> {
-    if ((await this.get(key)) !== value) return false;
-    await this.set(key, value, ttlMs);
+    if (this.read(key) !== value) return false;
+    this.write(key, value, ttlMs);
     return true;
   }
 
@@ -102,6 +119,13 @@ export class MemoryStore implements MMStore {
 
   async del(key: string): Promise<void> {
     this.kv.delete(key);
+  }
+
+  async expire(key: string, ttlMs: number): Promise<boolean> {
+    const v = this.read(key);
+    if (v === null) return false;
+    this.write(key, v, ttlMs);
+    return true;
   }
 
   async hset(hash: string, field: string, value: string): Promise<void> {
@@ -156,8 +180,19 @@ export class RedisStore implements MMStore {
   private readonly cmd: Redis;
   private readonly sub: Redis;
   private readonly handlers = new Map<string, Set<Handler>>();
+  /** SUBSCRIBE commands not acknowledged yet, so concurrent subscribers to one channel all wait for it. */
+  private readonly subscribing = new Map<string, Promise<unknown>>();
 
-  constructor(url: string, prefix = 'tumble:mm:') {
+  /**
+   * @param url - `redis://` connection string.
+   * @param prefix - Namespace for keys and pub/sub channels, so environments
+   *   sharing one Redis neither read each other's state nor receive each
+   *   other's events.
+   */
+  constructor(
+    url: string,
+    private readonly prefix = 'tumble:mm:',
+  ) {
     this.cmd = new Redis(url, { keyPrefix: prefix, maxRetriesPerRequest: 3 });
     this.sub = new Redis(url);
     this.sub.on('message', (channel: string, message: string) => {
@@ -195,6 +230,10 @@ export class RedisStore implements MMStore {
     await this.cmd.del(key);
   }
 
+  async expire(key: string, ttlMs: number): Promise<boolean> {
+    return (await this.cmd.pexpire(key, ttlMs)) === 1;
+  }
+
   async hset(hash: string, field: string, value: string): Promise<void> {
     await this.cmd.hset(hash, field, value);
   }
@@ -207,24 +246,36 @@ export class RedisStore implements MMStore {
     return this.cmd.hgetall(hash);
   }
 
+  // NOTE: ioredis applies keyPrefix to keys only, never to pub/sub channels; they are prefixed here.
   async publish(channel: string, message: string): Promise<void> {
-    await this.cmd.publish(channel, message);
+    await this.cmd.publish(this.prefix + channel, message);
   }
 
   async subscribe(channel: string, handler: Handler): Promise<() => Promise<void>> {
-    let set = this.handlers.get(channel);
+    const name = this.prefix + channel;
+    let set = this.handlers.get(name);
     if (!set) {
       set = new Set();
-      this.handlers.set(channel, set);
-      await this.sub.subscribe(channel);
+      this.handlers.set(name, set);
+      const created = set;
+      const pending = this.sub
+        .subscribe(name)
+        .catch((err: unknown) => {
+          // Not subscribed after all: the next caller must try again rather than wait on a dead entry.
+          if (this.handlers.get(name) === created) this.handlers.delete(name);
+          throw err;
+        })
+        .finally(() => this.subscribing.delete(name));
+      this.subscribing.set(name, pending);
     }
     const handlers = set;
     handlers.add(handler);
+    await this.subscribing.get(name);
     return async () => {
       handlers.delete(handler);
-      if (handlers.size === 0) {
-        this.handlers.delete(channel);
-        await this.sub.unsubscribe(channel);
+      if (handlers.size === 0 && this.handlers.get(name) === handlers) {
+        this.handlers.delete(name);
+        await this.sub.unsubscribe(name);
       }
     };
   }

@@ -109,6 +109,39 @@ describe.skipIf(!REDIS_URL)('RedisStore against a real server', () => {
     await sleep(100);
     expect(got).toEqual(['hello']);
   });
+
+  it('keeps pub/sub of environments with different prefixes apart', async () => {
+    const [prod] = stores(1) as [RedisStore];
+    const [staging] = stores(1) as [RedisStore];
+    const got: string[] = [];
+    await prod.subscribe(userChannel('u1'), (m) => got.push(m));
+    await staging.publish(userChannel('u1'), 'from staging');
+    await prod.publish(userChannel('u1'), 'from prod');
+    await until(() => got.length === 1);
+    await sleep(100);
+    expect(got).toEqual(['from prod']);
+  });
+
+  it('lets every concurrent subscriber of a channel receive the very next message', async () => {
+    const [a, b] = stores(2) as [RedisStore, RedisStore];
+    const got: string[] = [];
+    await Promise.all([
+      b.subscribe('test:race', (m) => got.push(`1:${m}`)),
+      b.subscribe('test:race', (m) => got.push(`2:${m}`)),
+    ]);
+    await a.publish('test:race', 'now');
+    await until(() => got.length === 2);
+    expect(got.sort()).toEqual(['1:now', '2:now']);
+  });
+
+  it('renews the TTL of an existing key only', async () => {
+    const [a] = stores(1) as [RedisStore];
+    await a.set('match:m1', '{}', 200);
+    expect(await a.expire('match:m1', 60_000)).toBe(true);
+    expect(await a.expire('match:missing', 60_000)).toBe(false);
+    await sleep(300);
+    expect(await a.get('match:m1')).toBe('{}');
+  });
 });
 
 describe.skipIf(!REDIS_URL)('two matchmakers sharing Redis', () => {

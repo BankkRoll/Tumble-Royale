@@ -3,6 +3,7 @@
  * only (signs with `node:crypto`).
  *
  * Responsibilities:
+ * - Sign and verify service-to-service calls ({@link signInternal}).
  * - Fetch the API's live-ops snapshot (`POST /internal/liveops`, HMAC-signed
  *   with `INTERNAL_HMAC_SECRET`): raw flags, the maintenance window and the
  *   effective schedule of every playlist the API knows.
@@ -34,52 +35,185 @@ import {
 // The package lint bans Date.now (it guards the deterministic sim); service code needs the real clock.
 const wallClock = (): number => new Date().getTime();
 
+/** Header carrying the signature scheme version; absent means the legacy v1 scheme. */
+export const INTERNAL_SIG_VERSION_HEADER = 'x-tumble-signature-version';
+
 /**
- * Headers for a call the API verifies with `requireInternalSignature`:
- * `hex(HMAC-SHA256(secret, "<timestamp>.<nonce>.<body>"))`.
- *
- * @param secret - `INTERNAL_HMAC_SECRET`.
- * @param body - The exact request body.
- * @param nowMs - Wall clock (the API checks it against its own, ±5 min).
+ * Accepted clock difference for signed internal calls. Receivers remember a
+ * nonce for twice this long, so it cannot be replayed while its timestamp
+ * would still pass.
  */
-export function signInternal(secret: string, body: string, nowMs: number): Record<string, string> {
+export const INTERNAL_SIG_WINDOW_MS = 5 * 60_000;
+
+/** The request a v2 internal signature is bound to, besides its body. */
+export interface InternalTarget {
+  /** HTTP method, e.g. `POST`. */
+  method: string;
+  /**
+   * Endpoint path as the receiving service routes it: no query string and no
+   * reverse-proxy prefix (`/internal/match-results`, not `/api/internal/…`).
+   */
+  path: string;
+}
+
+/**
+ * The string a v2 signature covers: `METHOD\npath\ntimestamp\nnonce\nbody`.
+ *
+ * @param target - Method and endpoint path.
+ * @param timestamp - `x-tumble-timestamp` as sent.
+ * @param nonce - `x-tumble-nonce` as sent.
+ * @param body - Exact request body (`''` for a GET).
+ */
+export function internalSigningString(
+  target: InternalTarget,
+  timestamp: string,
+  nonce: string,
+  body: string,
+): string {
+  return `${target.method.toUpperCase()}\n${target.path}\n${timestamp}\n${nonce}\n${body}`;
+}
+
+/**
+ * Headers for a signed service-to-service call (the API's
+ * `requireInternalSignature`, the matchmaker's `/internal/*` routes):
+ * `hex(HMAC-SHA256(secret, "METHOD\npath\ntimestamp\nnonce\nbody"))` and
+ * `x-tumble-signature-version: 2`.
+ *
+ * SECURITY: binding the method and path means a captured signature for one
+ * endpoint cannot be replayed against another that accepts the same body.
+ *
+ * @param secret - The caller's HMAC key (`INTERNAL_HMAC_SECRET`, or a game
+ *   server's `GAME_SERVER_HMAC_SECRET`).
+ * @param body - The exact request body (`''` for a GET).
+ * @param nowMs - Wall clock (receivers check it against their own, ±5 min).
+ * @param target - Method and endpoint path of the request.
+ * @example
+ * const body = '{}';
+ * await fetch(`${apiUrl}/internal/liveops`, {
+ *   method: 'POST',
+ *   headers: signInternal(secret, body, Date.now(), { method: 'POST', path: '/internal/liveops' }),
+ *   body,
+ * });
+ */
+export function signInternal(
+  secret: string,
+  body: string,
+  nowMs: number,
+  target: InternalTarget,
+): Record<string, string> {
   const timestamp = String(nowMs);
   const nonce = randomBytes(16).toString('hex');
-  const signature = createHmac('sha256', secret).update(`${timestamp}.${nonce}.${body}`).digest('hex');
-  return { 'x-tumble-timestamp': timestamp, 'x-tumble-nonce': nonce, 'x-tumble-signature': signature };
+  const signature = createHmac('sha256', secret)
+    .update(internalSigningString(target, timestamp, nonce, body))
+    .digest('hex');
+  return {
+    'x-tumble-timestamp': timestamp,
+    'x-tumble-nonce': nonce,
+    'x-tumble-signature': signature,
+    [INTERNAL_SIG_VERSION_HEADER]: '2',
+  };
+}
+
+/** Options for {@link inspectInternal} and {@link verifyInternal}. */
+export interface VerifyInternalOptions extends InternalTarget {
+  /** Allowed clock difference (default {@link INTERNAL_SIG_WINDOW_MS}). */
+  windowMs?: number;
+  /**
+   * Also accept the legacy v1 scheme (`"<timestamp>.<nonce>.<body>"`, no
+   * method or path) while callers are being upgraded. Off by default.
+   */
+  allowV1?: boolean;
+}
+
+/** A request that passed {@link verifyInternal}. */
+export interface VerifiedInternal {
+  /** The request's nonce; the receiver records it so the request cannot be replayed. */
+  nonce: string;
+  /** Signed timestamp (epoch ms). */
+  timestamp: number;
+  /** Scheme the caller used. */
+  version: 1 | 2;
+}
+
+/** Why {@link inspectInternal} refused a request. */
+export type InternalSignatureProblem = 'missing' | 'malformed' | 'stale' | 'mismatch';
+
+const headerValue = (
+  headers: Record<string, string | string[] | undefined>,
+  name: string,
+): string | undefined => {
+  const v = headers[name];
+  return typeof v === 'string' ? v : undefined;
+};
+
+/**
+ * Checks headers made by {@link signInternal} against any of `secrets` and
+ * says why a request failed; {@link verifyInternal} is the single-key form.
+ *
+ * Nonces are not remembered here: the receiver must record
+ * {@link VerifiedInternal.nonce} for twice {@link INTERNAL_SIG_WINDOW_MS}
+ * and refuse it a second time.
+ *
+ * @param secrets - Keys to try in order; empty entries are skipped.
+ * @param headers - Request headers (lower-case names).
+ * @param body - The exact request body (`''` for a GET).
+ * @param nowMs - Wall clock.
+ * @param opts - Method and path the request arrived on, and the scheme policy.
+ * @returns The verified request with the index of the key that matched, or the problem.
+ */
+export function inspectInternal(
+  secrets: readonly (string | undefined)[],
+  headers: Record<string, string | string[] | undefined>,
+  body: string,
+  nowMs: number,
+  opts: VerifyInternalOptions,
+): { ok: VerifiedInternal & { key: number } } | { problem: InternalSignatureProblem } {
+  const ts = headerValue(headers, 'x-tumble-timestamp');
+  const nonce = headerValue(headers, 'x-tumble-nonce');
+  const sig = headerValue(headers, 'x-tumble-signature');
+  const versionRaw = headerValue(headers, INTERNAL_SIG_VERSION_HEADER);
+  if (ts === undefined || nonce === undefined || sig === undefined) return { problem: 'missing' };
+  if (!/^\d{10,16}$/.test(ts) || nonce.length < 16 || nonce.length > 128 || !/^[0-9a-f]{64}$/i.test(sig))
+    return { problem: 'malformed' };
+  if (versionRaw !== undefined && versionRaw !== '2') return { problem: 'malformed' };
+  const version = versionRaw === '2' ? 2 : 1;
+  if (version === 1 && !opts.allowV1) return { problem: 'mismatch' };
+  if (Math.abs(nowMs - Number(ts)) > (opts.windowMs ?? INTERNAL_SIG_WINDOW_MS)) return { problem: 'stale' };
+  const signed = version === 2 ? internalSigningString(opts, ts, nonce, body) : `${ts}.${nonce}.${body}`;
+  const got = Buffer.from(sig.toLowerCase(), 'hex');
+  for (let key = 0; key < secrets.length; key++) {
+    const secret = secrets[key];
+    if (!secret) continue;
+    const expected = createHmac('sha256', secret).update(signed).digest();
+    if (timingSafeEqual(expected, got)) return { ok: { nonce, timestamp: Number(ts), version, key } };
+  }
+  return { problem: 'mismatch' };
 }
 
 /**
  * Checks headers made by {@link signInternal}: well formed, signed with
- * `secret` over `body`, and stamped within `windowMs` of `nowMs`.
+ * `secret` over this method, path and body, and stamped within the window.
  *
- * Nonces are not remembered, so a captured request can be replayed inside
- * the window; only use this for read-only calls where a replay reveals
- * nothing new.
- *
- * @param secret - `INTERNAL_HMAC_SECRET`.
+ * @param secret - The shared key.
  * @param headers - Request headers (lower-case names).
  * @param body - The exact request body (`''` for a GET).
  * @param nowMs - Wall clock.
- * @param windowMs - Allowed clock difference (default 5 min).
- * @returns True when the signature is valid.
+ * @param opts - Method and path the request arrived on, and the scheme policy.
+ * @returns The verified nonce and timestamp, or null when the request is not authentic.
+ * @example
+ * const ok = verifyInternal(secret, req.headers, '', Date.now(), { method: 'GET', path: '/internal/capacity' });
+ * if (!ok || !(await nonces.use(ok.nonce))) return reply.code(401).send();
  */
 export function verifyInternal(
   secret: string,
   headers: Record<string, string | string[] | undefined>,
   body: string,
   nowMs: number,
-  windowMs = 5 * 60_000,
-): boolean {
-  const ts = headers['x-tumble-timestamp'];
-  const nonce = headers['x-tumble-nonce'];
-  const sig = headers['x-tumble-signature'];
-  if (typeof ts !== 'string' || typeof nonce !== 'string' || typeof sig !== 'string') return false;
-  if (!/^\d{10,16}$/.test(ts) || nonce.length < 16 || nonce.length > 128 || !/^[0-9a-f]{64}$/i.test(sig))
-    return false;
-  if (Math.abs(nowMs - Number(ts)) > windowMs) return false;
-  const expected = createHmac('sha256', secret).update(`${ts}.${nonce}.${body}`).digest();
-  return timingSafeEqual(expected, Buffer.from(sig.toLowerCase(), 'hex'));
+  opts: VerifyInternalOptions,
+): VerifiedInternal | null {
+  const r = inspectInternal([secret], headers, body, nowMs, opts);
+  if (!('ok' in r)) return null;
+  return { nonce: r.ok.nonce, timestamp: r.ok.timestamp, version: r.ok.version };
 }
 
 /** One raw flag row as the API stores it. */
@@ -287,7 +421,10 @@ export class ApiLiveOps implements LiveOpsSource {
       const sentAt = this.now();
       const res = await this.fetchFn(`${this.opts.apiUrl}/internal/liveops`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', ...signInternal(this.opts.secret, body, wallClock()) },
+        headers: {
+          'content-type': 'application/json',
+          ...signInternal(this.opts.secret, body, wallClock(), { method: 'POST', path: '/internal/liveops' }),
+        },
         body,
         signal: AbortSignal.timeout(this.opts.timeoutMs ?? 3000),
       });
@@ -347,7 +484,10 @@ export function apiErrorReporter(
     try {
       await fetchFn(`${opts.apiUrl}/internal/errors`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', ...signInternal(opts.secret, body, wallClock()) },
+        headers: {
+          'content-type': 'application/json',
+          ...signInternal(opts.secret, body, wallClock(), { method: 'POST', path: '/internal/errors' }),
+        },
         body,
         signal: AbortSignal.timeout(2000),
       });

@@ -27,6 +27,11 @@ export interface GameServer {
   rooms?: number;
   /** Epoch ms of the last heartbeat. */
   lastSeen: number;
+  /**
+   * Shutting down: no new matches go here, but it stays registered (rejoins,
+   * host kicks, the player counts) until its last show ends.
+   */
+  draining?: boolean;
 }
 
 /** A server is considered dead after this long without a heartbeat. */
@@ -75,7 +80,7 @@ export function candidateRegions(region: string, fallback: boolean, known: Itera
 
 /** True when a live server has room for `seats` more seats and one more room. */
 export function hasRoom(s: GameServer, seats: number, now: number): boolean {
-  if (now - s.lastSeen > SERVER_TTL_MS) return false;
+  if (s.draining || now - s.lastSeen > SERVER_TTL_MS) return false;
   if (s.capacity - s.load < seats) return false;
   return s.maxRooms === undefined || (s.rooms ?? 0) < s.maxRooms;
 }

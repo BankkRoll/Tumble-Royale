@@ -274,6 +274,54 @@ function firstOfEachShaderFirst(objects: Object3D[]): Object3D[] {
   return first.concat(rest);
 }
 
+type Countable = Object3D & {
+  isInstancedMesh?: boolean;
+  isPoints?: boolean;
+  isLine?: boolean;
+  count?: number;
+  geometry?: {
+    drawRange: { start: number; count: number };
+    setDrawRange(start: number, count: number): void;
+  };
+};
+
+/** What {@link forceNonEmptyDraws} changed, to put back. */
+type EmptyDrawPatch = [o: Countable, count: number | undefined, rangeStart: number, rangeCount: number][];
+
+/**
+ * Makes every object in `objects` issue a real draw: an instanced mesh with
+ * no instances draws one, a geometry with an empty draw range draws one
+ * primitive. Nothing shows: the warm-up runs under the loading cover.
+ *
+ * PERF: three skips empty draws, and ANGLE (WebGL2 on D3D11) builds a
+ * program's driver shaders for the real vertex layout and render targets on
+ * its first actual draw. Batches, trails, particle pools and LOD meshes are
+ * often empty while the warm-up runs, so their first visible draw after the
+ * reveal stalled the GPU process for seconds.
+ */
+function forceNonEmptyDraws(objects: readonly Object3D[], from: number, to: number): EmptyDrawPatch {
+  const patch: EmptyDrawPatch = [];
+  for (let i = from; i < to; i++) {
+    const o = objects[i] as Countable;
+    const g = o.geometry;
+    if (!g?.drawRange) continue;
+    const instanced = o.isInstancedMesh === true && o.count === 0;
+    const empty = g.drawRange.count === 0;
+    if (!instanced && !empty) continue;
+    patch.push([o, o.count, g.drawRange.start, g.drawRange.count]);
+    if (instanced) o.count = 1;
+    if (empty) g.setDrawRange(0, o.isPoints ? 1 : o.isLine ? 2 : 3);
+  }
+  return patch;
+}
+
+function restoreDraws(patch: EmptyDrawPatch): void {
+  for (const [o, count, start, n] of patch) {
+    if (count !== undefined) o.count = count;
+    o.geometry?.setDrawRange(start, n);
+  }
+}
+
 /** For each warmed object, the scene child it hangs under (null if it is one). */
 interface Branches {
   owner: (Object3D | null)[];
@@ -427,6 +475,7 @@ export function beginSceneWarmUp(
       const end = Math.min(objects.length, index + batch);
       for (let i = index; i < end; i++) (objects[i] as Object3D).visible = true;
       const pruned = pruneBranches(branches, objects, index, end);
+      const patched = forceNonEmptyDraws(objects, index, end);
       const t0 = now();
       let skipped = false;
       let builds = 0;
@@ -445,6 +494,7 @@ export function beginSceneWarmUp(
       } finally {
         unlimit();
         unforce();
+        restoreDraws(patched);
         for (const b of pruned) b.visible = true;
         for (let i = index; i < end; i++) (objects[i] as Object3D).visible = false;
       }

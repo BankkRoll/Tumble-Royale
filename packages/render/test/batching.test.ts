@@ -60,7 +60,7 @@ describe('MeshBatcher', () => {
     expect(batchability(new Mesh(geo, glass))).toMatch(/transparent/);
   });
 
-  it('merges equivalent meshes and stages divergent ones out without gaps', () => {
+  it('merges equivalent meshes and draws divergent ones solo, never twice or not at all', () => {
     const scene = new Scene();
     const meshes = Array.from({ length: 4 }, (_, i) => {
       // Separate geometry and material objects with identical content still group.
@@ -72,28 +72,51 @@ describe('MeshBatcher', () => {
     const b = new MeshBatcher();
     for (const m of meshes) b.add(m);
     b.build();
-    scene.add(b.object);
+    b.attach(scene);
+    scene.updateMatrixWorld();
     expect(b.stats.batches).toBe(1);
+    const inst = b.object.children[0] as InstancedMesh;
 
-    frame(b, 1); // sources drew themselves this frame and join from the next
+    frame(b, 1);
     expect(meshes.every((m) => m.layers.mask === 0)).toBe(true);
-    frame(b, 2);
+    expect(inst.count).toBe(4);
     expect(drawnMeshes(scene)).toBe(1);
 
-    // One member's uniform diverges: it is still drawn by the batch this frame, then on its own.
+    // One member's uniform diverges: it leaves the batch and draws through a one-instance mesh
+    // with its own material (and the batch's shader).
     (meshes[2]!.material as MeshBasicNodeMaterial).userData.tint.value = 0.9;
-    frame(b, 3);
-    const inst = b.object.children[0] as Mesh & { count: number };
-    expect(inst.count).toBe(4);
-    expect(meshes[2]!.layers.mask).not.toBe(0);
-    frame(b, 4);
+    frame(b, 2);
     expect(inst.count).toBe(3);
+    expect(meshes[2]!.layers.mask).toBe(0);
+    const solos = (b.object.children as InstancedMesh[]).filter((o) => o.visible && o !== inst);
+    expect(solos).toHaveLength(1);
+    expect(solos[0]!.material).toBe(meshes[2]!.material);
+    expect(solos[0]!.count).toBe(1);
+    // Same capacity as the batch, past three's uniform-array path, so both compile to one shader.
+    expect(solos[0]!.instanceMatrix.count).toBe(inst.instanceMatrix.count);
+    expect(inst.instanceMatrix.count * 64).toBeGreaterThan(65536);
+    const m4 = new Matrix4();
+    solos[0]!.getMatrixAt(0, m4);
+    expect(m4.elements[12]).toBeCloseTo(6);
     expect(drawnMeshes(scene)).toBe(2);
 
-    // Hidden members leave the batch immediately.
+    // Matching again: back into the batch.
+    (meshes[2]!.material as MeshBasicNodeMaterial).userData.tint.value = 0.5;
+    frame(b, 3);
+    expect(inst.count).toBe(4);
+    expect(drawnMeshes(scene)).toBe(1);
+
+    // Hidden members leave the batch.
     meshes[0]!.visible = false;
+    frame(b, 4);
+    expect(inst.count).toBe(3);
+
+    // A swapped material object gives the source its own draw back.
+    meshes[1]!.material = tintMaterial();
     frame(b, 5);
     expect(inst.count).toBe(2);
+    expect(meshes[1]!.layers.mask).toBe(1);
+    expect(drawnMeshes(scene)).toBe(2);
 
     b.dispose();
     expect(meshes.every((m) => m.layers.mask !== 0)).toBe(true);
@@ -116,11 +139,11 @@ describe('MeshBatcher', () => {
     frame(b, 2);
     expect(drawnMeshes(scene)).toBe(1);
 
-    // One hammer's telegraph glow ramps up: it leaves the batch, the others stay instanced.
+    // One hammer's telegraph glow ramps up: it draws solo, the others stay instanced.
     setGlow(meshes[1]!.material as MeshToonNodeMaterial, 0.8);
     frame(b, 3);
-    frame(b, 4);
-    expect(meshes[1]!.layers.mask).not.toBe(0);
+    expect(meshes[1]!.layers.mask).toBe(0);
+    expect((b.object.children[0] as InstancedMesh).count).toBe(2);
     expect(drawnMeshes(scene)).toBe(2);
     b.dispose();
   });
@@ -253,6 +276,13 @@ describe('MeshBatcher culling', () => {
     inst.frustumCulled = false;
     pass(scene, mid, 4);
     expect(batchesDrawn(b)).toHaveLength(1);
+    // The warm-up hides every source too: the batch still draws one instance so it compiles.
+    for (const m of meshes) m.visible = false;
+    pass(scene, mid, 5);
+    expect(inst.count).toBe(1);
+    inst.frustumCulled = true;
+    pass(scene, mid, 6);
+    expect(inst.count).toBe(0);
     b.dispose();
   });
 
@@ -312,10 +342,13 @@ describe('MeshBatcher culling', () => {
 
     // Parity: each batch holds exactly its hidden sources' current world matrices.
     const m4 = new Matrix4();
-    type Internals = { batches: { mesh: InstancedMesh; members: { mesh: Mesh; instanced: unknown }[] }[] };
+    type Internals = {
+      batches: { mesh: InstancedMesh; members: { mesh: Mesh; instanced: unknown; mode: number }[] }[];
+    };
     for (const { mesh: inst, members } of (b as unknown as Internals).batches) {
       if (members.some((m) => m.instanced)) continue;
-      const shown = members.filter((m) => m.mesh.layers.mask === 0);
+      // Mode.Batch (1): drawn as an instance of this batch this frame.
+      const shown = members.filter((m) => m.mode === 1);
       expect(inst.count).toBe(shown.length);
       expect(inst.material).toBe(members[0]!.mesh.material);
       for (const m of shown)

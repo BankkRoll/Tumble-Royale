@@ -1,4 +1,13 @@
-import { BoxGeometry, BufferGeometry, Group, Mesh, MeshBasicMaterial, PointLight, Scene } from 'three/webgpu';
+import {
+  BoxGeometry,
+  BufferGeometry,
+  Group,
+  InstancedMesh,
+  Mesh,
+  MeshBasicMaterial,
+  PointLight,
+  Scene,
+} from 'three/webgpu';
 import type { Object3D, WebGPURenderer } from 'three/webgpu';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -108,6 +117,27 @@ describe('beginSceneWarmUp', () => {
     const fractions: number[] = [];
     await w.settle((f) => fractions.push(f));
     expect(fractions.at(-1)).toBe(1);
+  });
+
+  it('makes empty draws real while warming and restores their counts', () => {
+    const { renderer } = fakeRenderer();
+    const { scene, trail } = course();
+    const batch = new InstancedMesh(new BoxGeometry(), new MeshBasicMaterial(), 8);
+    batch.count = 0;
+    scene.add(batch);
+    const during = { trail: -1, batch: -1 };
+    const w = beginSceneWarmUp(renderer, scene, {
+      render: () => {
+        // ANGLE builds a program's driver shaders on its first real draw: nothing may be empty.
+        if (trail.visible) during.trail = trail.geometry.drawRange.count;
+        if (batch.visible) during.batch = batch.count;
+      },
+    });
+    while (w.next());
+    expect(during.trail).toBe(3);
+    expect(during.batch).toBe(1);
+    expect(trail.geometry.drawRange.count).toBe(0);
+    expect(batch.count).toBe(0);
   });
 
   it('grows batches while renders are cheap and shrinks them when a shader build is slow', () => {

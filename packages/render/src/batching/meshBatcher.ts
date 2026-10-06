@@ -10,9 +10,9 @@
  *   empty layer mask, so obstacle code keeps animating, showing and hiding its
  *   own meshes exactly as before.
  * - Every frame, re-validates each member (visibility, material/uniform state,
- *   shadow flags); members that diverge from their group's representative —
- *   e.g. one hammer's telegraph glow ramping up — are drawn individually until
- *   they match again.
+ *   shadow flags); members whose material values diverge from their group's
+ *   representative — e.g. one hammer's telegraph glow ramping up — draw as a
+ *   one-instance mesh with the batch's shader until they match again.
  * - Keeps per-grid-cell bounds of each batch's instances and culls a batch
  *   from every render pass (view, shadow cascades) that sees none of them.
  *
@@ -482,10 +482,24 @@ interface Member {
   layerMask: number;
   castShadow: boolean;
   receiveShadow: boolean;
-  /** Drawn by the batch this frame (sources hidden via an empty layer mask). */
-  batched: boolean;
+  /** How the source is drawn this frame. */
+  mode: Mode;
+  /** One-instance stand-in drawn while the source's material values diverge (created on first use). */
+  solo: InstancedMesh | null;
   /** This member's and the representative's material `version` when their pipeline keys last matched. */
   checked: [number, number];
+}
+
+/** How a source is drawn in the current frame. */
+const enum Mode {
+  /** Not shown (hidden itself or by an ancestor). */
+  Hidden,
+  /** An instance of its batch. */
+  Batch,
+  /** Through its own one-instance mesh: same shader as the batch, its own material values. */
+  Solo,
+  /** By itself: its geometry, material object or shadow flags no longer match the group. */
+  Own,
 }
 
 interface Batch {
@@ -518,6 +532,21 @@ const CELL_M = 16;
 /** Cell coordinates are packed into one number: x * CELL_STRIDE + z. */
 const CELL_STRIDE = 1 << 16;
 
+/**
+ * Instance capacity a batch (or solo stand-in) of `n` instances allocates.
+ *
+ * PERF: three bakes an instanced mesh's capacity into its shader (the
+ * matrices are a `mat4[capacity]` uniform array while they fit a uniform
+ * buffer), so batches of 2, 3, 18 and 42 sources with the same material
+ * graph compiled four shaders. Rounding to two shared sizes lets every batch
+ * with the same graph and vertex layout share one; 256 matrices (16 KB) is
+ * the smallest uniform block WebGL2 guarantees. Larger batches fall back to
+ * three's per-instance attributes either way.
+ */
+function shaderCapacity(n: number): number {
+  return Math.max(n, 1025);
+}
+
 const tmpInst = new Matrix4();
 const tmpWorld = new Matrix4();
 const projScreen = new Matrix4();
@@ -532,11 +561,11 @@ interface FrameSource {
  * Collects meshes from registered roots and draws render-equivalent ones as
  * instanced batches.
  *
- * Attached to a scene ({@link MeshBatcher.attach}), the batches sync before
+ * {@link MeshBatcher.attach} hooks it into the scene: the batches sync before
  * each frame's render lists are built and are culled per render pass (main
  * view and every shadow cascade) by the bounds of the grid cells their
  * instances occupy, so a batch only draws in passes that can see one of its
- * members.
+ * members. Until attached nothing syncs and every source draws itself.
  *
  * @example
  * const batcher = new MeshBatcher();
@@ -546,7 +575,7 @@ interface FrameSource {
  * // nothing per frame: the batches sync themselves while the scene renders.
  */
 export class MeshBatcher {
-  /** Holds the instanced batches; add it to the same scene as the roots (or use {@link attach}). */
+  /** Holds the instanced batches and solo stand-ins; {@link attach} adds it to the scene. */
   readonly object = new Group();
   private readonly roots: Object3D[] = [];
   private readonly batches: Batch[] = [];
@@ -575,7 +604,7 @@ export class MeshBatcher {
     let now = 0;
     for (const b of this.batches) {
       sources += b.members.length;
-      for (const m of b.members) if (m.batched) now++;
+      for (const m of b.members) if (m.mode === Mode.Batch) now++;
     }
     return { sources, batches: this.batches.length, batchedNow: now };
   }
@@ -610,18 +639,18 @@ export class MeshBatcher {
           layerMask: mesh.layers.mask,
           castShadow: mesh.castShadow,
           receiveShadow: mesh.receiveShadow,
-          batched: false,
+          mode: Mode.Own,
+          solo: null,
           checked: [material.version, -1],
         });
       });
     }
-    const sync = ((renderer: FrameSource) =>
-      this.safeSync(renderer.info.frame)) as unknown as Mesh['onBeforeRender'];
     for (const members of groups.values()) {
       if (members.length < this.minGroup) continue;
       const rep = members[0]!;
       let capacity = 0;
       for (const m of members) capacity += m.instanced ? m.instanced.instanceMatrix.count : 1;
+      capacity = shaderCapacity(capacity);
       const inst = new InstancedMesh(rep.geometry, rep.material, capacity);
       if (rep.instanced?.instanceColor) {
         inst.instanceColor = new InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
@@ -634,11 +663,8 @@ export class MeshBatcher {
       inst.renderOrder = rep.mesh.renderOrder;
       inst.matrixAutoUpdate = false;
       inst.count = 0;
-      // Unattached, the sync runs after culling, so bounds would always be a frame stale: never cull then.
       inst.frustumCulled = this.scene !== null;
       inst.boundingSphere = new Sphere();
-      // Fallback sync for an unattached batcher (a no-op once the scene hook ran this frame).
-      inst.onBeforeRender = sync;
       if (!rep.geometry.boundingSphere) rep.geometry.computeBoundingSphere();
       const gs = rep.geometry.boundingSphere as Sphere | null;
       this.batches.push({
@@ -709,17 +735,16 @@ export class MeshBatcher {
   }
 
   /**
-   * Per-frame sync, run before the frame's first render list is built when
-   * attached, else from the first batch the renderer draws (after culling).
-   * A source's layer mask may then only take effect next frame, so
-   * membership changes are staged:
-   * - a batched source that is visible is always drawn by the batch this
-   *   frame; if it stopped matching, it gets its own draw back from the next
-   *   frame;
-   * - an individually drawn source that now matches keeps its own draw this
-   *   frame and joins the batch next frame.
-   * Nothing is ever drawn twice or skipped; a diverging member shows its
-   * group's material state for at most one frame.
+   * Per-frame sync, run from the scene's `onBeforeRender` before the frame's
+   * first render list is built, so every decision applies to this frame:
+   * - a visible source that matches its group is written into the batch;
+   * - a source whose material values diverge (a hammer's telegraph glow, a
+   *   tile changing colour) draws through its own one-instance
+   *   {@link Member.solo} mesh, which uses the batch's pipeline;
+   * - a source whose geometry, material object or shadow flags were swapped
+   *   gets its own draw back (its layer mask);
+   * - a group with fewer than `minGroup` matching sources draws them all solo.
+   * Nothing is ever drawn twice or skipped.
    */
   private sync(frame: number): void {
     if (frame === this.lastFrame || this.failed) return;
@@ -727,26 +752,32 @@ export class MeshBatcher {
     const sceneRoot = rootOf(this.object);
     for (const b of this.batches) {
       const rep = b.members[0]!;
+      let joining = 0;
+      for (const m of b.members) {
+        m.mode = this.modeOf(m, rep, sceneRoot);
+        if (m.mode === Mode.Batch) joining++;
+      }
+      const grouped = joining >= this.minGroup;
       const arr = b.mesh.instanceMatrix.array as Float32Array;
       const colors = b.mesh.instanceColor?.array as Float32Array | undefined;
       clearBounds(b.bounds);
       let n = 0;
-      let joining = 0;
       for (const m of b.members) {
-        const visible = isShown(m.mesh, sceneRoot);
-        const ok = visible && this.matches(m, rep);
-        if (m.batched) {
-          if (visible) {
-            const start = n;
-            n = writeMember(m, arr, colors, n);
-            for (let i = start; i < n; i++) growCell(b, arr, i * 16);
-          }
-          if (visible && !ok) m.batched = false;
-        } else if (ok) m.batched = true;
-        if (m.batched && ok) joining++;
+        if (m.mode === Mode.Batch && !grouped) m.mode = m.instanced ? Mode.Own : Mode.Solo;
+        if (m.mode === Mode.Batch) {
+          const start = n;
+          n = writeMember(m, arr, colors, n);
+          for (let i = start; i < n; i++) growCell(b, arr, i * 16);
+        }
+        m.mesh.layers.mask = m.mode === Mode.Own ? m.layerMask : 0;
+        this.syncSolo(m);
       }
-      if (joining < this.minGroup) for (const m of b.members) m.batched = false;
-      for (const m of b.members) m.mesh.layers.mask = m.batched ? 0 : m.layerMask;
+      // The warm-up turns culling off (while attached) and hides the sources; draw one instance
+      // anyway so the batch's pipelines and WebGL2 driver shaders exist before the reveal.
+      if (n === 0 && this.scene !== null && !b.mesh.frustumCulled) {
+        rep.mesh.matrixWorld.toArray(arr, 0);
+        n = 1;
+      }
       b.mesh.count = n;
       fitSphere(b);
       if (n > 0) {
@@ -762,27 +793,69 @@ export class MeshBatcher {
     }
   }
 
-  private matches(m: Member, rep: Member): boolean {
+  private modeOf(m: Member, rep: Member, sceneRoot: Object3D): Mode {
     const mesh = m.mesh;
-    if (mesh.geometry !== m.geometry || mesh.material !== m.material) return false;
-    if (mesh.castShadow !== m.castShadow || mesh.receiveShadow !== m.receiveShadow) return false;
-    // The source's own layer mask is ours while batched; a change by obstacle code means "leave me alone".
-    if (!m.batched && mesh.layers.mask !== m.layerMask) return false;
-    if (m === rep) return true;
+    if (!isShown(mesh, sceneRoot)) return Mode.Hidden;
+    if (mesh.geometry !== m.geometry || mesh.material !== m.material) return Mode.Own;
+    if (mesh.castShadow !== m.castShadow || mesh.receiveShadow !== m.receiveShadow) return Mode.Own;
+    if (m === rep) return Mode.Batch;
     const c = m.checked;
     const v = m.material.version;
     const rv = rep.material.version;
     const fresh = c[0] !== v || c[1] !== rv;
-    if (!sameState(m.material, m.info, rep.material, rep.info, fresh)) return false;
-    c[0] = v;
-    c[1] = rv;
-    return true;
+    if (sameState(m.material, m.info, rep.material, rep.info, fresh)) {
+      c[0] = v;
+      c[1] = rv;
+      return Mode.Batch;
+    }
+    // An instanced source already draws with the instanced pipeline.
+    return m.instanced ? Mode.Own : Mode.Solo;
+  }
+
+  /**
+   * Shows or hides a member's one-instance stand-in.
+   *
+   * PERF: a diverging source used to get its own (non-instanced) draw back,
+   * whose pipeline nothing had built: the first telegraph glow of a hammer
+   * compiled a shader mid-round (a hitch on WebGPU, seconds inside ANGLE on
+   * WebGL2). An `InstancedMesh` with the source's material shares the
+   * batch's shader, so it needs no new pipeline.
+   */
+  private syncSolo(m: Member): void {
+    if (m.mode !== Mode.Solo) {
+      if (m.solo) m.solo.visible = false;
+      return;
+    }
+    let solo = m.solo;
+    if (!solo) {
+      solo = new InstancedMesh(m.geometry, m.material, shaderCapacity(1));
+      solo.count = 1;
+      solo.name = `solo:${m.mesh.name || m.mesh.parent?.name || m.material.type}`;
+      solo.instanceMatrix.setUsage(DynamicDrawUsage);
+      solo.castShadow = m.castShadow;
+      solo.receiveShadow = m.receiveShadow;
+      solo.renderOrder = m.mesh.renderOrder;
+      solo.matrixAutoUpdate = false;
+      solo.boundingSphere = new Sphere();
+      if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
+      m.solo = solo;
+      this.object.add(solo);
+    }
+    solo.visible = true;
+    solo.frustumCulled = this.scene !== null;
+    m.mesh.matrixWorld.toArray(solo.instanceMatrix.array as Float32Array, 0);
+    solo.instanceMatrix.needsUpdate = true;
+    const gs = m.geometry.boundingSphere;
+    if (gs) (solo.boundingSphere as Sphere).copy(gs).applyMatrix4(m.mesh.matrixWorld);
   }
 
   /** Removes the batches and gives every source back its own draw. */
   dispose(): void {
     for (const b of this.batches) {
-      for (const m of b.members) m.mesh.layers.mask = m.layerMask;
+      for (const m of b.members) {
+        m.mesh.layers.mask = m.layerMask;
+        m.solo?.dispose();
+      }
       b.mesh.dispose();
     }
     this.batches.length = 0;

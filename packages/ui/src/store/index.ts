@@ -123,3 +123,14 @@ export {
   overlayAfterScreenChange,
   watchChoiceVisible,
 } from './inputOwnership.ts';
+export {
+  SPECTATOR_HELP,
+  SPECTATOR_MODES,
+  SPECTATOR_MODE_LABELS,
+  broadcastActive,
+  foldForSearch,
+  initialSpectatorState,
+  nextSpectatorMode,
+  searchRoster,
+  type SpectatorHelpRow,
+} from './spectator.ts';

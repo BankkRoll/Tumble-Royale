@@ -47,6 +47,35 @@ export interface LightingRig {
 
 const SUN_DISTANCE = 120;
 
+/** The parts of `CSMShadowNode` its typings leave out. */
+interface CsmInternals {
+  camera: Camera | null;
+  _init(builder: unknown): void;
+  _setupFade(): unknown;
+  _setupStandard(): unknown;
+}
+
+/**
+ * A `CSMShadowNode` that hands every material build the same node graph.
+ *
+ * PERF: three's version builds a fresh graph per material, including a new
+ * `_cascades` array reference whose node id becomes the uniform block's name
+ * in GLSL (`NodeBuffer_<id>`). On WebGL2 that made every lit material's
+ * program text unique, so nothing was shared and ANGLE compiled one D3D
+ * program per material: hundreds per round, seconds of GPU-process work.
+ * The graph only reads the light's own state, so one copy serves them all.
+ */
+class SharedCsmShadowNode extends CSMShadowNode {
+  private shared: unknown = null;
+
+  override setup(builder: Parameters<CSMShadowNode['setup']>[0]): ReturnType<CSMShadowNode['setup']> {
+    const self = this as unknown as CsmInternals;
+    if (self.camera === null) self._init(builder);
+    this.shared ??= this.fade ? self._setupFade() : self._setupStandard();
+    return this.shared as ReturnType<CSMShadowNode['setup']>;
+  }
+}
+
 /**
  * Creates the sun + hemisphere lights.
  *
@@ -82,7 +111,7 @@ export function createLightingRig(atmosphere: Atmosphere, opts: LightingRigOptio
       sc.far = SUN_DISTANCE * 2;
       sc.updateProjectionMatrix();
     } else {
-      csm = new CSMShadowNode(sun, {
+      csm = new SharedCsmShadowNode(sun, {
         cascades: opts.cascades ?? 3,
         maxFar: dist,
         mode: 'practical',

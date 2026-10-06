@@ -162,7 +162,7 @@ The "Required in production" group of each `.env.example` lists what to set.
 
 The client is a single-page app. Party invites (`/join/<code>`), OAuth and
 email sign-in returns (`/auth/*`) and Stripe returns (`/store`) must serve
-`index.html`, and `/admin` serves `admin.html`. The build includes `_redirects` (Netlify, Cloudflare Pages)
+`index.html`, `/admin` serves `admin.html` and `/status` serves `status.html`. The build includes `_redirects` (Netlify, Cloudflare Pages)
 from `apps/client/public/`, and `apps/client/vercel.json` does the same on
 Vercel; other hosts need equivalent rewrites.
 
@@ -204,6 +204,11 @@ pnpm admin errors top                                   # most frequent client e
   with no identity beyond the account id; players can turn them off in
   Settings → Gameplay, and they start off under Do Not Track or Global
   Privacy Control. Client and server crashes go to the same table.
+- **Status page** at `/status`: live component states from real probes
+  (database, KV, matchmaker, game servers per region, store and chat
+  switches), maintenance, incidents with updates, 90 days of uptime, and
+  Atom and JSON incident feeds. Admins publish incidents from the console or
+  `pnpm admin status incident open|update|resolve|list`.
 
 The full reference is the Live ops section of
 [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md#6-live-ops).

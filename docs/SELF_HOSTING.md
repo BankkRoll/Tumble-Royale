@@ -324,6 +324,81 @@ pnpm admin errors top                 # client errors, last 24 h
 pnpm admin errors top --server --hours 168
 ```
 
+## 7. Status page and incidents
+
+`https://DOMAIN/status` is a public status page: the overall state, each
+component (Website, Accounts & API, Matchmaking, Game servers and one row
+per region once there are two or more, Store & payments, Chat), the current
+and next maintenance window, open incidents with their updates, 90 days of
+daily uptime bars and the past 90 days of incidents. It is a separate,
+framework-free page (a few kilobytes), so it loads when the game does not;
+the installed app never caches it. The in-game maintenance banner and the
+"Servers offline" Play tile link to it.
+
+### What it checks
+
+The API computes the states itself (cached 5 s per instance):
+
+| Component        | Major outage                                 | Degraded / other                        |
+| ---------------- | -------------------------------------------- | --------------------------------------- |
+| Accounts & API   | database unreachable (KV down: partial)      | database or KV slower than 1 s          |
+| Matchmaking      | `MATCHMAKER_URL/health` fails or takes > 2 s | answers slower than 1 s                 |
+| Game servers     | no live server, or every region down         | a region at 90 % of its seats           |
+| Game servers · X | a region seen in the last 7 days has none    | that region at 90 % of its seats        |
+| Store & payments | database unreachable                         | `store.enabled` off → under maintenance |
+| Chat             | KV unreachable                               | `chat.global` off → under maintenance   |
+| Website          | only through an incident                     |                                         |
+
+Matchmaking and Game servers need `MATCHMAKER_URL` on the API (the compose
+`.env` already has it) and `API_URL` plus `INTERNAL_HMAC_SECRET` on the
+matchmaker, which answers per-region capacity on a signed
+`/internal/capacity`. Without them those rows are left out (or show
+Unknown). A major outage of the API, matchmaking or every game server is a
+major outage overall; a major outage of anything else (one region, the
+store, chat) reads as a partial outage. During an active maintenance window
+everything but the website shows "Under maintenance".
+
+### Uptime history
+
+Each API instance runs a sampler every `STATUS_SAMPLE_SECONDS` (60; `0`
+turns history off). A KV lock per interval makes exactly one instance write,
+however many run. Samples land in `status_uptime`, one row per component and
+UTC day; rows older than 90 days are deleted as it goes. A day's uptime
+counts a major outage as down, a partial outage as half down, degraded as up,
+and leaves maintenance and unknown samples out.
+
+### Incidents runbook
+
+Admins publish incidents from the console (**Status**) or the CLI;
+moderators can read them. Titles and updates are public plain text (markup
+shows literally); every write is in the audit log.
+
+```sh
+pnpm admin status summary                       # what the page shows now
+pnpm admin status incident open --title "Queues are slow" --impact major \
+  --components matchmaking,gameservers:eu --message "We are looking into slow queues."
+pnpm admin status incident list                 # open incidents and their ids
+pnpm admin status incident update <id> --status identified --message "A queue worker is stuck."
+pnpm admin status incident update <id> --status monitoring --message "Fix deployed; watching."
+pnpm admin status incident resolve <id> --message "Queues are back to normal."
+```
+
+- Impact: `minor` (shows the components as degraded), `major` (partial
+  outage) or `critical` (major outage). No `--components` means the whole
+  service. Probes can make a component look worse than the incident, never
+  better.
+- Post an update whenever something changes and at least every 30 minutes
+  while it is open; players watch the page instead of guessing.
+- For planned work use maintenance (`pnpm admin maintenance on --in 30
+--for 60 --message "…"`): the page shows it as scheduled, then in
+  progress, without an incident.
+- A non-resolved update on a resolved incident reopens it.
+
+Subscribers can follow `https://DOMAIN/api/status/feed.atom` or
+`/api/status/feed.json` (incidents of the last 90 days). The summary is
+`GET /api/status/summary`, the history `GET /api/status/history`; both are
+public, rate limited per client and cacheable for 15 s and 5 min.
+
 ## Scaling
 
 One game server process runs up to three 100-player shows at once (one event

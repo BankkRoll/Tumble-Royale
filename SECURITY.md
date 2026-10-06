@@ -114,3 +114,32 @@ treats every club input as untrusted:
   reason and is written to `admin_audit_log` in the same transaction.
 - Goal rewards are paid once per player, week and goal, whichever club the
   player is in, so hopping between clubs cannot farm them.
+
+### Public status page
+
+`/status` and `GET /api/status/summary`, `/api/status/history` and the
+incident feeds (`/api/status/feed.atom`, `/api/status/feed.json`) answer
+anyone, so they are deliberately narrow:
+
+- They expose component states (operational, degraded, partial or major
+  outage, maintenance, unknown), the overall state, the live-ops maintenance
+  message and window, daily uptime ratios, and incident titles, impact,
+  affected components and updates written by staff for the public.
+- They never expose hostnames, addresses, ports, probe error messages, server
+  or player counts, seat capacity, queue sizes, which database or KV is in
+  use, who opened or updated an incident (that is in `admin_audit_log`), or
+  anything about a player. Region rows show only region ids that match
+  `[a-z0-9-]` and at most 12 of them, whatever game servers register with.
+- The matchmaker's capacity endpoint behind the Game servers rows is signed
+  with `INTERNAL_HMAC_SECRET` and returns per-region totals only. It does not
+  remember nonces, so a captured request can be replayed for five minutes,
+  which reveals nothing more than the request already did.
+- Incident text is plain text. The status page and the console only ever
+  set it as text (never parsed as HTML), the Atom feed escapes it and the
+  JSON feed carries it as `content_text` only. Control characters and
+  bidirectional overrides are stripped on write; titles are limited to 120
+  characters and updates to 2,000.
+- The routes are rate limited per client and cached for a few seconds, so
+  polling them cannot turn into a probe storm against the database or the
+  matchmaker. The page itself is served with `X-Frame-Options: DENY` and
+  `no-cache`, and the service worker never stores it.

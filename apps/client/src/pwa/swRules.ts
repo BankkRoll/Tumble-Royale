@@ -88,7 +88,10 @@ export function routeRequest(req: RequestInfo, ctx: RouteContext): Route {
   if (req.mode === 'navigate') return isShellPath(rel) ? { kind: 'shell' } : { kind: 'passthrough' };
   if (rel === 'config.json') return { kind: 'config' };
   // A query string means a dynamic request (cache busters, signed URLs); never serve it from the precache.
-  if (url.search === '' && ctx.precached.has(rel)) return { kind: 'precache', key: rel };
+  // shouldPrecache again: a precache written by an older worker version may
+  // still hold files (such as the status page) that are now network-only.
+  if (url.search === '' && ctx.precached.has(rel) && shouldPrecache(rel))
+    return { kind: 'precache', key: rel };
   return { kind: 'passthrough' };
 }
 
@@ -106,6 +109,9 @@ export function shouldPrecache(rel: string): boolean {
   // The admin console's entry chunk and stylesheet (Vite names them after the
   // `admin` input): players must never download the console, not even into a cache.
   if (/^assets\/admin-[\w-]+\.(js|css)$/.test(rel)) return false;
+  // The status page must always come from the network: a cached copy would
+  // be useless exactly when the service is down.
+  if (/^assets\/status-[\w-]+\.(js|css)$/.test(rel)) return false;
   return !rel.startsWith('.') && !rel.includes('/.');
 }
 

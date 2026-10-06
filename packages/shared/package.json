@@ -13,7 +13,8 @@
     "./metrics": "./src/metrics.ts",
     "./proxy": "./src/proxy.ts",
     "./request-id": "./src/requestId.ts",
-    "./sentry": "./src/sentry.ts"
+    "./sentry": "./src/sentry.ts",
+    "./status": "./src/status.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

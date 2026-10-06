@@ -79,7 +79,7 @@ export interface TestApi extends BuiltApp {
 /** Build overrides for {@link createTestApi}. */
 export interface TestApiOptions extends Pick<
   BuildOptions,
-  'seasonListeners' | 'payments' | 'kv' | 'database' | 'fetch' | 'sharedRateLimit'
+  'seasonListeners' | 'payments' | 'kv' | 'database' | 'fetch' | 'sharedRateLimit' | 'status'
 > {
   /**
    * Keep the in-process KV even when `REDIS_URL` is set, for tests that expire

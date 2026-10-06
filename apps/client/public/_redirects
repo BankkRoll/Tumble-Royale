@@ -7,3 +7,5 @@
 /store         /index.html   200
 # The admin console is its own page.
 /admin         /admin.html   200
+# So is the public status page.
+/status        /status.html  200

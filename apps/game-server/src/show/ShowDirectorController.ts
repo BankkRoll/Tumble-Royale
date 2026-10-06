@@ -55,6 +55,7 @@ const EMPTY_PLAYERS: RoundStatus['players'] = new Map();
 function toShowVote(v: VoteSnapshot): ShowVote {
   return {
     roundIndex: v.roundIndex,
+    isFinal: v.isFinal,
     options: v.options,
     counts: v.counts,
     voted: v.voted,

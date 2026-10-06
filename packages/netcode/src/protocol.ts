@@ -372,6 +372,8 @@ export interface VoteOptionsMsg {
   t: 'voteOptions';
   /** Round the ballot is for. */
   roundIndex: number;
+  /** The ballot is for the final (playlists that vote on finals). */
+  isFinal: boolean;
   /** Candidate round ids, in display order (at most {@link VOTE_MAX_OPTIONS}). */
   options: string[];
   /** Raw ballots per option so far. */

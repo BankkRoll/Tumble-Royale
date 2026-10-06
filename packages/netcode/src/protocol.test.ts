@@ -102,6 +102,7 @@ describe('protocol v6', () => {
       {
         t: 'voteOptions',
         roundIndex: 2,
+        isFinal: false,
         options: ['tile-panic', 'egg-heist', 'pattern-panic', 'tail-chase'],
         counts: [3, 0, 12, 1],
         voted: 16,

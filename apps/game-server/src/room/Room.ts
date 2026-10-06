@@ -1235,6 +1235,7 @@ export class Room {
     return {
       t: 'voteOptions',
       roundIndex: vote.roundIndex,
+      isFinal: vote.isFinal,
       options: vote.options,
       counts: vote.counts,
       voted: vote.voted,

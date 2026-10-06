@@ -76,6 +76,8 @@ export type ShowVoteReason = 'votes' | 'tie' | 'noVotes' | 'cancelled';
 export interface ShowVote {
   /** Round the ballot is for. */
   roundIndex: number;
+  /** The ballot is for the final. */
+  isFinal: boolean;
   /** Candidate round ids in display order. */
   options: string[];
   /** Raw ballots per option. */

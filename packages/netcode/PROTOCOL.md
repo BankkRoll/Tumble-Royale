@@ -214,12 +214,12 @@ screen instead of seeing the round begin.
 Between rounds the director may put the next round to a vote (SHOWS.md §2.1).
 The server is authoritative; clients only ever send `castVote`.
 
-| message       | dir | when                                                    | payload                                                                                                                       |
-| ------------- | --- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `voteOptions` | S→C | ballot opens (RESULTS starts); re-sent on (re)attach    | `roundIndex`, `options` (≤ 4 round ids), `counts`, `voted`, `eligible`, `closesInMs`, `canVote`, `yourVote`, `botsDiscounted` |
-| `castVote`    | C→S | the player picks or changes an option                   | `roundIndex`, `option`                                                                                                        |
-| `voteTally`   | S→C | ballots changed; at most 4 Hz                           | `roundIndex`, `counts`, `voted`                                                                                               |
-| `voteResult`  | S→C | ballot closed (or called off: `winner -1`, `cancelled`) | `roundIndex`, `winner`, `roundId`, `counts`, `reason`                                                                         |
+| message       | dir | when                                                    | payload                                                                                                                                  |
+| ------------- | --- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `voteOptions` | S→C | ballot opens (RESULTS starts); re-sent on (re)attach    | `roundIndex`, `isFinal`, `options` (≤ 4 round ids), `counts`, `voted`, `eligible`, `closesInMs`, `canVote`, `yourVote`, `botsDiscounted` |
+| `castVote`    | C→S | the player picks or changes an option                   | `roundIndex`, `option`                                                                                                                   |
+| `voteTally`   | S→C | ballots changed; at most 4 Hz                           | `roundIndex`, `counts`, `voted`                                                                                                          |
+| `voteResult`  | S→C | ballot closed (or called off: `winner -1`, `cancelled`) | `roundIndex`, `winner`, `roundId`, `counts`, `reason`                                                                                    |
 
 `voteOptions` is per connection: `canVote` is false for spectators and
 players already knocked out, and `yourVote` echoes the player's own ballot so

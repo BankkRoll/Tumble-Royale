@@ -157,6 +157,7 @@ describe('authorisation of every admin route', () => {
     ['GET', '/internal/club-reports'],
     ['POST', '/internal/club-reports/action', { reportIds: [uuid], action: 'dismiss', reason: 'nope' }],
     ['GET', '/internal/audit'],
+    ['GET', '/internal/status/incidents'],
   ];
   const adminRoutes: [Method, string, unknown?][] = [
     ['GET', '/internal/flags'],
@@ -177,6 +178,9 @@ describe('authorisation of every admin route', () => {
     ['GET', '/internal/staff'],
     ['PUT', `/internal/staff/${uuid}`, { role: 'admin' }],
     ['DELETE', `/internal/staff/${uuid}`],
+    ['POST', '/internal/status/incidents', { title: 'Nope', impact: 'minor', message: 'nope' }],
+    ['POST', `/internal/status/incidents/${uuid}/updates`, { status: 'monitoring', message: 'nope' }],
+    ['POST', `/internal/status/incidents/${uuid}/resolve`, {}],
   ];
 
   it('refuses anonymous callers, guests and signed-in players everywhere', async () => {

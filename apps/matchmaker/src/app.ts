@@ -13,7 +13,12 @@ import type { Duplex } from 'node:stream';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { WebSocket, WebSocketServer } from 'ws';
 import { MAX_PLAYERS } from '@tumble/shared';
-import { ApiLiveOps, STATIC_LIVEOPS, type LiveOpsSource } from '@tumble/shared/liveops-client';
+import {
+  ApiLiveOps,
+  STATIC_LIVEOPS,
+  verifyInternal,
+  type LiveOpsSource,
+} from '@tumble/shared/liveops-client';
 import { clientIp, trustFunction } from '@tumble/shared/proxy';
 import { z } from 'zod';
 import { ApiBanLookup, NO_BANS, type BanLookup } from './bans.ts';
@@ -22,6 +27,7 @@ import type { GameControl } from './gameControl.ts';
 import { DEFAULT_CUSTOM, Matchmaker, MMError, userChannel } from './matchmaker.ts';
 import { registerOps, requestIdOptions, type MatchmakerOps } from './ops.ts';
 import { SharedRateLimiter } from './rateLimit.ts';
+import { capacityByRegion } from './servers.ts';
 import { createStore, type MMStore } from './store.ts';
 import { verifyAccess, verifyQueueTicket, type Player } from './tickets.ts';
 
@@ -257,6 +263,18 @@ export async function buildMatchmaker(
   app.get('/stats', async (_req, reply) => {
     reply.header('cache-control', 'public, max-age=5');
     return mm.stats();
+  });
+
+  // The API's public status page asks this for live game-server capacity per region.
+  // SECURITY: HMAC-signed with INTERNAL_HMAC_SECRET; it is read-only, so the
+  // signature is checked without a nonce store (a replay only repeats counts).
+  app.get('/internal/capacity', async (req, reply) => {
+    const secret = cfg.internalHmacSecret;
+    if (!secret) return reply.code(404).send({ error: 'not_found', message: 'Not found' });
+    if (!verifyInternal(secret, req.headers, '', now()))
+      throw new MMError(401, 'bad_signature', 'Invalid internal signature');
+    reply.header('cache-control', 'no-store');
+    return { regions: capacityByRegion(await mm.servers()) };
   });
 
   // --- Queue -----------------------------------------------------------------

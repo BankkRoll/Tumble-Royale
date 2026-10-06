@@ -6,6 +6,13 @@
 import type { MaintenanceNotice } from './types.ts';
 
 /**
+ * The public status page, served next to the game by every supported host
+ * (`deploy/docker/client.Caddyfile`, `vercel.json`, `_redirects`). It is a
+ * separate page so it still loads when the game's servers do not.
+ */
+export const STATUS_PAGE_URL = '/status';
+
+/**
  * Whether a feature is on. Flags are kill switches: a key the game never
  * received is on.
  *

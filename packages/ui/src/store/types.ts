@@ -1716,6 +1716,11 @@ export interface Settings {
     showPing: boolean;
     /** Pick "Keep watching" automatically after qualifying or being knocked out. */
     autoSpectate: boolean;
+    /**
+     * Play "How you went out" after a knock-out (a still frame and the cause
+     * under Reduce Motion). Needs replays to be switched on.
+     */
+    eliminationReplay: boolean;
     /** Small "BOT" tag beside bot names (nameplates, results, wall, spectate). */
     botTags: boolean;
     /** Masks swearing in chat (slurs are always masked). */
@@ -1850,4 +1855,60 @@ export interface ReplayViewerState {
   canSave: boolean;
   /** Where the recording came from. */
   origin: 'show' | 'file';
+  /** Playing the show's highlights: which one of how many (absent for a plain replay). */
+  reel?: { index: number; count: number; label: string };
+}
+
+/** The "How you went out" replay after a knock-out (null = not showing). */
+export interface EliminationReplayState {
+  /**
+   * `loading` while the replay builds (the cause already shows), `playing`,
+   * or `still`: Reduce Motion shows one frame of the decisive moment instead.
+   */
+  mode: 'loading' | 'playing' | 'still';
+  /** One line on what happened ("Knocked off by a sweeper"), names already Streamer Mode safe. */
+  cause: string;
+  /** 0..1 through the replay. */
+  progress: number;
+  /** Slow motion is on screen. */
+  slow: boolean;
+}
+
+/** Kinds of automatic highlight. */
+export type HighlightKind =
+  | 'finalWin'
+  | 'closeFinish'
+  | 'lastSecondQualify'
+  | 'bigFall'
+  | 'chainGrab'
+  | 'comeback'
+  | 'clutchSurvival'
+  | 'decisiveScore';
+
+/** A player named by a highlight; masked by Streamer Mode when shown. */
+export interface HighlightPlayer {
+  id: number;
+  name: string;
+  isBot: boolean;
+  isLocal: boolean;
+}
+
+/** One automatic highlight of the show (the rewards screen's reel). */
+export interface HighlightEntry {
+  id: string;
+  /** Replay library key of the round it is in. */
+  key: string;
+  roundIndex: number;
+  roundName: string;
+  isFinal: boolean;
+  kind: HighlightKind;
+  /** Segment start, seconds from the start of the recording. */
+  start: number;
+  /** Segment length (s). */
+  length: number;
+  player: HighlightPlayer | null;
+  /** The second player (beaten to the line, end of a grab chain), if any. */
+  other: HighlightPlayer | null;
+  /** Kind-specific figure: margin or time left (s), chain length, setbacks, survivors, score. */
+  value: number;
 }

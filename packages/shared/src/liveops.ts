@@ -304,6 +304,15 @@ export const ANALYTICS_EVENTS = [
   'share.clip',
   /** A round-vote ballot was cast or changed: `round` (index), `option`, `changed`, `online`. */
   'vote.cast',
+  /**
+   * An elimination replay ended: `outcome` (watched/skipped/interrupted/unavailable),
+   * `cause` (kind), `still` (Reduce Motion), `online`, `seconds` (planned length).
+   */
+  'replay.elimination',
+  /** Highlights were played: `kind` (the first), `count`, `mode` (single/reel), `local`. */
+  'highlight.view',
+  /** A highlight's Share opened the clip sheet: `kind`, `local`, `final`. */
+  'highlight.share',
   /** Voice connected to a room: `kind` (party/team), `mode` (ptt/open), `relayOnly`, `peers`. No audio, no names. */
   'voice.join',
   /** Voice switched off: `reason` and `seconds` switched on. */

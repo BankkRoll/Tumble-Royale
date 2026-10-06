@@ -38,11 +38,15 @@ export const SHOW_MENU_SCREENS: ReadonlySet<ScreenId> = new Set<ScreenId>([
 
 /**
  * Whether the "Keep watching / Leave show" choice is on screen: the in-round
- * sheet on `round`, the card over every other show screen.
+ * sheet on `round`, the card over every other show screen. The elimination
+ * replay holds it back until it finishes.
  *
  * @param s - UI state.
  */
-export function watchChoiceVisible(s: Pick<UIState, 'screen' | 'eliminatedSheet' | 'watchChoice'>): boolean {
+export function watchChoiceVisible(
+  s: Pick<UIState, 'screen' | 'eliminatedSheet' | 'watchChoice'> & { elimReplay?: UIState['elimReplay'] },
+): boolean {
+  if (s.elimReplay) return false;
   return s.screen === 'round' ? s.eliminatedSheet : s.watchChoice !== null;
 }
 
@@ -53,7 +57,9 @@ export function watchChoiceVisible(s: Pick<UIState, 'screen' | 'eliminatedSheet'
  * @param s - UI state.
  */
 export function menuOwnsInput(
-  s: Pick<UIState, 'inputMode' | 'dialog' | 'overlay' | 'screen' | 'eliminatedSheet' | 'watchChoice'>,
+  s: Pick<UIState, 'inputMode' | 'dialog' | 'overlay' | 'screen' | 'eliminatedSheet' | 'watchChoice'> & {
+    elimReplay?: UIState['elimReplay'];
+  },
 ): boolean {
   return s.inputMode === 'menu' || s.dialog !== null || s.overlay !== 'none' || watchChoiceVisible(s);
 }

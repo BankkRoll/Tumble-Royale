@@ -72,6 +72,11 @@ export function ReplayLayer(): JSX.Element | null {
         <div className="tr-col tr-grow" style={{ gap: '0.1em', minWidth: 0 }}>
           <h2 className="tr-title tr-h3 tr-ellipsis">{r.title}</h2>
           <span className="tr-small tr-replay-sub tr-ellipsis">{r.subtitle}</span>
+          {r.reel && (
+            <span className="tr-small tr-replay-reel tr-ellipsis" role="status" data-testid="replay-reel">
+              <Icon name="star" size="1em" /> Highlight {r.reel.index + 1}/{r.reel.count} · {r.reel.label}
+            </span>
+          )}
         </div>
         {r.canSave && (
           <Button

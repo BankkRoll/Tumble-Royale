@@ -10,19 +10,26 @@
  *   exactly that place, disposing every replay resource;
  * - routes viewer controls from UI intents, keyboard, gamepad, mouse drag /
  *   wheel and touch drag / pinch;
- * - saves the open recording as a file and loads files back (validated).
+ * - saves the open recording as a file and loads files back (validated);
+ * - finds each stored round's highlights, keeps the show's best few and plays
+ *   them back to back in the viewer;
+ * - owns the elimination replay ({@link EliminationPlayer}), which yields to
+ *   the viewer.
  */
 import { lookupRound } from '../../customRounds/registry.ts';
 import type { QualityPreset } from '@tumble/render/quality';
 import type { CreateTumblerVisual, TumblerLoadout } from '@tumble/render/scenes';
+import type { AnalyticsValue } from '@tumble/shared/liveops';
 import type { Rapier } from '@tumble/sim';
 import type { MatchDeps } from '@tumble/sim/match';
 import {
   bindUI,
   isTypingTarget,
   seatName,
+  highlightTitle,
   streamerSafeName,
   ui,
+  type HighlightEntry,
   type OverlayId,
   type ReplayCommand,
   type ReplayMarkerInfo,
@@ -44,7 +51,10 @@ import {
   type ReplayData,
   type ReplayHeader,
 } from './format.ts';
-import { ReplayLibrary } from './library.ts';
+import { EliminationPlayer } from './elimPlayer.ts';
+import { timedEvents } from './elimination.ts';
+import { HighlightReel, detectHighlights, type Highlight } from './highlights.ts';
+import { ReplayLibrary, type ReplayEntry } from './library.ts';
 import { LiveRecording } from './live.ts';
 import { ReplayTimeline, type ReplayMarker } from './timeline.ts';
 import { ReplayView, type ReplayViewStatus } from './view.ts';
@@ -69,6 +79,21 @@ export interface ReplayControllerDeps {
   canvas: HTMLElement;
   /** Logs GPU memory with a label (`window.__tumble.memoryLog`). */
   logMemory: (label: string) => void;
+  /** `replays.enabled` right now (default on). */
+  replaysEnabled?: () => boolean;
+  /** Settings → Elimination replay (default on). */
+  eliminationReplay?: () => boolean;
+  /** Analytics. */
+  track?: (
+    name: 'replay.elimination' | 'highlight.view' | 'highlight.share',
+    props: Record<string, AnalyticsValue>,
+  ) => void;
+}
+
+/** Highlights playing back to back in the viewer. */
+interface Reel {
+  items: Highlight[];
+  index: number;
 }
 
 interface Origin {
@@ -100,6 +125,11 @@ function outcomeOf(h: ReplayHeader): ReplayRoundEntry['outcome'] {
 export class ReplayController {
   readonly library = new ReplayLibrary();
   readonly live: LiveRecording;
+  /** The show's best highlights so far. */
+  readonly highlights = new HighlightReel();
+  /** "How you went out" (handed to show sessions as `GameContext.eliminations`). */
+  readonly eliminations: EliminationPlayer;
+  private reel: Reel | null = null;
   private view: ReplayView | null = null;
   private data: ReplayData | null = null;
   private origin: Origin | null = null;
@@ -133,7 +163,21 @@ export class ReplayController {
   private readonly onBlur = (): void => this.held.clear();
 
   constructor(private readonly deps: ReplayControllerDeps) {
-    this.live = new LiveRecording(this.library, () => this.publish());
+    this.live = new LiveRecording(
+      this.library,
+      () => this.publish(),
+      (entry) => this.findHighlights(entry),
+    );
+    this.eliminations = new EliminationPlayer({
+      loadView: (data, isCancelled) => this.loadView(data, isCancelled),
+      showOverlay: (view) => deps.director.showOverlay(view),
+      clearOverlay: () => deps.director.clearOverlay(),
+      viewerOpen: () => this.view !== null,
+      enabled: () => this.replaysOn() && (deps.eliminationReplay?.() ?? true),
+      recording: (roundIndex) => this.live.recordingOf(roundIndex),
+      track: (name, props) => deps.track?.(name, props),
+      logMemory: (label) => deps.logMemory(label),
+    });
     this.offs.push(
       bindUI({
         onReplayOpen: ({ key }) => {
@@ -148,8 +192,17 @@ export class ReplayController {
         },
         onReplayOpenFile: ({ name, bytes }) => this.openFile(name, bytes),
         onReplayCommand: (cmd) => this.command(cmd),
+        onHighlightPlay: ({ ids }) => this.playHighlights(ids),
+        onHighlightShare: ({ id }) => {
+          const h = this.highlights.get(id);
+          if (h) deps.track?.('highlight.share', { kind: h.kind, local: h.local, final: h.isFinal });
+        },
       }),
     );
+  }
+
+  private replaysOn(): boolean {
+    return this.deps.replaysEnabled?.() ?? true;
   }
 
   /** True while the viewer is open. */
@@ -178,6 +231,124 @@ export class ReplayController {
       }),
     );
     s.setReplayLive(this.live.recording);
+    this.highlights.retain(new Set(this.library.list().map((e) => e.key)));
+    this.publishHighlights();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Highlights
+  // ---------------------------------------------------------------------------
+
+  /** A finished round went into the library: score its moments into the reel. */
+  private findHighlights(entry: ReplayEntry): void {
+    const h = entry.data.header;
+    const round = lookupRound(h.roundId);
+    try {
+      const events = timedEvents(entry.data).map(({ t, e }) => ({ t: t - h.startTime, e }));
+      this.highlights.add(
+        detectHighlights(
+          {
+            key: entry.key,
+            header: h,
+            timeLimit: round?.duration.seconds ?? null,
+            baseType: round?.type ?? h.roundType,
+          },
+          events,
+        ),
+      );
+    } catch (err) {
+      // Highlights are a bonus: a round that can't be read just contributes none.
+      console.warn('[replay] highlight detection failed', err);
+    }
+  }
+
+  private publishHighlights(): void {
+    ui.getState().setHighlights(this.replaysOn() ? this.highlights.list().map((h) => this.entryOf(h)) : []);
+  }
+
+  /** A highlight for the UI, with the names it mentions. */
+  private entryOf(h: Highlight): HighlightEntry {
+    const header = this.library.get(h.key)?.data.header;
+    const ref = (id: number): HighlightEntry['player'] => {
+      const p = header?.players.find((q) => q.id === id);
+      return p ? { id, name: p.name, isBot: p.isBot, isLocal: id === header?.localId } : null;
+    };
+    return {
+      id: h.id,
+      key: h.key,
+      roundIndex: h.roundIndex,
+      roundName: h.roundName,
+      isFinal: h.isFinal,
+      kind: h.kind,
+      start: h.start,
+      length: h.length,
+      player: h.player >= 0 ? ref(h.player) : null,
+      other: h.other >= 0 ? ref(h.other) : null,
+      value: h.value,
+    };
+  }
+
+  /** Plays highlights back to back in the viewer (the rewards screen's Watch / Play all). */
+  private playHighlights(ids: readonly string[]): void {
+    if (!this.replaysOn()) return;
+    const items = ids.map((id) => this.highlights.get(id)).filter((h): h is Highlight => !!h);
+    const first = items[0];
+    if (!first) {
+      this.toast('That highlight is no longer available');
+      return;
+    }
+    this.deps.track?.('highlight.view', {
+      kind: first.kind,
+      count: items.length,
+      mode: items.length > 1 ? 'reel' : 'single',
+      local: first.local,
+    });
+    this.playReelItem({ items, index: 0 });
+  }
+
+  private playReelItem(reel: Reel): void {
+    const h = reel.items[reel.index];
+    if (!h) return;
+    const entry = this.library.get(h.key);
+    if (!entry) {
+      if (reel.index + 1 < reel.items.length) this.playReelItem({ items: reel.items, index: reel.index + 1 });
+      else this.endReel();
+      return;
+    }
+    if (this.data !== entry.data && !this.open(entry.data, 'show')) return;
+    const view = this.view;
+    if (!view) return;
+    this.reel = reel;
+    view.command({ type: 'seek', t: h.start });
+    view.followPlayer(h.player);
+    if (!view.clock.playing) view.command({ type: 'toggle' });
+    const streamer = ui.getState().settings.gameplay.streamerMode;
+    ui.getState().patchReplay({
+      reel: { index: reel.index, count: reel.items.length, label: highlightTitle(this.entryOf(h), streamer) },
+    });
+    this.pushStatus(true);
+  }
+
+  /** The reel is over (or the player took over): leave the viewer where it is. */
+  private endReel(): void {
+    if (!this.reel) return;
+    this.reel = null;
+    ui.getState().patchReplay({ reel: undefined });
+  }
+
+  /** Moves the reel on once the playhead leaves the current highlight. */
+  private advanceReel(): void {
+    const reel = this.reel;
+    const view = this.view;
+    const h = reel?.items[reel.index];
+    if (!reel || !view || !h || view.clock.time < h.start + h.length - 1e-3) return;
+    if (reel.index + 1 < reel.items.length) {
+      this.playReelItem({ items: reel.items, index: reel.index + 1 });
+      return;
+    }
+    if (view.clock.playing) view.command({ type: 'toggle' });
+    this.endReel();
+    this.pushStatus(true);
   }
 
   private toast(title: string, body?: string): void {
@@ -221,6 +392,26 @@ export class ReplayController {
    * @throws {@link ReplayFileError} (`header`) when the round is not in this build; decode errors as thrown.
    */
   createView(data: ReplayData, post: CeremonyPost = this.deps.post): ReplayView {
+    return new ReplayView(this.viewOptions(data, post));
+  }
+
+  /**
+   * Builds a replay view in time-sliced steps (the elimination replay, while
+   * the round is still running).
+   *
+   * @param data - Recording.
+   * @param isCancelled - Checked between steps.
+   * @returns The view (caller owns it), or null when cancelled.
+   */
+  loadView(data: ReplayData, isCancelled: () => boolean): Promise<ReplayView | null> {
+    try {
+      return ReplayView.load(this.viewOptions(data, this.deps.post), isCancelled);
+    } catch (err) {
+      return Promise.reject(err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+
+  private viewOptions(data: ReplayData, post: CeremonyPost): ConstructorParameters<typeof ReplayView>[0] {
     const h = data.header;
     const round = lookupRound(h.roundId);
     if (!round)
@@ -232,7 +423,7 @@ export class ReplayController {
     for (const p of h.players)
       loadouts.set(p.id, decodeLoadout(JSON.stringify(p.loadout ?? '')) ?? botLoadout(h.seed, p.id, p.name));
     const set = ui.getState().settings;
-    return new ReplayView({
+    return {
       R: this.deps.R,
       deps: this.deps.matchDeps,
       round,
@@ -244,7 +435,7 @@ export class ReplayController {
       nameplates: set.gameplay.nameplates,
       streamerMode: set.gameplay.streamerMode,
       reduceShake: set.accessibility.reduceShake,
-    });
+    };
   }
 
   /**
@@ -255,6 +446,8 @@ export class ReplayController {
    * @returns False when the round can't be rebuilt (unknown round in this build).
    */
   open(data: ReplayData, origin: 'show' | 'file'): boolean {
+    // Both draw as the director's overlay; the viewer is what the player asked for.
+    this.eliminations.stop();
     if (this.view) this.exit();
     const h = data.header;
     if (!lookupRound(h.roundId)) {
@@ -306,6 +499,7 @@ export class ReplayController {
     if (!view) return;
     this.view = null;
     this.data = null;
+    this.reel = null;
     this.listen(false);
     this.held.clear();
     this.pointers.clear();
@@ -388,6 +582,8 @@ export class ReplayController {
       this.save();
       return;
     }
+    // Scrubbing takes the viewer over from the highlight reel.
+    if (cmd.type === 'seek' || cmd.type === 'seekBy') this.endReel();
     view.command(cmd);
     this.pushStatus(true);
   }
@@ -452,6 +648,8 @@ export class ReplayController {
    * @param realDt - Unscaled frame delta (s).
    */
   frame(realDt: number): void {
+    this.eliminations.frame(realDt);
+    this.advanceReel();
     const view = this.view;
     if (!view) return;
     const s = ui.getState();
@@ -588,6 +786,7 @@ export class ReplayController {
 
   /** Closes the viewer and unsubscribes (app teardown). */
   dispose(): void {
+    this.eliminations.dispose();
     this.exit();
     for (const off of this.offs) off();
     this.offs.length = 0;

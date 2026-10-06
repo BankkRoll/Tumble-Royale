@@ -10,7 +10,8 @@ import type { RoundCameraMode } from '../round/roundView.ts';
 import type { PlayerSample, RoundSource } from '../round/source.ts';
 import { CameraModeCode, type ReplayData, type ReplayOutcome, type ReplayPlayer } from './format.ts';
 import type { ReplayLibrary } from './library.ts';
-import { ReplayRecorder, type RecordableCamera, type RecordablePlayer } from './recorder.ts';
+import type { ReplayEntry } from './library.ts';
+import { ReplayRecorder, type RecordableCamera, type RecordablePlayer, type ReplayMeta } from './recorder.ts';
 
 /** The camera facts the recorder reads from the live round view. */
 export interface RecordableView {
@@ -56,6 +57,50 @@ const CAMERA_CODE: Readonly<Record<RoundCameraMode, number>> = {
 };
 
 /**
+ * Fills a recordable camera from the live view.
+ *
+ * @param v - The round view.
+ * @param out - Camera to fill.
+ * @returns `out`.
+ */
+export function readCamera(v: RecordableView, out: RecordableCamera): RecordableCamera {
+  out.mode = CAMERA_CODE[v.cameraMode];
+  out.target = v.cameraTarget;
+  out.yaw = v.rig.yaw;
+  out.pitch = v.rig.pitch;
+  return out;
+}
+
+/**
+ * Recording header facts for a live round.
+ *
+ * @param info - The round.
+ * @param source - Its render source (variation and mutator come from the sim).
+ * @returns Meta for a {@link ReplayRecorder} (or a {@link ReplayTape} export).
+ */
+export function replayMeta(info: LiveRoundInfo, source: Pick<RoundSource, 'sim'>): ReplayMeta {
+  const r = info.round;
+  return {
+    protocolVersion: PROTOCOL_VERSION,
+    recordedAt: new Date().toISOString(),
+    online: info.online,
+    showName: info.showName,
+    roundId: r.id,
+    roundName: r.name,
+    roundType: info.isFinal ? 'final' : r.type,
+    roundIndex: info.roundIndex,
+    isFinal: info.isFinal,
+    seed: info.seed >>> 0,
+    stage: info.stage,
+    variationId: source.sim.variationId ?? null,
+    ...(source.sim.mutatorId ? { mutatorId: source.sim.mutatorId } : {}),
+    qualifyTarget: info.qualifyTarget,
+    localId: info.localId,
+    players: info.players,
+  };
+}
+
+/**
  * Records the round on screen.
  *
  * @example
@@ -71,13 +116,17 @@ export class LiveRecording implements ReplayHooks {
   private readonly sampler = (id: number, out: RecordablePlayer): boolean =>
     this.source?.sample(id, out as PlayerSample) ?? false;
 
+  private roundIndex = -1;
+
   /**
    * @param library - Where finished rounds go.
    * @param onChange - Library or live availability changed (publish to the UI).
+   * @param onStored - A finished round went into the library (highlights).
    */
   constructor(
     private readonly library: ReplayLibrary,
     private readonly onChange: () => void,
+    private readonly onStored?: (entry: ReplayEntry) => void,
   ) {}
 
   /** True while a round with at least one frame is being recorded. */
@@ -90,6 +139,23 @@ export class LiveRecording implements ReplayHooks {
     return this.rec?.snapshot() ?? null;
   }
 
+  /**
+   * A round of the current show: the one being recorded (so far), else the
+   * stored recording.
+   *
+   * @param roundIndex - Round index within the show.
+   * @returns The recording, or null when it wasn't recorded (or was evicted).
+   */
+  recordingOf(roundIndex: number): ReplayData | null {
+    if (this.rec && this.roundIndex === roundIndex) return this.rec.snapshot();
+    const list = this.library.list();
+    for (let i = list.length - 1; i >= 0; i--) {
+      const e = list[i] as ReplayEntry;
+      if (e.data.header.roundIndex === roundIndex) return e.data;
+    }
+    return null;
+  }
+
   showStarted(): void {
     this.rec = null;
     this.source = null;
@@ -100,25 +166,8 @@ export class LiveRecording implements ReplayHooks {
 
   roundStarted(info: LiveRoundInfo, source: RoundSource, view: RecordableView | null): void {
     if (this.rec) this.roundEnded(null);
-    const r = info.round;
-    this.rec = new ReplayRecorder({
-      protocolVersion: PROTOCOL_VERSION,
-      recordedAt: new Date().toISOString(),
-      online: info.online,
-      showName: info.showName,
-      roundId: r.id,
-      roundName: r.name,
-      roundType: info.isFinal ? 'final' : r.type,
-      roundIndex: info.roundIndex,
-      isFinal: info.isFinal,
-      seed: info.seed >>> 0,
-      stage: info.stage,
-      variationId: source.sim.variationId ?? null,
-      ...(source.sim.mutatorId ? { mutatorId: source.sim.mutatorId } : {}),
-      qualifyTarget: info.qualifyTarget,
-      localId: info.localId,
-      players: info.players,
-    });
+    this.rec = new ReplayRecorder(replayMeta(info, source));
+    this.roundIndex = info.roundIndex;
     this.source = source;
     this.view = view;
     this.announced = false;
@@ -131,14 +180,7 @@ export class LiveRecording implements ReplayHooks {
     const t = src.renderTime();
     if (!rec.due(t)) return;
     const v = this.view;
-    let cam: RecordableCamera | null = null;
-    if (v) {
-      cam = this.cam;
-      cam.mode = CAMERA_CODE[v.cameraMode];
-      cam.target = v.cameraTarget;
-      cam.yaw = v.rig.yaw;
-      cam.pitch = v.rig.pitch;
-    }
+    const cam = v ? readCamera(v, this.cam) : null;
     rec.frame(t, this.sampler, cam, src.sim.getObstacleNetStates());
     if (!this.announced) {
       this.announced = true;
@@ -159,7 +201,8 @@ export class LiveRecording implements ReplayHooks {
     this.source = null;
     this.view = null;
     const data = rec.finish(outcome);
-    if (data && data.header.frameCount > 1) this.library.add(data);
+    const entry = data && data.header.frameCount > 1 ? this.library.add(data) : null;
+    if (entry) this.onStored?.(entry);
     this.onChange();
   }
 }

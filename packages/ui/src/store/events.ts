@@ -291,6 +291,12 @@ export interface UIIntents {
   replayOpenFile: { name: string; bytes: ArrayBuffer };
   /** Replay viewer control. */
   replayCommand: ReplayCommand;
+  /** Skip the "How you went out" replay (its button; keys, clicks and pad buttons skip it too). */
+  elimReplaySkip: undefined;
+  /** Play highlights in the replay viewer, one after another (`HighlightEntry.id`s, in order). */
+  highlightPlay: { ids: string[] };
+  /** A highlight's Share button opened the share sheet on it (analytics). */
+  highlightShare: { id: string };
   /** Share sheet: render the show's share card. */
   shareCard: { format: ShareCardFormat; includeName: boolean };
   /** Share sheet: render a clip of a recorded round (window in recording seconds). */

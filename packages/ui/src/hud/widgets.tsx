@@ -429,7 +429,7 @@ export const SpectateBanner = memo(function SpectateBanner(): JSX.Element | null
 
 /** "Keep watching / Leave show" after the ELIMINATED stamp. */
 export const EliminatedSheet = memo(function EliminatedSheet(): JSX.Element | null {
-  const open = useUI((s) => s.eliminatedSheet);
+  const open = useUI((s) => s.eliminatedSheet && s.elimReplay === null);
   const choice = useUI((s) => s.watchChoice);
   if (!open) return null;
   return (

@@ -68,6 +68,16 @@ export interface ShareResult {
   canCopy: boolean;
 }
 
+/** A clip window the sheet opens on (a highlight's Share button). */
+export interface ShareClipPrefill {
+  /** Replay library key. */
+  key: string;
+  /** Window start (s). */
+  start: number;
+  /** Window length (s); the trimmer rounds it to its nearest length. */
+  length: number;
+}
+
 /** Where the sheet is. */
 export type ShareStatus = 'idle' | 'rendering' | 'ready' | 'error';
 
@@ -84,6 +94,8 @@ export interface ShareSheet {
   error: string | null;
   /** One-line confirmation after delivering ("Saved to your downloads"). */
   notice: string | null;
+  /** The clip tab starts on this window instead of the round's default. */
+  prefill: ShareClipPrefill | null;
 }
 
 /** Share store shape. */
@@ -92,8 +104,11 @@ export interface ShareState {
   sheet: ShareSheet;
   setOffer(offer: ShareOffer | null): void;
   patchOffer(patch: Partial<ShareOffer>): void;
-  /** Opens the sheet on a tab (fresh: no result, idle). */
-  openSheet(tab?: 'card' | 'clip'): void;
+  /**
+   * Opens the sheet on a tab (fresh: no result, idle), optionally on a clip
+   * window (which implies the clip tab).
+   */
+  openSheet(tab?: 'card' | 'clip', prefill?: ShareClipPrefill): void;
   closeSheet(): void;
   patchSheet(patch: Partial<ShareSheet>): void;
 }
@@ -108,6 +123,7 @@ export const CLOSED_SHARE_SHEET: ShareSheet = {
   result: null,
   error: null,
   notice: null,
+  prefill: null,
 };
 
 /** The share store. */
@@ -119,10 +135,10 @@ export const shareUI = createStore<ShareState>()((set, get) => ({
     const o = get().offer;
     if (o) set({ offer: { ...o, ...patch } });
   },
-  openSheet: (tab) => {
+  openSheet: (tab, prefill) => {
     const offer = get().offer;
-    const pick = tab ?? (offer?.card ? 'card' : 'clip');
-    set({ sheet: { ...CLOSED_SHARE_SHEET, open: true, tab: pick } });
+    const pick = prefill ? 'clip' : (tab ?? (offer?.card ? 'card' : 'clip'));
+    set({ sheet: { ...CLOSED_SHARE_SHEET, open: true, tab: pick, prefill: prefill ?? null } });
   },
   closeSheet: () => set({ sheet: CLOSED_SHARE_SHEET }),
   patchSheet: (patch) => set({ sheet: { ...get().sheet, ...patch } }),

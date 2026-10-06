@@ -10,7 +10,7 @@ What comes next, in order. Each item should land with tests, docs and a green
       share by code, and moderate shared rounds from the admin console.
 - [x] **Map voting**: players vote between round candidates during a show
       transition; the server decides, ties broken by seed.
-- [ ] **Elimination replay and highlights**: a short replay of how the player
+- [x] **Elimination replay and highlights**: a short replay of how the player
       was eliminated, and automatic highlight moments built on the replay and
       clip pipeline.
 - [ ] **Spectator / broadcast mode**: a free camera, player switching and a

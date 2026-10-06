@@ -156,8 +156,9 @@ so there is nothing to enable; nobody can use it until you grant a role.
 A **moderator** handles reports, warnings, mutes, suspensions and lifting
 them, renames and the audit log. An **admin** can also adjust currencies,
 revoke cosmetics, run live ops and manage staff. Console sessions last 30
-minutes, live only in that browser tab and end at once if the role is revoked
-or the account is suspended. Every action from the console or the CLI lands
+minutes, live only in that browser tab and end at once if the role is revoked,
+the account is suspended or the player signs out of the game. Opening one
+needs a game sign-in from the last 10 minutes. Every action from the console or the CLI lands
 in the audit log, with who did it and the reason:
 
 ```sh

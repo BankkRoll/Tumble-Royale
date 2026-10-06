@@ -54,7 +54,8 @@ export type PadStartAction =
  */
 export function padStartAction(s: RoutingState, ctx: RoutingContext): PadStartAction {
   if (ctx.inShow && ctx.sessionOwnsMenu) return 'none';
-  if (s.dialog) return 'none';
+  // The elimination replay takes Start as its skip; it must not also open the menu underneath.
+  if (s.dialog || s.elimReplay) return 'none';
   if (s.photo.active) return 'exitPhoto';
   if (ctx.idlePlaying) return 'leaveIdlePlay';
   if (ctx.inShow && SHOW_MENU_SCREENS.has(s.screen))

@@ -90,6 +90,12 @@ describe('padStartAction', () => {
     expect(padStartAction(state({ dialog: { id: 'x', kind: 'info', title: 'x' } }), show)).toBe('none');
   });
 
+  it('leaves Start to the elimination replay, which takes it as a skip', () => {
+    const elimReplay = { mode: 'playing', cause: 'x', progress: 0, slow: false } as const;
+    expect(padStartAction(state({ elimReplay }), show)).toBe('none');
+    expect(padStartAction(state({ screen: 'roundResults', elimReplay }), show)).toBe('none');
+  });
+
   it('never opens the show menu without a show', () => {
     expect(padStartAction(state({ screen: 'preShow' }), menus)).toBe('none');
   });

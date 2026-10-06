@@ -216,6 +216,8 @@ export const DEFAULT_CUSTOM: CustomSettings = {
   lobbyCountdownSec: 10,
   spectatorSlots: 2,
   minPlayers: 1,
+  roundVoting: true,
+  spectatorChat: false,
 };
 
 /** Receives placement events (metrics). */
@@ -1062,6 +1064,66 @@ export class Matchmaker {
     });
     await this.cancel(p.userId, 'joined_custom_lobby');
     return lobby;
+  }
+
+  /**
+   * Takes a spectator seat in a private show that is already running (the
+   * code was shared to a broadcaster or a late friend). Seats come from the
+   * host's spectator limit, counting the spectators the show started with;
+   * a seat taken this way belongs to the account until the show ends, so
+   * leaving and coming back does not cost another one. A member of the show
+   * gets their own seat back instead.
+   *
+   * SECURITY: the host's bans, lock and in-show removals apply, and the game
+   * server enforces the same limit again from the ticket.
+   *
+   * @throws {MMError} 404 `lobby_not_found`, 409 `lobby_open` (not started: join instead),
+   *   409 `no_spectators` / `spectators_full`, 403 `banned` / `lobby_locked` /
+   *   `removed_by_host`, 410 `match_over`.
+   */
+  async watchLobby(p: Player, code: string): Promise<MatchFoundEvent> {
+    const muted = await this.checkStanding([p.userId]);
+    return this.withLobby(code, async (lobby) => {
+      if (lobby.status !== 'started' || !lobby.matchId)
+        throw new MMError(409, 'lobby_open', 'That show has not started yet, join it with the code');
+      const record = await this.getMatch(lobby.matchId);
+      if (!record) throw new MMError(410, 'match_over', 'That show is over');
+      if (await this.store.get(`match-kicked:${record.matchId}:${p.userId}`))
+        throw new MMError(403, 'removed_by_host', 'The host removed you from that show');
+      if (record.roster.some((r) => r.userId === p.userId)) return this.rejoinMatch(p.userId, record.matchId);
+      rules.assertCanEnter(lobby, p.userId);
+      const slots = record.custom?.spectatorSlots ?? 0;
+      if (slots <= 0) throw new MMError(409, 'no_spectators', 'Spectating is turned off for this show');
+      let taken = 0;
+      for (const r of record.roster) {
+        // A watcher the host removed gives their seat back.
+        if (r.role === 'spectator' && !(await this.store.get(`match-kicked:${record.matchId}:${r.userId}`)))
+          taken++;
+      }
+      if (taken >= slots) throw new MMError(409, 'spectators_full', 'No spectator slots left');
+      const server = await this.liveServerFor(record);
+      if (!server) throw new MMError(410, 'match_over', 'That show is no longer running');
+      const seat: MatchRecord['roster'][number] = {
+        userId: p.userId,
+        name: p.name,
+        partyId: `custom:${code}`,
+        team: null,
+        role: 'spectator',
+        ...(muted.has(p.userId) ? { muted: true } : {}),
+      };
+      record.roster.push(seat);
+      await this.store.set(`match:${record.matchId}`, JSON.stringify(record), MATCH_TTL_MS);
+      // Listed with the lobby's spectators so the host's in-show tools can remove a watcher too.
+      lobby.spectators.push({
+        userId: p.userId,
+        name: p.name,
+        joinedAt: this.now(),
+        ready: false,
+        awaySince: null,
+      });
+      await this.saveLobby(lobby);
+      return this.matchFoundFor(record, server, seat, true);
+    });
   }
 
   /**

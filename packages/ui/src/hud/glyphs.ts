@@ -31,7 +31,15 @@ export const PAD_GLYPHS: Record<BindAction, string> = {
   emote4: 'D-pad left',
   spectatePrev: 'LB',
   spectateNext: 'RB',
+  spectateCamera: 'Ⓨ',
+  spectateLeader: 'Ⓐ',
+  spectateRoster: 'Ⓧ',
+  spectatePin: 'Ⓑ',
+  broadcastOverlay: 'R3',
+  broadcastHelp: 'D-pad up',
+  broadcastChroma: '—',
   pause: 'Start',
+  pushToTalk: 'Back',
 };
 
 /** Left stick glyph: movement is never remapped. */

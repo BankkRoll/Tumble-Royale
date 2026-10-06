@@ -56,6 +56,9 @@ export class ShowChat {
   private readonly offs: (() => void)[] = [];
   private lastBotReplies = -Infinity;
   private seq = 0;
+  /** Read-only for this seat: a private show's spectator seat without the host's permission. */
+  private quiet = false;
+  private textWanted = false;
 
   constructor(
     private readonly host: ShowChatHost,
@@ -90,7 +93,20 @@ export class ShowChat {
 
   /** Lets players type to the show (online shows with other humans). */
   setTextEnabled(on: boolean): void {
-    setChatRoom('show', on && this.send !== null ? 'write' : 'read');
+    this.textWanted = on;
+    setChatRoom('show', on && this.send !== null && !this.quiet ? 'write' : 'read');
+  }
+
+  /**
+   * Makes the show read-only for this seat (a spectator seat the host did not
+   * let chat): typing and quick pings stop, relayed chat still shows.
+   *
+   * @param on - Quiet or not.
+   */
+  setQuiet(on: boolean): void {
+    if (on === this.quiet) return;
+    this.quiet = on;
+    this.setTextEnabled(this.textWanted);
   }
 
   /**
@@ -101,7 +117,7 @@ export class ShowChat {
   quick(kind: string): void {
     const id = quickChatId(kind);
     const preset = id ? quickChat(id) : undefined;
-    if (!id || !preset) return;
+    if (!id || !preset || this.quiet) return;
     if (this.send) {
       this.send({ t: 'chat', from: -1, text: '', quick: id });
       return;

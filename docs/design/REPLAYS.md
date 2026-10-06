@@ -7,8 +7,11 @@ Recordings can be saved as files and opened again from Profile or Match
 history.
 
 Code: `apps/client/src/game/replay/` (pure: `codec`, `format`, `recorder`,
-`timeline`, `clock`, `library`, `controls`; engine glue: `source`, `view`,
-`live`, `controller`), UI: `packages/ui/src/screens/Replay.tsx`.
+`timeline`, `clock`, `library`, `controls`, `tape`, `elimCause`,
+`elimination`, `highlights`; engine glue: `source`, `view`, `live`,
+`controller`, `elimPlayer`), `apps/client/src/game/show/elimination.ts`
+(session side), UI: `packages/ui/src/screens/Replay.tsx`, `ElimReplay.tsx`,
+`Highlights.tsx`.
 
 ## Recording
 
@@ -148,3 +151,95 @@ Nothing is uploaded.
 | Firefox 130+                     | WebCodecs H.264 → MP4 where the OS has an encoder, else VP9 |
 | Older engines with MediaRecorder | MediaRecorder WebM (or MP4 on Safari), paced in real time   |
 | Neither                          | Clips explained as unavailable; cards still work            |
+
+## Elimination replay
+
+When the local player is knocked out, "How you went out" replays the last
+~7.5 s of the round up to 1 s after the knock-out, with one line on the
+cause (UI: `docs/design/SCREENS.md` §9.8a).
+
+**Source.** Offline it is cut from the round's own recording (the live
+recorder's snapshot, or the stored round once results are in). Online the
+client keeps `ReplayTape`, a ring buffer of the last 10 s of what it
+rendered (its interpolated snapshots and its own prediction): every player's
+position, yaw, state, flags and emote, the live camera and the replicated
+obstacle states, sampled on the same 20 Hz grid as the recorder, plus the
+last 4096 sim events by reference. It is sized once per round (typed arrays,
+about 24 bytes per player per frame; under 1 MB for 100 players, tested) and
+writing a frame allocates nothing after the first frames. On the knock-out
+the tape is turned into a normal short recording, so both paths play through
+the same `ReplayView` and nothing changes on the wire.
+
+**Cause.** `attributeElimination` reads the event stream:
+
+| Cause     | When                                                                                                                                       | Text                                                   |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ |
+| obstacle  | a `stun` inside the reach of a placed hazard (sweeper, mallet, pow wall, …) or a `bounce` off a named obstacle, within 4 s before the fall | Knocked off by a sweeper / Launched off by a boing pad |
+| grabbed   | another player's grab on you ended (or was still on) within 2.5 s of the fall                                                              | Grabbed by <name>                                      |
+| bumped    | a stun away from any hazard right after another player dived into you                                                                      | Bumped off by <name>                                   |
+| floor     | crumbling tiles near where you fell dropped within 2 s                                                                                     | The floor dropped away                                 |
+| wrongTile | a fall with nothing else to blame in a logic round                                                                                         | Picked the wrong tile                                  |
+| fell      | a fall with nothing to blame, or two different causes within 0.3 s of each other (a toss-up)                                               | Fell off the course                                    |
+| missedCut | out at the end of a race; the gap is the distance to the finish at running speed                                                           | Missed the cut by 0.4 s / Didn't make the cut          |
+| teamLost  | out at the end of a team round, from the final team scores                                                                                 | Your team lost 12–15                                   |
+| timeUp    | out at the end of any other timed round                                                                                                    | Time ran out                                           |
+| unknown   | a tied team result, a forfeit mid-round                                                                                                    | Knocked out                                            |
+
+Events carry no "hit by", so obstacles are found by proximity: each placed
+obstacle's reach is its longest sweeping parameter (arm length, radius,
+range, …) plus 2 m. The cause also picks the decisive moment, which the
+replay slows down around, and the camera: the grabber or bumper when another
+player did it ("killer's eye"), else the local player, locked so it never
+switches away. Names go through Streamer Mode before they reach the screen.
+
+**Playback.** The view is built in time-sliced steps (`ReplayView.load`)
+while the ELIMINATED stamp plays and shown as a director overlay at the time
+the watch choice would appear. The decisive moment plays at 0.45× from 0.5 s
+before to 0.9 s after; the rest plays at whatever rate (1–3×) brings the
+whole replay to about 5.5 s. Under Reduce Motion it is one still frame of the
+decisive moment for 4 s. Any key, click, tap or pad button skips (input
+still held from playing doesn't); a screen change (results, next round),
+opening the replay viewer or a build that takes over 3 s ends it. It never
+holds the show: the watch choice is offered on schedule and its countdown
+runs, the UI only hides it until the replay ends, and offline the sim keeps
+stepping underneath. Knock-outs that end the round for the player (the cut,
+a team loss, time up) play over the results wall.
+
+**Gating.** On when `replays.enabled` is on and Settings → Gameplay →
+Elimination replay is on (default). Off means no tape, no per-frame work and
+no replay. Analytics: `replay.elimination` with `outcome` (watched, skipped,
+interrupted, unavailable), `cause`, `still`, `online` and the planned
+`seconds`.
+
+## Highlights
+
+Every round that goes into the library is scanned for highlight moments
+(`highlights.ts`, events only, no frame decode):
+
+| Kind              | Moment                                                                    | Base |
+| ----------------- | ------------------------------------------------------------------------- | ---- |
+| finalWin          | the final's winner                                                        | 100  |
+| closeFinish       | two qualifications within 0.35 s (×1 to ×2.5, closer scores more)         | 40   |
+| lastSecondQualify | qualifying in the last 5 s of the time limit, or taking the last spot     | 45   |
+| decisiveScore     | the last lead change of a team round (×1.5 in the last 10 s)              | 38   |
+| clutchSurvival    | a ledge grab with no fall after it, or surviving with three or fewer left | 32   |
+| comeback          | qualifying after two or more falls, stuns or grabs in the last 25 s       | 30   |
+| chainGrab         | a grab that makes a line of three or more Tumblers (+50% per extra)       | 30   |
+| bigFall           | a landing at 16 m/s or harder                                             | 14   |
+
+Scores are ×1.5 when the local player is the main or second player and ×1.2
+in the final. Each highlight is cut to a 3–5 s segment inside its recording.
+The show keeps its best six (`HighlightReel`): sorted by score, then earlier
+round, earlier moment, kind and player id, so the order is the same whatever
+order rounds arrive in; at most two of a kind while other kinds can fill the
+reel, and never two overlapping segments of one round. A re-recorded round
+replaces its highlights, rounds the library evicts take theirs along, and a
+new show starts empty.
+
+The rewards screen lists them (`docs/design/SCREENS.md` §11). Watch and Play
+all open the replay viewer on each segment in turn, following the
+highlight's player; Share opens the share sheet's clip tab on the
+highlight's round and window, so export goes through the clip pipeline
+above. Hidden while `replays.enabled` is off. Analytics: `highlight.view`
+(`kind`, `count`, `mode`, `local`) and `highlight.share` (`kind`, `local`,
+`final`).

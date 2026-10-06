@@ -93,6 +93,10 @@
   overflow: hidden;
   contain: strict;
 }
+/* The new screen is already live under the rising bands. */
+.tr-wipe[data-phase='revealing'] {
+  pointer-events: none;
+}
 /* Skewed as a group (animations own each band's transform); wider than the
    viewport so the slanted edges still cover both sides. */
 .tr-wipe-bands {
@@ -932,6 +936,23 @@
 }
 .tr-maintenance small {
   max-width: 28em;
+}
+/* The banner ignores the pointer so it never blocks the menu; only its link takes clicks. */
+.tr-maintenance-link {
+  flex: none;
+  pointer-events: auto;
+  color: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+}
+.tr-status-link {
+  margin: 0.4em 0 0;
+  font-size: 0.9em;
+  text-align: center;
+}
+.tr-status-link a {
+  color: inherit;
+  font-weight: 800;
 }
 .tr-level {
   display: flex;
@@ -3868,6 +3889,14 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--type);
+}
+.tr-pshow-group--custom {
+  --type: #ffd23f;
+}
+.tr-pshow-roundcode {
+  display: grid;
+  gap: 0.3em;
+  margin-top: 0.6em;
 }
 .tr-pshow-rules .tr-settings-row:last-child {
   border-bottom: 0;

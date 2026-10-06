@@ -9,8 +9,8 @@
  * - `lobby`: members of a private-show lobby (matchmaker);
  * - `global`: everyone online in the menu (account API realtime gateway).
  *
- * Tabs are only All, Party (while in a party) and Whispers (once there is a
- * whisper conversation). System notices (joins, leaves, host changes, command
+ * Tabs are only All, Party (while in a party), Club (while in a club) and
+ * Whispers (once there is a whisper conversation). System notices (joins, leaves, host changes, command
  * help) are not a tab: they show inline in every tab and can't be sent to.
  * Refusals (rate limit, chat ban, offline) are a single replaceable hint, not
  * feed lines, so a mashed Enter key never floods the chat.
@@ -18,7 +18,7 @@
 import type { PlayerRef } from './social.ts';
 
 /** A chat tab (send target). */
-export type ChatChannel = 'all' | 'party' | 'whisper';
+export type ChatChannel = 'all' | 'party' | 'club' | 'whisper';
 
 /** What a line belongs to: a tab, or `system` (inline in every tab). */
 export type ChatLineChannel = ChatChannel | 'system';
@@ -30,7 +30,7 @@ export type PublicRoom = 'show' | 'lobby' | 'global';
 export type RoomAccess = 'off' | 'read' | 'write';
 
 /** Tab order (also the order Tab cycles through). */
-export const CHANNEL_ORDER: readonly ChatChannel[] = ['all', 'party', 'whisper'];
+export const CHANNEL_ORDER: readonly ChatChannel[] = ['all', 'party', 'club', 'whisper'];
 
 /** Which room All talks to when several exist: the most local one wins. */
 export const ROOM_PRIORITY: readonly PublicRoom[] = ['show', 'lobby', 'global'];
@@ -39,6 +39,7 @@ export const ROOM_PRIORITY: readonly PublicRoom[] = ['show', 'lobby', 'global'];
 export const CHANNEL_LABEL: Readonly<Record<ChatChannel, string>> = {
   all: 'All',
   party: 'Party',
+  club: 'Club',
   whisper: 'Whispers',
 };
 
@@ -91,6 +92,8 @@ export interface ChatState {
   rooms: Readonly<Record<PublicRoom, RoomAccess>>;
   /** In a party with someone else (Party tab exists). */
   party: boolean;
+  /** In a club (Club tab exists). */
+  club: boolean;
   /** Whispers can be sent (signed in and online). */
   whispers: boolean;
   active: ChatChannel;
@@ -118,9 +121,10 @@ export const INITIAL_CHAT: ChatState = {
   lines: [],
   rooms: { show: 'off', lobby: 'off', global: 'off' },
   party: false,
+  club: false,
   whispers: false,
   active: 'all',
-  unread: { all: 0, party: 0, whisper: 0 },
+  unread: { all: 0, party: 0, club: 0, whisper: 0 },
   open: false,
   mode: 'text',
   replyTo: null,
@@ -133,9 +137,10 @@ export type ChatAction =
   | { type: 'receive'; line: ChatLine }
   | { type: 'room'; room: PublicRoom; access: RoomAccess }
   | { type: 'party'; on: boolean }
+  | { type: 'club'; on: boolean }
   | { type: 'whispers'; on: boolean }
   /** Drops a room's or a tab's lines (the room or party went away). */
-  | { type: 'clear'; target: PublicRoom | 'party' | 'whisper' }
+  | { type: 'clear'; target: PublicRoom | 'party' | 'club' | 'whisper' }
   | { type: 'focus'; channel: ChatChannel }
   | { type: 'cycle'; dir: 1 | -1 }
   | { type: 'open'; mode?: 'text' | 'quick'; channel?: ChatChannel }
@@ -174,9 +179,12 @@ export function publicRoom(s: Pick<ChatState, 'rooms'>): PublicRoom | null {
  *
  * @param s - Chat state.
  */
-export function chatTabs(s: Pick<ChatState, 'party' | 'whispers' | 'whisperTo' | 'lines'>): ChatChannel[] {
+export function chatTabs(
+  s: Pick<ChatState, 'party' | 'whispers' | 'whisperTo' | 'lines'> & Partial<Pick<ChatState, 'club'>>,
+): ChatChannel[] {
   const tabs: ChatChannel[] = ['all'];
   if (s.party) tabs.push('party');
+  if (s.club) tabs.push('club');
   if (s.whispers && (s.whisperTo || s.lines.some((l) => channelOf(l) === 'whisper'))) tabs.push('whisper');
   return tabs;
 }
@@ -214,7 +222,7 @@ export function reduceChat(s: ChatState, a: ChatAction): ChatState {
       if (s.lines.some((l) => l.id === a.line.id)) return s;
       const ch = channelOf(a.line);
       const lines = [...s.lines.slice(-(CHAT_KEEP - 1)), a.line];
-      const counts = ch === 'party' || ch === 'whisper';
+      const counts = ch === 'party' || ch === 'club' || ch === 'whisper';
       const seen = s.open && s.active === ch;
       const unread = !counts || a.line.self || seen ? s.unread : { ...s.unread, [ch]: s.unread[ch] + 1 };
       const replyTo =
@@ -234,18 +242,19 @@ export function reduceChat(s: ChatState, a: ChatAction): ChatState {
     case 'party':
       if (s.party === a.on) return s;
       return settle({ ...s, party: a.on, unread: a.on ? s.unread : { ...s.unread, party: 0 } });
+    case 'club':
+      if (s.club === a.on) return s;
+      return settle({ ...s, club: a.on, unread: a.on ? s.unread : { ...s.unread, club: 0 } });
     case 'whispers':
       if (s.whispers === a.on) return s;
       return settle({ ...s, whispers: a.on });
     case 'clear': {
+      const tab = a.target === 'party' || a.target === 'club' || a.target === 'whisper';
       const lines = s.lines.filter((l) =>
-        a.target === 'party' || a.target === 'whisper'
-          ? channelOf(l) !== a.target
-          : channelOf(l) !== 'all' || roomOf(l) !== a.target,
+        tab ? channelOf(l) !== a.target : channelOf(l) !== 'all' || roomOf(l) !== a.target,
       );
       if (lines.length === s.lines.length) return s;
-      const unread =
-        a.target === 'party' || a.target === 'whisper' ? { ...s.unread, [a.target]: 0 } : s.unread;
+      const unread = tab ? { ...s.unread, [a.target]: 0 } : s.unread;
       return settle({ ...s, lines, unread });
     }
     case 'focus':
@@ -327,6 +336,8 @@ export function chatPlaceholder(s: ChatState): string {
       return allBlocked(s) ?? 'Message everyone';
     case 'party':
       return 'Message your party';
+    case 'club':
+      return 'Message your club';
     case 'whisper':
       return s.whisperTo ? `Whisper ${nameTag(s.whisperTo)}` : 'Whisper with /w name message';
   }
@@ -338,7 +349,7 @@ export function chatPlaceholder(s: ChatState): string {
 
 /** What the input asked for. */
 export type ChatCommand =
-  | { kind: 'send'; to: PublicRoom | 'party'; text: string }
+  | { kind: 'send'; to: PublicRoom | 'party' | 'club'; text: string }
   | { kind: 'whisper'; to: WhisperTarget; text: string }
   | { kind: 'switch'; channel: ChatChannel; to?: WhisperTarget }
   | { kind: 'mute'; name: string; muted: boolean }
@@ -348,10 +359,10 @@ export type ChatCommand =
   | { kind: 'none' };
 
 /** Context for {@link parseChatInput}: the chat state plus a friend lookup. */
-export interface CommandContext extends Pick<
-  ChatState,
-  'active' | 'rooms' | 'party' | 'whispers' | 'whisperTo' | 'replyTo'
-> {
+export interface CommandContext
+  extends
+    Pick<ChatState, 'active' | 'rooms' | 'party' | 'whispers' | 'whisperTo' | 'replyTo'>,
+    Partial<Pick<ChatState, 'club'>> {
   /** Finds a friend by `name` or `name#tag` (case-insensitive). */
   findFriend(name: string): WhisperTarget | null;
 }
@@ -360,7 +371,7 @@ export interface CommandContext extends Pick<
 export const CHAT_HELP = [
   'Just type and press Enter to talk to everyone',
   '/w name message: whisper a friend · /r message: reply',
-  '/p message: party · /all message: everyone',
+  '/p message: party · /c message: club · /all message: everyone',
   '/mute name, /unmute name: hide or show a player',
   'Tab: next tab · Esc: close',
 ];
@@ -390,6 +401,11 @@ function toParty(ctx: CommandContext, text: string): ChatCommand {
   return text ? { kind: 'send', to: 'party', text } : { kind: 'switch', channel: 'party' };
 }
 
+function toClub(ctx: CommandContext, text: string): ChatCommand {
+  if (!ctx.club) return { kind: 'hint', message: "You're not in a club" };
+  return text ? { kind: 'send', to: 'club', text } : { kind: 'switch', channel: 'club' };
+}
+
 /**
  * Parses what the player typed. Plain text always goes to the open tab; it
  * never produces an error, only a hint when the tab can't take it.
@@ -405,6 +421,7 @@ export function parseChatInput(raw: string, ctx: CommandContext): ChatCommand {
   if (!text) return { kind: 'none' };
   if (!text.startsWith('/')) {
     if (ctx.active === 'party') return toParty(ctx, text);
+    if (ctx.active === 'club') return toClub(ctx, text);
     if (ctx.active === 'whisper')
       return ctx.whisperTo
         ? { kind: 'whisper', to: ctx.whisperTo, text }
@@ -435,6 +452,9 @@ export function parseChatInput(raw: string, ctx: CommandContext): ChatCommand {
     case '/p':
     case '/party':
       return toParty(ctx, rest);
+    case '/c':
+    case '/club':
+      return toClub(ctx, rest);
     case '/all':
     case '/a':
     case '/show':

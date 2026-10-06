@@ -47,12 +47,15 @@ export function confirmDeleteAccount(): void {
   const { session } = accountUi.getState();
   const p = ui.getState().profile;
   const who = p ? `${p.name}#${p.tag}` : 'this Tumbler';
-  if (session === 'unreachable') {
+  if (session === 'unreachable' || session === 'expired') {
     ui.getState().showDialog({
       id: 'deleteAccount-offline',
       kind: 'info',
       title: "Can't delete right now",
-      body: `${who} is saved on the Tumble Royale servers, and they can't be reached right now. Nothing was deleted. Try again when you're back online.`,
+      body:
+        session === 'expired'
+          ? `${who} is saved on the Tumble Royale servers, and this device's session expired. Nothing was deleted. Sign in again first.`
+          : `${who} is saved on the Tumble Royale servers, and they can't be reached right now. Nothing was deleted. Try again when you're back online.`,
     });
     return;
   }

@@ -10,14 +10,16 @@
  *   presence with invite / join / profile / remove / block, recent players
  *   with real presence for friends and "Add friend" for everyone else, and
  *   the blocked list with unblock;
+ * - the Club section (`ClubPanel.tsx`), one switch away from friends;
  * - offline: an honest empty state with Retry instead of dead buttons;
- * - notifications with inline Accept/Decline and Join/Decline.
+ * - notifications with inline Accept/Decline and Join/Decline (party and club).
  */
 import { useEffect, useRef, useState, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
-import { Button } from '../../components/controls.tsx';
+import { Button, Segmented } from '../../components/controls.tsx';
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
 import { Icon } from '../../components/icons/index.tsx';
+import { clubs, useClubs } from '../../store/clubs.ts';
 import { uiEvents } from '../../store/events.ts';
 import {
   PRESENCE_LABEL,
@@ -29,8 +31,10 @@ import {
 import type { Friend, NotificationItem, Presence } from '../../store/types.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import { setChatOpen } from '../../hud/ChatWidget.tsx';
+import { ClubPanel } from './ClubPanel.tsx';
 import { confirmBlock, confirmRemoveFriend, PlayerButton } from './PlayerActions.tsx';
 import { openJoinCode } from './PrivateShow.tsx';
+import { PartyVoiceMark } from './VoicePanel.tsx';
 
 const PRESENCE_CLS: Record<Presence, string> = {
   online: 'is-online',
@@ -436,6 +440,7 @@ export function FriendsSheet(): JSX.Element {
   const party = useUI((s) => s.party);
   const streamer = useUI((s) => s.settings.gameplay.streamerMode);
   const availability = useSocial((s) => s.availability);
+  const section = useClubs((s) => s.section);
   const [reveal, setReveal] = useState(false);
   const [copied, setCopied] = useState<'code' | 'link' | null>(null);
   const [kickArmed, setKickArmed] = useState<string | null>(null);
@@ -485,8 +490,21 @@ export function FriendsSheet(): JSX.Element {
           </button>
         </div>
         <div className="tr-sheet-body tr-scroll">
+          {online && (
+            <Segmented
+              label="Friends or club"
+              value={section}
+              options={[
+                { value: 'friends', label: 'Friends & party' },
+                { value: 'club', label: 'Club' },
+              ]}
+              onChange={(s) => clubs.getState().setSection(s)}
+            />
+          )}
           {!online ? (
             <OfflineFriends />
+          ) : section === 'club' ? (
+            <ClubPanel />
           ) : (
             <>
               <MyTag masked={streamer && !reveal} />
@@ -548,6 +566,7 @@ export function FriendsSheet(): JSX.Element {
                           {m.isSelf ? ' (you)' : ''}
                         </b>
                       </PlayerButton>
+                      <PartyVoiceMark userId={m.id} isSelf={m.isSelf} />
                       {m.isLeader ? (
                         <span
                           className="tr-chip tr-chip--lemon"
@@ -694,6 +713,31 @@ function NotificationActions({ n }: { n: NotificationItem }): JSX.Element | null
           onClick={() => {
             resolve('Declined');
             uiEvents.emit('friendRequestAction', { userId: a.userId, action: 'decline' });
+          }}
+        >
+          Decline
+        </Button>
+      </div>
+    );
+  if (a.kind === 'clubInvite')
+    return (
+      <div className="tr-row tr-notif-actions">
+        <Button
+          size="sm"
+          variant="go"
+          onClick={() => {
+            resolve('Joined');
+            uiEvents.emit('clubInviteAnswer', { clubId: a.clubId, accept: true });
+          }}
+        >
+          Join club
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            resolve('Declined');
+            uiEvents.emit('clubInviteAnswer', { clubId: a.clubId, accept: false });
           }}
         >
           Decline

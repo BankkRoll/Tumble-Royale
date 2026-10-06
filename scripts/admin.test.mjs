@@ -1,10 +1,22 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
-import { formatErrors, formatRefunds, loadEnv, parseArgs, run, toRequest } from './admin.mjs';
+import { fileURLToPath } from 'node:url';
+import {
+  formatErrors,
+  formatIncidents,
+  formatRefunds,
+  formatStaffLink,
+  formatSummary,
+  loadEnv,
+  parseArgs,
+  run,
+  toRequest,
+  USAGE,
+} from './admin.mjs';
 
 function capture() {
   const out = [];
@@ -131,6 +143,38 @@ describe('toRequest', () => {
     assert.throws(() => req(['staff', 'grant']), /userId/);
   });
 
+  it('maps the first-admin bootstrap and sign-in link commands', () => {
+    const boot = req(['staff', 'bootstrap', '--email', 'me@example.com', '--name', 'Owner']);
+    assert.equal(boot.method, 'POST');
+    assert.equal(boot.path, '/internal/staff/bootstrap');
+    assert.deepEqual(boot.body, { email: 'me@example.com', displayName: 'Owner' });
+    assert.deepEqual(req(['staff', 'bootstrap', '--email', 'me@example.com']).body, {
+      email: 'me@example.com',
+    });
+    assert.throws(() => req(['staff', 'bootstrap']), /--email/);
+    const link = req(['staff', 'link', 'u1']);
+    assert.deepEqual([link.method, link.path], ['POST', '/internal/staff/u1/link']);
+    assert.throws(() => req(['staff', 'link']), /userId/);
+  });
+
+  it('prints the bootstrap result with the link on its own line', () => {
+    const text = formatStaffLink({
+      userId: 'u1',
+      label: 'Owner#0001',
+      email: 'me@example.com',
+      created: true,
+      role: 'admin',
+      link: 'https://play.example/auth/staff?token=abc',
+      expiresAt: '2026-10-06T09:15:00.000Z',
+    });
+    assert.match(text, /^Created Owner#0001 \(u1\) for me@example.com; role: admin\./);
+    assert.match(text, /\n {2}https:\/\/play\.example\/auth\/staff\?token=abc$/);
+    assert.match(
+      formatStaffLink({ userId: 'u1', role: 'moderator', link: 'x', expiresAt: 't' }),
+      /^Sign-in link for u1/,
+    );
+  });
+
   it('rejects bad usage', () => {
     for (const argv of [
       ['bans', 'add', 'u1'],
@@ -229,6 +273,118 @@ describe('live-ops commands', () => {
     assert.deepEqual(req(['maintenance', 'on', '--for', '15']).body.endsAt, '2026-10-04T12:15:00.000Z');
     assert.deepEqual(req(['maintenance', 'off']), { method: 'DELETE', path: '/internal/maintenance' });
     assert.deepEqual(req(['maintenance', 'status']), { method: 'GET', path: '/status' });
+  });
+
+  it('maps status incident commands', () => {
+    const id = '11111111-2222-4333-8444-555555555555';
+    assert.equal(req(['status', 'summary']).path, '/status/summary');
+    assert.equal(req(['status', 'incident', 'list']).path, '/internal/status/incidents?state=active');
+    assert.equal(req(['status', 'incident', 'list', '--all']).path, '/internal/status/incidents?state=all');
+    assert.deepEqual(
+      req([
+        'status',
+        'incident',
+        'open',
+        '--title',
+        'Queues are slow',
+        '--impact',
+        'major',
+        '--components',
+        'matchmaking, gameservers:eu',
+        '--message',
+        'Looking into it.',
+      ]),
+      {
+        method: 'POST',
+        path: '/internal/status/incidents',
+        body: {
+          title: 'Queues are slow',
+          impact: 'major',
+          status: 'investigating',
+          message: 'Looking into it.',
+          components: ['matchmaking', 'gameservers:eu'],
+        },
+      },
+    );
+    assert.deepEqual(
+      req([
+        'status',
+        'incident',
+        'update',
+        id,
+        '--status',
+        'monitoring',
+        '--message',
+        'Fix out.',
+        '--impact',
+        'minor',
+      ]),
+      {
+        method: 'POST',
+        path: `/internal/status/incidents/${id}/updates`,
+        body: { status: 'monitoring', message: 'Fix out.', impact: 'minor' },
+      },
+    );
+    assert.deepEqual(req(['status', 'incident', 'resolve', id]), {
+      method: 'POST',
+      path: `/internal/status/incidents/${id}/resolve`,
+      body: {},
+    });
+    assert.deepEqual(req(['status', 'incident', 'resolve', id, '--message', 'All good.']).body, {
+      message: 'All good.',
+    });
+    for (const argv of [
+      ['status', 'incident'],
+      ['status', 'incident', 'close', id],
+      ['status', 'incident', 'open', '--title', 'x', '--message', 'y'],
+      ['status', 'incident', 'open', '--title', 'x', '--impact', 'huge', '--message', 'y'],
+      [
+        'status',
+        'incident',
+        'open',
+        '--title',
+        'x',
+        '--impact',
+        'minor',
+        '--status',
+        'resolved',
+        '--message',
+        'y',
+      ],
+      ['status', 'incident', 'update', id, '--message', 'y'],
+      ['status', 'incident', 'update', '--status', 'monitoring', '--message', 'y'],
+      ['status', 'incident', 'resolve'],
+    ])
+      assert.throws(() => req(argv), /./, argv.join(' '));
+  });
+
+  it('prints the status summary and incidents readably', () => {
+    const summary = formatSummary({
+      overall: 'partial_outage',
+      components: [{ name: 'Chat', state: 'major_outage' }],
+      maintenance: { active: null, upcoming: { startsAt: '2026-10-05T18:00:00.000Z' } },
+      incidents: [{ title: 'Chat is down' }],
+    });
+    assert.match(summary, /^Overall: partial_outage/);
+    assert.match(summary, /Chat\s+major_outage/);
+    assert.match(summary, /Maintenance scheduled: 2026-10-05T18:00:00.000Z/);
+    assert.match(summary, /Open incident: Chat is down/);
+    assert.equal(formatIncidents({ incidents: [] }), 'No incidents.');
+    const list = formatIncidents({
+      incidents: [
+        {
+          id: 'i1',
+          title: 'Chat is down',
+          impact: 'critical',
+          status: 'identified',
+          startedAt: '2026-10-05T12:00:00.000Z',
+          components: [],
+          updates: [{ message: 'Redis restarted.' }],
+        },
+      ],
+    });
+    assert.match(list, /^i1\s+identified\s+critical\s+2026-10-05T12:00:00.000Z\s+everything\s+Chat is down/);
+    assert.match(list, /"Redis restarted."/);
   });
 
   it('builds the errors view query', () => {
@@ -380,5 +536,41 @@ describe('loadEnv', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * Every command in the usage text, as the words before its first argument:
+ * `bans list`, `status incident open`, `audit`, …
+ *
+ * @param {string} usage
+ * @returns {string[]}
+ */
+function usageCommands(usage) {
+  const body = usage.slice(usage.indexOf('\n'), usage.indexOf('\nOptions'));
+  const commands = [];
+  for (const line of body.split('\n')) {
+    if (!/^ {2}[a-z]/.test(line)) continue;
+    // Usage text first, then two or more spaces and a description; " | " joins two commands.
+    const syntax = line.trim().split(/\s{2,}/)[0] ?? '';
+    for (const part of syntax.split(/\s+\|\s+(?=[a-z]+ [a-z])/)) {
+      const words = [];
+      for (const w of part.split(/\s+/)) {
+        if (!/^[a-z]+$/.test(w)) break;
+        words.push(w);
+      }
+      if (words.length) commands.push(words.join(' '));
+    }
+  }
+  return [...new Set(commands)];
+}
+
+describe('docs/ADMIN.md', () => {
+  it('documents every command in --help with a pnpm admin example', () => {
+    const doc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../docs/ADMIN.md'), 'utf8');
+    const commands = usageCommands(USAGE);
+    assert.ok(commands.length > 40, `parsed only ${commands.length} commands`);
+    const missing = commands.filter((c) => !doc.includes(`pnpm admin ${c}`));
+    assert.deepEqual(missing, [], `docs/ADMIN.md lacks examples for: ${missing.join(', ')}`);
   });
 });

@@ -15,13 +15,19 @@
  * started after it does not, however late its result arrives.
  *
  * Custom lobbies are recorded (history, stats) but grant nothing, so private
- * lobbies cannot be used to farm rewards or rank.
+ * lobbies cannot be used to farm rewards, rank or club goals.
+ *
+ * Club goals count a member's show for the club they are in when the result
+ * is ingested, in the same transaction, so they are idempotent like the rest.
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { ChallengeMetric } from '../catalog.ts';
+import { recordClubShow, type ClubShowUpdate } from '../clubs/goals.ts';
+import { notifyClub } from '../clubs/service.ts';
 import type { AppContext } from '../context.ts';
 import type { DbOrTx } from '../db/client.ts';
 import {
+  clubMembers,
   matches,
   matchParticipants,
   matchRounds,
@@ -39,6 +45,7 @@ import { recordEventShow, type EventShowUpdate } from '../events/progress.ts';
 import { countingEvents } from '../events/state.ts';
 import { badRequest, isUniqueViolation } from '../http/errors.ts';
 import { recordLeaderboards, RANKED_QUEUE } from '../leaderboards/service.ts';
+import { serverFlag } from '../liveops/state.ts';
 import {
   notifyUnlocks,
   recordAchievementProgress,
@@ -83,6 +90,8 @@ export interface PlayerRewardSummary {
   achievements?: AchievementUnlock[];
   /** Limited-time events this show counted toward. Absent on older stored results. */
   events?: EventShowUpdate[];
+  /** The player's club and its weekly goals this show moved. Absent outside a club. */
+  club?: ClubShowUpdate;
   ranked: {
     rpBefore: number;
     rpAfter: number;
@@ -181,6 +190,7 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
   const liveEvents = grants
     ? await countingEvents(ctx, Math.min(Date.parse(m.startedAt), now.getTime()))
     : [];
+  const clubsOn = grants && (await serverFlag(ctx, 'clubs.enabled'));
   let leaderboardUpdates: Parameters<typeof recordLeaderboards>[1][] = [];
 
   let result: IngestResult;
@@ -257,6 +267,17 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
           : new Map<string, RankedRow>();
       const rewards: PlayerRewardSummary[] = [];
       leaderboardUpdates = [];
+      const humanIds = humans.map((h) => h.userId!);
+      const clubOf = new Map(
+        clubsOn && humanIds.length
+          ? (
+              await tx
+                .select({ userId: clubMembers.userId, clubId: clubMembers.clubId })
+                .from(clubMembers)
+                .where(inArray(clubMembers.userId, humanIds))
+            ).map((r) => [r.userId, r.clubId])
+          : [],
+      );
 
       for (const p of humans) {
         const userId = p.userId!;
@@ -476,6 +497,11 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
             )
           : [];
 
+        const clubId = clubOf.get(userId);
+        const club = clubId
+          ? await recordClubShow(tx, { clubId, userId, rounds: qualified, crowns: pl.crowned ? 1 : 0 }, now)
+          : null;
+
         const rk = ranked.get(userId);
         await tx
           .update(matchParticipants)
@@ -498,6 +524,7 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
           challenges,
           achievements,
           events: eventUpdates,
+          ...(club ? { club } : {}),
           ranked: rk
             ? {
                 rpBefore: rk.rpBefore,
@@ -533,6 +560,21 @@ export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<Inge
   }
 
   for (const u of leaderboardUpdates) await recordLeaderboards(ctx, u, now);
+  const clubGoalsDone = new Map<string, string[]>();
+  for (const r of result.rewards)
+    for (const g of r.club?.goals ?? [])
+      if (g.completed)
+        clubGoalsDone.set(r.club!.clubId, [...(clubGoalsDone.get(r.club!.clubId) ?? []), g.title]);
+  for (const [clubId, titles] of clubGoalsDone) {
+    for (const title of titles)
+      await notifyClub(ctx, clubId, {
+        type: 'notification',
+        kind: 'reward',
+        title: 'Club goal complete!',
+        body: title,
+      });
+    await notifyClub(ctx, clubId, { type: 'club_update', clubId });
+  }
   for (const r of result.rewards) {
     await ctx.notifier.notifyUser(r.userId, { type: 'wallet', ...r.wallet });
     for (const g of r.gems?.lines ?? []) {

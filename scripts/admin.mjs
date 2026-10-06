@@ -21,7 +21,7 @@ export const USAGE = `Usage: pnpm admin <command> [options]
 
 Bans
   bans list [--user <userId>] [--all] [--limit N]   active bans (--all includes expired/revoked)
-  bans add <userId> --reason <text> [--scope all|ranked|chat] [--hours N]
+  bans add <userId> --reason <text> [--scope all|ranked|chat|voice] [--hours N]
   bans remove <banId>
 Reports
   reports list                                      open reports, oldest first
@@ -46,6 +46,14 @@ Maintenance
   maintenance status
   maintenance on [--message <text>] [--in <minutes> | --starts <time>] [--for <minutes> | --ends <time>]
   maintenance off
+Status page (https://DOMAIN/status; incident text is public plain text)
+  status summary                                    what the public page shows right now
+  status incident list [--all]                      open incidents (--all includes resolved)
+  status incident open --title <text> --impact minor|major|critical --message <text>
+                       [--components api,chat,...] [--status investigating|identified|monitoring]
+  status incident update <id> --status investigating|identified|monitoring|resolved --message <text>
+                       [--impact minor|major|critical] [--components api,chat,...]
+  status incident resolve <id> [--message <text>]
 Errors
   errors top [--hours N] [--limit N] [--server]     most frequent client (or server) errors
 Economy
@@ -58,6 +66,9 @@ Users
   user lookup <userId | name#1234 | email | name>
   user rename <userId> <new display name>
 Admin console (staff accounts sign in at https://DOMAIN/admin)
+  staff bootstrap --email <address> [--name <name>]   first admin: find or create the account, make it
+                                                      admin, print a one-time sign-in link (15 min)
+  staff link <userId>                                 a new one-time sign-in link for a staff account
   staff list
   staff grant <userId> [--role admin|moderator]       the account must not be a guest
   staff revoke <userId>
@@ -162,6 +173,115 @@ function intOpt(q, opts, name) {
   const n = Number(opts[name]);
   if (!(Number.isInteger(n) && n > 0)) throw new UsageError(`--${name} must be a positive integer`);
   q.set(name, String(n));
+}
+
+const IMPACTS = ['minor', 'major', 'critical'];
+const INCIDENT_STATUSES = ['investigating', 'identified', 'monitoring', 'resolved'];
+
+function choiceOpt(opts, name, choices, fallback) {
+  const v = opts[name] ?? fallback;
+  if (v === undefined) return undefined;
+  if (!choices.includes(v)) throw new UsageError(`--${name} must be one of ${choices.join(', ')}`);
+  return v;
+}
+
+function textOpt(opts, name) {
+  return typeof opts[name] === 'string' && opts[name].trim() ? opts[name].trim() : undefined;
+}
+
+function componentsOpt(opts) {
+  if (opts.components === undefined) return undefined;
+  if (opts.components === true) throw new UsageError('--components needs a value');
+  return String(opts.components)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** `status incident <sub> …` → request. */
+function incidentRequest(sub, rest, opts) {
+  const base = '/internal/status/incidents';
+  switch (sub) {
+    case 'list':
+      return { method: 'GET', path: `${base}?state=${opts.all ? 'all' : 'active'}`, format: formatIncidents };
+    case 'open': {
+      const components = componentsOpt(opts);
+      return {
+        method: 'POST',
+        path: base,
+        body: {
+          title: need(textOpt(opts, 'title'), '--title'),
+          impact: need(choiceOpt(opts, 'impact', IMPACTS), '--impact'),
+          status: choiceOpt(opts, 'status', INCIDENT_STATUSES.slice(0, 3), 'investigating'),
+          message: need(textOpt(opts, 'message'), '--message'),
+          ...(components ? { components } : {}),
+        },
+      };
+    }
+    case 'update': {
+      const components = componentsOpt(opts);
+      const impact = choiceOpt(opts, 'impact', IMPACTS);
+      return {
+        method: 'POST',
+        path: `${base}/${enc(need(rest[0], '<incidentId>'))}/updates`,
+        body: {
+          status: need(choiceOpt(opts, 'status', INCIDENT_STATUSES), '--status'),
+          message: need(textOpt(opts, 'message'), '--message'),
+          ...(impact ? { impact } : {}),
+          ...(components ? { components } : {}),
+        },
+      };
+    }
+    case 'resolve': {
+      const message = textOpt(opts, 'message');
+      return {
+        method: 'POST',
+        path: `${base}/${enc(need(rest[0], '<incidentId>'))}/resolve`,
+        body: message ? { message } : {},
+      };
+    }
+    default:
+      throw new UsageError(
+        sub
+          ? `unknown command: status incident ${sub}`
+          : 'status incident needs open, update, resolve or list',
+      );
+  }
+}
+
+/**
+ * Renders `status summary` for a terminal.
+ *
+ * @param {{ overall: string, components: { name: string, state: string }[],
+ *   maintenance: { active: { message: string } | null, upcoming: { startsAt: string | null } | null },
+ *   incidents: { title: string }[] }} body
+ * @returns {string}
+ */
+export function formatSummary(body) {
+  const lines = [`Overall: ${body.overall}`];
+  for (const c of body.components ?? []) lines.push(`  ${c.name.padEnd(32)} ${c.state}`);
+  if (body.maintenance?.active) lines.push(`Maintenance now: ${body.maintenance.active.message}`);
+  if (body.maintenance?.upcoming) lines.push(`Maintenance scheduled: ${body.maintenance.upcoming.startsAt}`);
+  for (const i of body.incidents ?? []) lines.push(`Open incident: ${i.title}`);
+  return lines.join('\n');
+}
+
+/**
+ * Renders `status incident list` for a terminal: one line per incident, then its latest update.
+ *
+ * @param {{ incidents: { id: string, title: string, impact: string, status: string, startedAt: string,
+ *   components: string[], updates: { message: string }[] }[] }} body
+ * @returns {string}
+ */
+export function formatIncidents(body) {
+  if (!body.incidents?.length) return 'No incidents.';
+  const lines = [];
+  for (const i of body.incidents) {
+    const where = i.components.length ? i.components.join(',') : 'everything';
+    lines.push(`${i.id}  ${i.status.padEnd(13)} ${i.impact.padEnd(8)} ${i.startedAt}  ${where}  ${i.title}`);
+    if (i.updates[0]) lines.push(`    "${i.updates[0].message}"`);
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -321,6 +441,10 @@ export function toRequest(args, opts, readFile = (f) => readFileSync(f, 'utf8'),
     }
     case 'maintenance off':
       return { method: 'DELETE', path: '/internal/maintenance' };
+    case 'status summary':
+      return { method: 'GET', path: '/status/summary', format: formatSummary };
+    case 'status incident':
+      return incidentRequest(a, rest, opts);
     case 'errors top': {
       const q = new URLSearchParams();
       intOpt(q, opts, 'hours');
@@ -365,6 +489,22 @@ export function toRequest(args, opts, readFile = (f) => readFileSync(f, 'utf8'),
         path: `/internal/refunds/${enc(need(a, '<refundId>'))}/deny`,
         body: { reason: need(typeof opts.reason === 'string' ? opts.reason : '', '--reason') },
       };
+    case 'staff bootstrap': {
+      const email = need(textOpt(opts, 'email'), '--email');
+      const name = textOpt(opts, 'name');
+      return {
+        method: 'POST',
+        path: '/internal/staff/bootstrap',
+        body: { email, ...(name ? { displayName: name } : {}) },
+        format: formatStaffLink,
+      };
+    }
+    case 'staff link':
+      return {
+        method: 'POST',
+        path: `/internal/staff/${enc(need(a, '<userId>'))}/link`,
+        format: formatStaffLink,
+      };
     case 'staff list':
       return { method: 'GET', path: '/internal/staff' };
     case 'staff grant': {
@@ -403,6 +543,32 @@ export function formatErrors(body) {
     lines.push(`${String(e.occurrences).padStart(7)}x  ${e.type}: ${e.message}`);
     lines.push(`          ${who}${release} · last ${e.lastSeen}`);
   }
+  return lines.join('\n');
+}
+
+/**
+ * Renders `staff bootstrap` and `staff link`: who the link signs in, and the link.
+ *
+ * @param {{ userId: string, label?: string | null, email?: string, created?: boolean, role: string,
+ *   link: string, expiresAt: string }} body
+ * @returns {string}
+ */
+export function formatStaffLink(body) {
+  const lines = [];
+  if (body.email !== undefined) {
+    const who = body.label ? `${body.label} (${body.userId})` : body.userId;
+    lines.push(`${body.created ? 'Created' : 'Found'} ${who} for ${body.email}; role: ${body.role}.`);
+  } else {
+    lines.push(`Sign-in link for ${body.userId} (${body.role}).`);
+  }
+  lines.push(
+    '',
+    'Open this link in the browser you will administer from. It works once, until',
+    `${body.expiresAt}, and signs that browser in to the game; then open /admin.`,
+    'Do not share it: anyone holding it can act as this account.',
+    '',
+    `  ${body.link}`,
+  );
   return lines.join('\n');
 }
 

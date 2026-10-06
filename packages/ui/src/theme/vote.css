@@ -1,0 +1,241 @@
+/*
+ * Between-rounds round vote (SCREENS.md §9.11a): a sticker panel docked over
+ * the results wall, one card per candidate, then the winner reveal.
+ */
+
+.tr-vote {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--safe-b) + 5.4em);
+  width: min(46em, calc(100% - 2em));
+  transform: translateX(-50%);
+  display: grid;
+  gap: 0.6em;
+  padding: 0.9em 1em 0.8em;
+  background: linear-gradient(180deg, var(--cloud) 0%, var(--cream) 60%, #ffeedd 100%);
+  border: var(--outline) solid var(--ink);
+  border-radius: var(--rad-lg);
+  box-shadow: var(--shadow-hard), var(--shadow-soft);
+  z-index: 21;
+  animation: tr-vote-in 520ms var(--ease-spring) backwards;
+}
+@keyframes tr-vote-in {
+  from {
+    transform: translate(-50%, 2em) scale(0.92);
+    opacity: 0;
+  }
+}
+
+.tr-vote-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6em;
+}
+.tr-vote-timer {
+  font-variant-numeric: tabular-nums;
+  min-width: 3.6em;
+  justify-content: center;
+}
+
+.tr-vote-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  grid-auto-flow: column;
+  gap: 0.6em;
+}
+
+.tr-vote-card {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto auto 1fr auto auto;
+  justify-items: start;
+  gap: 0.3em;
+  min-width: 0;
+  padding: 0.55em 0.6em 0.6em;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  background: var(--cloud);
+  border: var(--outline) solid var(--ink);
+  border-radius: var(--rad-md);
+  box-shadow: 0 0.22em 0 var(--ink);
+  cursor: pointer;
+  transition:
+    transform 160ms var(--ease-spring),
+    box-shadow 160ms ease,
+    opacity 200ms ease,
+    filter 200ms ease;
+}
+.tr-vote-card:not(:disabled):hover,
+.tr-vote-card:focus-visible {
+  transform: translateY(-0.15em);
+  outline: 0.2em solid var(--lemon);
+  outline-offset: 0.12em;
+}
+.tr-vote-card:disabled {
+  cursor: default;
+}
+.tr-vote-card.is-mine {
+  background: linear-gradient(180deg, #fff6c8, var(--cloud));
+  box-shadow:
+    0 0 0 0.24em var(--lemon),
+    0 0.22em 0 var(--ink);
+}
+.tr-vote-card.is-winner {
+  background: linear-gradient(180deg, #fff1b0, #ffe680);
+  box-shadow:
+    0 0 0 0.3em var(--lemon),
+    0 0.3em 0 var(--ink);
+  animation: tr-vote-win 560ms var(--ease-spring-snappy);
+}
+.tr-vote-card.is-out {
+  opacity: 0.55;
+  filter: saturate(0.5);
+}
+@keyframes tr-vote-win {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.08) rotate(-1.5deg);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.tr-vote-thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 7;
+  border-radius: calc(var(--rad-md) - 0.3em);
+  background:
+    radial-gradient(circle at 70% 30%, rgba(255, 255, 255, 0.45), transparent 55%),
+    linear-gradient(135deg, var(--vote-a), var(--vote-b));
+  border: 0.12em solid var(--ink);
+  color: var(--cloud);
+  filter: drop-shadow(0 0.1em 0 rgba(43, 26, 94, 0.35));
+}
+.tr-vote-key {
+  position: absolute;
+  top: 0.25em;
+  left: 0.3em;
+  min-width: 1.4em;
+  padding: 0 0.3em;
+  border-radius: 0.4em;
+  background: var(--ink);
+  color: var(--cloud);
+  font-family: var(--font-display);
+  font-size: 0.8em;
+  line-height: 1.4em;
+  text-align: center;
+}
+.tr-vote-badge {
+  font-size: 0.75em;
+}
+.tr-vote-name {
+  max-width: 100%;
+  font-family: var(--font-display);
+  font-size: 1.15em;
+  line-height: 1.1;
+}
+.tr-vote-goal {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.82em;
+  line-height: 1.25;
+  color: var(--ink-soft);
+}
+.tr-vote-bar {
+  width: 100%;
+  height: 0.5em;
+  border-radius: 999px;
+  background: rgba(43, 26, 94, 0.12);
+  overflow: hidden;
+}
+.tr-vote-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--type, var(--sky));
+  transition: width 260ms ease;
+}
+.tr-vote-count {
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+.tr-vote-mine,
+.tr-vote-won {
+  position: absolute;
+  top: -0.7em;
+  right: 0.5em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  padding: 0.1em 0.5em;
+  border: 0.12em solid var(--ink);
+  border-radius: 999px;
+  background: var(--lemon);
+  font-size: 0.75em;
+  font-weight: 700;
+}
+.tr-vote-won {
+  background: var(--tangerine);
+  color: var(--cloud);
+}
+.tr-vote-card.is-winner .tr-vote-mine {
+  display: none;
+}
+
+.tr-vote-foot {
+  margin: 0;
+  text-align: center;
+  color: var(--ink-soft);
+}
+
+/* Phones and portrait: stack the cards as rows (swatch left, words right). */
+@media (max-width: 760px), (orientation: portrait) {
+  .tr-vote {
+    bottom: calc(var(--safe-b) + 4.6em);
+    width: calc(100% - 1.2em);
+    padding: 0.7em 0.7em 0.6em;
+  }
+  .tr-vote-cards {
+    grid-auto-flow: row;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.45em;
+  }
+  .tr-vote-card {
+    grid-template-columns: 4.2em minmax(0, 1fr) auto;
+    grid-template-rows: auto auto auto;
+    align-items: center;
+    column-gap: 0.6em;
+    row-gap: 0.15em;
+    min-height: 3.2em;
+  }
+  .tr-vote-thumb {
+    grid-row: 1 / span 3;
+    aspect-ratio: 1;
+  }
+  .tr-vote-badge {
+    grid-column: 2;
+  }
+  .tr-vote-name {
+    grid-column: 2;
+  }
+  .tr-vote-goal {
+    display: none;
+  }
+  .tr-vote-bar {
+    grid-column: 2;
+  }
+  .tr-vote-count {
+    grid-column: 3;
+    grid-row: 1 / span 3;
+  }
+}

@@ -7,6 +7,8 @@ import { consoleLogger, installLifecycle } from '@tumble/shared/lifecycle';
 import { startInternalMetrics } from '@tumble/shared/metrics';
 import { buildApp } from './app.ts';
 import { SmtpMailer } from './auth/mailer.ts';
+import { OAUTH_PROVIDERS, providerEnabled, providerLabel } from './auth/oauth.ts';
+import { seedDevAdmin } from './staff/bootstrap.ts';
 import { loadConfig } from './config.ts';
 import type { AppContext } from './context.ts';
 import { recordServerError } from './liveops/routes.ts';
@@ -43,15 +45,19 @@ if (config.env === 'production' && built.database.driver === 'pglite') {
       'and back up PGLITE_DIR while the API is stopped. !!!',
   );
 }
-if (!config.discord) app.log.info('Discord sign-in disabled (DISCORD_CLIENT_ID/SECRET unset)');
-if (!config.google) app.log.info('Google sign-in disabled (GOOGLE_CLIENT_ID/SECRET unset)');
+const signIn = OAUTH_PROVIDERS.filter((p) => providerEnabled(config, p)).map(providerLabel);
+app.log.info(`OAuth sign-in: ${signIn.length ? signIn.join(', ') : 'none configured'}`);
 if (built.ctx.mailer instanceof SmtpMailer) {
   // A bad relay only breaks email sign-in, so boot anyway but say so loudly.
   void built.ctx.mailer.verify().catch((err: unknown) => app.log.error({ err }, 'SMTP relay check failed'));
 } else if (built.ctx.mailer.id === 'disabled') {
   app.log.info('Email sign-in disabled (SMTP_URL unset)');
 }
-if (!config.stripe) app.log.info('Stripe disabled: Gem checkouts complete instantly via the fake provider');
+if (built.ctx.payments.id === 'fake') {
+  app.log.info('Stripe disabled: Gem checkouts complete instantly via the fake provider');
+} else if (built.ctx.payments.id === 'disabled') {
+  app.log.info('Stripe disabled: Gem checkout is off (set STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET)');
+}
 
 await app.listen({ host: config.host, port: config.port });
 const { internalPort, internalHost } = config.ops.metrics;
@@ -69,3 +75,9 @@ if (internalPort !== undefined) {
 app.log.info(
   `[api] ${built.database.driver} | ${config.redisUrl ? 'redis' : 'memory kv'} | listening on :${config.port}`,
 );
+if (config.devAdminEmail) {
+  await seedDevAdmin(built.ctx, {
+    info: (m) => app.log.info(m),
+    warn: (m) => app.log.warn(m),
+  }).catch((err: unknown) => app.log.error({ err }, '[dev] admin seed failed'));
+}

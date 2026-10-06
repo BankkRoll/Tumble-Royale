@@ -14,10 +14,15 @@ import type { DbOrTx } from '../db/client.ts';
 import { bans, playerWarnings, reports, users } from '../db/schema.ts';
 import { invalidateBanCache } from '../http/auth.ts';
 import { notFound } from '../http/errors.ts';
+import { endVoiceForSanction } from '../voice/service.ts';
 import { revokeMarks } from './ban-evasion.ts';
 
-/** Ban scopes: `all` suspends the account, `ranked` blocks ranked queues, `chat` mutes. */
-export const BAN_SCOPES = ['all', 'ranked', 'chat'] as const;
+/**
+ * Ban scopes: `all` suspends the account, `ranked` blocks ranked queues,
+ * `chat` mutes text chat, `voice` mutes voice chat. The two mutes are
+ * independent so a moderator can take away one channel and leave the other.
+ */
+export const BAN_SCOPES = ['all', 'ranked', 'chat', 'voice'] as const;
 
 /** A ban scope. */
 export type BanScope = (typeof BAN_SCOPES)[number];
@@ -28,8 +33,8 @@ export const MAX_SANCTION_HOURS = 24 * 365 * 10;
 /** A sanction to apply. */
 export interface SanctionInput {
   userId: string;
-  /** `warn` records a strike only; `mute` is a `chat` ban; `ban` an `all` ban. */
-  kind: 'warn' | 'mute' | 'ban' | 'ranked_ban';
+  /** `warn` records a strike only; `mute` is a `chat` ban, `voice_mute` a `voice` ban; `ban` an `all` ban. */
+  kind: 'warn' | 'mute' | 'voice_mute' | 'ban' | 'ranked_ban';
   reason: string;
   /** Hours until it lapses; omitted means permanent (warnings never lapse). */
   durationHours?: number | undefined;
@@ -54,6 +59,7 @@ export interface AppliedSanction {
 
 const SCOPE: Record<Exclude<SanctionInput['kind'], 'warn'>, BanScope> = {
   mute: 'chat',
+  voice_mute: 'voice',
   ban: 'all',
   ranked_ban: 'ranked',
 };
@@ -106,8 +112,9 @@ export async function applySanction(tx: DbOrTx, now: Date, input: SanctionInput)
 
 /**
  * Makes a committed sanction take effect everywhere and tells the player:
- * every API instance drops its cached ban state, and an online player gets a
- * notification (a suspended player's next request is refused anyway).
+ * every API instance drops its cached ban state, a voice mute or suspension
+ * ends the player's voice session (their peers are told at once), and an
+ * online player gets a notification (a suspended player's next request is refused anyway).
  *
  * @param ctx - Shared services.
  * @param s - What {@link applySanction} returned.
@@ -121,9 +128,13 @@ export async function announceSanction(ctx: AppContext, s: AppliedSanction, reas
       ? 'Warning from the moderators'
       : s.kind === 'mute'
         ? `Chat disabled${until}`
-        : s.kind === 'ranked_ban'
-          ? `Ranked disabled${until}`
-          : `Account suspended${until}`;
+        : s.kind === 'voice_mute'
+          ? `Voice chat disabled${until}`
+          : s.kind === 'ranked_ban'
+            ? `Ranked disabled${until}`
+            : `Account suspended${until}`;
+  if (s.kind === 'voice_mute' || s.kind === 'ban')
+    await endVoiceForSanction(ctx, s.userId, s.kind === 'ban' ? 'banned' : 'muted');
   await ctx.notifier.notifyUser(s.userId, { type: 'notification', kind: 'warning', title, body: reason });
 }
 

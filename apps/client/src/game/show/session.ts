@@ -9,6 +9,12 @@
  * - swaps 3D views while the Tumble Wipe covers the screen;
  * - owns the round view, HUD mapper, gameplay input (look, emote wheel,
  *   spectate cycling), local fate stamps, slow-mo and the autoplay pilot;
+ * - hands spectating to a {@link SpectatorController} (free / overview /
+ *   director cameras, roster, pin, broadcast overlay) through a small host;
+ * - mirrors the between-rounds round vote onto the vote card and sends the
+ *   local player's ballot through {@link sendVote};
+ * - notes the local player's knock-out and plays "How you went out" before
+ *   the watch choice ({@link SessionElimination});
  * - builds the end-of-show recap for the wall and the rewards payload.
  *
  * Subclasses supply the data (director events or server messages) through the
@@ -28,6 +34,7 @@ import { getMutator } from '@tumble/sim/mutators';
 import type { ShowPlaylist } from '@tumble/sim/show';
 import {
   bindUI,
+  clubs,
   keyboardBusy,
   padButtonLabel,
   social,
@@ -62,13 +69,17 @@ import {
   type PreShowView,
 } from '../views/ceremonies.ts';
 import type { GameContext, RoundOutcomeInfo, RoundStart, SessionPlayer, SessionSummary } from './context.ts';
+import { acceptsLocalVote, roundVoteState, type SessionVote, type SessionVoteResult } from './vote.ts';
+import { SessionElimination, eliminationFacts } from './elimination.ts';
 import { wonShow } from './crown.ts';
 import { showMenuKeyAction } from '../inputRouting.ts';
 import { withEventNote } from '../liveEvents.ts';
 import { FpsSampler, track } from '../liveOps/analytics.ts';
-import { padSpectateButtons } from '../bindings.ts';
+import { SpectatorController, type SpectatorHost, type SpectatorRound } from '../spectate/controller.ts';
+import type { DirectorPlayer, DirectorRoundKind } from '../spectate/director.ts';
+import type { RosterPlayer } from '../spectate/roster.ts';
+import { createPlayerSample } from '../round/source.ts';
 import {
-  SpectatePadCycler,
   afterRoundResults,
   cycleSpectateIndex,
   planAfterEliminated,
@@ -128,6 +139,17 @@ function spectateStatusOf(status: number | undefined): SpectateStatus | undefine
   if (status === PlayerRoundStatus.Qualified) return 'qualified';
   if (status === PlayerRoundStatus.Eliminated) return 'eliminated';
   return 'playing';
+}
+
+/**
+ * 1-based places from a standings order. The offline sim reports no place
+ * for players still racing, so the spectator roster and director fall back
+ * to where the standings put them.
+ */
+function standingsPlaces(order: readonly number[] | null | undefined): Map<number, number> {
+  const out = new Map<number, number>();
+  order?.forEach((id, i) => out.set(id, i + 1));
+  return out;
 }
 
 /** Short key name for a `KeyboardEvent.code` in hints. */
@@ -244,6 +266,8 @@ export abstract class ShowSession {
   /** Set while a UI card holds the show clock (offline only honours it). */
   private holds = 0;
   private flowClock = 0;
+  /** `performance.now()` of the previous frame, or -1 before the first. */
+  private lastFrameAt = -1;
   private timers: { at: number; fn: () => void }[] = [];
   private readonly covered = new Map<ScreenId, () => void>();
   private readonly offs: (() => void)[] = [];
@@ -283,11 +307,20 @@ export abstract class ShowSession {
   private spectatorSeat = false;
   /** The watch choice holds the (offline) show clock. */
   private choiceHeld = false;
-  private readonly padCycler = new SpectatePadCycler();
   private spectateRefresh = 0;
+  /** Free / overview / director cameras, roster and broadcast tools. */
+  private readonly spectator: SpectatorController;
+  /** The live round as the spectator controller sees it (rebuilt when the view changes). */
+  private spectatorRound: SpectatorRound | null = null;
+  /** Who the server was last told this client watches (-1: a free camera; -2: nothing yet this round). */
+  private serverTarget = -2;
+  private readonly directorSample = createPlayerSample();
+  /** "How you went out": the online tape and the knock-out waiting for its replay. */
+  private readonly elim: SessionElimination;
 
   constructor(protected readonly ctx: GameContext) {
     this.pool = new TumblerPool(ctx.tumblers.create);
+    this.elim = new SessionElimination(ctx.eliminations, this.isOnline());
     this.chat = new ShowChat(
       {
         localId: () => this.localId,
@@ -309,8 +342,14 @@ export abstract class ShowSession {
     ui.getState().resetShowScreens();
     ui.getState().setShowSeat({ online: this.isOnline(), outOfShow: false });
     ui.getState().setWatchChoice(null);
+    this.spectator = new SpectatorController(this.spectatorHost());
     this.offs.push(
       bindUI({
+        onSpectatorCamera: ({ mode }) =>
+          mode === 'next' ? this.spectator.act('camera') : this.spectator.setMode(mode),
+        onSpectatorFollow: ({ id }) => this.spectator.follow(id),
+        onSpectatorPin: ({ id }) => this.spectator.pin(id),
+        onBroadcastToggle: ({ what, on }) => this.spectator.toggle(what, on),
         onTransitionCovered: ({ to }) => {
           const fn = this.covered.get(to);
           if (fn) {
@@ -320,6 +359,7 @@ export abstract class ShowSession {
         },
         onSpectate: () => this.keepWatching(),
         onSpectateNext: ({ dir }) => this.cycleSpectate(dir),
+        onCastVote: ({ roundIndex, option }) => this.castLocalVote(roundIndex, option),
         onEmote: ({ slot }) => {
           this.pendingEmote = Math.min(4, slot + 1);
           this.counters.emotes = (this.counters.emotes ?? 0) + 1;
@@ -385,6 +425,23 @@ export abstract class ShowSession {
 
   /** The spectated player changed (online: tell the server for interest management). */
   protected onSpectateTarget(_id: number): void {}
+
+  /**
+   * A spectator camera that follows nobody looks at a new point (online:
+   * the server's interest management centres on it).
+   *
+   * @param _focus - World point, whole metres.
+   */
+  protected onSpectatorFocus(_focus: [number, number, number]): void {}
+
+  /**
+   * Delivers the local player's round-vote ballot (offline: the director;
+   * online: `castVote` to the server).
+   *
+   * @param _roundIndex - Round the ballot is for.
+   * @param _option - Option index.
+   */
+  protected sendVote(_roundIndex: number, _option: number): void {}
 
   /** True when a subclass drives the pre-show join feed from real joins (online live lobby). */
   protected liveJoinFeed(): boolean {
@@ -534,7 +591,14 @@ export abstract class ShowSession {
    */
   frame(dt: number, realDt: number): void {
     if (this.ended) return;
-    this.flowClock += realDt * this.flowScale;
+    const now = performance.now();
+    // The app clamps realDt to 0.1 s, so below 10 fps the flow clock runs slow.
+    // Offline the show waits for this player anyway; online the server does not,
+    // and a slow device (software rendering, a busy laptop) would sit through
+    // cards while its round was already being played. Online cards keep wall time.
+    const flowDt = this.isOnline() && this.lastFrameAt >= 0 ? (now - this.lastFrameAt) / 1000 : realDt;
+    this.lastFrameAt = now;
+    this.flowClock += flowDt * this.flowScale;
     if (this.liftWipeIn > 0 && --this.liftWipeIn === 0) this.liftLoadingWipe();
     this.runTimers();
     this.toastTokens = Math.min(4, this.toastTokens + realDt * 3);
@@ -604,6 +668,8 @@ export abstract class ShowSession {
     if (document.pointerLockElement) document.exitPointerLock();
     this.ctx.input.settings.pointerLock = false;
     this.ctx.replays?.roundEnded(null);
+    this.elim.reset();
+    this.ctx.eliminations?.stop();
     ui.setState({ cameraLock: 'off' });
     ui.getState().setEmoteWheel(false);
     ui.getState().setSpectate(null);
@@ -611,6 +677,7 @@ export abstract class ShowSession {
     ui.getState().setEliminatedSheet(false);
     ui.getState().setWatchChoice(null);
     ui.getState().setShowSeat(null);
+    this.spectator.dispose();
     this.onDispose();
     // The round view on screen may still render pooled Tumblers until the next wipe swaps it out.
     const pool = this.pool;
@@ -811,6 +878,69 @@ export abstract class ShowSession {
   }
 
   // ---------------------------------------------------------------------------
+  // Round vote
+  // ---------------------------------------------------------------------------
+
+  /**
+   * A ballot for the next round opened (or was re-offered after a reconnect).
+   *
+   * @param v - The ballot.
+   */
+  protected onVoteOpen(v: SessionVote): void {
+    const scale = this.isOnline() ? 1 : Math.max(0.01, this.ctx.cfg.timeScale);
+    ui.getState().setRoundVote(roundVoteState(v, Date.now(), scale));
+    if (v.canVote && v.myVote < 0)
+      this.ctx.audio.game.announcer.sayText(v.isFinal ? 'Vote for the final!' : 'Vote for the next round!');
+  }
+
+  /**
+   * Ballots changed.
+   *
+   * @param roundIndex - Round the ballot is for.
+   * @param counts - Ballots per option.
+   * @param voted - Ballots cast.
+   */
+  protected onVoteTally(roundIndex: number, counts: readonly number[], voted: number): void {
+    const cur = ui.getState().roundVote;
+    if (!cur || cur.roundIndex !== roundIndex || cur.result) return;
+    ui.getState().patchRoundVote({ counts: [...counts], voted });
+  }
+
+  /**
+   * The ballot closed: reveal the winner on the card (null: called off).
+   *
+   * @param roundIndex - Round the ballot was for.
+   * @param r - The result, or null when the vote was called off.
+   */
+  protected onVoteResult(roundIndex: number, r: SessionVoteResult | null): void {
+    const s = ui.getState();
+    const cur = s.roundVote;
+    if (!cur || cur.roundIndex !== roundIndex) return;
+    if (!r || r.winner < 0 || r.winner >= cur.options.length) {
+      s.setRoundVote(null);
+      return;
+    }
+    s.patchRoundVote({
+      counts: [...r.counts],
+      voted: r.counts.reduce((a, b) => a + b, 0),
+      result: { winner: r.winner, reason: r.reason },
+    });
+    const name = cur.options[r.winner]?.name;
+    if (name) this.ctx.audio.game.announcer.sayText(`Next up: ${name}!`);
+  }
+
+  /** The vote card's click/tap/key: checks it can count, marks it at once and sends it. */
+  private castLocalVote(roundIndex: number, option: number): void {
+    const s = ui.getState();
+    const cur = s.roundVote;
+    if (!acceptsLocalVote(cur, roundIndex, option)) return;
+    const changed = (cur?.myVote ?? -1) >= 0;
+    s.patchRoundVote({ myVote: option });
+    track('vote.cast', { round: roundIndex, option, changed, online: this.isOnline() });
+    this.sendVote(roundIndex, option);
+  }
+
+  // ---------------------------------------------------------------------------
   // Round lifecycle
   // ---------------------------------------------------------------------------
 
@@ -823,6 +953,7 @@ export abstract class ShowSession {
   protected onRoundSelected(rs: RoundStart): void {
     const prevEntrants = this.round?.start.players.length ?? this.order.length;
     this.fpsSampler.take();
+    this.elim.reset();
     if (rs.players.some((p) => p.id === this.localId))
       track('round_start', { round: rs.round.id, index: rs.index, final: rs.isFinal });
     this.round = {
@@ -845,12 +976,19 @@ export abstract class ShowSession {
       spectateId: -1,
       playingSince: 0,
     };
+    this.serverTarget = -2;
     this.roundCount = Math.max(this.roundCount, rs.index + 1);
     if (rs.isFinal) this.roundCount = rs.index + 1;
     this.phase = RoundPhase.Loading;
     this.hold();
     const s = ui.getState();
     const roundType: RoundType = rs.isFinal ? 'final' : rs.round.type;
+    const vote = s.roundVote;
+    const voted =
+      !!vote?.result &&
+      vote.roundIndex === rs.index &&
+      vote.options[vote.result.winner]?.roundId === rs.round.id;
+    s.setRoundVote(null);
     let wait: number;
     if (rs.index === 0) {
       s.setShowIntro({ showName: this.showName, roundIndex: 0, roundCount: this.roundCount });
@@ -862,7 +1000,7 @@ export abstract class ShowSession {
         remaining: rs.players.length,
         roundIndex: rs.index - 1,
         roundCount: this.roundCount,
-        next: { name: rs.round.name, type: roundType, isFinal: rs.isFinal },
+        next: { name: rs.round.name, type: roundType, isFinal: rs.isFinal, ...(voted ? { voted } : {}) },
       });
       s.setScreen('betweenRounds', { transition: 'fade' });
       wait = 3.8;
@@ -1197,12 +1335,17 @@ export abstract class ShowSession {
         if (!r.inRound) {
           r.fate = 'spectating';
           this.spectateLeader();
+          this.spectator.goLive();
           // Online the show doesn't wait for an unanswered watch choice; keep offering it in the round.
           if (ui.getState().watchChoice) s.setEliminatedSheet(true);
         } else r.view?.followLocal();
         s.setScreen('round', { transition: 'fade' });
         if (!set.gameplay.showPing) s.setHud({ ping: -1 });
-        if (r.source) this.ctx.replays?.roundStarted(this.replayInfo(r), r.source, r.view);
+        if (r.source) {
+          const info = this.replayInfo(r);
+          this.ctx.replays?.roundStarted(info, r.source, r.view);
+          this.elim.roundStarted(info, r.source);
+        }
         break;
       }
       case RoundPhase.Playing:
@@ -1273,6 +1416,7 @@ export abstract class ShowSession {
     this.ctx.replays?.roundEnded({ qualified: o.qualified, eliminated: o.eliminated });
     const s = ui.getState();
     s.clearStamps();
+    this.spectator.goQuiet();
     s.setSpectate(null);
     s.setEliminatedSheet(false);
     s.setResults({
@@ -1316,6 +1460,12 @@ export abstract class ShowSession {
         r.source = null;
       }
     });
+    // Knocked out at the end of the round (the cut, the team result, the clock): the replay
+    // plays over the results wall, which never waits for it.
+    if (r.inRound && !qualified.has(this.localId)) {
+      this.elim.knockedOut(rs.index, this.knockoutFacts(r));
+      this.playElimination(true);
+    }
     this.ctx.audio.game.onRoundPhase(RoundPhase.Results, rs.round.type, {
       playersRemaining: o.qualified.length,
       theme: rs.round.theme,
@@ -1360,6 +1510,7 @@ export abstract class ShowSession {
     if (this.outOfShow) return;
     this.outOfShow = true;
     ui.getState().setShowSeat({
+      ...ui.getState().showSeat,
       online: this.isOnline(),
       outOfShow: true,
       ...(this.spectatorSeat ? { spectator: true } : {}),
@@ -1374,7 +1525,13 @@ export abstract class ShowSession {
   protected markSpectatorSeat(): void {
     if (this.spectatorSeat) return;
     this.spectatorSeat = true;
-    ui.getState().setShowSeat({ online: this.isOnline(), outOfShow: this.outOfShow, spectator: true });
+    this.spectator.enableBroadcastSeat();
+    ui.getState().setShowSeat({
+      ...ui.getState().showSeat,
+      online: this.isOnline(),
+      outOfShow: this.outOfShow,
+      spectator: true,
+    });
   }
 
   /**
@@ -1485,17 +1642,20 @@ export abstract class ShowSession {
     for (const e of events) {
       view?.handleEvent(e);
       this.ctx.replays?.event(e);
+      this.elim.event(e);
       if (audio) this.ctx.audio.game.handleSimEvent(e, lp);
       const cue = this.haptics.map(e, this.localId);
       if (cue && rumble && this.hapticGate.allow(cue.kind, now)) this.ctx.input.rumble(cue.pattern);
       const mine = 'player' in e && e.player === this.localId;
       switch (e.type) {
         case 'qualified':
+          this.spectator.note({ kind: 'qualified', id: e.player });
           if (mine) this.localQualified();
           else if (r && r.start.round.type === 'race')
             this.toast(`${this.publicName(e.player)} qualified!`, '🏁', e.player);
           break;
         case 'eliminated':
+          this.spectator.note({ kind: 'eliminated', id: e.player });
           if (mine) this.localEliminated();
           else if (r && r.start.round.type !== 'race')
             this.toast(`${this.publicName(e.player)} is out!`, '💨', e.player);
@@ -1569,9 +1729,12 @@ export abstract class ShowSession {
     s.setEmoteWheel(false);
     s.showStamp('eliminated');
     if (document.pointerLockElement) document.exitPointerLock();
+    this.elim.knockedOut(r.start.index, this.knockoutFacts(r));
     const plan = planAfterEliminated(this.watch, this.watchPrefs());
     this.after(plan.afterS, () => {
       if (this.round !== r || r.fate !== 'eliminated' || (this.phase ?? 0) >= RoundPhase.RoundEnd) return;
+      // The choice is offered as before; the UI holds it back until the replay is done.
+      this.playElimination(false);
       if (plan.kind === 'spectate') {
         this.beginSpectating();
         return;
@@ -1580,6 +1743,22 @@ export abstract class ShowSession {
       this.offerWatchChoice(plan.autoAfterS, this.stillInCount(), false);
       ui.getState().setEliminatedSheet(true);
     });
+  }
+
+  /** What the elimination replay's attribution needs from the live round right now. */
+  private knockoutFacts(r: ActiveRound): ReturnType<typeof eliminationFacts> {
+    const teams = new Map(r.start.players.map((p) => [p.id, p.team]));
+    return eliminationFacts(r.source?.alive ? r.source : null, r.start.round, teams, this.localId);
+  }
+
+  /**
+   * Plays "How you went out" for the noted knock-out, if the feature is on.
+   *
+   * @param atRoundEnd - Over the results wall (the knock-out ended the round for this player).
+   */
+  private playElimination(atRoundEnd: boolean): void {
+    const still = this.ctx.settings().accessibility.reduceMotion;
+    this.elim.play((id) => (id === this.localId ? 'you' : this.publicName(id)), still, atRoundEnd);
   }
 
   /** Entrants of the current round not yet knocked out. */
@@ -1610,12 +1789,18 @@ export abstract class ShowSession {
     r.fate = 'spectating';
     ui.getState().setHud({ localStatus: 'spectating', controlsHint: false });
     this.spectateLeader();
+    this.spectator.goLive();
   }
 
+  /** Starts watching: the pinned player, a party or club member, else the leader. */
   private spectateLeader(): void {
     const list = this.candidates();
-    const id = list[0];
-    if (id !== undefined) this.spectatePlayer(id, 0, list.length);
+    const id = this.spectator.firstTarget(
+      list,
+      (p) => this.isPartyMate(p),
+      (p) => this.isClubMate(p),
+    );
+    if (id !== undefined) this.spectatePlayer(id, Math.max(0, list.indexOf(id)), list.length);
   }
 
   /**
@@ -1639,7 +1824,11 @@ export abstract class ShowSession {
   private spectatePlayer(id: number, index: number, count: number): void {
     const r = this.round;
     if (!r) return;
-    if (r.spectateId !== id) this.onSpectateTarget(id);
+    if (r.spectateId !== id) this.spectator.beforeCut();
+    if (this.serverTarget !== id) {
+      this.serverTarget = id;
+      this.onSpectateTarget(id);
+    }
     r.spectateId = id;
     r.view?.spectate(id);
     const st = this.liveStatus()?.players?.get(id);
@@ -1657,7 +1846,7 @@ export abstract class ShowSession {
   /** Keeps the banner's place and "still in" count current while watching. */
   private refreshSpectateBanner(realDt: number): void {
     const r = this.round;
-    if (!r || r.fate !== 'spectating' || r.spectateId < 0) return;
+    if (!r || r.fate !== 'spectating' || r.spectateId < 0 || !this.spectator.followsPlayers) return;
     this.spectateRefresh += realDt;
     if (this.spectateRefresh < SPECTATE_REFRESH_S) return;
     this.spectateRefresh = 0;
@@ -1666,20 +1855,115 @@ export abstract class ShowSession {
     if (i >= 0) this.spectatePlayer(r.spectateId, i, list.length);
   }
 
-  /** The controller's spectate buttons (LB/RB unless remapped) cycle targets; the input system has no spectate actions. */
-  private pollSpectatePad(): void {
-    const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : [];
-    let gp: Gamepad | null = null;
-    for (const p of pads) {
-      if (p && p.connected && p.mapping === 'standard') {
-        gp = p;
-        break;
-      }
+  /** True for a member of the local player's club (online accounts only). */
+  private isClubMate(id: number): boolean {
+    const userId = this.players.get(id)?.userId;
+    if (!userId || id === this.localId) return false;
+    return clubs.getState().club?.members.some((m) => m.userId === userId && !m.isSelf) ?? false;
+  }
+
+  /** The spectator controller's view of this session. */
+  private spectatorHost(): SpectatorHost {
+    const fateOf = (status: number | undefined): RosterPlayer['status'] =>
+      spectateStatusOf(status) ?? 'playing';
+    return {
+      round: () => {
+        const r = this.round;
+        if (!r?.view || !r.source) return null;
+        if (this.spectatorRound?.view !== r.view) {
+          const def = r.start.round;
+          const kind: DirectorRoundKind =
+            def.type === 'final' ? (def.qualification.mode === 'finish' ? 'race' : 'survival') : def.type;
+          this.spectatorRound = {
+            view: r.view,
+            def,
+            kind,
+            isFinal: r.start.isFinal,
+            qualifyTarget: r.start.qualifyTarget,
+          };
+        }
+        return this.spectatorRound;
+      },
+      watching: () => this.round?.fate === 'spectating' || this.round?.fate === 'qualified',
+      spectating: () => this.round?.fate === 'spectating',
+      candidates: () => this.candidates(),
+      rosterPlayers: () => {
+        const r = this.round;
+        if (!r) return [];
+        const live0 = this.liveStatus();
+        const st = live0?.players;
+        const placeOf = standingsPlaces(live0?.standings);
+        return r.start.players.map((p) => {
+          const sp = this.players.get(p.id);
+          const live = st?.get(p.id);
+          return {
+            id: p.id,
+            name: sp?.name ?? p.name,
+            color: sp?.loadout.colors[0] ?? '#ff6fb5',
+            isBot: sp?.isBot ?? p.isBot,
+            isLocal: p.id === this.localId,
+            isParty: this.isPartyMate(p.id),
+            isClub: this.isClubMate(p.id),
+            team: live?.team ?? p.team,
+            status: fateOf(live?.status),
+            place: live?.place || (placeOf.get(p.id) ?? 0),
+          };
+        });
+      },
+      directorPlayers: () => this.directorPlayers(),
+      teamScores: () => this.liveStatus()?.teamScores ?? [],
+      follow: (id) => {
+        const list = this.candidates();
+        this.spectatePlayer(id, Math.max(0, list.indexOf(id)), Math.max(1, list.length));
+      },
+      followedId: () => this.round?.spectateId ?? -1,
+      clearBanner: () => ui.getState().setSpectate(null),
+      sendFocus: (focus) => {
+        this.serverTarget = -1;
+        this.onSpectatorFocus(focus);
+      },
+      beginSpectating: () => {
+        if (this.round?.fate === 'qualified') this.beginSpectating();
+      },
+      cycle: (dir) => this.cycleSpectate(dir),
+      settings: () => this.ctx.settings(),
+      touch: this.ctx.input.touch,
+    };
+  }
+
+  /**
+   * Round participants for the auto director, in standings order, with a
+   * rough "about to fall out" danger read off their fall speed in rounds
+   * where falling ends the round for them.
+   */
+  private directorPlayers(): DirectorPlayer[] {
+    const r = this.round;
+    if (!r) return [];
+    const st = this.liveStatus();
+    const order = st?.standings ?? r.start.players.map((p) => p.id);
+    const teams = new Map(r.start.players.map((p) => [p.id, p.team]));
+    const falls = r.start.round.fallBehavior === 'eliminate';
+    const floor = r.start.round.spawn.origin.y - 2;
+    const placeOf = standingsPlaces(st?.standings);
+    const out: DirectorPlayer[] = [];
+    for (const id of order) {
+      if (!teams.has(id)) continue;
+      const live = st?.players?.get(id);
+      let danger = 0;
+      const sample = this.directorSample;
+      if (falls && r.source?.alive && r.source.sample(id, sample) && !sample.grounded && sample.vy < -5)
+        danger = Math.min(1, (-sample.vy - 5) / 12 + (sample.y < floor ? 0.35 : 0));
+      out.push({
+        id,
+        status: spectateStatusOf(live?.status) ?? 'playing',
+        place: live?.place || (placeOf.get(id) ?? 0),
+        progress: live?.progress ?? 0,
+        team: live?.team ?? teams.get(id) ?? -1,
+        danger,
+        favourite: this.isPartyMate(id) || this.isClubMate(id),
+      });
     }
-    const down = (i: number): boolean => !!gp?.buttons[i]?.pressed;
-    const { prev, next } = padSpectateButtons(ui.getState().settings.controls.padBinds);
-    const dir = this.padCycler.update(prev.some(down), next.some(down));
-    if (dir !== 0) this.cycleSpectate(dir);
+    return out;
   }
 
   /**
@@ -1694,13 +1978,7 @@ export abstract class ShowSession {
     // The chat field (or any text field) owns every key while the player types.
     if (e.repeat || keyboardBusy(e)) return;
     const s = ui.getState();
-    const r = this.round;
-    const binds = s.settings.controls.keybinds;
-    const watching = !!r && (r.fate === 'spectating' || r.fate === 'qualified');
-    if (watching && s.screen === 'round' && s.overlay === 'none') {
-      if (binds.spectatePrev.includes(e.code)) this.cycleSpectate(-1);
-      else if (binds.spectateNext.includes(e.code)) this.cycleSpectate(1);
-    }
+    if (this.spectator.handleKey(e)) return;
     if (this.ownsMenuKey) return;
     // NOTE: Escape always works too: browsers spend it on releasing pointer
     // lock, so a player who rebinds Menu still expects Esc to reach the menu.
@@ -1788,6 +2066,7 @@ export abstract class ShowSession {
       us.screen === 'round' &&
       us.overlay === 'none' &&
       !us.replay &&
+      !us.elimReplay &&
       !social.getState().chat.open &&
       !us.photo.active;
     if (
@@ -1803,7 +2082,9 @@ export abstract class ShowSession {
     this.updateGrabHud();
     if (!view || !r) return;
     this.ctx.replays?.frame();
-    if (active || spectating) view.rig.addLook(look.yaw, look.pitch);
+    this.elim.frame(view);
+    const flying = this.spectator.frame(realDt, look);
+    if ((active || spectating) && !flying) view.rig.addLook(look.yaw, look.pitch);
 
     if (active && !this.pilot) {
       const open = input.emoteWheelOpen;
@@ -1827,21 +2108,16 @@ export abstract class ShowSession {
     if (st && r.hud && p >= RoundPhase.Countdown && p <= RoundPhase.RoundEnd)
       r.hud.update(realDt, st, this.ctx.fps(), this.ping());
 
-    if (r.fate === 'spectating' && r.spectateId >= 0 && (this.phase ?? 0) < RoundPhase.RoundEnd) {
+    if (
+      r.fate === 'spectating' &&
+      r.spectateId >= 0 &&
+      (this.phase ?? 0) < RoundPhase.RoundEnd &&
+      this.spectator.cameraMode === 'follow' &&
+      !this.spectator.holdsKnockedOut(r.spectateId)
+    ) {
       const ps = st?.players?.get(r.spectateId);
       if (ps && ps.status === PlayerRoundStatus.Eliminated) this.cycleSpectate(1);
     }
-    // Photo mode uses the shoulders for field of view.
-    if (
-      spectating &&
-      us.screen === 'round' &&
-      us.overlay === 'none' &&
-      !us.eliminatedSheet &&
-      !us.photo.active &&
-      !social.getState().chat.open
-    )
-      this.pollSpectatePad();
-    else this.padCycler.reset(true, true);
     this.refreshSpectateBanner(realDt);
   }
 
@@ -1867,6 +2143,7 @@ export abstract class ShowSession {
     });
     this.showPhaseId = ShowPhase.Victory;
     const s = ui.getState();
+    this.spectator.goQuiet();
     s.setSpectate(null);
     s.setEliminatedSheet(false);
     const rounds = summary.rounds.map((o) => {

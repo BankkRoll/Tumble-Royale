@@ -7,7 +7,7 @@
 ## Contents
 
 1. Show anatomy & pacing timeline
-2. Round selection algorithm (shared by every playlist)
+2. Round selection algorithm (shared by every playlist), and round voting (§2.1)
 3. Qualification curves (40 / 30 / 20 starting players, plus private-show sizes)
 4. Playlists — Main Show · Duos · Squads · Chaos Mode · Ranked · First Show
 5. Bots: fill rules and skill mix
@@ -38,6 +38,7 @@ Player Wall → rewards. Phases mirror `ShowPhase` / `RoundPhase` in
 | ROUND_END                  | 1.5 s slow-mo + 1.5 s "ROUND OVER" stamp  |                                                                                                                                                               |
 | RESULTS                    | 6 s                                       | Qualified/eliminated grid, portraits                                                                                                                          |
 | TRANSITION                 | 3 s                                       | "PLAYERS REMAINING: 26" + next-round tease (silhouette of the next round's thumbnail)                                                                         |
+| Round vote                 | ≤ 8 s, alongside RESULTS + TRANSITION     | Rounds 2+ (not the final unless the playlist opts in); see §2.1. Runs inside the existing gap, so it adds no time by default                                  |
 | Final VICTORY              | 8 s                                       | Winner cam, slow-mo crown grab, fireworks, `mus_victory_crowned`                                                                                              |
 | Player Wall                | 12 s (scales: 1.5 s per round + 4 s)      | Every player's cell; eliminated cells drop out round by round                                                                                                 |
 | Rewards                    | 10–15 s (skippable after 3 s)             | XP bar, level-ups, pass progress, unlocks, Gumballs, RP                                                                                                       |
@@ -62,7 +63,8 @@ in 74 s. The browser's offline Main Show (`?autoplay=1&playlist=main-show`)
 with the same seed went Tilt Town 100 → Bounce Ball Blitz 60 → Pattern
 Panic 30 → Crown Climb 12 and reached rewards.
 
-Eliminated players may **Spectate** (follow leader / friend / random, Q/E cycle),
+Eliminated players may **Spectate** (follow, free camera, course overview or
+the auto director; Q/E cycle, the player list, pin; see §8),
 **Return to lobby** (rewards granted immediately for rounds played), or **Play
 again** (requeue with party). A player who leaves early still appears on the
 Player Wall.
@@ -113,6 +115,78 @@ excluded at step 3.
 **Survival safety valve:** if a survival/logic round ends at its timer with more
 than T alive, **all survivors qualify** (no random culls). The next round's
 target is recomputed from the new N (curves are recomputed every stage).
+
+### 2.1 Round voting
+
+Players vote on the next round between rounds. The director runs it
+(`packages/sim/src/show/vote.ts`); the game server is authoritative online and
+the offline runner uses the same code with the local player and bots.
+
+**When.** Every round except round 1 (whose first type is fixed) and the final
+(unless the playlist sets `voting.finals`). The ballot opens when RESULTS
+starts, so it runs alongside the results wall and TRANSITION.
+
+**Ballot.** Up to `voting.options` (default 3) rounds, drawn from the show seed
+by selection weight, without replacement, from the same constraint tier the
+seeded selector would pick from (player count, no type twice in a row, never a
+repeat in the show, final-type for a final). A thin tier gives a shorter
+ballot; fewer than two candidates means no vote and the seeded pick. The first
+draw is exactly the round the seeded selector would have picked; the display
+order is shuffled so the card position never gives it away.
+
+**Who votes.** Players still in the show when the ballot opens. Eliminated
+players and spectators see the ballot read-only. Party members vote
+individually. One ballot each, changeable until the close.
+
+**Bots.** Each bot pre-rolls its choice (weighted by the candidates' selection
+weights) and a moment to cast it (10–60 % of the base gap), both from the show
+seed, so offline shows feel alive. Humans sway it: with any humans voting, a
+bot ballot weighs `min(1, humans / (2 × bots))` of a human's, so all bots
+together never outweigh half the human electorate. With no humans (attract
+mode), bots decide alone. The card shows raw counts and says when bot votes
+count for less.
+
+**Winner.** Highest weighted score. A tie is broken by a seeded pick among the
+tied rounds; a ballot with no votes at all goes to a seeded pick of the
+candidates. When the round is selected, the winner is re-checked against the
+field as it is then (players can leave mid-vote): it must still fit the player
+count and the ballot must have been for a final exactly when this round is the
+final, else the runner-up, else the seeded pick.
+
+**Timing.** `voting.seconds` (default 8, 3–20) from the start of RESULTS. The
+ballot closes at the first of: the window ends; every connected eligible human
+has voted (but not before 3 s, so the card is readable and the bots visibly
+join in); or, with no connected human able to vote, the end of RESULTS +
+TRANSITION. The next round is selected when TRANSITION ends or the ballot
+closes, whichever is later, so TRANSITION only stretches when a playlist's
+window is longer than the gap and nobody has voted. The all-loaded gate
+applies to the voted round as to any other.
+
+Measured on the Main Show (100 players, 10 humans, every round a fixed 60 s
+of PLAYING, seeds 5–7, the director at 30 Hz), from RESULTS to the next
+round's selection:
+
+| Timings                                        | Voting off | On, humans vote promptly | On, nobody votes                |
+| ---------------------------------------------- | ---------- | ------------------------ | ------------------------------- |
+| Online defaults (RESULTS 6 s + TRANSITION 2 s) | 8.0 s      | 8.0 s                    | 8.0 s                           |
+| Offline (5.5 s + 0.2 s)                        | 5.7 s      | 5.7 s                    | 8.0 s on ballot rounds (+2.3 s) |
+
+So online shows are exactly as long as before; offline shows are too unless
+the local player lets the ballot run out (two ballots in a Main Show: at most
++4.6 s). A player knocked out offline is not waited for (the ballot closes at
+5.7 s).
+
+**Private shows.** "Round voting" in the private show settings (on by
+default). Host picks still win: the ballot only ever offers rounds from the
+picked pool, so the lobby chooses the order of the host's rounds.
+
+**Kill switch.** The `shows.mapVoting` live-ops flag (default on), read when a
+show starts by game servers and the offline client. Off, the director draws
+from its generator exactly as before voting existed, so a seed replays the
+same show.
+
+**Online.** Protocol v6 `voteOptions` / `castVote` / `voteTally` /
+`voteResult` (`packages/netcode/PROTOCOL.md`, Round voting).
 
 ---
 
@@ -464,6 +538,7 @@ export default defineShow({
   ],
   variationFilter: { exclude: ['stiff-town', 'delicates', 'dead-calm'] },
   bots: { mixByBracket: 'default' },
+  voting: { enabled: true, seconds: 8, options: 3, finals: false }, // §2.1
   timings: {
     preShow: 8,
     intro: 5,
@@ -477,3 +552,48 @@ export default defineShow({
   rewards: 'standard',
 });
 ```
+
+---
+
+## 8. Streaming a show
+
+Anyone watching a round has the same tools: knocked-out players, qualified
+players waiting for the round to end, and a private show's spectator seats.
+Controls and screens are in SCREENS.md §9.9.1.
+
+**To stream a private show:**
+
+1. The host turns on **Allow spectators** in the lobby, sets **Spectator
+   slots** (up to 10; 2–4 is plenty for a caster or two) and leaves
+   **Spectators can chat** off unless the casters should talk in the show.
+2. The broadcaster enters the lobby code with **Join with a code**, before or
+   after the show starts. After the start they are asked "Watch it from a
+   spectator seat?" and join the running show. A seat taken this way stays
+   theirs until the show ends, so a reload never costs another one.
+3. A spectator seat opens on the **broadcast overlay** with the help card
+   showing: round card, clock, qualified count or team scores, a standings
+   strip and the followed player's name card, with the personal HUD, chat,
+   toasts and menu pill hidden. **B** toggles it, **H** the help card.
+4. **F** cycles the camera: Follow, Free (fly with WASD, Q/E or Space,
+   Shift for speed), Overview (the whole course) and Director (cuts between
+   the leader, close races, the qualifying bubble, near-eliminations, team
+   swings and the final on its own). **Tab** finds a player by name or place,
+   **L** jumps to the leader, **P** pins whoever the camera is on.
+5. For a clean capture, **K** puts a chroma-key green (#00B140) behind the
+   overlay in place of the world: key it out in the capture software and
+   layer the overlay over another source. There is no transparent canvas
+   mode; capture the browser window or tab.
+
+Rules that keep watchers out of the show: spectator seats never count as
+players (no Tumbler, no inputs, no ballot, no loading gate, not in the
+roster), the game server caps a room at 16 spectators and a private show at
+its host's slot count, and a seat holder's chat is dropped unless the host
+allowed it (their client goes read-only). Each spectator costs one snapshot
+encode per tick, like a player; a free or overview camera tells the server
+where it looks (at most twice a second) so interest management sends the
+Tumblers near the camera at full rate and the rest at the distance rate.
+Measurements are in `packages/netcode/PROTOCOL.md` (Spectators).
+
+Streamer Mode applies throughout: the player list, its search and the
+overlay only ever use masked names. Reduce Motion turns every camera blend
+into a cut, and captions stay on screen over the overlay.

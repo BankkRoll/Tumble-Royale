@@ -32,6 +32,8 @@ export interface SocialRef {
   userId: string;
   name: string;
   tag: string;
+  /** Club tag, when they are in a club. */
+  club?: string;
 }
 
 /** Presence fields carried by realtime `presence` events. */

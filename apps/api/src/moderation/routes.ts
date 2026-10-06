@@ -13,6 +13,7 @@ import {
 import { z } from 'zod';
 import { accountRegion, RegionSchema } from '../accounts/accounts.ts';
 import { isErased } from '../accounts/tombstone.ts';
+import { membershipOf } from '../clubs/service.ts';
 import type { AppContext } from '../context.ts';
 import { bans, events, featureFlags, reports, users } from '../db/schema.ts';
 import { verifyLedger } from '../economy/ledger.ts';
@@ -32,12 +33,14 @@ import { chatEvidence } from '../social/chatEvidence.ts';
 import { friendIds } from '../social/friends.ts';
 import { recordAudit } from '../staff/audit.ts';
 import { requireStaff } from '../staff/auth.ts';
+import { voiceEvidence } from '../voice/service.ts';
+import { REPORT_REASONS } from './reports.ts';
 import { announceSanction, applySanction, BAN_SCOPES, liftBan, MAX_SANCTION_HOURS } from './sanctions.ts';
 
 const ReportBody = z.object({
   targetUserId: z.string().uuid(),
   matchId: z.string().max(64).optional(),
-  reason: z.enum(['cheating', 'harassment', 'offensive_name', 'griefing', 'spam', 'other']),
+  reason: z.enum(REPORT_REASONS),
   details: z.string().max(1000).optional(),
 });
 /** What the browser's crash reporter sends (`apps/client/src/crashReporter.ts`). */
@@ -111,6 +114,20 @@ export function rolloutBucket(flagKey: string, userId: string): number {
  * @param ctx - Shared services.
  */
 export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext): void {
+  /** Chat the reporter could have seen, plus, for a voice report, when they shared a voice room. */
+  const reportEvidence = async (reason: string, targetId: string, reporterId: string) => {
+    const lines =
+      (await chatEvidence(
+        ctx.kv,
+        targetId,
+        reporterId,
+        (await membershipOf(ctx.db, reporterId))?.clubId ?? null,
+      )) ?? [];
+    const voice = reason === 'voice' ? await voiceEvidence(ctx, reporterId, targetId) : null;
+    if (voice) lines.push(voice);
+    return lines.length ? lines : null;
+  };
+
   app.post('/report', { config: { rateLimit: { max: 10, timeWindow: '1 hour' } } }, async (req, reply) => {
     const auth = await requireUser(ctx, req);
     const body = parse(ReportBody, req.body);
@@ -125,7 +142,7 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
         matchId: body.matchId ?? null,
         reason: body.reason,
         details: body.details ? maskProfanity(body.details) : null,
-        evidence: await chatEvidence(ctx.kv, body.targetUserId, auth.userId),
+        evidence: await reportEvidence(body.reason, body.targetUserId, auth.userId),
       })
       .returning({ id: reports.id });
     return reply.code(201).send({ id: row?.id, status: 'open' });
@@ -215,7 +232,14 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
   app.post('/internal/bans', async (req, reply) => {
     const actor = await requireStaff(ctx, req, 'moderator');
     const body = parse(BanBody, req.body);
-    const kind = body.scope === 'chat' ? 'mute' : body.scope === 'ranked' ? 'ranked_ban' : 'ban';
+    const kind =
+      body.scope === 'chat'
+        ? 'mute'
+        : body.scope === 'voice'
+          ? 'voice_mute'
+          : body.scope === 'ranked'
+            ? 'ranked_ban'
+            : 'ban';
     const now = ctx.now();
     const applied = await ctx.db.transaction(async (tx) => {
       const s = await applySanction(tx, now, {

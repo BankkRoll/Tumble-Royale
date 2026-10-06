@@ -32,6 +32,8 @@ export function normalizeLobby(raw: CustomLobby): CustomLobby {
   raw.locked ??= false;
   raw.banned ??= [];
   raw.settings.minPlayers ??= 1;
+  raw.settings.roundVoting ??= true;
+  raw.settings.spectatorChat ??= false;
   return raw;
 }
 

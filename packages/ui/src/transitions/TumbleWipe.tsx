@@ -70,7 +70,9 @@ export function TumbleWipe(): JSX.Element | null {
 
     if (phase === 'covering') {
       for (const b of bands) b.style.transform = BELOW;
-      let safety = 0;
+      // NOTE: armed outside afterPaint: a hidden tab never runs rAF, and background
+      // tabs can stall WAAPI; never leave the player stuck behind candy.
+      const safety = window.setTimeout(() => ui.getState()._wipeCovered(), WIPE_COVER_TOTAL_MS + 400);
       const cancelStart = afterPaint(() => {
         playCue('ui.whoosh');
         bands.forEach((b, i) => {
@@ -100,8 +102,6 @@ export function TumbleWipe(): JSX.Element | null {
           () => ui.getState()._wipeCovered(),
           () => {},
         );
-        // NOTE: background tabs can stall WAAPI; never leave the player stuck behind candy.
-        safety = window.setTimeout(() => ui.getState()._wipeCovered(), WIPE_COVER_TOTAL_MS + 400);
       });
       return () => {
         cancelStart();
@@ -116,7 +116,7 @@ export function TumbleWipe(): JSX.Element | null {
 
     if (phase === 'revealing') {
       for (const b of bands) b.style.transform = COVERED;
-      let safety = 0;
+      const safety = window.setTimeout(() => ui.getState()._wipeDone(), WIPE_REVEAL_TOTAL_MS + 400);
       const cancelStart = afterPaint(() => {
         playCue('ui.whoosh');
         bands.forEach((b, i) => {
@@ -133,7 +133,6 @@ export function TumbleWipe(): JSX.Element | null {
           () => ui.getState()._wipeDone(),
           () => {},
         );
-        safety = window.setTimeout(() => ui.getState()._wipeDone(), WIPE_REVEAL_TOTAL_MS + 400);
       });
       return () => {
         cancelStart();
@@ -144,7 +143,7 @@ export function TumbleWipe(): JSX.Element | null {
 
   if (phase === 'idle') return null;
   return (
-    <div className="tr-wipe" aria-hidden>
+    <div className="tr-wipe" data-phase={phase} aria-hidden>
       <div className="tr-wipe-bands">
         {BANDS.map((c, i) => (
           <div

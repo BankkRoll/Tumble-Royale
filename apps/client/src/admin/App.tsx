@@ -13,11 +13,14 @@ import {
 } from './components.tsx';
 import { isAdmin, parseRoute, relativeTime, type Route } from './format.ts';
 import { AuditView } from './views/AuditView.tsx';
+import { ClubsView } from './views/ClubsView.tsx';
 import { LiveOpsView } from './views/LiveOpsView.tsx';
 import { PlayersView } from './views/PlayerView.tsx';
 import { RefundsView } from './views/RefundsView.tsx';
 import { ReportsView } from './views/ReportsView.tsx';
 import { SanctionsView } from './views/SanctionsView.tsx';
+import { SharedRoundsView } from './views/SharedRoundsView.tsx';
+import { StatusView } from './views/StatusView.tsx';
 
 /** What the shell needs from the page. */
 export interface AdminAppProps {
@@ -35,7 +38,10 @@ const NAV: { view: Route['view']; label: string; adminOnly?: boolean }[] = [
   { view: 'players', label: 'Players' },
   { view: 'sanctions', label: 'Sanctions' },
   { view: 'refunds', label: 'Refunds' },
+  { view: 'rounds', label: 'Shared rounds' },
+  { view: 'clubs', label: 'Clubs' },
   { view: 'liveops', label: 'Live ops', adminOnly: true },
+  { view: 'status', label: 'Status' },
   { view: 'audit', label: 'Audit log' },
 ];
 
@@ -52,8 +58,9 @@ export function SignIn(props: { onSignIn(): void; busy: boolean; error: string |
       <div className="adm-card">
         <h1>Tumble Royale admin</h1>
         <p>
-          Sign in to the game with your staff account (email, Discord or Google, not a guest), then open the
-          console here. Sessions last 30 minutes and end when you close this tab.
+          Sign in to the game with your staff account (any linked login, not a guest), or open the one-time
+          link from <code>pnpm admin staff link</code>, then open the console here. Sessions last 30 minutes
+          and end when you close this tab.
         </p>
         {props.error && (
           <p className="adm-inline-error" role="alert">
@@ -169,7 +176,10 @@ export function AdminApp(props: AdminAppProps) {
         )}
         {route.view === 'sanctions' && <SanctionsView />}
         {route.view === 'refunds' && <RefundsView key={route.id ?? ''} id={route.id} />}
+        {route.view === 'rounds' && <SharedRoundsView key={route.code ?? ''} code={route.code} />}
+        {route.view === 'clubs' && <ClubsView key={route.id ?? route.q ?? ''} id={route.id} q={route.q} />}
         {route.view === 'liveops' && <LiveOpsView />}
+        {route.view === 'status' && <StatusView />}
         {route.view === 'audit' && <AuditView key={route.target ?? ''} target={route.target} />}
       </main>
       {pending && (

@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { and, eq, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { achievementStats, currenciesLedger, inventoryItems, playerAchievements } from '../src/db/schema.ts';
 import { verifyLedger } from '../src/economy/ledger.ts';
 import { grantCosmetic } from '../src/economy/wallet.ts';
@@ -243,7 +243,7 @@ describe.each(BACKENDS)('achievements ($name)', (backend) => {
     expect(first.achievements.find((a) => a.id === 'wardrobe-1')).toMatchObject({ unlocked: true });
     expect((await view(u)).newlyUnlocked).toEqual([]);
     await backend.settle();
-    expect(seen.filter((id) => id === 'wardrobe-1')).toHaveLength(1);
+    await vi.waitFor(() => expect(seen.filter((id) => id === 'wardrobe-1')).toHaveLength(1));
     expect((await verifyLedger(api.ctx.db, u.id)).ok).toBe(true);
   });
 

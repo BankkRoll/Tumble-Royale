@@ -23,12 +23,16 @@ export type LastShow =
       lobby?: { code: string | null; host: boolean };
     }
   /** A matchmade online show (public queue, solo or party). */
-  | { kind: 'matchmade'; playlistId: string };
+  | { kind: 'matchmade'; playlistId: string }
+  /** The round editor's Test play (the draft is read again, so edits show up). */
+  | { kind: 'playtest' };
 
 /** What Play again does. */
 export type PlayAgainAction =
   /** Start an offline show vs bots on this playlist, right away. */
   | { action: 'offline'; playlistId: string | null }
+  /** Test play the editor's draft again. */
+  | { action: 'playtest' }
   /** Start an offline private show with these options. */
   | { action: 'custom'; options: CustomLobbyOptions }
   /** Go through the normal Play routing (queues online when it can). */
@@ -90,6 +94,8 @@ export function playAgainAction(
       // Copy so a later edit of the private show dialog can't change the replayed show.
       return { action: 'custom', options: copyOptions(last.options) };
     }
+    case 'playtest':
+      return { action: 'playtest' };
     case 'matchmade':
     case 'auto':
       return ctx.partyMember ? waitForLeader : { action: 'play', playlistId: last.playlistId };

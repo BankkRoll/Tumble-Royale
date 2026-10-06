@@ -97,6 +97,7 @@ export function resetTransient(): void {
   s.closeDialog();
   s.setConnection({ status: 'online' });
   s.setCaption(null);
+  s.setRoundVote(null);
   s.setQueue({ status: 'idle', playersFound: 0 });
   for (const t of s.toasts) s.dismissToast(t.id);
 }

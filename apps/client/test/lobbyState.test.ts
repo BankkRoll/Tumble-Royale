@@ -44,11 +44,14 @@ function lobby(over: Partial<Lobby> = {}): Lobby {
 describe('host tools in a running private show', () => {
   const started = lobby({ status: 'started', matchId: 'm_1' });
 
-  it('lists only members the game server still has in the show, and always the host', () => {
+  it('lists only players the game server still has in the show, and always the host', () => {
     const live = liveStartedLobby(started, new Set(['me']));
     expect(live.players.map((p) => p.userId)).toEqual(['host', 'me']);
-    expect(live.spectators).toEqual([]);
     expect(started.players).toHaveLength(3);
+  });
+
+  it('keeps every spectator, whom the server roster never lists, so the host can still remove one', () => {
+    expect(liveStartedLobby(started, new Set(['me'])).spectators.map((s) => s.userId)).toEqual(['sam']);
   });
 
   it('keeps the frozen roster until the server sent its first one', () => {
@@ -73,9 +76,13 @@ describe('lobbyOptions', () => {
       spectatorSlots: 2,
       countdownSec: 20,
       minPlayers: 3,
+      roundVoting: true,
+      spectatorChat: false,
       isPrivate: true,
     });
     expect(o.rounds).not.toBe(l.settings.rounds);
+    expect(lobbyOptions({ ...l.settings, roundVoting: false }).roundVoting).toBe(false);
+    expect(lobbyOptions({ ...l.settings, spectatorChat: true }).spectatorChat).toBe(true);
   });
 });
 
@@ -192,5 +199,6 @@ describe('optionsToSettings', () => {
     expect(optionsToSettings({ spectators: false })).toEqual({ spectatorSlots: 0 });
     expect(optionsToSettings({ spectators: true })).toEqual({ spectatorSlots: 2 });
     expect(optionsToSettings({ bots: false })).toEqual({ bots: false });
+    expect(optionsToSettings({ roundVoting: false })).toEqual({ roundVoting: false });
   });
 });

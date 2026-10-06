@@ -115,6 +115,7 @@ gold). Cue `ui.confetti`.
      ├─ WatchChoiceLayer keep watching / leave after elimination
      ├─ ToastLayer       top-right cards + left feed
      ├─ ReplayLayer      replay viewer
+     ├─ ElimReplayLayer  "How you went out" after a knock-out
      ├─ ShareLayer       share sheet (card / clip, progress, preview)
      ├─ OverlayLayer     settings, friends, notifications, privateShow, joinCode, inGameMenu
      │   (PhotoModeBar replaces it in photo mode)
@@ -389,6 +390,8 @@ clicks each top-level control and asserts the destination.
 | All news / Esc                  | News reader       | back to the list                                                                                                                                          |
 | Eliminated choice               | show flow         | Keep watching (`spectate`, auto after a countdown) or Leave show (`leaveShow`)                                                                            |
 | Results / Rewards               | show flow         | Watch replay (`replayOpen`), Share (§9.19), Back to lobby (`backToLobby`), Play again (`playAgain`, same mode), Continue (`continue`)                     |
+| Elimination replay              | show flow         | Skip (`elimReplaySkip`; any key, click or pad button also skips)                                                                                          |
+| Highlights (rewards)            | show flow         | Watch / Play all (`highlightPlay`), Share (`highlightShare` + the share sheet on the highlight)                                                           |
 | Open replay file                | Profile / History | `replayOpenFile` (a saved `.tumblereplay`)                                                                                                                |
 
 ---
@@ -508,25 +511,53 @@ Intents: `inviteFriend`, `copyInvite`, `promotePartyMember`,
 `joinFriend`, `inspectPlayer`, `mutePlayer`, `blockPlayer`, `unblockPlayer`,
 `reportPlayer`.
 
+**Club section** (`ClubPanel.tsx`, a "Friends & party | Club" switch at the
+top of the panel). Without a club: invites (Join / Decline), requests waiting
+on a club (Cancel), search by name or tag, recommended open and active clubs,
+and "Found a club" (name, tag, description, who can join, emblem from the
+banner motifs and the Tumbler palette; the shared rules are checked inline;
+guests see why they cannot join yet). In a club: emblem, name, `[TAG]`,
+members and role, then tabs Roster (presence, role chips, Party up for online
+members, Manage for lower roles: make officer / member, make owner, remove,
+plus invite friends for officers), Chat, Goals (three weekly goals with
+progress bars, Collect, the week's contribution board), Requests (officers,
+with a count) and Settings (name and tag for the owner, join mode,
+description and emblem for officers, leave, disband, report). Loading, error
+with Retry, empty and "switched off" states are explicit. Streamer Mode hides
+other players' `#tag` and club tags. Club chat also appears as a Club tab in
+the chat widget (`/c`).
+
+Intents: `clubRefresh`, `clubCreate`, `clubSearch`, `clubJoin`,
+`clubCancelRequest`, `clubInviteAnswer`, `clubRequestAnswer`, `clubInvite`,
+`clubEdit`, `clubMember`, `clubLeave`, `clubGoals`, `clubClaim`,
+`clubPartyUp`, `clubChat`, `clubReport`.
+
 ### 5.9 Private show (overlays `privateShow`, `joinCode`)
 
 A dialog, not a screen. **Setup**: round picker, house rules (fill with
-bots, players 2–60, round length ×0.5–×2, allow spectators); footer **Have a
+bots, round voting, players 2–60, round length ×0.5–×2, allow spectators);
+footer **Have a
 code?** (→ `joinCode`), **Invite friends** (`createCustom`; disabled with a
 note when offline) and **Play with bots** (`playCustomOffline`, always
 works). Closing the dialog keeps a joined lobby.
 
 **`joinCode`**: six code cells (A–Z/0–9) → `joinCode { code }`; offline →
 empty state with Try again (`retryOnline`). Opened from the start card, the
-private-show dialog and the friends sheet.
+private-show dialog and the friends sheet. A code whose show already started
+asks "Watch it from a spectator seat?" and, on Watch, joins the running show
+as a spectator (matchmaker `POST /lobbies/:code/watch`; refusals: every seat
+taken, spectating off, the show just ended, locked or removed).
 
 **Private lobby** (same dialog, once created or joined):
 
 - Code panel with Copy (masked in streamer mode). Host: Lock/Unlock
   (`lockCustom`), New code (`newCustomCode`).
-- Host settings apply live (`updateCustom`, debounced): rounds, bots, max
+- Host settings apply live (`updateCustom`, debounced): rounds, bots, round
+  voting (players vote between the picked rounds; SHOWS.md §2.1), max
   players, players needed to start, round length, pre-show countdown,
-  spectators and spectator slots. Members see a read-only summary.
+  spectators, spectator slots (0–10; spectator and broadcast seats never
+  count as players and can join after the start) and **Spectators can chat**
+  (off: seat holders watch quietly). Members see a read-only summary.
 - Member rows: Make host (`transferCustomHost`), Remove → confirm
   (`kickCustomMember`, also bans from that lobby); the host's Removed list
   has Unban (`unbanCustomMember`).
@@ -560,10 +591,25 @@ Full-height sheet with text-only tabs:
   Reduce camera shake, Captions, Spoken announcer (off by default), UI scale,
   High-contrast HUD.
 - **Gameplay**: nameplates, Streamer mode (hides other players' names and
-  lobby codes), show ping, auto-spectate, **Show bot tags**, **Show chat**
+  lobby codes), show ping, auto-spectate, **Elimination replay** (on by
+  default; a still frame under Reduce Motion), **Show bot tags**, **Show chat**
   (off also hides quick pings), **Chat filter** (masks swearing; slurs are
   always hidden), **Region** (Auto or a fixed region, each with its measured
   ping; `probeRegions` when shown).
+- **Voice** (only when the server offers voice, or to a voice-muted player so
+  they see why): the **Voice chat** toggle, off by default; the first time it
+  opens a dialog (what voice does, that peers can see your IP unless Relay
+  only is on, nothing is recorded) and only on "Turn on voice" does the
+  browser ask for the microphone. Talk mode **Push to talk** (default, key V /
+  controller Back, rebindable in Controls) or **Open mic** with a sensitivity
+  slider and live level meter; microphone picker; voice volume; noise
+  suppression; echo cancellation; **Relay only (hide my IP)** (disabled without
+  a relay); **Team voice** (team rounds; needs a linked account 3+ days old);
+  Streamer Mode "hide voice names" and "don't play voice"; while on, the room's
+  players with volume, Mute and Report (reason "Voice chat", with a note that
+  nothing is recorded). Speaking marks (🔊 with "Speaking" for screen readers)
+  sit on party slots and the friends sheet's party list; in shows a small
+  voice roster sits under the team scores.
 - **Account**: display name with Rename (monthly cooldown online), linked
   logins (Link / Unlink per provider), Sign in to an existing Tumbler, Sign
   out, Delete Tumbler (confirm).
@@ -719,11 +765,82 @@ screens): **Keep watching** (auto-selected after a countdown) or **Leave
 show**, with a rewards note and "N still in the show".
 Intents: `spectate`, `leaveShow`.
 
+### 9.8a How you went out (`ElimReplayLayer`, store `elimReplay`)
+
+Where the choice sheet would slide in, the replay of the last ~7.5 s plays
+first (`docs/design/REPLAYS.md`): letterbox bars, "REPLAY · HOW YOU WENT
+OUT" at the top, the cause as a tangerine sticker over the lower third
+("Knocked off by a sweeper", "Grabbed by Bean", "Missed the cut by 0.4 s";
+other players' names follow Streamer Mode) announced once through a polite
+live region, a Slow-mo chip while the decisive moment plays, a progress bar,
+"Press any key to skip" (touch: "Tap to skip") and a Skip button. Any key,
+click, tap or pad button skips (`elimReplaySkip` for the button); keys and
+buttons still held from playing do not. While it builds, only the bottom
+bar and the cause show ("Loading replay…"). Reduce Motion shows a single
+still frame of the decisive moment for 4 s instead. The screen, HUD and
+stamps underneath are hidden; the keep-watching choice is offered as usual
+(its countdown runs) but stays hidden until the replay ends. Knock-outs at
+the end of a round (the cut, a team loss, time up) play it over the results
+wall instead. Off in Settings → Gameplay → Elimination replay, and while
+`replays.enabled` is off.
+
 ### 9.9 Spectating banner
 
 Bottom-centre bar: ◀ Q · player card (avatar, name, place/score, "Qualified ✓"
 chip) · E ▶; "SPECTATING" label; mobile has tap arrows. Card swaps with a
 horizontal flip on change. Intents: `spectateNext(±1)`.
+
+### 9.9.1 Spectator tools and broadcast overlay (store `spectator`)
+
+Whoever watches a round — knocked out, qualified and waiting, or in a private
+show's spectator seat — gets the same tools. Every action has a rebindable key
+(Settings → Controls), a remappable controller button and a click/tap target.
+
+| Action            | Keys (default)     | Pad (default)     | Notes                                                           |
+| ----------------- | ------------------ | ----------------- | --------------------------------------------------------------- |
+| Camera mode       | F                  | Y                 | Follow → Free → Overview → Director                             |
+| Previous / next   | Q / E              | LB / RB           | Picks a player by hand: leaves Free/Overview/Director           |
+| Watch the leader  | L                  | A                 |                                                                 |
+| Player list       | Tab                | X                 | Overlay `spectatorRoster`                                       |
+| Pin / unpin       | P                  | B                 | The camera (Director too) stays on a pinned player              |
+| Broadcast overlay | B                  | R3                |                                                                 |
+| Help card         | H                  | D-pad up          |                                                                 |
+| Chroma backdrop   | K                  | —                 | Turns the broadcast overlay on with it                          |
+| Free camera: fly  | WASD, Q/E or Space | Left stick, LT/RT | Shift / L3 faster; mouse / right stick look; touch stick + drag |
+
+- **Toolbar** (personal HUD, above the spectating banner): camera mode
+  button, Director caption ("Neck and neck"), Pinned chip, Players,
+  Broadcast and ? buttons, and a one-line free camera hint.
+- **Camera modes**: _Follow_ is the spectating banner's camera. _Free_ flies
+  from where the camera is, stays inside the level's bounds (plus a margin)
+  and never dips below the kill plane. _Overview_ frames the whole course
+  from the side, tilted down. _Director_ picks shots itself: an establishing
+  overview, then the leader, a close race, the qualifying bubble, someone
+  about to fall out, the team that just scored, the final; every shot holds
+  at least 4 s, a new pick must clearly beat the current one, a knocked-out
+  player stays on screen ~2 s, holds rotate after 14 s, and the wide shot
+  returns after 25 s of nothing happening. Changes blend over 0.45–1.4 s at
+  comfortable speeds; longer sweeps, fast turns and Reduce Motion cut.
+- **Player list** (overlay `spectatorRoster`): search field (focused; name,
+  accent-insensitive, or a place like `#3`), rows with place, colour, team
+  shape, BOT/Party/Club chips and status; pick a row to follow, the lock to
+  pin. Pinned, party and club members list first. Tab, Esc or Back closes.
+  Streamer Mode masks names before the list (and its search) sees them.
+- **Broadcast overlay** (`spectator.broadcast`, round screen only, never in
+  photo mode): hides the personal HUD, toolbar, chat, toasts, the menu pill
+  and touch buttons (`data-broadcast` on the root); shows the round card
+  (type, name, "Round n of m" / Final round), the clock, QUALIFIED x / y or
+  ALIVE n or the team scores, a standings strip (top 8: place, colour, team
+  shape, ✓/✗) and a name card for the followed player (or the camera mode),
+  with the Director's caption. Stamps and caption chips stay. Esc still opens
+  the in-game menu.
+- **Chroma backdrop** (`spectator.chroma`): solid broadcast green (#00B140)
+  behind the overlay in place of the 3D world, for capture software to key
+  out. There is no transparent canvas mode.
+- **Help card** (`spectator.help`): every action with its binding on the
+  last-used device (keyboard-only rows drop on a gamepad).
+- A private show's spectator seat starts with the broadcast overlay and the
+  help card on. Knocked-out players start on the personal HUD.
 
 ### 9.10 ROUND OVER stamp
 
@@ -741,12 +858,43 @@ whistle cue `ui.stamp.roundOver`; or "TIME'S UP!" for timed rounds.
   with a pause + stamp. Summary chips: "26 QUALIFIED · 14 ELIMINATED".
 - **3D**: blurred podium scene or the level from above.
 
+### 9.11a Round vote (over `roundResults`, store `roundVote`)
+
+From round 2 (SHOWS.md §2.1), a sticker panel docks above the results tallies:
+"VOTE FOR THE NEXT ROUND" (or "VOTE FOR THE FINAL"), a countdown chip and one
+card per candidate (2–4). Each card: a thumbnail swatch in the round's theme
+colours with its type icon, type badge, name, one-line objective, a live count
+bar and "N votes". Your pick gets a lemon ring and a "YOUR PICK" tag; you can
+change it until the close. The footer says "12 of 30 voted" and, when bots
+are discounted, "bot votes count for less than yours".
+
+- **Input**: click/tap a card; arrows/pad move focus between cards (the panel
+  is nav scope 7, first card autofocused) and Enter/A votes; number keys 1–4
+  vote directly. Only a player who can vote gets focus pulled to the ballot.
+- **Read-only**: knocked-out players and spectators see the same cards
+  disabled with the live counts ("only players still in the show can vote");
+  no focus trap, so the watch choice (scope 8) and replay button keep working.
+- **Reveal**: when the ballot closes the title becomes "NEXT UP!", the winner
+  card pops (lemon/orange, crown "WINNER" tag, cue `ui.stamp`) and the others
+  dim; the footer explains a tie or an empty ballot. The between-rounds card
+  then names the voted round at once with a "Picked by vote" chip, before the
+  wipe.
+- **Phones / portrait**: cards stack as rows (swatch left, name and bar right,
+  count at the end); objectives hide.
+- **Accessibility**: each card's label reads name, type, objective, votes and
+  "Your pick"/"Winner"; a polite status line announces the ballot when it
+  opens and the winner when it closes (never each tally). Captions: the
+  announcer says "Vote for the next round!" and "Next up: <round>!" (spoken
+  only with the spoken announcer turned on). Reduce Motion keeps the global
+  short fades. Intent: `castVote { roundIndex, option }`.
+
 ### 9.12 Between rounds — `betweenRounds`
 
 "PLAYERS REMAINING" with a huge rolling counter `40 → 26`, round progress
 gumdrops filling, then **NEXT UP** tease card: type badge + "???" silhouette
-which shakes then reveals the round name. Cue `ui.reward` per counter tick,
-`ui.stamp` on reveal. Then wipe → `roundLoading`.
+which shakes then reveals the round name. A round picked by vote skips the
+tease: its name shows at once with a "Picked by vote" chip. Cue `ui.reward`
+per counter tick, `ui.stamp` on reveal. Then wipe → `roundLoading`.
 
 ### 9.13 FINAL ROUND hype — `finalHype`
 
@@ -784,8 +932,11 @@ Exit, scrub bar with qualify/elimination markers, play/pause, ±5 s, speed
 0.25–2×, cameras Follow / Free / Your view, previous/next player, Save replay.
 Keys: Space, ←/→ seek, ↑/↓ speed, C camera, WASD free camera. Opened from
 round results (Watch replay), the rewards picker, the in-game menu (live
-round) and Profile / Match history (open a `.tumblereplay` file). Intents:
-`replayOpen`, `replayOpenLive`, `replayOpenFile`, `replayCommand`.
+round), the rewards highlights (§11) and Profile / Match history (open a
+`.tumblereplay` file). Playing highlights adds "Highlight 2/5 · …" under the
+title and moves on to the next one at the end of each segment; scrubbing
+hands control back to the player. Intents: `replayOpen`, `replayOpenLive`,
+`replayOpenFile`, `replayCommand`, `highlightPlay`.
 
 ### 9.18 Photo mode
 
@@ -805,7 +956,9 @@ clip. A modal card with two tabs:
   (`shareCard`).
 - **Clip:** recorded rounds as chips (defaults to the won final, else the
   latest qualified round), length 5 / 10 / 15 s and a start trimmer (range
-  plus ±1 s buttons for pad and keys). Make clip (`shareClip`). Hidden while
+  plus ±1 s buttons for pad and keys). A highlight's Share button opens this
+  tab on the highlight instead (its round, 5 s centred on its segment). Make
+  clip (`shareClip`). Hidden while
   `replays.enabled` is off; a browser that cannot record video gets an
   explanation instead.
 
@@ -920,6 +1073,16 @@ is a pill at the bottom-centre above the safe-area.
   5. **Ranked** (if present): emblem with RP bar, "+24 RP" floating up; tier-up
      promotes with a stamp "PROMOTED: GOLD II".
 - Skip: any key fast-forwards the current step; second press completes all.
+- **Highlights** (above the replay chips; `HighlightsReel`, store
+  `highlights`): up to six cards, best first, each with an icon, a heading
+  (Crowned, Photo finish, Last-gasp qualify, Big fall, Grab chain, Comeback,
+  Clutch survival, Decider), one line on what happened (names follow
+  Streamer Mode; "you" for the player) and the round, plus Watch
+  (`highlightPlay` with one id) and Share (opens the clip tab on it,
+  `highlightShare`; only where a clip can be made). **Play all** runs them
+  back to back in the replay viewer. "No highlights this show" when rounds
+  were recorded but nothing stood out; hidden entirely while
+  `replays.enabled` is off or nothing was recorded.
 - `music.rewards`.
 
 ---
@@ -968,10 +1131,10 @@ is unread notifications only.
 `playerWall`, `rewards`, `matchHistory`.
 
 Overlays (`OverlayId`): `settings`, `friends`, `notifications`,
-`privateShow`, `joinCode`, `inGameMenu`.
+`privateShow`, `joinCode`, `inGameMenu`, `spectatorRoster`.
 
 Sub-states are store fields, not screens: `menuTab`, `overlay`,
-`countdown`, `stamps`, `hud.localStatus`, `eliminatedSheet`, `spectate`,
+`countdown`, `stamps`, `hud.localStatus`, `eliminatedSheet`, `roundVote`, `spectate`, `spectator`,
 `dialog`, `connection`, the private lobby, the replay viewer and photo mode.
 
 ## 14. The full show flow (happy path)
@@ -981,32 +1144,33 @@ boot ─wipe→ splash ─wipe→ welcome → tutorialPrompt ─wipe→ menu
 menu(play) → matchmaking → matchFound ─wipe(cover: load preshow scene)→ preShow
 preShow ─wipe→ showIntro → roundLoading(hold) ─release→ roundIntro → rules
 → round[countdown 3-2-1 GO] → round[playing] → stamp qualified|eliminated
-→ stamp roundOver → roundResults → betweenRounds ─wipe→ roundLoading …
+→ stamp roundOver → roundResults (+ round vote) → betweenRounds ─wipe→ roundLoading …
 … (final) finalHype → roundLoading → roundIntro → rules → round
 → victory | winnerCam ─wipe→ playerWall → rewards → (playAgain → matchmaking) | menu
 ```
 
 ## 15. Timing table (auto-play preview uses these)
 
-| Step               | Duration              |
-| ------------------ | --------------------- |
-| splash logo settle | 1.6 s                 |
-| matchmaking (mock) | 4–6 s                 |
-| match found burst  | 1.4 s                 |
-| pre-show           | 6 s (mock; real 25 s) |
-| show intro         | 2.2 s                 |
-| round loading      | 1.2 s                 |
-| flyover card       | 4 s                   |
-| rules              | 2.6 s                 |
-| countdown          | 4 s                   |
-| round (mock)       | 12–16 s               |
-| stamps             | 1.8 s each            |
-| results            | 4.5 s                 |
-| between rounds     | 3.6 s                 |
-| final hype         | 3 s                   |
-| victory            | 5 s                   |
-| player wall        | ~20 s                 |
-| rewards            | ~8 s                  |
+| Step               | Duration                                |
+| ------------------ | --------------------------------------- |
+| splash logo settle | 1.6 s                                   |
+| matchmaking (mock) | 4–6 s                                   |
+| match found burst  | 1.4 s                                   |
+| pre-show           | 6 s (mock; real 25 s)                   |
+| show intro         | 2.2 s                                   |
+| round loading      | 1.2 s                                   |
+| flyover card       | 4 s                                     |
+| rules              | 2.6 s                                   |
+| countdown          | 4 s                                     |
+| round (mock)       | 12–16 s                                 |
+| stamps             | 1.8 s each                              |
+| results            | 4.5 s                                   |
+| round vote         | up to 8 s, over results (open → reveal) |
+| between rounds     | 3.6 s                                   |
+| final hype         | 3 s                                     |
+| victory            | 5 s                                     |
+| player wall        | ~20 s                                   |
+| rewards            | ~8 s                                    |
 
 ## 16. Copy voice
 
@@ -1017,12 +1181,13 @@ games. Random funny bot names are generated from candy/wobble syllables
 
 ## 17. Accessibility matrix
 
-| Setting                                           | Effect                                                                                         |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Colour-blind (protanopia/deuteranopia/tritanopia) | swaps good/bad/warn + team colours; qualified/eliminated also differ by icon (✓/✗) and pattern |
-| Reduce Motion                                     | no springs/rotation/parallax/shake; wipes cross-fade; falls short fade                         |
-| Reduce Flashing                                   | no flashes/strobes; confetti × 0.4; stamps don't flash                                         |
-| UI Scale 80–140%                                  | root font-size multiplier (all `em`)                                                           |
-| High-contrast HUD                                 | HUD chips gain solid ink backgrounds                                                           |
-| Captions                                          | announcer lines appear as caption chips (bottom-centre)                                        |
-| Streamer Mode                                     | hides other players' names (→ "Tumbler N"), party/lobby codes masked                           |
+| Setting                                           | Effect                                                                                                                                                                               |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Colour-blind (protanopia/deuteranopia/tritanopia) | swaps good/bad/warn + team colours; qualified/eliminated also differ by icon (✓/✗) and pattern                                                                                       |
+| Reduce Motion                                     | no springs/rotation/parallax/shake; wipes cross-fade; falls short fade; spectator cameras cut                                                                                        |
+| Reduce Flashing                                   | no flashes/strobes; confetti × 0.4; stamps don't flash                                                                                                                               |
+| UI Scale 80–140%                                  | root font-size multiplier (all `em`)                                                                                                                                                 |
+| High-contrast HUD                                 | HUD chips gain solid ink backgrounds                                                                                                                                                 |
+| Captions                                          | announcer lines appear as caption chips (bottom-centre), over the broadcast overlay too                                                                                              |
+| Streamer Mode                                     | hides other players' names (→ "Tumbler N"), party/lobby codes masked; the vote card names no players; the spectator list (and its search) and broadcast overlay use the masked names |
+| Screen readers                                    | the round vote announces its ballot and winner in a polite status line; cards carry full labels                                                                                      |

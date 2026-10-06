@@ -15,9 +15,9 @@
 
 </div>
 
-Up to 100 Tumblers (humans and bots) compete through a show of 3–5 randomly
-drawn rounds (races, survivals, team games, hunts, logic rounds and a final) until
-one player takes the Crown. No install, no plugins: it runs in a browser tab
+Up to 100 Tumblers (humans and bots) compete through a show of 3–5 rounds
+(races, survivals, team games, hunts, logic rounds and a final), voted on
+between rounds or drawn by the show, until one player takes the Crown. No install, no plugins: it runs in a browser tab
 on desktop and mobile.
 
 <table>
@@ -48,20 +48,48 @@ What a player can do today:
 
 - **Play:** solo, Duos and Squads online with parties, or any show offline
   against bots; Chaos Mode (one mutator per show), Ranked (solo rounds only,
-  seasonal soft reset) and a gentler First Show for newcomers
-- **Private shows:** invite codes, host-picked rounds and rules changed live,
-  kick/ban, lock, transfer host, ready checks and spectator slots
+  seasonal soft reset) and a gentler First Show for newcomers; players vote
+  on the next round between rounds (server-authoritative, seeded tie-breaks)
+- **Private shows:** invite codes, host-picked rounds (with or without round
+  voting) and rules changed live, kick/ban, lock, transfer host, ready checks
+  and spectator slots (broadcast seats that never count as players, can join
+  mid-show by code and stay quiet unless the host allows chat); hosts can
+  also add a player-made round by its share code
+- **Round editor (`/editor`):** build races, survivals, hunts and logic rounds
+  from the shipped level parts and obstacle library in 3D (grid snapping,
+  move/turn/size gizmo, multi-select, copy/paste, undo/redo, generated
+  obstacle settings), with live checks (reachable finish, spawn on solid
+  ground, 100-player budgets), local saves, JSON import/export, Test play
+  against bots, and sharing by code (full accounts; reports and takedowns go
+  through the admin console)
 - **Social:** friends (requests, presence, join), party and in-show text chat
   with a filter, quick pings, report / block / mute, streamer mode
+- **Clubs:** persistent groups of up to 50 with owner / officer / member
+  roles, open, request or invite-only joining, a club chat, club tags beside
+  names, "Party up" with online members, weekly club goals that pay everyone
+  who played, discovery and moderation from the admin console
+- **Voice chat (opt-in):** off by default; party voice and, in team rounds,
+  squads of up to 8 teammates over a WebRTC mesh (Opus only) with the API
+  deciding every room; push-to-talk (rebindable) or open mic, per-player
+  volume and mute, speaking marks, "relay only" to hide your IP, Streamer
+  Mode options, voice mutes and voice reports (nothing is recorded). Needs a
+  TURN relay: the Compose stack ships coturn behind a `voice` profile
 - **Progression:** accounts (guest, Discord, Google, email link), seasons,
   a 100-tier pass, daily/weekly/seasonal/milestone challenges, 45
   achievements (some hidden), a collection log, a daily login streak,
   limited-time events with their own challenges, points track and cosmetics,
   store with self-service refunds (Gem packs go to a staff refund queue),
+  gifting store items to friends and wish lists friends can gift from,
   Crown Shard shop, free Gem paths, live news and notifications
-- **Watch & share:** keep spectating after elimination, round replays (save and
-  reopen them), photo mode, share cards for wins and deep runs, and 5–15 s
-  clips of any recorded round, all made on the device (no upload)
+- **Watch & share:** a short "How you went out" replay after a knock-out
+  (slowed at the decisive moment, with the cause), automatic highlights of
+  each show on the rewards screen, keep spectating after elimination with a
+  free camera, a course overview and an auto director, a searchable player
+  list with pin and party/club first, and a broadcast overlay for streaming
+  (see [Streaming a show](docs/design/SHOWS.md#8-streaming-a-show)), round
+  replays (save and reopen them), photo mode, share cards for wins and deep
+  runs, and 5–15 s clips of any recorded round or highlight, all made on the
+  device (no upload)
 - **Input & access:** keyboard/mouse with rebinding, gamepad menus,
   single-layer touch controls, vibration, colour-blind palettes (also in 3D),
   captions and an opt-in spoken announcer
@@ -112,7 +140,7 @@ it never overwrites an existing `.env`.
 | File                                                             | Holds                                                                                                    |
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | [`.env.example`](.env.example)                                   | Secrets and URLs shared by the API, matchmaker and game server (`JWT_SECRET`, `INTERNAL_HMAC_SECRET`, …) |
-| [`apps/api/.env.example`](apps/api/.env.example)                 | API overrides: database, Redis, OAuth, SMTP, Stripe, tuning                                              |
+| [`apps/api/.env.example`](apps/api/.env.example)                 | API overrides: database, Redis, OAuth (Discord, Google, GitHub, Twitch, Apple), SMTP, Stripe, tuning     |
 | [`apps/matchmaker/.env.example`](apps/matchmaker/.env.example)   | Matchmaker overrides: Redis, lobby timing, rate limits                                                   |
 | [`apps/game-server/.env.example`](apps/game-server/.env.example) | Game server overrides: public URL, region, capacity, results outbox                                      |
 | [`apps/client/.env.example`](apps/client/.env.example)           | Client build URLs (`VITE_*`, baked into the bundle) and the dev proxy target                             |
@@ -121,6 +149,13 @@ Each service loads its own `apps/<name>/.env`, then the root `.env`; real
 environment variables always win. Secrets have no built-in defaults: a service
 lists every missing or invalid variable and exits, and refuses the `change-me`
 placeholders from the examples. Tests never read `.env` files.
+
+The root `.env` also gets an `ADMIN_TOKEN` for `pnpm admin` and
+`DEV_ADMIN_EMAIL=admin@tumble.localhost`: on a `pnpm dev` boot with no staff
+yet, the API makes that address an admin and logs a one-time sign-in link
+for the game and `/admin` (a fresh one every boot). Remove the line to opt
+out; production refuses it. Every variable is listed in the
+[environment reference](docs/SELF_HOSTING.md#environment-reference).
 
 ### Deploying
 
@@ -147,7 +182,7 @@ The "Required in production" group of each `.env.example` lists what to set.
 
 The client is a single-page app. Party invites (`/join/<code>`), OAuth and
 email sign-in returns (`/auth/*`) and Stripe returns (`/store`) must serve
-`index.html`, and `/admin` serves `admin.html`. The build includes `_redirects` (Netlify, Cloudflare Pages)
+`index.html`, `/admin` serves `admin.html` and `/status` serves `status.html`. The build includes `_redirects` (Netlify, Cloudflare Pages)
 from `apps/client/public/`, and `apps/client/vercel.json` does the same on
 Vercel; other hosts need equivalent rewrites.
 
@@ -157,9 +192,13 @@ Operators steer a running game with `pnpm admin` (it calls the API with
 `ADMIN_TOKEN`); nothing needs a restart or a client release:
 
 Staff can do the same, and work the report queue, from the web console at
-`/admin`: grant a full account a role with
+`/admin`. A fresh server gets its first admin with
+`pnpm admin staff bootstrap --email you@example.com`, which prints a one-time
+sign-in link (no email or OAuth setup needed); later staff get a role with
 `pnpm admin staff grant <userId> --role moderator|admin`, and every action is
-recorded in an audit log (see [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md#the-admin-console)).
+recorded in an audit log. **[docs/ADMIN.md](docs/ADMIN.md)** is the operator's
+handbook: roles, every `pnpm admin` command, sign-in provider setup and
+runbooks for reports, bans, refunds, incidents, backups and secret rotation.
 
 ```sh
 pnpm admin maintenance on --in 10 --for 30 --message "New rounds incoming!"
@@ -172,7 +211,13 @@ pnpm admin errors top                                   # most frequent client e
   and private lobbies (`503 maintenance` from the API and matchmaker) while
   Vs Bots keeps working and running shows finish on their game servers.
 - **Feature flags** (`store.enabled`, `chat.global`, `party.lobbyGames`,
-  `replays.enabled`, `mutators.chaos`, `analytics.sample`) default to on.
+  `replays.enabled`, `mutators.chaos`, `analytics.sample`, `events.enabled`,
+  `clubs.enabled`, `shows.mapVoting`) default to on. With `clubs.enabled`
+  off every club route answers `503 feature_disabled`, club chat stops and
+  shows stop counting toward club goals; clubs and their members are kept.
+  `voice.enabled` is the exception: it defaults to off because voice needs a
+  TURN relay (`VOICE_ICE_SERVERS`, `VOICE_TURN_SECRET`; docs/SELF_HOSTING.md,
+  "Voice chat"), and the client hides voice until both are in place.
   The client fetches them at boot and on reconnect and caches them for
   offline boots; the matchmaker and game servers read them from the API
   over the internal HMAC channel, cached 30 s.
@@ -186,6 +231,11 @@ pnpm admin errors top                                   # most frequent client e
   with no identity beyond the account id; players can turn them off in
   Settings → Gameplay, and they start off under Do Not Track or Global
   Privacy Control. Client and server crashes go to the same table.
+- **Status page** at `/status`: live component states from real probes
+  (database, KV, matchmaker, game servers per region, store and chat
+  switches), maintenance, incidents with updates, 90 days of uptime, and
+  Atom and JSON incident feeds. Admins publish incidents from the console or
+  `pnpm admin status incident open|update|resolve|list`.
 
 The full reference is the Live ops section of
 [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md#6-live-ops).
@@ -216,6 +266,7 @@ how the game runs or point the client at another server.
 | `?fresh=1`                                  | Ignore the saved profile (replays the first-launch flow)          |
 | `?api=0` / `?apiUrl=` / `?mmUrl=` / `?gs=`  | Disable or redirect the API, matchmaker or game server            |
 | `?scene=test`                               | Phase 0 renderer/physics test scene                               |
+| `?playtest=1`                               | Test play the round editor's last saved Test play round           |
 
 ### Dev sandboxes
 
@@ -321,7 +372,7 @@ the same pose with zero bandwidth.
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Foundations                 | Done: both GPU backends render, client/server Rapier bit-identical after 600 steps (`e2e/phase0.spec.ts`)                                                            |
 | The Tumbler                 | Done; tuning still needs human playtesting                                                                                                                           |
-| Netcode                     | Done: no steady-state corrections at 150 ms + 2% loss (unit-tested), lag-compensated grab/dive hit assist, protocol v5                                               |
+| Netcode                     | Done: no steady-state corrections at 150 ms + 2% loss (unit-tested), lag-compensated grab/dive hit assist, protocol v6 (round voting)                                |
 | Shows                       | Done: full shows end to end in the browser (`e2e/game.spec.ts`; 100-player offline show verified), solo/Duos/Squads online                                           |
 | Meta & accounts             | Done: guest + OAuth/email accounts, locker, parties, matchmaking, server-granted rewards, seasons, shard shop                                                        |
 | Content                     | 25 rounds, tutorial island, procedural audio. Touch controls exist but no phone frame rate has been measured                                                         |
@@ -358,19 +409,58 @@ ran at 20 fps median (14 fps p10) with 270 draw calls median (355 max).
 
 Updating the scene graph once per frame (instead of once per shadow cascade
 and again for the main pass) and skipping bone subtrees in render-list builds
-cut main-thread frame work by about a third. Measured on the same desktop with
-round 1 of `?autoplay=1&ts=1&playlist=main-show&seed=5` (Tilt Town, 100
-Tumblers, WebGPU, headless Edge, frame cap off and vsync off, 15 s of
-PLAYING, 1280×720), one run each on a shared machine:
+cut main-thread frame work by about a third (High 48.5 → 69.4 fps median,
+Ultra 39.7 → 53.8, quiet machine). The next round of work:
 
-| Tier  | Before: fps median / p10 | After: fps median / p10 | Frame work p50 before → after | Draw calls |
-| ----- | ------------------------ | ----------------------- | ----------------------------- | ---------- |
-| High  | 48.5 / 35.7              | 69.4 / 32.6             | 19.2 → 14.0 ms                | ~330       |
-| Ultra | 39.7 / 23.0              | 53.8 / 31.3             | 24.6 → 16.7 ms                | ~340       |
+- obstacle batches sync before three builds its render lists and are culled
+  per pass (view and each shadow cascade) by the 16 m cells their instances
+  occupy; a source whose glow diverges draws through a one-instance mesh that
+  shares the batch's shader, so nothing compiles mid-round;
+- the batcher compares material state in place (3.4× cheaper);
+- every cosmetic trail is one draw; spatial sound effects reuse their
+  gain/panner nodes;
+- the far CSM cascade re-renders every other frame on High and Ultra;
+- WebGL2: one CSM node graph for every lit material (programs were unique per
+  material), real draws of every pipeline under the loading cover, paced so no
+  slice waits on more than a few driver compiles;
+- loading: environment and batch builds are sliced, and the shaders of
+  crowd-drawn Tumblers' own meshes are no longer built;
+- Auto quality steps down after 3 s (not 8 s) once frames take twice the budget.
 
-Draw calls are unchanged: about 145 render objects in the main pass and 175
-across the three shadow cascades. The sim (about 5 ms a frame with 100 bots)
-is the next largest cost.
+Measured on the same 16-thread desktop with round 1 of
+`?autoplay=1&ts=1&playlist=main-show&seed=5&players=N&tier=T&backend=B`
+(Tilt Town, sandbox build, headless Edge with `--disable-gpu-vsync
+--disable-frame-rate-limit`, FPS cap Off, 1280×720, 15 s of PLAYING from
+1.5 s in). Frame times come from a `requestAnimationFrame` recorder, draw
+calls from `__tumble.drawCalls()` (`__tumble.drawPasses()` splits them per
+pass), load figures from `__tumble.loadTimings`. The machine was shared with
+four other agents' builds and browsers (CPU at 100 % throughout, adaptive
+resolution often at 0.7–0.9), so absolute numbers are far below the quiet
+figures above; base (`c3b87a2`) and new builds were run interleaved, two runs
+each for 100 players:
+
+| Players · tier · backend | Base: fps median / p10 | New: fps median / p10 | Frames > 50 ms (base → new) | Draw calls |
+| ------------------------ | ---------------------- | --------------------- | --------------------------- | ---------- |
+| 100 · High · WebGPU      | 20.8–29.4 / 15.8–24.8  | 29.3–29.9 / 22.0–25.6 | 2–129 → 4–18                | 326 → 240  |
+| 100 · Ultra · WebGPU     | 23.8–25.3 / 19.9–20.2  | 25.2–29.3 / 20.9–23.7 | 32–41 → 7–25                | 337 → 243  |
+| 40 · High · WebGPU       | 39.8 / 33.6            | 47.8 / 39.4           | 1 → 0                       | 325 → 235  |
+| 40 · Ultra · WebGPU      | 39.4 / 33.8            | 44.8 / 38.0           | 0 → 1                       | 334 → 253  |
+| 100 · High · WebGL2      | 21.7 / 17.9            | 28.8 / 22.1           | 96 → 12                     | 322 → 244  |
+| 40 · High · WebGL2       | 42.4 / 35.2            | 49.3 / 41.8           | 2 → 0                       | 324 → 228  |
+
+| Round load (100 players, High)            | Base        | New                                |
+| ----------------------------------------- | ----------- | ---------------------------------- |
+| WebGPU total                              | 9.9–10.3 s  | 5.3–7.0 s                          |
+| WebGPU longest main-thread slice          | 186–199 ms  | 165–232 ms (one shader build each) |
+| WebGL2 total                              | 42.7 s      | 25.6–26.6 s                        |
+| WebGL2 worst frame in 20 s after reveal   | 16.4–27.5 s | 0.10–0.26 s                        |
+| WebGL2 pipelines created after the reveal | 2–16        | 0                                  |
+
+The remaining long load slices are single three.js shader graph builds (the
+crowd body, 40–120 ms depending on load): three's node builder has no
+safe way to split one, and building it asynchronously outside the render it
+belongs to produced wrong shaders. The sim (4–6 ms a step with 100 bots) is
+now the largest single cost of a frame.
 
 Production runs the client and services with Postgres and Redis; the
 [self-hosting guide](docs/SELF_HOSTING.md) sets all of it up with Docker

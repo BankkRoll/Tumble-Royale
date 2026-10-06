@@ -114,6 +114,10 @@ export interface TierGovernorOptions {
   ratio?: number;
   /** Seconds after a step down (or a reset) before judging again. Default 6. */
   settleS?: number;
+  /** How far over the target counts as hopeless (2 = twice as slow). Default 2. */
+  severeRatio?: number;
+  /** Patience while frames stay over `severeRatio`. Default 3. */
+  severePatienceS?: number;
 }
 
 /**
@@ -135,7 +139,7 @@ export class TierGovernor {
   private readonly opts: Required<TierGovernorOptions>;
 
   constructor(opts: TierGovernorOptions) {
-    this.opts = { patienceS: 8, ratio: 1.4, settleS: 6, ...opts };
+    this.opts = { patienceS: 8, ratio: 1.4, settleS: 6, severeRatio: 2, severePatienceS: 3, ...opts };
     this.ema = opts.targetMs;
     this.settle = this.opts.settleS;
   }
@@ -164,7 +168,11 @@ export class TierGovernor {
     }
     if (resolutionSpent && this.ema > this.opts.targetMs * this.opts.ratio) this.overFor += dt;
     else this.overFor = 0;
-    if (this.overFor < this.opts.patienceS) return false;
+    // A 100-player round is CPU-bound (sim, scene graph, draw submission): once resolution is spent,
+    // frames at twice the budget will not recover, so they step down sooner than merely slow ones.
+    const severe = this.ema > this.opts.targetMs * this.opts.severeRatio;
+    const patience = severe ? Math.min(this.opts.patienceS, this.opts.severePatienceS) : this.opts.patienceS;
+    if (this.overFor < patience) return false;
     this.overFor = 0;
     this.settle = this.opts.settleS;
     return true;

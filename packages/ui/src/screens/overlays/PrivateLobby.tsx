@@ -22,7 +22,7 @@ import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import type { CustomLobbyMember, CustomLobbyOptions, CustomLobbyState } from '../../store/types.ts';
 import { PlayerButton } from './PlayerActions.tsx';
-import { RoundPicker } from './RoundPicker.tsx';
+import { RoundPicker, roundName } from './RoundPicker.tsx';
 
 /** Settings edits are sent after this much quiet, so a slider drag is one request. */
 const SETTINGS_DEBOUNCE_MS = 350;
@@ -177,12 +177,20 @@ function HostSettings({ lobby }: { lobby: CustomLobbyState }): JSX.Element {
         />
       ) : (
         <p className="tr-small tr-muted tr-ellipsis">
-          {o.rounds.map((id) => catalog.find((r) => r.id === id)?.name ?? id).join(' · ') || 'No rounds'}
+          {o.rounds.map((id) => roundName(id, catalog)).join(' · ') || 'No rounds'}
         </p>
       )}
       <div className="tr-settings-row">
         <span>Fill empty spots with bots</span>
         <Toggle label="Bots" checked={o.bots} onChange={(bots) => change({ bots })} />
+      </div>
+      <div className="tr-settings-row">
+        <span>Round voting</span>
+        <Toggle
+          label="Round voting"
+          checked={o.roundVoting !== false}
+          onChange={(roundVoting) => change({ roundVoting })}
+        />
       </div>
       <div className="tr-settings-row">
         <span>Max players</span>
@@ -258,6 +266,18 @@ function HostSettings({ lobby }: { lobby: CustomLobbyState }): JSX.Element {
           />
         </div>
       )}
+      {slots > 0 && (
+        <div className="tr-settings-row">
+          <span title="Spectator and broadcast seats never count as players, can join after the start, and stay quiet unless this is on">
+            Spectators can chat
+          </span>
+          <Toggle
+            label="Spectators can chat"
+            checked={o.spectatorChat ?? false}
+            onChange={(spectatorChat) => change({ spectatorChat })}
+          />
+        </div>
+      )}
     </section>
   );
 }
@@ -267,10 +287,11 @@ function SettingsSummary({ lobby }: { lobby: CustomLobbyState }): JSX.Element {
   const o = lobby.options;
   const slots = o.spectatorSlots ?? (o.spectators ? DEFAULT_SPECTATOR_SLOTS : 0);
   const rows: [string, string][] = [
-    ['Rounds', o.rounds.map((id) => catalog.find((r) => r.id === id)?.name ?? id).join(' · ') || 'None'],
+    ['Rounds', o.rounds.map((id) => roundName(id, catalog)).join(' · ') || 'None'],
     ['Max players', String(o.maxPlayers)],
     ['Players needed to start', String(o.minPlayers ?? 1)],
     ['Bots fill empty spots', o.bots ? 'Yes' : 'No'],
+    ['Round voting', o.roundVoting === false ? 'Off' : 'On'],
     ['Round length', `×${o.timerScale}`],
     ['Pre-show countdown', `${o.countdownSec ?? 10}s`],
     ['Spectator slots', slots > 0 ? String(slots) : 'Off'],

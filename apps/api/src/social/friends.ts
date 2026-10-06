@@ -19,11 +19,12 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.ts';
 import type { DbOrTx } from '../db/client.ts';
-import { friendships, matchParticipants, matches, profiles } from '../db/schema.ts';
+import { clubMembers, clubs, friendships, matchParticipants, matches, profiles } from '../db/schema.ts';
 import { requireUser } from '../http/auth.ts';
 import { badRequest, conflict, notFound, parse } from '../http/errors.ts';
 import { parseNameTag } from '../names/display-name.ts';
 import { REPORTABLE_PRESENCE, type SocialRef } from '../realtime/notifier.ts';
+import { refreshVoice } from '../voice/service.ts';
 import { PRESENCE_RANK, presenceView, presenceViews, setPresence } from './presence.ts';
 
 /** Maximum accepted friends per player. */
@@ -115,13 +116,15 @@ async function names(db: DbOrTx, ids: string[]): Promise<Map<string, Card>> {
   return new Map(rows.map((r) => [r.id, r]));
 }
 
-/** `{userId, name, tag}` for social events. */
+/** `{userId, name, tag, club?}` for social events (`club` is the club tag). */
 export async function socialRef(db: DbOrTx, userId: string): Promise<SocialRef> {
   const [me] = await db
-    .select({ displayName: profiles.displayName, tag: profiles.tag })
+    .select({ displayName: profiles.displayName, tag: profiles.tag, club: clubs.tag })
     .from(profiles)
+    .leftJoin(clubMembers, eq(clubMembers.userId, profiles.userId))
+    .leftJoin(clubs, eq(clubs.id, clubMembers.clubId))
     .where(eq(profiles.userId, userId));
-  return { userId, name: me?.displayName ?? '', tag: me?.tag ?? '' };
+  return { userId, name: me?.displayName ?? '', tag: me?.tag ?? '', ...(me?.club ? { club: me.club } : {}) };
 }
 
 function pairWhere(a: string, b: string) {
@@ -459,6 +462,7 @@ export function registerFriendRoutes(app: FastifyInstance, ctx: AppContext): voi
     });
     // The blocked player sees an ordinary removal; the block itself stays private.
     await notifyRemoval(ctx, auth.userId, userId, removed);
+    await refreshVoice(ctx, [auth.userId, userId]);
     return { status: 'blocked' };
   });
 
@@ -474,6 +478,7 @@ export function registerFriendRoutes(app: FastifyInstance, ctx: AppContext): voi
           eq(friendships.status, 'blocked'),
         ),
       );
+    await refreshVoice(ctx, [auth.userId, userId]);
     return reply.code(204).send();
   });
 

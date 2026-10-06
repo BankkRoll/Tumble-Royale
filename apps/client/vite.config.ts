@@ -6,9 +6,11 @@ import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { pwa } from './vite-pwa.ts';
 
 // Every *.html in the client root is an entry: index.html is the game,
-// admin.html the admin console, the rest dev sandboxes (playground, obstacle
-// gallery, UI screen preview, …). Dev serves them all; production builds ship
-// the game and the console (a separate entry, so players never download it),
+// admin.html the admin console, editor.html the round editor, status.html the
+// public status page, the rest dev sandboxes (playground, obstacle gallery,
+// UI screen preview, …). Dev serves them all; production builds ship the
+// game, the console, the editor and the status page (separate entries, so
+// players never download them with the game),
 // and `--mode sandbox` builds everything (with dev URL options enabled) for
 // e2e and media capture.
 const root = import.meta.dirname;
@@ -22,11 +24,16 @@ const pages = Object.fromEntries(
 export const PRODUCTION_INPUT = {
   index: resolve(root, 'index.html'),
   admin: resolve(root, 'admin.html'),
+  editor: resolve(root, 'editor.html'),
+  status: resolve(root, 'status.html'),
 };
 
-/** Serves the console at `/admin` in `vite dev` / `vite preview`, as the deploy proxies do. */
+/** Serves `/admin`, `/editor` and `/status` from their pages in `vite dev` / `vite preview`, as the deploy proxies do. */
 const toAdminHtml = (req: { url?: string }, _res: unknown, next: () => void) => {
-  if (req.url && /^\/admin\/?(\?|$)/.test(req.url)) req.url = req.url.replace(/^\/admin\/?/, '/admin.html');
+  for (const page of ['admin', 'editor', 'status']) {
+    const re = new RegExp(`^/${page}/?(?=\\?|$)`);
+    if (req.url && re.test(req.url)) req.url = req.url.replace(re, `/${page}.html`);
+  }
   next();
 };
 const adminRoute: Plugin = {

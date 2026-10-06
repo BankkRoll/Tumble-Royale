@@ -19,8 +19,12 @@ import './theme/menu.css';
 import './theme/progression.css';
 import './theme/account.css';
 import './theme/social.css';
+import './theme/clubs.css';
+import './theme/voice.css';
 import './theme/replay.css';
 import './theme/share.css';
+import './theme/vote.css';
+import './theme/broadcast.css';
 
 /** Options for `mountUI`. */
 export interface MountOptions {

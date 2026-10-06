@@ -4,7 +4,7 @@
  * queue by name, and a member playing on their own tells the party.
  * Runs on memory storage and, in CI, on Redis + Postgres.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { userChannel, type RealtimeEvent } from '../src/realtime/notifier.ts';
 import { createTestApi, type TestApi, type TestUser } from './helpers.ts';
 import { BACKENDS } from './infra.ts';
@@ -126,15 +126,19 @@ describe.each(BACKENDS)('party queue handshake ($name)', (backend) => {
     expect(res.statusCode).toBe(200);
     await backend.settle();
     expect(await readyOf(bob, ann.id)).toBe(false);
-    expect(seen).toContainEqual(
-      expect.objectContaining({ type: 'party_solo', userId: ann.id, leader: false, playing: true }),
+    await vi.waitFor(() =>
+      expect(seen).toContainEqual(
+        expect.objectContaining({ type: 'party_solo', userId: ann.id, leader: false, playing: true }),
+      ),
     );
     // The player who went solo is not told about themselves.
     expect(annSeen.some((e) => e.type === 'party_solo')).toBe(false);
 
     await api.req('POST', '/party/solo', { token: ann.accessToken, body: { playing: false } });
     await backend.settle();
-    expect(seen.filter((e) => e.type === 'party_solo').at(-1)).toMatchObject({ playing: false });
+    await vi.waitFor(() =>
+      expect(seen.filter((e) => e.type === 'party_solo').at(-1)).toMatchObject({ playing: false }),
+    );
   });
 
   it("announces the leader's solo show without touching anyone's vote", async () => {
@@ -142,9 +146,10 @@ describe.each(BACKENDS)('party queue handshake ($name)', (backend) => {
     const ann = members[0]!;
     const seen = await listen(ann.id);
     await api.req('POST', '/party/solo', { token: leader.accessToken, body: { playing: true } });
-    await backend.settle();
-    expect(seen).toContainEqual(
-      expect.objectContaining({ type: 'party_solo', userId: leader.id, leader: true, playing: true }),
+    await vi.waitFor(() =>
+      expect(seen).toContainEqual(
+        expect.objectContaining({ type: 'party_solo', userId: leader.id, leader: true, playing: true }),
+      ),
     );
     expect(await readyOf(ann, ann.id)).toBe(true);
     expect(await readyOf(ann, leader.id)).toBe(true);

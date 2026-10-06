@@ -5,7 +5,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { adminAuditLog, inventoryItems, loadouts, nameHistory } from '../src/db/schema.ts';
 import { openDatabase } from '../src/db/client.ts';
 import { createKV } from '../src/kv/index.ts';
@@ -143,10 +143,25 @@ describe('authorisation of every admin route', () => {
     ['DELETE', `/internal/bans/${uuid}`],
     ['GET', '/internal/users/lookup?q=abc'],
     ['GET', `/internal/users/${uuid}`],
+    ['GET', `/internal/users/${uuid}/gifts`],
     ['POST', `/internal/users/${uuid}/rename`, { displayName: 'Polite' }],
     ['POST', `/internal/users/${uuid}/warn`, { reason: 'nope' }],
     ['POST', `/internal/users/${uuid}/reset-name`, { reason: 'nope' }],
+    ['GET', '/internal/clubs'],
+    ['GET', `/internal/clubs/${uuid}`],
+    ['POST', `/internal/clubs/${uuid}/rename`, { name: 'Polite Club', reason: 'nope' }],
+    ['POST', `/internal/clubs/${uuid}/reset-name`, { reason: 'nope' }],
+    ['POST', `/internal/clubs/${uuid}/clear-description`, { reason: 'nope' }],
+    ['POST', `/internal/clubs/${uuid}/reset-emblem`, { reason: 'nope' }],
+    ['POST', `/internal/clubs/${uuid}/disband`, { reason: 'nope' }],
+    ['GET', '/internal/club-reports'],
+    ['POST', '/internal/club-reports/action', { reportIds: [uuid], action: 'dismiss', reason: 'nope' }],
     ['GET', '/internal/audit'],
+    ['GET', '/internal/status/incidents'],
+    ['GET', '/internal/custom-rounds'],
+    ['GET', '/internal/custom-rounds/ZZZZZZZZ'],
+    ['POST', '/internal/custom-rounds/ZZZZZZZZ/takedown', { reason: 'nope' }],
+    ['POST', '/internal/custom-rounds/ZZZZZZZZ/dismiss-reports', { reason: 'nope' }],
   ];
   const adminRoutes: [Method, string, unknown?][] = [
     ['GET', '/internal/flags'],
@@ -163,9 +178,14 @@ describe('authorisation of every admin route', () => {
     ['POST', `/internal/payments/debt/${uuid}/forgive`],
     ['POST', `/internal/users/${uuid}/currency`, { currency: 'gems', delta: 1, reason: 'nope' }],
     ['DELETE', `/internal/users/${uuid}/inventory/x`, { reason: 'nope' }],
+    ['POST', `/internal/gifts/${uuid}/reverse`, { reason: 'nope' }],
     ['GET', '/internal/staff'],
     ['PUT', `/internal/staff/${uuid}`, { role: 'admin' }],
     ['DELETE', `/internal/staff/${uuid}`],
+    ['POST', '/internal/status/incidents', { title: 'Nope', impact: 'minor', message: 'nope' }],
+    ['POST', `/internal/status/incidents/${uuid}/updates`, { status: 'monitoring', message: 'nope' }],
+    ['POST', `/internal/status/incidents/${uuid}/resolve`, {}],
+    ['POST', '/internal/custom-rounds/ZZZZZZZZ/restore', { reason: 'nope' }],
   ];
 
   it('refuses anonymous callers, guests and signed-in players everywhere', async () => {
@@ -300,7 +320,7 @@ describe('report queue', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().sanctions).toEqual([expect.objectContaining({ userId: target.id, kind: 'warn' })]);
-    expect(seen.some((m) => m.includes('keep chat friendly'))).toBe(true);
+    await vi.waitFor(() => expect(seen.some((m) => m.includes('keep chat friendly'))).toBe(true));
     const page = await asToken(mod.session)('GET', `/internal/users/${target.id}`);
     expect(page.json().warnings).toEqual([expect.objectContaining({ reason: 'keep chat friendly' })]);
     expect(page.json().reportsAgainst.byStatus).toMatchObject({ actioned: 2 });

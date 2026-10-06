@@ -10,17 +10,42 @@
  * - typed endpoint helpers mirroring `apps/api/README.md`.
  */
 import type { PlayerRewardMsg } from '@tumble/netcode';
+import type { ClubEmblemMotif, ClubJoinMode, ClubRole, VoiceConfigResponse } from '@tumble/shared';
 import type { WalletLedger } from './online/checkout.ts';
+import type {
+  ApiGiftInbox,
+  ApiGiftPicker,
+  ApiGiftResult,
+  ApiWishlist,
+  ApiWishlistEntry,
+} from './online/gifts.ts';
 import type { ApiPurchaseHistory, ApiRefundResult } from './online/purchaseHistory.ts';
-import { tokenSubject, type AuthOutcome, type LoginProvider } from './online/returnUrl.ts';
-import { loadJson, removeJson, saveJson } from './storage.ts';
+import {
+  tokenSubject,
+  type AuthOutcome,
+  type LoginProvider,
+  type OAuthProvider,
+} from './online/returnUrl.ts';
+import { loadJson, removeJson, saveJson, storageKeyName } from './storage.ts';
 
 /** Tokens returned by `/auth/guest` and `/auth/refresh`. */
 interface AuthTokens {
   accessToken: string;
   refreshToken: string;
   deviceToken: string;
+  /**
+   * The server refused the refresh token and there is no device token to fall
+   * back on: the account still exists but this browser must sign in again.
+   * Kept rather than deleted so a launch never mints a guest over it.
+   */
+  expired?: true;
 }
+
+/** Outcome of a refresh: rotated, refused by the server, or not answered. */
+export type RefreshResult = 'ok' | 'rejected' | 'unreachable';
+
+/** Web Locks name that serialises refreshes across this origin's tabs. */
+const REFRESH_LOCK = 'tumble-auth-refresh';
 
 const PROBE_TIMEOUT_MS = 900;
 const REQUEST_TIMEOUT_MS = 8000;
@@ -77,15 +102,19 @@ export interface ApiAuthResult {
   refreshToken: string;
   user: { id: string; displayName: string; tag: string; isGuest: boolean };
   outcome: AuthOutcome;
-  provider: LoginProvider;
+  /** `link` for a one-time staff sign-in link. */
+  provider: LoginProvider | 'link';
 }
 
-/** `GET /auth/providers`. */
-export interface ApiAuthProviders {
-  discord: boolean;
-  google: boolean;
-  email: boolean;
-}
+/** `GET /auth/providers`: which sign-in methods the server has turned on. */
+export type ApiAuthProviders = Record<LoginProvider, boolean>;
+
+/**
+ * What a signed-in player asks for when leaving for a provider: `link` adds
+ * the login to this account (refused if another account owns it), `signIn`
+ * may switch the device to the account that owns it.
+ */
+export type AuthIntent = 'link' | 'signIn';
 
 /** API loadout body (content `CosmeticLoadout` + banner/footsteps). */
 export interface ApiLoadoutItems {
@@ -440,7 +469,8 @@ export type ApiRecentPlayer = ApiFriendCard & { relation?: ApiRelation; presence
 export type ApiSearchResult = ApiFriendCard & { relation: ApiRelation };
 
 /** Report reasons accepted by `POST /report`. */
-export type ApiReportReason = 'cheating' | 'harassment' | 'offensive_name' | 'griefing' | 'spam' | 'other';
+export type ApiReportReason =
+  'cheating' | 'harassment' | 'offensive_name' | 'griefing' | 'spam' | 'voice' | 'other';
 
 /** A party (API view). */
 export interface ApiParty {
@@ -451,6 +481,73 @@ export interface ApiParty {
   playlistId: string;
   inviteUrl: string;
   maxSize: number;
+}
+
+/** A club as other players see it. */
+export interface ApiClubCard {
+  id: string;
+  name: string;
+  tag: string;
+  description: string;
+  emblem: { motif: ClubEmblemMotif; primary: string; secondary: string };
+  joinMode: ClubJoinMode;
+  memberCount: number;
+  maxMembers: number;
+}
+
+/** `GET /clubs/me`. */
+export interface ApiMyClub {
+  club:
+    | (ApiClubCard & {
+        members: {
+          userId: string;
+          displayName: string;
+          tag: string;
+          level: number;
+          role: ClubRole;
+          presence: string;
+        }[];
+      })
+    | null;
+  role: ClubRole | null;
+  joinRequests?: { userId: string; displayName: string; tag: string; level: number; at: string }[];
+  invites: { club: ApiClubCard; from: { userId: string; name: string; tag: string } | null }[];
+  requests: { club: ApiClubCard }[];
+}
+
+/** A club chat line. */
+export interface ApiClubChatLine {
+  id: string;
+  clubId: string;
+  from: { userId: string; name: string; tag: string; club?: string };
+  text: string;
+  masked?: string;
+  at: number;
+}
+
+/** `GET /clubs/me/goals`. */
+export interface ApiClubGoals {
+  week: string;
+  refreshesAt: string;
+  eligible: boolean;
+  goals: {
+    goalId: string;
+    title: string;
+    progress: number;
+    target: number;
+    completed: boolean;
+    claimed: boolean;
+    reward: { xp: number; gumballs: number };
+  }[];
+  contributions: {
+    userId: string;
+    displayName: string;
+    tag: string;
+    shows: number;
+    rounds: number;
+    crowns: number;
+  }[];
+  settled: { goalId: string; title: string; xp: number; gumballs: number }[];
 }
 
 /** `GET /party/code/:code`: who is behind an invite code. */
@@ -534,13 +631,38 @@ export class ApiClient {
   /** True after a successful health probe. */
   online = false;
   private tokens: AuthTokens | null = loadJson<AuthTokens>('auth');
-  private refreshing: Promise<boolean> | null = null;
+  private refreshing: Promise<RefreshResult> | null = null;
+  private expiredListeners = new Set<() => void>();
 
-  constructor(readonly baseUrl: string) {}
+  constructor(readonly baseUrl: string) {
+    // Another tab (or the admin console) may rotate the shared session; follow
+    // it instead of refreshing with a copy the server has already replaced.
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', (e) => {
+        if (e.key === storageKeyName('auth')) this.tokens = loadJson<AuthTokens>('auth');
+      });
+    }
+  }
 
-  /** Whether a guest session exists (tokens stored). */
+  /** Whether a session exists (tokens stored), even an expired one. */
   get signedIn(): boolean {
     return this.tokens !== null;
+  }
+
+  /** The stored session was refused by the server and needs a fresh sign-in. */
+  get expired(): boolean {
+    return this.tokens?.expired === true;
+  }
+
+  /**
+   * Calls `fn` when the session is found expired (refused and nothing to fall
+   * back on), so the UI can ask the player to sign in again.
+   *
+   * @returns Unsubscribe.
+   */
+  onExpired(fn: () => void): () => void {
+    this.expiredListeners.add(fn);
+    return () => this.expiredListeners.delete(fn);
   }
 
   /** Realtime gateway URL for the current access token. */
@@ -588,14 +710,30 @@ export class ApiClient {
   }
 
   /**
-   * Rotates the refresh token at launch (falls back to device sign-in).
+   * Rotates the refresh token at launch. Only a refusal from the server falls
+   * back to the device sign-in, and only when this device holds a device
+   * token; a timeout or server error keeps the session for the next try, and a
+   * refused session without one is marked expired instead of being replaced
+   * by a new guest.
    *
-   * @param displayName - Current display name for the fallback.
+   * @param displayName - Current display name for the device fallback.
+   * @returns True when the session is usable.
    */
   async resume(displayName: string): Promise<boolean> {
-    if (!this.online || !this.tokens) return false;
-    if (await this.refresh()) return true;
-    return this.signInGuest(displayName);
+    if (!this.online || !this.tokens || this.tokens.expired) return false;
+    const result = await this.refresh();
+    if (result === 'ok') return true;
+    if (result === 'unreachable') return false;
+    if (this.tokens?.deviceToken) return this.signInGuest(displayName);
+    this.markExpired();
+    return false;
+  }
+
+  private markExpired(): void {
+    if (!this.tokens) return;
+    this.tokens = { ...this.tokens, expired: true };
+    saveJson('auth', this.tokens);
+    for (const fn of this.expiredListeners) fn();
   }
 
   /**
@@ -663,29 +801,67 @@ export class ApiClient {
     );
   }
 
-  /** Rotates the refresh token; concurrent callers share one rotation. */
-  private refresh(): Promise<boolean> {
+  /**
+   * Rotates the refresh token. Callers in this tab share one rotation, and
+   * tabs take turns through a Web Lock; each re-reads the stored session
+   * first, so a tab whose token another tab already rotated just adopts the
+   * result instead of presenting a stale copy.
+   */
+  private refresh(): Promise<RefreshResult> {
     if (this.refreshing) return this.refreshing;
-    const tokens = this.tokens;
-    if (!tokens) return Promise.resolve(false);
-    this.refreshing = (async () => {
-      const r = await fetchJson<{ accessToken: string; refreshToken: string }>(
-        `${this.baseUrl}/auth/refresh`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ refreshToken: tokens.refreshToken }),
-        },
-        REQUEST_TIMEOUT_MS,
-      );
-      if (!r?.accessToken) return false;
-      this.tokens = { ...tokens, accessToken: r.accessToken, refreshToken: r.refreshToken };
-      saveJson('auth', this.tokens);
-      return true;
-    })().finally(() => {
+    if (!this.tokens || this.tokens.expired) return Promise.resolve('rejected');
+    const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+    // COMPAT: without Web Locks (old Safari, some webviews) tabs race; the
+    // server's short reuse grace window keeps a racing tab signed in.
+    const locked = locks
+      ? new Promise<RefreshResult>((resolve, reject) => {
+          locks.request(REFRESH_LOCK, () => this.rotate().then(resolve, reject)).catch(reject);
+        })
+      : this.rotate();
+    const pending: Promise<RefreshResult> = locked.finally(() => {
       this.refreshing = null;
     });
-    return this.refreshing;
+    this.refreshing = pending;
+    return pending;
+  }
+
+  private async rotate(): Promise<RefreshResult> {
+    const stored = loadJson<AuthTokens>('auth');
+    const mine = this.tokens;
+    if (!mine) return 'rejected';
+    if (stored && stored.refreshToken !== mine.refreshToken) {
+      // Another tab rotated (or switched accounts) meanwhile; its result is current.
+      this.tokens = stored;
+      if (!stored.expired && secondsLeft(stored.accessToken) >= REFRESH_MARGIN_S) return 'ok';
+    }
+    const tokens = this.tokens;
+    if (!tokens || tokens.expired) return 'rejected';
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken: tokens.refreshToken }),
+        signal: ctrl.signal,
+      });
+    } catch {
+      return 'unreachable';
+    } finally {
+      window.clearTimeout(timer);
+    }
+    // Only a definite refusal ends the session; rate limits and outages do not.
+    if (res.status === 400 || res.status === 401 || res.status === 403) return 'rejected';
+    if (!res.ok) return 'unreachable';
+    const r = (await res.json().catch(() => null)) as { accessToken?: string; refreshToken?: string } | null;
+    if (!r?.accessToken || !r.refreshToken) return 'unreachable';
+    // The device may have switched accounts while the request was out; never
+    // write the old session's tokens over the new one.
+    if (this.tokens?.refreshToken !== tokens.refreshToken) return this.tokens ? 'ok' : 'rejected';
+    this.tokens = { ...tokens, accessToken: r.accessToken, refreshToken: r.refreshToken };
+    saveJson('auth', this.tokens);
+    return 'ok';
   }
 
   /**
@@ -693,9 +869,12 @@ export class ApiClient {
    * for the matchmaker and the realtime gateways.
    */
   async accessToken(): Promise<string | null> {
-    if (!this.tokens) return null;
-    if (secondsLeft(this.tokens.accessToken) < REFRESH_MARGIN_S) await this.refresh();
-    return this.tokens?.accessToken ?? null;
+    if (!this.tokens || this.tokens.expired) return null;
+    if (secondsLeft(this.tokens.accessToken) < REFRESH_MARGIN_S) {
+      const result = await this.refresh();
+      if (result === 'rejected' && !this.tokens?.deviceToken) this.markExpired();
+    }
+    return this.tokens?.expired ? null : (this.tokens?.accessToken ?? null);
   }
 
   /**
@@ -733,7 +912,11 @@ export class ApiClient {
     let res: Response;
     try {
       res = await send();
-      if (res.status === 401 && opts.auth !== false && (await this.refresh())) res = await send();
+      if (res.status === 401 && opts.auth !== false && this.tokens) {
+        const result = await this.refresh();
+        if (result === 'ok') res = await send();
+        else if (result === 'rejected' && !this.tokens?.deviceToken) this.markExpired();
+      }
     } catch (err) {
       throw new ApiError(0, 'network', err instanceof Error ? err.message : 'Network error');
     }
@@ -779,22 +962,42 @@ export class ApiClient {
 
   authProviders = (): Promise<ApiAuthProviders> =>
     this.request('GET', '/auth/providers', undefined, { auth: false });
-  /** Trades the one-time code from `/auth/complete` for a session. */
-  exchangeCode = (code: string): Promise<ApiAuthResult> =>
-    this.request('POST', '/auth/exchange', { code }, { auth: false });
-  /** Redeems an email magic-link token for a session. */
-  verifyEmail = (token: string): Promise<ApiAuthResult> =>
-    this.request('POST', '/auth/email/verify', { token }, { auth: false });
   /**
-   * Starts Discord/Google sign-in. With `link` the signed-in account is sent
-   * along, so a new identity is linked to it (or the device switches to the
-   * account that already owns it).
+   * Trades the one-time code from `/auth/complete` for a session. `nonce` is
+   * the secret behind the binding sent at start; the current session (if
+   * any) goes along, since only that account can receive a link.
    */
-  startOAuth = (provider: 'discord' | 'google', link: boolean): Promise<{ url: string }> =>
-    this.request('POST', `/auth/${provider}/start`, undefined, { auth: link });
-  /** Emails a magic link; `link` works as for {@link ApiClient.startOAuth}. */
-  startEmail = (email: string, link: boolean): Promise<{ sent: boolean }> =>
-    this.request('POST', '/auth/email/start', { email }, { auth: link });
+  exchangeCode = (code: string, nonce: string): Promise<ApiAuthResult> =>
+    this.request('POST', '/auth/exchange', { code, nonce });
+  /** Redeems an email magic-link token for a session; `nonce` as for {@link ApiClient.exchangeCode}. */
+  verifyEmail = (token: string, nonce: string): Promise<ApiAuthResult> =>
+    this.request('POST', '/auth/email/verify', { token, nonce });
+  /** Redeems a one-time staff sign-in link (`pnpm admin staff bootstrap` / `staff link`). */
+  verifyStaffLink = (token: string): Promise<ApiAuthResult> =>
+    this.request('POST', '/auth/staff-link', { token }, { auth: false });
+  /**
+   * Starts an OAuth sign-in. With `link` the signed-in account is sent along
+   * with the intent: a new identity is linked to it, and one another account
+   * owns is refused (`link`) or switched to (`signIn`). `binding` is the
+   * SHA-256 of a nonce this browser keeps until it redeems the code.
+   */
+  startOAuth = (
+    provider: OAuthProvider,
+    link: boolean,
+    intent: AuthIntent,
+    binding: string,
+  ): Promise<{ url: string }> =>
+    this.request('POST', `/auth/${provider}/start`, link ? { intent, binding } : { binding }, { auth: link });
+  /** Emails a magic link; `link`, `intent` and `binding` work as for {@link ApiClient.startOAuth}. */
+  startEmail = (
+    email: string,
+    link: boolean,
+    intent: AuthIntent,
+    binding: string,
+  ): Promise<{ sent: boolean }> =>
+    this.request('POST', '/auth/email/start', link ? { email, intent, binding } : { email, binding }, {
+      auth: link,
+    });
   unlinkIdentity = (provider: LoginProvider): Promise<{ linkedProviders: string[] }> =>
     this.request('DELETE', `/me/identities/${provider}`);
 
@@ -812,6 +1015,31 @@ export class ApiClient {
   /** Refunds a store purchase, or files a Gem pack refund request (`reason` required there). */
   refundPurchase = (purchaseId: string, reason?: string): Promise<ApiRefundResult> =>
     this.request('POST', `/purchases/${encodeURIComponent(purchaseId)}/refund`, reason ? { reason } : {});
+  /** Gifts sent and received, with today's count and the policy. */
+  gifts = (): Promise<ApiGiftInbox> => this.request('GET', '/gifts');
+  /** Every friend with whether they can be gifted this offer now. */
+  giftPicker = (offerId: string): Promise<ApiGiftPicker> =>
+    this.request('GET', `/gifts/eligibility?offerId=${encodeURIComponent(offerId)}`);
+  /** Buys an offer for a friend; the key makes a retried send replay the first. */
+  sendGift = (
+    body: { recipientId: string; offerId: string; message?: string },
+    key: string,
+  ): Promise<ApiGiftResult & { wallet: ApiMe['wallet'] }> =>
+    this.request('POST', '/gifts', body, { idempotencyKey: key });
+  /** Opens or declines a received gift, or cancels a sent one. */
+  giftAction = (giftId: string, action: 'open' | 'decline' | 'cancel'): Promise<ApiGiftResult> =>
+    this.request('POST', `/gifts/${encodeURIComponent(giftId)}/${action}`);
+  wishlist = (): Promise<ApiWishlist> => this.request('GET', '/wishlist');
+  wishlistAdd = (itemId: string): Promise<ApiWishlist> => this.request('POST', '/wishlist', { itemId });
+  wishlistRemove = (itemId: string): Promise<ApiWishlist> =>
+    this.request('DELETE', `/wishlist/${encodeURIComponent(itemId)}`);
+  wishlistOrder = (itemIds: string[]): Promise<ApiWishlist> =>
+    this.request('PUT', '/wishlist/order', { itemIds });
+  wishlistSettings = (patch: { visibility?: 'friends' | 'nobody'; alerts?: boolean }): Promise<ApiWishlist> =>
+    this.request('PATCH', '/wishlist/settings', patch);
+  /** A friend's wish list (403 `wishlist_hidden` when they don't share it with you). */
+  friendWishlist = (userId: string): Promise<{ userId: string; entries: ApiWishlistEntry[] }> =>
+    this.request('GET', `/players/${encodeURIComponent(userId)}/wishlist`);
   shardShop = (): Promise<ApiShardShop> => this.request('GET', '/shop/shards');
   buyShardOffer = (offerId: string, key: string): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> =>
     this.request('POST', '/shop/shards/buy', { offerId }, { idempotencyKey: key });
@@ -936,10 +1164,115 @@ export class ApiClient {
     this.request('POST', '/party/playlist', { playlistId });
   inviteToParty = (userId: string): Promise<{ party: ApiParty }> =>
     this.request('POST', '/party/invite', { userId });
+  /** Whether voice chat can be switched on for this account (`GET /voice/config`). */
+  voiceConfig = (): Promise<VoiceConfigResponse> => this.request('GET', '/voice/config');
+
+  // ---------------------------------------------------------------------------
+  // Clubs
+  // ---------------------------------------------------------------------------
+
+  myClub = (): Promise<ApiMyClub> => this.request('GET', '/clubs/me');
+  createClub = (body: {
+    name: string;
+    tag: string;
+    description: string;
+    emblem: ApiClubCard['emblem'];
+    joinMode: ApiClubCard['joinMode'];
+  }): Promise<{ club: ApiClubCard }> => this.request('POST', '/clubs', body);
+  editClub = (patch: Record<string, unknown>): Promise<{ club: ApiClubCard }> =>
+    this.request('PATCH', '/clubs/me', patch);
+  searchClubs = (q: string): Promise<{ clubs: ApiClubCard[] }> =>
+    this.request('GET', `/clubs/search?q=${encodeURIComponent(q)}`);
+  recommendedClubs = (): Promise<{ clubs: ApiClubCard[] }> => this.request('GET', '/clubs/recommended');
+  joinClub = (clubId: string): Promise<{ status: 'joined' | 'requested'; club: ApiClubCard }> =>
+    this.request('POST', `/clubs/${encodeURIComponent(clubId)}/join`);
+  cancelClubRequest = (clubId: string): Promise<void> =>
+    this.request('DELETE', `/clubs/${encodeURIComponent(clubId)}/request`);
+  answerClubInvite = (clubId: string, accept: boolean): Promise<unknown> =>
+    this.request('POST', `/clubs/invites/${encodeURIComponent(clubId)}/${accept ? 'accept' : 'decline'}`);
+  answerClubRequest = (userId: string, accept: boolean): Promise<unknown> =>
+    this.request('POST', `/clubs/me/requests/${encodeURIComponent(userId)}/${accept ? 'accept' : 'decline'}`);
+  inviteToClub = (userId: string): Promise<unknown> => this.request('POST', '/clubs/me/invites', { userId });
+  kickFromClub = (userId: string): Promise<void> =>
+    this.request('POST', `/clubs/me/members/${encodeURIComponent(userId)}/kick`);
+  setClubRole = (userId: string, role: 'officer' | 'member'): Promise<unknown> =>
+    this.request('POST', `/clubs/me/members/${encodeURIComponent(userId)}/role`, { role });
+  transferClub = (userId: string): Promise<unknown> => this.request('POST', '/clubs/me/transfer', { userId });
+  leaveClub = (): Promise<void> => this.request('POST', '/clubs/me/leave');
+  disbandClub = (): Promise<void> => this.request('POST', '/clubs/me/disband');
+  clubChatHistory = (): Promise<{ clubId: string; lines: ApiClubChatLine[] }> =>
+    this.request('GET', '/clubs/me/chat');
+  clubChat = (text: string): Promise<{ message: ApiClubChatLine }> =>
+    this.request('POST', '/clubs/me/chat', { text });
+  clubGoals = (): Promise<ApiClubGoals> => this.request('GET', '/clubs/me/goals');
+  claimClubGoal = (week: string, goalId: string): Promise<unknown> =>
+    this.request('POST', '/clubs/me/goals/claim', { week, goalId });
+  clubPartyUp = (userId: string): Promise<{ party: ApiParty }> =>
+    this.request('POST', '/clubs/me/party-up', { userId });
+  reportClub = (clubId: string, reason: string, details?: string): Promise<{ id: string }> =>
+    this.request(
+      'POST',
+      `/clubs/${encodeURIComponent(clubId)}/report`,
+      details ? { reason, details } : { reason },
+    );
+
   /**
    * Party queue ticket. `region` is the client's measured pick (Settings →
    * Region); the API also reads it from the account after `PATCH /me`.
    */
   queueTicket = (playlistId: string, region?: string): Promise<{ ticket: string; expiresIn: number }> =>
     this.request('POST', '/party/queue-ticket', region ? { playlistId, region } : { playlistId });
+
+  // ---------------------------------------------------------------------------
+  // Shared custom rounds
+  // ---------------------------------------------------------------------------
+
+  /** A shared round by code (anyone; the owner also sees their unpublished rounds). */
+  customRound = (code: string): Promise<ApiCustomRound> =>
+    this.request('GET', `/custom-rounds/${encodeURIComponent(code)}`, undefined, { auth: this.signedIn });
+  myCustomRounds = (): Promise<{ rounds: ApiCustomRoundSummary[]; limit: number }> =>
+    this.request('GET', '/custom-rounds/mine');
+  publishCustomRound = (round: unknown, description: string): Promise<{ round: ApiCustomRoundSummary }> =>
+    this.request('POST', '/custom-rounds', { round, description });
+  updateCustomRound = (
+    code: string,
+    round: unknown,
+    description: string,
+  ): Promise<{ round: ApiCustomRoundSummary }> =>
+    this.request('PUT', `/custom-rounds/${encodeURIComponent(code)}`, { round, description });
+  setCustomRoundPublished = (code: string, published: boolean): Promise<{ round: ApiCustomRoundSummary }> =>
+    this.request('POST', `/custom-rounds/${encodeURIComponent(code)}/${published ? 'publish' : 'unpublish'}`);
+  deleteCustomRound = (code: string): Promise<void> =>
+    this.request('DELETE', `/custom-rounds/${encodeURIComponent(code)}`);
+  reportCustomRound = (
+    code: string,
+    reason: ApiRoundReportReason,
+    details?: string,
+  ): Promise<{ id: string }> =>
+    this.request('POST', `/custom-rounds/${encodeURIComponent(code)}/report`, {
+      reason,
+      ...(details ? { details } : {}),
+    });
+}
+
+/** Why a shared round is reported. */
+export type ApiRoundReportReason = 'offensive' | 'broken' | 'spam' | 'copied' | 'other';
+
+/** A shared round in lists. */
+export interface ApiCustomRoundSummary {
+  code: string;
+  name: string;
+  description: string;
+  type: string;
+  status: 'published' | 'unpublished' | 'taken_down';
+  sizeBytes: number;
+  createdAt: string;
+  updatedAt: string;
+  takedownReason?: string | null;
+}
+
+/** `GET /custom-rounds/:code`. */
+export interface ApiCustomRound extends ApiCustomRoundSummary {
+  author: string | null;
+  definition: unknown;
 }

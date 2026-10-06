@@ -33,6 +33,8 @@ export type LedgerReason =
   | 'achievement_reward'
   /** A limited-time event tier or challenge (ref `event:<eventId>:<tier>` or `event:<eventId>:challenge:<id>`). */
   | 'event_reward'
+  /** A weekly club goal (ref `club:<clubId>:<YYYY-Www>:<goalId>`). */
+  | 'club_reward'
   /** A daily login claim (ref `login:<YYYY-MM-DD>`). */
   | 'login_reward'
   | 'shard_conversion'
@@ -42,6 +44,10 @@ export type LedgerReason =
   | 'shard_shop'
   /** Currency given back by a self-service store refund (ref `refund:<purchaseId>`). */
   | 'store_refund'
+  /** A store item bought for a friend (ref `gift:<giftId>`). */
+  | 'gift'
+  /** A gift's price given back to its sender: declined, cancelled, returned or reversed (ref `gift:<giftId>`). */
+  | 'gift_refund'
   /** Gems (and debt) taken back after a refund or dispute (ref `<purchaseId>:<n>`). */
   | 'gem_reversal'
   /** Gems given back when a dispute is won (ref `<purchaseId>:<n>`). */

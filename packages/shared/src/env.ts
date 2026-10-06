@@ -30,6 +30,13 @@ export interface EnvIssue {
 const PLACEHOLDER = /change-?me/i;
 
 /**
+ * Largest delay `setTimeout`/`setInterval` honour (2^31-1 ms, about 24.8
+ * days); a longer one silently fires after 1 ms. Every millisecond setting
+ * that ends up in a timer is bounded by it.
+ */
+export const MAX_TIMER_MS = 2_147_483_647;
+
+/**
  * Thrown when a service's environment is unusable; lists every problem.
  *
  * @example

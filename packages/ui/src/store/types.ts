@@ -6,6 +6,7 @@
  * from `@tumble/sim` or three.js; only `@tumble/shared` types.
  */
 import type { LobbyGameKind, RoundType, TeamShape, ThemeId } from '@tumble/shared';
+import type { AuthProviderId } from './account.ts';
 
 export type { RoundType, ThemeId };
 
@@ -80,7 +81,14 @@ export const MENU_TABS: readonly MenuTab[] = [
 
 /** Side sheets / drop-downs layered over any screen. */
 export type OverlayId =
-  'none' | 'settings' | 'friends' | 'notifications' | 'privateShow' | 'joinCode' | 'inGameMenu';
+  | 'none'
+  | 'settings'
+  | 'friends'
+  | 'notifications'
+  | 'privateShow'
+  | 'joinCode'
+  | 'inGameMenu'
+  | 'spectatorRoster';
 
 /** How a screen change is presented. */
 export type TransitionKind = 'none' | 'fade' | 'wipe';
@@ -232,8 +240,11 @@ export interface NotificationItem {
   /** Epoch ms. */
   time: number;
   read?: boolean;
-  /** Inline Accept/Decline (friend request) or Join/Decline (party invite) buttons. */
-  action?: { kind: 'friendRequest'; userId: string } | { kind: 'partyInvite'; userId: string; code: string };
+  /** Inline Accept/Decline (friend request) or Join/Decline (party or club invite) buttons. */
+  action?:
+    | { kind: 'friendRequest'; userId: string }
+    | { kind: 'partyInvite'; userId: string; code: string }
+    | { kind: 'clubInvite'; clubId: string };
   /** Set once the action was taken ("Accepted", "Declined"…); hides the buttons. */
   resolved?: string;
 }
@@ -453,6 +464,127 @@ export interface PurchaseHistoryData {
   policy: { selfServiceWindowDays: number; realMoneyWindowDays: number };
   /** Purchase whose refund is being sent (its buttons disable). */
   busyId?: string | null;
+}
+
+/** Sections of the Profile tab. */
+export type ProfileSection = 'overview' | 'achievements' | 'collection' | 'wishlist' | 'gifts';
+
+/** Where a gift stands (the API's statuses). */
+export type GiftState = 'pending' | 'opened' | 'declined' | 'cancelled' | 'returned' | 'reversed';
+
+/** Someone on either end of a gift. */
+export interface GiftParty {
+  userId: string;
+  name: string;
+  tag: string;
+}
+
+/** One gift, sent or received. */
+export interface GiftEntry {
+  giftId: string;
+  /** Cosmetic id or `bundle:<id>`. */
+  offerId: string;
+  /** Item or bundle name. */
+  title: string;
+  /** What opening gives (a bundle's items the recipient lacked). */
+  items: CosmeticItem[];
+  price: { currency: Currency; amount: number };
+  /** The sender's note: `text` with slurs masked, `masked` with all swearing masked. */
+  message: { text: string; masked?: string } | null;
+  status: GiftState;
+  /** The price went back to the sender. */
+  refunded: boolean;
+  autoAccepted: boolean;
+  /** Why the gift went back without anyone choosing to. */
+  note: 'recipient_owns' | 'recipient_deleted' | 'staff' | null;
+  /** Epoch ms. */
+  sentAt: number;
+  /** Epoch ms when an unopened gift opens by itself. */
+  opensAutomaticallyAt: number;
+  /** The sender (null once their account is deleted). */
+  from: GiftParty | null;
+  /** The recipient (null once their account is deleted). */
+  to: GiftParty | null;
+}
+
+/** Profile → Gifts. */
+export interface GiftsData {
+  status: 'loading' | 'ready' | 'error';
+  error?: string;
+  received: GiftEntry[];
+  sent: GiftEntry[];
+  /** Unopened gifts waiting (the badge). */
+  unopened: number;
+  limits: { daily: number; sentToday: number; resetsAt: number };
+  policy: { minFriendDays: number; minAccountDays: number; autoAcceptDays: number; messageMax: number };
+  /** Gift whose action is being sent (its buttons disable). */
+  busyId?: string | null;
+  /** A gift just opened: its items play the capsule reveal. */
+  revealed?: { giftId: string; items: CosmeticItem[] } | null;
+}
+
+/** One friend in the gift picker. */
+export interface GiftPickerFriend {
+  userId: string;
+  name: string;
+  tag: string;
+  eligible: boolean;
+  /** What this friend's gift costs (a bundle skips what they own). */
+  price: { currency: Currency; amount: number } | null;
+  /** Why not, in the server's words. */
+  message?: string;
+  /** Epoch ms when the refusal lifts on its own. */
+  retryAt?: number;
+}
+
+/** The gift sheet (null = closed). */
+export interface GiftPickerData {
+  offerId: string;
+  title: string;
+  /** Hero item (preview). */
+  item: CosmeticItem | null;
+  status: 'loading' | 'ready' | 'error' | 'sending';
+  error?: string;
+  /** Set when the player cannot send any gift right now (guest, too new, daily cap). */
+  sender: { message: string; retryAt?: number } | null;
+  friends: GiftPickerFriend[];
+  sentToday: number;
+  dailyLimit: number;
+  messageMax: number;
+  /** Friend to preselect (opened from their wish list). */
+  recipientId?: string | null;
+}
+
+/** One wish list entry. */
+export interface WishlistEntryView {
+  /** Cosmetic id or `bundle:<id>`. */
+  itemId: string;
+  title: string;
+  kind: 'item' | 'bundle';
+  /** The item, or a bundle's hero item, for its preview. */
+  item: CosmeticItem | null;
+  /** Today's price; null when the owner has it all. */
+  price: { currency: Currency; amount: number } | null;
+  /** On today's shelves. */
+  inStoreToday: boolean;
+  owned: boolean;
+}
+
+/** Profile → Wish list (the player's own). */
+export interface WishlistData {
+  status: 'loading' | 'ready' | 'error';
+  error?: string;
+  entries: WishlistEntryView[];
+  visibility: 'friends' | 'nobody';
+  alerts: boolean;
+  limit: number;
+}
+
+/** A friend's wish list on their profile card. */
+export interface FriendWishlistData {
+  userId: string;
+  status: 'loading' | 'ready' | 'hidden' | 'error';
+  entries: WishlistEntryView[];
 }
 
 /** A Crown Shard shop offer. */
@@ -733,7 +865,7 @@ export interface ProfileData {
     recentForm?: ('crown' | 'final' | 'eliminated')[];
   };
   showcase?: CosmeticItem[];
-  linkedProviders?: ('discord' | 'google' | 'email')[];
+  linkedProviders?: AuthProviderId[];
   /** Crown Shards toward the next Crown. */
   crownShards?: number;
   /** Shards that make one Crown. */
@@ -899,7 +1031,8 @@ export interface PwaState {
 export type Presence = 'online' | 'inShow' | 'inMenu' | 'inQueue' | 'offline';
 
 /** Reasons offered by the report dialog (the API's report reasons). */
-export type ReportReason = 'cheating' | 'harassment' | 'offensive_name' | 'griefing' | 'spam' | 'other';
+export type ReportReason =
+  'cheating' | 'harassment' | 'offensive_name' | 'griefing' | 'spam' | 'voice' | 'other';
 
 /** How the local player relates to another player. */
 export type Relation = 'friend' | 'incoming' | 'outgoing' | 'none';
@@ -1046,6 +1179,10 @@ export interface CustomLobbyOptions {
   countdownSec?: number;
   /** Players needed before the host can start (bots fill the rest). */
   minPlayers?: number;
+  /** Players vote on each next round, between the picked rounds (absent: on). */
+  roundVoting?: boolean;
+  /** Spectator seats may chat into the show (absent: off, they watch quietly). */
+  spectatorChat?: boolean;
 }
 
 /** A member of a custom lobby as the lobby view shows them. */
@@ -1077,11 +1214,22 @@ export interface CustomLobbyState {
   started?: boolean;
 }
 
-/** A selectable round for the custom lobby picker. */
+/** Result of looking up a shared custom round by code (private show round picker). */
+export type CustomRoundLookup =
+  | { status: 'idle' }
+  | { status: 'loading'; code: string }
+  | { status: 'ok'; code: string; id: string }
+  | { status: 'error'; code: string; message: string };
+
+/** A round the private show pickers offer. */
 export interface RoundCatalogEntry {
   id: string;
   name: string;
   type: RoundType;
+  /** A shared custom round looked up by code (`id` is `custom:<CODE>`). */
+  custom?: boolean;
+  /** Custom rounds: `name#tag` of the creator. */
+  author?: string;
 }
 
 // -----------------------------------------------------------------------------
@@ -1274,6 +1422,53 @@ export interface SpectateInfo {
   remaining?: number;
 }
 
+/** How the spectator camera picks what to show. */
+export type SpectatorCamMode = 'follow' | 'free' | 'overview' | 'director';
+
+/** One row of the spectator roster (names already masked for Streamer Mode). */
+export interface SpectatorRosterEntry {
+  id: number;
+  name: string;
+  /** Body colour, for the row's swatch. */
+  color: string;
+  isBot: boolean;
+  /** In the local player's party. */
+  isParty: boolean;
+  /** In the local player's club. */
+  isClub: boolean;
+  /** Team index, −1 outside team rounds. */
+  team: number;
+  status: 'playing' | 'qualified' | 'eliminated';
+  /** 1 = first; 0 when unknown. */
+  place: number;
+  /** The viewer pinned this player (the camera stays on them). */
+  pinned: boolean;
+  /** The camera follows this player now. */
+  following: boolean;
+}
+
+/**
+ * Spectator and broadcast tools for the running show. Present for the whole
+ * show so the viewer's choices (camera mode, broadcast overlay, pin) carry
+ * over between rounds; `live` says whether they apply right now.
+ */
+export interface SpectatorState {
+  /** The local player is watching a round (eliminated, qualified and waiting, or a spectator seat). */
+  live: boolean;
+  mode: SpectatorCamMode;
+  /** Pinned player: the camera, the director included, stays on them while they play. */
+  pinnedId: number | null;
+  roster: SpectatorRosterEntry[];
+  /** Clean broadcast overlay instead of the personal HUD, chat and toasts. */
+  broadcast: boolean;
+  /** Hotkey help card open. */
+  help: boolean;
+  /** Solid chroma-key backdrop instead of the 3D world, for capture software (broadcast only). */
+  chroma: boolean;
+  /** Why the auto camera picked its current shot, e.g. "Close race" (director mode only). */
+  note: string | null;
+}
+
 /** The local player's seat in the running show. */
 export interface ShowSeat {
   /** The show runs on a game server (rewards are granted by the account API). */
@@ -1282,6 +1477,8 @@ export interface ShowSeat {
   outOfShow: boolean;
   /** Joined as a spectator (a private show's spectator seat): watching, never knocked out. */
   spectator?: boolean;
+  /** False when this seat may not chat into the show (a spectator seat without the host's permission). */
+  canChat?: boolean;
 }
 
 /**
@@ -1319,7 +1516,49 @@ export interface BetweenRoundsInfo {
   remaining: number;
   roundIndex: number;
   roundCount: number;
-  next: { name: string; type: RoundType; isFinal: boolean };
+  /** `voted`: the players picked it, so the card names it at once instead of teasing "???". */
+  next: { name: string; type: RoundType; isFinal: boolean; voted?: boolean };
+}
+
+/** One round on the between-rounds vote card. */
+export interface RoundVoteOption {
+  roundId: string;
+  name: string;
+  type: RoundType;
+  /** One-line objective. */
+  objective: string;
+  /** Two colours for the card's thumbnail swatch (the round's theme). */
+  colors: [string, string];
+}
+
+/** How a closed round vote was decided. */
+export type RoundVoteReason = 'votes' | 'tie' | 'noVotes';
+
+/**
+ * The between-rounds round vote (SCREENS.md §9.11a): the next round's ballot
+ * over the results wall, then the winner reveal before the wipe.
+ */
+export interface RoundVoteState {
+  /** Round the ballot is for (sent back with every vote). */
+  roundIndex: number;
+  isFinal: boolean;
+  options: RoundVoteOption[];
+  /** Ballots per option. */
+  counts: number[];
+  /** Ballots cast. */
+  voted: number;
+  /** Players allowed to vote. */
+  eligible: number;
+  /** Epoch ms when the ballot closes at the latest. */
+  closesAt: number;
+  /** The local player may vote (false once knocked out, and for spectators). */
+  canVote: boolean;
+  /** The local player's pick, or -1. */
+  myVote: number;
+  /** Bot ballots count for less than a player's (the card says so). */
+  botsDiscounted: boolean;
+  /** Set once the ballot closed. */
+  result: { winner: number; reason: RoundVoteReason } | null;
 }
 
 /** Victory / winner-cam payload. */
@@ -1453,7 +1692,15 @@ export type BindAction =
   | 'emote4'
   | 'spectatePrev'
   | 'spectateNext'
-  | 'pause';
+  | 'spectateCamera'
+  | 'spectateLeader'
+  | 'spectateRoster'
+  | 'spectatePin'
+  | 'broadcastOverlay'
+  | 'broadcastHelp'
+  | 'broadcastChroma'
+  | 'pause'
+  | 'pushToTalk';
 
 /** `KeyboardEvent.code` (or `Mouse0`…`Mouse4`) per action: [primary, secondary]. */
 export type Keybinds = Record<BindAction, [string, string]>;
@@ -1470,7 +1717,14 @@ export type PadBindAction =
   | 'emote4'
   | 'pause'
   | 'spectatePrev'
-  | 'spectateNext';
+  | 'spectateNext'
+  | 'spectateCamera'
+  | 'spectateLeader'
+  | 'spectateRoster'
+  | 'spectatePin'
+  | 'broadcastOverlay'
+  | 'broadcastHelp'
+  | 'pushToTalk';
 
 /**
  * Standard-mapping gamepad button index per action: [primary, secondary],
@@ -1534,6 +1788,11 @@ export interface Settings {
     showPing: boolean;
     /** Pick "Keep watching" automatically after qualifying or being knocked out. */
     autoSpectate: boolean;
+    /**
+     * Play "How you went out" after a knock-out (a still frame and the cause
+     * under Reduce Motion). Needs replays to be switched on.
+     */
+    eliminationReplay: boolean;
     /** Small "BOT" tag beside bot names (nameplates, results, wall, spectate). */
     botTags: boolean;
     /** Masks swearing in chat (slurs are always masked). */
@@ -1547,6 +1806,37 @@ export interface Settings {
      */
     analytics: boolean | null;
   };
+  voice: VoiceSettings;
+}
+
+/** Voice chat choices (Settings → Voice). Voice is strictly opt-in: `enabled` starts false. */
+export interface VoiceSettings {
+  /** The player switched voice on. Never true unless they did. */
+  enabled: boolean;
+  /** The first-use explanation was read and accepted. */
+  introSeen: boolean;
+  /** Push-to-talk (the default) or open mic gated by {@link VoiceSettings.threshold}. */
+  mode: 'ptt' | 'open';
+  /** Open mic sensitivity: the level (0..1) the microphone must pass to send. */
+  threshold: number;
+  /** `MediaDeviceInfo.deviceId`; empty = the browser's default microphone. */
+  inputDeviceId: string;
+  /** Voice chat volume 0..1 (under master volume). */
+  volume: number;
+  /** Connect through the TURN relay only, so peers never see this player's IP address. */
+  relayOnly: boolean;
+  /** In team rounds, also talk to teammates outside the party. */
+  teamVoice: boolean;
+  noiseSuppression: boolean;
+  echoCancellation: boolean;
+  /** With Streamer Mode on: show "Teammate 1"-style labels instead of voice names. */
+  streamerHideNames: boolean;
+  /** With Streamer Mode on: do not play anyone's voice (indicators still show). */
+  streamerMute: boolean;
+  /** Per-player volume 0..1 by user id. */
+  peerVolume: Record<string, number>;
+  /** Players muted locally by user id. */
+  peerMuted: Record<string, boolean>;
 }
 
 /** Photo mode look filters. */
@@ -1637,4 +1927,60 @@ export interface ReplayViewerState {
   canSave: boolean;
   /** Where the recording came from. */
   origin: 'show' | 'file';
+  /** Playing the show's highlights: which one of how many (absent for a plain replay). */
+  reel?: { index: number; count: number; label: string };
+}
+
+/** The "How you went out" replay after a knock-out (null = not showing). */
+export interface EliminationReplayState {
+  /**
+   * `loading` while the replay builds (the cause already shows), `playing`,
+   * or `still`: Reduce Motion shows one frame of the decisive moment instead.
+   */
+  mode: 'loading' | 'playing' | 'still';
+  /** One line on what happened ("Knocked off by a sweeper"), names already Streamer Mode safe. */
+  cause: string;
+  /** 0..1 through the replay. */
+  progress: number;
+  /** Slow motion is on screen. */
+  slow: boolean;
+}
+
+/** Kinds of automatic highlight. */
+export type HighlightKind =
+  | 'finalWin'
+  | 'closeFinish'
+  | 'lastSecondQualify'
+  | 'bigFall'
+  | 'chainGrab'
+  | 'comeback'
+  | 'clutchSurvival'
+  | 'decisiveScore';
+
+/** A player named by a highlight; masked by Streamer Mode when shown. */
+export interface HighlightPlayer {
+  id: number;
+  name: string;
+  isBot: boolean;
+  isLocal: boolean;
+}
+
+/** One automatic highlight of the show (the rewards screen's reel). */
+export interface HighlightEntry {
+  id: string;
+  /** Replay library key of the round it is in. */
+  key: string;
+  roundIndex: number;
+  roundName: string;
+  isFinal: boolean;
+  kind: HighlightKind;
+  /** Segment start, seconds from the start of the recording. */
+  start: number;
+  /** Segment length (s). */
+  length: number;
+  player: HighlightPlayer | null;
+  /** The second player (beaten to the line, end of a grab chain), if any. */
+  other: HighlightPlayer | null;
+  /** Kind-specific figure: margin or time left (s), chain length, setbacks, survivors, score. */
+  value: number;
 }

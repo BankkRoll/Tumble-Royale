@@ -1,10 +1,16 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MaintenanceBanner } from '../src/screens/menu/MainMenu.tsx';
-import { StartCluster } from '../src/screens/menu/PlayTab.tsx';
+import { ServerStatusLink, StartCluster } from '../src/screens/menu/PlayTab.tsx';
 import { StoreTab } from '../src/screens/menu/StoreTab.tsx';
 import { DEFAULT_SETTINGS } from '../src/store/defaults.ts';
-import { analyticsAllowed, featureOn, maintenanceHeadline, privacySignal } from '../src/store/liveOps.ts';
+import {
+  analyticsAllowed,
+  featureOn,
+  maintenanceHeadline,
+  privacySignal,
+  STATUS_PAGE_URL,
+} from '../src/store/liveOps.ts';
 import { ui } from '../src/store/uiStore.ts';
 import type { Playlist } from '../src/store/types.ts';
 
@@ -87,6 +93,27 @@ describe('maintenance banner', () => {
     const now = renderToStaticMarkup(<MaintenanceBanner />);
     expect(now).toContain('is-active');
     expect(now).toContain('Vs Bots still works');
+    expect(now).toContain(`href="${STATUS_PAGE_URL}"`);
+    expect(now).toContain('rel="noopener"');
+  });
+});
+
+describe('status page link when the servers are down', () => {
+  afterEach(() => ui.getState().setOnlineStatus({ state: 'checking' }));
+
+  it('appears only when the device is online but the servers are not', () => {
+    ui.getState().setOnlineStatus({ state: 'offline' });
+    const html = renderToStaticMarkup(<ServerStatusLink />);
+    expect(html).toContain('data-testid="server-status-link"');
+    expect(html).toContain('href="/status"');
+    for (const s of [
+      { state: 'offline' as const, noNetwork: true },
+      { state: 'online' as const },
+      { state: 'checking' as const },
+    ]) {
+      ui.getState().setOnlineStatus(s);
+      expect(renderToStaticMarkup(<ServerStatusLink />), JSON.stringify(s)).toBe('');
+    }
   });
 });
 

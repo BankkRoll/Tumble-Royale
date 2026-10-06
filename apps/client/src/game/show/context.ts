@@ -15,6 +15,7 @@ import type { GameConfig } from '../config.ts';
 import type { OnlineAccount } from '../online/account.ts';
 import type { ProfileStore, ShowResultForProfile } from '../profile.ts';
 import type { QualityManager } from '../quality.ts';
+import type { EliminationReplays } from '../replay/elimPlayer.ts';
 import type { ReplayHooks } from '../replay/live.ts';
 import type { CeremonyPost } from '../views/ceremonies.ts';
 import type { SceneDirector } from '../views/sceneDirector.ts';
@@ -53,6 +54,8 @@ export interface GameContext {
   onEnd(reason: SessionEnd): void;
   /** Round recorder for replays (absent in tools and tests). */
   readonly replays?: ReplayHooks | null;
+  /** "How you went out" after a knock-out (absent in tools and tests). */
+  readonly eliminations?: EliminationReplays | null;
   /** The show is over and its rewards are about to show: what the local player did (share cards). */
   onShowResult?(facts: ShowResultForProfile): void;
 }

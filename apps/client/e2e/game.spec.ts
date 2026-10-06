@@ -13,6 +13,8 @@ import { expect, test, type Page } from '@playwright/test';
  */
 const BACKEND = process.env.BACKEND ?? 'auto';
 const TS = Number(process.env.TS ?? 4);
+/** Quality tier; GPU-less runners pass `low` because SwiftShader compiles and fills too slowly for `high`. */
+const TIER = process.env.TIER ?? 'high';
 const SHOTS = 'test-results/game';
 /** Other suites may wipe test-results mid-run; SHOT_COPY keeps a second copy. */
 const COPY = process.env.SHOT_COPY;
@@ -83,7 +85,7 @@ test('full offline show with 100 players, boot to rewards', async ({ page }) => 
   });
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(
-    `${process.env.GAME_URL ?? ''}/?autoplay=1&ts=${TS}&fresh=1&api=0&seed=11&tier=high&playlist=main-show&backend=${BACKEND}`,
+    `${process.env.GAME_URL ?? ''}/?autoplay=1&ts=${TS}&fresh=1&api=0&seed=11&tier=${TIER}&playlist=main-show&backend=${BACKEND}`,
   );
   await page.waitForFunction(() => window.__tumble?.ready === true, undefined, { timeout: 120_000 });
   console.log('[game] backend', await page.evaluate(() => window.__tumble!.backend));
@@ -164,7 +166,7 @@ test('perf: 100 Tumblers at real time', async ({ page }) => {
   test.setTimeout(5 * 60_000);
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(
-    `${process.env.GAME_URL ?? ''}/?autoplay=1&ts=1&fresh=1&api=0&seed=11&playlist=main-show&tier=${process.env.TIER ?? 'high'}&backend=${BACKEND}`,
+    `${process.env.GAME_URL ?? ''}/?autoplay=1&ts=1&fresh=1&api=0&seed=11&playlist=main-show&tier=${TIER}&backend=${BACKEND}`,
   );
   await page.waitForFunction(
     () => window.__tumble?.screen?.() === 'round' && window.__tumble?.roundPhase?.() === 4,

@@ -13,7 +13,8 @@
  * Every card names its locker slot, shows owned / price / can't-afford state
  * and previews on the player's own Tumbler. Selecting an offer tries it on
  * live; the docked detail buys it (with confirmation) and then offers "Equip
- * now". docs/design/SCREENS.md §5.2, docs/design/ECONOMY.md §4.
+ * now", and (online, Gumball and Gem offers) puts it on the wish list or
+ * gifts it to a friend (`Gifting.tsx`). docs/design/SCREENS.md §5.2, docs/design/ECONOMY.md §4.
  */
 import { useEffect, useMemo, useState, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
@@ -37,6 +38,7 @@ import {
 import { rarityLabels } from '../../theme/tokens.ts';
 import { useAccountUI } from '../../store/account.ts';
 import { DressingRoom, ItemDetail, isEquipped, useActiveLoadout } from './DressingRoom.tsx';
+import { GiftButton, WishlistButton } from './Gifting.tsx';
 import { PurchaseHistorySection } from './PurchaseHistory.tsx';
 
 /** Anything on a shelf: a Gumball/Gem offer, a bundle or a Crown Shard offer. */
@@ -603,6 +605,16 @@ function StoreShelves(): JSX.Element {
               onBuy={() => buy(selected)}
               onEquip={() => uiEvents.emit('equip', { slot: selected.item.slot, itemId: selected.item.id })}
               {...(selected.bundle ? { bundle: selected.bundle } : {})}
+              {...(selected.currency !== 'crownShards'
+                ? {
+                    actions: (
+                      <>
+                        {!selected.item.owned && <WishlistButton itemId={selected.id} />}
+                        <GiftButton offerId={selected.id} />
+                      </>
+                    ),
+                  }
+                : {})}
             />
           )}
         </>

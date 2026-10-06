@@ -12,7 +12,7 @@ import { playCue } from '../../audio-cues.ts';
 import { Bar, CurrencyPill } from '../../components/bits.tsx';
 import { Icon } from '../../components/icons/index.tsx';
 import { useNow } from '../../components/hooks.ts';
-import { maintenanceHeadline } from '../../store/liveOps.ts';
+import { maintenanceHeadline, STATUS_PAGE_URL } from '../../store/liveOps.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import { MENU_TABS, type MenuTab } from '../../store/types.ts';
 import { ChallengesTab } from './ChallengesTab.tsx';
@@ -24,6 +24,7 @@ import { NewsTab } from './NewsTab.tsx';
 import { PassTab } from './PassTab.tsx';
 import { claimablePass, PlayTab } from './PlayTab.tsx';
 import { ProfileTab, ProfileOverlay } from './ProfileTab.tsx';
+import { GiftSheet } from './Gifting.tsx';
 import { StoreTab } from './StoreTab.tsx';
 import { canInstall, requestInstall } from '../overlays/InstallApp.tsx';
 
@@ -75,7 +76,7 @@ function LevelBadge(): JSX.Element | null {
   );
 }
 
-/** Badge counts per tab (claimables, unread news). */
+/** Badge counts per tab (claimables, unread news, unopened gifts). */
 function useTabBadges(): Partial<Record<MenuTab, number>> {
   return useUI(
     useShallow((s) => ({
@@ -84,6 +85,7 @@ function useTabBadges(): Partial<Record<MenuTab, number>> {
         (s.challenges?.list.filter((c) => !c.claimed && c.progress >= c.goal).length ?? 0) +
         (s.events?.online ? s.events.list.map(claimableCount).reduce((a, b) => a + b, 0) : 0),
       news: s.news.filter((n) => n.unread).length,
+      profile: s.gifts?.unopened ?? 0,
     })),
   );
 }
@@ -260,6 +262,15 @@ export function MaintenanceBanner(): JSX.Element | null {
           {active ? `${notice.message} Vs Bots still works offline.` : notice.message}
         </small>
       </span>
+      <a
+        className="tr-maintenance-link"
+        href={STATUS_PAGE_URL}
+        target="_blank"
+        rel="noopener"
+        data-testid="maintenance-status-link"
+      >
+        Status
+      </a>
     </div>
   );
 }
@@ -378,6 +389,7 @@ export function MainMenu({ matchmaking = false }: { matchmaking?: boolean }): JS
       <TabPanel matchmaking={matchmaking} />
       <CurrencyPanel />
       <ProfileOverlay />
+      <GiftSheet />
     </div>
   );
 }

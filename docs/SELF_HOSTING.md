@@ -9,6 +9,7 @@ one domain:
 | ---------------------------- | ------------------------------------------------------ |
 | `https://DOMAIN/`            | the web client (static files)                          |
 | `https://DOMAIN/admin`       | the admin console ([below](#the-admin-console))        |
+| `https://DOMAIN/editor`      | the round editor (needs no configuration)              |
 | `https://DOMAIN/api/*`       | account API, including its WebSocket `/api/ws`         |
 | `https://DOMAIN/mm/*`        | matchmaker, including its WebSocket `/mm/ws`           |
 | `https://DOMAIN/gs/ws`       | game server WebSocket                                  |
@@ -52,9 +53,13 @@ node scripts/setup-env.mjs --production --domain play.example.com --email you@ex
   OAuth redirects, `PUBLIC_WS_URL`) and the CORS allow-lists;
 - a fresh random value for every secret (`JWT_SECRET`,
   `INTERNAL_HMAC_SECRET`, `GAME_TICKET_SECRET`, `GAME_SERVER_SECRET`,
-  `ADMIN_TOKEN`, `METRICS_TOKEN`, `POSTGRES_PASSWORD`);
+  `ADMIN_TOKEN`, `METRICS_TOKEN`, `POSTGRES_PASSWORD`, `VOICE_TURN_SECRET`);
 - `DATABASE_URL` and `REDIS_URL` for the Compose services, and
-  `TRUST_PROXY=1` because Caddy is the one proxy in front of them.
+  `TRUST_PROXY=1` because Caddy is the one proxy in front of them;
+- every optional setting, commented out with its default: sign-in providers,
+  SMTP, Stripe, voice, monitoring and tuning. Each line says whether it is
+  REQUIRED or OPTIONAL; the [Environment reference](#environment-reference)
+  explains them all.
 
 `--email` is optional; Let's Encrypt uses it for expiry warnings. The script
 never replaces an existing `deploy/.env` unless you pass `--force`, which
@@ -93,7 +98,19 @@ Then open `https://play.example.com` and press Play.
 
 Admin actions use `ADMIN_TOKEN` from `deploy/.env`. On the server,
 `pnpm admin` (or `node scripts/admin.mjs`) reads that file and talks to
-`https://DOMAIN/api`:
+`https://DOMAIN/api`. The operator's handbook, [docs/ADMIN.md](ADMIN.md),
+covers every command and runbook; start by making yourself the first admin,
+which needs no sign-in provider:
+
+```sh
+pnpm admin staff bootstrap --email you@example.com --name Owner
+```
+
+It creates (or finds) the account for that address, makes it **admin** and
+prints a one-time sign-in link valid for 15 minutes. Open it in the browser
+you will administer from: it signs that browser in to the game and opens the
+console at `https://DOMAIN/admin`. `pnpm admin staff link <userId>` prints a
+fresh link later. Then:
 
 ```sh
 pnpm admin --help
@@ -115,11 +132,15 @@ docker compose exec api node scripts/admin.mjs reports list
 
 `https://DOMAIN/admin` is a web console for the same work: the report queue
 (with chat evidence and bulk decisions), player lookup and the player page,
-bans and mutes, live ops and the audit log. It is part of the client image,
+bans and mutes, shared custom rounds (inspect, take down, restore), live ops
+and the audit log. It is part of the client image,
 so there is nothing to enable; nobody can use it until you grant a role.
 
-1. Have the person sign in to the game with a full account (email, Discord
-   or Google; guests cannot be staff) and send you their `Name#1234`.
+1. Have the person sign in to the game with a full account (any linked login:
+   email, Discord, Google, GitHub, Twitch or Apple; guests cannot be staff)
+   and send you their `Name#1234`. Before any provider is set up, use
+   `pnpm admin staff bootstrap --email …` (it makes an admin; `staff grant`
+   can lower the role afterwards).
 2. Find their account id and grant a role:
 
    ```sh
@@ -135,8 +156,9 @@ so there is nothing to enable; nobody can use it until you grant a role.
 A **moderator** handles reports, warnings, mutes, suspensions and lifting
 them, renames and the audit log. An **admin** can also adjust currencies,
 revoke cosmetics, run live ops and manage staff. Console sessions last 30
-minutes, live only in that browser tab and end at once if the role is revoked
-or the account is suspended. Every action from the console or the CLI lands
+minutes, live only in that browser tab and end at once if the role is revoked,
+the account is suspended or the player signs out of the game. Opening one
+needs a game sign-in from the last 10 minutes. Every action from the console or the CLI lands
 in the audit log, with who did it and the reason:
 
 ```sh
@@ -153,10 +175,24 @@ Each one is off until configured. Uncomment its lines in `deploy/.env`, fill
 them in, then run `docker compose up -d` (Compose recreates the services whose
 settings changed).
 
-- **Discord / Google sign-in:** create an OAuth app and register the redirect
-  URI `https://DOMAIN/api/auth/discord/callback` (or `/google/callback`), then
-  set `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` or `GOOGLE_CLIENT_ID` /
-  `GOOGLE_CLIENT_SECRET`.
+- **Sign-in with Discord, Google, GitHub, Twitch or Apple:** each turns on
+  when its keys are set, and the game shows only the ones that are. Register
+  the redirect URI `https://DOMAIN/api/auth/<provider>/callback` exactly
+  (`discord`, `google`, `github`, `twitch` or `apple`), then set:
+
+  | Provider | Keys                                                                    |
+  | -------- | ----------------------------------------------------------------------- |
+  | Discord  | `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`                            |
+  | Google   | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`                              |
+  | GitHub   | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`                              |
+  | Twitch   | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`                              |
+  | Apple    | `APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` |
+
+  [ADMIN.md, "Sign-in providers"](ADMIN.md#sign-in-providers) walks through
+  creating each app. Half a pair stops the API at boot with a message naming
+  the missing key. Players link more logins in Settings → Account and can
+  unlink any but the last.
+
 - **Email sign-in (magic links):** set `SMTP_URL`
   (`smtp://user:pass@host:587` for STARTTLS, `smtps://user:pass@host:465`) and
   optionally `SMTP_FROM`. Without SMTP, production disables email sign-in.
@@ -172,6 +208,76 @@ settings changed).
   [Refunds](#refunds) for how Gem pack refund requests reach Stripe.
 - **Crash reports:** `SENTRY_DSN` (any Sentry-compatible service) for the
   servers; `sentryDsn` in the client overrides below for browsers.
+- **Voice chat:** needs a TURN relay; see [Voice chat](#voice-chat).
+
+### Voice chat
+
+Voice chat is opt-in for every player and off on the server until you set it
+up: players talk peer to peer (WebRTC, Opus audio only) inside their party,
+and in team rounds with up to eight teammates who also opted in. The API only
+relays signalling between players it has put in the same room. Many home and
+mobile networks cannot connect peer to peer, so voice needs a TURN relay, and
+the client hides voice entirely until one is configured and the
+`voice.enabled` flag is on.
+
+1. **Secret.** `pnpm setup:env --production` writes `VOICE_TURN_SECRET` to
+   `deploy/.env`. Older files: add `VOICE_TURN_SECRET=` with 32+ random
+   characters (`openssl rand -base64 32`). It is shared only by the API and
+   coturn; players get short-lived credentials derived from it (valid four
+   hours, for one player and one room), never the secret.
+2. **ICE servers.** Uncomment `VOICE_ICE_SERVERS` in `deploy/.env`:
+
+   ```sh
+   VOICE_ICE_SERVERS=stun:DOMAIN:3478,turn:DOMAIN:3478?transport=udp,turn:DOMAIN:3478?transport=tcp
+   ```
+
+   Any `turn:`/`turns:` URL requires `VOICE_TURN_SECRET` (the API refuses to
+   start otherwise). An external TURN service that supports the "TURN REST
+   API" shared-secret scheme (coturn's `use-auth-secret`) works the same way.
+
+3. **Start the relay** with the `voice` profile:
+
+   ```sh
+   docker compose -f deploy/docker-compose.yml --profile voice up -d
+   ```
+
+   coturn runs on the host network (Docker's port publishing is slow for a UDP
+   range). It refuses to relay to loopback, private, link-local and
+   carrier-grade NAT ranges, so it cannot be used to reach Postgres, Redis or a
+   cloud metadata service, and it caps each account's allocations and
+   bandwidth. On a cloud VM behind 1:1 NAT (AWS, GCP) add
+   `--external-ip=PUBLIC_IP/PRIVATE_IP` to the `turnserver` line in the
+   compose file.
+
+4. **Firewall.** Open `3478/udp`, `3478/tcp` and `49160-49200/udp` (the relay
+   range; widen `--min-port`/`--max-port` for more than ~40 relayed calls).
+5. **Switch it on:** `pnpm admin flags set voice.enabled on`. Players then see
+   Settings → Voice; they still have to switch it on themselves.
+
+`VOICE_REQUIRE_TURN` defaults to `1` in production. Setting it to `0` lets
+voice run without TURN (direct connections only: fine on a LAN, unreliable on
+the internet); it is `0` by default in development so voice can be tried on
+`localhost` with two browser windows.
+
+Rules worth knowing before you enable it:
+
+- **Rooms:** a party (up to 4) is one room. In team rounds, players who
+  turned on "Team voice" are grouped into squads of up to 8 teammates, with
+  queue parties kept together; the game server reports teams to the API over
+  the signed internal channel. Everyone else stays in their party room.
+- **Guests and new accounts** can use party voice (a party is joined by a
+  friend's invite or a code someone shared), but never team voice with
+  strangers: that needs a linked account at least three days old. The game
+  collects no ages, so there is no age gate; voice is off by default and
+  push-to-talk is the default mode.
+- **Moderation:** blocks are mutual (two players who blocked each other are
+  never connected, even in a shared room). A moderator's voice mute
+  (`pnpm admin` / the console's "Mute voice…", ban scope `voice`) or a
+  suspension ends the player's voice on every instance at once. Nothing is
+  recorded; a voice report carries which room the two shared and when.
+- **Privacy:** peers connected directly see each other's IP address, as with
+  any WebRTC call. Players can turn on "Relay only (hide my IP)" to send
+  everything through your TURN relay instead.
 
 ### Refunds
 
@@ -255,8 +361,11 @@ pnpm admin flags set analytics.sample on --payload 0.25
 | `mutators.chaos`   | Chaos Mode plays without its per-show mutator                       |
 | `analytics.sample` | no analytics are stored; with `on` the payload is the sampled share |
 | `events.enabled`   | events count nothing and pay nothing; the menu says they are paused |
+| `shows.mapVoting`  | no round votes; shows pick every round from the seed (next show)    |
+| `voice.enabled`    | voice chat is hidden and every session ends (**off unless set**)    |
 
-A flag that was never set is on. `--rollout N` turns a flag on for a sticky N%
+A flag that was never set is on, except `voice.enabled`, which needs a TURN
+relay first ([Voice chat](#voice-chat)). `--rollout N` turns a flag on for a sticky N%
 of players (client-side features only; servers read the master switch).
 `maintenance` is reserved for the maintenance window above.
 
@@ -320,6 +429,81 @@ Uncaught browser errors and server crashes land in the same table:
 pnpm admin errors top                 # client errors, last 24 h
 pnpm admin errors top --server --hours 168
 ```
+
+## 7. Status page and incidents
+
+`https://DOMAIN/status` is a public status page: the overall state, each
+component (Website, Accounts & API, Matchmaking, Game servers and one row
+per region once there are two or more, Store & payments, Chat), the current
+and next maintenance window, open incidents with their updates, 90 days of
+daily uptime bars and the past 90 days of incidents. It is a separate,
+framework-free page (a few kilobytes), so it loads when the game does not;
+the installed app never caches it. The in-game maintenance banner and the
+"Servers offline" Play tile link to it.
+
+### What it checks
+
+The API computes the states itself (cached 5 s per instance):
+
+| Component        | Major outage                                 | Degraded / other                        |
+| ---------------- | -------------------------------------------- | --------------------------------------- |
+| Accounts & API   | database unreachable (KV down: partial)      | database or KV slower than 1 s          |
+| Matchmaking      | `MATCHMAKER_URL/health` fails or takes > 2 s | answers slower than 1 s                 |
+| Game servers     | no live server, or every region down         | a region at 90 % of its seats           |
+| Game servers · X | a region seen in the last 7 days has none    | that region at 90 % of its seats        |
+| Store & payments | database unreachable                         | `store.enabled` off → under maintenance |
+| Chat             | KV unreachable                               | `chat.global` off → under maintenance   |
+| Website          | only through an incident                     |                                         |
+
+Matchmaking and Game servers need `MATCHMAKER_URL` on the API (the compose
+`.env` already has it) and `API_URL` plus `INTERNAL_HMAC_SECRET` on the
+matchmaker, which answers per-region capacity on a signed
+`/internal/capacity`. Without them those rows are left out (or show
+Unknown). A major outage of the API, matchmaking or every game server is a
+major outage overall; a major outage of anything else (one region, the
+store, chat) reads as a partial outage. During an active maintenance window
+everything but the website shows "Under maintenance".
+
+### Uptime history
+
+Each API instance runs a sampler every `STATUS_SAMPLE_SECONDS` (60; `0`
+turns history off). A KV lock per interval makes exactly one instance write,
+however many run. Samples land in `status_uptime`, one row per component and
+UTC day; rows older than 90 days are deleted as it goes. A day's uptime
+counts a major outage as down, a partial outage as half down, degraded as up,
+and leaves maintenance and unknown samples out.
+
+### Incidents runbook
+
+Admins publish incidents from the console (**Status**) or the CLI;
+moderators can read them. Titles and updates are public plain text (markup
+shows literally); every write is in the audit log.
+
+```sh
+pnpm admin status summary                       # what the page shows now
+pnpm admin status incident open --title "Queues are slow" --impact major \
+  --components matchmaking,gameservers:eu --message "We are looking into slow queues."
+pnpm admin status incident list                 # open incidents and their ids
+pnpm admin status incident update <id> --status identified --message "A queue worker is stuck."
+pnpm admin status incident update <id> --status monitoring --message "Fix deployed; watching."
+pnpm admin status incident resolve <id> --message "Queues are back to normal."
+```
+
+- Impact: `minor` (shows the components as degraded), `major` (partial
+  outage) or `critical` (major outage). No `--components` means the whole
+  service. Probes can make a component look worse than the incident, never
+  better.
+- Post an update whenever something changes and at least every 30 minutes
+  while it is open; players watch the page instead of guessing.
+- For planned work use maintenance (`pnpm admin maintenance on --in 30
+--for 60 --message "…"`): the page shows it as scheduled, then in
+  progress, without an incident.
+- A non-resolved update on a resolved incident reopens it.
+
+Subscribers can follow `https://DOMAIN/api/status/feed.atom` or
+`/api/status/feed.json` (incidents of the last 90 days). The summary is
+`GET /api/status/summary`, the history `GET /api/status/history`; both are
+public, rate limited per client and cacheable for 15 s and 5 min.
 
 ## Scaling
 
@@ -452,6 +636,174 @@ backup schedule. Caddy's certificates live in the `caddy-data` volume.
 (`ALLOW_EMBEDDED_DB=1`, data in `PGLITE_DIR`) as a single instance only; this
 Compose stack does not use it. Back up that directory only while the API is
 stopped, since copying it while running can capture a torn state.
+
+## Environment reference
+
+Every variable any part of Tumble Royale reads. `deploy/.env.example` (the
+whole stack) and `deploy/game-server/.env.example` (an extra game server)
+list each one, set or commented out, grouped like the tables below; for
+development, the root `.env.example` holds the shared secrets and URLs and
+`apps/<name>/.env.example` the rest. A test
+(`scripts/env-coverage.test.mjs`) scans the config loaders, compose files,
+Caddyfiles and scripts and fails if any variable is missing from those
+files or from these tables.
+
+Compose passes `deploy/.env` to the API, matchmaker and game server alike,
+so a name two services read (such as `RATE_LIMIT_MAX` or `LOG_LEVEL`) is set
+for both. **Req.** means the service refuses to start without it in
+production (or, for compose, the stack cannot start); _dev_ marks
+development-only settings.
+
+### Site and URLs
+
+| Variable          | Read by                 | Req. | Default                                    | What it does                                                                           |
+| ----------------- | ----------------------- | ---- | ------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `DOMAIN`          | compose, Caddy          | yes  | none                                       | Public hostname; Caddy gets its certificate                                            |
+| `ACME_EMAIL`      | compose, Caddy          | no   | none                                       | Let's Encrypt account email for expiry notices                                         |
+| `NODE_ENV`        | all services            | yes  | `development`                              | `production` turns on every production check                                           |
+| `PUBLIC_WEB_URL`  | API, matchmaker, server | yes  | `http://localhost:5173`                    | Where players open the game; redirects, invite, magic and staff links land here        |
+| `PUBLIC_API_URL`  | API, `pnpm admin`       | yes  | `http://localhost:7360`                    | Public API origin; OAuth redirect URIs are `<PUBLIC_API_URL>/auth/<provider>/callback` |
+| `PUBLIC_WS_URL`   | game server             | yes  | `ws://localhost:<PORT>/ws`                 | WebSocket URL players connect to, advertised to the matchmaker                         |
+| `CORS_ORIGINS`    | API                     | no   | `PUBLIC_WEB_URL` in production, any in dev | Browser origins allowed by the API, comma-separated                                    |
+| `ALLOWED_ORIGINS` | matchmaker, game server | no   | `PUBLIC_WEB_URL` in production, any in dev | Browser origins allowed to call and open WebSockets                                    |
+| `TRUST_PROXY`     | all services            | no   | none                                       | Proxies allowed to set `X-Forwarded-For`: a hop count or CIDRs, never `true`           |
+
+### Secrets
+
+| Variable               | Read by                      | Req.                  | Default | What it does                                                        |
+| ---------------------- | ---------------------------- | --------------------- | ------- | ------------------------------------------------------------------- |
+| `JWT_SECRET`           | API, matchmaker              | yes (32+)             | none    | Signs access tokens; a new value signs every player out             |
+| `INTERNAL_HMAC_SECRET` | API, matchmaker, game server | yes (16+)             | none    | Signs results and internal calls to the API                         |
+| `GAME_TICKET_SECRET`   | matchmaker, game server      | yes (16+)             | none    | Signs join tickets                                                  |
+| `GAME_SERVER_SECRET`   | matchmaker, game server      | yes (16+)             | none    | Game servers register with it; it also signs kicks                  |
+| `ADMIN_TOKEN`          | API, `pnpm admin`            | for the CLI (32+)     | none    | Operator bearer for `/internal/*`; acts as admin; mints staff links |
+| `METRICS_TOKEN`        | API, matchmaker, game server | no (16+)              | none    | Bearer for `/metrics` (and `/rooms` on game servers)                |
+| `VOICE_TURN_SECRET`    | API, coturn                  | with a TURN URL (16+) | none    | Shared TURN REST secret; players only get short-lived credentials   |
+
+### Datastores
+
+| Variable             | Read by         | Req. | Default                | What it does                                                            |
+| -------------------- | --------------- | ---- | ---------------------- | ----------------------------------------------------------------------- |
+| `DATABASE_URL`       | API             | yes  | embedded PGlite        | Postgres connection string                                              |
+| `REDIS_URL`          | API, matchmaker | yes  | in-process             | Shared state, rate limits and pub/sub                                   |
+| `POSTGRES_USER`      | compose         | no   | `tumble`               | Role the Postgres container creates                                     |
+| `POSTGRES_DB`        | compose         | no   | `tumble`               | Database the Postgres container creates                                 |
+| `POSTGRES_PASSWORD`  | compose         | yes  | none                   | Applied only when the volume is first created                           |
+| `DB_POOL_MAX`        | API             | no   | `10` (`2` for migrate) | Postgres pool size per instance                                         |
+| `ALLOW_MEMORY_STORE` | API, matchmaker | no   | off                    | `1` runs production without Redis (one instance, state lost on restart) |
+| `ALLOW_EMBEDDED_DB`  | API             | no   | off                    | `1` runs production on PGlite (one instance)                            |
+| `PGLITE_DIR`         | API             | no   | `./.data/pglite`       | Embedded database directory                                             |
+| `MIGRATE_ON_BOOT`    | API             | no   | `1`                    | `0` skips migrations at boot (compose runs the `migrate` service)       |
+
+### Services and game servers
+
+| Variable                  | Read by                               | Req.                       | Default                        | What it does                                                          |
+| ------------------------- | ------------------------------------- | -------------------------- | ------------------------------ | --------------------------------------------------------------------- |
+| `API_URL`                 | matchmaker, game server, `pnpm admin` | for results and ban checks | `http://localhost:7360` in dev | The API as these services reach it                                    |
+| `MATCHMAKER_URL`          | game server, API                      | for matchmaking            | none                           | Matchmaker to register with; the API probes it for `/status`          |
+| `SERVER_ID`               | game server                           | no (set one)               | `gs-<hostname>-<port>`         | Unique id; join tickets carry it                                      |
+| `REGION`                  | game server                           | no (set one)               | `na`                           | `na`, `eu`, `asia`, `sa` or `oce`                                     |
+| `CONTROL_URL`             | game server                           | no                         | `PUBLIC_WS_URL` minus `/ws`    | Where the matchmaker sends host kicks                                 |
+| `DEFAULT_GAME_SERVER_URL` | matchmaker                            | no                         | `ws://localhost:7350` in dev   | Game server used while none has registered                            |
+| `ALLOW_STANDALONE`        | matchmaker, game server               | no                         | off                            | `1` runs production without the API: no bans, live ops or results     |
+| `ROOM_CAPACITY`           | game server                           | no                         | `100`                          | Show size for unticketed rooms (max 100)                              |
+| `MAX_ROOMS`               | game server                           | no                         | `3`                            | Concurrent rooms per process (about one per core)                     |
+| `SERVER_CAPACITY`         | game server                           | no                         | `MAX_ROOMS × ROOM_CAPACITY`    | Seats advertised to the matchmaker                                    |
+| `FILL_WAIT_MS`            | game server                           | no                         | `25000`                        | Wait after the first human before bots fill                           |
+| `START_AT_HUMANS`         | game server                           | no                         | `ROOM_CAPACITY`                | Start early once this many humans joined                              |
+| `TICKET_FILL_WAIT_MS`     | game server                           | no                         | `15000`                        | Matchmade rooms start when all ticketed players joined, or after this |
+| `PLAYLIST`                | game server                           | no                         | Main Show                      | Playlist for unticketed shows                                         |
+| `ALLOW_UNTICKETED`        | game server                           | no                         | `0` in production              | `1` accepts players without a join ticket                             |
+| `REPORT_RESULTS`          | game server                           | no                         | `1`                            | `0` stops reporting results to the API                                |
+| `RESULTS_OUTBOX_DIR`      | game server                           | no                         | `./.data/results-outbox`       | Durable queue of undelivered results (compose: a volume)              |
+| `HELLO_TIMEOUT_MS`        | game server                           | no                         | `5000`                         | New sockets must say hello within this                                |
+| `MAX_PENDING_PER_IP`      | game server                           | no                         | `8`                            | Unhandshaken sockets per client address                               |
+| `DRAIN_SETTLE_MS`         | game server                           | no                         | `15000`                        | On SIGTERM, wait for players of just-placed matches                   |
+| `DRAIN_TIMEOUT_MS`        | game server                           | no                         | `900000`                       | On SIGTERM, how long running shows may continue                       |
+| `OUTBOX_FLUSH_MS`         | game server                           | no                         | `15000`                        | On SIGTERM, how long to retry undelivered results                     |
+| `TARGET_SIZE`             | matchmaker                            | no                         | `100`                          | Lobby size when a ticket sets none                                    |
+| `MAX_WAIT_MS`             | matchmaker                            | no                         | `25000`                        | Release a lobby with bots after this wait                             |
+| `HOT_MAX_WAIT_MS`         | matchmaker                            | no                         | `12000`                        | The shorter wait for a busy region                                    |
+| `HOT_THRESHOLD`           | matchmaker                            | no                         | `200`                          | Players searching at which a region counts as busy                    |
+| `REGION_FALLBACK_MS`      | matchmaker                            | no                         | `10000`                        | Wait for a server in the lobby's region before trying others          |
+| `USER_RATE_LIMIT_MAX`     | matchmaker                            | no                         | `30`                           | Queue and lobby changes per minute per player                         |
+| `TICK_MS`                 | matchmaker                            | no                         | `500`                          | Matchmaking tick                                                      |
+
+### Sign-in, payments and voice
+
+| Variable                | Read by | Req.                  | Default                                         | What it does                                                         |
+| ----------------------- | ------- | --------------------- | ----------------------------------------------- | -------------------------------------------------------------------- |
+| `DISCORD_CLIENT_ID`     | API     | no (both or none)     | none                                            | Discord sign-in ([ADMIN.md](ADMIN.md#discord))                       |
+| `DISCORD_CLIENT_SECRET` | API     | no (both or none)     | none                                            |                                                                      |
+| `GOOGLE_CLIENT_ID`      | API     | no (both or none)     | none                                            | Google sign-in ([ADMIN.md](ADMIN.md#google))                         |
+| `GOOGLE_CLIENT_SECRET`  | API     | no (both or none)     | none                                            |                                                                      |
+| `GITHUB_CLIENT_ID`      | API     | no (both or none)     | none                                            | GitHub sign-in ([ADMIN.md](ADMIN.md#github))                         |
+| `GITHUB_CLIENT_SECRET`  | API     | no (both or none)     | none                                            |                                                                      |
+| `TWITCH_CLIENT_ID`      | API     | no (both or none)     | none                                            | Twitch sign-in ([ADMIN.md](ADMIN.md#twitch))                         |
+| `TWITCH_CLIENT_SECRET`  | API     | no (both or none)     | none                                            |                                                                      |
+| `APPLE_CLIENT_ID`       | API     | no (all four or none) | none                                            | Sign in with Apple Services ID ([ADMIN.md](ADMIN.md#apple))          |
+| `APPLE_TEAM_ID`         | API     | no (all four or none) | none                                            | Apple Developer team id (the client secret's issuer)                 |
+| `APPLE_KEY_ID`          | API     | no (all four or none) | none                                            | Id of the Sign in with Apple key                                     |
+| `APPLE_PRIVATE_KEY`     | API     | no (all four or none) | none                                            | The `.p8` key's contents, one line with `\n` for newlines            |
+| `SMTP_URL`              | API     | no                    | console in dev, off in production               | Email magic links: `smtp://…:587` or `smtps://…:465`                 |
+| `SMTP_FROM`             | API     | no                    | `Tumble Royale <no-reply@<web host>>`           | Sender of sign-in emails                                             |
+| `STRIPE_SECRET_KEY`     | API     | no                    | fake instant checkout in dev, off in production | Stripe Checkout for Gem packs                                        |
+| `STRIPE_WEBHOOK_SECRET` | API     | with the key          | none                                            | Verifies Stripe webhooks (refunds and disputes arrive only this way) |
+| `VOICE_ICE_SERVERS`     | API     | no                    | none                                            | `stun:`/`turn:`/`turns:` URLs; voice stays hidden without a TURN URL |
+| `VOICE_REQUIRE_TURN`    | API     | no                    | `1` in production                               | `0` allows voice over direct connections only                        |
+
+### Operations
+
+| Variable                       | Read by              | Req. | Default                          | What it does                                                       |
+| ------------------------------ | -------------------- | ---- | -------------------------------- | ------------------------------------------------------------------ |
+| `HOST`                         | API, matchmaker      | no   | `0.0.0.0`                        | Listen address                                                     |
+| `PORT`                         | all services         | no   | 7360 / 7370 / 7350               | Listen port (each image sets its own)                              |
+| `LOG_LEVEL`                    | all services         | no   | `info`                           | `fatal` … `trace`, or `silent`                                     |
+| `SENTRY_DSN`                   | all services         | no   | none                             | Sentry-compatible crash reports                                    |
+| `INTERNAL_PORT`                | all services         | no   | none                             | Private `/metrics` listener without auth; keep it off the internet |
+| `INTERNAL_HOST`                | all services         | no   | all interfaces                   | Interface for that listener                                        |
+| `RATE_LIMIT_MAX`               | API, matchmaker      | no   | `300` / `120`                    | Requests per minute per player or IP                               |
+| `NAME_CHANGE_COOLDOWN_DAYS`    | API                  | no   | `30`                             | Days between display name changes                                  |
+| `PRESENCE_GRACE_MS`            | API                  | no   | `8000`                           | How long a player stays online after disconnecting                 |
+| `STATUS_SAMPLE_SECONDS`        | API                  | no   | `60`                             | Status page uptime sampling; `0` keeps no history                  |
+| `RETENTION_INTERVAL_MINUTES`   | API                  | no   | `360`                            | Retention job interval (`0` never, at most 35000)                  |
+| `RETENTION_SESSION_GRACE_DAYS` | API                  | no   | `7`                              | Delete sessions this long after they expired                       |
+| `RETENTION_EVENTS_DAYS`        | API                  | no   | `90`                             | Delete analytics events older than this (`0` keeps them)           |
+| `RETENTION_GUEST_DAYS`         | API                  | no   | `0` (keep)                       | Delete guest accounts unused this long                             |
+| `BACKUP_INTERVAL_HOURS`        | compose, `backup.sh` | no   | `24`                             | Hours between `pg_dump`s                                           |
+| `BACKUP_KEEP_DAYS`             | compose, `backup.sh` | no   | `14`                             | Delete dumps older than this                                       |
+| `BACKUP_DIR`                   | `backup.sh`          | no   | `/backups`                       | Where dumps go (compose mounts the `backups` volume there)         |
+| `ADMIN_API_URL`                | `pnpm admin`         | no   | `PUBLIC_API_URL`, else `API_URL` | API the CLI talks to (the API image sets `http://127.0.0.1:7360`)  |
+
+### Edge, images and the client
+
+| Variable               | Read by                    | Req.  | Default                 | What it does                                                       |
+| ---------------------- | -------------------------- | ----- | ----------------------- | ------------------------------------------------------------------ |
+| `TAG`                  | compose                    | no    | `latest`                | Image tag to build and run                                         |
+| `SITE_ADDRESS`         | compose, Caddy             | no    | `DOMAIN` / `GS_DOMAIN`  | Caddy site address (`:80` turns HTTPS off, as the smoke test does) |
+| `CADDY_GLOBAL_OPTIONS` | compose, Caddy             | no    | the `ACME_EMAIL` line   | Extra Caddy global options                                         |
+| `API_UPSTREAM`         | compose, Caddy             | no    | `api:7360`              | Where Caddy proxies `/api`                                         |
+| `MATCHMAKER_UPSTREAM`  | compose, Caddy             | no    | `matchmaker:7370`       | Where Caddy proxies `/mm`                                          |
+| `GAME_SERVER_UPSTREAM` | compose, Caddy             | no    | `game-server:7350`      | Where Caddy proxies `/gs/ws` (the game server host: everything)    |
+| `CLIENT_UPSTREAM`      | compose, Caddy             | no    | `client:8080`           | Where Caddy proxies the web client                                 |
+| `GS_DOMAIN`            | game server compose, Caddy | yes   | none                    | An extra game server's own public hostname                         |
+| `VITE_API_URL`         | client build               | no    | `/api` (same origin)    | Bakes a fixed API URL into the bundle (prefer `config.json`)       |
+| `VITE_MATCHMAKER_URL`  | client build               | no    | `/mm`                   | Same, for the matchmaker                                           |
+| `VITE_GAME_SERVER_URL` | client build               | no    | `/gs/ws`                | Same, for the game server                                          |
+| `VITE_SENTRY_DSN`      | client build               | no    | none                    | Browser crash reports (`config.json` `sentryDsn` wins)             |
+| `GAME_SERVER_URL`      | client dev server          | _dev_ | `http://localhost:7350` | Where `vite dev` proxies `/gs`                                     |
+
+The client's runtime file `deploy/client-config/config.json` takes
+`apiUrl`, `matchmakerUrl`, `gameServerUrl`, `reportErrors` and `sentryDsn`
+([Client overrides](#client-overrides)).
+
+### Development only
+
+| Variable          | Read by     | Req.  | Default | What it does                                                                                              |
+| ----------------- | ----------- | ----- | ------- | --------------------------------------------------------------------------------------------------------- |
+| `DEV_ADMIN_EMAIL` | API         | _dev_ | none    | While no staff exist, makes this address an admin and logs a one-time sign-in link; refused in production |
+| `GS_DEV`          | game server | _dev_ | off     | `1` swaps in the capsule stand-in sim (load tests)                                                        |
+| `PLAY_SECONDS`    | game server | _dev_ | `120`   | Round length of that sim                                                                                  |
 
 ## Troubleshooting
 

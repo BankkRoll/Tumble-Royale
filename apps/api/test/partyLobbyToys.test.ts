@@ -5,7 +5,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { encodeLobbyFrame, type LobbyPose } from '@tumble/shared';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { userChannel } from '../src/realtime/notifier.ts';
 import { PartyLobbyRelay } from '../src/realtime/partyLobby.ts';
 import { PartyService } from '../src/social/party.ts';
@@ -53,6 +53,13 @@ async function inbox(userId: string): Promise<Record<string, unknown>[]> {
   return out;
 }
 
+/** Resolves once `box` holds `n` frames: Redis delivers them after PUBLISH has returned. */
+const arrived = (box: Record<string, unknown>[], n: number) =>
+  vi.waitFor(() => {
+    expect(box).toHaveLength(n);
+    return box;
+  });
+
 describe('party lobby toys', () => {
   it('keeps the ball from the leader only and grabs aimed at fellow members only', async () => {
     const [lead, b, c] = (await party(3)) as [TestUser, TestUser, TestUser];
@@ -68,7 +75,7 @@ describe('party lobby toys', () => {
     );
     await r.handle(b.id, encodeLobbyFrame(pose(), 2, null, { grab: b.id, status: 'store' }), 200);
 
-    const [fromLead, fromB, fromB2] = atC;
+    const [fromLead, fromB, fromB2] = await arrived(atC, 3);
     expect(fromLead).toMatchObject({ userId: lead.id, ball, grab: b.id });
     expect(fromB).toMatchObject({ userId: b.id, bump: [3, 1, 0] });
     expect(fromB!.ball).toBeUndefined();

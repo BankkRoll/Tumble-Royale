@@ -16,6 +16,8 @@
  */
 
 export { AudioEngine, LoopEmitter, DEFAULT_AUDIO_SETTINGS, isMobileDevice } from './core/engine.ts';
+export { VoiceChatMixer, rmsLevel } from './core/voiceChat.ts';
+export type { VoiceChatPeer, VoiceLevelMeter } from './core/voiceChat.ts';
 export type {
   AudioEngineOptions,
   AudioSettings,

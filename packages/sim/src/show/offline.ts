@@ -36,6 +36,11 @@ export interface OfflineShowOptions {
   roundTimeScale?: number;
   /** Forces the show mutator (see {@link ShowDirectorOptions.mutatorId}). */
   mutatorId?: string | null;
+  /**
+   * Round voting between rounds (see {@link ShowDirectorOptions.voting}). The
+   * human votes through `director.castVote`; bots vote on their own.
+   */
+  voting?: boolean;
 }
 
 /** A single-player show against bots, running entirely in the browser (or a test). */
@@ -135,6 +140,7 @@ export function createOfflineShow(opts: OfflineShowOptions): OfflineShow {
     timings: manual ? { loadingStall: Infinity, loadingHardCap: Infinity, ...opts.timings } : opts.timings,
     ...(opts.roundTimeScale !== undefined ? { roundTimeScale: opts.roundTimeScale } : {}),
     ...(opts.mutatorId !== undefined ? { mutatorId: opts.mutatorId } : {}),
+    ...(opts.voting !== undefined ? { voting: opts.voting } : {}),
     host: {
       startRound(info) {
         const sim = createMatchSim(

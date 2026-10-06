@@ -75,5 +75,26 @@ export function socialIntents(account: () => OnlineAccount | null): UIHandlers {
     onPartyInviteAction: withAccount(
       (a, { userId, code, action }) => void a.answerPartyInvite(userId, code, action),
     ),
+    onClubRefresh: withAccount((a) => {
+      void a.clubs.refresh();
+      void a.clubs.recommended();
+    }),
+    onClubCreate: withAccount((a, body) => void a.clubs.create(body)),
+    onClubSearch: withAccount((a, { query }) => void a.clubs.search(query)),
+    onClubJoin: withAccount((a, { clubId }) => void a.clubs.join(clubId)),
+    onClubCancelRequest: withAccount((a, { clubId }) => void a.clubs.cancelRequest(clubId)),
+    onClubInviteAnswer: withAccount((a, { clubId, accept }) => void a.clubs.answerInvite(clubId, accept)),
+    onClubRequestAnswer: withAccount((a, { userId, accept }) => void a.clubs.answerRequest(userId, accept)),
+    onClubInvite: withAccount((a, { userId }) => void a.clubs.invite(userId)),
+    onClubEdit: withAccount((a, patch) => void a.clubs.edit(patch)),
+    onClubMember: withAccount((a, { userId, action }) => void a.clubs.member(userId, action)),
+    onClubLeave: withAccount((a, { disband }) => void a.clubs.leave(disband === true)),
+    onClubGoals: withAccount((a) => void a.clubs.goals()),
+    onClubClaim: withAccount((a, { week, goalId }) => void a.clubs.claim(week, goalId)),
+    onClubPartyUp: withAccount((a, { userId }) => void a.clubs.partyUp(userId)),
+    onClubChat: withAccount((a, { text }) => a.clubs.chat(text)),
+    onClubReport: withAccount(
+      (a, { clubId, reason, details }) => void a.clubs.report(clubId, reason, details),
+    ),
   };
 }

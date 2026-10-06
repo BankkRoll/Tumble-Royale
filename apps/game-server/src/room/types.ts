@@ -20,6 +20,7 @@ import {
   type ShowPhaseId,
 } from '@tumble/shared';
 import type { ResultsSink } from '../results.ts';
+import type { VoiceTeamsSink } from '../voiceTeams.ts';
 import type { TicketCustomSettings } from '../tickets.ts';
 
 /** A matchmade show: what the join tickets said about it. */
@@ -69,6 +70,31 @@ export interface ShowRoundPlan {
   roundTimeScale?: number;
 }
 
+/** How a round vote was decided (`cancelled`: called off, no winner). */
+export type ShowVoteReason = 'votes' | 'tie' | 'noVotes' | 'cancelled';
+
+/** A round-vote ballot as the room mirrors it to clients. */
+export interface ShowVote {
+  /** Round the ballot is for. */
+  roundIndex: number;
+  /** The ballot is for the final. */
+  isFinal: boolean;
+  /** Candidate round ids in display order. */
+  options: string[];
+  /** Raw ballots per option. */
+  counts: number[];
+  /** Ballots cast. */
+  voted: number;
+  /** Players allowed to vote. */
+  eligible: number;
+  /** Seconds until the ballot closes at the latest (0 once closed). */
+  closesIn: number;
+  /** Bot ballots count for less than a human's. */
+  botsDiscounted: boolean;
+  /** Set once closed. */
+  result: { winner: number; roundId: string; counts: number[]; reason: ShowVoteReason } | null;
+}
+
 /** Things the show director asks the room to do, drained once per tick. */
 export type ShowEvent =
   | { type: 'showPhase'; phase: ShowPhaseId }
@@ -81,7 +107,20 @@ export type ShowEvent =
   /** The round is over; results go to clients. */
   | { type: 'roundEnd'; roundId: string; results: RoundResultEntry[] }
   /** The show is over; the room winds down. */
-  | { type: 'showEnd'; winners: number[]; rounds: { roundId: string; qualified: number[] }[] };
+  | { type: 'showEnd'; winners: number[]; rounds: { roundId: string; qualified: number[] }[] }
+  /** A ballot for the next round opened: offer it to every client. */
+  | { type: 'voteOpen'; vote: ShowVote }
+  /** Ballots changed: mirror the counts (the room throttles these). */
+  | { type: 'voteTally'; roundIndex: number; counts: number[]; voted: number }
+  /** The ballot closed (`winner` -1 when it was called off). */
+  | {
+      type: 'voteResult';
+      roundIndex: number;
+      winner: number;
+      roundId: string;
+      counts: number[];
+      reason: ShowVoteReason;
+    };
 
 /** The LOADING roster mirrored to clients as `loadingStatus`. */
 export interface ShowLoadingStatus {
@@ -128,6 +167,18 @@ export interface ShowController {
   loadingStatus?(): ShowLoadingStatus | null;
   /** The round being played, or null. */
   currentRound(): ShowRoundPlan | null;
+  /**
+   * A player's round-vote ballot (client `castVote`). The controller ignores
+   * anything it cannot accept: wrong round, closed ballot, bad option, a
+   * player who may not vote.
+   */
+  castVote?(playerId: number, roundIndex: number, option: number): void;
+  /** The running ballot, for a client that (re)attached mid-vote; null when none. Allocates. */
+  currentVote?(): ShowVote | null;
+  /** True if the player may vote in the running ballot. */
+  canVote?(playerId: number): boolean;
+  /** The player's ballot in the running vote (option index), or -1. */
+  ballotOf?(playerId: number): number;
   /** Playlist party size (duos 2, squads 4); the room assigns party ids with it. */
   readonly partySize?: number;
   /** Playlist bot skill weights; the room seeds bot tiers with it. */
@@ -165,6 +216,13 @@ export interface RoomDeps {
   /** Real: wraps the match team's ShowDirector. */
   createShowController: ShowControllerFactory;
   /**
+   * Async work a matchmade show needs before it may start (fetching a private
+   * show's custom rounds). Returns null when there is none. The room holds the
+   * show in its lobby until the promise settles, then builds its show
+   * controller again; the promise must settle on its own (bounded timeouts).
+   */
+  prepareMatch?: (match: MatchSettings) => Promise<unknown> | null;
+  /**
    * Bots that need external input (e.g. the dev sim). Return null to let the
    * MatchSim drive the bot itself (the real sim has built-in bot brains).
    */
@@ -177,6 +235,8 @@ export interface RoomDeps {
   log?: (msg: string) => void;
   /** Posts matchmade show results to the account API; null/absent disables reporting. */
   results?: ResultsSink | null;
+  /** Tells the account API who is on which team in team rounds (team voice); null/absent disables it. */
+  voiceTeams?: VoiceTeamsSink | null;
   /** Playlist display name and round estimate for the `showInfo` message. */
   describePlaylist?: (
     playlistId: string | null,
@@ -216,6 +276,12 @@ export interface RoomConfig {
   lateJoinGraceMs: number;
   /** Snapshots go out every N × {@link snapshotEvery} ticks on the pre-show platform (bandwidth). */
   lobbySnapshotDivisor: number;
+  /**
+   * Spectators one room takes at most (late joiners plus private spectator
+   * seats). Each costs one snapshot encode per tick, like a player, so this
+   * bounds what watchers add to the tick.
+   */
+  maxSpectators: number;
 }
 
 /** Defaults per SPEC §3.1. */
@@ -230,4 +296,5 @@ export const DEFAULT_ROOM_CONFIG: RoomConfig = {
   ticketedFillWaitMs: 15_000,
   lateJoinGraceMs: 10_000,
   lobbySnapshotDivisor: 2,
+  maxSpectators: 16,
 };

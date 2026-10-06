@@ -1,0 +1,133 @@
+/* Voice chat: Settings → Voice, the HUD voice roster and speaking marks (VoicePanel.tsx). */
+
+.tr-voice-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4em;
+  height: 1.4em;
+  border-radius: 999px;
+  font-size: 0.85em;
+  opacity: 0.55;
+}
+.tr-voice-dot[data-speaking] {
+  opacity: 1;
+  background: var(--good);
+  box-shadow: 0 0 0 0.15em var(--ink);
+}
+.tr-voice-dot[data-muted] {
+  opacity: 0.8;
+}
+
+.tr-party-voice {
+  position: absolute;
+  bottom: -0.5em;
+  right: -0.5em;
+  pointer-events: none;
+}
+.tr-party-voice:empty {
+  display: none;
+}
+
+.tr-voice-meter {
+  position: relative;
+  width: 12em;
+  height: 0.6em;
+  border-radius: 999px;
+  background: var(--cloud);
+  border: 0.12em solid var(--ink);
+  overflow: hidden;
+}
+.tr-voice-meter-fill {
+  height: 100%;
+  background: var(--sky);
+}
+.tr-voice-meter-fill[data-on] {
+  background: var(--good);
+}
+.tr-voice-meter-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0.15em;
+  background: var(--ink);
+}
+
+.tr-voice-device {
+  max-width: 16em;
+}
+
+.tr-voice-message {
+  margin: 0.2em 0 0.6em;
+  color: var(--warn);
+  font-weight: 700;
+}
+
+.tr-voice-off {
+  padding: 1em 0;
+}
+
+.tr-voice-room {
+  margin-top: 1em;
+}
+.tr-voice-peers {
+  list-style: none;
+  margin: 0.4em 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+}
+.tr-voice-peer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4em;
+  padding: 0.4em 0.6em;
+  border-radius: 0.8em;
+  background: var(--cream);
+  border: 0.12em solid var(--ink);
+}
+.tr-voice-peer[data-speaking] {
+  border-color: var(--good);
+}
+.tr-voice-peer-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tr-voice-roster {
+  margin-top: 0.4em;
+  padding: 0.35em 0.6em;
+  border-radius: 0.8em;
+  background: color-mix(in srgb, var(--ink) 55%, transparent);
+  color: var(--cream);
+  font-size: 0.8em;
+  max-width: 14em;
+}
+.tr-voice-roster ul {
+  list-style: none;
+  margin: 0.2em 0 0;
+  padding: 0;
+}
+.tr-voice-roster li,
+.tr-voice-roster-self {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tr-voice-roster li[data-speaking],
+.tr-voice-roster-self[data-on] {
+  font-weight: 800;
+}
+
+.tr-report-note {
+  margin: 0.4em 0;
+  font-size: 0.85em;
+  color: var(--ink-soft);
+}

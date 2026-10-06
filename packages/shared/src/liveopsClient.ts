@@ -14,7 +14,7 @@
  * - Report crashes to the API (`POST /internal/errors`) so they show up in
  *   `pnpm admin errors top` next to client errors.
  */
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import {
   clockOffset,
   FLAG_DEFAULTS,
@@ -47,6 +47,39 @@ export function signInternal(secret: string, body: string, nowMs: number): Recor
   const nonce = randomBytes(16).toString('hex');
   const signature = createHmac('sha256', secret).update(`${timestamp}.${nonce}.${body}`).digest('hex');
   return { 'x-tumble-timestamp': timestamp, 'x-tumble-nonce': nonce, 'x-tumble-signature': signature };
+}
+
+/**
+ * Checks headers made by {@link signInternal}: well formed, signed with
+ * `secret` over `body`, and stamped within `windowMs` of `nowMs`.
+ *
+ * Nonces are not remembered, so a captured request can be replayed inside
+ * the window; only use this for read-only calls where a replay reveals
+ * nothing new.
+ *
+ * @param secret - `INTERNAL_HMAC_SECRET`.
+ * @param headers - Request headers (lower-case names).
+ * @param body - The exact request body (`''` for a GET).
+ * @param nowMs - Wall clock.
+ * @param windowMs - Allowed clock difference (default 5 min).
+ * @returns True when the signature is valid.
+ */
+export function verifyInternal(
+  secret: string,
+  headers: Record<string, string | string[] | undefined>,
+  body: string,
+  nowMs: number,
+  windowMs = 5 * 60_000,
+): boolean {
+  const ts = headers['x-tumble-timestamp'];
+  const nonce = headers['x-tumble-nonce'];
+  const sig = headers['x-tumble-signature'];
+  if (typeof ts !== 'string' || typeof nonce !== 'string' || typeof sig !== 'string') return false;
+  if (!/^\d{10,16}$/.test(ts) || nonce.length < 16 || nonce.length > 128 || !/^[0-9a-f]{64}$/i.test(sig))
+    return false;
+  if (Math.abs(nowMs - Number(ts)) > windowMs) return false;
+  const expected = createHmac('sha256', secret).update(`${ts}.${nonce}.${body}`).digest();
+  return timingSafeEqual(expected, Buffer.from(sig.toLowerCase(), 'hex'));
 }
 
 /** One raw flag row as the API stores it. */

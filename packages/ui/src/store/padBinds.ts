@@ -99,6 +99,13 @@ export const PAD_BIND_CONTEXT: Readonly<Record<PadBindAction, PadBindContext>> =
   pause: 'always',
   spectatePrev: 'spectate',
   spectateNext: 'spectate',
+  spectateCamera: 'spectate',
+  spectateLeader: 'spectate',
+  spectateRoster: 'spectate',
+  spectatePin: 'spectate',
+  broadcastOverlay: 'spectate',
+  broadcastHelp: 'spectate',
+  pushToTalk: 'always',
 };
 
 /** Whether two actions can be pressed in the same moment (so must not share a button). */

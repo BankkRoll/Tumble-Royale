@@ -164,10 +164,12 @@ function Line({
       name: nameTag(who),
       ...(who.isBot ? { isBot: true } : {}),
       ...(l.seat !== undefined && !outgoing ? { seat: l.seat } : {}),
-      known: (l.self && !outgoing) || friend || partyMate || ch === 'party',
+      known: (l.self && !outgoing) || friend || partyMate || ch === 'party' || ch === 'club',
     },
     streamer,
   );
+  // Streamer Mode: other players' club tags would identify them as surely as their names.
+  const clubTag = who.club && (!streamer || (l.self && !outgoing)) ? who.club : null;
   // The player card and its toasts must not reveal a name the line masked.
   const target: PlayerRef =
     label === nameTag(who)
@@ -178,6 +180,7 @@ function Line({
       className={`tr-chat-name${partyMate ? ' is-party-mate' : ''}`}
       style={l.color && !partyMate ? { color: l.color } : undefined}
     >
+      {clubTag && <span className="tr-club-tag">[{clubTag}]</span>}
       {outgoing ? `To ${label}` : label}
       {friend && <i className="tr-chat-friend" aria-hidden="true" />}:
     </b>

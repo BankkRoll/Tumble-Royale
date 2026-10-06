@@ -1,7 +1,9 @@
 /**
  * One headless swarm client: speaks the real protocol (Hello, 60 Hz input
  * batches with redundancy and snapshot acks, ping, reliable channel), fully
- * decodes snapshots, and records traffic and latency statistics.
+ * decodes snapshots, and records traffic and latency statistics. A spectator
+ * client sends no inputs (acks only) and steers a free-camera focus hint
+ * down the course twice a second, as the browser's free camera does.
  */
 import {
   BitReader,
@@ -102,16 +104,25 @@ export class SwarmClient {
 
   private upLink: NetworkConditioner | null = null;
   private downLink: NetworkConditioner | null = null;
+  private bounds: {
+    min: { x: number; y: number; z: number };
+    max: { x: number; y: number; z: number };
+  } | null = null;
+  private lastFocus = 0;
+  private readonly startedAt = now();
 
   /**
    * @param url - Server WebSocket URL.
    * @param index - Client number (name and RNG seed).
    * @param conditioner - Optional impairment applied to EACH direction.
+   * @param opts.ticket - Join ticket for Hello (ticketed runs).
+   * @param opts.spectator - Watch instead of play: no inputs, a moving camera focus hint.
    */
   constructor(
     private readonly url: string,
     readonly index: number,
     conditioner: ConditionerOptions | null = null,
+    private readonly opts: { ticket?: string; spectator?: boolean } = {},
   ) {
     this.rng = new Rng(0xb07 + index * 7919);
     this.heading = this.rng.range(-Math.PI, Math.PI);
@@ -184,7 +195,20 @@ export class SwarmClient {
       return;
     }
     this.clientTick++;
-    if (this.inRound) {
+    if (this.opts.spectator && this.bounds && t - this.lastFocus > 500) {
+      this.lastFocus = t;
+      const b = this.bounds;
+      const s = (t - this.startedAt) / 1000;
+      const cx = (b.min.x + b.max.x) / 2;
+      const len = Math.max(1, b.max.z - b.min.z);
+      const focus: [number, number, number] = [
+        Math.round(cx + Math.sin(s * 0.3 + this.index) * (b.max.x - b.min.x) * 0.25),
+        Math.round((b.min.y + b.max.y) / 2),
+        Math.round(b.min.z + ((s * 8 + this.index * 17) % len)),
+      ];
+      this.reliable.send(encodeReliableMessage({ kind: 'msg', msg: { t: 'spectate', target: -1, focus } }));
+    }
+    if (this.inRound && !this.opts.spectator) {
       this.makeInput(this.input);
       quantizeInputInPlace(this.input);
       const seq = this.history.push(this.input);
@@ -199,9 +223,11 @@ export class SwarmClient {
     } else if (t - this.lastAckOnly > 100) {
       this.lastAckOnly = t;
       const w = this.w.reset();
+      // A spectator acks like the browser does while watching, so its snapshots stay deltas.
+      const ack = this.opts.spectator ? this.decoder.newestId : NO_SNAPSHOT;
       writeInputBatch(
         w,
-        { newestSeq: 0, clientTick: this.clientTick, ackSnapshotId: NO_SNAPSHOT, count: 0 },
+        { newestSeq: 0, clientTick: this.clientTick, ackSnapshotId: ack, count: 0 },
         this.batch,
       );
       this.send(w.finish());
@@ -219,7 +245,13 @@ export class SwarmClient {
   private sendHello(): void {
     this.lastHello = now();
     const w = this.w.reset();
-    writeHello(w, { version: PROTOCOL_VERSION, name: `swarm-${this.index}`, resumeToken: '', loadout: '' });
+    writeHello(w, {
+      version: PROTOCOL_VERSION,
+      name: `swarm-${this.index}`,
+      resumeToken: '',
+      loadout: '',
+      ...(this.opts.ticket ? { ticket: this.opts.ticket } : {}),
+    });
     this.send(w.finish());
   }
 
@@ -276,12 +308,22 @@ export class SwarmClient {
           const m = decodeReliableMessage(p);
           if (m?.kind === 'msg' && m.msg.t === 'joinRound') {
             this.quantizer = new PositionQuantizer(m.msg.bounds);
+            this.bounds = m.msg.bounds;
             this.decoder.reset();
             this.inRound = true;
             // Nothing to build headless; without the ack the director holds LOADING until its hard
             // cap and then eliminates every swarm client, so PLAYING was never load-tested.
             this.reliable.send(
               encodeReliableMessage({ kind: 'msg', msg: { t: 'loaded', roundId: m.msg.roundId } }),
+            );
+          } else if (m?.kind === 'msg' && m.msg.t === 'voteOptions' && m.msg.canVote) {
+            // One seeded ballot per vote so load tests cover the castVote path and its tally broadcasts.
+            const option = this.rng.int(0, Math.max(0, m.msg.options.length - 1));
+            this.reliable.send(
+              encodeReliableMessage({
+                kind: 'msg',
+                msg: { t: 'castVote', roundIndex: m.msg.roundIndex, option },
+              }),
             );
           }
         });

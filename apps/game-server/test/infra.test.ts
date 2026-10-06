@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import { BitReader, BitWriter, MsgType, PROTOCOL_VERSION, readWelcome, writeHello } from '@tumble/netcode';
 import { RoundPhase, ShowPhase } from '@tumble/shared';
@@ -28,16 +28,38 @@ describe('LagCompensator', () => {
 });
 
 describe('TickScheduler', () => {
-  it('keeps a fixed rate without drift', async () => {
-    let ticks = 0;
-    const s = new TickScheduler({ hz: 100 }, () => {
-      ticks++;
-    });
+  it('runs tick n at epoch + n × period', () => {
+    // Without the setImmediate spin the fake clock lands exactly on each deadline.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setImmediate', 'clearImmediate', 'Date'] });
+    try {
+      const at: number[] = [];
+      const s = new TickScheduler({ hz: 100, now: () => Date.now(), spinMs: 0 }, () => at.push(Date.now()));
+      s.start();
+      vi.advanceTimersByTime(500);
+      s.stop();
+      expect(at).toHaveLength(50);
+      expect(at.map((t, n) => t - s.dueTime(n))).toEqual(at.map(() => 0));
+      expect(s.skipped).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a fixed rate without drift on real timers', async () => {
+    // A loaded runner may fire any timer late, so this bounds lateness per tick
+    // instead of counting ticks inside a sleep that can itself overrun.
+    const lateness: number[] = [];
+    const s = new TickScheduler({ hz: 100 }, (n) => lateness.push(performance.now() - s.dueTime(n)));
     s.start();
+    const epoch = s.epochMs;
     await new Promise((r) => setTimeout(r, 500));
     s.stop();
-    expect(ticks).toBeGreaterThanOrEqual(45);
-    expect(ticks).toBeLessThanOrEqual(52);
+    expect(lateness.length).toBeGreaterThan(0);
+    expect(Math.min(...lateness)).toBeGreaterThanOrEqual(0);
+    // The grid only ever moves by whole skipped periods, so lateness never accumulates.
+    expect(s.epochMs - epoch).toBeCloseTo(s.skipped * s.periodMs, 6);
+    const sorted = [...lateness].sort((a, b) => a - b);
+    expect(sorted[Math.floor(sorted.length / 2)]!).toBeLessThan(s.periodMs);
   });
 });
 

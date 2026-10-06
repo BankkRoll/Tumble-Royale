@@ -94,6 +94,18 @@ describe('game server config', () => {
     ).toMatchObject({ apiUrl: 'https://api', outboxDir: '/var/lib/tumble/outbox' });
   });
 
+  it('signs API calls with GAME_SERVER_HMAC_SECRET when given, without needing the shared key', () => {
+    const own = 'game-server-only-key-0123456789';
+    const env = testEnv({
+      NODE_ENV: 'production',
+      API_URL: 'https://api',
+      INTERNAL_HMAC_SECRET: undefined,
+      GAME_SERVER_HMAC_SECRET: own,
+    });
+    expect(loadConfig(env).results?.secret).toBe(own);
+    expect(issueNames({ ...env, GAME_SERVER_HMAC_SECRET: 'short' })).toEqual(['GAME_SERVER_HMAC_SECRET']);
+  });
+
   it('links to the matchmaker only with a URL, and then requires the server secret', () => {
     expect(loadConfig(testEnv()).link).toBeNull();
     expect(loadConfig(testEnv({ MATCHMAKER_URL: 'http://mm', SERVER_ID: 'gs-1' })).link).toMatchObject({

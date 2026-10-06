@@ -565,8 +565,12 @@ While the only game server drains, players cannot start new shows, so:
 - with several game servers, upgrade them one at a time.
 
 `stop_grace_period` (17 minutes) must stay longer than
-`DRAIN_SETTLE_MS + DRAIN_TIMEOUT_MS + OUTBOX_FLUSH_MS` plus 30 s; raise it
-together with them.
+`DRAIN_TIMEOUT_MS + OUTBOX_FLUSH_MS` plus 30 s (the settle wait for late
+arrivals, `DRAIN_SETTLE_MS`, runs inside `DRAIN_TIMEOUT_MS`); raise it together
+with them. While it drains, a game server stays registered with the matchmaker
+as draining: no new matches go to it, but players of running shows can still
+rejoin and hosts can still remove players. It deregisters once its last room
+closes, and a show cut off by the timeout reports the rounds played so far.
 
 ## Backups
 

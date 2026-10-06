@@ -102,7 +102,8 @@ services:
       RESULTS_OUTBOX_DIR: /data/results-outbox
     volumes:
       - results-outbox:/data/results-outbox
-    # SIGTERM drains: up to DRAIN_SETTLE_MS (15 s) + DRAIN_TIMEOUT_MS (15 min) +
+    # SIGTERM drains: up to DRAIN_TIMEOUT_MS (15 min, which includes the
+    # DRAIN_SETTLE_MS wait for late arrivals) +
     # OUTBOX_FLUSH_MS (15 s), and the server forces its own exit 30 s after
     # that. Docker kills the container after this period, so it must be longer;
     # raise both together.

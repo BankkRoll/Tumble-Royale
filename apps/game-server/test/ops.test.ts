@@ -96,6 +96,33 @@ describe('drain', () => {
     expect(t2.now()).toBe(0);
   });
 
+  it('waits for placed matches longer than a join ticket lives, but stops once none is pending', async () => {
+    const time = fakeTime();
+    let pending = 2;
+    const d = deps({
+      settleMs: 100_000,
+      now: time.now,
+      sleep: async (ms) => {
+        time.advance(ms);
+        if (time.now() >= 40_000) pending = 0;
+      },
+      link: { drain: async () => undefined, stop: async () => undefined, pendingMatches: () => pending },
+    });
+    await drain(d);
+    expect(time.now()).toBe(40_000);
+    const slow = fakeTime();
+    // The matchmaker never answered: the full settle runs, past the 90 s ticket lifetime.
+    await drain(
+      deps({
+        settleMs: 100_000,
+        now: slow.now,
+        sleep: slow.sleep,
+        link: { drain: async () => undefined, stop: async () => undefined, pendingMatches: () => null },
+      }),
+    );
+    expect(slow.now()).toBe(100_000);
+  });
+
   it('survives a matchmaker that cannot be reached and reports what the outbox kept', async () => {
     const d = deps({
       link: { drain: () => Promise.reject(new Error('down')), stop: () => Promise.reject(new Error('down')) },
@@ -207,7 +234,7 @@ describe('ops config', () => {
       logLevel: 'info',
       sentryDsn: undefined,
       drainTimeoutMs: 900_000,
-      drainSettleMs: 15_000,
+      drainSettleMs: 100_000,
       outboxFlushMs: 15_000,
     });
     expect(() => loadConfig({ ...base, LOG_LEVEL: 'loud', DRAIN_TIMEOUT_MS: '-1' })).toThrow(

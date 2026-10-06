@@ -3,10 +3,11 @@
  * id, one seat per account, held seats that can chat, partial results when a
  * show is cut off, and pre-show rooms only spectators are in.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { LEAVE_CLOSE_REASON, type LowFreqMessage } from '@tumble/netcode';
 import { ServerMetrics } from '../src/metrics.ts';
 import type { MatchResultPayload } from '../src/results.ts';
+import { Room } from '../src/room/Room.ts';
 import { RoomManager } from '../src/room/RoomManager.ts';
 import type { RoomConfig, RoomDeps, ShowController } from '../src/room/types.ts';
 import { SimpleShowController } from '../src/show/SimpleShowController.ts';
@@ -75,6 +76,7 @@ function harness(deps: Partial<RoomDeps>, config: Partial<RoomConfig> = {}) {
   const clock = { now: 1000 };
   const sims: FakeMatchSim[] = [];
   const posted: MatchResultPayload[] = [];
+  const metrics = new ServerMetrics();
   const manager = new RoomManager(
     {
       ...testDeps(clock, sims),
@@ -88,7 +90,7 @@ function harness(deps: Partial<RoomDeps>, config: Partial<RoomConfig> = {}) {
       },
       ...deps,
     },
-    new ServerMetrics(),
+    metrics,
     null,
     {
       config: {
@@ -120,7 +122,7 @@ function harness(deps: Partial<RoomDeps>, config: Partial<RoomConfig> = {}) {
       for (const c of clients) c.pump(clock.now);
     }
   };
-  return { clock, manager, posted, connect, advance };
+  return { clock, manager, metrics, posted, connect, advance };
 }
 
 describe('team voice reports', () => {
@@ -280,6 +282,36 @@ describe('shows cut off before their end', () => {
     expect(h.manager.list()).toEqual([]);
     expect(h.posted).toHaveLength(1);
     expect(h.posted[0]!.rounds.length).toBeGreaterThan(0);
+  });
+});
+
+describe('capacity report', () => {
+  it('counts connected spectators on top of the planned show size', () => {
+    const h = harness({}, { ticketedFillWaitMs: 600_000 });
+    h.connect(claims('u-a', { humans: 2, bots: 3 }));
+    expect(h.manager.capacityReport().load).toBe(5);
+    h.connect(claims('u-s', { role: 'spectator', humans: 2, bots: 3 }));
+    expect(h.manager.capacityReport().load).toBe(6);
+  });
+});
+
+describe('message handling errors', () => {
+  it('close only the connection whose message threw', () => {
+    const h = harness({}, { ticketedFillWaitMs: 600_000 });
+    const a = h.connect(claims('u-a'));
+    const b = h.connect(claims('u-b'));
+    const spy = vi.spyOn(Room.prototype, 'onMessage').mockImplementationOnce(() => {
+      throw new Error('decoder bug');
+    });
+    try {
+      a.input({ moveX: 1, moveZ: 0, yaw: 0, buttons: 0, emote: 0 });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(a.conn.open).toBe(false);
+    expect(b.conn.open).toBe(true);
+    expect(h.metrics.messageErrors).toBe(1);
+    expect(() => h.advance(3)).not.toThrow();
   });
 });
 

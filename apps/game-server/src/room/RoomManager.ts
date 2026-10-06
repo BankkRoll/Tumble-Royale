@@ -251,7 +251,7 @@ export class RoomManager {
       this.pending.delete(session);
       settle();
     };
-    conn.onMessage = (data) => {
+    conn.onMessage = this.guarded(conn, (data) => {
       const t = this.deps.now();
       if (!session.guard.admit(t, data.length)) return;
       if (data[0] !== MsgType.Hello) return;
@@ -280,9 +280,28 @@ export class RoomManager {
         );
       }
       const room = placed;
-      conn.onMessage = (d) => room.onMessage(session, d, this.deps.now());
+      conn.onMessage = this.guarded(conn, (d) => room.onMessage(session, d, this.deps.now()));
       conn.onClose = (code, reason) =>
         room.onClose(session, this.deps.now(), code === 1000 && reason === LEAVE_CLOSE_REASON);
+    });
+  }
+
+  /**
+   * Wraps a connection's message handler: a message that makes it throw
+   * (a decoder or room bug a crafted packet can reach) closes that one
+   * connection instead of escaping into the socket library's event handler.
+   */
+  private guarded(conn: Connection, handle: (data: Uint8Array) => void): (data: Uint8Array) => void {
+    return (data) => {
+      try {
+        handle(data);
+      } catch (err) {
+        this.metrics.messageErrors++;
+        this.deps.log?.(
+          `[rooms] message from ${conn.remoteAddress} failed: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
+        );
+        this.reject(conn, KickReason.BadMessage, 'bad message');
+      }
     };
   }
 

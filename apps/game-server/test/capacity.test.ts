@@ -120,7 +120,7 @@ describe('matchmaker link', () => {
         method: String(init.method),
         body: init.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {},
       });
-      return new Response('{}', { status: 200 });
+      return Response.json({ pendingMatches: 1 });
     }) as typeof fetch;
     const link = startMatchmakerLink({
       matchmakerUrl: 'http://mm.test',
@@ -138,6 +138,7 @@ describe('matchmaker link', () => {
     expect(calls.map((c) => c.method)).toEqual(['POST', 'POST', 'POST']);
     expect(calls[1]).toMatchObject({ url: 'http://mm.test/servers/heartbeat', body: { draining: true } });
     expect(calls[2]?.body.draining).toBe(true);
+    expect(link.pendingMatches()).toBe(1);
     await link.stop();
     expect(calls.at(-1)).toMatchObject({ url: 'http://mm.test/servers/gs-a', method: 'DELETE' });
     await link.beat();

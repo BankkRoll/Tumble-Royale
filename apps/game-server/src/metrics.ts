@@ -85,6 +85,8 @@ export class ServerMetrics {
   inputMissed = 0;
   inputLate = 0;
   roomCrashes = 0;
+  /** Client messages whose handling threw; the connection was closed. */
+  messageErrors = 0;
   /** Show results waiting in the outbox for the API. */
   outboxBacklog = 0;
   /** 1 while the server drains for shutdown. */
@@ -186,6 +188,11 @@ export class ServerMetrics {
     counter('tumble_input_missed_total', 'Inputs that never arrived (repeated instead).', this.inputMissed);
     counter('tumble_input_late_total', 'Inputs that arrived after their step.', this.inputLate);
     counter('tumble_room_crashes_total', 'Rooms closed after an exception in their tick.', this.roomCrashes);
+    counter(
+      'tumble_message_errors_total',
+      'Client messages whose handling threw; their connection was closed.',
+      this.messageErrors,
+    );
     lines.push(
       '# HELP tumble_anomalies_total Sanity-check anomalies (sim body speed/teleport, client input floods and impossible sequences).',
       '# TYPE tumble_anomalies_total counter',

@@ -67,6 +67,12 @@ What a player can do today:
   roles, open, request or invite-only joining, a club chat, club tags beside
   names, "Party up" with online members, weekly club goals that pay everyone
   who played, discovery and moderation from the admin console
+- **Voice chat (opt-in):** off by default; party voice and, in team rounds,
+  squads of up to 8 teammates over a WebRTC mesh (Opus only) with the API
+  deciding every room; push-to-talk (rebindable) or open mic, per-player
+  volume and mute, speaking marks, "relay only" to hide your IP, Streamer
+  Mode options, voice mutes and voice reports (nothing is recorded). Needs a
+  TURN relay: the Compose stack ships coturn behind a `voice` profile
 - **Progression:** accounts (guest, Discord, Google, email link), seasons,
   a 100-tier pass, daily/weekly/seasonal/milestone challenges, 45
   achievements (some hidden), a collection log, a daily login streak,
@@ -191,6 +197,9 @@ pnpm admin errors top                                   # most frequent client e
   `clubs.enabled`, `shows.mapVoting`) default to on. With `clubs.enabled`
   off every club route answers `503 feature_disabled`, club chat stops and
   shows stop counting toward club goals; clubs and their members are kept.
+  `voice.enabled` is the exception: it defaults to off because voice needs a
+  TURN relay (`VOICE_ICE_SERVERS`, `VOICE_TURN_SECRET`; docs/SELF_HOSTING.md,
+  "Voice chat"), and the client hides voice until both are in place.
   The client fetches them at boot and on reconnect and caches them for
   offline boots; the matchmaker and game servers read them from the API
   over the internal HMAC channel, cached 30 s.

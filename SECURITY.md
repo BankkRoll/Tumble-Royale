@@ -115,6 +115,52 @@ treats every club input as untrusted:
 - Goal rewards are paid once per player, week and goal, whichever club the
   player is in, so hopping between clubs cannot farm them.
 
+### Voice chat trust boundaries
+
+Voice is opt-in per player and audio travels peer to peer, so the server's
+job is deciding who may connect to whom and never trusting a client about it:
+
+- **Rooms are server state.** The API computes each player's room from the
+  party store and the game server's signed team report (`POST
+/internal/voice/teams`, HMAC with `INTERNAL_HMAC_SECRET`); nothing a client
+  sends names a room. Every relayed offer, answer or ICE candidate is
+  re-checked: both players opted in from the tab that sent it, are in the
+  same room right now, neither blocked the other, neither is voice-muted or
+  suspended. A kick, leave, block or sanction applies to the very next signal.
+- **Hang-ups are pushed.** The server cannot cut a peer-to-peer connection, so
+  every membership change pushes a fresh peer list to everyone it touches, and
+  clients hang up on anyone no longer listed. A modified client could keep an
+  existing connection open, but only if the other side's client also does;
+  it can never open a new one.
+- **Signalling limits.** Voice frames are capped at 12 KB (SDP at 10 KB, ICE
+  candidates at 512 bytes), rate limited per player (token bucket of 60, 20/s)
+  and joins at 12 per minute across instances. SDP whose media sections are
+  not all audio is refused by the API and again by the receiving client, so a
+  peer cannot open video or data channels.
+- **IP exposure.** Directly connected peers see each other's IP addresses,
+  as with any WebRTC call; the first-use dialog says so. "Relay only" sets
+  `iceTransportPolicy: 'relay'`, so the browser gathers only TURN candidates
+  and peers see the relay's address. The API never logs or stores peer
+  addresses.
+- **TURN credentials.** The API mints TURN REST credentials
+  (`expiry:userId.roomTag`, HMAC-SHA1 with `VOICE_TURN_SECRET`) valid for four
+  hours, one player and one room. The secret never leaves the API and coturn.
+  A credential cannot be extended or moved to another user; an allocation
+  made before a sanction can outlive it until the credential expires, but the
+  peer list it would need is already gone.
+- **The relay is not a proxy into your network.** The bundled coturn refuses
+  loopback, private, link-local and carrier-grade NAT peers and caps per-user
+  allocations and bandwidth.
+- **No recordings.** Nothing stores audio. A voice report (reason `voice`)
+  carries only which room the reporter and the target shared and when, kept
+  for an hour after they were last connected; the player's own description
+  is the rest of the evidence.
+- **Guests and sanctions.** Guests and accounts younger than three days are
+  limited to party voice; team voice never puts them with strangers. A voice
+  mute (ban scope `voice`) is separate from a chat mute so moderators can take
+  away one channel and leave the other; a suspension ends voice too. Both
+  propagate through the cluster-wide ban cache invalidation.
+
 ### Public status page
 
 `/status` and `GET /api/status/summary`, `/api/status/history` and the

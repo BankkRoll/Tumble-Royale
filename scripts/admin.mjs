@@ -21,7 +21,7 @@ export const USAGE = `Usage: pnpm admin <command> [options]
 
 Bans
   bans list [--user <userId>] [--all] [--limit N]   active bans (--all includes expired/revoked)
-  bans add <userId> --reason <text> [--scope all|ranked|chat] [--hours N]
+  bans add <userId> --reason <text> [--scope all|ranked|chat|voice] [--hours N]
   bans remove <banId>
 Reports
   reports list                                      open reports, oldest first

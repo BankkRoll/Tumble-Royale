@@ -27,6 +27,8 @@ export interface SocialRef {
   userId: string;
   name: string;
   tag: string;
+  /** Club tag, when the user is in a club. */
+  club?: string;
 }
 
 /** A relayed party chat line. */
@@ -34,6 +36,20 @@ export interface PartyChatLine {
   /** Unique id (dedupe across reconnects). */
   id: string;
   partyId: string;
+  from: SocialRef;
+  /** Slurs masked; shown with the chat filter off. */
+  text: string;
+  /** Fully masked copy, when it differs from `text`. */
+  masked?: string;
+  /** Epoch ms. */
+  at: number;
+}
+
+/** A relayed club chat line. */
+export interface ClubChatLine {
+  /** Message id (`club_messages.id`), also the history dedupe key. */
+  id: string;
+  clubId: string;
   from: SocialRef;
   /** Slurs masked; shown with the chat filter off. */
   text: string;
@@ -85,7 +101,15 @@ export type RealtimeEvent =
       /** Set for achievement unlocks, so the client can refresh its achievements view. */
       achievementId?: string;
     }
-  | { type: 'wallet'; gumballs: number; gems: number; crownShards: number };
+  | { type: 'wallet'; gumballs: number; gems: number; crownShards: number }
+  /** Something about the member's club changed (roster, roles, settings, goals): refetch it. */
+  | { type: 'club_update'; clubId: string }
+  | ({ type: 'club_chat' } & ClubChatLine)
+  /** The player is no longer in the club: kicked, or the club was disbanded. */
+  | { type: 'club_removed'; clubId: string; name: string; reason: 'kicked' | 'disbanded' }
+  | { type: 'club_invite'; clubId: string; name: string; tag: string; from: SocialRef }
+  /** To officers: someone asked to join. */
+  | { type: 'club_request'; clubId: string; from: SocialRef };
 
 /** Channel name for a user's personal event stream. */
 export const userChannel = (userId: string): string => `user:${userId}`;

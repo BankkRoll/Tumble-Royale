@@ -78,6 +78,13 @@
       "when": 1791129313000,
       "tag": "0010_refunds",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791293669096,
+      "tag": "0011_clubs",
+      "breakpoints": true
     }
   ]
 }

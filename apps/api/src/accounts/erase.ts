@@ -13,9 +13,12 @@
  *   recent chat kept as report evidence.
  * - Leave a short-lived tombstone so access tokens minted before the deletion
  *   stop working immediately instead of at their 15-minute expiry.
+ * - Leave the player's club first: an owner's club passes to the
+ *   longest-serving officer (else member); a club left empty is disbanded.
  * - Write an audit event.
  */
 import { eq, sql } from 'drizzle-orm';
+import { notifyClub, removeMember } from '../clubs/service.ts';
 import type { AppContext } from '../context.ts';
 import { events, matchParticipants, users } from '../db/schema.ts';
 import { invalidateBanCache } from '../http/auth.ts';
@@ -53,9 +56,11 @@ export async function deleteAccount(
   await new PartyService(ctx).leave(userId);
 
   const now = ctx.now();
-  await ctx.db.transaction(async (tx) => {
+  const club = await ctx.db.transaction(async (tx) => {
     // Transaction-local; lets the ledger trigger accept this user's cascade (migration 0002).
     await tx.execute(sql`select set_config('tumble.erase_user', ${userId}, true)`);
+    // Before the cascade: an owner's club passes to the next in line rather than losing its owner.
+    const removal = await removeMember(tx, userId, now);
     await tx
       .update(matchParticipants)
       .set({ userId: null, name: DELETED_PLAYER_NAME })
@@ -76,6 +81,7 @@ export async function deleteAccount(
       },
       createdAt: now,
     });
+    return removal;
   });
 
   await markErased(ctx.kv, userId);
@@ -84,4 +90,14 @@ export async function deleteAccount(
   await setPresence(ctx.kv, userId, 'offline', now.getTime());
   await removeFromLeaderboards(ctx, userId, user.region);
   await ctx.notifier.notifyMany(friends, { type: 'friend_removed', userId });
+  if (club && !club.disbanded) {
+    await notifyClub(ctx, club.clubId, { type: 'club_update', clubId: club.clubId });
+    if (club.newOwnerId)
+      await ctx.notifier.notifyUser(club.newOwnerId, {
+        type: 'notification',
+        kind: 'info',
+        title: `You now own ${club.clubName}`,
+        body: 'The previous owner left the club.',
+      });
+  }
 }

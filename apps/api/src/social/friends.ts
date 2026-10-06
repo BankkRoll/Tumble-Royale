@@ -19,7 +19,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.ts';
 import type { DbOrTx } from '../db/client.ts';
-import { friendships, matchParticipants, matches, profiles } from '../db/schema.ts';
+import { clubMembers, clubs, friendships, matchParticipants, matches, profiles } from '../db/schema.ts';
 import { requireUser } from '../http/auth.ts';
 import { badRequest, conflict, notFound, parse } from '../http/errors.ts';
 import { parseNameTag } from '../names/display-name.ts';
@@ -115,13 +115,15 @@ async function names(db: DbOrTx, ids: string[]): Promise<Map<string, Card>> {
   return new Map(rows.map((r) => [r.id, r]));
 }
 
-/** `{userId, name, tag}` for social events. */
+/** `{userId, name, tag, club?}` for social events (`club` is the club tag). */
 export async function socialRef(db: DbOrTx, userId: string): Promise<SocialRef> {
   const [me] = await db
-    .select({ displayName: profiles.displayName, tag: profiles.tag })
+    .select({ displayName: profiles.displayName, tag: profiles.tag, club: clubs.tag })
     .from(profiles)
+    .leftJoin(clubMembers, eq(clubMembers.userId, profiles.userId))
+    .leftJoin(clubs, eq(clubs.id, clubMembers.clubId))
     .where(eq(profiles.userId, userId));
-  return { userId, name: me?.displayName ?? '', tag: me?.tag ?? '' };
+  return { userId, name: me?.displayName ?? '', tag: me?.tag ?? '', ...(me?.club ? { club: me.club } : {}) };
 }
 
 function pairWhere(a: string, b: string) {

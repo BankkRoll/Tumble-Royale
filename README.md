@@ -52,8 +52,9 @@ What a player can do today:
   on the next round between rounds (server-authoritative, seeded tie-breaks)
 - **Private shows:** invite codes, host-picked rounds (with or without round
   voting) and rules changed live, kick/ban, lock, transfer host, ready checks
-  and spectator slots; hosts can also add a player-made round by its share
-  code
+  and spectator slots (broadcast seats that never count as players, can join
+  mid-show by code and stay quiet unless the host allows chat); hosts can
+  also add a player-made round by its share code
 - **Round editor (`/editor`):** build races, survivals, hunts and logic rounds
   from the shipped level parts and obstacle library in 3D (grid snapping,
   move/turn/size gizmo, multi-select, copy/paste, undo/redo, generated
@@ -74,9 +75,12 @@ What a player can do today:
   store with self-service refunds (Gem packs go to a staff refund queue),
   gifting store items to friends and wish lists friends can gift from,
   Crown Shard shop, free Gem paths, live news and notifications
-- **Watch & share:** keep spectating after elimination, round replays (save and
-  reopen them), photo mode, share cards for wins and deep runs, and 5–15 s
-  clips of any recorded round, all made on the device (no upload)
+- **Watch & share:** keep spectating after elimination with a free camera, a
+  course overview and an auto director, a searchable player list with pin
+  and party/club first, and a broadcast overlay for streaming (see
+  [Streaming a show](docs/design/SHOWS.md#8-streaming-a-show)); round replays
+  (save and reopen them), photo mode, share cards for wins and deep runs, and
+  5–15 s clips of any recorded round, all made on the device (no upload)
 - **Input & access:** keyboard/mouse with rebinding, gamepad menus,
   single-layer touch controls, vibration, colour-blind palettes (also in 3D),
   captions and an opt-in spoken announcer

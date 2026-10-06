@@ -13,7 +13,7 @@ What comes next, in order. Each item should land with tests, docs and a green
 - [ ] **Elimination replay and highlights**: a short replay of how the player
       was eliminated, and automatic highlight moments built on the replay and
       clip pipeline.
-- [ ] **Spectator / broadcast mode**: a free camera, player switching and a
+- [x] **Spectator / broadcast mode**: a free camera, player switching and a
       clean overlay for streaming shows.
 - [x] **Gifting and a wish list**: gift store items to friends, with abuse and
       refund rules that match the refund policy in `docs/ECONOMY.md`.

@@ -63,7 +63,8 @@ in 74 s. The browser's offline Main Show (`?autoplay=1&playlist=main-show`)
 with the same seed went Tilt Town 100 → Bounce Ball Blitz 60 → Pattern
 Panic 30 → Crown Climb 12 and reached rewards.
 
-Eliminated players may **Spectate** (follow leader / friend / random, Q/E cycle),
+Eliminated players may **Spectate** (follow, free camera, course overview or
+the auto director; Q/E cycle, the player list, pin; see §8),
 **Return to lobby** (rewards granted immediately for rounds played), or **Play
 again** (requeue with party). A player who leaves early still appears on the
 Player Wall.
@@ -551,3 +552,48 @@ export default defineShow({
   rewards: 'standard',
 });
 ```
+
+---
+
+## 8. Streaming a show
+
+Anyone watching a round has the same tools: knocked-out players, qualified
+players waiting for the round to end, and a private show's spectator seats.
+Controls and screens are in SCREENS.md §9.9.1.
+
+**To stream a private show:**
+
+1. The host turns on **Allow spectators** in the lobby, sets **Spectator
+   slots** (up to 10; 2–4 is plenty for a caster or two) and leaves
+   **Spectators can chat** off unless the casters should talk in the show.
+2. The broadcaster enters the lobby code with **Join with a code**, before or
+   after the show starts. After the start they are asked "Watch it from a
+   spectator seat?" and join the running show. A seat taken this way stays
+   theirs until the show ends, so a reload never costs another one.
+3. A spectator seat opens on the **broadcast overlay** with the help card
+   showing: round card, clock, qualified count or team scores, a standings
+   strip and the followed player's name card, with the personal HUD, chat,
+   toasts and menu pill hidden. **B** toggles it, **H** the help card.
+4. **V** cycles the camera: Follow, Free (fly with WASD, Q/E or Space,
+   Shift for speed), Overview (the whole course) and Director (cuts between
+   the leader, close races, the qualifying bubble, near-eliminations, team
+   swings and the final on its own). **Tab** finds a player by name or place,
+   **L** jumps to the leader, **P** pins whoever the camera is on.
+5. For a clean capture, **K** puts a chroma-key green (#00B140) behind the
+   overlay in place of the world: key it out in the capture software and
+   layer the overlay over another source. There is no transparent canvas
+   mode; capture the browser window or tab.
+
+Rules that keep watchers out of the show: spectator seats never count as
+players (no Tumbler, no inputs, no ballot, no loading gate, not in the
+roster), the game server caps a room at 16 spectators and a private show at
+its host's slot count, and a seat holder's chat is dropped unless the host
+allowed it (their client goes read-only). Each spectator costs one snapshot
+encode per tick, like a player; a free or overview camera tells the server
+where it looks (at most twice a second) so interest management sends the
+Tumblers near the camera at full rate and the rest at the distance rate.
+Measurements are in `packages/netcode/PROTOCOL.md` (Spectators).
+
+Streamer Mode applies throughout: the player list, its search and the
+overlay only ever use masked names. Reduce Motion turns every camera blend
+into a cut, and captions stay on screen over the overlay.

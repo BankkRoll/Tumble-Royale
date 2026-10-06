@@ -67,6 +67,7 @@ import {
 import {
   ApiError,
   idempotencyKey,
+  settledChallengeToast,
   type ApiClient,
   type ApiGrant,
   type ApiLoadoutItems,
@@ -691,14 +692,7 @@ export class OnlineAccount {
         rerollsPerDay: 1,
         ...(c.season ? { season: { name: c.season.name, endsAt: Date.parse(c.season.endsAt) } } : {}),
       });
-      for (const s of c.settled ?? []) {
-        ui.getState().pushToast({
-          kind: 'reward',
-          title: 'Seasonal challenge paid out',
-          body: `${s.title}: completed last season, rewards added.`,
-          icon: '🎯',
-        });
-      }
+      for (const s of c.settled ?? []) ui.getState().pushToast(settledChallengeToast(s));
     } catch (err) {
       console.warn('[account] challenges failed', err);
     }

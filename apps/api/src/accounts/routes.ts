@@ -11,7 +11,7 @@ import { authIdentities, inventoryItems, loadouts, profiles, users } from '../db
 import { requireUser } from '../http/auth.ts';
 import { conflict, notFound, parse } from '../http/errors.ts';
 import { LOADOUT_COUNT, LoadoutItemsSchema, validateLoadout } from '../inventory/loadout.ts';
-import { moveLeaderboardRegion } from '../leaderboards/service.ts';
+import { displayTier, moveLeaderboardRegion } from '../leaderboards/service.ts';
 import { accountRegion, changeDisplayName, getProfileCard, RegionSchema } from './accounts.ts';
 import { deleteAccount } from './erase.ts';
 
@@ -46,6 +46,12 @@ export async function ownedSet(ctx: AppContext, userId: string, db: DbOrTx = ctx
   return new Set(rows.map((r) => r.id));
 }
 
+/** The tier a profile shows: Crown League for Champions in their region's top of the live board. */
+function shownTier(ctx: AppContext, userId: string) {
+  return (r: { region: string; rp: number; placementsLeft: number }) =>
+    displayTier(ctx, ctx.kv, { userId, ...r });
+}
+
 /**
  * Registers account routes.
  *
@@ -55,7 +61,7 @@ export async function ownedSet(ctx: AppContext, userId: string, db: DbOrTx = ctx
 export function registerAccountRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/me', async (req) => {
     const auth = await requireUser(ctx, req);
-    const card = await getProfileCard(ctx.db, ctx.catalog, auth.userId);
+    const card = await getProfileCard(ctx.db, ctx.catalog, auth.userId, shownTier(ctx, auth.userId));
     const [extra] = await ctx.db
       .select({ email: users.email, isGuest: users.isGuest, p: profiles })
       .from(users)
@@ -121,7 +127,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: AppContext): vo
   app.get('/profile/:id', async (req) => {
     await requireUser(ctx, req);
     const { id } = parse(IdParam, req.params);
-    return getProfileCard(ctx.db, ctx.catalog, id);
+    return getProfileCard(ctx.db, ctx.catalog, id, shownTier(ctx, id));
   });
 
   app.get('/inventory', async (req) => {

@@ -149,7 +149,14 @@ describe.each(BACKENDS)('seasonal and milestone challenges ($name)', (backend) =
       seasonalRefreshesAt: string;
       dailyRefreshesAt: string;
       weeklyRefreshesAt: string;
-      settled: { id: string; challengeId: string; gumballs: number; gems: number; cosmetic: string | null }[];
+      settled: {
+        id: string;
+        challengeId: string;
+        period: string;
+        gumballs: number;
+        gems: number;
+        cosmetic: string | null;
+      }[];
     };
   };
   const complete = (rowId: string, target: number) =>
@@ -236,16 +243,19 @@ describe.each(BACKENDS)('seasonal and milestone challenges ($name)', (backend) =
       api.ctx.catalog.pickChallenges('seasonal', 's2').map((c) => c.id),
     );
     expect(s2.seasonal.some((c) => c.id === done!.id || c.id === open!.id)).toBe(false);
-    expect(s2.settled).toHaveLength(1);
+    // The show also completed some of that day's dailies; they settle with it.
+    const seasonal = s2.settled.filter((s) => s.period === 'seasonal');
+    expect(seasonal).toHaveLength(1);
+    expect(s2.settled.every((s) => s.period !== 'milestone')).toBe(true);
     const def = api.ctx.catalog.challenges.find((c) => c.id === done!.challengeId)!;
-    expect(s2.settled[0]).toMatchObject({
+    expect(seasonal[0]).toMatchObject({
       id: done!.id,
       gumballs: def.rewardGumballs,
       gems: def.rewardGems,
     });
     const after = await challengePay(u);
-    expect(after.gumballs - before.gumballs).toBe(def.rewardGumballs);
-    expect(after.gems - before.gems).toBe(def.rewardGems);
+    expect(after.gumballs - before.gumballs).toBe(s2.settled.reduce((n, s) => n + s.gumballs, 0));
+    expect(after.gems - before.gems).toBe(s2.settled.reduce((n, s) => n + s.gems, 0));
     expect((await board(u)).settled).toEqual([]);
 
     // Milestones carry over; the old season's unfinished challenge stops counting.

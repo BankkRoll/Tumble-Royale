@@ -3,14 +3,16 @@
  * account (XP + the Fresh Mint nameplate, `TUTORIAL_REWARD` in
  * `@tumble/content/progression`).
  *
- * Idempotency: the grant runs in one transaction that first locks the
- * player's `profiles` row, then looks for the account's audit row in `events`
- * (name {@link TUTORIAL_GRANT_EVENT}). Concurrent calls serialise on the row
- * lock, so exactly one of them writes the audit row and grants; every other
- * call answers `granted: false`.
+ * Idempotency: the grant runs in one transaction that locks the player's
+ * `profiles` row and checks `profiles.tutorial_granted_at`. Concurrent calls
+ * serialise on the row lock, so exactly one of them stamps the column and
+ * grants; every other call answers `granted: false`. The marker lives on the
+ * profile, not in `events`, because the retention job deletes old events and
+ * the reward would otherwise become claimable again. An audit event
+ * ({@link TUTORIAL_GRANT_EVENT}) is still written for analytics.
  */
 import { TUTORIAL_REWARD } from '@tumble/content/progression';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
 import type { DbOrTx } from '../db/client.ts';
@@ -55,17 +57,13 @@ export async function completeTutorial(
   userId: string,
 ): Promise<TutorialCompleteResult> {
   const [p] = await tx
-    .select({ xp: profiles.xp, level: profiles.level })
+    .select({ xp: profiles.xp, level: profiles.level, grantedAt: profiles.tutorialGrantedAt })
     .from(profiles)
     .where(eq(profiles.userId, userId))
     .for('update');
   if (!p) throw notFound('Profile not found');
-  const [done] = await tx
-    .select({ id: events.id })
-    .from(events)
-    .where(and(eq(events.userId, userId), eq(events.name, TUTORIAL_GRANT_EVENT)))
-    .limit(1);
-  if (done) return { granted: false, xp: 0, unlock: null, level: p.level, totalXp: p.xp };
+  if (p.grantedAt) return { granted: false, xp: 0, unlock: null, level: p.level, totalXp: p.xp };
+  await tx.update(profiles).set({ tutorialGrantedAt: ctx.now() }).where(eq(profiles.userId, userId));
 
   const cosmeticId = ctx.cosmetics.has(TUTORIAL_REWARD.cosmeticId) ? TUTORIAL_REWARD.cosmeticId : null;
   const unlocked = cosmeticId ? await grantCosmetic(tx, userId, cosmeticId, 'tutorial') : false;

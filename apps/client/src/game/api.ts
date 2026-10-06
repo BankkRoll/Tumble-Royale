@@ -249,8 +249,46 @@ export interface ApiChallenges {
   dailyRefreshesAt: string;
   weeklyRefreshesAt: string;
   season?: { id: string; name: string; endsAt: string };
-  /** Seasonal challenges of an ended season that this call paid out. */
-  settled?: { id: string; title: string; gumballs: number; gems: number; cosmetic: string | null }[];
+  /** Completed but unclaimed challenges of an ended day, week or season that this call paid out. */
+  settled?: ApiSettledChallenge[];
+}
+
+/** A challenge the API paid out because its period ended before it was claimed. */
+export interface ApiSettledChallenge {
+  id: string;
+  title: string;
+  /** Absent from older APIs, which only settled seasonal challenges. */
+  period?: 'daily' | 'weekly' | 'seasonal';
+  gumballs: number;
+  gems: number;
+  cosmetic: string | null;
+}
+
+/**
+ * The toast for a challenge paid out after its period ended.
+ *
+ * @example
+ * settledChallengeToast({ id: '1', title: 'Dive 40 times', period: 'daily', gumballs: 0, gems: 0, cosmetic: null });
+ * // { kind: 'reward', title: 'Daily challenge paid out', body: 'Dive 40 times: completed yesterday, rewards added.', … }
+ */
+export function settledChallengeToast(s: ApiSettledChallenge): {
+  kind: 'reward';
+  title: string;
+  body: string;
+  icon: string;
+} {
+  const when =
+    s.period === 'daily'
+      ? ['Daily', 'yesterday']
+      : s.period === 'weekly'
+        ? ['Weekly', 'last week']
+        : ['Seasonal', 'last season'];
+  return {
+    kind: 'reward',
+    title: `${when[0]} challenge paid out`,
+    body: `${s.title}: completed ${when[1]}, rewards added.`,
+    icon: '🎯',
+  };
 }
 
 /** A reward as the API describes it (achievements, login ladder). */

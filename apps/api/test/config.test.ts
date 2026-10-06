@@ -132,6 +132,18 @@ describe('sign-in providers', () => {
   });
 });
 
+describe('ADMIN_TOKEN', () => {
+  it('is optional, but refuses a placeholder or short value when set', () => {
+    expect(loadConfig(testEnv()).adminToken).toBeUndefined();
+    expect(loadConfig(testEnv({ ADMIN_TOKEN: '  ' })).adminToken).toBeUndefined();
+    expect(issueNames(testEnv({ ADMIN_TOKEN: 'change-me' }))).toEqual(['ADMIN_TOKEN']);
+    expect(issueNames(testEnv({ ADMIN_TOKEN: 'short' }))).toEqual(['ADMIN_TOKEN']);
+    expect(loadConfig(testEnv({ ADMIN_TOKEN: 'a-long-enough-admin-token' })).adminToken).toBe(
+      'a-long-enough-admin-token',
+    );
+  });
+});
+
 describe('DEV_ADMIN_EMAIL', () => {
   it('applies in development only and is refused in production', () => {
     expect(
@@ -142,6 +154,22 @@ describe('DEV_ADMIN_EMAIL', () => {
       'DEV_ADMIN_EMAIL',
     ]);
     expect(issueNames(testEnv({ DEV_ADMIN_EMAIL: 'not-an-email' }))).toEqual(['DEV_ADMIN_EMAIL']);
+  });
+});
+
+describe('.env from pnpm setup:env (development)', () => {
+  it('boots the API with the dev admin seed on', () => {
+    const files = ['../../../.env.example', '../.env.example'];
+    const merged = Object.assign(
+      {},
+      ...files.map((f) => parseEnv(readFileSync(new URL(f, import.meta.url), 'utf8'))),
+    ) as Record<string, string>;
+    const env = Object.fromEntries(
+      Object.entries(merged).map(([k, v]) => [k, v === 'change-me' ? randomBytes(32).toString('base64url') : v]),
+    );
+    const c = loadConfig(env);
+    expect(c).toMatchObject({ env: 'development', devAdminEmail: 'admin@tumble.localhost' });
+    expect(c.adminToken).toBe(env.ADMIN_TOKEN);
   });
 });
 

@@ -169,7 +169,10 @@ describe('toRequest', () => {
     });
     assert.match(text, /^Created Owner#0001 \(u1\) for me@example.com; role: admin\./);
     assert.match(text, /\n {2}https:\/\/play\.example\/auth\/staff\?token=abc$/);
-    assert.match(formatStaffLink({ userId: 'u1', role: 'moderator', link: 'x', expiresAt: 't' }), /^Sign-in link for u1/);
+    assert.match(
+      formatStaffLink({ userId: 'u1', role: 'moderator', link: 'x', expiresAt: 't' }),
+      /^Sign-in link for u1/,
+    );
   });
 
   it('rejects bad usage', () => {

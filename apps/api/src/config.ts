@@ -342,6 +342,10 @@ export function loadConfig(env: Env = process.env): ApiConfig {
   const trustProxy = issues.trustProxy();
   const metrics = readMetricsExposure(issues, e.PORT);
   const voice = readVoice(issues, e.NODE_ENV);
+  // SECURITY: ADMIN_TOKEN is optional, but when set it is a full admin
+  // credential, so a copied `change-me` or a short value must not boot.
+  const adminToken =
+    issues.optional('ADMIN_TOKEN') === undefined ? undefined : issues.secret('ADMIN_TOKEN', 16) || undefined;
   const oauth = {
     discord: pair(issues, 'DISCORD'),
     google: pair(issues, 'GOOGLE'),
@@ -375,7 +379,7 @@ export function loadConfig(env: Env = process.env): ApiConfig {
     memoryStoreInProduction: e.NODE_ENV === 'production' && !e.REDIS_URL,
     jwtSecret,
     internalHmacSecret,
-    adminToken: e.ADMIN_TOKEN,
+    adminToken,
     publicWebUrl: e.PUBLIC_WEB_URL.replace(/\/$/, ''),
     publicApiUrl: e.PUBLIC_API_URL.replace(/\/$/, ''),
     corsOrigins,

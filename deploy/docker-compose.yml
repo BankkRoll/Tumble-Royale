@@ -133,6 +133,11 @@ services:
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-${DOMAIN:?deploy/.env is missing; run pnpm setup:env --production --domain <domain>}}
       CADDY_GLOBAL_OPTIONS: ${CADDY_GLOBAL_OPTIONS:-${ACME_EMAIL:+email ${ACME_EMAIL}}}
+      # Where the Caddyfile proxies each path; the defaults are the services above.
+      API_UPSTREAM: ${API_UPSTREAM:-api:7360}
+      MATCHMAKER_UPSTREAM: ${MATCHMAKER_UPSTREAM:-matchmaker:7370}
+      GAME_SERVER_UPSTREAM: ${GAME_SERVER_UPSTREAM:-game-server:7350}
+      CLIENT_UPSTREAM: ${CLIENT_UPSTREAM:-client:8080}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Certificates and ACME account; losing them means re-issuing (rate limited).

@@ -176,3 +176,29 @@ describe('deploy/.env from pnpm setup:env --production', () => {
     });
   });
 });
+
+describe('deploy/game-server/.env.example', () => {
+  it('boots a standalone game server once its secrets are filled in', () => {
+    const example = parseEnv(
+      readFileSync(new URL('../../../deploy/game-server/.env.example', import.meta.url), 'utf8'),
+    );
+    const env = Object.fromEntries(
+      Object.entries(example).map(([k, v]) => [
+        k,
+        v === 'change-me' ? randomBytes(32).toString('base64url') : v,
+      ]),
+    );
+    expect(loadConfig(env)).toMatchObject({
+      env: 'production',
+      allowUnticketed: false,
+      results: { apiUrl: 'https://example.com/api' },
+      link: {
+        matchmakerUrl: 'https://example.com/mm',
+        serverId: 'gs-eu-1',
+        publicUrl: 'wss://gs-eu.example.com/ws',
+        region: 'eu',
+      },
+      exposure: { allowedOrigins: ['https://example.com'], debug: false, trustProxy: 1 },
+    });
+  });
+});

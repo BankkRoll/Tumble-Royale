@@ -112,6 +112,8 @@ export function shouldPrecache(rel: string): boolean {
   // The status page must always come from the network: a cached copy would
   // be useless exactly when the service is down.
   if (/^assets\/status-[\w-]+\.(js|css)$/.test(rel)) return false;
+  // The round editor is opt-in tooling; precaching it would download it for every player.
+  if (/^assets\/editor-[\w-]+\.(js|css)$/.test(rel)) return false;
   return !rel.startsWith('.') && !rel.includes('/.');
 }
 

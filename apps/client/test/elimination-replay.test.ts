@@ -628,6 +628,22 @@ describe('player', () => {
     resolveLoad?.(view as unknown as ReplayView);
   });
 
+  it('plays over the results wall a covering wipe brings in, then yields to the next screen', async () => {
+    ui.getState().setScreen('round', { transition: 'cut' });
+    ui.getState().setScreen('roundResults', { transition: 'wipe' });
+    expect(ui.getState().wipe.phase).toBe('covering');
+    await start();
+    ui.getState()._wipeCovered();
+    expect(ui.getState().screen).toBe('roundResults');
+    ui.getState()._wipeDone();
+    tick(0.1);
+    expect(ui.getState().elimReplay).toMatchObject({ mode: 'playing' });
+    ui.getState().setScreen('round', { transition: 'cut' });
+    tick(0.1);
+    expect(ui.getState().elimReplay).toBeNull();
+    expect(tracked[0]?.props.outcome).toBe('interrupted');
+  });
+
   it('never starts over the open replay viewer, and stops for it', async () => {
     viewerOpen = true;
     expect(player.play({ data, plan, cause: 'x', still: false, online: false })).toBe(false);

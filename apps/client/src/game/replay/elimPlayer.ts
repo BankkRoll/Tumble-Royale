@@ -164,7 +164,9 @@ export class EliminationPlayer implements EliminationReplays {
     const run: Running = {
       req,
       view: null,
-      screenSeq: s.screenSeq,
+      // A knock-out at the round's end starts while the wipe to the results wall is still
+      // covering: that screen change is the one this replay plays over, not an interruption.
+      screenSeq: s.wipe.phase === 'covering' && s.wipe.target ? s.screenSeq + 1 : s.screenSeq,
       age: 0,
       shown: false,
       progress: 0,

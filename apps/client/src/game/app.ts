@@ -2048,11 +2048,8 @@ export class GameApp {
       onToastAction: ({ actionId }) => {
         online()?.handleToastAction(actionId);
       },
-      onCopyInvite: ({ code }) => {
-        const url = online()?.party?.inviteUrl ?? `${location.origin}/join/${code}`;
-        void navigator.clipboard?.writeText(url).catch(() => undefined);
-        s().pushToast({ kind: 'success', title: 'Invite link copied!', body: url, icon: '📋' });
-      },
+      // The UI copied exactly what the player picked (lobby code, party code or link) and confirmed it.
+      onCopyInvite: ({ kind, what }) => track('invite.copy', { kind, what }),
       onNavUnhandled: ({ dir }) => {
         if (dir !== 'back') return;
         if (s().screen === 'menu' && s().overlay === 'none') {

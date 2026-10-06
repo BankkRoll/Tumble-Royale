@@ -494,7 +494,7 @@ function CodePanel({ lobby }: { lobby: CustomLobbyState }): JSX.Element {
           variant="sky"
           onClick={() => {
             void navigator.clipboard?.writeText(lobby.code);
-            uiEvents.emit('copyInvite', { code: lobby.code });
+            uiEvents.emit('copyInvite', { kind: 'lobby', what: 'code' });
             ui.getState().pushToast({ kind: 'success', title: 'Code copied!' });
           }}
         >

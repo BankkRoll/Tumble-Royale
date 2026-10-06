@@ -434,6 +434,24 @@ function OfflineFriends(): JSX.Element {
   );
 }
 
+/**
+ * Copies the party's code or invite link and confirms it. The game only
+ * hears about it for analytics, so nothing overwrites the clipboard after.
+ *
+ * @param what - Which one the player picked.
+ * @param text - The code or the link itself.
+ */
+export function copyPartyInvite(what: 'code' | 'link', text: string): void {
+  void navigator.clipboard?.writeText(text);
+  uiEvents.emit('copyInvite', { kind: 'party', what });
+  // SECURITY: the toast never repeats the code or link; on a stream it would hand out the party.
+  ui.getState().pushToast({
+    kind: 'success',
+    title: what === 'code' ? 'Party code copied!' : 'Invite link copied!',
+    icon: '📋',
+  });
+}
+
 /** Friends & party side sheet. */
 export function FriendsSheet(): JSX.Element {
   const friends = useUI((s) => s.friends);
@@ -447,8 +465,7 @@ export function FriendsSheet(): JSX.Element {
   const code = party?.code ?? '';
   const link = `${globalThis.location?.origin ?? ''}/join/${code}`;
   const copy = (what: 'code' | 'link'): void => {
-    void navigator.clipboard?.writeText(what === 'code' ? code : link);
-    uiEvents.emit('copyInvite', { code });
+    copyPartyInvite(what, what === 'code' ? code : link);
     setCopied(what);
     window.setTimeout(() => setCopied(null), 1600);
   };

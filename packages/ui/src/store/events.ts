@@ -171,7 +171,11 @@ export interface UIIntents {
   spectateCustom: { spectator: boolean };
   inviteFriend: { friendId: string };
   addFriend: { nameTag: string };
-  copyInvite: { code: string };
+  /**
+   * The UI already copied an invite (and said so): analytics only. Carries
+   * no code, so nothing downstream can echo it on a stream.
+   */
+  copyInvite: { kind: 'party' | 'lobby'; what: 'code' | 'link' };
   kickPartyMember: { memberId: string };
   /** Solo player or party leader starts a lobby mini-game on the menu platform. */
   lobbyGameStart: { game: LobbyGameId };

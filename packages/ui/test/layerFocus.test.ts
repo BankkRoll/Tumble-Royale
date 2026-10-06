@@ -29,9 +29,10 @@ class FakeElement {
   }
 
   get isConnected(): boolean {
-    let el: FakeElement | null = this;
-    while (el.parent) el = el.parent;
-    return el === doc.body;
+    let top: FakeElement | null = this.parent;
+    if (!top) return doc.body === (this as FakeElement);
+    while (top.parent) top = top.parent;
+    return top === doc.body;
   }
 
   append(...kids: FakeElement[]): this {

@@ -1154,7 +1154,7 @@ export class GameApp {
     if (this.cfg.online) {
       // A second Play during the server probe would start a second session over the first.
       this.probingServer = true;
-      let up = false;
+      let up: boolean;
       try {
         up = await gameServerAvailable();
       } finally {

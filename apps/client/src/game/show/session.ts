@@ -104,6 +104,8 @@ interface ActiveRound {
   loadRequested: boolean;
   /** The chunked build is running. */
   building: boolean;
+  /** A failed build already had its one retry. */
+  buildRetried: boolean;
   /** This machine's build progress (0..1), for the loading screen and the server. */
   loadPct: number;
   /** This machine finished building while the round was still waiting on others (online). */
@@ -367,6 +369,9 @@ export abstract class ShowSession {
           else if (from === 'playerWall' && this.awaiting === 'wall') this.goRewards();
         },
         onPlayerWallEvent: (e: PlayerWallEvent) => this.wall?.handle(e),
+        onDialogResult: ({ dialogId }) => {
+          if (dialogId === 'round-load-failed' && !this.ended) this.ctx.onEnd('failed');
+        },
       }),
     );
     window.addEventListener('keydown', this.onKey);
@@ -956,6 +961,7 @@ export abstract class ShowSession {
       inRound: rs.players.some((p) => p.id === this.localId),
       loadRequested: false,
       building: false,
+      buildRetried: false,
       loadPct: 0,
       waited: false,
       everyoneIn: false,
@@ -1139,6 +1145,31 @@ export abstract class ShowSession {
     this.buildRoundAsync(r, source).catch((err: unknown) => {
       r.building = false;
       console.error('[show] round build failed', err);
+      if (this.ended || this.round !== r) return;
+      if (!r.buildRetried) {
+        r.buildRetried = true;
+        this.requestRoundBuild();
+        return;
+      }
+      this.roundLoadFailed();
+    });
+  }
+
+  /**
+   * The round could not be built, even on a retry. The loading wipe is held
+   * (and offline, the show clock with it) until the round is up, so the show
+   * cannot go on: say so and offer the way out.
+   */
+  protected roundLoadFailed(): void {
+    const s = ui.getState();
+    s.releaseWipe();
+    s.showDialog({
+      id: 'round-load-failed',
+      kind: 'error',
+      title: "The round didn't load",
+      body: 'Something went wrong building this round. Head back to the menu and start another show.',
+      code: 'E-LOAD-01',
+      buttons: [{ id: 'menu', label: 'Back to menu', autofocus: true }],
     });
   }
 

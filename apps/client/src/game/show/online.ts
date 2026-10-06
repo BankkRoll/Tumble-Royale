@@ -681,6 +681,12 @@ export class OnlineShowSession extends ShowSession {
     this.heartbeat = 0;
   }
 
+  protected override roundLoadFailed(): void {
+    // The heartbeat would keep the server holding the round for a build that will never finish.
+    this.stopLoadHeartbeat();
+    super.roundLoadFailed();
+  }
+
   protected override get waitsForOthers(): boolean {
     return true;
   }

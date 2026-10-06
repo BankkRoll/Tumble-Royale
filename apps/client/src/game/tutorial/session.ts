@@ -451,6 +451,7 @@ export class TutorialSession extends ShowSession {
       inRound: true,
       loadRequested: true,
       building: false,
+      buildRetried: false,
       loadPct: 0,
       waited: false,
       everyoneIn: false,

@@ -301,6 +301,38 @@ describe('opting in', () => {
     expect(r.enabled).toEqual([false]);
   });
 
+  it('switched off while the microphone prompt is up: closes the granted mic and stays off', async () => {
+    let grant!: (s: FakeStream) => void;
+    const stream = new FakeStream();
+    const r = rig({}, () => new Promise<FakeStream>((resolve) => (grant = resolve)));
+    await r.vc.refreshAvailability();
+    const enabling = r.vc.enable();
+    expect(voice.getState().status).toBe('requesting');
+    r.vc.disable();
+    expect(voice.getState().status).toBe('off');
+    grant(stream);
+    expect(await enabling).toBe(false);
+    expect(stream.tracks[0]!.stopped).toBe(true);
+    expect(r.rt.of('voice_join')).toEqual([]);
+    expect(r.enabled).toEqual([false]);
+    // Switching on again asks afresh and works.
+    const again = r.vc.enable();
+    grant(new FakeStream());
+    expect(await again).toBe(true);
+  });
+
+  it('teardown mid-prompt leaves no microphone open', async () => {
+    let grant!: (s: FakeStream) => void;
+    const stream = new FakeStream();
+    const r = rig({}, () => new Promise<FakeStream>((resolve) => (grant = resolve)));
+    await r.vc.refreshAvailability();
+    const enabling = r.vc.enable();
+    r.vc.dispose();
+    grant(stream);
+    expect(await enabling).toBe(false);
+    expect(stream.tracks[0]!.stopped).toBe(true);
+  });
+
   it('does nothing while the server does not offer voice', async () => {
     const r = rig();
     expect(await r.vc.enable()).toBe(false);

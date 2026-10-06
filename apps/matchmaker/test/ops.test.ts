@@ -135,7 +135,9 @@ describe('matchmaker ops endpoints', () => {
     ).toBe(200);
     await m.close();
     mm = await buildMatchmaker(
-      loadConfig(testEnv({ NODE_ENV: 'production', ALLOW_MEMORY_STORE: '1', API_URL: '' })),
+      loadConfig(
+        testEnv({ NODE_ENV: 'production', ALLOW_MEMORY_STORE: '1', API_URL: '', ALLOW_STANDALONE: '1' }),
+      ),
       { now: () => clock, logger: false },
     );
     expect((await mm.app.inject({ url: '/metrics' })).statusCode).toBe(404);

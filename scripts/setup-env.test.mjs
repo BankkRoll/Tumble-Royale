@@ -122,7 +122,6 @@ describe('setupProductionEnv', () => {
         'CORS_ORIGINS',
         'ALLOWED_ORIGINS',
         'TRUST_PROXY',
-        'REDIS_URL',
       ]),
       {
         DOMAIN: 'play.example.com',
@@ -134,7 +133,6 @@ describe('setupProductionEnv', () => {
         CORS_ORIGINS: 'https://play.example.com',
         ALLOWED_ORIGINS: 'https://play.example.com',
         TRUST_PROXY: '1',
-        REDIS_URL: 'redis://redis:6379',
       },
     );
     const secrets = PRODUCTION_SECRETS.map((k) => env[k] ?? '');
@@ -142,6 +140,10 @@ describe('setupProductionEnv', () => {
     assert.equal(new Set(secrets).size, PRODUCTION_SECRETS.length);
     assert.equal(env.DATABASE_URL, `postgres://tumble:${env.POSTGRES_PASSWORD}@postgres:5432/tumble`);
     assert.equal(new URL(env.DATABASE_URL ?? '').password, env.POSTGRES_PASSWORD);
+    // Redis gets a password of its own, carried in the URL the services connect with.
+    assert.equal(env.REDIS_URL, `redis://:${env.REDIS_PASSWORD}@redis:6379`);
+    assert.equal(new URL(env.REDIS_URL ?? '').password, env.REDIS_PASSWORD);
+    assert.notEqual(env.GAME_SERVER_HMAC_SECRET, env.INTERNAL_HMAC_SECRET);
     for (const v of Object.values(env)) assert.doesNotMatch(v ?? '', /change-?me/i);
   });
 

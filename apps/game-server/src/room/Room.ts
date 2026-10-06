@@ -173,6 +173,20 @@ function partyKeyOf(ticket: JoinTicketClaims | null): string | null {
   return ticket.pid && !ticket.pid.startsWith('solo:') ? `party:${ticket.pid}` : null;
 }
 
+/**
+ * One slot per account, bots untouched. The seat still in play (not left)
+ * wins over one the account forfeited; otherwise the earlier seat wins.
+ */
+function uniqueAccounts(slots: readonly PlayerSlot[]): PlayerSlot[] {
+  const byUser = new Map<string, PlayerSlot>();
+  for (const s of slots) {
+    if (s.isBot || !s.userId) continue;
+    const cur = byUser.get(s.userId);
+    if (!cur || (cur.left && !s.left)) byUser.set(s.userId, s);
+  }
+  return slots.filter((s) => s.isBot || !s.userId || byUser.get(s.userId) === s);
+}
+
 /** Drop-in height above the lobby platform for joiners (they fall onto it). */
 const LOBBY_DROP_HEIGHT = 4;
 
@@ -202,6 +216,8 @@ export interface RoomInfo {
   humans: number;
   connected: number;
   bots: number;
+  /** Spectator seats taken (they cost the server a connection and snapshots like a player). */
+  spectators: number;
   serverTick: number;
   round: string | null;
   epoch: number;
@@ -275,6 +291,8 @@ export class Room {
   private firstJoinAt = -1;
   private endedAt = -1;
   private emptySince = -1;
+  /** Since when the pre-show lobby has had no player (spectators only, or nobody); -1 while one is in. */
+  private lobbyNoPlayersSince = -1;
   private lastLobbyBroadcast = 0;
   private status: RoundStatus | null = null;
 
@@ -424,10 +442,19 @@ export class Room {
    *
    * @returns False when the account has no live slot here.
    */
-  rejoinUser(session: ClientSession, userId: string): boolean {
+  rejoinUser(session: ClientSession, userId: string, muted?: boolean): boolean {
     const id = this.slotOfUser(userId);
     const slot = id >= 0 ? this.slots.get(id) : undefined;
-    return slot ? this.resume(session, slot.token) : false;
+    if (!slot) return false;
+    // The fresh ticket carries the account's current chat standing; a ban since the first join applies now.
+    if (muted !== undefined) slot.muted = muted;
+    return this.resume(session, slot.token);
+  }
+
+  /** True when the account holds or held a player seat in this room (even one it left). */
+  private hadSeat(userId: string): boolean {
+    for (const s of this.slots.values()) if (s.userId === userId && !s.spectator) return true;
+    return false;
   }
 
   /**
@@ -445,8 +472,9 @@ export class Room {
     // Detach first so the close callback doesn't treat this as a resumable disconnect.
     slot.session = null;
     if (session) this.kick(session, KickReason.RemovedByHost, 'removed by the host');
+    this.leaveLobby(slot.id);
     if (this.state === 'lobby' || slot.spectator) {
-      this.slots.delete(slot.id);
+      this.deleteSlot(slot.id);
     } else {
       slot.left = true;
       (this.sim as { forfeit?: (id: number) => void } | null)?.forfeit?.(slot.id);
@@ -499,13 +527,18 @@ export class Room {
   /** Room summary. */
   info(): RoomInfo {
     let bots = 0;
-    for (const s of this.slots.values()) if (s.isBot) bots++;
+    let spectators = 0;
+    for (const s of this.slots.values()) {
+      if (s.isBot) bots++;
+      else if (s.spectator) spectators++;
+    }
     return {
       id: this.id,
       state: this.state,
       humans: this.humanCount,
       connected: this.sessions.size,
       bots,
+      spectators,
       serverTick: this.serverTick,
       round: this.round?.id ?? null,
       epoch: this.epoch,
@@ -551,21 +584,28 @@ export class Room {
   join(session: ClientSession, hello: HelloMsg, now: number, ticket: JoinTicketClaims | null = null): number {
     // Ticketed names come from the account (`name#tag`); the tag stays off the nameplate.
     const name = ticket ? sanitizeName(ticket.name.replace(/#\d+$/, '')) : sanitizeName(hello.name);
-    const held = this.state === 'show' && ticket?.role === 'player' ? this.heldSeatFor(ticket) : null;
-    if (held) {
+    // An account that already had a seat here (it left or forfeited) only watches: a second
+    // seat would put its user id into the results twice, and the API refuses such a report.
+    const seated = ticket !== null && this.hadSeat(ticket.sub);
+    const held =
+      this.state === 'show' && ticket?.role === 'player' && !seated ? this.heldSeatFor(ticket) : null;
+    if (held && ticket) {
       held.reserved = false;
       held.name = name;
-      held.userId = ticket!.sub;
+      held.userId = ticket.sub;
       held.loadout = hello.loadout.slice(0, 255);
-      held.muted = ticket!.mute === true;
+      held.muted = ticket.mute === true;
+      held.partyKey = partyKeyOf(ticket) ?? held.partyKey;
+      held.queuePartyId = ticket.pid && !ticket.pid.startsWith('solo:') ? ticket.pid : null;
       held.session = session;
+      this.chat.register(held.id, { muted: held.muted }, now);
       this.enterLobby(held);
       this.attach(session, held, false);
       this.log(`[room ${this.id}] ${name} took held seat ${held.id} after the show started`);
       return held.id;
     }
     const watchOnly = ticket?.role === 'spectator';
-    const spectator = this.state !== 'lobby' || watchOnly;
+    const spectator = this.state !== 'lobby' || watchOnly || seated;
     if (spectator && !this.hasSpectatorSeat(watchOnly)) {
       this.log(`[room ${this.id}] refused ${name}: no spectator seat left`);
       return -1;
@@ -680,8 +720,7 @@ export class Room {
     if (!slot || slot.session !== session) return;
     slot.session = null;
     if (slot.spectator) {
-      this.slots.delete(slot.id);
-      this.chat.remove(slot.id);
+      this.deleteSlot(slot.id);
       return;
     }
     if (left) {
@@ -756,6 +795,24 @@ export class Room {
     }
   }
 
+  /**
+   * Closes the room before its show finished (drain timeout, a crashed tick).
+   * A show in progress reports the rounds played so far, so the players keep
+   * what they earned instead of losing it with the room.
+   *
+   * @returns Settles once the report was handed to the results sink (the
+   *   outbox has it on disk); never rejects.
+   */
+  abort(): Promise<void> {
+    if (this.state === 'closed') return Promise.resolve();
+    const report = this.state === 'show' && !this.rewardsDone ? this.reportResults([]) : Promise.resolve();
+    this.log(
+      `[room ${this.id}] aborted${this.state === 'show' ? ' mid-show; reporting the rounds played' : ''}`,
+    );
+    this.dispose();
+    return report;
+  }
+
   /** Closes every session and disposes the sim. */
   dispose(): void {
     for (const s of [...this.sessions]) this.kick(s, KickReason.Shutdown, 'room closed');
@@ -775,13 +832,22 @@ export class Room {
   private dropSlot(slot: PlayerSlot): void {
     this.leaveLobby(slot.id);
     if (this.state === 'lobby') {
-      this.slots.delete(slot.id);
+      this.deleteSlot(slot.id);
     } else {
       slot.left = true;
       // The real sim eliminates forfeiting players at once; the contract makes it optional.
       (this.sim as { forfeit?: (id: number) => void } | null)?.forfeit?.(slot.id);
       this.show.onPlayerLeft(slot.id);
     }
+  }
+
+  /**
+   * Frees a slot id for reuse. Per-id state goes with it: a reused id must not
+   * inherit the previous holder's chat ban or rate-limit bucket.
+   */
+  private deleteSlot(id: number): void {
+    this.slots.delete(id);
+    this.chat.remove(id);
   }
 
   private updateRoster(now: number): void {
@@ -812,6 +878,12 @@ export class Room {
       const humans = this.humanCount;
       if (humans === 0) {
         this.firstJoinAt = -1;
+        if (this.lobbyNoPlayersSince < 0) this.lobbyNoPlayersSince = now;
+      } else {
+        this.lobbyNoPlayersSince = -1;
+      }
+      if (humans === 0) {
+        // Waiting for a player: spectators alone never start a show.
       } else if (
         !this.preparing &&
         (now - this.firstJoinAt >= this.config.fillWaitMs ||
@@ -837,14 +909,17 @@ export class Room {
     const idle =
       this.state !== 'lobby' && this.emptySince >= 0 && now - this.emptySince > this.config.idleCloseMs;
     const over = this.state === 'ended' && now - this.endedAt > this.config.idleCloseMs;
-    if (
-      idle ||
-      over ||
-      (this.state === 'lobby' && this.slots.size === 0 && this.serverTick > SERVER_TICK_HZ * 60)
-    ) {
+    // A pre-show room nobody plays in closes after a minute; spectators alone keep it
+    // for no longer than an idle show, or its reserved seats would be held forever.
+    const abandoned =
+      this.state === 'lobby' &&
+      this.serverTick > SERVER_TICK_HZ * 60 &&
+      (this.slots.size === 0 ||
+        (this.lobbyNoPlayersSince >= 0 && now - this.lobbyNoPlayersSince > this.config.idleCloseMs));
+    if (idle || over || abandoned) {
       this.log(`[room ${this.id}] closing (${over ? 'show over' : 'empty'})`);
       // Every human left mid-show: report the rounds they played, or their rewards would be lost with the room.
-      if (this.state === 'show' && !this.rewardsDone) this.reportResults([]);
+      if (this.state === 'show' && !this.rewardsDone) void this.reportResults([]);
       this.dispose();
     }
   }
@@ -1191,6 +1266,8 @@ export class Room {
           this.metrics.rateLimited++;
           return;
         }
+        // The slot is the source of truth for the chat ban (tickets and rejoins update it).
+        this.chat.register(slot.id, { muted: slot.muted === true }, now);
         const out = this.chat.handle(slot.id, msg, now);
         if (out.kind === 'violation') return this.violation(session, now);
         if (out.kind === 'relay') this.broadcast(out.msg);
@@ -1280,7 +1357,7 @@ export class Room {
           this.broadcast({ t: 'showSummary', winners: e.winners, rounds: e.rounds });
           this.state = 'ended';
           this.endedAt = now;
-          this.reportResults(e.winners);
+          void this.reportResults(e.winners);
           this.reportVoiceTeams(null);
           break;
       }
@@ -1388,7 +1465,8 @@ export class Room {
    */
   private reportVoiceTeams(players: readonly MatchPlayerInfo[] | null): void {
     const sink = this.deps.voiceTeams;
-    if (!sink) return;
+    // Room ids restart at r1 in every process; only the match id is unique across game servers.
+    if (!sink || !this.match) return;
     const entries = (players ?? []).flatMap((p) => {
       const slot = this.slots.get(p.id);
       if (p.team < 0 || !slot?.userId || slot.isBot) return [];
@@ -1396,7 +1474,7 @@ export class Room {
     });
     if (entries.length === 0 && !this.voiceTeamsReported) return;
     this.voiceTeamsReported = entries.length > 0;
-    sink.report(this.id, Math.max(0, this.roundIndex), entries);
+    sink.report(this.match.matchId, Math.max(0, this.roundIndex), entries);
   }
 
   private hasHeldSeats(): boolean {
@@ -1631,7 +1709,9 @@ export class Room {
   buildResults(winners: readonly number[]): MatchResultPayload | null {
     const m = this.match;
     if (!m || this.roundRecords.length === 0) return null;
-    const players = [...this.slots.values()].filter((s) => !s.spectator && (s.isBot || s.userId));
+    const players = uniqueAccounts(
+      [...this.slots.values()].filter((s) => !s.spectator && (s.isBot || s.userId)),
+    );
     const keys = new Set(players.map((s) => String(s.id)));
     const placements = computePlacements(
       players.map((s) => String(s.id)),
@@ -1648,6 +1728,7 @@ export class Room {
         partySizes.set(s.queuePartyId, (partySizes.get(s.queuePartyId) ?? 0) + 1);
     return {
       matchId: m.matchId,
+      ...(this.deps.serverId ? { serverId: this.deps.serverId } : {}),
       queue: m.queue,
       playlistId: m.custom?.playlistId ?? m.playlistId,
       region: m.region.slice(0, 8) || 'na',
@@ -1672,18 +1753,26 @@ export class Room {
     };
   }
 
-  private reportResults(winners: readonly number[]): void {
+  private reportResults(winners: readonly number[]): Promise<void> {
     const sink = this.deps.results;
-    const payload = sink ? this.buildResults(winners) : null;
+    let payload: MatchResultPayload | null = null;
+    try {
+      payload = sink ? this.buildResults(winners) : null;
+    } catch (err) {
+      this.log(
+        `[room ${this.id}] could not build results: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     if (!sink || !payload) {
       this.finishRewards(null);
-      return;
+      return Promise.resolve();
     }
-    void sink
-      .post(payload)
+    const body = payload;
+    return sink
+      .post(body)
       .then((res) => {
         this.log(
-          `[room ${this.id}] results for ${payload.matchId} ${res ? `recorded (${res.rewards.length} rewards${res.alreadyProcessed ? ', replayed' : ''})` : 'not recorded'}`,
+          `[room ${this.id}] results for ${body.matchId} ${res ? `recorded (${res.rewards.length} rewards${res.alreadyProcessed ? ', replayed' : ''})` : 'not recorded'}`,
         );
         this.finishRewards(res?.rewards ?? null);
       })

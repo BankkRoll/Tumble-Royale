@@ -49,7 +49,7 @@ export function registerVoiceRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.post('/internal/voice/teams', { config: { rateLimit: false } }, async (req, reply) => {
     // SECURITY: only a game server holding INTERNAL_HMAC_SECRET may say who is on whose team.
-    await requireInternalSignature(ctx, req);
+    await requireInternalSignature(ctx, req, { callers: ['game-server'] });
     const body = parse(TeamsBody, req.body);
     await setTeamRooms(ctx, body.matchId, body.round, body.players);
     return reply.code(204).send();

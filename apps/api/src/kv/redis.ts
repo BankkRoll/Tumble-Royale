@@ -6,18 +6,29 @@ import { Redis } from 'ioredis';
 import type { KV, MessageHandler, ScoredMember } from './types.ts';
 
 const INCR_WITH_TTL = `local n = redis.call('incr', KEYS[1]) if redis.call('pttl', KEYS[1]) < 0 then redis.call('pexpire', KEYS[1], ARGV[1]) end return n`;
+// Compare-and-delete / compare-and-expire in one server-side step: a GET then
+// a DEL from Node could delete a lock another instance took in between.
+const DEL_IF_EQUALS = `if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end`;
+const EXPIRE_IF_EQUALS = `if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('pexpire', KEYS[1], ARGV[2]) else return 0 end`;
 
 /** ioredis implementation of {@link KV}. */
 export class RedisKV implements KV {
   private readonly cmd: Redis;
   private readonly sub: Redis;
   private readonly handlers = new Map<string, Set<MessageHandler>>();
+  /** SUBSCRIBE commands not acknowledged yet, so concurrent subscribers to one channel all wait for it. */
+  private readonly subscribing = new Map<string, Promise<unknown>>();
 
   /**
    * @param url - `redis://` connection string.
-   * @param prefix - Key prefix so several environments can share one Redis.
+   * @param prefix - Namespace for keys and pub/sub channels, so several
+   *   environments can share one Redis without reading each other's state or
+   *   receiving each other's events.
    */
-  constructor(url: string, prefix = 'tumble:') {
+  constructor(
+    url: string,
+    private readonly prefix = 'tumble:',
+  ) {
     this.cmd = new Redis(url, { keyPrefix: prefix, lazyConnect: false, maxRetriesPerRequest: 3 });
     this.sub = new Redis(url, { lazyConnect: false });
     this.sub.on('message', (channel: string, message: string) => {
@@ -36,6 +47,14 @@ export class RedisKV implements KV {
 
   async setNX(key: string, value: string, ttlMs: number): Promise<boolean> {
     return (await this.cmd.set(key, value, 'PX', ttlMs, 'NX')) === 'OK';
+  }
+
+  async delIfEquals(key: string, value: string): Promise<boolean> {
+    return Number(await this.cmd.eval(DEL_IF_EQUALS, 1, key, value)) === 1;
+  }
+
+  async expireIfEquals(key: string, value: string, ttlMs: number): Promise<boolean> {
+    return Number(await this.cmd.eval(EXPIRE_IF_EQUALS, 1, key, value, String(ttlMs))) === 1;
   }
 
   async del(...keys: string[]): Promise<void> {
@@ -90,23 +109,36 @@ export class RedisKV implements KV {
     return this.cmd.zcard(key);
   }
 
+  // NOTE: ioredis applies keyPrefix to keys only, never to pub/sub channels; they are prefixed here.
   async publish(channel: string, message: string): Promise<void> {
-    await this.cmd.publish(channel, message);
+    await this.cmd.publish(this.prefix + channel, message);
   }
 
   async subscribe(channel: string, handler: MessageHandler): Promise<() => Promise<void>> {
-    let set = this.handlers.get(channel);
+    const name = this.prefix + channel;
+    let set = this.handlers.get(name);
     if (!set) {
-      set = new Set();
-      this.handlers.set(channel, set);
-      await this.sub.subscribe(channel);
+      const created = new Set<MessageHandler>();
+      set = created;
+      this.handlers.set(name, created);
+      const pending = this.sub
+        .subscribe(name)
+        .catch((err: unknown) => {
+          // Not subscribed after all: the next caller must try again rather than wait on a dead entry.
+          if (this.handlers.get(name) === created) this.handlers.delete(name);
+          throw err;
+        })
+        .finally(() => this.subscribing.delete(name));
+      this.subscribing.set(name, pending);
     }
-    set.add(handler);
+    const handlers = set;
+    handlers.add(handler);
+    await this.subscribing.get(name);
     return async () => {
-      set.delete(handler);
-      if (set.size === 0) {
-        this.handlers.delete(channel);
-        await this.sub.unsubscribe(channel);
+      handlers.delete(handler);
+      if (handlers.size === 0 && this.handlers.get(name) === handlers) {
+        this.handlers.delete(name);
+        await this.sub.unsubscribe(name);
       }
     };
   }

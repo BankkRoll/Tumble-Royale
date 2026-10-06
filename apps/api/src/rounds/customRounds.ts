@@ -352,7 +352,7 @@ export function registerCustomRoundRoutes(app: FastifyInstance, ctx: AppContext)
   // Game server → API (HMAC): the definitions a private show picked. Only
   // published rounds resolve, so a takedown stops new shows from loading it.
   app.post('/internal/custom-rounds/resolve', { config: { rateLimit: false } }, async (req) => {
-    await requireInternalSignature(ctx, req);
+    await requireInternalSignature(ctx, req, { callers: ['game-server'] });
     const { codes } = parse(ResolveBody, req.body);
     const wanted = [...new Set(codes.map((c) => normalizeShareCode(c)).filter((c): c is string => !!c))];
     const rows = wanted.length

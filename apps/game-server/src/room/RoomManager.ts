@@ -72,7 +72,7 @@ const MAX_PENDING_JOINS = 10_000;
 
 /** Load summary sent to the matchmaker on every heartbeat. */
 export interface CapacityReport {
-  /** Seats in use, humans and bots (matchmade rooms count their full planned size). */
+  /** Seats in use: humans, bots and spectators (matchmade rooms count at least their planned size). */
   load: number;
   rooms: number;
   /** Match ids of ticketed rooms, so the matchmaker can release their reservations. */
@@ -140,11 +140,18 @@ export class RoomManager {
     this.scheduler.start();
   }
 
-  /** Stops ticking and closes every room. */
-  stop(): void {
+  /**
+   * Stops ticking and closes every room. Shows still running report the
+   * rounds played so far (see {@link Room.abort}).
+   *
+   * @returns Settles once those reports reached the results sink.
+   */
+  async stop(): Promise<void> {
     this.scheduler.stop();
-    for (const r of this.rooms.values()) r.dispose();
+    const reports = [...this.rooms.values()].map((r) => r.abort());
     this.rooms.clear();
+    this.matchRooms.clear();
+    await Promise.allSettled(reports);
   }
 
   /** Summaries for `/rooms`. */
@@ -201,7 +208,8 @@ export class RoomManager {
       if (room.state === 'closed') continue;
       const info = room.info();
       const live = info.humans + info.bots;
-      load += room.match ? Math.max(live, room.match.humans + room.match.bots) : live;
+      // The matchmaker reserved spectator seats on top of the show size; they stay taken once released.
+      load += (room.match ? Math.max(live, room.match.humans + room.match.bots) : live) + info.spectators;
       if (room.match) matches.push(room.match.matchId);
     }
     return { load, rooms: this.rooms.size, matches };
@@ -243,7 +251,7 @@ export class RoomManager {
       this.pending.delete(session);
       settle();
     };
-    conn.onMessage = (data) => {
+    conn.onMessage = this.guarded(conn, (data) => {
       const t = this.deps.now();
       if (!session.guard.admit(t, data.length)) return;
       if (data[0] !== MsgType.Hello) return;
@@ -272,9 +280,28 @@ export class RoomManager {
         );
       }
       const room = placed;
-      conn.onMessage = (d) => room.onMessage(session, d, this.deps.now());
+      conn.onMessage = this.guarded(conn, (d) => room.onMessage(session, d, this.deps.now()));
       conn.onClose = (code, reason) =>
         room.onClose(session, this.deps.now(), code === 1000 && reason === LEAVE_CLOSE_REASON);
+    });
+  }
+
+  /**
+   * Wraps a connection's message handler: a message that makes it throw
+   * (a decoder or room bug a crafted packet can reach) closes that one
+   * connection instead of escaping into the socket library's event handler.
+   */
+  private guarded(conn: Connection, handle: (data: Uint8Array) => void): (data: Uint8Array) => void {
+    return (data) => {
+      try {
+        handle(data);
+      } catch (err) {
+        this.metrics.messageErrors++;
+        this.deps.log?.(
+          `[rooms] message from ${conn.remoteAddress} failed: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
+        );
+        this.reject(conn, KickReason.BadMessage, 'bad message');
+      }
     };
   }
 
@@ -344,7 +371,7 @@ export class RoomManager {
     let room = existingId ? this.rooms.get(existingId) : undefined;
     if (room && room.state === 'closed') room = undefined;
     if (room) {
-      if (room.rejoinUser(session, claims.sub)) return this.noteJoined(claims, room);
+      if (room.rejoinUser(session, claims.sub, claims.mute === true)) return this.noteJoined(claims, room);
       if (room.state === 'ended') return null;
       if (room.join(session, hello, now, claims) < 0) return null;
       return this.noteJoined(claims, room);
@@ -418,7 +445,7 @@ export class RoomManager {
         );
         this.metrics.roomCrashes++;
         try {
-          room.dispose();
+          void room.abort();
         } catch {
           room.state = 'closed';
         }

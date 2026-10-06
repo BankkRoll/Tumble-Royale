@@ -34,6 +34,9 @@ export const NO_BANS: BanLookup = {
   scopes: async (userIds) => new Map(userIds.map((id) => [id, new Set<string>()])),
 };
 
+/** How long a failed ban lookup keeps players being let through without asking the API again. */
+export const FAILURE_BACKOFF_MS = 5000;
+
 /** Options for {@link ApiBanLookup}. */
 export interface ApiBanLookupOptions {
   /** API base URL, e.g. `http://localhost:7360`. */
@@ -60,6 +63,8 @@ export class ApiBanLookup implements BanLookup {
   private readonly cacheMs: number;
   private readonly fetchFn: typeof fetch;
   private readonly now: () => number;
+  /** After a failed lookup, the API is not asked again before this (epoch ms). */
+  private retryAt = 0;
 
   constructor(private readonly opts: ApiBanLookupOptions) {
     this.cacheMs = opts.cacheMs ?? 15_000;
@@ -77,7 +82,9 @@ export class ApiBanLookup implements BanLookup {
       else missing.push(id);
     }
     if (missing.length === 0) return out;
-    const fetched = await this.fetchScopes(missing);
+    // PERF: during an outage every chat line and queue request would otherwise wait out a timeout.
+    const fetched = t < this.retryAt ? null : await this.fetchScopes(missing);
+    if (!fetched && t >= this.retryAt) this.retryAt = t + FAILURE_BACKOFF_MS;
     if (this.cache.size > 50_000) this.cache.clear();
     for (const id of missing) {
       const scopes = fetched?.get(id) ?? new Set<string>();
@@ -97,7 +104,10 @@ export class ApiBanLookup implements BanLookup {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            ...signInternal(this.opts.secret, body, Date.now()),
+            ...signInternal(this.opts.secret, body, Date.now(), {
+              method: 'POST',
+              path: '/internal/bans/lookup',
+            }),
             ...requestIdHeaders(),
           },
           body,

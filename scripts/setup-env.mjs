@@ -71,11 +71,13 @@ export const PRODUCTION_ENV_FILE = 'deploy/.env';
 export const PRODUCTION_SECRETS = [
   'JWT_SECRET',
   'INTERNAL_HMAC_SECRET',
+  'GAME_SERVER_HMAC_SECRET',
   'GAME_TICKET_SECRET',
   'GAME_SERVER_SECRET',
   'ADMIN_TOKEN',
   'METRICS_TOKEN',
   'POSTGRES_PASSWORD',
+  'REDIS_PASSWORD',
   'VOICE_TURN_SECRET',
 ];
 
@@ -138,8 +140,14 @@ TRUST_PROXY=1
 # --- Secrets (REQUIRED, generated) --------------------------------------------
 # Signs access tokens (API) and is verified by the matchmaker; a new value signs every player out.
 JWT_SECRET=${s.JWT_SECRET}
-# Signs game server results and matchmaker ban lookups sent to the API.
+# Signs the matchmaker's calls to the API and the API's to the matchmaker.
 INTERNAL_HMAC_SECRET=${s.INTERNAL_HMAC_SECRET}
+# Signs game server results and other game server calls to the API, which
+# accepts it only on those routes (docs/SELF_HOSTING.md, "Service keys").
+GAME_SERVER_HMAC_SECRET=${s.GAME_SERVER_HMAC_SECRET}
+# OPTIONAL. 1 accepts the old internal signature (no method/path) while game
+# servers on other hosts still run an older release; remove once all are upgraded.
+# INTERNAL_HMAC_ALLOW_V1=1
 # Signs matchmaker join tickets; game servers verify them.
 GAME_TICKET_SECRET=${s.GAME_TICKET_SECRET}
 # Game servers present it to register with the matchmaker; it also signs kicks.
@@ -160,8 +168,11 @@ POSTGRES_DB=tumble
 POSTGRES_PASSWORD=${s.POSTGRES_PASSWORD}
 # REQUIRED. The API's database.
 DATABASE_URL=postgres://tumble:${s.POSTGRES_PASSWORD}@postgres:5432/tumble
+# REQUIRED. Redis requires it; the compose file builds the API's and matchmaker's
+# REDIS_URL with it.
+REDIS_PASSWORD=${s.REDIS_PASSWORD}
 # REQUIRED. Parties, presence, leaderboards, queues and pub/sub for the API and matchmaker.
-REDIS_URL=redis://redis:6379
+REDIS_URL=redis://:${s.REDIS_PASSWORD}@redis:6379
 
 # --- Services inside the compose network --------------------------------------
 # REQUIRED. The API, as the matchmaker and game server reach it.

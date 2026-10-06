@@ -60,7 +60,8 @@ const life = installLifecycle({
     ? [apiErrorReporter({ apiUrl: resultsCfg.apiUrl, secret: resultsCfg.secret, service: 'game-server' })]
     : [],
   // The drain bounds itself; this only catches a drain that hangs.
-  shutdownTimeoutMs: config.ops.drainSettleMs + config.ops.drainTimeoutMs + config.ops.outboxFlushMs + 30_000,
+  // Settling happens inside DRAIN_TIMEOUT_MS, so it adds nothing here.
+  shutdownTimeoutMs: config.ops.drainTimeoutMs + config.ops.outboxFlushMs + 30_000,
 });
 let draining = false;
 
@@ -80,6 +81,7 @@ const deps = config.devSim
       ...(config.playlistId ? { playlistId: config.playlistId } : {}),
       log,
       results,
+      ...(config.link ? { serverId: config.link.serverId } : {}),
       voiceTeams: resultsCfg
         ? new HttpVoiceTeams({ apiUrl: resultsCfg.apiUrl, secret: resultsCfg.secret, log })
         : null,

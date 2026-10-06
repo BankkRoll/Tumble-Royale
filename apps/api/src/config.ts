@@ -130,6 +130,17 @@ export interface ApiConfig {
   jwtSecret: string;
   /** HMAC secret shared with game servers for `/internal/*` calls. */
   internalHmacSecret: string;
+  /**
+   * Narrow key for game servers (`GAME_SERVER_HMAC_SECRET`): accepted only on
+   * the internal routes game servers call, so a game server on its own host
+   * need not hold {@link internalHmacSecret}. Absent → game servers use the shared key.
+   */
+  gameServerHmacSecret: string | undefined;
+  /**
+   * Accept the legacy internal signature that does not cover the method and
+   * path (`INTERNAL_HMAC_ALLOW_V1=1`), while older callers are upgraded.
+   */
+  internalHmacAllowV1: boolean;
   /** Bearer token for admin-only internal routes; absent → those routes are disabled. */
   adminToken: string | undefined;
   /** Origin of the web client, used for redirects, invite links and magic links. */
@@ -344,6 +355,13 @@ export function loadConfig(env: Env = process.env): ApiConfig {
   const issues = new EnvIssues(env);
   const jwtSecret = issues.secret('JWT_SECRET', 32);
   const internalHmacSecret = issues.secret('INTERNAL_HMAC_SECRET', 16);
+  const gameServerHmacSecret =
+    issues.optional('GAME_SERVER_HMAC_SECRET') === undefined
+      ? undefined
+      : issues.secret('GAME_SERVER_HMAC_SECRET', 16) || undefined;
+  if (gameServerHmacSecret !== undefined && gameServerHmacSecret === internalHmacSecret)
+    issues.add('GAME_SERVER_HMAC_SECRET', 'must differ from INTERNAL_HMAC_SECRET');
+  const internalHmacAllowV1 = issues.flag('INTERNAL_HMAC_ALLOW_V1', false);
   const parsed = EnvSchema.safeParse(env);
   if (!parsed.success) issues.addSchemaIssues(parsed.error.issues);
   // Every field has a default, so parsing {} lets the remaining checks run and
@@ -422,6 +440,8 @@ export function loadConfig(env: Env = process.env): ApiConfig {
     memoryStoreInProduction: e.NODE_ENV === 'production' && !e.REDIS_URL,
     jwtSecret,
     internalHmacSecret,
+    gameServerHmacSecret,
+    internalHmacAllowV1,
     adminToken,
     publicWebUrl: e.PUBLIC_WEB_URL.replace(/\/$/, ''),
     publicApiUrl: e.PUBLIC_API_URL.replace(/\/$/, ''),

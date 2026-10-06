@@ -6,7 +6,14 @@ import { createHmac } from 'node:crypto';
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import { isErased } from '../accounts/tombstone.ts';
-import { safeEqual, verifyAccessToken } from '../auth/tokens.ts';
+import {
+  inspectInternal,
+  internalSigningString,
+  INTERNAL_SIG_VERSION_HEADER,
+  INTERNAL_SIG_WINDOW_MS,
+  type InternalTarget,
+} from '@tumble/shared/liveops-client';
+import { verifyAccessToken } from '../auth/tokens.ts';
 import type { AppContext } from '../context.ts';
 import { bans } from '../db/schema.ts';
 import { ApiError, unauthorized } from './errors.ts';
@@ -172,49 +179,91 @@ export const HMAC_HEADERS = {
   timestamp: 'x-tumble-timestamp',
   nonce: 'x-tumble-nonce',
   signature: 'x-tumble-signature',
+  version: INTERNAL_SIG_VERSION_HEADER,
 } as const;
 
 /** Accepted clock skew / replay window for signed internal calls. */
-export const HMAC_WINDOW_MS = 5 * 60 * 1000;
+export const HMAC_WINDOW_MS = INTERNAL_SIG_WINDOW_MS;
 
 /**
- * Computes the internal request signature:
- * `hex(HMAC-SHA256(secret, "<timestamp>.<nonce>.<rawBody>"))`.
+ * Computes an internal request signature (scheme v2, see `signInternal` in
+ * `@tumble/shared/liveops-client`):
+ * `hex(HMAC-SHA256(secret, "METHOD\npath\ntimestamp\nnonce\nrawBody"))`.
  *
- * @param secret - `INTERNAL_HMAC_SECRET`.
+ * @param secret - `INTERNAL_HMAC_SECRET` (or `GAME_SERVER_HMAC_SECRET`).
  * @param timestamp - Unix epoch milliseconds, as sent in `x-tumble-timestamp`.
  * @param nonce - Random string (16–128 chars), as sent in `x-tumble-nonce`.
  * @param body - Exact request body bytes as a UTF-8 string.
+ * @param target - Method and route path of the request.
  * @example
  * const ts = String(Date.now()); const nonce = randomUUID();
- * const sig = signInternal(secret, ts, nonce, body);
+ * const sig = signInternal(secret, ts, nonce, body, { method: 'POST', path: '/internal/liveops' });
  */
-export function signInternal(secret: string, timestamp: string, nonce: string, body: string): string {
-  return createHmac('sha256', secret).update(`${timestamp}.${nonce}.${body}`).digest('hex');
+export function signInternal(
+  secret: string,
+  timestamp: string,
+  nonce: string,
+  body: string,
+  target: InternalTarget,
+): string {
+  return createHmac('sha256', secret)
+    .update(internalSigningString(target, timestamp, nonce, body))
+    .digest('hex');
+}
+
+/** Callers with a key of their own, besides holders of the shared `INTERNAL_HMAC_SECRET`. */
+export type InternalCaller = 'game-server';
+
+/** Options for {@link requireInternalSignature}. */
+export interface InternalSignatureOptions {
+  /**
+   * Narrow keys also accepted on this route. Holders of the shared key are
+   * always accepted; a game server's own key only where listed here.
+   */
+  callers?: readonly InternalCaller[];
 }
 
 /**
- * Verifies a game-server request signed with {@link signInternal}: timestamp
- * within ±5 min, nonce unseen in that window, constant-time signature match.
+ * Verifies a service request signed with {@link signInternal}: bound to this
+ * method and path, timestamp within ±5 min, nonce unseen in that window,
+ * constant-time signature match.
  *
+ * SECURITY: trust boundary for every `/internal/*` route that services (not
+ * staff) call. `GAME_SERVER_HMAC_SECRET` is honoured only on routes that list
+ * `game-server`, so a leaked game-server key cannot look up bans or reach
+ * other service-only routes.
+ *
+ * @returns Which kind of key signed the request.
  * @throws {ApiError} 401 `bad_signature` / `stale_request` / `replayed_request`.
  */
-export async function requireInternalSignature(ctx: AppContext, req: FastifyRequest): Promise<void> {
-  const ts = req.headers[HMAC_HEADERS.timestamp];
-  const nonce = req.headers[HMAC_HEADERS.nonce];
-  const sig = req.headers[HMAC_HEADERS.signature];
-  if (typeof ts !== 'string' || typeof nonce !== 'string' || typeof sig !== 'string') {
-    throw new ApiError(401, 'bad_signature', 'Missing signature headers');
+export async function requireInternalSignature(
+  ctx: AppContext,
+  req: FastifyRequest,
+  opts: InternalSignatureOptions = {},
+): Promise<'shared' | InternalCaller> {
+  const keys = [ctx.config.internalHmacSecret];
+  if (opts.callers?.includes('game-server')) keys.push(ctx.config.gameServerHmacSecret ?? '');
+  const r = inspectInternal(keys, req.headers, req.rawBody ?? '', ctx.now().getTime(), {
+    method: req.method,
+    path: req.url.split('?')[0] ?? req.url,
+    windowMs: HMAC_WINDOW_MS,
+    allowV1: ctx.config.internalHmacAllowV1,
+  });
+  if (!('ok' in r)) {
+    if (r.problem === 'stale')
+      throw new ApiError(401, 'stale_request', 'Request timestamp outside the replay window');
+    throw new ApiError(
+      401,
+      'bad_signature',
+      r.problem === 'missing'
+        ? 'Missing signature headers'
+        : r.problem === 'malformed'
+          ? 'Malformed signature headers'
+          : 'Signature mismatch',
+    );
   }
-  if (!/^\d{10,16}$/.test(ts) || nonce.length < 16 || nonce.length > 128) {
-    throw new ApiError(401, 'bad_signature', 'Malformed signature headers');
-  }
-  if (Math.abs(ctx.now().getTime() - Number(ts)) > HMAC_WINDOW_MS) {
-    throw new ApiError(401, 'stale_request', 'Request timestamp outside the replay window');
-  }
-  const expected = signInternal(ctx.config.internalHmacSecret, ts, nonce, req.rawBody ?? '');
-  if (!safeEqual(expected, sig.toLowerCase())) throw new ApiError(401, 'bad_signature', 'Signature mismatch');
-  if (!(await ctx.kv.setNX(`nonce:${nonce}`, '1', HMAC_WINDOW_MS * 2))) {
+  if (!(await ctx.kv.setNX(`nonce:${r.ok.nonce}`, '1', HMAC_WINDOW_MS * 2))) {
     throw new ApiError(401, 'replayed_request', 'Nonce already used');
   }
+  return r.ok.key === 0 ? 'shared' : 'game-server';
 }

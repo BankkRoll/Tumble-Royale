@@ -78,8 +78,12 @@ describe('placements', () => {
     expect(p).toHaveLength(5);
   });
 
-  it('signs internal calls as timestamp.nonce.body', () => {
-    const h = signInternal('s3cret-s3cret-s3cret', '{"x":1}', 1234567890123);
+  it('signs internal calls for the results endpoint', () => {
+    const h = signInternal('s3cret-s3cret-s3cret', '{"x":1}', 1234567890123, {
+      method: 'POST',
+      path: '/internal/match-results',
+    });
+    expect(h['x-tumble-signature-version']).toBe('2');
     expect(h['x-tumble-timestamp']).toBe('1234567890123');
     expect(h['x-tumble-nonce']).toHaveLength(32);
     expect(h['x-tumble-signature']).toMatch(/^[0-9a-f]{64}$/);

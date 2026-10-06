@@ -5,7 +5,8 @@
  * matchmaker for capacity.
  */
 import { describe, expect, it } from 'vitest';
-import { signInternal, verifyInternal } from '../src/liveopsClient.ts';
+import { createHmac } from 'node:crypto';
+import { inspectInternal, signInternal, verifyInternal } from '../src/liveopsClient.ts';
 import {
   cleanPublicText,
   componentName,
@@ -111,19 +112,61 @@ describe('uptime', () => {
 describe('verifyInternal', () => {
   const secret = 'shared-secret-0123456789';
   const now = Date.parse('2026-10-05T12:00:00Z');
+  const cap = { method: 'GET', path: '/internal/capacity' } as const;
+  const ok = (
+    h: Record<string, string>,
+    body = '',
+    at = now,
+    target: typeof cap | { method: string; path: string } = cap,
+  ) => verifyInternal(secret, h, body, at, target) !== null;
 
   it('accepts what signInternal signed, within the window', () => {
-    expect(verifyInternal(secret, signInternal(secret, '', now), '', now)).toBe(true);
-    expect(verifyInternal(secret, signInternal(secret, '', now - 60_000), '', now)).toBe(true);
+    expect(ok(signInternal(secret, '', now, cap))).toBe(true);
+    expect(ok(signInternal(secret, '', now - 60_000, cap))).toBe(true);
+    const h = signInternal(secret, '', now, cap);
+    expect(verifyInternal(secret, h, '', now, cap)).toEqual({
+      nonce: h['x-tumble-nonce'],
+      timestamp: now,
+      version: 2,
+    });
   });
 
   it('rejects another secret, another body, stale or malformed headers', () => {
-    expect(verifyInternal(secret, signInternal('other-secret-0123456789', '', now), '', now)).toBe(false);
-    expect(verifyInternal(secret, signInternal(secret, '{}', now), '', now)).toBe(false);
-    expect(verifyInternal(secret, signInternal(secret, '', now - 6 * 60_000), '', now)).toBe(false);
-    expect(verifyInternal(secret, {}, '', now)).toBe(false);
-    const h = signInternal(secret, '', now);
-    expect(verifyInternal(secret, { ...h, 'x-tumble-signature': 'zz' }, '', now)).toBe(false);
-    expect(verifyInternal(secret, { ...h, 'x-tumble-nonce': 'short' }, '', now)).toBe(false);
+    expect(ok(signInternal('other-secret-0123456789', '', now, cap))).toBe(false);
+    expect(ok(signInternal(secret, '{}', now, cap))).toBe(false);
+    expect(ok(signInternal(secret, '', now - 6 * 60_000, cap))).toBe(false);
+    expect(ok({})).toBe(false);
+    const h = signInternal(secret, '', now, cap);
+    expect(ok({ ...h, 'x-tumble-signature': 'zz' })).toBe(false);
+    expect(ok({ ...h, 'x-tumble-nonce': 'short' })).toBe(false);
+  });
+
+  it('binds the method and path, so a signature cannot be replayed on another endpoint', () => {
+    const h = signInternal(secret, '{}', now, { method: 'POST', path: '/internal/liveops' });
+    expect(ok(h, '{}', now, { method: 'POST', path: '/internal/liveops' })).toBe(true);
+    expect(ok(h, '{}', now, { method: 'POST', path: '/internal/errors' })).toBe(false);
+    expect(ok(h, '{}', now, { method: 'PUT', path: '/internal/liveops' })).toBe(false);
+  });
+
+  it('accepts the legacy scheme only when asked to', () => {
+    const ts = String(now);
+    const nonce = 'n'.repeat(32);
+    const legacy = {
+      'x-tumble-timestamp': ts,
+      'x-tumble-nonce': nonce,
+      'x-tumble-signature': createHmac('sha256', secret).update(`${ts}.${nonce}.`).digest('hex'),
+    };
+    expect(ok(legacy)).toBe(false);
+    expect(verifyInternal(secret, legacy, '', now, { ...cap, allowV1: true })?.version).toBe(1);
+  });
+
+  it('tells which of several keys matched', () => {
+    const h = signInternal('second-key-0123456789', '', now, cap);
+    const r = inspectInternal([secret, 'second-key-0123456789'], h, '', now, cap);
+    expect('ok' in r && r.ok.key).toBe(1);
+    expect(inspectInternal([secret], h, '', now, cap)).toEqual({ problem: 'mismatch' });
+    expect(inspectInternal([secret], signInternal(secret, '', now - 6 * 60_000, cap), '', now, cap)).toEqual({
+      problem: 'stale',
+    });
   });
 });

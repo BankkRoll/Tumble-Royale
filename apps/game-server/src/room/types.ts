@@ -233,6 +233,11 @@ export interface RoomDeps {
   randomSeed: () => number;
   /** Logger. */
   log?: (msg: string) => void;
+  /**
+   * The id this process registered with the matchmaker (`SERVER_ID`). Sent
+   * with show results so the API can check the match was placed here.
+   */
+  serverId?: string;
   /** Posts matchmade show results to the account API; null/absent disables reporting. */
   results?: ResultsSink | null;
   /** Tells the account API who is on which team in team rounds (team voice); null/absent disables it. */

@@ -181,7 +181,10 @@ export async function createTestApi(
     const body = JSON.stringify(payload);
     const ts = String(opts.timestamp ?? clock.now().getTime());
     const nonce = opts.nonce ?? randomUUID();
-    const sig = signInternal(opts.secret ?? config.internalHmacSecret, ts, nonce, body);
+    const sig = signInternal(opts.secret ?? config.internalHmacSecret, ts, nonce, body, {
+      method: 'POST',
+      path: url.split('?')[0] ?? url,
+    });
     return built.app.inject({
       method: 'POST',
       url,
@@ -190,6 +193,7 @@ export async function createTestApi(
         [HMAC_HEADERS.timestamp]: ts,
         [HMAC_HEADERS.nonce]: nonce,
         [HMAC_HEADERS.signature]: sig,
+        [HMAC_HEADERS.version]: '2',
       },
       payload: body,
     });

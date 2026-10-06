@@ -221,13 +221,31 @@ export function GiftButton({
 /** Messages typed in the sheet, waiting for their confirm dialog. */
 const pendingNotes = new Map<string, string>();
 
+let confirmBindings = 0;
+let unbindConfirm: (() => void) | null = null;
+
 /**
- * Turns a confirmed send dialog into the `sendGift` intent; Cancel or Escape
- * sends nothing.
+ * Turns confirmed gift dialogs (send, decline, cancel) into intents; Cancel
+ * or Escape sends nothing. Shared by every mounted gift view: the listener
+ * exists once however many bind it, because a second one would send a
+ * confirmed gift twice under two different idempotency keys.
  *
- * @returns Unsubscribe.
+ * @returns Unsubscribe (idempotent).
  */
 export function bindGiftConfirm(): () => void {
+  if (confirmBindings++ === 0) unbindConfirm = listenGiftConfirm();
+  let bound = true;
+  return () => {
+    if (!bound) return;
+    bound = false;
+    if (--confirmBindings === 0) {
+      unbindConfirm?.();
+      unbindConfirm = null;
+    }
+  };
+}
+
+function listenGiftConfirm(): () => void {
   return uiEvents.on('dialogResult', ({ dialogId, buttonId }) => {
     const note = pendingNotes.get(dialogId);
     pendingNotes.delete(dialogId);
@@ -397,8 +415,7 @@ export function GiftReveal({ items, onDone }: { items: CosmeticItem[]; onDone: (
     playCue('ui.reward');
     const id = window.setTimeout(() => {
       setOpen(true);
-      const top = items.reduce<CosmeticItem | null>((best, i) => best ?? i, null);
-      if (top) playCue(`ui.rarity.${top.rarity}`);
+      if (items[0]) playCue(`ui.rarity.${items[0].rarity}`);
     }, 600);
     return () => window.clearTimeout(id);
   }, [items, reduce]);

@@ -395,6 +395,26 @@ describe('gift sheet', () => {
       for (const off of offs) off();
     }
   });
+
+  it('confirms once however many gift views are mounted', () => {
+    const sent = vi.fn();
+    const offSent = uiEvents.on('sendGift', sent);
+    const a = bindGiftConfirm();
+    const b = bindGiftConfirm();
+    try {
+      uiEvents.emit('dialogResult', { dialogId: `gift-send:${hat.id}|${pal.userId}`, buttonId: 'confirm' });
+      expect(sent).toHaveBeenCalledTimes(1);
+      a();
+      a();
+      uiEvents.emit('dialogResult', { dialogId: `gift-send:${hat.id}|${pal.userId}`, buttonId: 'confirm' });
+      expect(sent).toHaveBeenCalledTimes(2);
+      b();
+      uiEvents.emit('dialogResult', { dialogId: `gift-send:${hat.id}|${pal.userId}`, buttonId: 'confirm' });
+      expect(sent).toHaveBeenCalledTimes(2);
+    } finally {
+      offSent();
+    }
+  });
 });
 
 describe('wish list', () => {

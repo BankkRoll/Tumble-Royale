@@ -244,6 +244,8 @@ export abstract class ShowSession {
   /** Set while a UI card holds the show clock (offline only honours it). */
   private holds = 0;
   private flowClock = 0;
+  /** `performance.now()` of the previous frame, or -1 before the first. */
+  private lastFrameAt = -1;
   private timers: { at: number; fn: () => void }[] = [];
   private readonly covered = new Map<ScreenId, () => void>();
   private readonly offs: (() => void)[] = [];
@@ -534,7 +536,14 @@ export abstract class ShowSession {
    */
   frame(dt: number, realDt: number): void {
     if (this.ended) return;
-    this.flowClock += realDt * this.flowScale;
+    const now = performance.now();
+    // The app clamps realDt to 0.1 s, so below 10 fps the flow clock runs slow.
+    // Offline the show waits for this player anyway; online the server does not,
+    // and a slow device (software rendering, a busy laptop) would sit through
+    // cards while its round was already being played. Online cards keep wall time.
+    const flowDt = this.isOnline() && this.lastFrameAt >= 0 ? (now - this.lastFrameAt) / 1000 : realDt;
+    this.lastFrameAt = now;
+    this.flowClock += flowDt * this.flowScale;
     if (this.liftWipeIn > 0 && --this.liftWipeIn === 0) this.liftLoadingWipe();
     this.runTimers();
     this.toastTokens = Math.min(4, this.toastTokens + realDt * 3);

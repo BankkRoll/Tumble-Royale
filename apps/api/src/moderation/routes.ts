@@ -2,7 +2,7 @@
  * Reports, feature flags, analytics events, leaderboards and admin tooling.
  */
 import { createHash } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import {
   ANALYTICS_EVENTS,
@@ -34,6 +34,7 @@ import { friendIds } from '../social/friends.ts';
 import { recordAudit } from '../staff/audit.ts';
 import { requireStaff } from '../staff/auth.ts';
 import { voiceEvidence } from '../voice/service.ts';
+import { assertCanLiftBan, assertCanModerate } from './guard.ts';
 import { REPORT_REASONS } from './reports.ts';
 import { announceSanction, applySanction, BAN_SCOPES, liftBan, MAX_SANCTION_HOURS } from './sanctions.ts';
 
@@ -134,6 +135,20 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
     if (body.targetUserId === auth.userId) throw badRequest('self_report', 'You cannot report yourself');
     const [target] = await ctx.db.select({ id: users.id }).from(users).where(eq(users.id, body.targetUserId));
     if (!target) throw notFound('Player');
+    // Repeating a report would only stack the queue (and spend the reporter's hourly budget twice).
+    const [open] = await ctx.db
+      .select({ id: reports.id })
+      .from(reports)
+      .where(
+        and(
+          eq(reports.reporterId, auth.userId),
+          eq(reports.targetUserId, body.targetUserId),
+          eq(reports.reason, body.reason),
+          eq(reports.status, 'open'),
+        ),
+      )
+      .limit(1);
+    if (open) return reply.code(200).send({ id: open.id, status: 'open', duplicate: true });
     const [row] = await ctx.db
       .insert(reports)
       .values({
@@ -232,6 +247,7 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
   app.post('/internal/bans', async (req, reply) => {
     const actor = await requireStaff(ctx, req, 'moderator');
     const body = parse(BanBody, req.body);
+    await assertCanModerate(ctx, actor, body.userId);
     const kind =
       body.scope === 'chat'
         ? 'mute'
@@ -275,6 +291,7 @@ export function registerModerationRoutes(app: FastifyInstance, ctx: AppContext):
     const { id } = parse(z.object({ id: z.string().uuid() }), req.params);
     // The CLI sends no body; the console sends the reason.
     const { reason } = parse(LiftBody, req.body ?? {});
+    if (!(await assertCanLiftBan(ctx, actor, id))) throw notFound('Ban');
     const lifted = await ctx.db.transaction(async (tx) => {
       const row = await liftBan(tx, ctx.now(), id);
       if (row && !row.alreadyLifted) {

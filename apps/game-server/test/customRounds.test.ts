@@ -51,7 +51,6 @@ function match(rounds: string[]): MatchSettings {
       roundTimeScale: 1,
       lobbyCountdownSec: 0,
       spectatorSlots: 0,
-      minPlayers: 1,
     },
   };
 }

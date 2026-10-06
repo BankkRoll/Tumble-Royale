@@ -92,6 +92,7 @@ const SettingsSchema = z
     lobbyCountdownSec: z.number().int().min(0).max(120),
     spectatorSlots: z.number().int().min(0).max(10),
     minPlayers: z.number().int().min(1).max(MAX_PLAYERS),
+    roundVoting: z.boolean(),
   })
   .partial();
 const CreateLobbyBody = z.object({

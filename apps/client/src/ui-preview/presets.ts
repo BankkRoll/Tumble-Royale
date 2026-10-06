@@ -14,6 +14,7 @@ import {
   roundIntro,
 } from './mocks.ts';
 import { resetTransient, world } from './world.ts';
+import { roundVoteState } from '../game/show/vote.ts';
 
 /** A preview preset. */
 export interface Preset {
@@ -103,6 +104,19 @@ function feedToasts(): void {
 }
 
 /** All presets in dev-menu order. */
+const PREVIEW_BALLOT = {
+  roundIndex: 1,
+  isFinal: false,
+  options: ['tile-panic', 'egg-heist', 'tail-chase'],
+  counts: [5, 9, 4],
+  voted: 18,
+  eligible: 30,
+  closesIn: 6,
+  canVote: true,
+  myVote: -1,
+  botsDiscounted: true,
+};
+
 export const PRESETS: Preset[] = [
   {
     id: 'boot',
@@ -497,6 +511,32 @@ export const PRESETS: Preset[] = [
     apply: () => (
       s().setResults(makeResults(world.loseSummary, 1)),
       s().setScreen('roundResults', { transition: 'none' })
+    ),
+  },
+  {
+    id: 'roundVote',
+    label: 'Round vote (open)',
+    group: 'End of show',
+    apply: () => (
+      s().setResults(makeResults(world.winSummary, 0)),
+      s().setScreen('roundResults', { transition: 'none' }),
+      s().setRoundVote({ ...roundVoteState(PREVIEW_BALLOT, Date.now(), 1), myVote: 1 })
+    ),
+  },
+  {
+    id: 'roundVoteResult',
+    label: 'Round vote (winner reveal)',
+    group: 'End of show',
+    apply: () => (
+      s().setResults(makeResults(world.winSummary, 0)),
+      s().setScreen('roundResults', { transition: 'none' }),
+      s().setRoundVote({
+        ...roundVoteState(PREVIEW_BALLOT, Date.now(), 1),
+        myVote: 1,
+        counts: [7, 14, 9],
+        voted: 30,
+        result: { winner: 1, reason: 'votes' },
+      })
     ),
   },
   {

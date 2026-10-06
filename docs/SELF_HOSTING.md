@@ -257,6 +257,7 @@ pnpm admin flags set analytics.sample on --payload 0.25
 | `mutators.chaos`   | Chaos Mode plays without its per-show mutator                       |
 | `analytics.sample` | no analytics are stored; with `on` the payload is the sampled share |
 | `events.enabled`   | events count nothing and pay nothing; the menu says they are paused |
+| `shows.mapVoting`  | no round votes; shows pick every round from the seed (next show)    |
 
 A flag that was never set is on. `--rollout N` turns a flag on for a sticky N%
 of players (client-side features only; servers read the master switch).

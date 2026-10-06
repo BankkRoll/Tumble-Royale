@@ -9,7 +9,8 @@
  *   menu card says so.
  * - Offline fallbacks: ranked needs real opponents, so offline it plays as the
  *   Main Show.
- * - Private shows: picked rounds, seat count, bots on/off and the timer scale.
+ * - Private shows: picked rounds, seat count, bots on/off, round voting and
+ *   the timer scale.
  */
 import { getPlaylist } from '@tumble/content/shows';
 import { MAX_PLAYERS } from '@tumble/shared';
@@ -82,6 +83,8 @@ export interface PrivateShowOptions {
   maxPlayers: number;
   /** Round timer multiplier from the dialog. */
   timerScale: number;
+  /** "Round voting": players vote between the picked rounds (absent: on). */
+  roundVoting?: boolean;
 }
 
 /** An offline private show: its playlist and the round timer multiplier. */
@@ -113,6 +116,7 @@ export function privateShow(options: PrivateShowOptions): PrivateShow {
     maxRounds: Math.max(2, Math.min(n, 8)),
     pool: options.rounds.map((roundId) => ({ roundId, weight: 1 })),
     botsAllowed: options.bots,
+    voting: { ...base.voting, enabled: options.roundVoting !== false },
   });
   return { playlist, roundTimeScale: clampRoundTimeScale(options.timerScale) };
 }

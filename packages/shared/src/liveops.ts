@@ -35,6 +35,8 @@ export const FLAG_KEYS = [
   'analytics.sample',
   'events.enabled',
   'clubs.enabled',
+  /** Round voting between rounds (game servers read it per show, the offline client per show). */
+  'shows.mapVoting',
 ] as const;
 
 /** A flag the code reads. */
@@ -64,6 +66,7 @@ export const FLAG_DEFAULTS: Readonly<Record<FlagKey, FlagValue>> = {
   'analytics.sample': { enabled: true, payload: null },
   'events.enabled': { enabled: true, payload: null },
   'clubs.enabled': { enabled: true, payload: null },
+  'shows.mapVoting': { enabled: true, payload: null },
 };
 
 /**
@@ -296,6 +299,8 @@ export const ANALYTICS_EVENTS = [
   'share.card',
   /** A clip was made or delivered: `format` (mp4/webm), `encoder`, `outcome`, `action`, `seconds`, `height`. */
   'share.clip',
+  /** A round-vote ballot was cast or changed: `round` (index), `option`, `changed`, `online`. */
+  'vote.cast',
 ] as const;
 
 /** An allow-listed analytics event name. */

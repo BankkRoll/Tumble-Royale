@@ -252,3 +252,31 @@ honest and simple over a navmesh.
 The editor is its own Vite entry (`/editor`): players never download it with
 the game, and it shares the origin so it can reuse the player's session and
 hand Test play rounds to the game tab through IndexedDB.
+
+## Obstacle batches cull per pass and never draw a source on its own
+
+Batched obstacles used to sync after three had built its render lists, so
+their bounds were always a frame stale and culling was off: every batch drew
+in the view and in all three shadow cascades. The batcher now hooks the
+scene's `onBeforeRender` and culls each batch per render by the bounds of
+the 16 m ground cells its instances occupy, which is tight enough for a near
+cascade to skip a course-long batch without splitting batches (and adding
+view draws).
+
+A source whose material values diverge from its group (a telegraph glow)
+draws through a one-instance `InstancedMesh` with its own material instead
+of its own non-instanced draw. three bakes an instanced mesh's capacity, and
+the matrix uniform array's node id, into the shader, so every batch and
+stand-in allocates past the uniform-buffer limit (1025 instances), where
+three switches to per-instance attributes with stable names: one shader per
+material graph and vertex layout, and nothing new to compile mid-round. The
+cost is 64 KB of instance buffer per batch, of which only the written range
+is uploaded.
+
+## The far shadow cascade re-renders every other frame on High and Ultra
+
+The third cascade sees most of the course and is the least visible one.
+Rendering it every second frame keeps its map and its shadow matrix in step,
+so static shadows never move and a moving obstacle's shadow 60 m or more
+away lags one frame. We chose that over fewer or lower-resolution cascades,
+which would blur every far shadow all the time.

@@ -14,7 +14,18 @@ import { SHOW_MENU_SCREENS, menuOwnsInput, type UIState } from '@tumble/ui';
 export type RoutingState = Pick<
   UIState,
   'inputMode' | 'dialog' | 'overlay' | 'screen' | 'eliminatedSheet' | 'watchChoice' | 'photo' | 'replay'
-> & { elimReplay?: UIState['elimReplay'] };
+> & { elimReplay?: UIState['elimReplay']; connection?: UIState['connection'] };
+
+/**
+ * Whether the connection curtain is up (connecting, reconnecting, or lost
+ * with Try again / Leave): it owns the screen, so the in-game menu stays shut.
+ *
+ * @param s - UI state.
+ */
+export function curtainUp(s: { connection?: UIState['connection'] }): boolean {
+  const st = s.connection?.status;
+  return st === 'connecting' || st === 'reconnecting' || st === 'lost';
+}
 
 /** Game-side facts the routing rules need. */
 export interface RoutingContext {
@@ -58,8 +69,10 @@ export function padStartAction(s: RoutingState, ctx: RoutingContext): PadStartAc
   if (s.dialog || s.elimReplay) return 'none';
   if (s.photo.active) return 'exitPhoto';
   if (ctx.idlePlaying) return 'leaveIdlePlay';
-  if (ctx.inShow && SHOW_MENU_SCREENS.has(s.screen))
-    return s.overlay === 'none' ? 'openShowMenu' : 'closeOverlay';
+  if (ctx.inShow && SHOW_MENU_SCREENS.has(s.screen)) {
+    if (s.overlay === 'none') return curtainUp(s) ? 'none' : 'openShowMenu';
+    return 'closeOverlay';
+  }
   if (s.overlay === 'settings') return 'closeOverlay';
   if (s.overlay === 'none' && s.inputMode === 'menu' && s.screen !== 'splash' && s.screen !== 'welcome')
     return 'openSettings';
@@ -75,10 +88,10 @@ export function padStartAction(s: RoutingState, ctx: RoutingContext): PadStartAc
  * @returns `open`, `close`, or null when the key is not the show menu's.
  */
 export function showMenuKeyAction(
-  s: Pick<UIState, 'screen' | 'overlay' | 'dialog'>,
+  s: Pick<UIState, 'screen' | 'overlay' | 'dialog'> & { connection?: UIState['connection'] },
 ): 'open' | 'close' | null {
   if (s.dialog || !SHOW_MENU_SCREENS.has(s.screen)) return null;
-  if (s.overlay === 'none') return 'open';
+  if (s.overlay === 'none') return curtainUp(s) ? null : 'open';
   if (s.overlay === 'inGameMenu') return 'close';
   return null;
 }

@@ -3201,7 +3201,8 @@
   inset: 0;
   display: grid;
   place-items: center;
-  z-index: 80;
+  /* Above the in-game menu (110), which sits above the wipe: the curtain is the last word. */
+  z-index: 120;
 }
 .tr-reconnect-card {
   display: grid;

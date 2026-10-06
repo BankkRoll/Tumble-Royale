@@ -582,7 +582,11 @@ export const ui = createStore<UIState>()((set, get) => ({
   navigate: (dir) => navigator?.(dir),
 
   setBoot: (boot) => set({ boot: { ...get().boot, ...boot } }),
-  setConnection: (connection) => set({ connection }),
+  setConnection: (connection) => {
+    const curtain = connection.status === 'reconnecting' || connection.status === 'lost';
+    // The curtain takes over: a question asked before the drop can't be answered behind it.
+    set(curtain && get().dialog ? { connection, dialog: null } : { connection });
+  },
   showDialog: (dialog) => set({ dialog }),
   closeDialog: () => set({ dialog: null }),
   pushToast: (input) => {

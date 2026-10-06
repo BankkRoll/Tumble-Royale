@@ -157,8 +157,8 @@ describe('broadcast director', () => {
   });
 
   it('breaks near-ties toward party and club members', () => {
-    const d = new BroadcastDirector({ prefer: new Set([2]) });
-    const tied = [player(1, 0), player(2, 0), player(3, 0)];
+    const d = new BroadcastDirector();
+    const tied = [player(1, 0), player(2, 0, { favourite: true }), player(3, 0)];
     expect(d.scores(race(5, tied, { kind: 'survival' }))[0]!.id).toBe(2);
   });
 });

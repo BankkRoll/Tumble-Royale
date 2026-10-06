@@ -38,6 +38,8 @@ export interface DirectorPlayer {
   team: number;
   /** 0..1: how close they look to falling out of the round right now. */
   danger: number;
+  /** A party or club member of the viewer: a small bonus breaks near-ties their way. */
+  favourite?: boolean;
 }
 
 /** Round kinds the director tells apart. */
@@ -109,14 +111,6 @@ export class BroadcastDirector {
   private lastOverview = 0;
   private leaving: { id: number; at: number; linger: number } | null = null;
   private swings: { team: number; delta: number; at: number }[] = [];
-  private readonly prefer: ReadonlySet<number>;
-
-  /**
-   * @param opts.prefer - Party and club members: a small bonus breaks near-ties their way.
-   */
-  constructor(opts: { prefer?: ReadonlySet<number> } = {}) {
-    this.prefer = opts.prefer ?? new Set();
-  }
 
   /** The shot on air. */
   get shot(): DirectorShot {
@@ -207,7 +201,7 @@ export class BroadcastDirector {
         const fade = 1 - (f.time - swing.at) / DIRECTOR_TIMING.swingFade;
         take(1.5 + 2.5 * fade * Math.min(2, Math.abs(swing.delta)), 'teamSwing');
       }
-      if (this.prefer.has(p.id)) score += 0.4;
+      if (p.favourite) score += 0.4;
       out.push({ id: p.id, score, reason });
     }
     out.sort((a, b) => b.score - a.score || a.id - b.id);

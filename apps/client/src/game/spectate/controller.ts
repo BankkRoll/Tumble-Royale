@@ -143,7 +143,7 @@ export class SpectatorController {
   private mode: SpectatorCamMode = 'follow';
   private pinnedId: number | null = null;
   private live = false;
-  private readonly director: BroadcastDirector;
+  private readonly director = new BroadcastDirector();
   private readonly freeCam = new FreeCam();
   private readonly transition = new CameraTransition();
   private pendingFrom: CamPose | null = null;
@@ -168,15 +168,8 @@ export class SpectatorController {
   private readonly onBlur = (): void => this.held.clear();
   private disposed = false;
 
-  /**
-   * @param host - The session's side of the contract.
-   * @param opts.prefer - Party/club test for the director's tie-break.
-   */
-  constructor(
-    private readonly host: SpectatorHost,
-    opts: { prefer?: ReadonlySet<number> } = {},
-  ) {
-    this.director = new BroadcastDirector(opts.prefer ? { prefer: opts.prefer } : {});
+  /** @param host - The session's side of the contract. */
+  constructor(private readonly host: SpectatorHost) {
     ui.getState().setSpectator(initialSpectatorState(false));
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('blur', this.onBlur);

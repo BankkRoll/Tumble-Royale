@@ -1951,6 +1951,7 @@ export abstract class ShowSession {
         progress: live?.progress ?? 0,
         team: live?.team ?? teams.get(id) ?? -1,
         danger,
+        favourite: this.isPartyMate(id) || this.isClubMate(id),
       });
     }
     return out;

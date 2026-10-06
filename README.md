@@ -15,9 +15,9 @@
 
 </div>
 
-Up to 100 Tumblers (humans and bots) compete through a show of 3–5 randomly
-drawn rounds (races, survivals, team games, hunts, logic rounds and a final) until
-one player takes the Crown. No install, no plugins: it runs in a browser tab
+Up to 100 Tumblers (humans and bots) compete through a show of 3–5 rounds
+(races, survivals, team games, hunts, logic rounds and a final), voted on
+between rounds or drawn by the show, until one player takes the Crown. No install, no plugins: it runs in a browser tab
 on desktop and mobile.
 
 <table>
@@ -48,8 +48,10 @@ What a player can do today:
 
 - **Play:** solo, Duos and Squads online with parties, or any show offline
   against bots; Chaos Mode (one mutator per show), Ranked (solo rounds only,
-  seasonal soft reset) and a gentler First Show for newcomers
-- **Private shows:** invite codes, host-picked rounds and rules changed live,
+  seasonal soft reset) and a gentler First Show for newcomers; players vote
+  on the next round between rounds (server-authoritative, seeded tie-breaks)
+- **Private shows:** invite codes, host-picked rounds (with or without round
+  voting) and rules changed live,
   kick/ban, lock, transfer host, ready checks and spectator slots
 - **Social:** friends (requests, presence, join), party and in-show text chat
   with a filter, quick pings, report / block / mute, streamer mode
@@ -322,7 +324,7 @@ the same pose with zero bandwidth.
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Foundations                 | Done: both GPU backends render, client/server Rapier bit-identical after 600 steps (`e2e/phase0.spec.ts`)                                                            |
 | The Tumbler                 | Done; tuning still needs human playtesting                                                                                                                           |
-| Netcode                     | Done: no steady-state corrections at 150 ms + 2% loss (unit-tested), lag-compensated grab/dive hit assist, protocol v6 (round voting)                               |
+| Netcode                     | Done: no steady-state corrections at 150 ms + 2% loss (unit-tested), lag-compensated grab/dive hit assist, protocol v6 (round voting)                                |
 | Shows                       | Done: full shows end to end in the browser (`e2e/game.spec.ts`; 100-player offline show verified), solo/Duos/Squads online                                           |
 | Meta & accounts             | Done: guest + OAuth/email accounts, locker, parties, matchmaking, server-granted rewards, seasons, shard shop                                                        |
 | Content                     | 25 rounds, tutorial island, procedural audio. Touch controls exist but no phone frame rate has been measured                                                         |

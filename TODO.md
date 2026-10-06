@@ -8,7 +8,7 @@ What comes next, in order. Each item should land with tests, docs and a green
 - [ ] **Round editor with sharing**: build rounds from the existing obstacle
       kits, validate them against `RoundDefinitionSchema`, test-play locally,
       share by code, and moderate shared rounds from the admin console.
-- [ ] **Map voting**: players vote between round candidates during a show
+- [x] **Map voting**: players vote between round candidates during a show
       transition; the server decides, ties broken by seed.
 - [ ] **Elimination replay and highlights**: a short replay of how the player
       was eliminated, and automatic highlight moments built on the replay and

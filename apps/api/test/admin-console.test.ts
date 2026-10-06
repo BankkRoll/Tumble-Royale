@@ -158,6 +158,10 @@ describe('authorisation of every admin route', () => {
     ['POST', '/internal/club-reports/action', { reportIds: [uuid], action: 'dismiss', reason: 'nope' }],
     ['GET', '/internal/audit'],
     ['GET', '/internal/status/incidents'],
+    ['GET', '/internal/custom-rounds'],
+    ['GET', '/internal/custom-rounds/ZZZZZZZZ'],
+    ['POST', '/internal/custom-rounds/ZZZZZZZZ/takedown', { reason: 'nope' }],
+    ['POST', '/internal/custom-rounds/ZZZZZZZZ/dismiss-reports', { reason: 'nope' }],
   ];
   const adminRoutes: [Method, string, unknown?][] = [
     ['GET', '/internal/flags'],
@@ -181,6 +185,7 @@ describe('authorisation of every admin route', () => {
     ['POST', '/internal/status/incidents', { title: 'Nope', impact: 'minor', message: 'nope' }],
     ['POST', `/internal/status/incidents/${uuid}/updates`, { status: 'monitoring', message: 'nope' }],
     ['POST', `/internal/status/incidents/${uuid}/resolve`, {}],
+    ['POST', '/internal/custom-rounds/ZZZZZZZZ/restore', { reason: 'nope' }],
   ];
 
   it('refuses anonymous callers, guests and signed-in players everywhere', async () => {

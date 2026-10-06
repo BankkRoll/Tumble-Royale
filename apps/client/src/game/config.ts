@@ -40,6 +40,8 @@ export interface GameConfig {
   mmUrl: string;
   /** `?mm=0` never matchmakes (Play always runs an offline show unless `?online=1`). */
   matchmaking: boolean;
+  /** `?playtest=1`: the round editor's Test play (the draft it saved, vs bots). */
+  playtest: boolean;
 }
 
 const TIERS: readonly QualityTier[] = ['low', 'medium', 'high', 'ultra'];
@@ -83,5 +85,6 @@ export function readConfig(search: string = location.search): GameConfig {
     apiUrl: dev('apiUrl') ?? ENDPOINTS.api,
     mmUrl: dev('mmUrl') ?? ENDPOINTS.matchmaker,
     matchmaking: dev('mm') !== '0',
+    playtest: p.get('playtest') === '1',
   };
 }

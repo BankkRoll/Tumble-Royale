@@ -9,6 +9,7 @@ one domain:
 | ---------------------------- | ------------------------------------------------------ |
 | `https://DOMAIN/`            | the web client (static files)                          |
 | `https://DOMAIN/admin`       | the admin console ([below](#the-admin-console))        |
+| `https://DOMAIN/editor`      | the round editor (needs no configuration)              |
 | `https://DOMAIN/api/*`       | account API, including its WebSocket `/api/ws`         |
 | `https://DOMAIN/mm/*`        | matchmaker, including its WebSocket `/mm/ws`           |
 | `https://DOMAIN/gs/ws`       | game server WebSocket                                  |
@@ -115,7 +116,8 @@ docker compose exec api node scripts/admin.mjs reports list
 
 `https://DOMAIN/admin` is a web console for the same work: the report queue
 (with chat evidence and bulk decisions), player lookup and the player page,
-bans and mutes, live ops and the audit log. It is part of the client image,
+bans and mutes, shared custom rounds (inspect, take down, restore), live ops
+and the audit log. It is part of the client image,
 so there is nothing to enable; nobody can use it until you grant a role.
 
 1. Have the person sign in to the game with a full account (email, Discord

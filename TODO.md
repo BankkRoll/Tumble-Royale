@@ -5,7 +5,7 @@ What comes next, in order. Each item should land with tests, docs and a green
 
 ## 1. Wave 4 features
 
-- [ ] **Round editor with sharing**: build rounds from the existing obstacle
+- [x] **Round editor with sharing**: build rounds from the existing obstacle
       kits, validate them against `RoundDefinitionSchema`, test-play locally,
       share by code, and moderate shared rounds from the admin console.
 - [ ] **Map voting**: players vote between round candidates during a show

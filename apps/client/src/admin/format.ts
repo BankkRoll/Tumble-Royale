@@ -190,7 +190,8 @@ export type Route =
   | { view: 'liveops' }
   | { view: 'refunds'; id?: string }
   | { view: 'clubs'; id?: string; q?: string }
-  | { view: 'audit'; target?: string };
+  | { view: 'audit'; target?: string }
+  | { view: 'rounds'; code?: string };
 
 /**
  * Parses `location.hash` (`#/players/<id>`, `#/players?q=name`, `#/audit?target=…`).
@@ -222,6 +223,8 @@ export function parseRoute(hash: string): Route {
       };
     case 'audit':
       return { view: 'audit', ...(params.get('target') ? { target: params.get('target')! } : {}) };
+    case 'rounds':
+      return { view: 'rounds', ...(id ? { code: decodeURIComponent(id) } : {}) };
     default:
       return { view: 'reports' };
   }
@@ -242,6 +245,8 @@ export function routeHash(r: Route): string {
       return r.id ? `#/clubs/${encodeURIComponent(r.id)}` : `#/clubs${query({ q: r.q })}`;
     case 'audit':
       return `#/audit${query({ target: r.target })}`;
+    case 'rounds':
+      return r.code ? `#/rounds/${encodeURIComponent(r.code)}` : '#/rounds';
     default:
       return `#/${r.view}`;
   }

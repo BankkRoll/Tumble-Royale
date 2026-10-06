@@ -165,6 +165,13 @@ export interface RoomDeps {
   /** Real: wraps the match team's ShowDirector. */
   createShowController: ShowControllerFactory;
   /**
+   * Async work a matchmade show needs before it may start (fetching a private
+   * show's custom rounds). Returns null when there is none. The room holds the
+   * show in its lobby until the promise settles, then builds its show
+   * controller again; the promise must settle on its own (bounded timeouts).
+   */
+  prepareMatch?: (match: MatchSettings) => Promise<unknown> | null;
+  /**
    * Bots that need external input (e.g. the dev sim). Return null to let the
    * MatchSim drive the bot itself (the real sim has built-in bot brains).
    */

@@ -1301,3 +1301,64 @@ export const statusUptime = pgTable(
   },
   (t) => [primaryKey({ columns: [t.component, t.day] }), index('status_uptime_day_idx').on(t.day)],
 );
+
+// -----------------------------------------------------------------------------
+// Custom rounds
+// -----------------------------------------------------------------------------
+
+/**
+ * Rounds players built in the editor and shared by code. `definition` is the
+ * validated round (defaults applied, id `custom:<code>`), re-validated on
+ * every write. `status`: `published` (the code works), `unpublished` (owner
+ * hid it), `taken_down` (staff removed it; only staff can restore it).
+ */
+export const customRounds = pgTable(
+  'custom_rounds',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Share code (8 characters, unambiguous alphabet). */
+    code: text('code').notNull(),
+    ownerId: uuid('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description').notNull().default(''),
+    roundType: text('round_type').notNull(),
+    definition: jsonb('definition').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    status: text('status').notNull().default('published'),
+    takedownReason: text('takedown_reason'),
+    takenDownBy: text('taken_down_by'),
+    takenDownAt: ts('taken_down_at'),
+    createdAt: createdAt(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('custom_rounds_code_uq').on(t.code),
+    index('custom_rounds_owner_idx').on(t.ownerId, t.createdAt),
+    index('custom_rounds_status_idx').on(t.status, t.createdAt),
+  ],
+);
+
+/** Player reports against a shared round (the round, not its author: `reports` covers players). */
+export const customRoundReports = pgTable(
+  'custom_round_reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    roundId: uuid('round_id')
+      .notNull()
+      .references(() => customRounds.id, { onDelete: 'cascade' }),
+    reporterId: uuid('reporter_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    reason: text('reason').notNull(),
+    details: text('details'),
+    /** `open`, `actioned` (round taken down) or `dismissed`. */
+    status: text('status').notNull().default('open'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('custom_round_reports_once_uq').on(t.roundId, t.reporterId),
+    index('custom_round_reports_status_idx').on(t.status, t.createdAt),
+  ],
+);

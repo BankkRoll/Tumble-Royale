@@ -33,7 +33,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.ts';
 import type { DbOrTx, Tx } from '../db/client.ts';
-import { bans, friendships, gifts, inventoryItems, profiles, users } from '../db/schema.ts';
+import { bans, friendships, gifts, inventoryItems, profiles, refunds, users } from '../db/schema.ts';
 import { activeBans, requireUser } from '../http/auth.ts';
 import {
   ApiError,
@@ -48,11 +48,18 @@ import { revokeCosmetic } from '../inventory/revoke.ts';
 import { refuseDuringMaintenance } from '../liveops/state.ts';
 import type { SocialRef } from '../realtime/notifier.ts';
 import { friendIds, socialRef } from '../social/friends.ts';
+import { CursorParam, encodeCursor, olderThan, type PageCursor } from '../util/cursor.ts';
 import { dayKey, nextUtcMidnight } from '../util/time.ts';
-import { applyLedger, lockWallet, type Wallet } from './ledger.ts';
-import { currentRotation, priceOffer, type StoreRotation } from './store.ts';
+import { applyLedger, lockWallet, tryLockWallet, type Wallet } from './ledger.ts';
+import {
+  assertExpectedPrice,
+  currentRotation,
+  ExpectedPrice,
+  priceOffer,
+  type StoreRotation,
+} from './store.ts';
 import { grantCosmetic, readWallet } from './wallet.ts';
-import { checkWishlistAlert, removeFromWishlist } from './wishlist.ts';
+import { checkWishlistAlert, removeObtainedFromWishlist } from './wishlist.ts';
 
 // -----------------------------------------------------------------------------
 // Policy
@@ -89,9 +96,34 @@ export type GiftRefusal =
   | 'gift_recipient_unavailable'
   | 'gift_inbox_full'
   | 'gift_already_owned'
-  | 'gift_already_pending';
+  | 'gift_already_pending'
+  | 'gift_refund_pending';
+
+const GEM_REFUND_PENDING_MESSAGE =
+  'Gem gifts are paused while one of your Gem purchases has a refund request open.';
+
+/**
+ * Whether the player has a real-money refund request still in play. Gems
+ * spent on a gift survive a chargeback (the friend keeps the item), so Gem
+ * gifts wait until the request is settled.
+ */
+async function hasOpenGemRefund(db: DbOrTx, userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: refunds.id })
+    .from(refunds)
+    .where(
+      and(
+        eq(refunds.userId, userId),
+        eq(refunds.kind, 'real_money'),
+        inArray(refunds.status, ['pending', 'processing', 'manual']),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
+}
 
 const REFUSAL_STATUS: Readonly<Record<GiftRefusal, number>> = {
+  gift_refund_pending: 409,
   gift_account_required: 403,
   gift_account_too_new: 403,
   gift_daily_limit: 429,
@@ -455,7 +487,9 @@ async function lockGift(tx: Tx, giftId: string): Promise<GiftRow | null> {
     .where(eq(gifts.id, giftId));
   if (!peek) return null;
   const parties = [peek.senderId, peek.recipientId].filter((x): x is string => !!x).sort();
-  for (const id of parties) await lockWallet(tx, id);
+  // The other party's account may be deleted while we wait; the gift row
+  // read below then already shows them as gone.
+  for (const id of parties) await tryLockWallet(tx, id);
   const [row] = await tx.select().from(gifts).where(eq(gifts.id, giftId)).for('update');
   return row ?? null;
 }
@@ -516,7 +550,7 @@ async function openLocked(tx: Tx, ctx: AppContext, gift: GiftRow, auto: boolean)
     return { status: 'returned', granted: [], refunded };
   }
   for (const id of items) await grantCosmetic(tx, recipientId, id, 'gift');
-  await removeFromWishlist(tx, recipientId, [gift.offerId, ...items]);
+  await removeObtainedFromWishlist(tx, recipientId, [gift.offerId, ...items]);
   await tx
     .update(gifts)
     .set({ status: 'opened', autoAccepted: auto, resolvedAt: ctx.now() })
@@ -581,6 +615,8 @@ export interface SendGiftInput {
   offerId: string;
   currency?: 'gumballs' | 'gems' | undefined;
   message?: string | undefined;
+  /** The price the picker showed; any other charge is refused with 409 `price_changed`. */
+  expectedPrice?: { currency: 'gumballs' | 'gems'; amount: number } | undefined;
 }
 
 /** Answer of `POST /gifts`; a retried request gets the same gift with `replayed: true`. */
@@ -616,12 +652,23 @@ export async function sendGift(
       .from(gifts)
       .where(and(eq(gifts.senderId, senderId), eq(gifts.idempotencyKey, key)));
     if (!row) return null;
-    if (row.recipientId !== input.recipientId || row.offerId !== input.offerId)
+    const sameMessage =
+      (input.message === undefined ? null : (filterChat(input.message)?.text ?? null)) === row.message;
+    if (
+      row.recipientId !== input.recipientId ||
+      row.offerId !== input.offerId ||
+      (input.currency !== undefined && input.currency !== row.currency) ||
+      !sameMessage
+    )
       throw conflict('idempotency_key_reused', 'This Idempotency-Key was already used for a different gift');
     const [view] = await giftViews(ctx, db, [row]);
     return { gift: view!, wallet: await readWallet(db, senderId), replayed: true };
   };
   if (senderId === input.recipientId) throw badRequest('gift_self', 'Gifts are for friends!');
+  // A retry of a gift that already went through answers with it, even if a
+  // mute (or anything else checked below) started in between.
+  const early = await replay(ctx.db);
+  if (early) return early;
 
   let message: { text: string; masked?: string } | null = null;
   if (input.message !== undefined) {
@@ -632,6 +679,9 @@ export async function sendGift(
     message = filterChat(input.message);
   }
 
+  // Outside the transaction: inserting a new day's rotation row after the
+  // wallet locks inverts the lock order of a store purchase at midnight.
+  const rotation = await currentRotation(ctx.db, ctx.catalog, ctx.now());
   try {
     const result = await ctx.db.transaction(async (tx) => {
       const existing = await replay(tx);
@@ -654,13 +704,15 @@ export async function sendGift(
       const facts = (
         await recipientFacts(tx, senderId, [input.recipientId], candidateItems(ctx, input.offerId), now)
       ).get(input.recipientId)!;
-      const rotation = await currentRotation(tx, ctx.catalog, now);
       const quote = quoteFor(ctx, rotation, input.offerId, facts.owned);
       if (!quote) throw new ApiError(404, 'offer_not_available', 'That item is not sold in the store');
       if (input.currency && input.currency !== quote.price.currency)
         throw badRequest('currency_mismatch', `This item costs ${quote.price.currency}`);
       const verdict = giftEligibility(sender, facts, quote.items, now);
       if (!verdict.eligible) throw refusalError(verdict);
+      if (quote.price.currency === 'gems' && (await hasOpenGemRefund(tx, senderId)))
+        throw refusalError(refuse('gift_refund_pending', GEM_REFUND_PENDING_MESSAGE));
+      assertExpectedPrice(input.expectedPrice, quote.price);
 
       const id = randomUUID();
       await tx.insert(gifts).values({
@@ -851,6 +903,53 @@ export async function settleExpiredGifts(
 // Erasure and staff reversal
 // -----------------------------------------------------------------------------
 
+/** Thrown inside the savepoint when a sender appeared that was not locked. */
+class NewSenders extends Error {}
+
+/**
+ * Locks the deleted account's wallet and the wallets of everyone with a
+ * pending gift to it, all in id order like every gift operation.
+ *
+ * SECURITY: holding the account's own profile lock makes a gift sent to it
+ * right now either land before the sender list is read (and be refunded) or
+ * wait and fail once the profile is gone; never slip through unrefunded.
+ *
+ * The sender list is read before the locks, so a gift committed in between
+ * adds a sender we do not hold. Locking that sender now would break the id
+ * order (and could deadlock against its next gift), so the attempt runs in a
+ * savepoint: rolling it back releases its locks, and the next attempt takes
+ * the larger set in order. Once the account's own lock is held no new gift
+ * can reach it, so the set is final after at most a few rounds.
+ */
+async function lockErasureParties(tx: Tx, userId: string): Promise<void> {
+  const pendingSenders = async (db: DbOrTx): Promise<string[]> =>
+    (
+      await db
+        .selectDistinct({ id: gifts.senderId })
+        .from(gifts)
+        .where(and(eq(gifts.recipientId, userId), eq(gifts.status, 'pending')))
+    ).flatMap((s) => (s.id ? [s.id] : []));
+  let parties = new Set([userId, ...(await pendingSenders(tx))]);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await tx.transaction(async (sp) => {
+        for (const id of [...parties].sort()) await tryLockWallet(sp, id);
+        const missing = (await pendingSenders(sp)).filter((id) => !parties.has(id));
+        if (missing.length > 0) {
+          parties = new Set([...parties, ...missing]);
+          throw new NewSenders();
+        }
+      });
+    } catch (err) {
+      if (!(err instanceof NewSenders)) throw err;
+      if (attempt < 5) continue;
+      throw new ApiError(503, 'busy', 'Gifts to this account keep arriving; try again in a moment');
+    }
+    // A released savepoint's locks stay held until the transaction ends.
+    return;
+  }
+}
+
 /** Gifts an account deletion settled, for notifications after it commits. */
 export interface ErasedGifts {
   returned: Pick<GiftRow, 'id' | 'senderId' | 'recipientId' | 'offerId'>[];
@@ -867,15 +966,7 @@ export interface ErasedGifts {
  * @param userId - The account being deleted.
  */
 export async function settleGiftsOnErasure(tx: Tx, ctx: AppContext, userId: string): Promise<ErasedGifts> {
-  const senders = await tx
-    .selectDistinct({ id: gifts.senderId })
-    .from(gifts)
-    .where(and(eq(gifts.recipientId, userId), eq(gifts.status, 'pending')));
-  // SECURITY: holding the account's own profile lock makes a gift sent to it
-  // right now either land before this read (and be refunded) or wait and fail
-  // once the profile is gone; never slip through unrefunded.
-  const parties = [userId, ...senders.flatMap((s) => (s.id ? [s.id] : []))].sort();
-  for (const id of new Set(parties)) await lockWallet(tx, id);
+  await lockErasureParties(tx, userId);
   const pending = await tx
     .select()
     .from(gifts)
@@ -971,6 +1062,11 @@ export interface GiftInbox {
   sent: GiftView[];
   /** Unopened gifts waiting for the caller. */
   unopened: number;
+  /**
+   * Cursors for `GET /gifts/history` to page further back through settled
+   * received gifts and sent gifts; null when there is nothing older.
+   */
+  nextCursor: { received: string | null; sent: string | null };
   limits: {
     daily: number;
     sentToday: number;
@@ -984,6 +1080,60 @@ export interface GiftInbox {
     autoAcceptDays: number;
     messageMax: number;
   };
+}
+
+/**
+ * One page of settled received gifts or of sent gifts, newest first.
+ *
+ * @param ctx - Shared services.
+ * @param userId - The caller.
+ * @param direction - `received` (unopened ones are listed apart) or `sent`.
+ * @param limit - Page size.
+ * @param before - Cursor from the previous page.
+ */
+async function giftPage(
+  ctx: AppContext,
+  userId: string,
+  direction: 'received' | 'sent',
+  limit: number,
+  before?: PageCursor,
+): Promise<{ rows: GiftRow[]; nextCursor: string | null }> {
+  const fetched = await ctx.db
+    .select()
+    .from(gifts)
+    .where(
+      and(
+        direction === 'received'
+          ? and(eq(gifts.recipientId, userId), sql`${gifts.status} <> 'pending'`)
+          : eq(gifts.senderId, userId),
+        before ? olderThan(gifts.createdAt, gifts.id, before) : undefined,
+      ),
+    )
+    .orderBy(desc(gifts.createdAt), desc(gifts.id))
+    .limit(limit + 1);
+  const rows = fetched.slice(0, limit);
+  const last = rows.at(-1);
+  return { rows, nextCursor: fetched.length > limit && last ? encodeCursor(last.createdAt, last.id) : null };
+}
+
+/**
+ * Older settled received gifts, or older sent gifts (`GET /gifts/history`).
+ *
+ * @param ctx - Shared services.
+ * @param userId - The caller.
+ * @param direction - Which list.
+ * @param before - Cursor from `GET /gifts` or the previous page.
+ * @param limit - Page size.
+ */
+export async function giftHistory(
+  ctx: AppContext,
+  userId: string,
+  direction: 'received' | 'sent',
+  before: PageCursor,
+  limit = 50,
+): Promise<{ gifts: GiftView[]; nextCursor: string | null }> {
+  const page = await giftPage(ctx, userId, direction, limit, before);
+  return { gifts: await giftViews(ctx, ctx.db, page.rows), nextCursor: page.nextCursor };
 }
 
 /**
@@ -1002,20 +1152,17 @@ export async function giftInbox(ctx: AppContext, userId: string, limit = 50): Pr
       .from(gifts)
       .where(and(eq(gifts.recipientId, userId), eq(gifts.status, 'pending')))
       .orderBy(gifts.createdAt),
-    ctx.db
-      .select()
-      .from(gifts)
-      .where(and(eq(gifts.recipientId, userId), sql`${gifts.status} <> 'pending'`))
-      .orderBy(desc(gifts.createdAt))
-      .limit(limit),
-    ctx.db.select().from(gifts).where(eq(gifts.senderId, userId)).orderBy(desc(gifts.createdAt)).limit(limit),
+    giftPage(ctx, userId, 'received', limit),
+    giftPage(ctx, userId, 'sent', limit),
     senderFacts(ctx.db, userId, now),
   ]);
-  const views = await giftViews(ctx, ctx.db, [...pending, ...settledReceived, ...sent]);
+  const views = await giftViews(ctx, ctx.db, [...pending, ...settledReceived.rows, ...sent.rows]);
+  const receivedCount = pending.length + settledReceived.rows.length;
   return {
-    received: views.slice(0, pending.length + settledReceived.length),
-    sent: views.slice(pending.length + settledReceived.length),
+    received: views.slice(0, receivedCount),
+    sent: views.slice(receivedCount),
     unopened: pending.length,
+    nextCursor: { received: settledReceived.nextCursor, sent: sent.nextCursor },
     limits: {
       daily: GIFT_DAILY_LIMIT,
       sentToday: sender?.sentToday ?? 0,
@@ -1131,10 +1278,16 @@ const SendBody = z
     offerId: OfferId,
     currency: z.enum(['gumballs', 'gems']).optional(),
     message: z.string().max(GIFT_MESSAGE_MAX).optional(),
+    expectedPrice: ExpectedPrice.optional(),
   })
   .strict();
 const GiftParams = z.object({ giftId: z.string().uuid() });
 const PickerQuery = z.object({ offerId: OfferId });
+const HistoryQuery = z.object({
+  direction: z.enum(['received', 'sent']),
+  before: CursorParam,
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
 
 /** Routes that move currency, for the `store.enabled` kill switch (`liveops/routes.ts`). */
 export const GIFT_SPEND_ROUTES = ['/gifts', '/gifts/:giftId/decline', '/gifts/:giftId/cancel'] as const;
@@ -1143,6 +1296,7 @@ export const GIFT_SPEND_ROUTES = ['/gifts', '/gifts/:giftId/decline', '/gifts/:g
  * Registers the player gift routes:
  *
  * - `GET /gifts` — both directions, limits and policy (auto-accepts overdue gifts first).
+ * - `GET /gifts/history?direction=received|sent&before=` — older pages of either list.
  * - `GET /gifts/eligibility?offerId=` — the friend picker.
  * - `POST /gifts` (`Idempotency-Key`) `{ recipientId, offerId, currency?, message? }`.
  * - `POST /gifts/:giftId/open` | `/decline` (recipient), `/cancel` (sender).
@@ -1166,6 +1320,12 @@ export function registerGiftRoutes(
       req.log.warn({ err }, 'wish list alert'),
     );
     return inbox;
+  });
+
+  app.get('/gifts/history', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req) => {
+    const auth = await requireUser(ctx, req);
+    const q = parse(HistoryQuery, req.query);
+    return giftHistory(ctx, auth.userId, q.direction, q.before, q.limit);
   });
 
   app.get(

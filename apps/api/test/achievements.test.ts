@@ -247,6 +247,53 @@ describe.each(BACKENDS)('achievements ($name)', (backend) => {
     expect((await verifyLedger(api.ctx.db, u.id)).ok).toBe(true);
   });
 
+  it('counts store purchases toward collections only once they can no longer be refunded', async () => {
+    const u = await api.guest();
+    await api.grant(u.id, 'gumballs', 1_000_000);
+    await api.grant(u.id, 'gems', 1_000_000);
+    const wardrobe = api.ctx.catalog.achievements.find((a) => a.id === 'wardrobe-1')!;
+    const sellable = api.ctx.catalog.cosmetics.filter((c) => c.source === 'store' && c.price);
+    const starters = api.ctx.catalog.cosmetics.filter((c) => c.source === 'default').length;
+    const needed = wardrobe.target - starters;
+    expect(needed).toBeGreaterThan(1);
+    // All but the last item came from somewhere a refund cannot reach.
+    await api.ctx.db.transaction(async (tx) => {
+      for (const c of sellable.slice(0, needed - 1)) await grantCosmetic(tx, u.id, c.id, 'event');
+    });
+    const last = sellable[needed - 1]!;
+    const bought = await api.req('POST', '/purchase', {
+      token: u.accessToken,
+      headers: { 'idempotency-key': `wardrobe-${u.id}` },
+      body: { offerId: last.id },
+    });
+    expect(bought.statusCode, bought.body).toBe(200);
+    expect((await view(u)).newlyUnlocked.map((a) => a.id)).not.toContain('wardrobe-1');
+
+    // Refunding inside the window leaves nothing behind to keep.
+    const refund = await api.req('POST', `/purchases/${bought.json().purchaseId}/refund`, {
+      token: u.accessToken,
+    });
+    expect(refund.statusCode, refund.body).toBe(200);
+    expect((await view(u)).achievements.find((a) => a.id === 'wardrobe-1')).toMatchObject({
+      unlocked: false,
+    });
+
+    // Bought again and kept past the window, it counts.
+    const again = await api.req('POST', '/purchase', {
+      token: u.accessToken,
+      headers: { 'idempotency-key': `wardrobe-again-${u.id}` },
+      body: { offerId: last.id },
+    });
+    expect(again.statusCode, again.body).toBe(200);
+    api.clock.advance(8 * 86_400_000);
+    const relog = await api.req('POST', '/auth/guest', {
+      body: { deviceToken: u.deviceToken },
+      ip: '10.99.1.1',
+    });
+    u.accessToken = relog.json().accessToken;
+    expect((await view(u)).newlyUnlocked.map((a) => a.id)).toContain('wardrobe-1');
+  });
+
   it('reports per-category tallies', async () => {
     const u = await api.guest();
     await api.postMatch(show(u, 1));

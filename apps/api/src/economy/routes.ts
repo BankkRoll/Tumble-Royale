@@ -11,7 +11,7 @@
  * Everything sold is cosmetic; there is no code path that sells gameplay effects.
  */
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, lt } from 'drizzle-orm';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.ts';
@@ -27,7 +27,7 @@ import {
   notFound,
   parse,
 } from '../http/errors.ts';
-import { applyLedger, readGemDebt, type Wallet } from './ledger.ts';
+import { applyLedger, lockWallet, readGemDebt, type Wallet } from './ledger.ts';
 import { applyPaymentEvent, creditGemPurchase, forgiveGemDebt, notifyWallets } from './reversals.ts';
 import { recordAudit } from '../staff/audit.ts';
 import { requireStaff } from '../staff/auth.ts';
@@ -36,15 +36,28 @@ import { registerRefundRoutes } from './refunds.ts';
 import { registerShardShopRoutes } from './shards.ts';
 import { registerGiftAdminRoutes } from './giftAdmin.ts';
 import { registerGiftRoutes } from './gifts.ts';
-import { checkWishlistAlert, registerWishlistRoutes, removeFromWishlist } from './wishlist.ts';
+import { checkWishlistAlert, registerWishlistRoutes, removeObtainedFromWishlist } from './wishlist.ts';
 import { grantCosmetic, readWallet } from './wallet.ts';
-import { bundleQuotes, currentRotation, priceOffer, storeCatalog } from './store.ts';
+import {
+  assertExpectedPrice,
+  bundleQuotes,
+  currentRotation,
+  ExpectedPrice,
+  priceOffer,
+  storeCatalog,
+} from './store.ts';
 
 const PurchaseBody = z.object({
   offerId: z.string().min(3).max(64),
   currency: z.enum(['gumballs', 'gems']).optional(),
+  expectedPrice: ExpectedPrice.optional(),
 });
 const CheckoutBody = z.object({ packId: z.string().min(1).max(64) });
+const WalletQuery = z.object({
+  /** Ledger row id from the previous page's `nextCursor`. */
+  before: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
 const KeySchema = z
   .string()
   .regex(/^[A-Za-z0-9_\-:.]{8,128}$/, 'Idempotency-Key must be 8–128 URL-safe characters');
@@ -82,7 +95,8 @@ function replay(row: typeof purchases.$inferSelect, kind: string, itemId: string
  * Buys a store item (at today's shelf price or its list price) or a bundle (the
  * items still missing, discounted) with Gumballs or Gems.
  *
- * @throws {ApiError} 404 offer unavailable, 409 already owned / key reuse, 402 insufficient funds.
+ * @throws {ApiError} 404 offer unavailable, 409 already owned / key reuse /
+ *   `price_changed`, 402 insufficient funds.
  */
 export async function purchaseOffer(
   ctx: AppContext,
@@ -90,6 +104,7 @@ export async function purchaseOffer(
   key: string,
   offerId: string,
   currency: 'gumballs' | 'gems' | undefined,
+  expectedPrice?: { currency: 'gumballs' | 'gems'; amount: number },
 ): Promise<PurchaseResult> {
   const findExisting = async (db: DbOrTx) =>
     (
@@ -98,11 +113,17 @@ export async function purchaseOffer(
         .from(purchases)
         .where(and(eq(purchases.userId, userId), eq(purchases.idempotencyKey, key)))
     )[0];
+  // NOTE: outside the transaction. Inside, the insert of a new day's rotation
+  // row would come after another transaction's wallet lock in one and before
+  // it in the other (gifts lock wallets first): a lock-order inversion.
+  const rotation = await currentRotation(ctx.db, ctx.catalog, ctx.now());
   try {
     return await ctx.db.transaction(async (tx) => {
+      // SECURITY: the wallet lock comes first so ownership is read under it;
+      // otherwise two purchases with different keys both see "not owned".
+      await lockWallet(tx, userId);
       const existing = await findExisting(tx);
       if (existing) return replay(existing, 'cosmetic', offerId);
-      const rotation = await currentRotation(tx, ctx.catalog, ctx.now());
       const owned = new Set(
         (
           await tx
@@ -119,6 +140,7 @@ export async function purchaseOffer(
       const grants = offer.kind === 'bundle' ? offer.quote.missing : [offer.item.id];
       if (grants.length === 0 || (offer.kind === 'item' && owned.has(offerId)))
         throw conflict('already_owned', 'You already own this item');
+      assertExpectedPrice(expectedPrice, offer.price);
 
       const purchaseId = randomUUID();
       await tx.insert(purchases).values({
@@ -139,7 +161,7 @@ export async function purchaseOffer(
         ref: purchaseId,
       });
       for (const id of grants) await grantCosmetic(tx, userId, id, 'store');
-      await removeFromWishlist(tx, userId, [offerId, ...grants]);
+      await removeObtainedFromWishlist(tx, userId, [offerId, ...grants]);
       const result: PurchaseResult = {
         purchaseId,
         offerId,
@@ -261,24 +283,41 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
     const auth = await requireUser(ctx, req);
     const key = idempotencyKey(req);
     const body = parse(PurchaseBody, req.body);
-    const result = await purchaseOffer(ctx, auth.userId, key, body.offerId, body.currency);
+    const result = await purchaseOffer(
+      ctx,
+      auth.userId,
+      key,
+      body.offerId,
+      body.currency,
+      body.expectedPrice,
+    );
     if (!result.replayed) await ctx.notifier.notifyUser(auth.userId, { type: 'wallet', ...result.wallet });
     return result;
   });
 
   app.get('/wallet', async (req) => {
     const auth = await requireUser(ctx, req);
-    const recent = await ctx.db
+    const { before, limit } = parse(WalletQuery, req.query);
+    const fetched = await ctx.db
       .select()
       .from(currenciesLedger)
-      .where(eq(currenciesLedger.userId, auth.userId))
+      .where(
+        and(
+          eq(currenciesLedger.userId, auth.userId),
+          before !== undefined ? lt(currenciesLedger.id, before) : undefined,
+        ),
+      )
       .orderBy(desc(currenciesLedger.id))
-      .limit(50);
+      .limit(limit + 1);
+    const recent = fetched.slice(0, limit);
     return {
       wallet: await readWallet(ctx.db, auth.userId),
       /** Gems owed after a refund or chargeback; Gem checkout is paused while positive. */
       gemDebt: await readGemDebt(ctx.db, auth.userId),
+      /** Pass as `before` for the next (older) page; null on the last page. */
+      nextCursor: fetched.length > limit ? String(recent.at(-1)!.id) : null,
       recent: recent.map((r) => ({
+        id: r.id,
         currency: r.currency,
         delta: r.delta,
         balanceAfter: r.balanceAfter,
@@ -325,27 +364,34 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
           'This Idempotency-Key was already used for a different request',
         );
       }
-      return { ...(existing.response as object), status: existing.status, replayed: true };
+      // A first attempt whose provider call failed left no session behind;
+      // creating it again is safe because the provider's own idempotency key
+      // (`checkout:<purchaseId>`) returns the same session if one did exist.
+      const unfinished = !existing.response && !existing.providerRef && existing.status === 'pending';
+      if (!unfinished) return { ...(existing.response as object), status: existing.status, replayed: true };
     }
     await assertMayBuyGems(ctx, auth.userId);
 
-    const purchaseId = randomUUID();
-    try {
-      await ctx.db.insert(purchases).values({
-        id: purchaseId,
-        userId: auth.userId,
-        idempotencyKey: key,
-        kind: 'gem_pack',
-        itemId: pack.id,
-        currency: pack.currency,
-        price: pack.priceCents,
-        status: 'pending',
-        provider: ctx.payments.id,
-      });
-    } catch (err) {
-      if (isUniqueViolation(err))
-        throw conflict('purchase_in_progress', 'A checkout with this key is already being created');
-      throw err;
+    const purchaseId = existing?.id ?? randomUUID();
+    if (!existing) {
+      try {
+        await ctx.db.insert(purchases).values({
+          id: purchaseId,
+          userId: auth.userId,
+          idempotencyKey: key,
+          kind: 'gem_pack',
+          itemId: pack.id,
+          currency: pack.currency,
+          price: pack.priceCents,
+          gems: pack.gems,
+          status: 'pending',
+          provider: ctx.payments.id,
+        });
+      } catch (err) {
+        if (isUniqueViolation(err))
+          throw conflict('purchase_in_progress', 'A checkout with this key is already being created');
+        throw err;
+      }
     }
     const base = ctx.config.publicWebUrl;
     const session = await ctx.payments.createCheckout({
@@ -358,7 +404,7 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
     const response = {
       purchaseId,
       packId: pack.id,
-      gems: pack.gems,
+      gems: existing?.gems ?? pack.gems,
       checkoutUrl: session.url,
       provider: ctx.payments.id,
     };
@@ -367,7 +413,11 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
       .set({ providerRef: session.providerRef, response })
       .where(eq(purchases.id, purchaseId));
     if (session.completed) await completeGemPurchase(ctx, purchaseId, session.providerRef);
-    return { ...response, status: session.completed ? 'completed' : 'pending', replayed: false };
+    return {
+      ...response,
+      status: session.completed ? 'completed' : 'pending',
+      replayed: existing !== undefined,
+    };
   });
 
   registerShardShopRoutes(app, ctx, idempotencyKey);

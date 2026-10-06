@@ -5,6 +5,8 @@ import { and, asc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.ts';
+import type { DbOrTx } from '../db/client.ts';
+import { lockWallet } from '../economy/ledger.ts';
 import { authIdentities, inventoryItems, loadouts, profiles, users } from '../db/schema.ts';
 import { requireUser } from '../http/auth.ts';
 import { conflict, notFound, parse } from '../http/errors.ts';
@@ -29,9 +31,15 @@ const IndexParam = z.object({
 });
 const PutLoadout = z.object({ name: z.string().trim().min(1).max(24).optional(), items: LoadoutItemsSchema });
 
-/** Owned cosmetic ids for a user. */
-export async function ownedSet(ctx: AppContext, userId: string): Promise<Set<string>> {
-  const rows = await ctx.db
+/**
+ * Owned cosmetic ids for a user.
+ *
+ * @param ctx - Shared services.
+ * @param userId - Owner.
+ * @param db - Read inside this transaction instead of the pool.
+ */
+export async function ownedSet(ctx: AppContext, userId: string, db: DbOrTx = ctx.db): Promise<Set<string>> {
+  const rows = await db
     .select({ id: inventoryItems.cosmeticId })
     .from(inventoryItems)
     .where(eq(inventoryItems.userId, userId));
@@ -151,16 +159,22 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: AppContext): vo
     const auth = await requireUser(ctx, req);
     const { index } = parse(IndexParam, req.params);
     const body = parse(PutLoadout, req.body);
-    validateLoadout(body.items, ctx.cosmetics, await ownedSet(ctx, auth.userId));
     const name = body.name ?? `Loadout ${index + 1}`;
     const now = ctx.now();
-    await ctx.db
-      .insert(loadouts)
-      .values({ userId: auth.userId, slotIndex: index, name, items: body.items, updatedAt: now })
-      .onConflictDoUpdate({
-        target: [loadouts.userId, loadouts.slotIndex],
-        set: { name, items: body.items, updatedAt: now },
-      });
+    await ctx.db.transaction(async (tx) => {
+      // Every revoke (refund, gift reversal, admin) takes this lock before it
+      // removes an item and strips it from saved loadouts, so a save cannot
+      // validate against an item that a concurrent revoke is taking away.
+      await lockWallet(tx, auth.userId);
+      validateLoadout(body.items, ctx.cosmetics, await ownedSet(ctx, auth.userId, tx));
+      await tx
+        .insert(loadouts)
+        .values({ userId: auth.userId, slotIndex: index, name, items: body.items, updatedAt: now })
+        .onConflictDoUpdate({
+          target: [loadouts.userId, loadouts.slotIndex],
+          set: { name, items: body.items, updatedAt: now },
+        });
+    });
     return { index, name, items: body.items };
   });
 

@@ -38,6 +38,7 @@ import {
   liveOpsSnapshot,
   MAINTENANCE_FLAG_KEY,
   maintenanceStatus,
+  refuseDuringMaintenance,
   requireFlag,
   scheduledPlaylists,
 } from './state.ts';
@@ -80,7 +81,10 @@ const ErrorsTopQuery = z.object({
   source: z.enum(['client', 'server']).default('client'),
 });
 
-/** Routes that spend or refund currency or start a payment; `store.enabled` off closes them all. */
+/**
+ * Routes that spend or refund currency or start a payment; a maintenance
+ * window or `store.enabled` off closes them all.
+ */
 export const STORE_SPEND_ROUTES: ReadonlySet<string> = new Set([
   '/purchase',
   '/purchases/:purchaseId/refund',
@@ -140,8 +144,10 @@ export function registerLiveOpsRoutes(app: FastifyInstance, ctx: AppContext): vo
   // One hook instead of a check in each purchase route, so a new spend route only needs adding here.
   // Payment webhooks are deliberately absent: money already taken must still be credited.
   app.addHook('onRequest', async (req) => {
-    if (req.method === 'POST' && STORE_SPEND_ROUTES.has(req.routeOptions.url ?? ''))
+    if (req.method === 'POST' && STORE_SPEND_ROUTES.has(req.routeOptions.url ?? '')) {
+      await refuseDuringMaintenance(ctx);
       await requireFlag(ctx, 'store.enabled', 'The store is closed for a moment. Try again soon!');
+    }
   });
 
   // --- Public ------------------------------------------------------------------

@@ -103,6 +103,21 @@ a purchase there could vanish with the device and could never be refunded to
 anyone. `POST /gems/checkout` answers guests with **403 `account_required`**
 and the client opens the link-account dialog instead.
 
+- **What a checkout credits is fixed at checkout.** The purchase row records
+  the pack's price and Gems when the session is created; a later catalog
+  change never alters what that payment credits or what a refund takes back.
+- **Completion is checked against the purchase.** A `checkout.session.completed`
+  is credited only when its session id, buyer (`metadata.userId`), amount and
+  currency match the stored purchase. Anything else credits nothing, leaves
+  the purchase pending and records a `payments.checkout_mismatch` event for
+  support.
+- **Retrying a failed checkout.** `POST /gems/checkout` is idempotent per
+  `Idempotency-Key`. If the provider call failed the first time (no session
+  was stored), the same key creates the session again for the same purchase;
+  Stripe's own idempotency key (`checkout:<purchaseId>`) makes that safe.
+  The client sends one checkout at a time: pack buttons stay disabled, with
+  a spinner, until the answer arrives.
+
 ### 3.2 Refunds and chargebacks
 
 Stripe tells the API about money moving back through signed webhooks
@@ -131,8 +146,14 @@ the implementation; the policy is:
   Cosmetics bought with reversed Gems are kept.
 - **Ordering.** A refund or dispute that arrives before the checkout
   completion is stored and applied the moment the completion credits the
-  pack. Events for unknown sessions or charges get a 200 so Stripe stops
-  retrying them.
+  pack. Every event of one PaymentIntent runs under a transaction-scoped
+  advisory lock on that PaymentIntent, taken before any row lock, so a refund
+  racing the completion can never be lost between them. Events for unknown
+  sessions or charges get a 200 so Stripe stops retrying them.
+- **Disputes close refund requests.** When a payment is disputed or charged
+  back, an open (`pending` or `failed`) refund request for it is denied with
+  that reason, and approving a request for a disputed payment answers
+  **409 `refund_payment_reversed`**: the bank is already returning the money.
 - **Failed refunds** (Stripe lowering `amount_refunded` again) are not
   re-credited automatically; support restores those Gems with an adjustment.
 - An expired session (`checkout.session.expired`) or a declined delayed payment
@@ -143,8 +164,22 @@ the implementation; the policy is:
 
 ### 3.3 Refunds
 
+**Buying.** `POST /purchase` charges today's price. The client sends the
+price it showed in the confirmation (`expectedPrice: { currency, amount }`);
+if the shelves rotated meanwhile, or a bundle got cheaper because the player
+came to own part of it, the API answers **409 `price_changed`** with the new
+quote in `details.price` and charges nothing, and the client refreshes the
+store and explains. The open store refreshes itself when the daily or weekly
+shelves rotate. Purchases of one player run under their wallet lock from the
+first statement, so two purchases of the same item with different
+idempotency keys charge once (the second gets `already_owned`). Every route
+that spends, refunds or starts a payment (store, Gem checkout, Crown Shard
+shop, pass premium, gifts, refunds) answers **503 `maintenance`** during a
+maintenance window and closes with `store.enabled`.
+
 `GET /purchases` lists a player's completed purchases with each one's refund
-and whether it can be refunded now, and why not. `POST
+and whether it can be refunded now, and why not, newest first, 50 at a time
+(`?before=<nextCursor>` for older pages). `POST
 /purchases/:purchaseId/refund` does whichever refund the purchase allows.
 `apps/api/src/economy/refunds.ts` holds the policy as one pure function.
 
@@ -171,8 +206,13 @@ and whether it can be refunded now, and why not. `POST
   repeated grant re-sources the inventory row, and refunds only remove copies
   still held from the store. The price still comes back in full.
 - **Once.** One refund per purchase (`refunds.purchase_id` is unique) under
-  the buyer's wallet lock: a double or concurrent submit returns the first
-  refund with `replayed: true`. A denied request cannot be filed again.
+  the purchase row's lock and then the buyer's wallet lock (the order the
+  Stripe webhook takes them in): a double or concurrent submit returns the
+  first refund with `replayed: true`. A denied request cannot be filed again.
+- **Collections wait for the window.** Store purchases still inside their
+  7-day refund window do not count toward "cosmetics owned" achievements;
+  they count once the window has passed. Otherwise buying a bundle, collecting
+  the achievement's rewards and refunding the bundle would keep them for free.
 - **Gem packs.** A request (with the player's reason) waits in the admin
   console's **Refunds** queue and `pnpm admin refunds`. Admins approve
   (Stripe refund of the whole payment, or `manual` without a Stripe key);
@@ -205,9 +245,14 @@ function; the API enforces every rule, the client only shows its answers.
 | Item not already waiting in an unopened gift  | —                        | `gift_already_pending` (409)        |
 | Unopened gifts per recipient                  | 30                       | `gift_inbox_full` (409)             |
 | Optional note                                 | ≤ 80 chars, chat filter  | `gift_message_muted` (403) if muted |
+| No open Gem pack refund request (Gem gifts)   | —                        | `gift_refund_pending` (409)         |
 
 Refusals that lift on their own carry `retryAt`. A guest may **receive**
-gifts. A chat-muted sender may still gift, without a note.
+gifts. A chat-muted sender may still gift, without a note. Like a purchase,
+`POST /gifts` takes the `expectedPrice` the picker showed and answers **409
+`price_changed`** with the new quote if it moved. Gem gifts wait while the
+sender has a real-money refund request `pending`, `processing` or `manual`:
+Gems spent on a gift survive a chargeback, since the friend keeps the item.
 
 - **Money.** Sending charges the sender with one `gift` ledger row, ref
   `gift:<giftId>`, in the same transaction that files the gift. The recipient
@@ -216,7 +261,9 @@ gifts. A chat-muted sender may still gift, without a note.
   the same ref, so a gift can be refunded at most once. Gems coming back
   repay Gem debt first, like any Gem credit.
 - **Once, even concurrently.** `POST /gifts` takes an `Idempotency-Key`; a
-  repeat (even a concurrent one) replays the first gift. Every gift operation
+  repeat (even a concurrent one, even after a chat mute) replays the first
+  gift, and the same key with a different recipient, offer, currency or note
+  is refused as `idempotency_key_reused`. Every gift operation
   locks both players' profiles in id order before deciding, so two friends
   gifting the same item to one player at once get one gift and one
   `gift_already_pending`, and a decline racing a cancel settles once.
@@ -255,7 +302,11 @@ player, gets the same `wishlist_hidden` answer. A friend's profile card shows
 their list with a Gift button per entry. When a wished-for item is on the
 day's shelves, the player is told once per store rotation (the first time
 their client asks for the store, the list or their gifts that UTC day),
-unless they switched alerts off. Buying or being gifted an entry removes it.
+unless they switched alerts off. Buying or being gifted an entry removes it,
+and a wished-for bundle leaves the list once the player owns every item in
+it, however they came by them. `GET /gifts` returns the newest 50 settled
+gifts each way with `nextCursor`; `GET /gifts/history?direction=&before=`
+pages further back.
 
 ## 4. Crown Shard shop
 

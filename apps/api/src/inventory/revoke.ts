@@ -11,6 +11,7 @@ import type { LoadoutItems } from '../catalog.ts';
 import type { AppContext } from '../context.ts';
 import type { DbOrTx } from '../db/client.ts';
 import { inventoryItems, loadouts } from '../db/schema.ts';
+import { lockWallet } from '../economy/ledger.ts';
 
 const LOADOUT_SINGLE_SLOTS = [
   'pattern',
@@ -83,6 +84,8 @@ export async function revokeCosmetic(
   cosmeticId: string,
   onlySource?: string,
 ): Promise<RevokedCosmetic | null> {
+  // Serialises with a loadout save, which validates ownership under the same lock.
+  await lockWallet(tx, userId);
   const removed = await tx
     .delete(inventoryItems)
     .where(

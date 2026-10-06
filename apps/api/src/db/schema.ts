@@ -116,6 +116,8 @@ export const profiles = pgTable(
      */
     gemDebt: integer('gem_debt').notNull().default(0),
     activeLoadout: integer('active_loadout').notNull().default(0),
+    /** When the one-time Practice Island reward was granted; null until then. */
+    tutorialGrantedAt: ts('tutorial_granted_at'),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
   (t) => [uniqueIndex('profiles_name_tag_uq').on(sql`lower(${t.displayName})`, t.tag)],
@@ -245,6 +247,12 @@ export const purchases = pgTable(
     itemId: text('item_id').notNull(),
     currency: text('currency').notNull(),
     price: integer('price').notNull(),
+    /**
+     * Gem packs: the Gems the pack held at checkout, so a later catalog change
+     * never alters what a paid checkout credits or a refund takes back.
+     * Null on older rows and non-pack purchases (the catalog value applies).
+     */
+    gems: integer('gems'),
     status: text('status').notNull(),
     provider: text('provider'),
     providerRef: text('provider_ref'),

@@ -100,7 +100,10 @@ export function registerProgressionRoutes(app: FastifyInstance, ctx: AppContext)
     const result = await ctx.db.transaction(async (tx) => {
       const unlocked = await unlockAchievements(tx, ctx.catalog, auth.userId, ctx.now());
       if (unlocked.xp > 0) await addXp(tx, ctx.catalog, auth.userId, unlocked.xp);
-      return { ...(await achievementsView(tx, ctx.catalog, auth.userId)), newlyUnlocked: unlocked.unlocks };
+      return {
+        ...(await achievementsView(tx, ctx.catalog, auth.userId, ctx.now())),
+        newlyUnlocked: unlocked.unlocks,
+      };
     });
     await notifyUnlocks(ctx, auth.userId, result.newlyUnlocked);
     return result;

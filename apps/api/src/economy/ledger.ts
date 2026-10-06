@@ -117,6 +117,24 @@ export async function lockWallet(tx: DbOrTx, userId: string): Promise<Wallet> {
   return { gumballs, gems, crownShards };
 }
 
+/**
+ * Locks the profile row when it still exists. For locks taken on behalf of
+ * another player (a gift's other party) whose account may be deleted while
+ * this transaction waits for the lock.
+ *
+ * @param tx - Open transaction.
+ * @param userId - Whose wallet.
+ * @returns False when the profile is gone.
+ */
+export async function tryLockWallet(tx: DbOrTx, userId: string): Promise<boolean> {
+  const rows = await tx
+    .select({ userId: profiles.userId })
+    .from(profiles)
+    .where(eq(profiles.userId, userId))
+    .for('update');
+  return rows.length > 0;
+}
+
 async function isDuplicate(tx: DbOrTx, entry: LedgerEntry): Promise<boolean> {
   const [dup] = await tx
     .select({ id: currenciesLedger.id })

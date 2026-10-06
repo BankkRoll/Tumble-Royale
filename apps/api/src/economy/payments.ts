@@ -71,6 +71,12 @@ export type PaymentEvent =
       /** Checkout session id. */
       providerRef: string;
       paymentIntent: string | null;
+      /** Buyer from the session metadata, checked against the purchase row. */
+      userId?: string | null;
+      /** Amount actually charged, minor units, checked against the purchase row. */
+      amountTotal?: number | null;
+      /** Lower-case ISO currency of {@link amountTotal}. */
+      currency?: string | null;
     }
   | {
       type: 'checkout_expired';
@@ -236,6 +242,9 @@ export class StripePaymentProvider implements PaymentProvider {
           purchaseId: s.metadata?.purchaseId ?? null,
           providerRef: s.id,
           paymentIntent: idOf(s.payment_intent),
+          userId: s.metadata?.userId ?? null,
+          amountTotal: s.amount_total ?? null,
+          currency: s.currency ?? null,
         };
       }
       case 'checkout.session.expired':

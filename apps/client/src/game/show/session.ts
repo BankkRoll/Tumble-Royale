@@ -138,6 +138,17 @@ function spectateStatusOf(status: number | undefined): SpectateStatus | undefine
   return 'playing';
 }
 
+/**
+ * 1-based places from a standings order. The offline sim reports no place
+ * for players still racing, so the spectator roster and director fall back
+ * to where the standings put them.
+ */
+function standingsPlaces(order: readonly number[] | null | undefined): Map<number, number> {
+  const out = new Map<number, number>();
+  order?.forEach((id, i) => out.set(id, i + 1));
+  return out;
+}
+
 /** Short key name for a `KeyboardEvent.code` in hints. */
 function shortKey(code: string | undefined): string {
   return (code ?? '').replace(/^Key|^Digit/, '') || '?';
@@ -1831,7 +1842,9 @@ export abstract class ShowSession {
       rosterPlayers: () => {
         const r = this.round;
         if (!r) return [];
-        const st = this.liveStatus()?.players;
+        const live0 = this.liveStatus();
+        const st = live0?.players;
+        const placeOf = standingsPlaces(live0?.standings);
         return r.start.players.map((p) => {
           const sp = this.players.get(p.id);
           const live = st?.get(p.id);
@@ -1845,7 +1858,7 @@ export abstract class ShowSession {
             isClub: this.isClubMate(p.id),
             team: live?.team ?? p.team,
             status: fateOf(live?.status),
-            place: live?.place ?? 0,
+            place: live?.place || (placeOf.get(p.id) ?? 0),
           };
         });
       },
@@ -1883,6 +1896,7 @@ export abstract class ShowSession {
     const teams = new Map(r.start.players.map((p) => [p.id, p.team]));
     const falls = r.start.round.fallBehavior === 'eliminate';
     const floor = r.start.round.spawn.origin.y - 2;
+    const placeOf = standingsPlaces(st?.standings);
     const out: DirectorPlayer[] = [];
     for (const id of order) {
       if (!teams.has(id)) continue;
@@ -1894,7 +1908,7 @@ export abstract class ShowSession {
       out.push({
         id,
         status: spectateStatusOf(live?.status) ?? 'playing',
-        place: live?.place ?? 0,
+        place: live?.place || (placeOf.get(id) ?? 0),
         progress: live?.progress ?? 0,
         team: live?.team ?? teams.get(id) ?? -1,
         danger,

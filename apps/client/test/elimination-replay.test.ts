@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CharacterState, type SimEvent } from '@tumble/sim';
-import { ui, uiEvents } from '@tumble/ui';
+import { social, ui, uiEvents } from '@tumble/ui';
 import { ReplayClock } from '../src/game/replay/clock.ts';
 import type { CauseObstacle } from '../src/game/replay/elimCause.ts';
 import {
@@ -642,6 +642,50 @@ describe('player', () => {
     tick(0.1);
     expect(ui.getState().elimReplay).toBeNull();
     expect(tracked[0]?.props.outcome).toBe('interrupted');
+  });
+
+  it('leaves chat typing, the chat keys and push-to-talk alone', async () => {
+    await start();
+    for (let i = 0; i < 30; i++) tick(1 / 60);
+    dom.key('keydown', 'Enter');
+    dom.key('keydown', 'KeyT');
+    dom.key('keydown', 'KeyV');
+    expect(ui.getState().elimReplay).not.toBeNull();
+    social.getState().dispatchChat({ type: 'open' });
+    try {
+      dom.key('keydown', 'KeyA');
+      expect(ui.getState().elimReplay).not.toBeNull();
+    } finally {
+      social.getState().dispatchChat({ type: 'close' });
+    }
+    dom.key('keydown', 'KeyA');
+    expect(ui.getState().elimReplay).toBeNull();
+  });
+
+  it('a press on the chat or a control keeps its click; elsewhere it skips', async () => {
+    await start();
+    for (let i = 0; i < 30; i++) tick(1 / 60);
+    Object.assign(window, { setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms) });
+    const press = (onControl: boolean): ReturnType<typeof vi.fn> => {
+      const stopPropagation = vi.fn();
+      const target = { closest: () => (onControl ? {} : null) };
+      (player as unknown as { onPointer: (e: unknown) => void }).onPointer({ target, stopPropagation });
+      return stopPropagation;
+    };
+    expect(press(true)).not.toHaveBeenCalled();
+    expect(ui.getState().elimReplay).not.toBeNull();
+    expect(press(false)).toHaveBeenCalled();
+    expect(ui.getState().elimReplay).toBeNull();
+  });
+
+  it('never skips on the pad View or push-to-talk button', async () => {
+    const pad = fakePad();
+    dom.pads.push(pad);
+    await start();
+    for (let i = 0; i < 40; i++) tick(1 / 60);
+    setButton(pad, 8, true);
+    tick(1 / 60);
+    expect(ui.getState().elimReplay).not.toBeNull();
   });
 
   it('never starts over the open replay viewer, and stops for it', async () => {

@@ -17,7 +17,7 @@
  * online nothing here talks to the server.
  */
 import type { AnalyticsValue } from '@tumble/shared/liveops';
-import { bindUI, ui } from '@tumble/ui';
+import { bindUI, keyboardBusy, ui } from '@tumble/ui';
 import type { EliminationCauseKind } from './elimCause.ts';
 import { playbackRateAt, playbackRealSeconds, type EliminationPlan } from './elimination.ts';
 import type { ReplayData } from './format.ts';
@@ -94,11 +94,29 @@ function swallowClick(e: Event): void {
   e.stopPropagation();
 }
 
+/** Standard-mapping View button: opens quick chat, never a skip. */
+const PAD_VIEW = 8;
+/** Keys that open the chat. */
+const CHAT_KEYS = new Set(['Enter', 'NumpadEnter', 'KeyT']);
+/** Pointer targets that keep their press: the chat and real controls (the replay's own Skip included). */
+const OWN_POINTER_SELECTOR = '.tr-chat, .tr-chat-wrap, button, a, input, textarea, select, [role="button"], [data-nav]';
+
+/**
+ * Keys and buttons that belong to something else while the replay plays:
+ * typing into the chat, opening it, and push-to-talk.
+ */
+function passThroughKey(e: KeyboardEvent): boolean {
+  if (keyboardBusy(e) || CHAT_KEYS.has(e.code)) return true;
+  return ui.getState().settings.controls.keybinds.pushToTalk.includes(e.code);
+}
+
 function anyPadButton(): boolean {
   const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : [];
+  const ptt = ui.getState().settings.controls.padBinds.pushToTalk;
   for (const p of pads) {
     if (!p || !p.connected) continue;
-    for (const b of p.buttons) if (b.pressed) return true;
+    for (let i = 0; i < p.buttons.length; i++)
+      if (p.buttons[i]?.pressed && i !== PAD_VIEW && !ptt.includes(i)) return true;
   }
   return false;
 }
@@ -117,7 +135,7 @@ export class EliminationPlayer implements EliminationReplays {
   private padHeld = true;
   private readonly offs: (() => void)[] = [];
   private readonly onKey = (e: KeyboardEvent): void => {
-    if (!this.run?.shown || e.repeat) return;
+    if (!this.run?.shown || e.repeat || passThroughKey(e)) return;
     // Capture phase: the key must not also reach the show (Esc menu, spectate keys) or menu
     // navigation. Browser shortcuts (F-keys, Ctrl/Cmd/Alt combos) still skip but keep working.
     if (!/^F\d+$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -128,6 +146,8 @@ export class EliminationPlayer implements EliminationReplays {
   };
   private readonly onPointer = (e: PointerEvent): void => {
     if (!this.run?.shown) return;
+    const target = e.target as Element | null;
+    if (typeof target?.closest === 'function' && target.closest(OWN_POINTER_SELECTOR)) return;
     e.stopPropagation();
     if (this.run.age < SKIP_GRACE_S) return;
     this.finish('skipped');

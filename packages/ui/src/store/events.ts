@@ -65,6 +65,24 @@ export interface UIIntents {
    * Gem pack refund (`reason` required) for staff review.
    */
   refundPurchase: { purchaseId: string; reason?: string };
+  /** Profile → Gifts opened or refreshed. */
+  requestGifts: undefined;
+  /** Open or decline a received gift, or cancel a sent one (already confirmed where it costs anything). */
+  giftAction: { giftId: string; action: 'open' | 'decline' | 'cancel' };
+  /** Open the gift sheet for an offer, optionally with a friend picked. */
+  openGiftPicker: { offerId: string; recipientId?: string };
+  /** Send a gift the player confirmed (price shown in the confirm dialog). */
+  sendGift: { offerId: string; recipientId: string; message?: string };
+  /** Profile → Wish list opened or refreshed. */
+  requestWishlist: undefined;
+  /** Put an item (or `bundle:<id>`) on the wish list, or take it off. */
+  wishlistToggle: { itemId: string; on: boolean };
+  /** The whole wish list in its new order. */
+  wishlistReorder: { itemIds: string[] };
+  /** Wish list privacy and store alerts. */
+  wishlistSettings: { visibility?: 'friends' | 'nobody'; alerts?: boolean };
+  /** A friend's profile card wants their wish list. */
+  requestFriendWishlist: { userId: string };
   /** Buy a Gem pack (`StoreData.gemPacks`). */
   buyGems: { packId: string };
   /** Try on several items at once (bundles); an empty list restores the equipped look. */

@@ -266,6 +266,7 @@ export class OnlineAccount {
     lobbyCode?: string;
   } = { status: 'in_menu' };
   private realtimeOpened = false;
+  private realtimeStarted = false;
   /** Account XP and season XP before the current show, for the rewards bars. */
   private snapshotBefore: { xp: number; passXp: number } | null = null;
   /** Party members away in a solo show (from `party_solo`), shown on the party line. */
@@ -1709,6 +1710,8 @@ export class OnlineAccount {
 
   /** Connects the realtime gateway and wires its events. */
   startRealtime(): void {
+    if (this.realtimeStarted) return;
+    this.realtimeStarted = true;
     const rt = this.realtime;
     this.social.bind();
     this.clubs.bind();

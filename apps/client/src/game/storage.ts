@@ -83,6 +83,16 @@ export function removeKey(key: StorageKey): void {
 }
 
 /**
+ * Forgets what belongs to the player who just signed out: their notification
+ * inbox (with its read flags) and the feature flags rolled out to their
+ * account, so the next player on this device never sees either.
+ */
+export function forgetPlayerData(): void {
+  removeKey('notifications');
+  removeKey('flags');
+}
+
+/**
  * Deletes a stored value.
  *
  * @param key - Storage key.

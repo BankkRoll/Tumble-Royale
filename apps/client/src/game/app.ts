@@ -122,7 +122,7 @@ import type { GameContext, SessionEnd } from './show/context.ts';
 import { OfflineShowSession } from './show/offline.ts';
 import { OnlineShowSession, gameServerAvailable } from './show/online.ts';
 import type { ShowSession } from './show/session.ts';
-import { loadJson, saveJson } from './storage.ts';
+import { forgetPlayerData, loadJson, saveJson } from './storage.ts';
 import type { CeremonyPost } from './views/ceremonies.ts';
 import { MenuView } from './views/menuView.ts';
 import { loadTimingsLog } from './round/loadPipeline.ts';
@@ -805,6 +805,7 @@ export class GameApp {
   private async signOut(): Promise<void> {
     await this.api.signOut();
     this.profile.clear();
+    forgetPlayerData();
     window.location.reload();
   }
 

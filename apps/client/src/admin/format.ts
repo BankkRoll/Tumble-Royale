@@ -188,6 +188,7 @@ export type Route =
   | { view: 'players'; id?: string; q?: string }
   | { view: 'sanctions' }
   | { view: 'liveops' }
+  | { view: 'status' }
   | { view: 'refunds'; id?: string }
   | { view: 'clubs'; id?: string; q?: string }
   | { view: 'audit'; target?: string }
@@ -211,6 +212,8 @@ export function parseRoute(hash: string): Route {
       };
     case 'sanctions':
       return { view: 'sanctions' };
+    case 'status':
+      return { view: 'status' };
     case 'liveops':
       return { view: 'liveops' };
     case 'refunds':

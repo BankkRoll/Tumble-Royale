@@ -575,7 +575,8 @@ export const ui = createStore<UIState>()((set, get) => ({
     uiEvents.emit('menuTab', { tab });
   },
   setOverlay: (overlay) => {
-    set({ overlay });
+    // The wallet is a popover of the menu: an overlay opening over it closes it rather than sit under it.
+    set(overlay !== 'none' && get().currencyPanel !== 'none' ? { overlay, currencyPanel: 'none' } : { overlay });
     uiEvents.emit('overlay', { overlay });
   },
   setTouch: (isTouch) => set({ isTouch }),

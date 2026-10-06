@@ -77,6 +77,23 @@ export function menuOwnsInput(
   );
 }
 
+/**
+ * Whether a layer is open above a menu panel that closes on Esc (the news
+ * reader on the menu screen, or the wallet popover), so Esc is that layer's.
+ *
+ * @param s - UI state.
+ * @param from - Where the panel lives: on the menu `screen`, or the `wallet` popover above it.
+ * @example
+ * if (e.code === 'Escape' && !layerAbove(ui.getState(), 'screen')) closeReader();
+ */
+export function layerAbove(
+  s: Pick<UIState, 'dialog' | 'overlay' | 'currencyPanel'>,
+  from: 'screen' | 'wallet',
+): boolean {
+  if (s.dialog !== null || s.overlay !== 'none' || socialOwnsInput()) return true;
+  return from === 'screen' && s.currencyPanel !== 'none';
+}
+
 /** Input types that take no typed text (keys there are still hotkeys). */
 const NON_TEXT_INPUTS = new Set([
   'button',

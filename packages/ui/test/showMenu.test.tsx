@@ -11,6 +11,7 @@ import { INITIAL_CHAT } from '../src/store/chatChannels.ts';
 import {
   isTypingTarget,
   keyboardBusy,
+  layerAbove,
   menuOwnsInput,
   overlayAfterScreenChange,
   watchChoiceVisible,
@@ -165,6 +166,28 @@ describe('input ownership', () => {
       social.getState().openPlayerMenu(null);
       social.getState().openReport(null);
     }
+  });
+
+  it('leaves Esc to a layer above the news reader or the wallet', () => {
+    const none = { dialog: null, overlay: 'none' as const, currencyPanel: 'none' as const };
+    expect(layerAbove(none, 'screen')).toBe(false);
+    expect(layerAbove({ ...none, currencyPanel: 'gems' }, 'screen')).toBe(true);
+    expect(layerAbove({ ...none, currencyPanel: 'gems' }, 'wallet')).toBe(false);
+    expect(layerAbove({ ...none, overlay: 'settings' }, 'wallet')).toBe(true);
+    expect(layerAbove({ ...none, dialog: { id: 'x', kind: 'info', title: 'x' } }, 'wallet')).toBe(true);
+    social.getState().openPlayerMenu({ key: 'u1', name: 'Mallow' });
+    try {
+      expect(layerAbove(none, 'screen')).toBe(true);
+    } finally {
+      social.getState().openPlayerMenu(null);
+    }
+  });
+
+  it('an overlay opening over the wallet closes it instead of sitting under it', () => {
+    ui.getState().setCurrencyPanel('gems');
+    ui.getState().setOverlay('settings');
+    expect(ui.getState().currencyPanel).toBe('none');
+    ui.getState().setOverlay('none');
   });
 });
 

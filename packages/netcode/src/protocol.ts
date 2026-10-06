@@ -10,7 +10,7 @@ import type { BitReader, BitWriter } from './bits.ts';
 import type { Bounds } from './quantize.ts';
 
 /** Bumped on any incompatible wire change; peers with different versions are rejected in the handshake. */
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 /**
  * WebSocket close reason (with code 1000) a client sends when the player chose
@@ -258,6 +258,25 @@ export interface ShowInfoMsg {
   queue: 'casual' | 'ranked' | 'custom' | 'dev';
   /** Estimated rounds (the real count depends on results). */
   roundCount: number;
+  /**
+   * v7: whether this connection may chat into the show. False for a private
+   * show's spectator seat unless the host allowed spectator chat; older
+   * servers leave it out (treated as allowed).
+   */
+  canChat?: boolean;
+}
+
+/**
+ * Client → server: who or where a spectator watches (drives interest
+ * management). Sent when the followed player changes and, with `target` -1,
+ * while a free or overview camera moves (v7, at most 2 Hz).
+ */
+export interface SpectateMsg {
+  t: 'spectate';
+  /** Followed player id, or -1 for a camera not tied to anyone. */
+  target: number;
+  /** v7: world point `[x, y, z]` (whole metres) a camera not tied to anyone looks at. */
+  focus?: [number, number, number];
 }
 
 /** One labelled reward line (the API's `RewardLine`). */
@@ -444,8 +463,7 @@ export type LowFreqMessage =
   | { t: 'loaded'; roundId: string }
   | LoadProgressMsg
   | LoadingStatusMsg
-  /** Client → server: who to spectate (drives interest management). */
-  | { t: 'spectate'; target: number }
+  | SpectateMsg
   /** Server → client: lobby countdown before the show fills with bots. */
   | { t: 'lobby'; humans: number; capacity: number; startsInMs: number }
   /** `startsInMs` (v3, PreShow only): time until round 1 is selected. */

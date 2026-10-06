@@ -10,12 +10,15 @@
  *   … --clients 2000 --procs 8      (fan out across child processes)
  *   … --ramp 20                     (ms between connection opens)
  *   … --lag 150 --jitter 20 --loss 0.02   (simulated round-trip latency, jitter, per-direction loss)
+ *   … --spectators 8 --spectate-after 45  (free-camera spectators join the running show; ticketed,
+ *                                          needs the server's GAME_TICKET_SECRET and a single process)
  */
 import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { conditionerFromParams, type ConditionerOptions } from '@tumble/netcode';
 import { DEFAULT_SHOW_PLAYERS } from '@tumble/shared';
 import { SwarmClient, type ClientStats } from './client.ts';
+import { signSwarmTicket } from './ticket.ts';
 
 interface Args {
   clients: number;
@@ -29,6 +32,12 @@ interface Args {
   lag: number;
   jitter: number;
   loss: number;
+  /** Spectators that join once the show runs (0: none, unticketed run). */
+  spectators: number;
+  /** Seconds after the start before the spectators connect. */
+  spectateAfter: number;
+  /** The game server's `GAME_TICKET_SECRET` (spectator runs). */
+  ticketSecret: string;
 }
 
 function parseArgs(argv: readonly string[]): Args {
@@ -47,6 +56,9 @@ function parseArgs(argv: readonly string[]): Args {
     lag: Number(get('lag', '0')),
     jitter: Number(get('jitter', '0')),
     loss: Number(get('loss', '0')),
+    spectators: Math.max(0, Math.min(64, Number(get('spectators', '0')))),
+    spectateAfter: Math.max(0, Number(get('spectate-after', '45'))),
+    ticketSecret: get('ticket-secret', process.env.GAME_TICKET_SECRET ?? ''),
   };
 }
 
@@ -117,17 +129,53 @@ function merge(parts: readonly Aggregate[]): Aggregate {
 }
 
 /** Runs `count` clients in this process for `duration` seconds. */
-async function runClients(args: Args, count: number, offset: number): Promise<Aggregate> {
+async function runClients(
+  args: Args,
+  count: number,
+  offset: number,
+): Promise<{ players: Aggregate; spectators: Aggregate }> {
   const clients: SwarmClient[] = [];
+  const watchers: SwarmClient[] = [];
   const cond: ConditionerOptions | null = conditionerFromParams(
     new URLSearchParams({ lag: String(args.lag), jitter: String(args.jitter), loss: String(args.loss) }),
   );
+  // Spectators only reach a running show through its match: everyone in the run shares one ticketed match.
+  const mid = `m_swarm${Date.now().toString(36)}`;
+  const ticket = (i: number, role: 'player' | 'spectator'): string | undefined =>
+    args.spectators > 0
+      ? signSwarmTicket(args.ticketSecret, {
+          sub: `swarm-${i}`,
+          mid,
+          role,
+          humans: args.clients,
+          size: Math.max(args.clients, DEFAULT_SHOW_PLAYERS),
+        })
+      : undefined;
+  const startedAt = performance.now();
   for (let i = 0; i < count; i++) {
-    const c = new SwarmClient(args.url, offset + i, cond);
+    const t = ticket(offset + i, 'player');
+    const c = new SwarmClient(args.url, offset + i, cond, t ? { ticket: t } : {});
     c.connect();
     clients.push(c);
     if (args.ramp > 0) await new Promise((r) => setTimeout(r, args.ramp));
   }
+  const spectatorTimer =
+    args.spectators > 0
+      ? setTimeout(
+          () => {
+            for (let i = 0; i < args.spectators; i++) {
+              const index = 10_000 + i;
+              const c = new SwarmClient(args.url, index, cond, {
+                ticket: ticket(index, 'spectator')!,
+                spectator: true,
+              });
+              c.connect();
+              watchers.push(c);
+            }
+          },
+          Math.max(0, args.spectateAfter * 1000 - (performance.now() - startedAt)),
+        )
+      : null;
   // Timers are coarse (≈15 ms on Windows), so step on an accumulator rather than trusting the interval.
   const stepMs = 1000 / 60;
   let next = performance.now();
@@ -136,6 +184,7 @@ async function runClients(args: Args, count: number, offset: number): Promise<Ag
     let n = 0;
     while (t >= next && n < 4) {
       for (const c of clients) c.step();
+      for (const c of watchers) c.step();
       next += stepMs;
       n++;
     }
@@ -143,8 +192,13 @@ async function runClients(args: Args, count: number, offset: number): Promise<Ag
   }, 4);
   await new Promise((r) => setTimeout(r, args.duration * 1000));
   clearInterval(timer);
+  if (spectatorTimer) clearTimeout(spectatorTimer);
   for (const c of clients) c.close();
-  return aggregate(clients.map((c) => c.stats));
+  for (const c of watchers) c.close();
+  return {
+    players: aggregate(clients.map((c) => c.stats)),
+    spectators: aggregate(watchers.map((c) => c.stats)),
+  };
 }
 
 function pct(values: number[], p: number): number {
@@ -153,10 +207,10 @@ function pct(values: number[], p: number): number {
   return s[Math.min(s.length - 1, Math.floor(p * s.length))]!;
 }
 
-function report(a: Aggregate, args: Args): void {
+function report(a: Aggregate, args: Args, title = 'bot-swarm summary'): void {
   const perClientSec = Math.max(1e-6, a.activeSeconds);
   const f1 = (v: number): string => v.toFixed(1);
-  console.log('\n=== bot-swarm summary ===');
+  console.log(`\n=== ${title} ===`);
   console.log(
     `clients        ${a.clients} (welcomed ${a.welcomed}, kicked ${a.kicked}, connects retried ${a.refused}) over ${args.duration}s, ${args.procs} proc(s)`,
   );
@@ -198,8 +252,14 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (args.child) {
     const agg = await runClients(args, args.clients, args.offset);
-    process.send?.(agg);
+    process.send?.(agg.players);
     return;
+  }
+  if (args.spectators > 0 && (args.procs > 1 || !args.ticketSecret)) {
+    console.error(
+      "--spectators needs --procs 1 and the server's GAME_TICKET_SECRET (--ticket-secret or env)",
+    );
+    process.exit(2);
   }
   console.log(`bot-swarm: ${args.clients} clients → ${args.url} for ${args.duration}s`);
   // The server's tick window is rolling: read it while the clients still play, not after they
@@ -210,8 +270,11 @@ async function main(): Promise<void> {
     setTimeout(() => fetchServerMetrics(args.url).then(resolve, () => resolve(null)), captureAt);
   });
   let result: Aggregate;
+  let watched: Aggregate | null = null;
   if (args.procs <= 1) {
-    result = await runClients(args, args.clients, 0);
+    const run = await runClients(args, args.clients, 0);
+    result = run.players;
+    if (args.spectators > 0) watched = run.spectators;
   } else {
     const per = Math.ceil(args.clients / args.procs);
     const self = fileURLToPath(import.meta.url);
@@ -238,6 +301,7 @@ async function main(): Promise<void> {
     result = merge(parts);
   }
   report(result, args);
+  if (watched) report(watched, args, `spectators (joined after ${args.spectateAfter}s)`);
   await printServerMetrics(args.url, captured);
   process.exit(0);
 }

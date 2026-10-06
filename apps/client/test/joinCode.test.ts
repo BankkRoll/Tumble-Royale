@@ -4,8 +4,13 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError, type ApiParty, type ApiPartyPreview } from '../src/game/api.ts';
-import { NO_CODE_MATCH, joinWithCode, type JoinCodeDeps } from '../src/game/online/joinCode.ts';
-import type { Lobby } from '../src/game/online/matchmaker.ts';
+import {
+  NO_CODE_MATCH,
+  joinWithCode,
+  watchStartedShow,
+  type JoinCodeDeps,
+} from '../src/game/online/joinCode.ts';
+import type { Lobby, MatchFound } from '../src/game/online/matchmaker.ts';
 
 const lobby = { code: 'ABC234' } as Lobby;
 const preview: ApiPartyPreview = {
@@ -107,12 +112,17 @@ describe('join with a code', () => {
 
   it('names a lobby refusal instead of trying the party', async () => {
     const d = deps({
+      joinLobby: () => Promise.reject(new ApiError(409, 'lobby_full', 'Lobby is full')),
+    });
+    expect(await joinWithCode('ABC234', d)).toMatchObject({ kind: 'error', title: 'That show is full' });
+    expect(d.partyByCode).not.toHaveBeenCalled();
+  });
+
+  it('offers to watch a private show that already started', async () => {
+    const d = deps({
       joinLobby: () => Promise.reject(new ApiError(409, 'lobby_started', 'The show already started')),
     });
-    expect(await joinWithCode('ABC234', d)).toMatchObject({
-      kind: 'error',
-      title: 'That show already started',
-    });
+    expect(await joinWithCode('abc234', d)).toEqual({ kind: 'started', code: 'ABC234' });
     expect(d.partyByCode).not.toHaveBeenCalled();
   });
 
@@ -133,5 +143,39 @@ describe('join with a code', () => {
     expect(await joinWithCode('ABC234', deps({ joinLobby: down, partyByCode: partyMissing }))).toMatchObject({
       title: "Couldn't check that code",
     });
+  });
+});
+
+describe('watching a show that already started', () => {
+  const match: MatchFound = {
+    matchId: 'm_1',
+    server: { id: 'gs', url: 'ws://gs', region: 'eu' },
+    ticket: 't',
+    expiresIn: 90,
+    playlistId: 'main-show',
+    queue: 'custom',
+    team: null,
+    role: 'spectator',
+  };
+
+  it('hands back the spectator seat to join', async () => {
+    const watch = vi.fn(() => Promise.resolve(match));
+    expect(await watchStartedShow('ABC234', watch)).toEqual({ kind: 'match', match });
+    expect(watch).toHaveBeenCalledWith('ABC234');
+  });
+
+  it.each([
+    ['spectators_full', 'Every spectator seat is taken'],
+    ['no_spectators', 'This show has no spectator seats'],
+    ['match_over', 'That show just ended'],
+    ['removed_by_host', 'You were removed from that show'],
+  ])('explains %s', async (code, title) => {
+    const r = await watchStartedShow('ABC234', () => Promise.reject(new ApiError(409, code, 'nope')));
+    expect(r).toMatchObject({ kind: 'error', title, code: 'E-WATCH' });
+  });
+
+  it('reports an unreachable matchmaker as a network problem', async () => {
+    const r = await watchStartedShow('ABC234', () => Promise.reject(new ApiError(0, 'network', 'offline')));
+    expect(r).toMatchObject({ kind: 'error', code: 'E-CODE-NET' });
   });
 });

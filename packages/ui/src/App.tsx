@@ -13,6 +13,7 @@ import { RotateHint } from './hud/RotateHint.tsx';
 import { ShowMenuButton } from './hud/ShowMenuButton.tsx';
 import { CaptionChip } from './hud/widgets.tsx';
 import { Hud } from './hud/Hud.tsx';
+import { BroadcastLayer, SpectatorRosterSheet } from './hud/Spectator.tsx';
 import { TouchControls } from './hud/TouchControls.tsx';
 import { touchMode } from './hud/touchMode.ts';
 import { SettingsSheet } from './screens/overlays/SettingsSheet.tsx';
@@ -27,6 +28,7 @@ import { ReplayLayer } from './screens/Replay.tsx';
 import { ElimReplayLayer } from './screens/ElimReplay.tsx';
 import { ShareLayer } from './screens/overlays/ShareSheet.tsx';
 import { ScreenLayer } from './screens/ScreenLayer.tsx';
+import { broadcastActive } from './store/spectator.ts';
 import { useUI } from './store/uiStore.ts';
 import { installEasingVars } from './theme/motion.ts';
 import { ConfettiLayer } from './transitions/Confetti.tsx';
@@ -48,6 +50,8 @@ function OverlayLayer(): JSX.Element | null {
       return <JoinCodeDialog />;
     case 'inGameMenu':
       return <InGameMenu />;
+    case 'spectatorRoster':
+      return <SpectatorRosterSheet />;
     default:
       return null;
   }
@@ -66,6 +70,7 @@ export function App(): JSX.Element {
   const overlay = useUI((s) => s.overlay);
   const photo = useUI((s) => s.photo.active);
   const replay = useUI((s) => s.replay !== null);
+  const broadcast = useUI(broadcastActive);
   const elimReplay = useUI((s) => (s.elimReplay && s.elimReplay.mode !== 'loading' ? 'true' : undefined));
   const touchContext = useUI((s) => touchMode(s)?.context);
   const ref = useRef<HTMLDivElement>(null);
@@ -92,6 +97,7 @@ export function App(): JSX.Element {
       data-overlay={overlay}
       data-photo={String(photo)}
       data-replay={replay ? 'true' : undefined}
+      data-broadcast={broadcast ? 'true' : undefined}
       data-elim-replay={elimReplay}
       data-touch-play={touchContext}
       style={{ ['--ui-scale' as string]: String(a.uiScale) }}
@@ -103,6 +109,7 @@ export function App(): JSX.Element {
           {/* Before the HUD, so every HUD control paints above the touch camera-drag surface. */}
           <TouchControls />
           <HudLayer />
+          <BroadcastLayer />
           <ShowMenuButton />
           <ChatWidgetLayer />
           <RotateHint />

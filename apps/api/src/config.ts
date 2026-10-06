@@ -36,6 +36,8 @@ const OpsEnvSchema = z.object({
   RETENTION_SESSION_GRACE_DAYS: z.coerce.number().int().min(1).default(7),
   RETENTION_EVENTS_DAYS: z.coerce.number().int().min(0).default(90),
   RETENTION_GUEST_DAYS: z.coerce.number().int().min(0).default(0),
+  MATCHMAKER_URL: optionalString.pipe(z.string().url().optional()),
+  STATUS_SAMPLE_SECONDS: z.coerce.number().int().min(0).max(3600).default(60),
 });
 
 const EnvSchema = z.object({
@@ -124,6 +126,27 @@ export interface ApiConfig {
   logLevel: string;
   /** Self-hosting and operations settings. */
   ops: ApiOpsConfig;
+  /** Voice chat ICE servers and the TURN secret. */
+  voice: VoiceServerConfig;
+}
+
+/**
+ * Where voice peers find each other. TURN credentials are minted per user and
+ * room from `turnSecret` (the TURN REST scheme, coturn's `static-auth-secret`).
+ */
+export interface VoiceServerConfig {
+  /** `stun:` URLs from `VOICE_ICE_SERVERS`, handed out as is. */
+  stunUrls: string[];
+  /** `turn:` / `turns:` URLs from `VOICE_ICE_SERVERS`, handed out with short-lived credentials. */
+  turnUrls: string[];
+  /** `VOICE_TURN_SECRET`; never leaves the server. */
+  turnSecret: string | undefined;
+  /**
+   * Voice may be switched on at all (`voice.enabled` still has to be on): a
+   * TURN relay is configured, or `VOICE_REQUIRE_TURN=0` (the default outside
+   * production, for LAN play and local testing).
+   */
+  available: boolean;
 }
 
 /** Data-retention policy; a 0 day count keeps that data forever. */
@@ -149,6 +172,48 @@ export interface ApiOpsConfig {
   /** Sentry-compatible DSN for crash reports. */
   sentryDsn: string | undefined;
   retention: RetentionConfig;
+  /** Public status page. */
+  status: StatusConfig;
+}
+
+/** Public status page settings. */
+export interface StatusConfig {
+  /**
+   * Matchmaker base URL the API probes for the Matchmaking and Game servers
+   * components (`MATCHMAKER_URL`, the same variable the game servers read);
+   * absent → those components are not shown.
+   */
+  matchmakerUrl: string | undefined;
+  /** Uptime sampling interval (`STATUS_SAMPLE_SECONDS`, 60; 0 = no history). */
+  sampleIntervalMs: number;
+}
+
+const ICE_URL = /^(stun|turn|turns):[^\s,]+$/;
+
+function readVoice(issues: EnvIssues, nodeEnv: ApiConfig['env']): VoiceServerConfig {
+  const urls = (issues.optional('VOICE_ICE_SERVERS') ?? '')
+    .split(',')
+    .map((u) => u.trim())
+    .filter(Boolean);
+  const bad = urls.filter((u) => !ICE_URL.test(u));
+  if (bad.length)
+    issues.add('VOICE_ICE_SERVERS', `must be stun:, turn: or turns: URLs (got "${bad.join(', ')}")`);
+  const valid = urls.filter((u) => ICE_URL.test(u));
+  const turnUrls = valid.filter((u) => !u.startsWith('stun:'));
+  const stunUrls = valid.filter((u) => u.startsWith('stun:'));
+  const secret = issues.optional('VOICE_TURN_SECRET');
+  if (secret !== undefined && secret.length < 16)
+    issues.add('VOICE_TURN_SECRET', 'must be at least 16 characters');
+  else if (turnUrls.length > 0 && secret === undefined)
+    issues.add('VOICE_TURN_SECRET', 'is required when VOICE_ICE_SERVERS lists a turn: or turns: URL');
+  const requireTurn = issues.flag('VOICE_REQUIRE_TURN', nodeEnv === 'production');
+  const relay = turnUrls.length > 0 && secret !== undefined && secret.length >= 16;
+  return {
+    stunUrls,
+    turnUrls: relay ? turnUrls : [],
+    turnSecret: relay ? secret : undefined,
+    available: relay || !requireTurn,
+  };
 }
 
 function pair(id: string | undefined, secret: string | undefined): OAuthClientConfig | undefined {
@@ -162,7 +227,8 @@ function pair(id: string | undefined, secret: string | undefined): OAuthClientCo
  * @returns The validated configuration.
  * @throws {EnvConfigError} Listing every malformed variable and missing or
  *   placeholder secret, `REDIS_URL` in production unless `ALLOW_MEMORY_STORE=1`,
- *   and `STRIPE_WEBHOOK_SECRET` whenever `STRIPE_SECRET_KEY` is set.
+ *   `STRIPE_WEBHOOK_SECRET` whenever `STRIPE_SECRET_KEY` is set, and
+ *   `VOICE_TURN_SECRET` whenever `VOICE_ICE_SERVERS` lists a TURN URL.
  */
 export function loadConfig(env: Env = process.env): ApiConfig {
   const issues = new EnvIssues(env);
@@ -200,6 +266,7 @@ export function loadConfig(env: Env = process.env): ApiConfig {
   }
   const trustProxy = issues.trustProxy();
   const metrics = readMetricsExposure(issues, e.PORT);
+  const voice = readVoice(issues, e.NODE_ENV);
   issues.throwIfAny('api');
   const corsOrigins: string[] | true = e.CORS_ORIGINS
     ? e.CORS_ORIGINS.split(',')
@@ -250,6 +317,11 @@ export function loadConfig(env: Env = process.env): ApiConfig {
         eventsDays: e.RETENTION_EVENTS_DAYS,
         guestDays: e.RETENTION_GUEST_DAYS,
       },
+      status: {
+        matchmakerUrl: e.MATCHMAKER_URL?.replace(/\/$/, ''),
+        sampleIntervalMs: e.NODE_ENV === 'test' ? 0 : e.STATUS_SAMPLE_SECONDS * 1000,
+      },
     },
+    voice,
   };
 }

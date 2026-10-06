@@ -97,7 +97,8 @@ export function registerOps(
       metrics.retentionDeleted.inc({ kind: 'sessions' }, r.sessions);
       metrics.retentionDeleted.inc({ kind: 'events' }, r.events);
       metrics.retentionDeleted.inc({ kind: 'guests' }, r.guests);
-      if (r.sessions || r.events || r.guests) app.log.info({ retention: r }, 'retention pass deleted rows');
+      if (r.sessions || r.events || r.guests || r.gifts)
+        app.log.info({ retention: r }, 'retention pass deleted rows or settled gifts');
       return r;
     } catch (err) {
       metrics.retentionRuns.inc({ outcome: 'error' });

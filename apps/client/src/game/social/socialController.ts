@@ -394,7 +394,13 @@ export class SocialController {
     social.getState().pushChat({
       id: String(m.id ?? `w${Date.now()}`),
       channel: 'whisper',
-      from: { userId: from.userId, name: from.name, tag: from.tag, key: from.userId },
+      from: {
+        userId: from.userId,
+        name: from.name,
+        tag: from.tag,
+        key: from.userId,
+        ...(from.club ? { club: from.club } : {}),
+      },
       to: { userId: to.userId, name: to.name, tag: to.tag, key: to.userId },
       text: m.text,
       ...(typeof m.masked === 'string' ? { masked: m.masked } : {}),
@@ -429,7 +435,13 @@ export class SocialController {
     social.getState().pushChat({
       id: `g:${m.id}`,
       room: 'global',
-      from: { userId: from.userId, name: from.name, tag: from.tag, key: from.userId },
+      from: {
+        userId: from.userId,
+        name: from.name,
+        tag: from.tag,
+        key: from.userId,
+        ...(from.club ? { club: from.club } : {}),
+      },
       text: m.text,
       ...(typeof m.masked === 'string' ? { masked: m.masked } : {}),
       ...(from.userId === this.host.userId() ? { self: true } : {}),
@@ -444,7 +456,13 @@ export class SocialController {
     const line: ChatLine = {
       id: String(m.id ?? `p${Date.now()}`),
       channel: 'party',
-      from: { userId: from.userId, name: from.name, tag: from.tag, key: from.userId },
+      from: {
+        userId: from.userId,
+        name: from.name,
+        tag: from.tag,
+        key: from.userId,
+        ...(from.club ? { club: from.club } : {}),
+      },
       text: m.text,
       ...(typeof m.masked === 'string' ? { masked: m.masked } : {}),
       ...(self ? { self: true } : {}),

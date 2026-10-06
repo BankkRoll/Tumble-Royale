@@ -19,6 +19,7 @@ import { uiEvents } from './events.ts';
 import { overlayAfterScreenChange } from './inputOwnership.ts';
 import type {
   BetweenRoundsInfo,
+  RoundVoteState,
   BootState,
   AchievementsData,
   ChallengesData,
@@ -35,6 +36,11 @@ import type {
   CosmeticSlot,
   StoreSection,
   PurchaseHistoryData,
+  FriendWishlistData,
+  GiftPickerData,
+  GiftsData,
+  ProfileSection,
+  WishlistData,
   LeaderboardId,
   LeaderboardInfo,
   LeaderboardRow,
@@ -60,7 +66,10 @@ import type {
   PhotoModeState,
   ReplayRoundEntry,
   ReplayViewerState,
+  EliminationReplayState,
+  HighlightEntry,
   RewardsSummary,
+  CustomRoundLookup,
   RoundCatalogEntry,
   RoundIntroInfo,
   RoundLoadingState,
@@ -155,6 +164,8 @@ export interface UIState {
   lobbyGames: LobbyGamesState;
   customLobby: CustomLobbyState | null;
   roundCatalog: RoundCatalogEntry[];
+  /** The last shared-round code lookup from a round picker. */
+  customRoundLookup: CustomRoundLookup;
   /** Rendered cosmetic thumbnails (data/blob URLs) by item id; cards fall back to the emoji icon. */
   thumbnails: Record<string, string>;
   /** Top-bar currency popover. */
@@ -175,6 +186,16 @@ export interface UIState {
   storeSection: StoreSection | null;
   /** Store purchase history with refund eligibility (online accounts; null until asked for). */
   purchaseHistory: PurchaseHistoryData | null;
+  /** Section the Profile tab should open on (deep links such as a gift toast). */
+  profileSection: ProfileSection | null;
+  /** Gifts sent and received (online accounts; null until asked for). */
+  gifts: GiftsData | null;
+  /** The gift sheet (null = closed). */
+  giftPicker: GiftPickerData | null;
+  /** The player's own wish list (online accounts; null until asked for). */
+  wishlist: WishlistData | null;
+  /** The wish list on the profile card being viewed. */
+  friendWishlist: FriendWishlistData | null;
 
   // --- show ----------------------------------------------------------------
   queue: QueueState;
@@ -200,6 +221,8 @@ export interface UIState {
   emoteWheelOpen: boolean;
   results: RoundResults | null;
   betweenRounds: BetweenRoundsInfo | null;
+  /** The next round's ballot between rounds (null when no vote is running). */
+  roundVote: RoundVoteState | null;
   finalHype: FinalHypeInfo | null;
   victory: VictoryInfo | null;
   playerWall: ShowSummary | null;
@@ -223,6 +246,10 @@ export interface UIState {
   replayLive: boolean;
   /** The open replay viewer (null = closed). While open it covers the screen and HUD. */
   replay: ReplayViewerState | null;
+  /** The "How you went out" replay after a knock-out (null = not showing). */
+  elimReplay: EliminationReplayState | null;
+  /** The show's automatic highlights, best first (empty while replays are off). */
+  highlights: HighlightEntry[];
 
   // --- actions: screens ----------------------------------------------------
   /** Changes screen, with the screen's default transition unless overridden. */
@@ -257,6 +284,10 @@ export interface UIState {
   setInventory: (inventory: InventoryData | null) => void;
   setStoreData: (store: StoreData | null) => void;
   setPurchaseHistory: (history: PurchaseHistoryData | null) => void;
+  setGifts: (gifts: GiftsData | null) => void;
+  setGiftPicker: (picker: GiftPickerData | null) => void;
+  setWishlist: (wishlist: WishlistData | null) => void;
+  setFriendWishlist: (wishlist: FriendWishlistData | null) => void;
   setPass: (pass: SeasonPassData | null) => void;
   setChallenges: (challenges: ChallengesData | null) => void;
   /** Daily login streak card (null offline). */
@@ -284,6 +315,9 @@ export interface UIState {
   setLobbyGames: (patch: Partial<LobbyGamesState>) => void;
   setCustomLobby: (lobby: CustomLobbyState | null) => void;
   setRoundCatalog: (rounds: RoundCatalogEntry[]) => void;
+  /** Adds (or refreshes) a shared custom round in the pickers. */
+  addCustomRoundEntry: (entry: RoundCatalogEntry) => void;
+  setCustomRoundLookup: (lookup: CustomRoundLookup) => void;
   /** Adds rendered thumbnails (merged into `thumbnails`). */
   setThumbnails: (thumbs: Record<string, string>) => void;
   setCurrencyPanel: (panel: 'none' | 'gumballs' | 'gems') => void;
@@ -296,6 +330,8 @@ export interface UIState {
   openLocker: (slot: CosmeticSlot | null) => void;
   /** Opens the Store tab on a section. */
   openStore: (section: StoreSection | null) => void;
+  /** Switches to the Profile tab on a section. */
+  openProfile: (section: ProfileSection) => void;
 
   // --- actions: show -------------------------------------------------------
   setQueue: (queue: Partial<QueueState>) => void;
@@ -332,6 +368,10 @@ export interface UIState {
   setEmoteWheel: (open: boolean) => void;
   setResults: (results: RoundResults | null) => void;
   setBetweenRounds: (info: BetweenRoundsInfo | null) => void;
+  /** Replaces the round vote (null hides the card). */
+  setRoundVote: (vote: RoundVoteState | null) => void;
+  /** Merges into the running round vote; ignored when none is running. */
+  patchRoundVote: (patch: Partial<RoundVoteState>) => void;
   setFinalHype: (info: FinalHypeInfo | null) => void;
   setVictory: (info: VictoryInfo | null) => void;
   /** Loads the end-of-show wall; call before `setScreen('playerWall')`. */
@@ -347,6 +387,11 @@ export interface UIState {
   setReplay: (replay: ReplayViewerState | null) => void;
   /** Merges viewer fields (playhead updates at ~15 Hz). */
   patchReplay: (patch: Partial<ReplayViewerState>) => void;
+  /** Shows (state) or hides (null) the elimination replay. */
+  setElimReplay: (state: EliminationReplayState | null) => void;
+  /** Merges elimination replay fields (progress at ~10 Hz); ignored when none shows. */
+  patchElimReplay: (patch: Partial<EliminationReplayState>) => void;
+  setHighlights: (highlights: HighlightEntry[]) => void;
 
   // --- internal (TumbleWipe component) -------------------------------------
   /** @internal Cover animation finished. */
@@ -415,6 +460,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   lobbyGames: { pickerOpen: false, canStart: true, players: 1, hud: null },
   customLobby: null,
   roundCatalog: [],
+  customRoundLookup: { status: 'idle' },
   thumbnails: {},
   currencyPanel: 'none',
   playMode: 'offline',
@@ -425,6 +471,11 @@ export const ui = createStore<UIState>()((set, get) => ({
   lockerSlot: null,
   storeSection: null,
   purchaseHistory: null,
+  profileSection: null,
+  gifts: null,
+  giftPicker: null,
+  wishlist: null,
+  friendWishlist: null,
 
   queue: {
     status: 'idle',
@@ -450,6 +501,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   emoteWheelOpen: false,
   results: null,
   betweenRounds: null,
+  roundVote: null,
   finalHype: null,
   victory: null,
   playerWall: null,
@@ -461,6 +513,8 @@ export const ui = createStore<UIState>()((set, get) => ({
   replays: [],
   replayLive: false,
   replay: null,
+  elimReplay: null,
+  highlights: [],
 
   setScreen: (screen, opts = {}) => {
     const s = get();
@@ -554,6 +608,10 @@ export const ui = createStore<UIState>()((set, get) => ({
   setInventory: (inventory) => set({ inventory }),
   setStoreData: (store) => set({ store }),
   setPurchaseHistory: (purchaseHistory) => set({ purchaseHistory }),
+  setGifts: (gifts) => set({ gifts }),
+  setGiftPicker: (giftPicker) => set({ giftPicker }),
+  setWishlist: (wishlist) => set({ wishlist }),
+  setFriendWishlist: (friendWishlist) => set({ friendWishlist }),
   setPass: (pass) => set({ pass }),
   setChallenges: (challenges) => set({ challenges }),
   setLoginStreak: (loginStreak) => set({ loginStreak }),
@@ -593,6 +651,9 @@ export const ui = createStore<UIState>()((set, get) => ({
   setLobbyGames: (patch) => set({ lobbyGames: { ...get().lobbyGames, ...patch } }),
   setCustomLobby: (customLobby) => set({ customLobby }),
   setRoundCatalog: (roundCatalog) => set({ roundCatalog }),
+  addCustomRoundEntry: (entry) =>
+    set((s) => ({ roundCatalog: [...s.roundCatalog.filter((r) => r.id !== entry.id), entry] })),
+  setCustomRoundLookup: (customRoundLookup) => set({ customRoundLookup }),
   setThumbnails: (thumbs) => set({ thumbnails: { ...get().thumbnails, ...thumbs } }),
   setCurrencyPanel: (currencyPanel) => set({ currencyPanel }),
   setPlayMode: (playMode) => {
@@ -611,6 +672,10 @@ export const ui = createStore<UIState>()((set, get) => ({
     set({ storeSection });
     get().setMenuTab('store');
   },
+  openProfile: (profileSection) => {
+    set({ profileSection });
+    get().setMenuTab('profile');
+  },
 
   setQueue: (queue) => set({ queue: { ...get().queue, ...queue } }),
   setRegionStatus: (patch) => set({ regionStatus: { ...get().regionStatus, ...patch } }),
@@ -627,6 +692,7 @@ export const ui = createStore<UIState>()((set, get) => ({
       spectate: null,
       results: null,
       betweenRounds: null,
+      roundVote: null,
       finalHype: null,
       victory: null,
       playerWall: null,
@@ -683,6 +749,11 @@ export const ui = createStore<UIState>()((set, get) => ({
   setEmoteWheel: (emoteWheelOpen) => set({ emoteWheelOpen }),
   setResults: (results) => set({ results }),
   setBetweenRounds: (betweenRounds) => set({ betweenRounds }),
+  setRoundVote: (roundVote) => set({ roundVote }),
+  patchRoundVote: (patch) => {
+    const cur = get().roundVote;
+    if (cur) set({ roundVote: { ...cur, ...patch } });
+  },
   setFinalHype: (finalHype) => set({ finalHype }),
   setVictory: (victory) => set({ victory }),
   setPlayerWall: (playerWall, opts) =>
@@ -708,6 +779,18 @@ export const ui = createStore<UIState>()((set, get) => ({
       }
     }
   },
+  setElimReplay: (elimReplay) => set({ elimReplay }),
+  patchElimReplay: (patch) => {
+    const r = get().elimReplay;
+    if (!r) return;
+    for (const k in patch) {
+      if (r[k as keyof EliminationReplayState] !== patch[k as keyof EliminationReplayState]) {
+        set({ elimReplay: { ...r, ...patch } });
+        return;
+      }
+    }
+  },
+  setHighlights: (highlights) => set({ highlights }),
 }));
 
 function applyScreen(screen: ScreenId, transition: TransitionKind): void {

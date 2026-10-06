@@ -199,3 +199,79 @@ renders one frame per animation frame with encoder back-pressure. The MP4 and
 WebM muxers are written in-house (one video track, laid out once the samples
 are known) because the small npm muxers are either deprecated or not
 MIT/Apache.
+
+## Gifts are their own ledger records, not purchases
+
+A gift is a `gifts` row plus at most two ledger rows on the sender (`gift`
+and `gift_refund`, both ref `gift:<id>`), not a `purchases` row on either
+side. Reusing purchases would have put gifts into `GET /purchases` and the
+self-service refund path, letting a recipient refund something they never
+paid for, or a sender refund an item someone else already wears. Keeping
+them apart makes "no refund after opening" structural instead of a special
+case in the refund policy.
+
+The recipient's copy has inventory source `gift`, which store refunds never
+touch and a staff reversal removes; an earned grant re-sources it, as it
+already did for `store` copies, so a reversal never takes an item the player
+earned another way. Every gift operation locks both profiles in id order
+before deciding, which serialises double submits, two friends gifting the
+same item, and decline/cancel races without a lock table of its own.
+Overdue gifts are auto-accepted lazily on read and by the retention sweep,
+so the 30-day rule needs no new background process.
+
+## Voice chat is a peer-to-peer mesh, not an SFU
+
+Voice rooms are small: a party is at most 4 players, and team voice splits a
+team into squads of at most 8. In a full mesh each player uploads one Opus
+stream per peer, about 30 kbit/s each, so even a full squad costs ~210 kbit/s
+up, which any connection that can play the game already has. An SFU would
+cut that to one upload but adds a media server to run, scale and secure, and
+puts every conversation's audio through infrastructure the operator then has
+to explain. Self-hosters already run a TURN relay for players behind strict
+NATs; a mesh needs nothing else.
+
+The cost of the mesh is that peers who connect directly see each other's IP
+addresses. Players can choose "Relay only", which forces TURN and hides it;
+the first-use dialog says so before the microphone is ever requested.
+
+Squads are fixed when a team round starts (parties first, largest first, then
+solo players) rather than "the 8 nearest teammates", because proximity
+changes every second and every regrouping would tear down and renegotiate
+connections mid-round. Signalling rides the existing authenticated realtime
+socket instead of a new endpoint, so origin checks, bans and cross-instance
+delivery come for free; the API decides room membership from server state
+and re-checks it on every relayed message.
+
+## Custom rounds: one validator, no physics, the server ships the definition
+
+Player-made rounds are untrusted data that run on the same game servers as
+built-in rounds, so one validator (`@tumble/content/custom`) runs unchanged in
+the editor, in the API on every publish and update, and on the game server
+before a show plays the round, and again on each client before it builds
+what the server sent. The editor's verdict is never trusted.
+
+The playability checks (spawn on solid ground, reachable finish) use a
+physics-free model of walkable surfaces rather than Rapier: the API does not
+ship the physics engine, and the same answer everywhere matters more than a
+precise one. The model errs toward "reachable"; a false "unreachable" would
+block a fair round, while a false "reachable" is caught by Test play.
+
+Shared rounds are not in any client build. The game server fetches the
+stored definition over the signed internal channel when a private show
+starts, holds the show in its lobby until it has it, and sends the exact
+definition in `joinRound`, so the authoritative sim and every prediction sim
+build the same round. Codes that are gone or fail validation drop out and the
+show falls back to its base playlist instead of stalling. A takedown stops a
+code for the editor, lobbies and every show created afterwards; a show
+already running finishes with its copy.
+
+Publishing needs a full (non-guest) account: shared rounds reach other
+players and must be attributable, and a guest account is one cookie clear
+away from gone. Guests still build, save locally and test play. Bots on
+custom races follow generated straight legs between checkpoints with jumps at
+gaps, and the editor says when a leg crosses a gap they cannot jump; we chose
+honest and simple over a navmesh.
+
+The editor is its own Vite entry (`/editor`): players never download it with
+the game, and it shares the origin so it can reuse the player's session and
+hand Test play rounds to the game tab through IndexedDB.

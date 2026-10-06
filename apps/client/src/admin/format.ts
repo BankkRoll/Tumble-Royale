@@ -34,6 +34,7 @@ export const REASON_LABELS: Record<string, string> = {
   offensive_name: 'Offensive name',
   griefing: 'Griefing',
   spam: 'Spam',
+  voice: 'Voice chat',
   other: 'Other',
 };
 
@@ -41,6 +42,7 @@ export const REASON_LABELS: Record<string, string> = {
 export const SCOPE_LABELS: Record<string, string> = {
   all: 'Suspended',
   chat: 'Muted',
+  voice: 'Voice muted',
   ranked: 'Ranked ban',
 };
 
@@ -50,6 +52,7 @@ export const ACTION_META: Record<ReportAction, { label: string; danger: boolean;
   resolve: { label: 'Resolve', danger: false, verb: 'Resolve' },
   warn: { label: 'Warn', danger: false, verb: 'Warn' },
   mute: { label: 'Mute chat…', danger: true, verb: 'Mute' },
+  voice_mute: { label: 'Mute voice…', danger: true, verb: 'Mute voice' },
   ban: { label: 'Ban…', danger: true, verb: 'Ban' },
 };
 
@@ -173,7 +176,9 @@ export function reportActionBody(
     reportIds: [...reportIds],
     action,
     reason: reason.trim(),
-    ...((action === 'mute' || action === 'ban') && hours ? { durationHours: hours } : {}),
+    ...((action === 'mute' || action === 'voice_mute' || action === 'ban') && hours
+      ? { durationHours: hours }
+      : {}),
   };
 }
 
@@ -188,8 +193,11 @@ export type Route =
   | { view: 'players'; id?: string; q?: string }
   | { view: 'sanctions' }
   | { view: 'liveops' }
+  | { view: 'status' }
   | { view: 'refunds'; id?: string }
-  | { view: 'audit'; target?: string };
+  | { view: 'clubs'; id?: string; q?: string }
+  | { view: 'audit'; target?: string }
+  | { view: 'rounds'; code?: string };
 
 /**
  * Parses `location.hash` (`#/players/<id>`, `#/players?q=name`, `#/audit?target=…`).
@@ -209,12 +217,22 @@ export function parseRoute(hash: string): Route {
       };
     case 'sanctions':
       return { view: 'sanctions' };
+    case 'status':
+      return { view: 'status' };
     case 'liveops':
       return { view: 'liveops' };
     case 'refunds':
       return { view: 'refunds', ...(id ? { id: decodeURIComponent(id) } : {}) };
+    case 'clubs':
+      return {
+        view: 'clubs',
+        ...(id ? { id: decodeURIComponent(id) } : {}),
+        ...(params.get('q') ? { q: params.get('q')! } : {}),
+      };
     case 'audit':
       return { view: 'audit', ...(params.get('target') ? { target: params.get('target')! } : {}) };
+    case 'rounds':
+      return { view: 'rounds', ...(id ? { code: decodeURIComponent(id) } : {}) };
     default:
       return { view: 'reports' };
   }
@@ -231,8 +249,12 @@ export function routeHash(r: Route): string {
       return r.id ? `#/players/${encodeURIComponent(r.id)}` : `#/players${query({ q: r.q })}`;
     case 'refunds':
       return r.id ? `#/refunds/${encodeURIComponent(r.id)}` : '#/refunds';
+    case 'clubs':
+      return r.id ? `#/clubs/${encodeURIComponent(r.id)}` : `#/clubs${query({ q: r.q })}`;
     case 'audit':
       return `#/audit${query({ target: r.target })}`;
+    case 'rounds':
+      return r.code ? `#/rounds/${encodeURIComponent(r.code)}` : '#/rounds';
     default:
       return `#/${r.view}`;
   }

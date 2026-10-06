@@ -34,6 +34,10 @@ export const FLAG_KEYS = [
   'mutators.chaos',
   'analytics.sample',
   'events.enabled',
+  'clubs.enabled',
+  /** Round voting between rounds (game servers read it per show, the offline client per show). */
+  'shows.mapVoting',
+  'voice.enabled',
 ] as const;
 
 /** A flag the code reads. */
@@ -51,8 +55,9 @@ export type FlagMap = Readonly<Record<string, FlagValue>>;
 
 /**
  * What every flag is when the API has no row for it or cannot be reached.
- * Everything is on: flags are kill switches, so "unknown" must never turn a
- * feature off.
+ * Almost everything is on: flags are kill switches, so "unknown" must never
+ * turn a feature off. `voice.enabled` is the exception: voice needs a TURN
+ * relay the operator sets up first, so it stays off until switched on.
  */
 export const FLAG_DEFAULTS: Readonly<Record<FlagKey, FlagValue>> = {
   'store.enabled': { enabled: true, payload: null },
@@ -62,6 +67,9 @@ export const FLAG_DEFAULTS: Readonly<Record<FlagKey, FlagValue>> = {
   'mutators.chaos': { enabled: true, payload: null },
   'analytics.sample': { enabled: true, payload: null },
   'events.enabled': { enabled: true, payload: null },
+  'clubs.enabled': { enabled: true, payload: null },
+  'shows.mapVoting': { enabled: true, payload: null },
+  'voice.enabled': { enabled: false, payload: null },
 };
 
 /**
@@ -294,6 +302,21 @@ export const ANALYTICS_EVENTS = [
   'share.card',
   /** A clip was made or delivered: `format` (mp4/webm), `encoder`, `outcome`, `action`, `seconds`, `height`. */
   'share.clip',
+  /** A round-vote ballot was cast or changed: `round` (index), `option`, `changed`, `online`. */
+  'vote.cast',
+  /**
+   * An elimination replay ended: `outcome` (watched/skipped/interrupted/unavailable),
+   * `cause` (kind), `still` (Reduce Motion), `online`, `seconds` (planned length).
+   */
+  'replay.elimination',
+  /** Highlights were played: `kind` (the first), `count`, `mode` (single/reel), `local`. */
+  'highlight.view',
+  /** A highlight's Share opened the clip sheet: `kind`, `local`, `final`. */
+  'highlight.share',
+  /** Voice connected to a room: `kind` (party/team), `mode` (ptt/open), `relayOnly`, `peers`. No audio, no names. */
+  'voice.join',
+  /** Voice switched off: `reason` and `seconds` switched on. */
+  'voice.leave',
 ] as const;
 
 /** An allow-listed analytics event name. */

@@ -24,6 +24,7 @@ import type {
   SettingsSection,
   TumblerColors,
 } from './types.ts';
+import type { ClubEmblem, ClubJoinMode, ClubReportReason } from '@tumble/shared';
 import type { AuthProviderId } from './account.ts';
 import type { ShareCardFormat } from './share.ts';
 
@@ -49,6 +50,8 @@ export interface UIIntents {
   retryOnline: undefined;
   /** Host an offline custom show vs bots with the picked rounds. */
   playCustomOffline: { options: CustomLobbyOptions };
+  /** Look up a shared custom round by its share code for the round picker. */
+  customRoundLookup: { code: string };
   cancelQueue: undefined;
   ready: { ready: boolean };
   /** Preview an item on the 3D Tumbler (`itemId` null = clear). */
@@ -65,6 +68,24 @@ export interface UIIntents {
    * Gem pack refund (`reason` required) for staff review.
    */
   refundPurchase: { purchaseId: string; reason?: string };
+  /** Profile → Gifts opened or refreshed. */
+  requestGifts: undefined;
+  /** Open or decline a received gift, or cancel a sent one (already confirmed where it costs anything). */
+  giftAction: { giftId: string; action: 'open' | 'decline' | 'cancel' };
+  /** Open the gift sheet for an offer, optionally with a friend picked. */
+  openGiftPicker: { offerId: string; recipientId?: string };
+  /** Send a gift the player confirmed (price shown in the confirm dialog). */
+  sendGift: { offerId: string; recipientId: string; message?: string };
+  /** Profile → Wish list opened or refreshed. */
+  requestWishlist: undefined;
+  /** Put an item (or `bundle:<id>`) on the wish list, or take it off. */
+  wishlistToggle: { itemId: string; on: boolean };
+  /** The whole wish list in its new order. */
+  wishlistReorder: { itemIds: string[] };
+  /** Wish list privacy and store alerts. */
+  wishlistSettings: { visibility?: 'friends' | 'nobody'; alerts?: boolean };
+  /** A friend's profile card wants their wish list. */
+  requestFriendWishlist: { userId: string };
   /** Buy a Gem pack (`StoreData.gemPacks`). */
   buyGems: { packId: string };
   /** Try on several items at once (bundles); an empty list restores the equipped look. */
@@ -114,6 +135,8 @@ export interface UIIntents {
   };
   spectate: undefined;
   spectateNext: { dir: 1 | -1 };
+  /** Vote (or change the vote) for the next round on the between-rounds card. */
+  castVote: { roundIndex: number; option: number };
   playAgain: undefined;
   backToLobby: undefined;
   emote: { slot: number; id: string };
@@ -173,6 +196,57 @@ export interface UIIntents {
   joinFriend: { userId: string };
   /** Answer a party invite from the notifications panel. */
   partyInviteAction: { userId: string; code: string; action: 'join' | 'decline' };
+  /** Reload the player's club, invites and requests (the club section opened, Retry). */
+  clubRefresh: undefined;
+  /** Found a club (fields already checked against the shared club rules). */
+  clubCreate: {
+    name: string;
+    tag: string;
+    description: string;
+    emblem: ClubEmblem;
+    joinMode: ClubJoinMode;
+  };
+  /** Club search by name or tag (debounced by the UI); also loads the recommended list. */
+  clubSearch: { query: string };
+  /** Join an open club, or ask to join a request-only one. */
+  clubJoin: { clubId: string };
+  /** Withdraw a join request. */
+  clubCancelRequest: { clubId: string };
+  /** Answer a club invite. */
+  clubInviteAnswer: { clubId: string; accept: boolean };
+  /** Officers: answer a join request. */
+  clubRequestAnswer: { userId: string; accept: boolean };
+  /** Officers: invite a friend. */
+  clubInvite: { userId: string };
+  /** Edit the club (only the fields given). */
+  clubEdit: {
+    name?: string;
+    tag?: string;
+    description?: string;
+    emblem?: ClubEmblem;
+    joinMode?: ClubJoinMode;
+  };
+  /** Kick (already confirmed), change a role, or hand over ownership (already confirmed). */
+  clubMember: { userId: string; action: 'kick' | 'officer' | 'member' | 'transfer' };
+  /** Leave the club, or disband it (owner); already confirmed. */
+  clubLeave: { disband?: boolean };
+  /** Load the weekly goals tab. */
+  clubGoals: undefined;
+  /** Claim a completed weekly goal. */
+  clubClaim: { week: string; goalId: string };
+  /** Invite an online club mate into the party. */
+  clubPartyUp: { userId: string };
+  /** Club chat from the club page's own input. */
+  clubChat: { text: string };
+  /** Report a club. */
+  clubReport: { clubId: string; reason: ClubReportReason; details?: string };
+  /**
+   * Switch voice chat on (after the first-use explanation; the game then asks
+   * for the microphone) or off.
+   */
+  voiceToggle: { on: boolean };
+  /** Settings → Voice opened: re-check availability and list microphones. */
+  voiceRefresh: undefined;
   /** In-show text chat (online shows only). */
   sendChat: { text: string };
   /** The in-show chat input opened or closed (the game frees the mouse and held keys). */
@@ -217,6 +291,12 @@ export interface UIIntents {
   replayOpenFile: { name: string; bytes: ArrayBuffer };
   /** Replay viewer control. */
   replayCommand: ReplayCommand;
+  /** Skip the "How you went out" replay (its button; keys, clicks and pad buttons skip it too). */
+  elimReplaySkip: undefined;
+  /** Play highlights in the replay viewer, one after another (`HighlightEntry.id`s, in order). */
+  highlightPlay: { ids: string[] };
+  /** A highlight's Share button opened the share sheet on it (analytics). */
+  highlightShare: { id: string };
   /** Share sheet: render the show's share card. */
   shareCard: { format: ShareCardFormat; includeName: boolean };
   /** Share sheet: render a clip of a recorded round (window in recording seconds). */

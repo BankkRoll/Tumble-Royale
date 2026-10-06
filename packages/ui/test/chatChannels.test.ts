@@ -74,10 +74,24 @@ describe('chat tabs', () => {
     s = reduceChat(s, { type: 'receive', line: line({ channel: 'party' }) });
     s = reduceChat(s, { type: 'receive', line: line({ channel: 'party', self: true }) });
     s = reduceChat(s, { type: 'receive', line: sys('Pal joined the party') });
-    expect(s.unread).toEqual({ all: 0, party: 1, whisper: 0 });
+    expect(s.unread).toEqual({ all: 0, party: 1, club: 0, whisper: 0 });
     s = reduceChat(s, { type: 'open', channel: 'party' });
     s = reduceChat(s, { type: 'receive', line: line({ channel: 'party' }) });
     expect(s.unread.party).toBe(0);
+  });
+
+  it('shows a Club tab only in a club, counts its unread and drops its lines on leaving', () => {
+    expect(chatTabs(online())).not.toContain('club');
+    let s = apply(online(), { type: 'party', on: true }, { type: 'club', on: true });
+    expect(chatTabs(s)).toEqual(['all', 'party', 'club']);
+    s = reduceChat(s, { type: 'receive', line: line({ channel: 'club' }) });
+    expect(s.unread.club).toBe(1);
+    expect(linesOf(s, 'club')).toHaveLength(1);
+    s = reduceChat(s, { type: 'focus', channel: 'club' });
+    expect(s.unread.club).toBe(0);
+    s = apply(s, { type: 'club', on: false }, { type: 'clear', target: 'club' });
+    expect(s.active).toBe('all');
+    expect(s.lines.some((l) => l.channel === 'club')).toBe(false);
   });
 
   it('dedupes lines and caps history', () => {
@@ -249,6 +263,19 @@ describe('chat commands', () => {
       text: 'gg',
     });
     expect(parseChatInput('/p hi', ctx(online()))).toMatchObject({ kind: 'hint' });
+  });
+
+  it('/c and the Club tab talk to the club, only while in one', () => {
+    expect(parseChatInput('/c hi', ctx(online()))).toEqual({ kind: 'hint', message: "You're not in a club" });
+    const s = apply(online(), { type: 'club', on: true });
+    expect(parseChatInput('/club', ctx(s))).toEqual({ kind: 'switch', channel: 'club' });
+    expect(parseChatInput('/c show at 8?', ctx(s))).toEqual({ kind: 'send', to: 'club', text: 'show at 8?' });
+    expect(parseChatInput('anyone on', ctx({ ...s, active: 'club' }))).toEqual({
+      kind: 'send',
+      to: 'club',
+      text: 'anyone on',
+    });
+    expect(chatPlaceholder({ ...s, active: 'club' })).toBe('Message your club');
   });
 
   it('/mute, /unmute, /help and unknown commands', () => {

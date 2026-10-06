@@ -7,6 +7,7 @@
 #
 # Only Caddy publishes ports (80, 443). Every other service, including the
 # internal and metrics endpoints, is reachable only on the compose network.
+# The optional `voice` profile adds a coturn TURN relay on the host network.
 
 name: tumble
 
@@ -166,6 +167,55 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  # Optional TURN relay for voice chat (docs/SELF_HOSTING.md, "Voice chat"):
+  #   docker compose -f deploy/docker-compose.yml --profile voice up -d
+  # It shares VOICE_TURN_SECRET with the API, which mints short-lived
+  # credentials per player and room (the TURN REST scheme). Host networking
+  # because Docker's port publishing is slow for a UDP relay range; open
+  # 3478/udp, 3478/tcp and 49160-49200/udp in the firewall.
+  coturn:
+    image: coturn/coturn:4.6
+    profiles: ['voice']
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      # NOTE: read at run time, not interpolated with `:?`: Compose interpolates
+      # every service, so a required variable here would break deployments
+      # that never enable the profile.
+      VOICE_TURN_SECRET: ${VOICE_TURN_SECRET:-}
+      TURN_REALM: ${DOMAIN:-tumble}
+    entrypoint: ['/bin/sh', '-c']
+    # SECURITY: the denied ranges keep the relay from becoming a way into this
+    # server's private networks (Postgres, Redis, internal ports) or a cloud
+    # metadata service. The quotas cap one account's share of the relay (voice
+    # is a few dozen kbit/s per stream).
+    command:
+      - |
+        if [ "$${#VOICE_TURN_SECRET}" -lt 16 ]; then
+          echo 'coturn: set VOICE_TURN_SECRET (16+ characters) in deploy/.env' >&2
+          exit 1
+        fi
+        exec turnserver -n --log-file=stdout \
+          --listening-port=3478 --min-port=49160 --max-port=49200 \
+          --use-auth-secret --static-auth-secret="$$VOICE_TURN_SECRET" --realm="$$TURN_REALM" \
+          --fingerprint --no-cli --no-multicast-peers --no-loopback-peers \
+          --denied-peer-ip=0.0.0.0-0.255.255.255 \
+          --denied-peer-ip=10.0.0.0-10.255.255.255 \
+          --denied-peer-ip=100.64.0.0-100.127.255.255 \
+          --denied-peer-ip=127.0.0.0-127.255.255.255 \
+          --denied-peer-ip=169.254.0.0-169.254.255.255 \
+          --denied-peer-ip=172.16.0.0-172.31.255.255 \
+          --denied-peer-ip=192.168.0.0-192.168.255.255 \
+          --denied-peer-ip=::1 \
+          --denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff \
+          --denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff \
+          --user-quota=12 --total-quota=1200 --max-bps=128000
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: '5'
 
 volumes:
   postgres:

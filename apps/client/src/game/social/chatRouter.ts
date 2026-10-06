@@ -3,12 +3,12 @@
  *
  * Responsibilities:
  * - parse the input (`parseChatInput`: plain text to the open tab, `/w`,
- *   `/r`, `/p`, `/all`, `/mute`, `/help`) against the live chat state and
- *   friends list;
+ *   `/r`, `/p`, `/c`, `/all`, `/mute`, `/help`) against the live chat state
+ *   and friends list;
  * - hand each message to the transport that owns its target: All goes to
  *   the current public room (game server for a show, matchmaker for a
  *   private-show lobby, account API gateway for the menu's global room);
- *   Party and Whispers go to the account API;
+ *   Party, Club and Whispers go to the account API;
  * - post System notices (joins, leaves, command help), which show inline in
  *   every tab, and refusals as the single inline hint.
  *
@@ -32,7 +32,7 @@ export type ChatSend = (text: string) => void;
 /** Sends a whisper. */
 export type WhisperSend = (to: WhisperTarget, text: string) => void;
 /** Where {@link ChatSend}s are registered. */
-export type ChatRouteKey = PublicRoom | 'party';
+export type ChatRouteKey = PublicRoom | 'party' | 'club';
 
 const routes: Partial<Record<ChatRouteKey, ChatSend>> = {};
 let whisperRoute: WhisperSend | null = null;
@@ -100,6 +100,16 @@ export function setChatRoom(room: PublicRoom, access: RoomAccess): void {
 export function setPartyChat(on: boolean): void {
   social.getState().dispatchChat({ type: 'party', on });
   if (!on) social.getState().dispatchChat({ type: 'clear', target: 'party' });
+}
+
+/**
+ * Turns the Club tab on or off; off drops the club's lines.
+ *
+ * @param on - In a club.
+ */
+export function setClubChat(on: boolean): void {
+  social.getState().dispatchChat({ type: 'club', on });
+  if (!on) social.getState().dispatchChat({ type: 'clear', target: 'club' });
 }
 
 const norm = (s: string): string => s.trim().toLowerCase();

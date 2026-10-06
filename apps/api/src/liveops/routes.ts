@@ -28,6 +28,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.ts';
 import { events, featureFlags, playlistOverrides } from '../db/schema.ts';
+import { GIFT_SPEND_ROUTES } from '../economy/gifts.ts';
 import { requireInternalSignature } from '../http/auth.ts';
 import { badRequest, notFound, parse } from '../http/errors.ts';
 import { recordAudit } from '../staff/audit.ts';
@@ -86,6 +87,7 @@ export const STORE_SPEND_ROUTES: ReadonlySet<string> = new Set([
   '/gems/checkout',
   '/shop/shards/buy',
   '/pass/premium',
+  ...GIFT_SPEND_ROUTES,
 ]);
 
 const at = (iso: string | null | undefined): Date | null => (iso ? new Date(iso) : null);

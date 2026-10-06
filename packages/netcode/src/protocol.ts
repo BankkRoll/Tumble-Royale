@@ -4,13 +4,13 @@
  * bit budgets. Every binary message starts with one byte: {@link MsgType}.
  */
 import { Packr } from 'msgpackr';
-import type { RoundPhaseId, ShowPhaseId } from '@tumble/shared';
+import type { RoundDefinitionInput, RoundPhaseId, ShowPhaseId } from '@tumble/shared';
 import type { MatchPlayerInfo } from './simTypes.ts';
 import type { BitReader, BitWriter } from './bits.ts';
 import type { Bounds } from './quantize.ts';
 
 /** Bumped on any incompatible wire change; peers with different versions are rejected in the handshake. */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 /**
  * WebSocket close reason (with code 1000) a client sends when the player chose
@@ -239,6 +239,12 @@ export interface JoinRoundMsg {
   mutatorId?: string | null;
   /** Round timer multiplier the server applies (0.5–2). Absent: 1. */
   roundTimeScale?: number;
+  /**
+   * A shared custom round (`custom:<CODE>` ids) is not in any client build:
+   * the server sends the exact definition it plays. Clients validate it with
+   * the same rules before building it.
+   */
+  round?: RoundDefinitionInput;
 }
 
 /** Show context, sent once per connection right after Welcome. */
@@ -360,6 +366,73 @@ export interface LoadingStatusMsg {
   waitingOn: number[];
 }
 
+/** Most options a round-vote ballot carries. */
+export const VOTE_MAX_OPTIONS = 4;
+
+/**
+ * Server → client (v6), per connection: the ballot for the next round
+ * opened. Also re-sent on (re)attach while a ballot is running, so a player
+ * who reconnected mid-vote sees it again with their own ballot marked.
+ */
+export interface VoteOptionsMsg {
+  t: 'voteOptions';
+  /** Round the ballot is for. */
+  roundIndex: number;
+  /** The ballot is for the final (playlists that vote on finals). */
+  isFinal: boolean;
+  /** Candidate round ids, in display order (at most {@link VOTE_MAX_OPTIONS}). */
+  options: string[];
+  /** Raw ballots per option so far. */
+  counts: number[];
+  /** Ballots cast so far. */
+  voted: number;
+  /** Players allowed to vote. */
+  eligible: number;
+  /** Time until the ballot closes at the latest. */
+  closesInMs: number;
+  /** This connection's player may vote (false for eliminated players and spectators). */
+  canVote: boolean;
+  /** This player's current ballot (option index), or -1. */
+  yourVote: number;
+  /** Bot ballots count for less than a human's. */
+  botsDiscounted: boolean;
+}
+
+/**
+ * Client → server (v6): vote for (or change to) an option. Ignored unless
+ * the ballot for `roundIndex` is open and the sender may vote.
+ */
+export interface CastVoteMsg {
+  t: 'castVote';
+  roundIndex: number;
+  /** Option index in {@link VoteOptionsMsg.options}. */
+  option: number;
+}
+
+/** Server → client (v6), at most 4 Hz while ballots change. */
+export interface VoteTallyMsg {
+  t: 'voteTally';
+  roundIndex: number;
+  /** Raw ballots per option. */
+  counts: number[];
+  /** Ballots cast. */
+  voted: number;
+}
+
+/** Server → client (v6): the ballot closed. */
+export interface VoteResultMsg {
+  t: 'voteResult';
+  roundIndex: number;
+  /** Winning option index, or -1 when the vote was called off (the show ended). */
+  winner: number;
+  /** Winning round id ('' when called off). */
+  roundId: string;
+  /** Final raw ballots per option. */
+  counts: number[];
+  /** How it was decided: most votes, a seeded tie-break, or a seeded pick with no votes. */
+  reason: 'votes' | 'tie' | 'noVotes' | 'cancelled';
+}
+
 /** Union of low-frequency messages. `t` is the discriminant. */
 export type LowFreqMessage =
   | JoinRoundMsg
@@ -379,7 +452,11 @@ export type LowFreqMessage =
   | { t: 'showPhase'; phase: ShowPhaseId; startsInMs?: number }
   | { t: 'roundPhase'; phase: RoundPhaseId; time: number }
   | ShowInfoMsg
-  | ShowRewardsMsg;
+  | ShowRewardsMsg
+  | VoteOptionsMsg
+  | CastVoteMsg
+  | VoteTallyMsg
+  | VoteResultMsg;
 
 /** Low-frequency message type discriminant. */
 export type LowFreqType = LowFreqMessage['t'];

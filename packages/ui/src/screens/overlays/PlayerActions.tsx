@@ -23,8 +23,13 @@ export const REPORT_REASONS: { id: ReportReason; label: string; hint: string }[]
   { id: 'cheating', label: 'Cheating', hint: 'Speed, flying, impossible moves' },
   { id: 'griefing', label: 'Griefing', hint: 'Ruining rounds on purpose' },
   { id: 'spam', label: 'Spam', hint: 'Flooding chat or pings' },
+  { id: 'voice', label: 'Voice chat', hint: 'Something they said in voice' },
   { id: 'other', label: 'Something else', hint: 'Tell us in the details' },
 ];
+
+/** Shown with the voice reason: moderators get metadata, never a recording. */
+export const VOICE_REPORT_NOTE =
+  'Voice chat is never recorded. Your report sends when and in which party or team room you talked, plus your description, so please say what happened.';
 
 // NOTE: a dialog dismissed without a button never reports back, so a stale
 // listener is dropped when the next confirmation opens.
@@ -49,6 +54,25 @@ function confirm(id: string, title: string, body: string, label: string, onYes: 
     if (buttonId === 'confirm') onYes();
   });
   pendingConfirm = off;
+}
+
+/**
+ * Asks before a destructive action (club kicks, hand-overs, leaving).
+ *
+ * @param id - Dialog id.
+ * @param title - Question.
+ * @param body - What will happen.
+ * @param label - Confirm button label.
+ * @param onYes - Runs when confirmed.
+ */
+export function confirmAction(
+  id: string,
+  title: string,
+  body: string,
+  label: string,
+  onYes: () => void,
+): void {
+  confirm(id, title, body, label, onYes);
 }
 
 /**
@@ -409,6 +433,11 @@ export function ReportDialog(): JSX.Element | null {
             </button>
           ))}
         </div>
+        {reason === 'voice' && (
+          <p className="tr-report-note" role="note">
+            {VOICE_REPORT_NOTE}
+          </p>
+        )}
         <textarea
           className="tr-input tr-report-details"
           placeholder="What happened? (optional)"

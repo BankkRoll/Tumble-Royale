@@ -46,6 +46,7 @@ import {
   type RoundStatus,
   type SnapshotFrame,
 } from '@tumble/netcode';
+import { isCustomRoundId } from '@tumble/content/custom';
 import type { CharacterInput, SimEvent } from '@tumble/sim';
 import { assignBotSkills, assignShowParties, lobbySpawnPoint } from '@tumble/sim/show';
 import {
@@ -80,6 +81,7 @@ import type {
   ShowController,
   ShowEvent,
   ShowRoundPlan,
+  ShowVote,
 } from './types.ts';
 
 /** Lifecycle of a room. */
@@ -203,6 +205,8 @@ const SPECTATOR_ID_BASE = MAX_ENTITIES;
 const LOADING_STATUS_INTERVAL_MS = 500;
 /** …and at least this often while a round loads, even when nothing changed. */
 const LOADING_STATUS_KEEPALIVE_MS = 1000;
+/** `voteTally` goes out at most this often (4 Hz); a burst of ballots folds into one. */
+const VOTE_TALLY_INTERVAL_MS = 250;
 const BOT_NAMES_A = [
   'Bouncy',
   'Wobbly',
@@ -250,7 +254,9 @@ export class Room {
   private readonly slots = new Map<number, PlayerSlot>();
   private readonly chat = new ChatRelay();
   private readonly sessions = new Set<ClientSession>();
-  private readonly show: ShowController;
+  private show: ShowController;
+  /** A custom show is still fetching its picked rounds; it starts once they are in (or failed). */
+  private preparing = false;
   private sim: MatchSim | null = null;
   private round: RoundDefinition | null = null;
   private quantizer: PositionQuantizer | null = null;
@@ -293,12 +299,17 @@ export class Room {
   private showStartedAtWall = 0;
   private readonly roundRecords: RoundRecord[] = [];
   private currentPlan: ShowRoundPlan | null = null;
+  /** Teams of the current round were sent to the API and still need clearing. */
+  private voiceTeamsReported = false;
   /** Rewards per user id once the API answered (replayed to late reconnects). */
   private readonly rewardsByUser = new Map<string, Record<string, unknown> | null>();
   private rewardsDone = false;
   private loadingPolledAt = -Infinity;
   private loadingSentAt = -Infinity;
   private loadingKey = '';
+  /** Newest vote tally not broadcast yet. */
+  private pendingTally: LowFreqMessage | null = null;
+  private tallySentAt = -Infinity;
   /** The running sim is the pre-show platform, not a show round. */
   private lobbyActive = false;
   /** Server tick at which the pre-show countdown ends (-1 before the show starts). */
@@ -348,6 +359,22 @@ export class Room {
       leaders: this.leaders,
       quantizer: new PositionQuantizer({ min: { x: -1, y: -1, z: -1 }, max: { x: 1, y: 1, z: 1 } }),
     };
+    const prep = match ? deps.prepareMatch?.(match) : null;
+    if (prep) {
+      this.preparing = true;
+      const ready = (): void => {
+        this.preparing = false;
+        // Built again so the show sees what the preparation loaded. Nothing has
+        // reached the first controller yet: the show starts after this.
+        if (this.state === 'lobby') this.show = deps.createShowController({ roomId: id, match });
+      };
+      prep.then(ready, (err: unknown) => {
+        this.log(
+          `[room ${id}] match preparation failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        ready();
+      });
+    }
   }
 
   /** Global sim tick of the room's current state (lag-compensation timeline). */
@@ -664,6 +691,7 @@ export class Room {
     this.show.onTick(1 / SERVER_TICK_HZ, { status: this.status, presentPlayers: this.presentPlayers });
     this.applyShowEvents(this.show.drainEvents(), now);
     this.updateLoadingStatus(now);
+    this.flushVoteTally(now);
 
     const tSnap = performance.now();
     const every = this.config.snapshotEvery * (this.lobbyActive ? this.config.lobbySnapshotDivisor : 1);
@@ -737,8 +765,9 @@ export class Room {
       if (humans === 0) {
         this.firstJoinAt = -1;
       } else if (
-        now - this.firstJoinAt >= this.config.fillWaitMs ||
-        humans >= Math.min(this.config.startAtHumans, this.config.capacity)
+        !this.preparing &&
+        (now - this.firstJoinAt >= this.config.fillWaitMs ||
+          humans >= Math.min(this.config.startAtHumans, this.config.capacity))
       ) {
         this.startShow();
       } else if (now - this.lastLobbyBroadcast >= 1000) {
@@ -1112,6 +1141,16 @@ export class Room {
         if (this.round && msg.roundId === this.round.id && !this.lobbyActive)
           this.show.onPlayerLoaded?.(slot.id);
         return;
+      case 'castVote':
+        // Stale, malformed or ineligible ballots are dropped quietly: a vote is never worth a kick.
+        if (slot.spectator || !this.show.castVote) return;
+        if (!session.guard.admitVote(now)) {
+          this.metrics.rateLimited++;
+          return;
+        }
+        if (typeof msg.roundIndex !== 'number' || typeof msg.option !== 'number') return;
+        this.show.castVote(slot.id, msg.roundIndex, msg.option);
+        return;
       case 'loadProgress':
         if (slot.spectator || typeof msg.pct !== 'number' || !Number.isFinite(msg.pct)) return;
         if (this.round && msg.roundId === this.round.id && !this.lobbyActive)
@@ -1147,12 +1186,33 @@ export class Room {
         case 'roundEnd':
           this.broadcast({ t: 'roundResults', roundId: e.roundId, results: e.results });
           this.recordRound(e.roundId, e.results, now);
+          this.reportVoiceTeams(null);
+          break;
+        case 'voteOpen':
+          this.pendingTally = null;
+          for (const s of this.sessions) s.sendLowFreq(this.voteOptionsFor(s, e.vote));
+          break;
+        case 'voteTally':
+          this.pendingTally = { t: 'voteTally', roundIndex: e.roundIndex, counts: e.counts, voted: e.voted };
+          break;
+        case 'voteResult':
+          // The result carries the final counts; a tally still queued would only arrive after it.
+          this.pendingTally = null;
+          this.broadcast({
+            t: 'voteResult',
+            roundIndex: e.roundIndex,
+            winner: e.winner,
+            roundId: e.roundId,
+            counts: e.counts,
+            reason: e.reason,
+          });
           break;
         case 'showEnd':
           this.broadcast({ t: 'showSummary', winners: e.winners, rounds: e.rounds });
           this.state = 'ended';
           this.endedAt = now;
           this.reportResults(e.winners);
+          this.reportVoiceTeams(null);
           break;
       }
     }
@@ -1182,6 +1242,33 @@ export class Room {
       total: st.total,
       waitingOn: st.waitingOn.slice(0, LOADING_STATUS_MAX_WAITING),
     });
+  }
+
+  /** Broadcasts the newest queued vote tally, at most {@link VOTE_TALLY_INTERVAL_MS} apart. */
+  private flushVoteTally(now: number): void {
+    if (!this.pendingTally || now - this.tallySentAt < VOTE_TALLY_INTERVAL_MS) return;
+    this.broadcast(this.pendingTally);
+    this.pendingTally = null;
+    this.tallySentAt = now;
+  }
+
+  /** The ballot as one connection sees it: whether its player may vote and what they picked. */
+  private voteOptionsFor(session: ClientSession, vote: ShowVote): LowFreqMessage {
+    const slot = this.slots.get(session.playerId);
+    const voter = slot && !slot.spectator ? slot.id : -1;
+    return {
+      t: 'voteOptions',
+      roundIndex: vote.roundIndex,
+      isFinal: vote.isFinal,
+      options: vote.options,
+      counts: vote.counts,
+      voted: vote.voted,
+      eligible: vote.eligible,
+      closesInMs: Math.round(vote.closesIn * 1000),
+      canVote: voter >= 0 && (this.show.canVote?.(voter) ?? false),
+      yourVote: voter >= 0 ? (this.show.ballotOf?.(voter) ?? -1) : -1,
+      botsDiscounted: vote.botsDiscounted,
+    };
   }
 
   private startRound(plan: ShowRoundPlan): void {
@@ -1223,6 +1310,24 @@ export class Room {
     this.log(
       `[room ${this.id}] round ${round.id} (stage ${plan.stage}) with ${players.length} players, epoch ${this.epoch}`,
     );
+    this.reportVoiceTeams(players);
+  }
+
+  /**
+   * Tells the API who is on which team this round (team voice), or that the
+   * last team round is over. Only humans with an account are sent.
+   */
+  private reportVoiceTeams(players: readonly MatchPlayerInfo[] | null): void {
+    const sink = this.deps.voiceTeams;
+    if (!sink) return;
+    const entries = (players ?? []).flatMap((p) => {
+      const slot = this.slots.get(p.id);
+      if (p.team < 0 || !slot?.userId || slot.isBot) return [];
+      return [{ userId: slot.userId, team: p.team, partyId: slot.queuePartyId }];
+    });
+    if (entries.length === 0 && !this.voiceTeamsReported) return;
+    this.voiceTeamsReported = entries.length > 0;
+    sink.report(this.id, Math.max(0, this.roundIndex), entries);
   }
 
   private hasHeldSeats(): boolean {
@@ -1326,6 +1431,11 @@ export class Room {
     this.broadcastPlayerList();
     if (this.sim && this.status && !this.lobbyActive)
       session.sendLowFreq({ t: 'roundPhase', phase: this.status.phase, time: this.sim.time });
+    const vote = this.show.currentVote?.();
+    if (vote) {
+      session.sendLowFreq(this.voteOptionsFor(session, vote));
+      if (vote.result) session.sendLowFreq({ t: 'voteResult', roundIndex: vote.roundIndex, ...vote.result });
+    }
     this.flushSession(session, performance.now());
   }
 
@@ -1390,6 +1500,8 @@ export class Room {
       variationId: this.sim.variationId ?? null,
       mutatorId: plan?.mutatorId ?? null,
       roundTimeScale: plan?.roundTimeScale ?? 1,
+      // Clients do not ship shared rounds: they build this exact definition.
+      ...(isCustomRoundId(this.round.id) ? { round: this.round } : {}),
     });
   }
 

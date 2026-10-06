@@ -1,7 +1,7 @@
 /**
  * Settings sheet: Graphics, Controls (keyboard and controller rebinding), Audio,
- * Accessibility, Gameplay, Account. Every change applies live and emits
- * `settingsChange`. docs/design/SCREENS.md §5.10.
+ * Accessibility, Gameplay, Voice (see `VoicePanel.tsx`), Account. Every change
+ * applies live and emits `settingsChange`. docs/design/SCREENS.md §5.10.
  */
 import { useEffect, useState, type JSX, type ReactNode } from 'react';
 import { playCue } from '../../audio-cues.ts';
@@ -16,6 +16,8 @@ import { Icon } from '../../components/icons/index.tsx';
 import { AccountSection } from './AccountSheet.tsx';
 import { AppRows } from './InstallApp.tsx';
 import { PadRebinder } from './PadRebinder.tsx';
+import { VoiceSection } from './VoicePanel.tsx';
+import { useVoice } from '../../store/voice.ts';
 import { semanticColors } from '../../theme/tokens.ts';
 
 const SECTIONS: { id: SettingsSection; label: string }[] = [
@@ -24,6 +26,7 @@ const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: 'audio', label: 'Audio' },
   { id: 'accessibility', label: 'Accessibility' },
   { id: 'gameplay', label: 'Gameplay' },
+  { id: 'voice', label: 'Voice' },
   { id: 'account', label: 'Account' },
 ];
 
@@ -454,6 +457,16 @@ export function Section({ id }: { id: SettingsSection }): JSX.Element {
               onChange={(autoSpectate) => up('gameplay', { autoSpectate })}
             />
           </Row>
+          <Row
+            label="Elimination replay"
+            hint="Show how you were knocked out before you choose to keep watching (a still frame with Reduce Motion)"
+          >
+            <Toggle
+              label="Elimination replay"
+              checked={s.gameplay.eliminationReplay}
+              onChange={(eliminationReplay) => up('gameplay', { eliminationReplay })}
+            />
+          </Row>
           <Row label="Show bot tags" hint="Marks computer-controlled players with a small BOT tag">
             <Toggle
               label="Show bot tags"
@@ -505,6 +518,8 @@ export function Section({ id }: { id: SettingsSection }): JSX.Element {
           </Row>
         </>
       );
+    case 'voice':
+      return <VoiceSection />;
     case 'account':
       return <AccountSection />;
   }
@@ -567,9 +582,12 @@ export function openAccountSettings(): void {
 /** Settings overlay sheet. */
 export function SettingsSheet(): JSX.Element {
   const [section, setSection] = useState<SettingsSection>(() => requestedSection ?? 'graphics');
+  // Voice stays hidden on servers that do not offer it; a muted player still sees why.
+  const showVoice = useVoice((s) => s.available || s.status !== 'off' || s.unavailableReason === 'muted');
   // Cleared after mount, not in the initializer, which StrictMode runs twice.
   useEffect(() => {
     requestedSection = null;
+    uiEvents.emit('voiceRefresh');
   }, []);
   return (
     <div
@@ -598,7 +616,7 @@ export function SettingsSheet(): JSX.Element {
           </button>
         </div>
         <div className="tr-settings-tabs" role="tablist" data-nav-tabs="">
-          {SECTIONS.map((sec) => (
+          {SECTIONS.filter((sec) => sec.id !== 'voice' || showVoice).map((sec) => (
             <button
               key={sec.id}
               type="button"

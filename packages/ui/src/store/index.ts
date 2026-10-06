@@ -49,6 +49,34 @@ export {
   type VisibleChatLine,
 } from './social.ts';
 export {
+  clubs,
+  useClubs,
+  JOIN_MODE_LABEL,
+  CLUB_ROLE_LABEL,
+  CLUB_REPORT_LABEL,
+  type ClubsState,
+  type ClubStatus,
+  type ClubTab,
+  type ClubCardView,
+  type ClubMemberView,
+  type MyClubView,
+  type ClubInviteView,
+  type ClubJoinRequestView,
+  type ClubGoalView,
+  type ClubGoalsView,
+  type ClubContributionView,
+} from './clubs.ts';
+export {
+  voice,
+  useVoice,
+  VOICE_UNAVAILABLE_TEXT,
+  type VoiceState,
+  type VoiceStatus,
+  type VoiceUnavailableReason,
+  type VoicePeerView,
+  type VoiceDeviceView,
+} from './voice.ts';
+export {
   shareUI,
   useShare,
   CLOSED_SHARE_SHEET,
@@ -58,6 +86,7 @@ export {
   type ShareResult,
   type ShareStatus,
   type ShareClipRound,
+  type ShareClipPrefill,
   type ShareCardFormat,
   type ClipSupport,
 } from './share.ts';
@@ -105,3 +134,4 @@ export {
   overlayAfterScreenChange,
   watchChoiceVisible,
 } from './inputOwnership.ts';
+export { HIGHLIGHT_HEADINGS, highlightPlace, highlightTitle } from './highlights.ts';

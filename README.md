@@ -15,9 +15,9 @@
 
 </div>
 
-Up to 100 Tumblers (humans and bots) compete through a show of 3–5 randomly
-drawn rounds (races, survivals, team games, hunts, logic rounds and a final) until
-one player takes the Crown. No install, no plugins: it runs in a browser tab
+Up to 100 Tumblers (humans and bots) compete through a show of 3–5 rounds
+(races, survivals, team games, hunts, logic rounds and a final), voted on
+between rounds or drawn by the show, until one player takes the Crown. No install, no plugins: it runs in a browser tab
 on desktop and mobile.
 
 <table>
@@ -48,20 +48,44 @@ What a player can do today:
 
 - **Play:** solo, Duos and Squads online with parties, or any show offline
   against bots; Chaos Mode (one mutator per show), Ranked (solo rounds only,
-  seasonal soft reset) and a gentler First Show for newcomers
-- **Private shows:** invite codes, host-picked rounds and rules changed live,
-  kick/ban, lock, transfer host, ready checks and spectator slots
+  seasonal soft reset) and a gentler First Show for newcomers; players vote
+  on the next round between rounds (server-authoritative, seeded tie-breaks)
+- **Private shows:** invite codes, host-picked rounds (with or without round
+  voting) and rules changed live, kick/ban, lock, transfer host, ready checks
+  and spectator slots; hosts can also add a player-made round by its share
+  code
+- **Round editor (`/editor`):** build races, survivals, hunts and logic rounds
+  from the shipped level parts and obstacle library in 3D (grid snapping,
+  move/turn/size gizmo, multi-select, copy/paste, undo/redo, generated
+  obstacle settings), with live checks (reachable finish, spawn on solid
+  ground, 100-player budgets), local saves, JSON import/export, Test play
+  against bots, and sharing by code (full accounts; reports and takedowns go
+  through the admin console)
 - **Social:** friends (requests, presence, join), party and in-show text chat
   with a filter, quick pings, report / block / mute, streamer mode
+- **Clubs:** persistent groups of up to 50 with owner / officer / member
+  roles, open, request or invite-only joining, a club chat, club tags beside
+  names, "Party up" with online members, weekly club goals that pay everyone
+  who played, discovery and moderation from the admin console
+- **Voice chat (opt-in):** off by default; party voice and, in team rounds,
+  squads of up to 8 teammates over a WebRTC mesh (Opus only) with the API
+  deciding every room; push-to-talk (rebindable) or open mic, per-player
+  volume and mute, speaking marks, "relay only" to hide your IP, Streamer
+  Mode options, voice mutes and voice reports (nothing is recorded). Needs a
+  TURN relay: the Compose stack ships coturn behind a `voice` profile
 - **Progression:** accounts (guest, Discord, Google, email link), seasons,
   a 100-tier pass, daily/weekly/seasonal/milestone challenges, 45
   achievements (some hidden), a collection log, a daily login streak,
   limited-time events with their own challenges, points track and cosmetics,
   store with self-service refunds (Gem packs go to a staff refund queue),
+  gifting store items to friends and wish lists friends can gift from,
   Crown Shard shop, free Gem paths, live news and notifications
-- **Watch & share:** keep spectating after elimination, round replays (save and
-  reopen them), photo mode, share cards for wins and deep runs, and 5–15 s
-  clips of any recorded round, all made on the device (no upload)
+- **Watch & share:** a short "How you went out" replay after a knock-out
+  (slowed at the decisive moment, with the cause), automatic highlights of
+  each show on the rewards screen, keep spectating after elimination, round
+  replays (save and reopen them), photo mode, share cards for wins and deep
+  runs, and 5–15 s clips of any recorded round or highlight, all made on the
+  device (no upload)
 - **Input & access:** keyboard/mouse with rebinding, gamepad menus,
   single-layer touch controls, vibration, colour-blind palettes (also in 3D),
   captions and an opt-in spoken announcer
@@ -147,7 +171,7 @@ The "Required in production" group of each `.env.example` lists what to set.
 
 The client is a single-page app. Party invites (`/join/<code>`), OAuth and
 email sign-in returns (`/auth/*`) and Stripe returns (`/store`) must serve
-`index.html`, and `/admin` serves `admin.html`. The build includes `_redirects` (Netlify, Cloudflare Pages)
+`index.html`, `/admin` serves `admin.html` and `/status` serves `status.html`. The build includes `_redirects` (Netlify, Cloudflare Pages)
 from `apps/client/public/`, and `apps/client/vercel.json` does the same on
 Vercel; other hosts need equivalent rewrites.
 
@@ -172,7 +196,13 @@ pnpm admin errors top                                   # most frequent client e
   and private lobbies (`503 maintenance` from the API and matchmaker) while
   Vs Bots keeps working and running shows finish on their game servers.
 - **Feature flags** (`store.enabled`, `chat.global`, `party.lobbyGames`,
-  `replays.enabled`, `mutators.chaos`, `analytics.sample`) default to on.
+  `replays.enabled`, `mutators.chaos`, `analytics.sample`, `events.enabled`,
+  `clubs.enabled`, `shows.mapVoting`) default to on. With `clubs.enabled`
+  off every club route answers `503 feature_disabled`, club chat stops and
+  shows stop counting toward club goals; clubs and their members are kept.
+  `voice.enabled` is the exception: it defaults to off because voice needs a
+  TURN relay (`VOICE_ICE_SERVERS`, `VOICE_TURN_SECRET`; docs/SELF_HOSTING.md,
+  "Voice chat"), and the client hides voice until both are in place.
   The client fetches them at boot and on reconnect and caches them for
   offline boots; the matchmaker and game servers read them from the API
   over the internal HMAC channel, cached 30 s.
@@ -186,6 +216,11 @@ pnpm admin errors top                                   # most frequent client e
   with no identity beyond the account id; players can turn them off in
   Settings → Gameplay, and they start off under Do Not Track or Global
   Privacy Control. Client and server crashes go to the same table.
+- **Status page** at `/status`: live component states from real probes
+  (database, KV, matchmaker, game servers per region, store and chat
+  switches), maintenance, incidents with updates, 90 days of uptime, and
+  Atom and JSON incident feeds. Admins publish incidents from the console or
+  `pnpm admin status incident open|update|resolve|list`.
 
 The full reference is the Live ops section of
 [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md#6-live-ops).
@@ -216,6 +251,7 @@ how the game runs or point the client at another server.
 | `?fresh=1`                                  | Ignore the saved profile (replays the first-launch flow)          |
 | `?api=0` / `?apiUrl=` / `?mmUrl=` / `?gs=`  | Disable or redirect the API, matchmaker or game server            |
 | `?scene=test`                               | Phase 0 renderer/physics test scene                               |
+| `?playtest=1`                               | Test play the round editor's last saved Test play round           |
 
 ### Dev sandboxes
 
@@ -321,7 +357,7 @@ the same pose with zero bandwidth.
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Foundations                 | Done: both GPU backends render, client/server Rapier bit-identical after 600 steps (`e2e/phase0.spec.ts`)                                                            |
 | The Tumbler                 | Done; tuning still needs human playtesting                                                                                                                           |
-| Netcode                     | Done: no steady-state corrections at 150 ms + 2% loss (unit-tested), lag-compensated grab/dive hit assist, protocol v5                                               |
+| Netcode                     | Done: no steady-state corrections at 150 ms + 2% loss (unit-tested), lag-compensated grab/dive hit assist, protocol v6 (round voting)                                |
 | Shows                       | Done: full shows end to end in the browser (`e2e/game.spec.ts`; 100-player offline show verified), solo/Duos/Squads online                                           |
 | Meta & accounts             | Done: guest + OAuth/email accounts, locker, parties, matchmaking, server-granted rewards, seasons, shard shop                                                        |
 | Content                     | 25 rounds, tutorial island, procedural audio. Touch controls exist but no phone frame rate has been measured                                                         |

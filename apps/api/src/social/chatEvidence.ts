@@ -2,10 +2,11 @@
  * Recent chat kept per sender so a report can carry what the reported player
  * actually said.
  *
- * Only two kinds of line are kept: global chat (public to everyone online)
- * and whispers, which are attached to a report only when the reporter was
- * their recipient. Party chat is not kept: the API cannot tell afterwards
- * whether the reporter was in that party. Lines expire after
+ * Three kinds of line are kept: global chat (public to everyone online),
+ * whispers, which are attached to a report only when the reporter was their
+ * recipient, and club chat, attached only when the reporter is in that club.
+ * Party chat is not kept: the API cannot tell afterwards whether the reporter
+ * was in that party. Lines expire after
  * {@link CHAT_EVIDENCE_TTL_MS}; a report snapshots them into `reports.evidence`.
  */
 import type { KV } from '../kv/index.ts';
@@ -17,13 +18,20 @@ export const CHAT_EVIDENCE_TTL_MS = 60 * 60_000;
 
 /** One stored line. */
 export interface EvidenceLine {
-  channel: 'global' | 'whisper';
-  /** As relayed (slurs already masked by the chat filter). */
+  /** `voice` lines are room/time metadata from `voice/service.ts`, never audio. */
+  channel: 'global' | 'whisper' | 'club' | 'voice';
+  /** As relayed (slurs already masked by the chat filter), or a voice summary. */
   text: string;
-  /** Epoch ms. */
+  /** Epoch ms (for voice: when the two were last in the room together). */
   at: number;
   /** Whisper recipient. */
   to?: string;
+  /** Club of a club chat line. */
+  club?: string;
+  /** Voice room id. */
+  room?: string;
+  /** Voice: epoch ms when the two first shared the room. */
+  from?: number;
 }
 
 const key = (userId: string) => `chat-evidence:${userId}`;
@@ -71,21 +79,26 @@ export async function forgetChatLines(kv: KV, userId: string): Promise<void> {
 
 /**
  * The target's recent lines the reporter could have seen: every global line,
- * and whispers sent to the reporter.
+ * whispers sent to the reporter, and club chat of the reporter's club.
  *
  * @param kv - Shared KV.
  * @param targetId - Reported player.
  * @param reporterId - Who is reporting.
+ * @param reporterClubId - The reporter's club, if any.
  * @returns Lines oldest first, or null when there are none.
  */
 export async function chatEvidence(
   kv: KV,
   targetId: string,
   reporterId: string,
+  reporterClubId: string | null = null,
 ): Promise<EvidenceLine[] | null> {
-  // SECURITY: whispers to anyone else stay private, even from moderators.
+  // SECURITY: whispers to anyone else and other clubs' chat stay private, even from moderators.
   const lines = read(await kv.get(key(targetId))).filter(
-    (l) => l.channel === 'global' || (l.channel === 'whisper' && l.to === reporterId),
+    (l) =>
+      l.channel === 'global' ||
+      (l.channel === 'whisper' && l.to === reporterId) ||
+      (l.channel === 'club' && reporterClubId !== null && l.club === reporterClubId),
   );
   return lines.length ? lines : null;
 }

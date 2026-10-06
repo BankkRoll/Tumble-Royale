@@ -37,6 +37,7 @@ import {
   type DialogSpec,
   type PrivacyNavigator,
   type Settings,
+  type UIState,
 } from '@tumble/ui';
 import { bindChatRouter } from './social/chatRouter.ts';
 import { loadMutes, publishSocialAvailability, socialIntents } from './social/intents.ts';
@@ -60,12 +61,17 @@ import { drawBreakdown } from '../debug/drawBreakdown.ts';
 import { DEV_TOOLS } from '../devTools.ts';
 import { ApiClient, ApiError } from './api.ts';
 import { AudioBridge } from './audioBridge.ts';
+import { startVoice, type VoiceHandle } from './voice/voiceWiring.ts';
 import { installAutoplay } from './autoplay.ts';
 import { resolveTumblerFactory, type ResolvedTumblerFactory } from './characters.ts';
 import type { GameConfig } from './config.ts';
 import { botLoadout, tumblerColors } from './cosmetics.ts';
 import { createDebugPanel } from './debugPanel.ts';
 import type { TumbleHooks } from './hooks.ts';
+import { customRoundId, normalizeShareCode } from '@tumble/content/custom';
+import { defaultDrafts } from '../customRounds/drafts.ts';
+import { loadPlaytest } from '../customRounds/playtest.ts';
+import { registerCustomRound } from '../customRounds/registry.ts';
 import { playAgainAction, type LastShow } from './lastShow.ts';
 import {
   localPlayerCard,
@@ -139,6 +145,7 @@ function mergeSettings(base: Settings, saved: Partial<Settings> | null): Setting
     audio: { ...base.audio, ...saved.audio },
     accessibility: { ...base.accessibility, ...saved.accessibility },
     gameplay: { ...base.gameplay, ...saved.gameplay },
+    voice: { ...base.voice, ...saved.voice },
   };
 }
 
@@ -204,6 +211,8 @@ export class GameApp {
   private lastMemoryView: object | null = null;
   private readonly ctx: GameContext;
   private readonly account: OnlineAccount | null;
+  /** Voice chat, wired once an online account is signed in (off until the player opts in). */
+  private voice: VoiceHandle | null = null;
   private readonly mm: MatchmakerClient | null;
   private partyLooks: TumblerLoadout[] = [];
   private partyMembers: { userId: string; loadout: TumblerLoadout }[] = [];
@@ -312,6 +321,9 @@ export class GameApp {
         const m = renderer.info.memory;
         this.memoryLog.push({ round: label, geometries: m.geometries, textures: m.textures });
       },
+      replaysEnabled: () => flag('replays.enabled'),
+      eliminationReplay: () => ui.getState().settings.gameplay.eliminationReplay,
+      track: (name, props) => track(name, props),
     });
     this.share = new ShareController({
       renderer,
@@ -346,6 +358,7 @@ export class GameApp {
       settings: () => ui.getState().settings,
       onEnd: (reason) => this.onSessionEnd(reason),
       replays: gatedReplays(this.replays.live, () => flag('replays.enabled')),
+      eliminations: this.replays.eliminations,
       onShowResult: (facts) => this.share.showFinished(facts),
     };
     this.hooks = {
@@ -581,6 +594,12 @@ export class GameApp {
     if (!ok || !(await account.load())) return;
     if (welcome && fresh) await account.adoptWelcomeColors(welcome.colors);
     account.startRealtime();
+    this.voice ??= startVoice({
+      realtime: account.socket,
+      api: this.api,
+      selfId: () => account.userId,
+      engine: this.audio.engine,
+    });
     // Rollouts are per account, and an offline boot may have skipped the first fetch.
     void this.liveOps.refresh();
     publishSocialAvailability(true);
@@ -658,6 +677,7 @@ export class GameApp {
     // PERF: an opaque loading screen hides the canvas; drawing it would only steal frame time from the build.
     if (!d.covered) d.update(dt * warp, realDt);
     this.photo.update(realDt);
+    this.voice?.tick(now);
     this.audio.setListener(d.listenerPos, d.listenerFwd, d.listenerUp);
     this.audio.update();
     this.post.update(realDt);
@@ -693,7 +713,8 @@ export class GameApp {
   private pollPadNav(now: number): void {
     const s = ui.getState();
     const photo = s.photo.active;
-    const replay = s.replay !== null;
+    // The elimination replay reads the pad itself (any button skips it).
+    const replay = s.replay !== null || s.elimReplay !== null;
     const padToMenu = menuOwnsPad(s, this.menu?.idlePlaying ?? false);
     this.input.setGamepadGameplay(!padToMenu);
     const pad =
@@ -1012,6 +1033,66 @@ export class GameApp {
         this.goMenu();
         void this.backToPrivateShow(next);
         break;
+      case 'playtest':
+        void this.startPlaytest();
+        break;
+    }
+  }
+
+  /**
+   * The round editor's Test play: the draft it saved, as a one-round show vs
+   * bots. Read again on every start, so Play again picks up the latest save.
+   */
+  private async startPlaytest(): Promise<void> {
+    if (this.session) return;
+    const result = await loadPlaytest(defaultDrafts());
+    if (!result.ok) {
+      ui.getState().pushToast({ kind: 'error', title: 'Test play', body: result.message });
+      this.goMenu();
+      return;
+    }
+    if (this.session) return;
+    this.lastShow = { kind: 'playtest' };
+    this.startOfflineShow(result.playlist);
+  }
+
+  /** Looks up a shared round by code for a private show's round picker. */
+  private async lookupCustomRound(input: string): Promise<void> {
+    const set = (v: Parameters<UIState['setCustomRoundLookup']>[0]) => ui.getState().setCustomRoundLookup(v);
+    const code = normalizeShareCode(input);
+    if (!code) {
+      set({ status: 'error', code: input, message: 'Codes are 8 letters and numbers' });
+      return;
+    }
+    set({ status: 'loading', code });
+    try {
+      const shared = await this.api.customRound(code);
+      const id = customRoundId(code);
+      const reg = registerCustomRound(shared.definition, id);
+      if (!reg.ok) {
+        set({ status: 'error', code, message: 'This round does not pass the current rules' });
+        return;
+      }
+      ui.getState().addCustomRoundEntry({
+        id,
+        name: reg.round.name,
+        type: reg.round.type,
+        custom: true,
+        ...(shared.author ? { author: shared.author } : {}),
+      });
+      set({ status: 'ok', code, id });
+    } catch (err) {
+      const e = err instanceof ApiError ? err : null;
+      set({
+        status: 'error',
+        code,
+        message:
+          e?.code === 'taken_down'
+            ? 'This round was removed by moderators'
+            : e?.status === 404
+              ? 'No shared round has that code'
+              : 'Could not reach the server; try again',
+      });
     }
   }
 
@@ -1556,6 +1637,11 @@ export class GameApp {
     bindUI({
       onStart: () => {
         this.audio.unlock();
+        if (this.cfg.playtest && this.profile.exists && !this.session) {
+          this.goMenu();
+          void this.startPlaytest();
+          return;
+        }
         if (!this.profile.exists) s().setScreen('welcome', { transition: 'wipe' });
         else if (this.offerTutorial()) s().setScreen('tutorialPrompt', { transition: 'fade' });
         else this.goMenu();
@@ -1683,6 +1769,44 @@ export class GameApp {
         if (a) void a.refundPurchase(purchaseId, reason);
         else s().pushToast({ kind: 'info', title: 'Refunds need an online account' });
       },
+      onRequestGifts: () => {
+        const a = online();
+        if (a) void a.loadGifts();
+      },
+      onGiftAction: ({ giftId, action }) => {
+        const a = online();
+        if (a) void a.giftAction(giftId, action);
+      },
+      onOpenGiftPicker: ({ offerId, recipientId }) => {
+        const a = online();
+        if (a) void a.openGiftPicker(offerId, recipientId);
+        else s().pushToast({ kind: 'info', title: 'Gifts need an online account' });
+      },
+      onSendGift: ({ offerId, recipientId, message }) => {
+        const a = online();
+        if (a) void a.sendGift(offerId, recipientId, message);
+      },
+      onRequestWishlist: () => {
+        const a = online();
+        if (a) void a.loadWishlist();
+      },
+      onWishlistToggle: ({ itemId, on }) => {
+        const a = online();
+        if (a) void a.wishlistToggle(itemId, on);
+        else s().pushToast({ kind: 'info', title: 'Wish lists need an online account' });
+      },
+      onWishlistReorder: ({ itemIds }) => {
+        const a = online();
+        if (a) void a.wishlistReorder(itemIds);
+      },
+      onWishlistSettings: (patch) => {
+        const a = online();
+        if (a) void a.wishlistSettings(patch);
+      },
+      onRequestFriendWishlist: ({ userId }) => {
+        const a = online();
+        if (a) void a.loadFriendWishlist(userId);
+      },
       onBuyGems: ({ packId }) => {
         const a = online();
         if (a) void a.buyGems(packId);
@@ -1752,6 +1876,7 @@ export class GameApp {
           },
         );
       },
+      onCustomRoundLookup: ({ code }) => void this.lookupCustomRound(code),
       onPlayCustomOffline: ({ options }) => {
         if (options.rounds.length === 0) return;
         this.lastShow = { kind: 'custom', options };

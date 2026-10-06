@@ -2,7 +2,7 @@
  * Fan-out of realtime events to users via KV pub/sub. Any API instance can
  * publish; whichever instance holds the user's WebSocket delivers it.
  */
-import type { PartyLobbyEvent } from '@tumble/shared';
+import type { PartyLobbyEvent, VoiceServerEvent } from '@tumble/shared';
 import type { KV } from '../kv/index.ts';
 
 /** Presence states shown in friends lists. */
@@ -27,6 +27,8 @@ export interface SocialRef {
   userId: string;
   name: string;
   tag: string;
+  /** Club tag, when the user is in a club. */
+  club?: string;
 }
 
 /** A relayed party chat line. */
@@ -34,6 +36,20 @@ export interface PartyChatLine {
   /** Unique id (dedupe across reconnects). */
   id: string;
   partyId: string;
+  from: SocialRef;
+  /** Slurs masked; shown with the chat filter off. */
+  text: string;
+  /** Fully masked copy, when it differs from `text`. */
+  masked?: string;
+  /** Epoch ms. */
+  at: number;
+}
+
+/** A relayed club chat line. */
+export interface ClubChatLine {
+  /** Message id (`club_messages.id`), also the history dedupe key. */
+  id: string;
+  clubId: string;
   from: SocialRef;
   /** Slurs masked; shown with the chat filter off. */
   text: string;
@@ -85,7 +101,36 @@ export type RealtimeEvent =
       /** Set for achievement unlocks, so the client can refresh its achievements view. */
       achievementId?: string;
     }
-  | { type: 'wallet'; gumballs: number; gems: number; crownShards: number };
+  | { type: 'wallet'; gumballs: number; gems: number; crownShards: number }
+  /** Something about the member's club changed (roster, roles, settings, goals): refetch it. */
+  | { type: 'club_update'; clubId: string }
+  | ({ type: 'club_chat' } & ClubChatLine)
+  /** The player is no longer in the club: kicked, or the club was disbanded. */
+  | { type: 'club_removed'; clubId: string; name: string; reason: 'kicked' | 'disbanded' }
+  | { type: 'club_invite'; clubId: string; name: string; tag: string; from: SocialRef }
+  /** To officers: someone asked to join. */
+  | { type: 'club_request'; clubId: string; from: SocialRef }
+  /**
+   * A gift changed: `received` reaches the recipient, every later status
+   * (`opened`, `declined`, `cancelled`, `returned`, `reversed`) both sides.
+   * Clients reload `GET /gifts` for the details.
+   */
+  | {
+      type: 'gift';
+      giftId: string;
+      status: 'received' | 'opened' | 'declined' | 'cancelled' | 'returned' | 'reversed';
+      /** Whose point of view this event is for. */
+      role: 'sender' | 'recipient';
+      /** The other party, when they still exist. */
+      other: SocialRef | null;
+      /** Item or bundle name. */
+      title: string;
+      autoAccepted?: boolean;
+    }
+  /** Wished-for items are in the day's store (at most once per UTC day). */
+  | { type: 'wishlist_in_store'; day: string; items: { itemId: string; title: string }[] }
+  /** Voice room, relayed signalling and session end (see `voice/service.ts`). */
+  | VoiceServerEvent;
 
 /** Channel name for a user's personal event stream. */
 export const userChannel = (userId: string): string => `user:${userId}`;

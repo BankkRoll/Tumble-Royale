@@ -367,6 +367,85 @@ export const storeRotations = pgTable('store_rotations', {
   createdAt: createdAt(),
 });
 
+/**
+ * A store item bought by one player for a friend (`economy/gifts.ts`).
+ *
+ * The sender's charge is the ledger row `gift` / `gift:<id>` and any money
+ * given back is one `gift_refund` / `gift:<id>` row, so a gift can be
+ * refunded at most once. Statuses: `pending` (unopened) → `opened` (items
+ * granted with source `gift`), or `declined` / `cancelled` / `returned`
+ * (the system sent it back) / `reversed` (staff), each refunding the sender
+ * when the sender still exists.
+ *
+ * Both parties are `ON DELETE SET NULL`: the other side's history survives an
+ * account deletion, which settles pending gifts first (`accounts/erase.ts`).
+ */
+export const gifts = pgTable(
+  'gifts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    senderId: uuid('sender_id').references(() => users.id, { onDelete: 'set null' }),
+    recipientId: uuid('recipient_id').references(() => users.id, { onDelete: 'set null' }),
+    /** Sender's `Idempotency-Key`: a double submit replays the first gift. */
+    idempotencyKey: text('idempotency_key').notNull(),
+    /** Cosmetic id or `bundle:<id>`. */
+    offerId: text('offer_id').notNull(),
+    /** Cosmetic ids opening grants (a bundle's items the recipient lacked when it was sent). */
+    items: jsonb('items').notNull(),
+    currency: text('currency').notNull(),
+    price: integer('price').notNull(),
+    /** Optional note, slurs masked (`filterChat`). */
+    message: text('message'),
+    /** Fully masked copy of `message`, when it differs. */
+    messageMasked: text('message_masked'),
+    status: text('status').notNull(),
+    /** True once the price went back to the sender. */
+    refunded: boolean('refunded').notNull().default(false),
+    /** Opened by the 30-day auto-accept rather than by the recipient. */
+    autoAccepted: boolean('auto_accepted').notNull().default(false),
+    /** Why it was returned or reversed (`recipient_owns`, `recipient_deleted`, a staff reason…). */
+    note: text('note'),
+    createdAt: createdAt(),
+    /** When an unopened gift opens by itself. */
+    expiresAt: ts('expires_at').notNull(),
+    resolvedAt: ts('resolved_at'),
+  },
+  (t) => [
+    uniqueIndex('gifts_sender_key_uq').on(t.senderId, t.idempotencyKey),
+    index('gifts_recipient_idx').on(t.recipientId, t.status, t.createdAt),
+    index('gifts_sender_idx').on(t.senderId, t.createdAt),
+    index('gifts_pending_expiry_idx').on(t.status, t.expiresAt),
+  ],
+);
+
+/** A player's wish list: store items (or `bundle:<id>`) in the player's own order. */
+export const wishlistItems = pgTable(
+  'wishlist_items',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    itemId: text('item_id').notNull(),
+    position: integer('position').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.itemId] })],
+);
+
+/** Wish list privacy and alerts; no row means the defaults (friends may look, alerts on). */
+export const wishlistSettings = pgTable('wishlist_settings', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  /** `friends` or `nobody`. */
+  visibility: text('visibility').notNull().default('friends'),
+  /** Tell the player when a wished item is in the day's store. */
+  alerts: boolean('alerts').notNull().default(true),
+  /** UTC day of the last alert sent, so a rotation alerts once. */
+  lastAlertDay: text('last_alert_day'),
+  updatedAt: ts('updated_at').notNull().defaultNow(),
+});
+
 // -----------------------------------------------------------------------------
 // Season pass & challenges
 // -----------------------------------------------------------------------------
@@ -918,6 +997,210 @@ export const adminAuditLog = pgTable(
   ],
 );
 
+// -----------------------------------------------------------------------------
+// Clubs
+// -----------------------------------------------------------------------------
+
+/**
+ * Persistent player groups. Disbanding is a soft delete (`disbanded_at`), so
+ * reports, chat evidence and the audit trail keep pointing at a real row;
+ * names and tags are unique case-insensitively among live clubs only.
+ */
+export const clubs = pgTable(
+  'clubs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    /** 2–5 upper-case letters or digits, shown as `[TAG]` beside members' names. */
+    tag: text('tag').notNull(),
+    description: text('description').notNull().default(''),
+    /** `{ motif, primary, secondary }` from the shared emblem palette. */
+    emblem: jsonb('emblem').notNull(),
+    /** `open`, `request` or `invite`. */
+    joinMode: text('join_mode').notNull().default('open'),
+    /** Cached member count, kept under the club row lock (cap checks, discovery). */
+    memberCount: integer('member_count').notNull().default(0),
+    /** Last join, chat line or counted show; drives "recommended". */
+    lastActivityAt: ts('last_activity_at').notNull().defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+    disbandedAt: ts('disbanded_at'),
+    /** Why it was disbanded: `owner`, `empty`, or a moderator's reason. */
+    disbandReason: text('disband_reason'),
+  },
+  (t) => [
+    uniqueIndex('clubs_name_live_uq')
+      .on(sql`lower(${t.name})`)
+      .where(sql`${t.disbandedAt} is null`),
+    uniqueIndex('clubs_tag_live_uq')
+      .on(sql`lower(${t.tag})`)
+      .where(sql`${t.disbandedAt} is null`),
+    index('clubs_activity_idx').on(t.lastActivityAt),
+  ],
+);
+
+/**
+ * Club membership. The primary key on `user_id` is what holds "one club per
+ * player" even under concurrent joins.
+ */
+export const clubMembers = pgTable(
+  'club_members',
+  {
+    userId: uuid('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    clubId: uuid('club_id')
+      .notNull()
+      .references(() => clubs.id, { onDelete: 'cascade' }),
+    /** `owner`, `officer` or `member`. */
+    role: text('role').notNull(),
+    joinedAt: ts('joined_at').notNull().defaultNow(),
+  },
+  (t) => [index('club_members_club_idx').on(t.clubId, t.joinedAt)],
+);
+
+/** Pending join requests (player → club) and invites (club → player). */
+export const clubInvites = pgTable(
+  'club_invites',
+  {
+    clubId: uuid('club_id')
+      .notNull()
+      .references(() => clubs.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** `request` (the player asked) or `invite` (an officer asked). */
+    kind: text('kind').notNull(),
+    /** Officer who sent an invite. */
+    invitedBy: uuid('invited_by'),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.clubId, t.userId, t.kind] }), index('club_invites_user_idx').on(t.userId)],
+);
+
+/** Kicks, which keep the player out of that club until `until`. */
+export const clubKicks = pgTable(
+  'club_kicks',
+  {
+    clubId: uuid('club_id')
+      .notNull()
+      .references(() => clubs.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    until: ts('until').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.clubId, t.userId] })],
+);
+
+/** Club chat, kept short-term for history and report evidence (pruned by the retention job). */
+export const clubMessages = pgTable(
+  'club_messages',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    clubId: uuid('club_id')
+      .notNull()
+      .references(() => clubs.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Slurs masked (shown with the chat filter off). */
+    text: text('text').notNull(),
+    /** Fully masked copy, when it differs. */
+    masked: text('masked'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('club_messages_club_idx').on(t.clubId, t.id),
+    index('club_messages_created_idx').on(t.createdAt),
+  ],
+);
+
+/**
+ * One weekly goal of one club. The target is fixed when the week's first show
+ * is counted; only the match ingest writes progress.
+ */
+export const clubGoalProgress = pgTable(
+  'club_goal_progress',
+  {
+    clubId: uuid('club_id')
+      .notNull()
+      .references(() => clubs.id, { onDelete: 'cascade' }),
+    /** ISO week, `YYYY-Www`. */
+    week: text('week').notNull(),
+    goalId: text('goal_id').notNull(),
+    progress: integer('progress').notNull().default(0),
+    target: integer('target').notNull(),
+    completedAt: ts('completed_at'),
+  },
+  (t) => [primaryKey({ columns: [t.clubId, t.week, t.goalId] })],
+);
+
+/** What each member added to their club's week; a show here makes them eligible for its rewards. */
+export const clubContributions = pgTable(
+  'club_contributions',
+  {
+    clubId: uuid('club_id')
+      .notNull()
+      .references(() => clubs.id, { onDelete: 'cascade' }),
+    week: text('week').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    shows: integer('shows').notNull().default(0),
+    rounds: integer('rounds').notNull().default(0),
+    crowns: integer('crowns').notNull().default(0),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.clubId, t.week, t.userId] })],
+);
+
+/**
+ * Club goal rewards paid. Keyed by player, week and goal (not club), so
+ * hopping between clubs cannot collect the same week's goal twice.
+ */
+export const clubRewardClaims = pgTable(
+  'club_reward_claims',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    week: text('week').notNull(),
+    goalId: text('goal_id').notNull(),
+    clubId: uuid('club_id').notNull(),
+    claimedAt: ts('claimed_at').notNull(),
+    /** Paid by the week-end settlement rather than a claim. */
+    auto: boolean('auto').notNull().default(false),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.week, t.goalId] })],
+);
+
+/** Reports against a club (name, description, emblem or chat), with what the club looked like then. */
+export const clubReports = pgTable(
+  'club_reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    reporterId: uuid('reporter_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    clubId: uuid('club_id')
+      .notNull()
+      .references(() => clubs.id, { onDelete: 'cascade' }),
+    reason: text('reason').notNull(),
+    details: text('details'),
+    /** `{ name, tag, description, emblem }` when the report was filed. */
+    snapshot: jsonb('snapshot').notNull(),
+    /** Recent club chat, only when the reporter was a member (could see it). */
+    evidence: jsonb('evidence'),
+    status: text('status').notNull().default('open'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('club_reports_status_idx').on(t.status, t.createdAt),
+    index('club_reports_club_idx').on(t.clubId),
+  ],
+);
+
 /** Feature flags with percentage rollout. */
 export const featureFlags = pgTable('feature_flags', {
   key: text('key').primaryKey(),
@@ -952,4 +1235,130 @@ export const events = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index('events_name_idx').on(t.name, t.createdAt)],
+);
+
+// -----------------------------------------------------------------------------
+// Public status page
+// -----------------------------------------------------------------------------
+
+/**
+ * Incidents shown on the public status page. Who opened or updated one is in
+ * `admin_audit_log`, never here, so nothing in this table is private.
+ */
+export const statusIncidents = pgTable(
+  'status_incidents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    title: text('title').notNull(),
+    /** `minor`, `major` or `critical`. */
+    impact: text('impact').notNull(),
+    /** `investigating`, `identified`, `monitoring` or `resolved`. */
+    status: text('status').notNull(),
+    /** Component ids (`api`, `gameservers:eu`, …); empty means the service as a whole. */
+    components: jsonb('components').$type<string[]>().notNull(),
+    startedAt: ts('started_at').notNull().defaultNow(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+    resolvedAt: ts('resolved_at'),
+  },
+  (t) => [
+    index('status_incidents_started_idx').on(t.startedAt),
+    index('status_incidents_resolved_idx').on(t.resolvedAt),
+  ],
+);
+
+/** Public, timestamped updates on an incident. */
+export const statusIncidentUpdates = pgTable(
+  'status_incident_updates',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    incidentId: uuid('incident_id')
+      .notNull()
+      .references(() => statusIncidents.id, { onDelete: 'cascade' }),
+    status: text('status').notNull(),
+    /** Plain text, escaped by every renderer. */
+    message: text('message').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('status_incident_updates_incident_idx').on(t.incidentId, t.createdAt)],
+);
+
+/**
+ * Uptime samples per component per UTC day (`YYYY-MM-DD`), counted by state.
+ * One sampler pass per interval across all API instances adds one sample to
+ * each component; rows older than 90 days are pruned.
+ */
+export const statusUptime = pgTable(
+  'status_uptime',
+  {
+    component: text('component').notNull(),
+    day: text('day').notNull(),
+    samples: integer('samples').notNull().default(0),
+    operational: integer('operational').notNull().default(0),
+    degraded: integer('degraded').notNull().default(0),
+    partial: integer('partial').notNull().default(0),
+    major: integer('major').notNull().default(0),
+    maintenance: integer('maintenance').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.component, t.day] }), index('status_uptime_day_idx').on(t.day)],
+);
+
+// -----------------------------------------------------------------------------
+// Custom rounds
+// -----------------------------------------------------------------------------
+
+/**
+ * Rounds players built in the editor and shared by code. `definition` is the
+ * validated round (defaults applied, id `custom:<code>`), re-validated on
+ * every write. `status`: `published` (the code works), `unpublished` (owner
+ * hid it), `taken_down` (staff removed it; only staff can restore it).
+ */
+export const customRounds = pgTable(
+  'custom_rounds',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Share code (8 characters, unambiguous alphabet). */
+    code: text('code').notNull(),
+    ownerId: uuid('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description').notNull().default(''),
+    roundType: text('round_type').notNull(),
+    definition: jsonb('definition').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    status: text('status').notNull().default('published'),
+    takedownReason: text('takedown_reason'),
+    takenDownBy: text('taken_down_by'),
+    takenDownAt: ts('taken_down_at'),
+    createdAt: createdAt(),
+    updatedAt: ts('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('custom_rounds_code_uq').on(t.code),
+    index('custom_rounds_owner_idx').on(t.ownerId, t.createdAt),
+    index('custom_rounds_status_idx').on(t.status, t.createdAt),
+  ],
+);
+
+/** Player reports against a shared round (the round, not its author: `reports` covers players). */
+export const customRoundReports = pgTable(
+  'custom_round_reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    roundId: uuid('round_id')
+      .notNull()
+      .references(() => customRounds.id, { onDelete: 'cascade' }),
+    reporterId: uuid('reporter_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    reason: text('reason').notNull(),
+    details: text('details'),
+    /** `open`, `actioned` (round taken down) or `dismissed`. */
+    status: text('status').notNull().default('open'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('custom_round_reports_once_uq').on(t.roundId, t.reporterId),
+    index('custom_round_reports_status_idx').on(t.status, t.createdAt),
+  ],
 );

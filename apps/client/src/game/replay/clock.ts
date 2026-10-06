@@ -20,6 +20,8 @@ export class ReplayClock {
   time = 0;
   playing = true;
   private speedIndex = REPLAY_SPEEDS.indexOf(1);
+  /** Exact rate set by {@link setExactSpeed} (scripted playback), or NaN for the viewer's steps. */
+  private exact = Number.NaN;
   private jumped = true;
 
   /** @param duration - Recording length (s). */
@@ -27,7 +29,18 @@ export class ReplayClock {
 
   /** Current playback rate. */
   get speed(): number {
-    return REPLAY_SPEEDS[this.speedIndex] as number;
+    return Number.isNaN(this.exact) ? (REPLAY_SPEEDS[this.speedIndex] as number) : this.exact;
+  }
+
+  /**
+   * Plays at any rate, not just the viewer's steps (the elimination replay's
+   * fast lead-in and slow-motion). {@link setSpeed} / {@link stepSpeed} go
+   * back to the steps.
+   *
+   * @param rate - Playback rate, clamped to 0.05–4.
+   */
+  setExactSpeed(rate: number): void {
+    this.exact = Number.isFinite(rate) ? Math.max(0.05, Math.min(4, rate)) : 1;
   }
 
   /** True when the playhead sits at the end. */
@@ -80,11 +93,13 @@ export class ReplayClock {
       if (Math.abs((REPLAY_SPEEDS[i] as number) - speed) < Math.abs((REPLAY_SPEEDS[best] as number) - speed))
         best = i;
     this.speedIndex = best;
+    this.exact = Number.NaN;
   }
 
   /** Steps the speed up or down one notch (clamped). */
   stepSpeed(dir: 1 | -1): void {
     this.speedIndex = Math.max(0, Math.min(REPLAY_SPEEDS.length - 1, this.speedIndex + dir));
+    this.exact = Number.NaN;
   }
 
   /** @returns True once after each seek (and at start). */

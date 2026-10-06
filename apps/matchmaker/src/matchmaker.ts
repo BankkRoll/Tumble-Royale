@@ -216,6 +216,7 @@ export const DEFAULT_CUSTOM: CustomSettings = {
   lobbyCountdownSec: 10,
   spectatorSlots: 2,
   minPlayers: 1,
+  roundVoting: true,
 };
 
 /** Receives placement events (metrics). */

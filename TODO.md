@@ -5,33 +5,26 @@ What comes next, in order. Each item should land with tests, docs and a green
 
 ## 1. Wave 4 features
 
-- [ ] **Round editor with sharing**: build rounds from the existing obstacle
+- [x] **Round editor with sharing**: build rounds from the existing obstacle
       kits, validate them against `RoundDefinitionSchema`, test-play locally,
       share by code, and moderate shared rounds from the admin console.
-- [ ] **Map voting**: players vote between round candidates during a show
+- [x] **Map voting**: players vote between round candidates during a show
       transition; the server decides, ties broken by seed.
-- [ ] **Elimination replay and highlights**: a short replay of how the player
+- [x] **Elimination replay and highlights**: a short replay of how the player
       was eliminated, and automatic highlight moments built on the replay and
       clip pipeline.
 - [ ] **Spectator / broadcast mode**: a free camera, player switching and a
       clean overlay for streaming shows.
-- [ ] **Gifting and a wish list**: gift store items to friends, with abuse and
+- [x] **Gifting and a wish list**: gift store items to friends, with abuse and
       refund rules that match the refund policy in `docs/ECONOMY.md`.
-- [ ] **Voice chat**: opt-in, party and team scoped, with mute, push-to-talk,
+- [x] **Voice chat**: opt-in, party and team scoped, with mute, push-to-talk,
       reporting and Streamer Mode support.
-- [ ] **Clubs**: persistent groups with a roster, roles, chat and club
+- [x] **Clubs**: persistent groups with a roster, roles, chat and club
       challenges.
-- [ ] **Public status page**: service health, maintenance windows and incident
+- [x] **Public status page**: service health, maintenance windows and incident
       notes, fed by the existing `/status` and live-ops data.
 
-## 2. Other languages
-
-- [ ] Add a translation system (there is none yet), move every UI, caption and
-      rules-card string into it, and ship at least one more language. Run it
-      when few other UI changes are in flight, since it touches nearly every
-      screen.
-
-## 3. Follow-ups from the last wave
+## 2. Follow-ups from the last wave
 
 - [ ] **Render performance**: 100 players reach 54 fps median on Ultra and 69 on
       High, but the High p10 is about 33 fps and frames over 50 ms remain. Next
@@ -58,7 +51,22 @@ What comes next, in order. Each item should land with tests, docs and a green
 - [ ] **Economy**: add the login streak, seasonal challenge and event Gems to
       the season budget table in `docs/ECONOMY.md`.
 
-## 4. Full re-review
+## 2b. Operator setup and sign-in
+
+- [ ] **Env completeness**: every variable each service reads is listed in
+      `deploy/.env.example` (and the game-server example), grouped as required
+      or optional with what it enables (Discord, Google, Stripe, SMTP, TURN…);
+      `setup:env --production` and the config tests agree with it.
+- [ ] **First admin**: a safe bootstrap path for a fresh server (e.g.
+      `pnpm admin staff bootstrap` creating or promoting an account and a
+      one-time sign-in link), documented.
+- [ ] **Admin guide**: one `docs/ADMIN.md` page covering roles, the console,
+      and every `pnpm admin` command with examples and common runbooks.
+- [ ] **More sign-in providers**: add GitHub, Twitch and Apple next to email,
+      Discord and Google, each enabled by its keys alone, with account linking
+      in Settings and docs for creating each provider's app.
+
+## 3. Full re-review
 
 - [ ] Review every feature, flow, screen, endpoint and setting for missing,
       half-built or buggy behaviour, plus a dedicated security pass (auth,
@@ -66,7 +74,7 @@ What comes next, in order. Each item should land with tests, docs and a green
       abuse, payments and refunds, admin routes, secrets, dependencies).
 - [ ] Fix everything found, then review again until a pass comes back clean.
 
-## 5. Final check and release
+## 4. Final check and release
 
 - [ ] Every root and package script runs (`dev`, `build`, `test`, `lint`,
       `format`, `setup:env` including `--production`, `admin`, migrations).

@@ -7,8 +7,10 @@
  *
  * Client → server: `{type:'ping'}`, `{type:'presence', status, playlistId?,
  * lobbyCode?}`, `{type:'party_chat', text}`, `{type:'whisper', to, text}`,
- * `{type:'global_chat', text}` and `{type:'party_lobby', …}` (relayed to fellow
- * party members, see `partyLobby.ts`). Server → client: `RealtimeEvent`s plus
+ * `{type:'global_chat', text}`, `{type:'club_chat', text}` and
+ * `{type:'party_lobby', …}` (relayed to fellow party members, see
+ * `partyLobby.ts`) and `voice_join` / `voice_leave` / `voice_signal` (see
+ * `voice/relay.ts`). Server → client: `RealtimeEvent`s plus
  * `{type:'hello'}`, `{type:'pong'}`, `{type:'global_chat', ...line}` (every
  * connection), `{type:'global_chat_history', lines}` (once, after `hello`)
  * and `{type:'error', code, message}` for refused client messages.
@@ -30,6 +32,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { z } from 'zod';
 import { isErased } from '../accounts/tombstone.ts';
 import { verifyAccessToken } from '../auth/tokens.ts';
+import { sendClubChat } from '../clubs/chat.ts';
 import type { AppContext } from '../context.ts';
 import { activeBans } from '../http/auth.ts';
 import { ApiError } from '../http/errors.ts';
@@ -39,6 +42,9 @@ import { sendPartyChat } from '../social/partyChat.ts';
 import { sendWhisper } from '../social/whisper.ts';
 import { PartyService } from '../social/party.ts';
 import { PRESENCE_TTL_MS, presenceViews, setPresence } from '../social/presence.ts';
+import { VOICE_LIMITS } from '@tumble/shared';
+import { VoiceRelay } from '../voice/relay.ts';
+import { leaveVoice, voiceKeepAlive } from '../voice/service.ts';
 import { REPORTABLE_PRESENCE, userChannel, type PresenceStatus } from './notifier.ts';
 import { PartyLobbyRelay } from './partyLobby.ts';
 
@@ -56,10 +62,15 @@ const ClientMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('party_chat'), text: z.string().max(500) }),
   z.object({ type: z.literal('whisper'), to: z.string().uuid(), text: z.string().max(500) }),
   z.object({ type: z.literal('global_chat'), text: z.string().max(500) }),
+  z.object({ type: z.literal('club_chat'), text: z.string().max(500) }),
 ]);
 
 const HEARTBEAT_MS = 30_000;
 const MAX_MESSAGE_BYTES = 4096;
+// Voice offers and answers carry SDP, which outgrows the cap for everything
+// else. Frames a little over the voice cap are dropped by the relay; only far
+// larger ones close the socket.
+const MAX_FRAME_BYTES = VOICE_LIMITS.maxMessageBytes + MAX_MESSAGE_BYTES;
 
 const ENGAGEMENT: Record<Exclude<PresenceStatus, 'offline'>, number> = {
   online: 0,
@@ -88,12 +99,15 @@ export interface Gateway {
  * @param ctx - Shared services.
  */
 export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
-  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_BYTES });
   const alive = new WeakMap<WebSocket, boolean>();
   const byUser = new Map<string, Map<WebSocket, TabState>>();
   const offlineTimers = new Map<string, NodeJS.Timeout>();
   const parties = new PartyService(ctx);
   const lobby = new PartyLobbyRelay(ctx, parties);
+  const voice = new VoiceRelay(ctx);
+  /** The voice tab id each socket last joined with; closing the socket ends that session. */
+  const voiceTabs = new WeakMap<WebSocket, string>();
   /** Last presence each user's friends were told about (skips duplicate broadcasts). */
   const lastBroadcast = new Map<string, string>();
   const globalChat = new GlobalChatRoom((line) => {
@@ -191,11 +205,24 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
     });
 
     ws.on('pong', () => alive.set(ws, true));
+    // NOTE: an over-size frame or protocol violation surfaces here; `ws` closes
+    // the socket itself, but an unhandled 'error' would crash the process.
+    ws.on('error', () => ws.terminate());
     ws.on('message', (data) => {
       const text = String(data);
       let parsed: z.infer<typeof ClientMessage>;
       try {
         const json: unknown = JSON.parse(text);
+        if (VoiceRelay.matches(json))
+          return void voice
+            .handle(userId, json, text.length)
+            .then((r) => {
+              if (r.outcome === 'joined' && r.cid) voiceTabs.set(ws, r.cid);
+              if (r.outcome === 'left' && voiceTabs.get(ws) === r.cid) voiceTabs.delete(ws);
+              if (r.error) send(ws, { type: 'error', code: r.error.code, message: r.error.message });
+            })
+            .catch(() => undefined);
+        if (text.length > MAX_MESSAGE_BYTES) return;
         if (PartyLobbyRelay.matches(json))
           return void lobby.handle(userId, json, text.length).catch(() => undefined);
         parsed = ClientMessage.parse(json);
@@ -206,6 +233,7 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
         if (parsed.type === 'ping') {
           // Refreshes the TTL with the tab's real status; a ping is not a status report.
           await storePresence(userId);
+          if (voiceTabs.has(ws)) await voiceKeepAlive(ctx, userId);
           send(ws, { type: 'pong', at: ctx.now().getTime() });
         } else if (parsed.type === 'presence') {
           tabs.set(ws, { status: parsed.status, playlistId: parsed.playlistId, lobbyCode: parsed.lobbyCode });
@@ -214,6 +242,7 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
           try {
             if (parsed.type === 'whisper') await sendWhisper(ctx, userId, parsed.to, parsed.text);
             else if (parsed.type === 'global_chat') await sendGlobalChat(ctx, userId, parsed.text);
+            else if (parsed.type === 'club_chat') await sendClubChat(ctx, userId, parsed.text);
             else await sendPartyChat(ctx, parties, userId, parsed.text);
           } catch (err) {
             if (err instanceof ApiError) send(ws, { type: 'error', code: err.code, message: err.message });
@@ -226,12 +255,15 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
       void (async () => {
         await unsubscribe();
         tabs.delete(ws);
+        const voiceTab = voiceTabs.get(ws);
+        if (voiceTab) await leaveVoice(ctx, userId, voiceTab);
         if (tabs.size > 0) {
           if (await storePresence(userId)) await broadcastPresence(ctx, userId);
           return;
         }
         byUser.delete(userId);
         lobby.forget(userId);
+        voice.forget(userId);
         const grace = ctx.config.presenceGraceMs;
         if (grace <= 0) return void (await goOffline(userId));
         const t = setTimeout(() => void goOffline(userId).catch(() => undefined), grace);

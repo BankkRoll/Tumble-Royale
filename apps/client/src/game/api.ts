@@ -10,7 +10,15 @@
  * - typed endpoint helpers mirroring `apps/api/README.md`.
  */
 import type { PlayerRewardMsg } from '@tumble/netcode';
+import type { ClubEmblemMotif, ClubJoinMode, ClubRole, VoiceConfigResponse } from '@tumble/shared';
 import type { WalletLedger } from './online/checkout.ts';
+import type {
+  ApiGiftInbox,
+  ApiGiftPicker,
+  ApiGiftResult,
+  ApiWishlist,
+  ApiWishlistEntry,
+} from './online/gifts.ts';
 import type { ApiPurchaseHistory, ApiRefundResult } from './online/purchaseHistory.ts';
 import { tokenSubject, type AuthOutcome, type LoginProvider } from './online/returnUrl.ts';
 import { loadJson, removeJson, saveJson } from './storage.ts';
@@ -440,7 +448,8 @@ export type ApiRecentPlayer = ApiFriendCard & { relation?: ApiRelation; presence
 export type ApiSearchResult = ApiFriendCard & { relation: ApiRelation };
 
 /** Report reasons accepted by `POST /report`. */
-export type ApiReportReason = 'cheating' | 'harassment' | 'offensive_name' | 'griefing' | 'spam' | 'other';
+export type ApiReportReason =
+  'cheating' | 'harassment' | 'offensive_name' | 'griefing' | 'spam' | 'voice' | 'other';
 
 /** A party (API view). */
 export interface ApiParty {
@@ -451,6 +460,73 @@ export interface ApiParty {
   playlistId: string;
   inviteUrl: string;
   maxSize: number;
+}
+
+/** A club as other players see it. */
+export interface ApiClubCard {
+  id: string;
+  name: string;
+  tag: string;
+  description: string;
+  emblem: { motif: ClubEmblemMotif; primary: string; secondary: string };
+  joinMode: ClubJoinMode;
+  memberCount: number;
+  maxMembers: number;
+}
+
+/** `GET /clubs/me`. */
+export interface ApiMyClub {
+  club:
+    | (ApiClubCard & {
+        members: {
+          userId: string;
+          displayName: string;
+          tag: string;
+          level: number;
+          role: ClubRole;
+          presence: string;
+        }[];
+      })
+    | null;
+  role: ClubRole | null;
+  joinRequests?: { userId: string; displayName: string; tag: string; level: number; at: string }[];
+  invites: { club: ApiClubCard; from: { userId: string; name: string; tag: string } | null }[];
+  requests: { club: ApiClubCard }[];
+}
+
+/** A club chat line. */
+export interface ApiClubChatLine {
+  id: string;
+  clubId: string;
+  from: { userId: string; name: string; tag: string; club?: string };
+  text: string;
+  masked?: string;
+  at: number;
+}
+
+/** `GET /clubs/me/goals`. */
+export interface ApiClubGoals {
+  week: string;
+  refreshesAt: string;
+  eligible: boolean;
+  goals: {
+    goalId: string;
+    title: string;
+    progress: number;
+    target: number;
+    completed: boolean;
+    claimed: boolean;
+    reward: { xp: number; gumballs: number };
+  }[];
+  contributions: {
+    userId: string;
+    displayName: string;
+    tag: string;
+    shows: number;
+    rounds: number;
+    crowns: number;
+  }[];
+  settled: { goalId: string; title: string; xp: number; gumballs: number }[];
 }
 
 /** `GET /party/code/:code`: who is behind an invite code. */
@@ -812,6 +888,31 @@ export class ApiClient {
   /** Refunds a store purchase, or files a Gem pack refund request (`reason` required there). */
   refundPurchase = (purchaseId: string, reason?: string): Promise<ApiRefundResult> =>
     this.request('POST', `/purchases/${encodeURIComponent(purchaseId)}/refund`, reason ? { reason } : {});
+  /** Gifts sent and received, with today's count and the policy. */
+  gifts = (): Promise<ApiGiftInbox> => this.request('GET', '/gifts');
+  /** Every friend with whether they can be gifted this offer now. */
+  giftPicker = (offerId: string): Promise<ApiGiftPicker> =>
+    this.request('GET', `/gifts/eligibility?offerId=${encodeURIComponent(offerId)}`);
+  /** Buys an offer for a friend; the key makes a retried send replay the first. */
+  sendGift = (
+    body: { recipientId: string; offerId: string; message?: string },
+    key: string,
+  ): Promise<ApiGiftResult & { wallet: ApiMe['wallet'] }> =>
+    this.request('POST', '/gifts', body, { idempotencyKey: key });
+  /** Opens or declines a received gift, or cancels a sent one. */
+  giftAction = (giftId: string, action: 'open' | 'decline' | 'cancel'): Promise<ApiGiftResult> =>
+    this.request('POST', `/gifts/${encodeURIComponent(giftId)}/${action}`);
+  wishlist = (): Promise<ApiWishlist> => this.request('GET', '/wishlist');
+  wishlistAdd = (itemId: string): Promise<ApiWishlist> => this.request('POST', '/wishlist', { itemId });
+  wishlistRemove = (itemId: string): Promise<ApiWishlist> =>
+    this.request('DELETE', `/wishlist/${encodeURIComponent(itemId)}`);
+  wishlistOrder = (itemIds: string[]): Promise<ApiWishlist> =>
+    this.request('PUT', '/wishlist/order', { itemIds });
+  wishlistSettings = (patch: { visibility?: 'friends' | 'nobody'; alerts?: boolean }): Promise<ApiWishlist> =>
+    this.request('PATCH', '/wishlist/settings', patch);
+  /** A friend's wish list (403 `wishlist_hidden` when they don't share it with you). */
+  friendWishlist = (userId: string): Promise<{ userId: string; entries: ApiWishlistEntry[] }> =>
+    this.request('GET', `/players/${encodeURIComponent(userId)}/wishlist`);
   shardShop = (): Promise<ApiShardShop> => this.request('GET', '/shop/shards');
   buyShardOffer = (offerId: string, key: string): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> =>
     this.request('POST', '/shop/shards/buy', { offerId }, { idempotencyKey: key });
@@ -936,10 +1037,115 @@ export class ApiClient {
     this.request('POST', '/party/playlist', { playlistId });
   inviteToParty = (userId: string): Promise<{ party: ApiParty }> =>
     this.request('POST', '/party/invite', { userId });
+  /** Whether voice chat can be switched on for this account (`GET /voice/config`). */
+  voiceConfig = (): Promise<VoiceConfigResponse> => this.request('GET', '/voice/config');
+
+  // ---------------------------------------------------------------------------
+  // Clubs
+  // ---------------------------------------------------------------------------
+
+  myClub = (): Promise<ApiMyClub> => this.request('GET', '/clubs/me');
+  createClub = (body: {
+    name: string;
+    tag: string;
+    description: string;
+    emblem: ApiClubCard['emblem'];
+    joinMode: ApiClubCard['joinMode'];
+  }): Promise<{ club: ApiClubCard }> => this.request('POST', '/clubs', body);
+  editClub = (patch: Record<string, unknown>): Promise<{ club: ApiClubCard }> =>
+    this.request('PATCH', '/clubs/me', patch);
+  searchClubs = (q: string): Promise<{ clubs: ApiClubCard[] }> =>
+    this.request('GET', `/clubs/search?q=${encodeURIComponent(q)}`);
+  recommendedClubs = (): Promise<{ clubs: ApiClubCard[] }> => this.request('GET', '/clubs/recommended');
+  joinClub = (clubId: string): Promise<{ status: 'joined' | 'requested'; club: ApiClubCard }> =>
+    this.request('POST', `/clubs/${encodeURIComponent(clubId)}/join`);
+  cancelClubRequest = (clubId: string): Promise<void> =>
+    this.request('DELETE', `/clubs/${encodeURIComponent(clubId)}/request`);
+  answerClubInvite = (clubId: string, accept: boolean): Promise<unknown> =>
+    this.request('POST', `/clubs/invites/${encodeURIComponent(clubId)}/${accept ? 'accept' : 'decline'}`);
+  answerClubRequest = (userId: string, accept: boolean): Promise<unknown> =>
+    this.request('POST', `/clubs/me/requests/${encodeURIComponent(userId)}/${accept ? 'accept' : 'decline'}`);
+  inviteToClub = (userId: string): Promise<unknown> => this.request('POST', '/clubs/me/invites', { userId });
+  kickFromClub = (userId: string): Promise<void> =>
+    this.request('POST', `/clubs/me/members/${encodeURIComponent(userId)}/kick`);
+  setClubRole = (userId: string, role: 'officer' | 'member'): Promise<unknown> =>
+    this.request('POST', `/clubs/me/members/${encodeURIComponent(userId)}/role`, { role });
+  transferClub = (userId: string): Promise<unknown> => this.request('POST', '/clubs/me/transfer', { userId });
+  leaveClub = (): Promise<void> => this.request('POST', '/clubs/me/leave');
+  disbandClub = (): Promise<void> => this.request('POST', '/clubs/me/disband');
+  clubChatHistory = (): Promise<{ clubId: string; lines: ApiClubChatLine[] }> =>
+    this.request('GET', '/clubs/me/chat');
+  clubChat = (text: string): Promise<{ message: ApiClubChatLine }> =>
+    this.request('POST', '/clubs/me/chat', { text });
+  clubGoals = (): Promise<ApiClubGoals> => this.request('GET', '/clubs/me/goals');
+  claimClubGoal = (week: string, goalId: string): Promise<unknown> =>
+    this.request('POST', '/clubs/me/goals/claim', { week, goalId });
+  clubPartyUp = (userId: string): Promise<{ party: ApiParty }> =>
+    this.request('POST', '/clubs/me/party-up', { userId });
+  reportClub = (clubId: string, reason: string, details?: string): Promise<{ id: string }> =>
+    this.request(
+      'POST',
+      `/clubs/${encodeURIComponent(clubId)}/report`,
+      details ? { reason, details } : { reason },
+    );
+
   /**
    * Party queue ticket. `region` is the client's measured pick (Settings →
    * Region); the API also reads it from the account after `PATCH /me`.
    */
   queueTicket = (playlistId: string, region?: string): Promise<{ ticket: string; expiresIn: number }> =>
     this.request('POST', '/party/queue-ticket', region ? { playlistId, region } : { playlistId });
+
+  // ---------------------------------------------------------------------------
+  // Shared custom rounds
+  // ---------------------------------------------------------------------------
+
+  /** A shared round by code (anyone; the owner also sees their unpublished rounds). */
+  customRound = (code: string): Promise<ApiCustomRound> =>
+    this.request('GET', `/custom-rounds/${encodeURIComponent(code)}`, undefined, { auth: this.signedIn });
+  myCustomRounds = (): Promise<{ rounds: ApiCustomRoundSummary[]; limit: number }> =>
+    this.request('GET', '/custom-rounds/mine');
+  publishCustomRound = (round: unknown, description: string): Promise<{ round: ApiCustomRoundSummary }> =>
+    this.request('POST', '/custom-rounds', { round, description });
+  updateCustomRound = (
+    code: string,
+    round: unknown,
+    description: string,
+  ): Promise<{ round: ApiCustomRoundSummary }> =>
+    this.request('PUT', `/custom-rounds/${encodeURIComponent(code)}`, { round, description });
+  setCustomRoundPublished = (code: string, published: boolean): Promise<{ round: ApiCustomRoundSummary }> =>
+    this.request('POST', `/custom-rounds/${encodeURIComponent(code)}/${published ? 'publish' : 'unpublish'}`);
+  deleteCustomRound = (code: string): Promise<void> =>
+    this.request('DELETE', `/custom-rounds/${encodeURIComponent(code)}`);
+  reportCustomRound = (
+    code: string,
+    reason: ApiRoundReportReason,
+    details?: string,
+  ): Promise<{ id: string }> =>
+    this.request('POST', `/custom-rounds/${encodeURIComponent(code)}/report`, {
+      reason,
+      ...(details ? { details } : {}),
+    });
+}
+
+/** Why a shared round is reported. */
+export type ApiRoundReportReason = 'offensive' | 'broken' | 'spam' | 'copied' | 'other';
+
+/** A shared round in lists. */
+export interface ApiCustomRoundSummary {
+  code: string;
+  name: string;
+  description: string;
+  type: string;
+  status: 'published' | 'unpublished' | 'taken_down';
+  sizeBytes: number;
+  createdAt: string;
+  updatedAt: string;
+  takedownReason?: string | null;
+}
+
+/** `GET /custom-rounds/:code`. */
+export interface ApiCustomRound extends ApiCustomRoundSummary {
+  author: string | null;
+  definition: unknown;
 }

@@ -184,6 +184,79 @@ and whether it can be refunded now, and why not. `POST
   maintenance. Guests can refund store purchases too. Deleting the account
   deletes its purchases and refunds with it.
 
+### 3.4 Gifts and wish lists
+
+A player can buy any store item or bundle for a friend with their own
+Gumballs or Gems, at the price they would pay today (the day's deal or
+weekly discount applies; a bundle is priced on the items the **recipient**
+still lacks). Crown Shard shop items and the Season Pass can never be
+gifted. `apps/api/src/economy/gifts.ts` holds the policy as one pure
+function; the API enforces every rule, the client only shows its answers.
+
+| Rule                                          | Value                    | Refusal (status)                    |
+| --------------------------------------------- | ------------------------ | ----------------------------------- |
+| Sender is a linked account, not a guest       | —                        | `gift_account_required` (403)       |
+| Sender's account age                          | ≥ 7 days                 | `gift_account_too_new` (403)        |
+| Gifts sent per UTC day (any outcome counts)   | 5                        | `gift_daily_limit` (429)            |
+| Mutual friends (a block reads as not friends) | —                        | `gift_not_friends` (403)            |
+| Friendship age (since it was accepted)        | ≥ 3 days                 | `gift_friendship_too_new` (403)     |
+| Recipient not suspended                       | —                        | `gift_recipient_unavailable` (409)  |
+| Recipient does not own any of the items       | checked at send and open | `gift_already_owned` (409)          |
+| Item not already waiting in an unopened gift  | —                        | `gift_already_pending` (409)        |
+| Unopened gifts per recipient                  | 30                       | `gift_inbox_full` (409)             |
+| Optional note                                 | ≤ 80 chars, chat filter  | `gift_message_muted` (403) if muted |
+
+Refusals that lift on their own carry `retryAt`. A guest may **receive**
+gifts. A chat-muted sender may still gift, without a note.
+
+- **Money.** Sending charges the sender with one `gift` ledger row, ref
+  `gift:<giftId>`, in the same transaction that files the gift. The recipient
+  gets nothing until they open it; opening grants the items with inventory
+  source `gift` (no currency moves). Any refund is one `gift_refund` row with
+  the same ref, so a gift can be refunded at most once. Gems coming back
+  repay Gem debt first, like any Gem credit.
+- **Once, even concurrently.** `POST /gifts` takes an `Idempotency-Key`; a
+  repeat (even a concurrent one) replays the first gift. Every gift operation
+  locks both players' profiles in id order before deciding, so two friends
+  gifting the same item to one player at once get one gift and one
+  `gift_already_pending`, and a decline racing a cancel settles once.
+- **Opening.** If the recipient owns any item of the gift by the time it is
+  opened (bought it, earned it), nothing is granted and the gift is
+  **returned**: the sender is refunded in full. Opening takes the items off
+  the recipient's wish list.
+- **Declining** (recipient) or **cancelling** an unopened gift (sender)
+  refunds the sender in full.
+- **Auto-accept.** An unopened gift opens by itself 30 days after it was sent
+  (on either player's next look at their gifts, or the retention sweep), and
+  from then on it can no longer be declined or cancelled.
+- **No refunds after opening.** Gifts are not purchases: they never appear in
+  `GET /purchases`, so neither side can self-refund one. A store refund only
+  ever removes `store` copies, so it never touches a gifted item.
+- **Staff.** An admin can reverse a gift from the console: the sender is
+  refunded in full and, if it was opened, the items the recipient still holds
+  _because of the gift_ are taken back (and off every loadout). An item the
+  recipient has since also earned another way is re-sourced by that grant and
+  stays, as with store refunds. A plain staff cosmetic revoke on the
+  recipient moves no currency. If the sender's Gems came from a pack that is
+  later refunded or charged back, the existing rule applies: Gems are taken
+  back (shortfall as Gem debt) and cosmetics, gifted ones included, are kept.
+- **Kill switches.** Sending, declining and cancelling (the routes that move
+  currency) close with the store (`store.enabled` off → `503`); every gift
+  action is refused during maintenance.
+- **Account deletion.** Deleting the recipient returns their unopened gifts
+  to the senders (refunded, note `recipient_deleted`). Deleting the sender
+  erases the notes they wrote; their unopened gifts stay with the recipients,
+  already paid for, and declining one then refunds nobody. Either side's
+  history keeps the gift with the deleted party shown as gone.
+
+**Wish lists.** Up to 50 store items or bundles in the player's own order,
+visible to friends (default) or nobody; anyone else, including a blocked
+player, gets the same `wishlist_hidden` answer. A friend's profile card shows
+their list with a Gift button per entry. When a wished-for item is on the
+day's shelves, the player is told once per store rotation (the first time
+their client asks for the store, the list or their gifts that UTC day),
+unless they switched alerts off. Buying or being gifted an entry removes it.
+
 ## 4. Crown Shard shop
 
 - Stock: only `source: 'shards'` cosmetics (the royal set). They are never sold

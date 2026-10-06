@@ -50,7 +50,15 @@ What a player can do today:
   against bots; Chaos Mode (one mutator per show), Ranked (solo rounds only,
   seasonal soft reset) and a gentler First Show for newcomers
 - **Private shows:** invite codes, host-picked rounds and rules changed live,
-  kick/ban, lock, transfer host, ready checks and spectator slots
+  kick/ban, lock, transfer host, ready checks and spectator slots; hosts
+  can also add a player-made round by its share code
+- **Round editor (`/editor`):** build races, survivals, hunts and logic rounds
+  from the shipped level parts and obstacle library in 3D (grid snapping,
+  move/turn/size gizmo, multi-select, copy/paste, undo/redo, generated
+  obstacle settings), with live checks (reachable finish, spawn on solid
+  ground, 100-player budgets), local saves, JSON import/export, Test play
+  against bots, and sharing by code (full accounts; reports and takedowns go
+  through the admin console)
 - **Social:** friends (requests, presence, join), party and in-show text chat
   with a filter, quick pings, report / block / mute, streamer mode
 - **Clubs:** persistent groups of up to 50 with owner / officer / member
@@ -224,6 +232,7 @@ how the game runs or point the client at another server.
 | `?fresh=1`                                  | Ignore the saved profile (replays the first-launch flow)          |
 | `?api=0` / `?apiUrl=` / `?mmUrl=` / `?gs=`  | Disable or redirect the API, matchmaker or game server            |
 | `?scene=test`                               | Phase 0 renderer/physics test scene                               |
+| `?playtest=1`                               | Test play the round editor's last saved Test play round           |
 
 ### Dev sandboxes
 

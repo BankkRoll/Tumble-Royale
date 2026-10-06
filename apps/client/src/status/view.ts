@@ -159,7 +159,14 @@ function incidentCard(i: PublicIncident, s: PageState, open: boolean): VNode {
 function bars(c: ComponentHistory, days: readonly string[]): VNode {
   return h(
     'div',
-    { class: 'st-bars', role: 'img', 'aria-label': `${c.name}: ${percent(c.uptime)} uptime over 90 days` },
+    {
+      class: 'st-bars',
+      role: 'img',
+      'aria-label':
+        c.uptime === null
+          ? `${c.name}: no uptime data yet`
+          : `${c.name}: ${percent(c.uptime)} uptime over 90 days`,
+    },
     c.days.map((d, idx) =>
       h('span', {
         class: `st-bar ${stateClass(d.state)}`,
@@ -204,7 +211,7 @@ function components(s: PageState): VNode | null {
                 'div',
                 { class: 'st-axis st-muted' },
                 h('span', {}, '90 days ago'),
-                h('span', {}, `${percent(hist.uptime)} uptime`),
+                h('span', {}, hist.uptime === null ? 'No data yet' : `${percent(hist.uptime)} uptime`),
                 h('span', {}, 'Today'),
               ),
             ),

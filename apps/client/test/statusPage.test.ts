@@ -298,6 +298,20 @@ describe('status page views', () => {
     expect(percent(0.99996)).toBe('99.99%');
     expect(percent(0.5)).toBe('50.00%');
     expect(percent(null)).toBe('No data');
+    const fresh = render({
+      history: history({
+        components: [
+          {
+            id: 'api',
+            name: 'Accounts & API',
+            uptime: null,
+            days: Array.from({ length: 90 }, () => ({ state: null, uptime: null })),
+          },
+        ],
+      }),
+    });
+    expect(fresh).toContain('No data yet');
+    expect(fresh).not.toContain('No data uptime');
     expect(relative(iso(NOW - 3 * 86_400_000), NOW)).toBe('3 d ago');
   });
 });

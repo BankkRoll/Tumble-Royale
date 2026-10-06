@@ -15,3 +15,18 @@ pnpm --filter @tumble/bot-swarm start -- --clients 100 --url ws://localhost:7350
 | `--url <ws>`                    | Game server WebSocket                                        |
 | `--duration S`                  | Run time in seconds (PLAYING starts about 60 s in)           |
 | `--lag MS --jitter MS --loss P` | Simulated network conditions                                 |
+| `--spectators N`                | Free-camera spectators that join the running show            |
+| `--spectate-after S`            | Seconds before the spectators connect (default 45)           |
+| `--ticket-secret S`             | The server's `GAME_TICKET_SECRET` (or that env variable)     |
+
+Spectators only reach a running show through its match, so a spectator run
+signs join tickets for every client (one shared match id) with the game
+server's `GAME_TICKET_SECRET`; the server must run without a matchmaker
+link, and the run stays in one process. Spectators send no inputs, ack
+snapshots like the browser does while watching, and move a free-camera
+focus hint down the course twice a second. Their traffic is reported in its
+own block:
+
+```sh
+GAME_TICKET_SECRET=… pnpm --filter @tumble/bot-swarm start -- --clients 40 --spectators 8 --spectate-after 50 --duration 120
+```

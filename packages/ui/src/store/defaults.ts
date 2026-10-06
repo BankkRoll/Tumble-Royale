@@ -30,6 +30,13 @@ export const DEFAULT_KEYBINDS: Keybinds = {
   emote4: ['Digit4', ''],
   spectatePrev: ['KeyQ', ''],
   spectateNext: ['KeyE', ''],
+  spectateCamera: ['KeyF', ''],
+  spectateLeader: ['KeyL', ''],
+  spectateRoster: ['Tab', ''],
+  spectatePin: ['KeyP', ''],
+  broadcastOverlay: ['KeyB', ''],
+  broadcastHelp: ['KeyH', ''],
+  broadcastChroma: ['KeyK', ''],
   pause: ['Escape', ''],
   pushToTalk: ['KeyV', ''],
 };
@@ -50,6 +57,13 @@ export const BIND_ACTION_LABELS: Record<BindAction, string> = {
   emote4: 'Emote 4',
   spectatePrev: 'Spectate previous',
   spectateNext: 'Spectate next',
+  spectateCamera: 'Spectator camera',
+  spectateLeader: 'Watch the leader',
+  spectateRoster: 'Player list',
+  spectatePin: 'Pin player',
+  broadcastOverlay: 'Broadcast overlay',
+  broadcastHelp: 'Broadcast help',
+  broadcastChroma: 'Chroma-key backdrop',
   pause: 'Menu',
   pushToTalk: 'Push to talk',
 };
@@ -58,7 +72,9 @@ export const BIND_ACTION_LABELS: Record<BindAction, string> = {
  * Default controller mapping (standard layout): A jump, X/B dive, RT/RB grab,
  * Y emote wheel, D-pad emotes, Start menu, LB/RB spectate. RB sits on both
  * grab and spectate next because spectating only starts once the Tumbler is
- * out of the round.
+ * out of the round; the other spectator tools reuse face buttons for the
+ * same reason (Y camera, X player list, A leader, B pin, R3 broadcast
+ * overlay, D-pad up help). View stays on quick chat.
  */
 export const DEFAULT_PAD_BINDS: PadBinds = {
   jump: [0, -1],
@@ -72,6 +88,12 @@ export const DEFAULT_PAD_BINDS: PadBinds = {
   pause: [9, -1],
   spectatePrev: [4, -1],
   spectateNext: [5, -1],
+  spectateCamera: [3, -1],
+  spectateLeader: [0, -1],
+  spectateRoster: [2, -1],
+  spectatePin: [1, -1],
+  broadcastOverlay: [11, -1],
+  broadcastHelp: [12, -1],
   pushToTalk: [8, -1],
 };
 
@@ -88,6 +110,12 @@ export const PAD_BIND_ACTION_LABELS: Record<PadBindAction, string> = {
   pause: 'Menu',
   spectatePrev: 'Spectate previous',
   spectateNext: 'Spectate next',
+  spectateCamera: 'Spectator camera',
+  spectateLeader: 'Watch the leader',
+  spectateRoster: 'Player list',
+  spectatePin: 'Pin player',
+  broadcastOverlay: 'Broadcast overlay',
+  broadcastHelp: 'Broadcast help',
   pushToTalk: 'Push to talk',
 };
 

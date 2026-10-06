@@ -37,7 +37,9 @@ function claims(sub: string, over: Partial<JoinTicketClaims> = {}): JoinTicketCl
   };
 }
 
-function setup(opts: { ticketed?: boolean; maxRooms?: number; resumeWindowMs?: number } = {}) {
+function setup(
+  opts: { ticketed?: boolean; maxRooms?: number; resumeWindowMs?: number; maxSpectators?: number } = {},
+) {
   const clock = { now: 1000 };
   const sims: FakeMatchSim[] = [];
   const manager = new RoomManager(testDeps(clock, sims), new ServerMetrics(), null, {
@@ -47,6 +49,7 @@ function setup(opts: { ticketed?: boolean; maxRooms?: number; resumeWindowMs?: n
       fillWaitMs: 3_600_000,
       ticketedFillWaitMs: 3_600_000,
       resumeWindowMs: opts.resumeWindowMs ?? 30_000,
+      ...(opts.maxSpectators !== undefined ? { maxSpectators: opts.maxSpectators } : {}),
     },
     maxRooms: opts.maxRooms ?? 1,
     profileLogMs: 0,
@@ -149,7 +152,8 @@ describe(`seats at the ${MAX_PLAYERS}-player cap`, () => {
   });
 
   it('seats spectators of a full show above the entity range, up to the 8-bit id limit', () => {
-    const { manager, connect, advance, sims } = setup({ ticketed: true });
+    // The id range is the limit under test here, not the room's spectator cap.
+    const { manager, connect, advance, sims } = setup({ ticketed: true, maxSpectators: 255 });
     const players = Array.from({ length: MAX_PLAYERS }, (_, i) =>
       connect(`u${i}`, signJoinTicket(SECRET, claims(`u${i}`), WALL)),
     );

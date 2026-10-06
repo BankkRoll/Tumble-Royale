@@ -11,7 +11,7 @@ import {
   type LowFreqMessage,
 } from './protocol.ts';
 
-describe('protocol v6', () => {
+describe('protocol v7', () => {
   it('round-trips a Hello with a join ticket', () => {
     const ticket = `${'a'.repeat(40)}.${'b'.repeat(700)}.${'c'.repeat(43)}`;
     const w = new BitWriter(64);
@@ -51,7 +51,6 @@ describe('protocol v6', () => {
   });
 
   it('carries load progress and the loading roster (v4, unchanged since)', () => {
-    expect(PROTOCOL_VERSION).toBe(6);
     const progress: LowFreqMessage = { t: 'loadProgress', roundId: 'tilt-town', pct: 0.42 };
     expect(unpackLowFreq(packLowFreq(progress))).toEqual(progress);
     const status: LowFreqMessage = {
@@ -95,6 +94,26 @@ describe('protocol v6', () => {
       { t: 'spectate', target: 7 },
     ];
     for (const m of msgs) expect(unpackLowFreq(packLowFreq(m))).toEqual(m);
+  });
+
+  it('carries the v7 spectator camera hint and chat permission', () => {
+    expect(PROTOCOL_VERSION).toBe(7);
+    const msgs: LowFreqMessage[] = [
+      { t: 'spectate', target: -1, focus: [13, 3, -40] },
+      { t: 'spectate', target: 9 },
+      {
+        t: 'showInfo',
+        matchId: 'm_abcdef',
+        playlistId: 'main-show',
+        showName: 'Main Show',
+        queue: 'custom',
+        roundCount: 4,
+        canChat: false,
+      },
+    ];
+    for (const m of msgs) expect(unpackLowFreq(packLowFreq(m))).toEqual(m);
+    // Sent up to 2 Hz while a free camera moves, rounded to whole metres: it must stay tiny.
+    expect(packLowFreq(msgs[0]!).byteLength).toBeLessThan(40);
   });
 
   it('carries the v6 round-vote messages, small enough for one reliable packet', () => {

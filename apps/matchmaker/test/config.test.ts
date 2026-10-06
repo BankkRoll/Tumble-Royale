@@ -17,7 +17,12 @@ const issueNames = (env: Record<string, string | undefined>): string[] => {
   return [];
 };
 
-const prod = testEnv({ NODE_ENV: 'production', INTERNAL_HMAC_SECRET: undefined, REDIS_URL: 'redis://r' });
+const prod = testEnv({
+  NODE_ENV: 'production',
+  INTERNAL_HMAC_SECRET: undefined,
+  REDIS_URL: 'redis://r',
+  ALLOW_STANDALONE: '1',
+});
 
 describe('matchmaker config', () => {
   it('requires every secret and reports them together', () => {
@@ -38,6 +43,13 @@ describe('matchmaker config', () => {
     expect(c.hotThreshold).toBe(2 * DEFAULT_SHOW_PLAYERS);
     expect(loadConfig(testEnv({ TARGET_SIZE: String(MAX_PLAYERS) })).targetSize).toBe(MAX_PLAYERS);
     expect(issueNames(testEnv({ TARGET_SIZE: String(MAX_PLAYERS + 1) }))).toEqual(['TARGET_SIZE']);
+  });
+
+  it('treats blank variables, as docker compose passes unset ones, as defaults', () => {
+    const blank = { TARGET_SIZE: '', MAX_WAIT_MS: '', TICK_MS: ' ', RATE_LIMIT_MAX: '', LOG_LEVEL: '' };
+    const c = loadConfig(testEnv(blank));
+    expect(c.targetSize).toBe(DEFAULT_SHOW_PLAYERS);
+    expect(c.logLevel).toBe('info');
   });
 
   it('refuses placeholder secrets copied from .env.example', () => {
@@ -64,6 +76,17 @@ describe('matchmaker config', () => {
     expect(loadConfig(testEnv({ NODE_ENV: 'development' })).allowedOrigins).toBe(true);
   });
 
+  it('requires the account API in production unless explicitly standalone', () => {
+    expect(issueNames({ ...prod, ALLOW_STANDALONE: undefined })).toEqual(['API_URL']);
+    expect(issueNames({ ...prod, ALLOW_STANDALONE: undefined, API_URL: 'https://api.example.com' })).toEqual([
+      'INTERNAL_HMAC_SECRET',
+    ]);
+  });
+
+  it('bounds timer settings below the setTimeout limit', () => {
+    expect(issueNames(testEnv({ MAX_WAIT_MS: '3000000000' }))).toEqual(['MAX_WAIT_MS']);
+  });
+
   it('refuses to run production on memory unless explicitly allowed', () => {
     const noRedis = { ...prod, REDIS_URL: undefined };
     expect(issueNames(noRedis)).toEqual(['REDIS_URL']);
@@ -81,9 +104,11 @@ describe('deploy/.env from pnpm setup:env --production', () => {
         v === 'change-me' ? randomBytes(32).toString('base64url') : v,
       ]),
     );
+    // setup:env writes the generated Redis password into REDIS_URL too.
+    env.REDIS_URL = env.REDIS_URL!.replace('change-me', env.REDIS_PASSWORD!);
     expect(loadConfig(env)).toMatchObject({
       env: 'production',
-      redisUrl: 'redis://redis:6379',
+      redisUrl: `redis://:${env.REDIS_PASSWORD}@redis:6379`,
       apiUrl: 'http://api:7360',
       allowedOrigins: ['https://example.com'],
       memoryStoreInProduction: false,

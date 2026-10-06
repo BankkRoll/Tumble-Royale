@@ -118,6 +118,15 @@ const MIN_AUDIBILITY = 0.015;
 const MAX_LATE_START = 0.15;
 const DUCK_LEVEL = 0.32;
 const STEAL_FADE = 0.015;
+/** Idle spatial chains kept for reuse (a burst beyond this many is rare and just rebuilt). */
+const MAX_IDLE_CHAINS = 48;
+
+/** A reusable gain → panner pair feeding the SFX bus. */
+interface SpatialChain {
+  context: AudioContext;
+  gain: GainNode;
+  panner: PannerNode;
+}
 /** Squared distance (m²) within which two plays of a sound count as the same emitter for the retrigger guard. */
 const SAME_EMITTER_DIST2 = 1.5 * 1.5;
 
@@ -190,6 +199,8 @@ export class AudioEngine {
     { t: number; x: number; y: number; z: number; spatial: boolean }
   >();
   private readonly emitters = new Set<LoopEmitter>();
+  /** Idle gain → panner chains of finished spatial voices, still connected to the SFX bus. */
+  private readonly spatialChains: SpatialChain[] = [];
   private readonly unlockListeners = new Set<() => void>();
   private duckCount = 0;
   private unlocked = false;
@@ -548,6 +559,36 @@ export class AudioEngine {
     return p;
   }
 
+  /**
+   * An idle gain → panner chain for a spatial one-shot (created on demand).
+   *
+   * PERF: one-shots built a fresh HRTF PannerNode per sound. With 100
+   * Tumblers jumping, landing and bumping that was dozens of node graphs a
+   * second, 2.6% of main-thread time in a CPU profile, plus garbage.
+   */
+  private takeSpatialChain(ctx: AudioContext, refDistance: number): SpatialChain {
+    const chain = this.spatialChains.pop();
+    if (chain && chain.context === ctx) {
+      chain.panner.refDistance = refDistance;
+      return chain;
+    }
+    const gain = ctx.createGain();
+    const panner = this.createPanner(refDistance);
+    gain.connect(panner);
+    panner.connect(this.bus('sfx'));
+    return { context: ctx, gain, panner };
+  }
+
+  private releaseSpatialChain(ctx: AudioContext, chain: SpatialChain): void {
+    if (this.context !== ctx || this.spatialChains.length >= MAX_IDLE_CHAINS) {
+      chain.panner.disconnect();
+      return;
+    }
+    chain.gain.gain.cancelScheduledValues(0);
+    chain.gain.gain.value = 0;
+    this.spatialChains.push(chain);
+  }
+
   // ---------------------------------------------------------------------------
   // One-shots
   // ---------------------------------------------------------------------------
@@ -643,22 +684,29 @@ export class AudioEngine {
     const src = ctx.createBufferSource();
     src.buffer = buffer;
     src.playbackRate.value = Math.pow(2, semis / 12);
-    const g = ctx.createGain();
-    g.gain.value = volume;
-    src.connect(g);
-    let tail: AudioNode = g;
+    let g: GainNode;
+    let tail: AudioNode;
+    let chain: SpatialChain | null = null;
     if (busName === 'sfx' && opts.pos) {
-      const p = this.createPanner(def.refDistance ?? 4);
-      placePanner(p, opts.pos.x, opts.pos.y, opts.pos.z, now, false);
-      g.connect(p);
-      tail = p;
-    } else if (opts.pan !== undefined && typeof ctx.createStereoPanner === 'function') {
-      const sp = ctx.createStereoPanner();
-      sp.pan.value = opts.pan;
-      g.connect(sp);
-      tail = sp;
+      chain = this.takeSpatialChain(ctx, def.refDistance ?? 4);
+      g = chain.gain;
+      g.gain.cancelScheduledValues(0);
+      g.gain.value = volume;
+      placePanner(chain.panner, opts.pos.x, opts.pos.y, opts.pos.z, now, false);
+      tail = chain.panner;
+    } else {
+      g = ctx.createGain();
+      g.gain.value = volume;
+      tail = g;
+      if (opts.pan !== undefined && typeof ctx.createStereoPanner === 'function') {
+        const sp = ctx.createStereoPanner();
+        sp.pan.value = opts.pan;
+        g.connect(sp);
+        tail = sp;
+      }
+      tail.connect(this.bus(busName));
     }
-    tail.connect(this.bus(busName));
+    src.connect(g);
     const start = now + (opts.delay ?? 0);
     src.start(start);
     let stopped = false;
@@ -678,7 +726,9 @@ export class AudioEngine {
     src.onended = () => {
       stopped = true;
       if (pooled) this.pool.release(slot, id);
-      tail.disconnect();
+      src.disconnect();
+      if (chain) this.releaseSpatialChain(ctx, chain);
+      else tail.disconnect();
     };
     if (pooled) (this.pool.slots[slot] as { stop: (() => void) | null }).stop = () => stop();
     return { stop };
@@ -742,6 +792,7 @@ export class AudioEngine {
     void this.context?.close();
     this.context = null;
     this.buses = null;
+    this.spatialChains.length = 0;
     this.unlocked = false;
   }
 

@@ -134,7 +134,7 @@ The full typed list is `UIIntents` in `src/store/events.ts`.
 | `accountAction`                                                 | `{ action, value? }`; action is `link-<provider>`, `signIn-<provider>`, `unlink-<provider>`, `signOut`, `deleteAccount` or `rename` |
 | **Party & social**                                              |                                                                                                                                     |
 | `inviteFriend`                                                  | `{ friendId }`                                                                                                                      |
-| `copyInvite`                                                    | `{ code }`                                                                                                                          |
+| `copyInvite`                                                    | `{ kind, what }` (analytics only; the UI copies and confirms)                                                                       |
 | `kickPartyMember` / `promotePartyMember`                        | `{ memberId }`                                                                                                                      |
 | `leaveParty`                                                    | —                                                                                                                                   |
 | `addFriend`                                                     | `{ nameTag }`                                                                                                                       |

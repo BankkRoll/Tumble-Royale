@@ -1,4 +1,13 @@
-import { BoxGeometry, BufferGeometry, Group, Mesh, MeshBasicMaterial, PointLight, Scene } from 'three/webgpu';
+import {
+  BoxGeometry,
+  BufferGeometry,
+  Group,
+  InstancedMesh,
+  Mesh,
+  MeshBasicMaterial,
+  PointLight,
+  Scene,
+} from 'three/webgpu';
 import type { Object3D, WebGPURenderer } from 'three/webgpu';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -108,6 +117,42 @@ describe('beginSceneWarmUp', () => {
     const fractions: number[] = [];
     await w.settle((f) => fractions.push(f));
     expect(fractions.at(-1)).toBe(1);
+  });
+
+  it('skips hidden leaves that opted out (a crowd-drawn Tumbler body)', () => {
+    const { renderer } = fakeRenderer();
+    const { scene, hidden } = course();
+    hidden.userData.warmUp = false;
+    let drawn = false;
+    const w = beginSceneWarmUp(renderer, scene, {
+      render: () => {
+        if (hidden.visible) drawn = true;
+      },
+    });
+    while (w.next());
+    expect(drawn).toBe(false);
+    expect(hidden.visible).toBe(false);
+  });
+
+  it('makes empty draws real while warming and restores their counts', () => {
+    const { renderer } = fakeRenderer();
+    const { scene, trail } = course();
+    const batch = new InstancedMesh(new BoxGeometry(), new MeshBasicMaterial(), 8);
+    batch.count = 0;
+    scene.add(batch);
+    const during = { trail: -1, batch: -1 };
+    const w = beginSceneWarmUp(renderer, scene, {
+      render: () => {
+        // ANGLE builds a program's driver shaders on its first real draw: nothing may be empty.
+        if (trail.visible) during.trail = trail.geometry.drawRange.count;
+        if (batch.visible) during.batch = batch.count;
+      },
+    });
+    while (w.next());
+    expect(during.trail).toBe(3);
+    expect(during.batch).toBe(1);
+    expect(trail.geometry.drawRange.count).toBe(0);
+    expect(batch.count).toBe(0);
   });
 
   it('grows batches while renders are cheap and shrinks them when a shader build is slow', () => {
@@ -248,6 +293,37 @@ describe('limitShaderBuilds', () => {
     expect(skips).toBe(1);
     expect(cache.size).toBe(1);
     expect(Object.prototype.hasOwnProperty.call(raw, '_renderObjectDirect')).toBe(false);
+  });
+
+  it('can also budget the first draw of each pipeline (WebGL2 compiles on first draw)', () => {
+    const drawn: Mesh[] = [];
+    const raw = {
+      _currentRenderContext: {},
+      // Every shader is built already; each material stands for its own pipeline.
+      _objects: { get: (object: Mesh) => ({ initialCacheKey: 'built', pipeline: object.material }) },
+      _nodes: { nodeBuilderCache: new Map([['built', {}]]), get: () => ({ nodeBuilderState: {} }) },
+      _renderObjectDirect(object: Mesh): void {
+        drawn.push(object);
+      },
+    };
+    const a = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+    const b = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+    const c = new Mesh(new BoxGeometry(), a.material);
+    const seen = new Set<unknown>();
+    let budget = 1;
+    let skips = 0;
+    const restore = limitShaderBuilds(
+      raw as unknown as WebGPURenderer,
+      () => budget-- > 0,
+      () => skips++,
+      seen,
+    );
+    for (const m of [a, b, c]) raw._renderObjectDirect(m);
+    restore();
+    expect(drawn).toEqual([a, c]);
+    expect(skips).toBe(1);
+    expect(seen.has(a.material)).toBe(true);
+    expect(seen.has(b.material)).toBe(false);
   });
 
   it('is a no-op on renderers without the private managers', () => {

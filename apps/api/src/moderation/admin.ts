@@ -25,6 +25,7 @@ import { notFound, parse } from '../http/errors.ts';
 import { parseNameTag } from '../names/display-name.ts';
 import { recordAudit } from '../staff/audit.ts';
 import { requireStaff } from '../staff/auth.ts';
+import { assertCanModerate } from './guard.ts';
 import { BAN_SCOPES } from './sanctions.ts';
 
 const UUID = z.string().uuid();
@@ -198,6 +199,7 @@ export function registerAdminRoutes(app: FastifyInstance, ctx: AppContext): void
     const actor = await requireStaff(ctx, req, 'moderator');
     const { id } = parse(z.object({ id: UUID }), req.params);
     const { displayName, reason } = parse(RenameBody, req.body);
+    await assertCanModerate(ctx, actor, id);
     const result = await ctx.db.transaction(async (tx) => {
       const [before] = await tx
         .select({ name: profiles.displayName, tag: profiles.tag })

@@ -13,6 +13,7 @@ import { requireInternalSignature, requireUser } from '../http/auth.ts';
 import { notFound, parse } from '../http/errors.ts';
 import { CursorParam, encodeCursor, olderThan } from '../util/cursor.ts';
 import { ingestMatch, type PlayerRewardSummary } from './ingest.ts';
+import { verifyPlacement } from './placement.ts';
 import { MatchResultSchema } from './schema.ts';
 
 const MatchIdParam = z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{6,64}$/) });
@@ -33,9 +34,9 @@ export function registerMatchRoutes(app: FastifyInstance, ctx: AppContext): void
     '/internal/match-results',
     { config: { rateLimit: false }, bodyLimit: 1024 * 1024 },
     async (req) => {
-      await requireInternalSignature(ctx, req);
+      await requireInternalSignature(ctx, req, { callers: ['game-server'] });
       const payload = parse(MatchResultSchema, req.body);
-      return ingestMatch(ctx, payload);
+      return ingestMatch(ctx, payload, (m) => verifyPlacement(ctx, m));
     },
   );
 

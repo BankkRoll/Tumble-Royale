@@ -67,6 +67,50 @@ describe('ReliableEndpoint', () => {
     expect(a.pending).toBe(0);
   });
 
+  describe('receive limits', () => {
+    const w = new BitWriter(1 << 17);
+    const r = new BitReader();
+    /** Feeds one hand-made packet carrying `[seq, payload]` messages; returns receive()'s verdict. */
+    const feed = (ep: ReliableEndpoint, msgs: [number, Uint8Array][], got: number[] = []): boolean => {
+      w.reset();
+      w.writeBits(MsgType.Reliable, 8);
+      w.writeBool(false);
+      w.writeVarUint(msgs.length);
+      for (const [seq, data] of msgs) {
+        w.writeBits(seq, 16);
+        w.writeByteArray(data);
+      }
+      r.reset(w.finish());
+      r.readBits(8);
+      return ep.receive(r, (p) => got.push(p[0]!));
+    };
+    const one = (tag: number, size = 1): Uint8Array => new Uint8Array(size).fill(tag);
+
+    it('refuses messages over the size cap and sequences implausibly far ahead', () => {
+      const ep = new ReliableEndpoint({ maxMessageBytes: 2048 });
+      expect(feed(ep, [[0, one(1, 2048)]])).toBe(true);
+      expect(feed(ep, [[1, one(1, 2049)]])).toBe(false);
+      expect(feed(ep, [[1 + 256, one(1)]])).toBe(true);
+      expect(feed(ep, [[1 + 257, one(1)]])).toBe(false);
+    });
+
+    it('holds out-of-order messages within a count and byte budget, then recovers by retransmission', () => {
+      const ep = new ReliableEndpoint({ maxEarly: 4, maxEarlyBytes: 1000 });
+      const got: number[] = [];
+      // Seq 0 is missing; 1..6 arrive early but only four fit, and 600 + 600 bytes would not.
+      expect(feed(ep, [[1, one(1, 600)]], got)).toBe(true);
+      expect(feed(ep, [[2, one(2, 600)]], got)).toBe(true);
+      for (let s = 3; s <= 6; s++) expect(feed(ep, [[s, one(s)]], got)).toBe(true);
+      expect(feed(ep, [[0, one(0)]], got)).toBe(true);
+      expect(got).toEqual([0, 1]);
+      // The dropped ones were never acked; the sender resends them and delivery completes in order.
+      expect(feed(ep, [[2, one(2, 600)]], got)).toBe(true);
+      expect(got).toEqual([0, 1, 2, 3, 4, 5]);
+      expect(feed(ep, [[6, one(6)]], got)).toBe(true);
+      expect(got).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    });
+  });
+
   it('16-bit sequence comparison wraps', () => {
     expect(seqNewer(1, 65535)).toBe(true);
     expect(seqNewer(65535, 1)).toBe(false);

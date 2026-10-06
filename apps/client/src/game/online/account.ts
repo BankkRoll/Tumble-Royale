@@ -40,9 +40,11 @@ import type { PlayerRewardMsg } from '@tumble/netcode';
 import type { TumblerLoadout } from '@tumble/render/scenes';
 import { hashString } from '@tumble/shared';
 import {
+  AUTH_PROVIDERS,
   grantText,
   maskedName,
   ui,
+  type AuthProviderId,
   type ChallengeCadence,
   type ChallengesData,
   type CollectionSourceView,
@@ -95,6 +97,7 @@ import {
 import { loadoutWithItem, profileDressing, randomizedLoadout } from '../profile.ts';
 import { ClubController } from '../social/clubController.ts';
 import { SocialController, type RealtimeLike } from '../social/socialController.ts';
+import { otherPlayerName } from '../social/streamerNames.ts';
 import { onlineStoreShelves } from '../storeOffers.ts';
 import {
   appendGiftPage,
@@ -499,8 +502,8 @@ export class OnlineAccount {
       shardsPerCrown: SHARDS_PER_CROWN,
       ...profileDressing(this.loadout),
       showcase: owned.slice(-3).map((c) => uiItem(c, true)),
-      linkedProviders: m.linkedProviders.filter(
-        (p): p is 'discord' | 'google' | 'email' => p === 'discord' || p === 'google' || p === 'email',
+      linkedProviders: m.linkedProviders.filter((p): p is AuthProviderId =>
+        (AUTH_PROVIDERS as readonly string[]).includes(p),
       ),
     };
   }
@@ -1817,10 +1820,10 @@ export class OnlineAccount {
         this.pushProfile();
       }),
       rt.on('friend_accepted', (m) => {
-        const by = m.by as { name?: string } | undefined;
+        const by = m.by as { userId?: string; name?: string } | undefined;
         ui.getState().pushToast({
           kind: 'social',
-          title: `${by?.name ?? 'Someone'} is now your friend!`,
+          title: `${otherPlayerName(by, 'Someone')} is now your friend!`,
           icon: '🤝',
         });
       }),
@@ -1944,13 +1947,14 @@ export class OnlineAccount {
   private onFriendRequest(m: TypedMessage): void {
     const from = m.from as { userId: string; name: string; tag: string } | undefined;
     if (!from) return;
-    this.addNotification('friendRequest', `${from.name}#${from.tag} wants to be friends`, undefined, {
+    const title = `${otherPlayerName(from, 'Someone', true)} wants to be friends`;
+    this.addNotification('friendRequest', title, undefined, {
       kind: 'friendRequest',
       userId: from.userId,
     });
     ui.getState().pushToast({
       kind: 'social',
-      title: `${from.name}#${from.tag} wants to be friends`,
+      title,
       icon: '🤝',
       durationMs: 0,
       actions: [
@@ -1964,14 +1968,15 @@ export class OnlineAccount {
     const from = m.from as { userId: string; name: string; tag: string } | undefined;
     const code = String(m.code ?? '');
     if (!code || !from) return;
-    this.addNotification('invite', `${from.name} invited you to their party`, undefined, {
+    const title = `${otherPlayerName(from, 'Someone')} invited you to their party`;
+    this.addNotification('invite', title, undefined, {
       kind: 'partyInvite',
       userId: from.userId,
       code,
     });
     ui.getState().pushToast({
       kind: 'social',
-      title: `${from.name} invited you to their party`,
+      title,
       icon: '💌',
       durationMs: 0,
       actions: [
@@ -2311,6 +2316,16 @@ export class OnlineAccount {
   /** True when the local player leads (or is solo). */
   get isLeader(): boolean {
     return !this.party || this.party.leaderId === this.userId;
+  }
+
+  /**
+   * The server refused this device's session for good: stop the realtime
+   * socket (it would only reconnect into 401s) and go inactive until the
+   * player signs in again.
+   */
+  endExpiredSession(): void {
+    this.realtime.stop();
+    this.me = null;
   }
 
   /** Tears down sockets and subscriptions. */

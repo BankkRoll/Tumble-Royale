@@ -317,6 +317,8 @@ export const ANALYTICS_EVENTS = [
   'voice.join',
   /** Voice switched off: `reason` and `seconds` switched on. */
   'voice.leave',
+  /** An invite was copied: `kind` (party/lobby), `what` (code/link). Never the code itself. */
+  'invite.copy',
 ] as const;
 
 /** An allow-listed analytics event name. */

@@ -471,6 +471,26 @@ describe('fanZone', () => {
     expect(inside.body.linvel().z).toBeGreaterThan(3);
     expect(Math.abs(outside.body.linvel().z)).toBeLessThan(1e-3);
   });
+
+  it('predicts its push for bots from the duty cycle alone', async () => {
+    const h = await harness();
+    const params = { onTime: 3, offTime: 2, spinUp: 0.5, strength: 4, falloff: 0 };
+    const rt = fanZone.create(inst(fanZone, params, { x: 0, y: 2, z: 0 }), h.ctx) as unknown as {
+      botWind(
+        t: number,
+        p: { x: number; y: number; z: number },
+        out: { x: number; y: number; z: number },
+      ): void;
+    };
+    const w = (t: number, x = 0) => {
+      const out = { x: 0, y: 0, z: 0 };
+      rt.botWind(t, { x, y: 2, z: 3 }, out);
+      return out;
+    };
+    expect(w(1.5).z).toBeCloseTo(4, 6);
+    expect(w(4).z).toBe(0);
+    expect(w(1.5, 10).z).toBe(0);
+  });
 });
 
 describe('bouncePad', () => {

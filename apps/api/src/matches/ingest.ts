@@ -325,13 +325,20 @@ async function crownLeagueTiers(
  *
  * @param ctx - Shared services.
  * @param m - Schema-validated payload (signature already checked by the route).
+ * @param verify - Checks a first report before anything is granted (the
+ *   matchmaker's placement); a replay of a stored match skips it.
  */
-export async function ingestMatch(ctx: AppContext, m: MatchResult): Promise<IngestResult> {
+export async function ingestMatch(
+  ctx: AppContext,
+  m: MatchResult,
+  verify?: (m: MatchResult) => Promise<void>,
+): Promise<IngestResult> {
   checkConsistency(m);
   const stored = await replayStored(ctx, m.matchId);
   if (stored) return stored;
   if (Date.parse(m.endedAt) < ctx.now().getTime() - MATCH_HISTORY_RETENTION_DAYS * 86_400_000)
     throw badRequest('result_too_old', 'This show ended too long ago to be recorded');
+  await verify?.(m);
 
   const seasonId = m.seasonId ?? ctx.catalog.season.id;
   // Only the live season is ever seeded: a late result for an old season must

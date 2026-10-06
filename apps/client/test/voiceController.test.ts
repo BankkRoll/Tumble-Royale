@@ -12,6 +12,8 @@ import {
   SPEAKING_LEVEL,
   VOICE_HOLD_MS,
   VoiceController,
+  hasTurnServer,
+  voiceIcePolicy,
   type VoiceDeps,
   type VoiceOptions,
 } from '../src/game/voice/voiceController.ts';
@@ -387,6 +389,19 @@ describe('peers', () => {
     expect(FakePC.all[0]!.restartIceCalls).toBe(1);
   });
 
+  it('relays a team room even without relay-only, and re-gathers when a party turns into a team', async () => {
+    const r = rig();
+    await live(r);
+    expect(FakePC.all[0]!.config.iceTransportPolicy).toBe('all');
+    r.rt.emit('voice_room', room([HIGH], { room: { id: 'team:m1:0', kind: 'team' } }));
+    await flush();
+    expect(FakePC.all[0]!.config.iceTransportPolicy).toBe('relay');
+    expect(FakePC.all[0]!.restartIceCalls).toBe(1);
+    r.rt.emit('voice_room', room([HIGH, LOW], { room: { id: 'team:m1:0', kind: 'team' } }));
+    await flush();
+    expect(FakePC.all[1]!.config.iceTransportPolicy).toBe('relay');
+  });
+
   it('restarts ICE on failure, asks the offerer when it is the answerer, and gives up after a few tries', async () => {
     const r = rig();
     await live(r, [HIGH, LOW]);
@@ -627,5 +642,29 @@ describe('PushToTalkInput', () => {
     expect(ptt.held).toBe(true);
     ptt.stop();
     expect(ptt.held).toBe(false);
+  });
+});
+
+describe('voiceIcePolicy', () => {
+  const turn = [{ urls: ['stun:s.example:3478'] }, { urls: ['turns:t.example:5349'] }];
+  const stunOnly = [{ urls: ['stun:s.example:3478'] }];
+
+  it('spots TURN among the ICE servers', () => {
+    expect(hasTurnServer(turn)).toBe(true);
+    expect(hasTurnServer([{ urls: ['TURN:t.example:3478?transport=udp'] }])).toBe(true);
+    expect(hasTurnServer(stunOnly)).toBe(false);
+    expect(hasTurnServer([])).toBe(false);
+  });
+
+  it('relays team rooms whenever TURN exists, party rooms only when chosen', () => {
+    expect(voiceIcePolicy('team', false, turn)).toBe('relay');
+    expect(voiceIcePolicy(null, false, turn)).toBe('relay');
+    expect(voiceIcePolicy('party', false, turn)).toBe('all');
+    expect(voiceIcePolicy('party', true, turn)).toBe('relay');
+  });
+
+  it('never forces a relay that does not exist', () => {
+    expect(voiceIcePolicy('team', false, stunOnly)).toBe('all');
+    expect(voiceIcePolicy('party', true, [])).toBe('all');
   });
 });

@@ -42,6 +42,19 @@ export class MemoryKV implements KV {
     return true;
   }
 
+  async delIfEquals(key: string, value: string): Promise<boolean> {
+    if (this.live(key)?.value !== value) return false;
+    this.values.delete(key);
+    return true;
+  }
+
+  async expireIfEquals(key: string, value: string, ttlMs: number): Promise<boolean> {
+    const e = this.live(key);
+    if (e?.value !== value) return false;
+    e.expiresAt = this.now() + ttlMs;
+    return true;
+  }
+
   async del(...keys: string[]): Promise<void> {
     for (const k of keys) {
       this.values.delete(k);

@@ -63,7 +63,7 @@ export function explainGemCheckoutRefusal(
       id: LINK_FOR_GEMS_DIALOG,
       kind: 'confirm',
       title: 'Link an account to buy Gems',
-      body: 'Guest Tumblers live only on this device, so Gems bought here could be lost with it. Link Discord, Google or email first and your Gems stay safe on any device.',
+      body: 'Guest Tumblers live only on this device, so Gems bought here could be lost with it. Link a login in Settings first and your Gems stay safe on any device.',
       buttons: [
         { id: 'cancel', label: 'Not now', variant: 'secondary' },
         { id: 'link', label: 'Link an account', variant: 'primary', autofocus: true },

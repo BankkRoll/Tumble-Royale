@@ -83,6 +83,7 @@ import type {
   ShowSeat,
   ShowSummary,
   SpectateInfo,
+  SpectatorState,
   StampEntry,
   StampKind,
   StoreData,
@@ -224,6 +225,8 @@ export interface UIState {
   /** The local seat in the running show (null outside shows). */
   showSeat: ShowSeat | null;
   spectate: SpectateInfo | null;
+  /** Spectator camera, roster and broadcast overlay for the running show (null outside shows). */
+  spectator: SpectatorState | null;
   emoteWheelOpen: boolean;
   results: RoundResults | null;
   betweenRounds: BetweenRoundsInfo | null;
@@ -372,6 +375,10 @@ export interface UIState {
   setWatchChoice: (choice: WatchChoice | null) => void;
   setShowSeat: (seat: ShowSeat | null) => void;
   setSpectate: (info: SpectateInfo | null) => void;
+  /** Replaces the spectator tools (null when the show ends). */
+  setSpectator: (state: SpectatorState | null) => void;
+  /** Merges into the spectator tools; ignored outside shows. */
+  patchSpectator: (patch: Partial<SpectatorState>) => void;
   setEmoteWheel: (open: boolean) => void;
   setResults: (results: RoundResults | null) => void;
   setBetweenRounds: (info: BetweenRoundsInfo | null) => void;
@@ -506,6 +513,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   watchChoice: null,
   showSeat: null,
   spectate: null,
+  spectator: null,
   emoteWheelOpen: false,
   results: null,
   betweenRounds: null,
@@ -755,6 +763,17 @@ export const ui = createStore<UIState>()((set, get) => ({
   setWatchChoice: (watchChoice) => set({ watchChoice }),
   setShowSeat: (showSeat) => set({ showSeat }),
   setSpectate: (spectate) => set({ spectate }),
+  setSpectator: (spectator) => set({ spectator }),
+  patchSpectator: (patch) => {
+    const cur = get().spectator;
+    if (!cur) return;
+    for (const k in patch) {
+      if (cur[k as keyof SpectatorState] !== patch[k as keyof SpectatorState]) {
+        set({ spectator: { ...cur, ...patch } });
+        return;
+      }
+    }
+  },
   setEmoteWheel: (emoteWheelOpen) => set({ emoteWheelOpen }),
   setResults: (results) => set({ results }),
   setBetweenRounds: (betweenRounds) => set({ betweenRounds }),

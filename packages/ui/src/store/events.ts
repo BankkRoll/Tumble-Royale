@@ -23,6 +23,7 @@ import type {
   ScreenId,
   Settings,
   SettingsSection,
+  SpectatorCamMode,
   TumblerColors,
 } from './types.ts';
 import type { ClubEmblem, ClubJoinMode, ClubReportReason } from '@tumble/shared';
@@ -127,6 +128,8 @@ export interface UIIntents {
     name?: string;
     /** Open the full profile even for party members (whose click opens the player card). */
     direct?: boolean;
+    /** `name` is a Streamer Mode mask: the card keeps it and hides the tag. */
+    masked?: boolean;
   };
   /** News posts the player has opened (clears unread badges). */
   newsRead: { ids: string[] };
@@ -149,6 +152,14 @@ export interface UIIntents {
   };
   spectate: undefined;
   spectateNext: { dir: 1 | -1 };
+  /** Spectator camera mode: a specific one, or the next in Follow → Free → Overview → Director. */
+  spectatorCamera: { mode: SpectatorCamMode | 'next' };
+  /** Follow a player picked on the roster (or the leader with `id` -1). */
+  spectatorFollow: { id: number };
+  /** Pin a player (null unpins). */
+  spectatorPin: { id: number | null };
+  /** Broadcast overlay, its help card or the chroma-key backdrop (omit `on` to toggle). */
+  broadcastToggle: { what: 'overlay' | 'help' | 'chroma'; on?: boolean };
   /** Vote (or change the vote) for the next round on the between-rounds card. */
   castVote: { roundIndex: number; option: number };
   playAgain: undefined;
@@ -185,7 +196,11 @@ export interface UIIntents {
   spectateCustom: { spectator: boolean };
   inviteFriend: { friendId: string };
   addFriend: { nameTag: string };
-  copyInvite: { code: string };
+  /**
+   * The UI already copied an invite (and said so): analytics only. Carries
+   * no code, so nothing downstream can echo it on a stream.
+   */
+  copyInvite: { kind: 'party' | 'lobby'; what: 'code' | 'link' };
   kickPartyMember: { memberId: string };
   /** Solo player or party leader starts a lobby mini-game on the menu platform. */
   lobbyGameStart: { game: LobbyGameId };

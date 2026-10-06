@@ -13,16 +13,24 @@ import { ConnectionGuard, DEFAULT_LIMITS, type ConnectionLimits } from '../antiC
 import type { Connection } from '../transport/types.ts';
 
 const SENT_RING = 64;
+/**
+ * Largest reliable message a client may send. Clients only send small
+ * low-frequency messages (chat lines, votes, load progress); anything bigger
+ * is a protocol violation rather than something to buffer.
+ */
+export const MAX_CLIENT_MESSAGE_BYTES = 2048;
 
 /** One connected client. */
 export class ClientSession {
   readonly guard: ConnectionGuard;
-  readonly reliable = new ReliableEndpoint();
+  readonly reliable = new ReliableEndpoint({ maxMessageBytes: MAX_CLIENT_MESSAGE_BYTES });
   readonly encoder: SnapshotEncoder;
   /** Player id once joined, else -1. */
   playerId = -1;
   /** Entity the client spectates (interest management), or -1. */
   spectateTarget = -1;
+  /** Where a free spectator camera looks (interest management when `spectateTarget` is -1), or null. */
+  spectateFocus: { x: number; y: number; z: number } | null = null;
   /** Smoothed RTT estimate from snapshot→ack timing (ms). */
   rttMs = 100;
   private rttSamples = 0;

@@ -28,7 +28,7 @@ import { withLock } from '../kv/index.ts';
 import { RANKED_QUEUE } from '../leaderboards/service.ts';
 import { refuseDuringMaintenance, requireLivePlaylist } from '../liveops/state.ts';
 import { DEFAULT_RATING, skillOrdinal } from '../ranked/rating.ts';
-import { broadcastPresence, friendIds, socialRef } from './friends.ts';
+import { blockedEitherWay, broadcastPresence, friendIds, socialRef } from './friends.ts';
 import { refreshVoice } from '../voice/service.ts';
 import { sendPartyChat } from './partyChat.ts';
 import { getPresence, getPresenceMany } from './presence.ts';
@@ -167,8 +167,33 @@ export class PartyService {
     };
   }
 
+  /**
+   * Serialises one player's party membership changes. Without it, two joins
+   * (or a create and a join) from the same player both see them partyless,
+   * and they end up a ghost member of whichever party `user-party` does not
+   * point at.
+   */
+  private asUser<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+    return withLock(this.ctx.kv, `user-party-op:${userId}`, fn);
+  }
+
+  /**
+   * True when the player and any member of the party blocked each other.
+   *
+   * @param p - Party.
+   * @param userId - Player about to join or be invited.
+   */
+  async blockedByMember(p: Party, userId: string): Promise<boolean> {
+    const blocked = await blockedEitherWay(this.ctx.db, userId);
+    return p.members.some((m) => blocked.has(m.userId));
+  }
+
   /** Creates a party led by the caller (returns the existing one if already in a party). */
   async create(userId: string): Promise<Party> {
+    return this.asUser(userId, () => this.createUnlocked(userId));
+  }
+
+  private async createUnlocked(userId: string): Promise<Party> {
     const existing = await this.current(userId);
     if (existing) return existing;
     let code = newCode();
@@ -188,16 +213,30 @@ export class PartyService {
     return p;
   }
 
-  /** Joins by invite code, leaving any previous party first. */
+  /**
+   * Joins by invite code, leaving any previous party first.
+   *
+   * @throws {ApiError} 404 when the code is unknown or a member and the
+   *   player blocked each other, 403 `kicked`, 409 `party_full`.
+   */
   async join(userId: string, code: string): Promise<Party> {
+    return this.asUser(userId, () => this.joinUnlocked(userId, code));
+  }
+
+  private async joinUnlocked(userId: string, code: string): Promise<Party> {
     const id = await this.ctx.kv.get(`party-code:${code}`);
     if (!id) throw notFound('Party');
     const prev = await this.current(userId);
     if (prev?.id === id) return prev;
-    if (prev) await this.leave(userId);
+    // SECURITY: a block either way keeps the pair apart; the code reads as unknown, as with every block.
+    const target = await this.load(id);
+    if (!target || (await this.blockedByMember(target, userId))) throw notFound('Party');
+    if (prev) await this.leaveUnlocked(userId);
     const joined = await withLock(this.ctx.kv, `party:${id}`, async () => {
       const p = await this.load(id);
       if (!p) throw notFound('Party');
+      // Re-checked under the lock: someone the player blocked may have joined meanwhile.
+      if (await this.blockedByMember(p, userId)) throw notFound('Party');
       if (p.kicked.includes(userId)) throw forbidden('kicked', 'You were removed from this party');
       if (p.members.length >= MAX_PARTY_SIZE) throw conflict('party_full', 'Party is full');
       p.members.push(await this.member(userId));
@@ -211,6 +250,10 @@ export class PartyService {
 
   /** Leaves the current party; promotes the longest-standing member if the leader leaves. */
   async leave(userId: string): Promise<void> {
+    await this.asUser(userId, () => this.leaveUnlocked(userId));
+  }
+
+  private async leaveUnlocked(userId: string): Promise<void> {
     const cur = await this.current(userId);
     if (!cur) return;
     const after = await withLock(

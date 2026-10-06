@@ -16,6 +16,7 @@
  *   stop working immediately instead of at their 15-minute expiry.
  * - Leave the player's club first: an owner's club passes to the
  *   longest-serving officer (else member); a club left empty is disbanded.
+ *   Club invites the player sent are withdrawn.
  * - Settle gifts: unopened gifts to the account go back to their senders,
  *   notes the account wrote are erased (`economy/gifts.ts`).
  * - Write an audit event.
@@ -23,7 +24,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { notifyClub, removeMember } from '../clubs/service.ts';
 import type { AppContext } from '../context.ts';
-import { clubReports, events, matches, matchParticipants, users } from '../db/schema.ts';
+import { clubInvites, clubReports, events, matches, matchParticipants, users } from '../db/schema.ts';
 import { announceErasedGifts, settleGiftsOnErasure } from '../economy/gifts.ts';
 import { invalidateBanCache } from '../http/auth.ts';
 import { notFound } from '../http/errors.ts';
@@ -83,6 +84,8 @@ export async function deleteAccount(
         where e->'from'->>'userId' is distinct from ${userId}
       )
       where ${clubReports.evidence} @> jsonb_build_array(jsonb_build_object('from', jsonb_build_object('userId', ${userId}::text)))`);
+    // Invites the account sent go with it rather than lingering with no one behind them.
+    await tx.delete(clubInvites).where(eq(clubInvites.invitedBy, userId));
     await tx
       .update(matchParticipants)
       .set({ userId: null, name: DELETED_PLAYER_NAME })

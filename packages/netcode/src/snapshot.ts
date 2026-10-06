@@ -527,6 +527,13 @@ export interface SnapshotViewer {
   spectateTarget: number;
   /** Last input sequence the server consumed for this client, or -1. */
   ackedInputSeq: number;
+  /**
+   * World point a free spectator camera looks at (v7 `spectate.focus`), or
+   * null. Distance priority is measured from it when the viewer has neither
+   * an entity of its own nor a spectate target, so a free camera gets the
+   * Tumblers around it at full rate instead of every one at the floor rate.
+   */
+  focus?: { x: number; y: number; z: number } | null;
 }
 
 /** Tuning for {@link SnapshotEncoder}. */
@@ -669,10 +676,12 @@ export class SnapshotEncoder {
       viewer.spectateTarget >= 0 && cur.present[viewer.spectateTarget]
         ? viewer.spectateTarget
         : viewer.playerId;
-    const hasRef = ref >= 0 && ref < MAX_ENTITIES && cur.present[ref] === 1;
-    const rx = hasRef ? cur.data[ref * ENTITY_STRIDE + PX]! : 0;
-    const ry = hasRef ? cur.data[ref * ENTITY_STRIDE + PY]! : 0;
-    const rz = hasRef ? cur.data[ref * ENTITY_STRIDE + PZ]! : 0;
+    const hasEntityRef = ref >= 0 && ref < MAX_ENTITIES && cur.present[ref] === 1;
+    const focus = hasEntityRef ? null : (viewer.focus ?? null);
+    const hasRef = hasEntityRef || focus !== null;
+    const rx = hasEntityRef ? cur.data[ref * ENTITY_STRIDE + PX]! : focus ? q.qx(focus.x) : 0;
+    const ry = hasEntityRef ? cur.data[ref * ENTITY_STRIDE + PY]! : focus ? q.qy(focus.y) : 0;
+    const rz = hasEntityRef ? cur.data[ref * ENTITY_STRIDE + PZ]! : focus ? q.qz(focus.z) : 0;
     let candidates = 0;
     for (let id = 0; id < MAX_ENTITIES; id++) {
       if (!cur.present[id]) continue;

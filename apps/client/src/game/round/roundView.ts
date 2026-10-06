@@ -13,7 +13,7 @@ import { getTheme, type ThemeDefinition, type Weather } from '@tumble/content/th
 import { MeshBatcher } from '@tumble/render/batching';
 import { RagdollManager, RagdollWorld } from '@tumble/render/character';
 import { ThirdPersonCamera, type CameraFollowTarget, type CameraVec3 } from '@tumble/render/camera';
-import { createEnvironment, roundDressing, type Environment } from '@tumble/render/environment';
+import { createEnvironmentSliced, roundDressing, type Environment } from '@tumble/render/environment';
 import { buildLevelVisualsSliced, quaternionFromRotation, type LevelVisuals } from '@tumble/render/level';
 import { getObstacleVisual, type ObstacleVisual } from '@tumble/render/obstacles';
 import { gradeFromTheme, type GradeParams } from '@tumble/render/post';
@@ -107,6 +107,13 @@ export class RoundView implements GameView {
    * paused (dt 0) but keep the camera live.
    */
   cameraDt: number | null = null;
+  /**
+   * Runs after the gameplay rig placed the camera each frame and may move it
+   * (spectator free camera, overview and blended cuts), and may move `focus`,
+   * the point shadows and environment detail centre on, to where it looks.
+   * Null leaves the rig in charge.
+   */
+  cameraDriver: ((dt: number, camera: PerspectiveCamera, focus: Vector3) => void) | null = null;
 
   /**
    * Cheap setup only. Call {@link loadSteps} (time-sliced) or {@link build}
@@ -161,31 +168,7 @@ export class RoundView implements GameView {
         weight: 3,
         run: () => this.buildLevel(),
       },
-      {
-        name: 'environment',
-        weight: 3,
-        run: () => {
-          const level = this.level as LevelVisuals;
-          // Obstacles included: tile floors, drum rings and sweepers are the course on several rounds.
-          const course = measureCourse(source.sim.round, source.sim.obstacleRuntimes);
-          const env = createEnvironment(this.theme, {
-            weather: roundWeather(round, source.sim.variationId, this.theme),
-            ...roundDressing(round, course),
-            seed: round.decorSeed,
-            detail: preset.environment,
-            lighting: {
-              shadows: preset.shadows,
-              mapSize: preset.shadowMapSize,
-              cascades: preset.cascades,
-              shadowDistance: preset.shadowDistance,
-            },
-          });
-          this.env = env;
-          env.attach(this.scene);
-          env.onAtmosphere = (a) => level.setNight(a.night);
-          level.setNight(env.atmosphere.night);
-        },
-      },
+      { name: 'environment', weight: 3, run: () => this.buildEnvironment() },
       {
         name: 'vfx',
         weight: 1,
@@ -202,11 +185,7 @@ export class RoundView implements GameView {
       {
         name: 'batching',
         weight: 1,
-        run: () => {
-          for (const o of this.obstacles) this.batcher.add(o.visual.object);
-          this.batcher.build();
-          this.scene.add(this.batcher.object);
-        },
+        run: () => this.buildBatches(),
       },
       { name: 'tumblers', weight: 4, run: () => this.warmTumblers() },
       {
@@ -260,6 +239,42 @@ export class RoundView implements GameView {
     }
     this.level = r.value;
     this.scene.add(this.level.object);
+  }
+
+  private *buildBatches(): Generator<number> {
+    for (const o of this.obstacles) this.batcher.add(o.visual.object);
+    yield* this.batcher.buildSliced();
+    this.batcher.attach(this.scene);
+  }
+
+  private *buildEnvironment(): Generator<number> {
+    const { round, source, preset } = this.opts;
+    const level = this.level as LevelVisuals;
+    // Obstacles included: tile floors, drum rings and sweepers are the course on several rounds.
+    const course = measureCourse(source.sim.round, source.sim.obstacleRuntimes);
+    const steps = createEnvironmentSliced(this.theme, {
+      weather: roundWeather(round, source.sim.variationId, this.theme),
+      ...roundDressing(round, course),
+      seed: round.decorSeed,
+      detail: preset.environment,
+      lighting: {
+        shadows: preset.shadows,
+        mapSize: preset.shadowMapSize,
+        cascades: preset.cascades,
+        shadowDistance: preset.shadowDistance,
+        farCascadeStride: preset.shadowFarStride,
+      },
+    });
+    let r = steps.next();
+    while (!r.done) {
+      yield r.value;
+      r = steps.next();
+    }
+    const env = r.value;
+    this.env = env;
+    env.attach(this.scene);
+    env.onAtmosphere = (a) => level.setNight(a.night);
+    level.setNight(env.atmosphere.night);
   }
 
   private *buildObstacles(): Generator<number> {
@@ -601,6 +616,7 @@ export class RoundView implements GameView {
       this.focus.set(p.x, p.y, p.z);
     }
     this.rig.update(this.cameraDt ?? dt, this.follow);
+    this.cameraDriver?.(this.cameraDt ?? dt, this.camera, this.focus);
 
     this.camera.getWorldPosition(this.camPos);
     this.ragdollMgr?.update(dt, this.camPos);

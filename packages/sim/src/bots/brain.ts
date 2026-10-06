@@ -6,9 +6,10 @@
  * - A *strategy* per round style picks a movement target: course following
  *   (races, crown climbs, towers), survival roaming (seek intact ground away
  *   from crowds and edges), wandering, team objectives (eggs → nest, ball →
- *   goal, zones), hunt chase/flee, logic (move to the obstacle-provided
- *   safe spot, with skill-based memory) and objective rounds (race to the spot
- *   an obstacle names: the nearest pickup, a scoring zone, a free seat).
+ *   goal with keeper, attacker and formation roles, zones), hunt chase/flee,
+ *   logic (move to the obstacle-provided safe spot, with skill-based memory
+ *   scaled by the question's difficulty) and objective rounds (race to the
+ *   spot an obstacle names: the nearest pickup, a scoring zone, a free seat).
  * - Course legs: run legs ease into their waypoint; action legs (jump,
  *   jump-dive, dive) run through the take-off at full speed and fire when the
  *   bot crosses the take-off line or reaches a lip, checked every step. Timed
@@ -16,7 +17,8 @@
  *   moving platform to bridge the leg (`waitForPlatform`).
  * - *Reflexes* layered on top: jumping incoming low beams / diving under high
  *   ones (predicted via obstacle poses, lasers included), hopping low lips,
- *   silly moments, emotes.
+ *   steering into crosswinds (fans, surf), silly moments (never a dive off
+ *   an edge), emotes.
  * - *Stuck recovery* measures route progress against a fixed baseline over
  *   a time window and escalates through a plan picked by what is ahead:
  *   walls get sidesteps, back-offs and re-paths to a sibling branch; lips
@@ -59,6 +61,13 @@ const DIVE_HOLD_TICKS = 3;
 const MAX_GAP_WAIT_SECONDS = 6;
 /** Lifts run long cycles; walking into the void is never the fallback, re-pathing is. */
 const MAX_PLATFORM_WAIT_SECONDS = 24;
+/**
+ * Seconds of push a character keeps as sideways speed in steady wind (its
+ * push half-life over ln 2), for steering upwind.
+ */
+const WIND_DRIFT_SECONDS = 0.36;
+/** Largest crosswind correction, as a sideways offset on the unit heading (about 40°). */
+const WIND_COMP_MAX = 0.85;
 /** Route metres that count as "getting somewhere" within one stuck window. */
 const STUCK_PROGRESS = 1;
 /** A branch abandoned by the stuck routine is avoided for this long. */
@@ -73,11 +82,28 @@ const PROBE_AHEAD = 0.75;
 const LIP_DROP = 0.7;
 /** Horizontal take-off legs at least this long may become jump-dives for bold bots. */
 const LONG_JUMP = 3.8;
+/** A silly dive needs floor this far ahead (m): roughly where a standing dive lands. */
+const SILLY_DIVE_REACH = 2.5;
 /**
  * Logic safe spots closer than this to the last one are the same answer (a
  * spot within a tile follows the bot as a crowd jostles it; tiles are 5 m+ apart).
  */
 const LOGIC_SAME_SPOT = 2.6;
+
+/**
+ * Ball rounds: share of a team attacking the ball at once, scaled by how far
+ * up the pitch it is (×0.15 at our goal to ×1.4 at theirs); the rest hold formation.
+ */
+const BALL_CHASE_SHARE = 0.18;
+/** Ball rounds: extra attackers whatever the team size, all of them at the far goal, none at ours. */
+const BALL_CHASE_UPFIELD = 2;
+/** Ball rounds: formation rows span this stretch of the pitch, as fractions from our goal to theirs. */
+const BALL_FORMATION_FROM = 0.3;
+const BALL_FORMATION_TO = 0.85;
+/** Ball rounds: keepers leave the goal mouth to clear a ball this close to it (m). */
+const BALL_KEEPER_RANGE = 12;
+/** Ball rounds: chance per decision of diving into a lined-up ball from close range. */
+const BALL_DIVE_CHANCE = 0.3;
 
 type Strategy = 'course' | 'survive' | 'wander' | 'team' | 'hunt' | 'logic' | 'objective';
 
@@ -246,6 +272,8 @@ export class DefaultBotBrain implements BotBrainLike {
   private layerAnchorY = Number.NaN;
   private logicKnown = false;
   private readonly logicSpot = vec3(Number.NaN, 0, 0);
+  /** Ball rounds: lowest ball-centre height above our feet seen so far, i.e. the ball's radius. */
+  private ballRadius = Infinity;
   private emoteCooldown = 0;
 
   // Flavour.
@@ -254,6 +282,11 @@ export class DefaultBotBrain implements BotBrainLike {
   private dizzyUntil = -1;
   private hangSince = -1;
   private hangWait = 0;
+
+  private readonly windW = vec3();
+  /** Steering correction against the push the bot is in, as a unit-direction offset. */
+  private windCompX = 0;
+  private windCompZ = 0;
 
   // Scratch.
   private readonly s1 = vec3();
@@ -366,7 +399,8 @@ export class DefaultBotBrain implements BotBrainLike {
       this.ledgeReflex(view, self);
       this.reflexes(view, self);
       this.checkStuck(view, self);
-      this.silly(view);
+      this.trackWind(view, self);
+      this.silly(view, self);
     } else if (this.lineValid && this.lineChecked && this.waitObstacle === null && !this.atGoal) {
       this.stepTakeoff(view, self);
     }
@@ -937,17 +971,7 @@ export class DefaultBotBrain implements BotBrainLike {
       }
     } else if (goal) {
       if (this.nearestProp(view, self, prop, null)) {
-        const toGoal = this.s2;
-        this.dirTo(prop, goal.position, toGoal);
-        const bx = prop.x - toGoal.x * 1.4;
-        const bz = prop.z - toGoal.z * 1.4;
-        const behind = (self.pos.x - bx) ** 2 + (self.pos.z - bz) ** 2 < 1.5;
-        if (behind) {
-          this.setTarget(prop.x + toGoal.x, prop.y, prop.z + toGoal.z);
-          if (this.rng.chance(0.08) && this.act === Act.None) this.schedule(view, Act.Dive, 0);
-        } else {
-          this.setTarget(bx, prop.y, bz);
-        }
+        this.decideBall(view, self, prop, goal);
         return;
       }
     } else if (zone) {
@@ -962,6 +986,148 @@ export class DefaultBotBrain implements BotBrainLike {
     // Painting rounds and fallbacks: roam widely so every step covers new ground.
     this.decideWander(view, self, 9);
     this.speed = this.p.speed;
+  }
+
+  /**
+   * Ball play. A whole team rushing the ball only builds a scrum that pins it
+   * in place, so roles are re-dealt every decision:
+   * - keepers (the lowest ids: one from four teammates up, two from twenty)
+   *   hold the goal mouth and clear a ball that comes close;
+   * - the few teammates nearest the ball attack it: get round to the side
+   *   away from the goal they score in, then run (and dive) through it;
+   * - everyone else holds a formation slot that slides with the ball, so the
+   *   pitch stays covered and the nearest of them takes over as it rolls by.
+   */
+  private decideBall(view: BotWorldView, self: BotSelfView, ball: Vec3, goal: TriggerDef): void {
+    let own: TriggerDef | null = null;
+    for (const t of view.round.triggers) {
+      if (t.kind === 'goal' && t.index !== self.team) {
+        own = t;
+        break;
+      }
+    }
+    const feet = self.pos.y - CENTRE_HEIGHT;
+    // A resting ball's centre sits one radius above the turf, so the lowest centre seen is the radius.
+    if (self.grounded && ball.y - feet > 0.6 && ball.y - feet < this.ballRadius)
+      this.ballRadius = ball.y - feet;
+    const r = Number.isFinite(this.ballRadius) ? Math.min(3, this.ballRadius) : 1.6;
+
+    let mates = 0;
+    let idRank = 0;
+    let closer = 0;
+    const mine = sqDistXZ(ball, self.pos);
+    for (const peer of view.peers) {
+      if (peer.id === this.id || peer.team !== self.team || peer.status !== PlayerRoundStatus.Playing)
+        continue;
+      mates++;
+      if (peer.id < this.id) idRank++;
+      if (sqDistXZ(ball, peer.pos) < mine) closer++;
+    }
+    const size = mates + 1;
+    if (!own) {
+      this.attackBall(view, self, ball, r, goal.position);
+      return;
+    }
+    const axis = this.dirTo(own.position, goal.position, this.s3);
+    const length = Math.sqrt(sqDistXZ(own.position, goal.position));
+    const bx = ball.x - own.position.x;
+    const bz = ball.z - own.position.z;
+    const ballAlong = bx * axis.x + bz * axis.z;
+    const ballLat = bx * axis.z - bz * axis.x;
+    const keepers = size >= 4 ? 1 : 0;
+
+    if (idRank < keepers) {
+      if (sqDistXZ(ball, own.position) < BALL_KEEPER_RANGE ** 2) {
+        this.attackBall(view, self, ball, r, goal.position);
+        return;
+      }
+      const mouth = own.size.x / 2 - 1;
+      const side = Math.max(
+        -mouth,
+        Math.min(mouth, ballLat * 0.3 + (keepers > 1 ? (idRank === 0 ? -2 : 2) : 0)),
+      );
+      this.holdSpot(
+        self,
+        own.position.x + axis.x * 4 + axis.z * side,
+        own.position.y,
+        own.position.z + axis.z * 4 - axis.x * side,
+      );
+      return;
+    }
+    // Teams commit more players the further up the pitch the ball is, so attackers outnumber defenders at
+    // either end; even numbers everywhere pin the ball in a scrum in front of each goal.
+    const upfield = Math.max(0, Math.min(1, ballAlong / Math.max(1, length)));
+    const chasers =
+      1 +
+      Math.round(BALL_CHASE_UPFIELD * upfield) +
+      Math.ceil(size * BALL_CHASE_SHARE * (0.15 + 1.25 * upfield));
+    if (closer < chasers) {
+      this.attackBall(view, self, ball, r, goal.position);
+      return;
+    }
+
+    // Formation: rows from our third up to their box, five lanes across, all leaning toward the ball.
+    const slot = idRank - keepers;
+    const rows = Math.max(1, Math.ceil((size - keepers) / 5));
+    const lane = (slot % 5) - 2;
+    const row = Math.floor(slot / 5);
+    let along =
+      length * (BALL_FORMATION_FROM + ((BALL_FORMATION_TO - BALL_FORMATION_FROM) * (row + 0.5)) / rows);
+    let lat = lane * length * 0.085;
+    along += (ballAlong - along) * 0.35;
+    lat += (ballLat - lat) * 0.35;
+    const wing = length * 0.2;
+    lat = Math.max(-wing, Math.min(wing, lat));
+    this.holdSpot(
+      self,
+      own.position.x + axis.x * along + axis.z * lat,
+      self.pos.y,
+      own.position.z + axis.z * along - axis.x * lat,
+    );
+  }
+
+  /** Walks to a spot and stands there (an intentional wait, not stuck). */
+  private holdSpot(self: BotSelfView, x: number, y: number, z: number): void {
+    this.setTarget(x, y, z);
+    if ((self.pos.x - x) ** 2 + (self.pos.z - z) ** 2 < 0.8) this.speed = 0;
+  }
+
+  /**
+   * Kicks a ball of radius `r` toward `aim`: from the wrong side, circle round
+   * it; once behind, line up and run through it, diving in from close range.
+   */
+  private attackBall(view: BotWorldView, self: BotSelfView, ball: Vec3, r: number, aim: Vec3): void {
+    const dir = this.dirTo(ball, aim, this.s3);
+    const rx = self.pos.x - ball.x;
+    const rz = self.pos.z - ball.z;
+    const along = rx * dir.x + rz * dir.z;
+    // Perpendicular offset: positive to the right of the ball's path.
+    const lat = rx * dir.z - rz * dir.x;
+    if (along > -0.4 * r) {
+      const side = lat >= 0 ? 1 : -1;
+      const out = r + 1.6;
+      this.setTarget(
+        ball.x + dir.z * side * out - dir.x * r * 0.7,
+        ball.y,
+        ball.z - dir.x * side * out - dir.z * r * 0.7,
+      );
+      return;
+    }
+    if (Math.abs(lat) > r * 0.6) {
+      this.setTarget(ball.x - dir.x * (r + 1), ball.y, ball.z - dir.z * (r + 1));
+      return;
+    }
+    this.setTarget(ball.x + dir.x * 2, ball.y, ball.z + dir.z * 2);
+    this.fullSpeed = true;
+    const gap = Math.sqrt(rx * rx + rz * rz) - r;
+    if (
+      gap < 1.4 &&
+      self.grounded &&
+      this.act === Act.None &&
+      this.rng.chance(BALL_DIVE_CHANCE * (1 - this.p.mistakeChance))
+    ) {
+      this.schedule(view, Act.Dive, this.reactionDelay() * 0.3);
+    }
   }
 
   private nearestProp(
@@ -1038,7 +1204,7 @@ export class DefaultBotBrain implements BotBrainLike {
     spot.x = self.pos.x;
     spot.y = self.pos.y;
     spot.z = self.pos.z;
-    if (view.safeSpot(spot)) {
+    if (view.safeSpot(spot, this.id)) {
       // Spots inside one tile shift as a crowd jostles the bot; only a new tile is a new answer.
       const changed =
         (spot.x - this.logicSpot.x) ** 2 + (spot.z - this.logicSpot.z) ** 2 > LOGIC_SAME_SPOT ** 2 ||
@@ -1047,7 +1213,9 @@ export class DefaultBotBrain implements BotBrainLike {
         this.logicSpot.x = spot.x;
         this.logicSpot.y = spot.y;
         this.logicSpot.z = spot.z;
-        this.logicKnown = this.rng.chance(this.p.memory);
+        // Skill sets how often a bot slips on the hardest questions; easy ones (a glowing answer) rarely trip anyone.
+        const difficulty = view.logicDifficulty?.() ?? 1;
+        this.logicKnown = this.rng.chance(1 - (1 - this.p.memory) * difficulty);
         // A wrong guess is a nearby spot: close enough to look plausible.
         this.offset.x = this.logicKnown ? 0 : this.rng.range(-4, 4);
         this.offset.z = this.logicKnown ? 0 : this.rng.range(-4, 4);
@@ -1065,7 +1233,16 @@ export class DefaultBotBrain implements BotBrainLike {
         this.nextRetarget = view.time + this.reactionDelay() * 2;
       }
       if (view.time >= this.nextRetarget) {
-        this.setTarget(this.logicSpot.x + this.offset.x, this.logicSpot.y, this.logicSpot.z + this.offset.z);
+        // Standing still once there: a bot leaning on its spot shoves the crowd around it off the tile.
+        this.holdSpot(
+          self,
+          this.logicSpot.x + this.offset.x,
+          this.logicSpot.y,
+          this.logicSpot.z + this.offset.z,
+        );
+        // Tiles that already dropped are holes, not a short cut.
+        const dir = this.dirTo(self.pos, this.target, this.s3);
+        if (this.speed > 0 && !this.floorAt(view, self, dir.x, dir.z)) this.speed = 0;
         return;
       }
       this.speed = 0;
@@ -1381,10 +1558,23 @@ export class DefaultBotBrain implements BotBrainLike {
   // Flavour
   // ---------------------------------------------------------------------------
 
-  private silly(view: BotWorldView): void {
+  private silly(view: BotWorldView, self: BotSelfView): void {
     if (this.act !== Act.None) return;
     if (this.rng.chance(this.p.sillyPerSecond * DECISION_TICKS * view.dt)) {
-      this.schedule(view, this.rng.chance(0.5) ? Act.Dive : Act.Jump, 0);
+      const dive = this.rng.chance(0.5);
+      // Unforced antics are for open ground: on a crowded logic tile a dive past the edge was most of the
+      // early eliminations (six or seven a board round at 100 bots).
+      if (
+        dive &&
+        !this.floorAt(
+          view,
+          self,
+          Math.sin(this.yaw) * SILLY_DIVE_REACH,
+          Math.cos(this.yaw) * SILLY_DIVE_REACH,
+        )
+      )
+        return;
+      this.schedule(view, dive ? Act.Dive : Act.Jump, 0);
     }
   }
 
@@ -1459,7 +1649,20 @@ export class DefaultBotBrain implements BotBrainLike {
     const dx = this.target.x - self.pos.x;
     const dz = this.target.z - self.pos.z;
     const d = Math.hypot(dx, dz);
-    if (d > 0.05) this.yaw = Math.atan2(dx, dz);
+    if (d > 0.05) {
+      const ux = dx / d;
+      const uz = dz / d;
+      // Only the crosswind part: steering against a tailwind would turn a strong fan's push into a U-turn.
+      const along = this.windCompX * ux + this.windCompZ * uz;
+      let cx = this.windCompX - along * ux;
+      let cz = this.windCompZ - along * uz;
+      const c = Math.hypot(cx, cz);
+      if (c > WIND_COMP_MAX) {
+        cx *= WIND_COMP_MAX / c;
+        cz *= WIND_COMP_MAX / c;
+      }
+      this.yaw = Math.atan2(ux + cx, uz + cz);
+    }
     out.yaw = this.yaw + this.noise;
     // Ease off when arriving so we don't overshoot narrow platforms (never on take-off runs).
     const arrive = this.fullSpeed || d >= 1.2 ? 1 : Math.max(0.35, d / 1.2);
@@ -1539,6 +1742,22 @@ export class DefaultBotBrain implements BotBrainLike {
     this.target.y = y;
     this.target.z = z;
     this.hasTarget = true;
+  }
+
+  /**
+   * A push (fans, surf) adds a velocity that the run input does not cancel,
+   * decaying over the character's push half-life; steady wind therefore
+   * carries a bot about `push × WIND_DRIFT_SECONDS` m/s sideways. Steering
+   * that much upwind holds the line.
+   */
+  private trackWind(view: BotWorldView, self: BotSelfView): void {
+    this.windCompX = 0;
+    this.windCompZ = 0;
+    if (!view.windAt) return;
+    const w = view.windAt(self.pos, 0, this.windW);
+    if (w.x * w.x + w.z * w.z < 0.25) return;
+    this.windCompX = (-w.x * WIND_DRIFT_SECONDS) / RUN_SPEED;
+    this.windCompZ = (-w.z * WIND_DRIFT_SECONDS) / RUN_SPEED;
   }
 
   private faceTowards(from: Vec3, to: Vec3): void {

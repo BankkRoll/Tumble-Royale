@@ -38,6 +38,8 @@ const SECRETS = {
 };
 
 const procs: ChildProcess[] = [];
+/** Sign-in link tokens the dev API's console mailer printed, oldest first. */
+const magicTokens: string[] = [];
 let dataDir = '';
 
 function start(app: string, env: Record<string, string>): ChildProcess {
@@ -50,6 +52,7 @@ function start(app: string, env: Record<string, string>): ChildProcess {
   const tag = app.split('/').pop();
   p.stdout?.on('data', (d: Buffer) => {
     const line = d.toString().trim();
+    for (const m of line.matchAll(/\/auth\/email\?token=([A-Za-z0-9_-]+)/g)) magicTokens.push(m[1]!);
     if (/results|match|error|ticket/i.test(line)) console.log(`[${tag}] ${line.slice(0, 300)}`);
   });
   p.stderr?.on('data', (d: Buffer) => console.log(`[${tag}!] ${d.toString().trim().slice(0, 300)}`));
@@ -79,6 +82,12 @@ test.beforeAll(async () => {
       PGLITE_DIR: join(dataDir, 'pglite'),
       PUBLIC_WEB_URL: GAME,
       RATE_LIMIT_MAX: '5000',
+      // Every spec signs in fresh guests from localhost.
+      GUEST_SIGNUPS_PER_IP_HOUR: '5000',
+      GLOBAL_CHAT_MIN_ACCOUNT_AGE_MINUTES: '0',
+      GLOBAL_CHAT_IP_MAX: '5000',
+      WS_IP_UPGRADES_PER_MINUTE: '5000',
+      WS_MAX_SOCKETS_PER_IP: '5000',
     });
     start('apps/matchmaker', {
       PORT: String(BASE + 370),
@@ -160,7 +169,9 @@ test('account → customize → party queue → show → XP & unlock persisted',
   await a.waitForTimeout(1500);
   await a.screenshot({ path: `${SHOTS}/01-menu-signed-in.png` });
 
-  // The client only sells Gems through Stripe; the dev API's fake checkout grants them for the test.
+  // Guests may not buy Gems, so A links an email first: the dev API's console
+  // mailer prints the sign-in link, which the spec reads from its output.
+  const mailed = magicTokens.length;
   await a.evaluate(async (api) => {
     const auth = JSON.parse(localStorage.getItem('tumble.v1.auth') ?? '{}') as { refreshToken?: string };
     const r = await fetch(`${api}/auth/refresh`, {
@@ -170,26 +181,51 @@ test('account → customize → party queue → show → XP & unlock persisted',
     });
     const tokens = (await r.json()) as { accessToken: string; refreshToken: string };
     localStorage.setItem('tumble.v1.auth', JSON.stringify({ ...auth, ...tokens }));
-    const res = await fetch(`${api}/gems/checkout`, {
+    const res = await fetch(`${api}/auth/email/start`, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${tokens.accessToken}`,
-        'idempotency-key': `e2e-gems-${Date.now()}`,
-      },
-      body: JSON.stringify({ packId: 'gems.2800' }),
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${tokens.accessToken}` },
+      body: JSON.stringify({ email: `meta-a-${Date.now()}@example.test` }),
     });
-    if (!res.ok) throw new Error(`gem checkout ${res.status}`);
+    if (res.status !== 202) throw new Error(`email link ${res.status}`);
   }, API);
+  await expect
+    .poll(() => magicTokens.length, { message: 'the API never printed the sign-in link', timeout: 15_000 })
+    .toBeGreaterThan(mailed);
+
+  // The client only sells Gems through Stripe; the dev API's fake checkout grants them for the test.
+  await a.evaluate(
+    async ([api, magic]) => {
+      const auth = JSON.parse(localStorage.getItem('tumble.v1.auth') ?? '{}') as Record<string, unknown>;
+      const r = await fetch(`${api}/auth/email/verify`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: magic }),
+      });
+      if (!r.ok) throw new Error(`email verify ${r.status}`);
+      const tokens = (await r.json()) as { accessToken: string; refreshToken: string };
+      localStorage.setItem('tumble.v1.auth', JSON.stringify({ ...auth, ...tokens }));
+      const res = await fetch(`${api}/gems/checkout`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${tokens.accessToken}`,
+          'idempotency-key': `e2e-gems-${Date.now()}`,
+        },
+        body: JSON.stringify({ packId: 'gems.2800' }),
+      });
+      if (!res.ok) throw new Error(`gem checkout ${res.status}`);
+    },
+    [API, magicTokens.at(-1)!] as const,
+  );
   await emit(a, 'buyGems', { packId: 'gems.2800' }); // UI path: must say "coming soon", not grant
   await a.waitForFunction(() => (window.__tumble!.ui!.getState().profile?.gems ?? 0) >= 2800, undefined, {
     timeout: 30_000,
   });
   const offer = await a.evaluate(() => {
     const s = window.__tumble!.ui!.getState().store!;
-    const gems = s.featured
-      .concat(s.daily)
-      .filter((o) => o.currency === 'gems' && !o.item.owned)
+    // Today's picks may all be Gumball-priced; the weekly picks and the catalog also sell for Gems.
+    const gems = [...s.featured, ...s.daily, ...(s.weekly ?? []), ...(s.catalog ?? [])]
+      .filter((o) => o.currency === 'gems' && !o.item.owned && !o.id.startsWith('bundle:'))
       .sort((x, y) => x.price - y.price);
     const o = gems[0];
     return o ? { id: o.id, slot: o.item.slot, name: o.item.name } : null;
@@ -241,8 +277,9 @@ test('account → customize → party queue → show → XP & unlock persisted',
     [a, 'A'],
     [b, 'B'],
   ] as const) {
+    // Two pages share one software renderer on CI, so the second can take minutes to get there.
     await p.waitForFunction(() => ['matchFound', 'preShow'].includes(window.__tumble!.screen!()), undefined, {
-      timeout: 90_000,
+      timeout: 180_000,
     });
     console.log(`[meta] ${l} matched`);
   }

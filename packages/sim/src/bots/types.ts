@@ -69,9 +69,24 @@ export interface BotWorldView {
    * point (its position nudged toward where it would like to go); when
    * several obstacles answer, the spot nearest the hint wins.
    *
+   * @param key - The asking bot's id: providers that share a crowd out over
+   *   several spots use it to give each bot its own (logic floors).
    * @returns True and writes `out` when some obstacle offered one.
    */
-  safeSpot(out: Vec3): boolean;
+  safeSpot(out: Vec3, key?: number): boolean;
+  /**
+   * How hard the question a logic floor is asking right now is to get right,
+   * from 0 (the answer glows) to 1 (the hardest board rounds); 1 when no
+   * obstacle rates its question.
+   */
+  logicDifficulty?(): number;
+  /**
+   * Push from fans and gusts on a capsule centred at `point`, `ahead` seconds
+   * from now (world, m/s²), predicted from the fans' pure duty cycles.
+   *
+   * @returns `out`.
+   */
+  windAt?(point: Vec3, ahead: number, out: Vec3): Vec3;
   /** Number of loose dynamic props (eggs, balls) currently tracked. */
   propCount(): number;
   /** Writes prop `index`'s position. */

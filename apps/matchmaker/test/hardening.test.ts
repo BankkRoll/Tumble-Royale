@@ -2,7 +2,7 @@ import type { AddressInfo } from 'node:net';
 import { SignJWT } from 'jose';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
-import { buildMatchmaker, type MatchmakerApp } from '../src/app.ts';
+import { buildMatchmaker, MAX_SOCKETS_PER_USER, type MatchmakerApp } from '../src/app.ts';
 import { loadConfig } from '../src/config.ts';
 import { SharedRateLimiter } from '../src/rateLimit.ts';
 import { MemoryStore } from '../src/store.ts';
@@ -184,6 +184,32 @@ describe('client address and shared limits', () => {
       );
     }
     expect(statuses).toEqual([101, 101, 429]);
+  });
+
+  it('caps open status sockets per account and frees a slot when one closes', async () => {
+    const built = await build({ RATE_LIMIT_MAX: '1000' });
+    await built.app.listen({ host: '127.0.0.1', port: 0 });
+    const port = (built.app.server.address() as AddressInfo).port;
+    const open = (token: string) =>
+      new Promise<{ status: number; ws: WebSocket }>((resolve) => {
+        const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${token}`);
+        ws.on('open', () => resolve({ status: 101, ws }));
+        ws.on('unexpected-response', (_req, res) => resolve({ status: res.statusCode ?? 0, ws }));
+        ws.on('error', () => undefined);
+      });
+    const alice = await access('alice');
+    const held = [];
+    for (let i = 0; i < MAX_SOCKETS_PER_USER; i++) held.push(await open(alice));
+    expect(held.map((h) => h.status)).toEqual(held.map(() => 101));
+    expect((await open(alice)).status).toBe(429);
+    expect((await open(await access('bob'))).status).toBe(101);
+    const first = held[0]!.ws;
+    await new Promise((r) => {
+      first.once('close', r);
+      first.close();
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    expect((await open(alice)).status).toBe(101);
   });
 });
 

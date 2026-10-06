@@ -12,7 +12,14 @@ import { openDatabase } from '../src/db/client.ts';
 import { authIdentities, banEvasionMarks, bans, users } from '../src/db/schema.ts';
 import { MemoryKV } from '../src/kv/index.ts';
 import { identifierHash } from '../src/moderation/ban-evasion.ts';
-import { ADMIN_TOKEN, createTestApi, TEST_SECRETS, type TestApi } from './helpers.ts';
+import {
+  ADMIN_TOKEN,
+  createTestApi,
+  TEST_BINDING,
+  TEST_NONCE,
+  TEST_SECRETS,
+  type TestApi,
+} from './helpers.ts';
 
 /** What the stubbed OAuth providers report for the next callback. */
 const nextProfile = {
@@ -63,17 +70,23 @@ async function oauth(
 ): Promise<{ error: string } | { userId: string; outcome: string; accessToken: string }> {
   if (provider === 'discord') nextProfile.discord = { id: profile.subject, email: profile.email ?? null };
   else nextProfile.google = { sub: profile.subject, email: profile.email ?? null };
-  const start = await api.req('POST', `/auth/${provider}/start`, { token, ip: ip() });
+  const start = await api.req('POST', `/auth/${provider}/start`, {
+    token,
+    body: { binding: TEST_BINDING },
+    ip: ip(),
+  });
   const state = new URL(start.json().url).searchParams.get('state')!;
   const cb = await api.req('GET', `/auth/${provider}/callback?code=c&state=${state}`, { ip: ip() });
   const back = new URL(cb.headers.location as string);
   const error = back.searchParams.get('error');
   if (error) return { error };
   const ex = await api.req('POST', '/auth/exchange', {
-    body: { code: back.searchParams.get('code') },
+    token,
+    body: { code: back.searchParams.get('code'), nonce: TEST_NONCE },
     ip: ip(),
   });
   const j = ex.json();
+  if (ex.statusCode !== 200) return { error: j.error };
   return { userId: j.user.id, outcome: j.outcome, accessToken: j.accessToken };
 }
 

@@ -19,7 +19,9 @@ test('online show reaches a live round with moving remotes', async ({ page }) =>
   page.on('pageerror', (e) => errors.push(`${e.name}: ${e.message}`));
   await page.setViewportSize({ width: 1280, height: 720 });
   const gs = GS ? `&gs=${encodeURIComponent(GS)}` : '';
-  await page.goto(`${process.env.GAME_URL ?? ''}/?online=1&autoplay=1&fresh=1&api=0&tier=medium${gs}`);
+  await page.goto(
+    `${process.env.GAME_URL ?? ''}/?online=1&autoplay=1&fresh=1&api=0&tier=${process.env.TIER ?? 'medium'}${gs}`,
+  );
   await page.waitForFunction(() => window.__tumble?.ready === true, undefined, { timeout: 120_000 });
   await page.waitForFunction(() => window.__tumble?.screen?.() === 'preShow', undefined, {
     timeout: 120_000,

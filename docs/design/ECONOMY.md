@@ -56,35 +56,65 @@ fires `onSeasonChanged` listeners (the ranked soft reset subscribes there).
 Gems must be reachable without paying. Rules: `GEM_EARN` in
 `packages/content/src/progression/gems.ts`, plus the pass tracks.
 
-| Source                                                                    | Gems    | Cap                                         |
-| ------------------------------------------------------------------------- | ------- | ------------------------------------------- |
-| Weekly challenge claimed                                                  | 10 each | 6 per week → 60/week                        |
-| First Crown of the UTC day                                                | 15      | 1 per day → 105/week                        |
-| Account level milestone (every 10)                                        | 100     | levels 10, 20, … 100                        |
-| Season Pass free track (x5 spotlight tiers 5, 15, 35, 45, 55, 65, 85, 95) | 50 each | 400/season                                  |
-| Season Pass premium track                                                 | 100 × 8 | 800/season (premium refunds most of itself) |
-| Daily login, day 7 of the ladder                                          | 20      | 1 per 7-day streak → 20/week                |
-| Seasonal challenges with a Gem reward (when drawn)                        | 25 each | at most 2 per season → 50/season            |
-| Achievements (top tiers) and the 50-Crown milestone                       | 25–100  | once per account: 350 + 100 lifetime        |
+| Source                                                                 | Gems    | Cap                                         |
+| ---------------------------------------------------------------------- | ------- | ------------------------------------------- |
+| Weekly challenge claimed                                               | 10 each | 6 per week → 60/week                        |
+| First Crown of the UTC day                                             | 15      | 1 per day → 105/week                        |
+| Account level milestone (every 10)                                     | 100     | levels 10, 20, … 100 → 1,000 lifetime       |
+| Season Pass free track (spotlight tiers 5, 15, 35, 45, 55, 65, 85, 95) | 50 each | 400/season                                  |
+| Season Pass premium track (tiers 8, 18, 27, 38, 47, 58, 68, 82)        | 100 × 8 | 800/season (premium refunds most of itself) |
+| Daily login, day 7 of the ladder                                       | 20      | 1 per 7-day streak → 20/week, 260/season    |
+| Seasonal challenges with a Gem reward (when drawn: 8 of 14 per season) | 25 each | at most 2 per season → 50/season            |
+| Achievements (top tiers, 9 × 25–50) and the 50-Crown milestone         | 25–100  | once per account: 350 + 100 = 450 lifetime  |
+| Limited-time event tiers (§5)                                          | ≤ 60    | per event; one event a season so far        |
+| Club goals ([§6](#6-club-goals))                                       | 0       | XP and Gumballs only                        |
 
-Season budget (13 weeks):
+**Season budget (13 weeks), recurring sources only:**
 
-| Player  | Weeklies   | First Crowns | Milestones | Free track | **Total** |
-| ------- | ---------- | ------------ | ---------- | ---------- | --------- |
-| Casual  | 3/wk → 390 | 2/wk → 390   | 1 → 100    | half → 200 | **1,080** |
-| Regular | 5/wk → 650 | 4/wk → 780   | 1 → 100    | all → 400  | **1,930** |
-| Grinder | 6/wk → 780 | 7/wk → 1,365 | 2 → 200    | all → 400  | **2,745** |
+| Player  | Weeklies   | First Crowns | Free track | Login streak | Seasonal (if drawn) | **Recurring** | + event | **With event** |
+| ------- | ---------- | ------------ | ---------- | ------------ | ------------------- | ------------- | ------- | -------------- |
+| Casual  | 3/wk → 390 | 2/wk → 390   | half → 200 | 4 → 80       | Crowns → 25         | **1,085**     | —       | **1,085**      |
+| Regular | 5/wk → 650 | 4/wk → 780   | all → 400  | 10 → 200     | both → 50           | **2,080**     | 60      | **2,140**      |
+| Grinder | 6/wk → 780 | 7/wk → 1,365 | all → 400  | 13 → 260     | both → 50           | **2,855**     | 60      | **2,915**      |
 
-Premium Pass costs **950 Gems**, so a casual player can buy the next season's
-pass from one season of play; premium then refunds 800 of it. Legendary store
-items (800) and Mythics (1,600) take a regular player roughly one season of
-saving. `packages/content/test/economy.test.ts` checks the casual row stays at
-or above the premium price.
+Club goals add nothing to any row. The seasonal Gem challenges are drawn, not
+guaranteed: Season 1 drew neither, Seasons 2 and 4 both, Season 3 the Crowns
+one. Events are optional (a casual player is assumed to skip them).
 
-The budget above leaves out the daily login (up to 260/season for an unbroken
-streak), seasonal challenges (up to 50/season) and the one-time achievement
-and milestone Gems: they reward showing up rather than grinding, and the
-budget should hold without them.
+**Lifetime, once per account:** level milestones 1,000 (10 × 100), achievement
+top tiers 350, the 50-Crown milestone 100: **1,450**. The level milestones are
+front-loaded: level 100 takes 276,680 XP and a full pass is 120,000 XP, so a
+regular player collects five or six milestones (500–600 Gems) in their first
+season and the rest within about three. Earlier versions of this table counted
+"1–2 milestones a season" as recurring income; that overstated every season
+after the third and understated the first, so milestones now sit here.
+
+**Does it balance against the prices?**
+
+| Sink                         | Gems    | Casual (1,085)          | Regular (2,140)           | Grinder (2,915)           |
+| ---------------------------- | ------- | ----------------------- | ------------------------- | ------------------------- |
+| Premium Pass, first purchase | 950     | 1 season                | half a season             | a third of a season       |
+| Premium Pass, renewed        | 150 net | yes (950 − 800)         | yes                       | yes                       |
+| Legendary item (16 in store) | 800     | ~1 a season (with pass) | ~2.5 a season (with pass) | ~3.5 a season (with pass) |
+| Mythic item (1 in store)     | 1,600   | ~1.7 seasons            | under a season            | about half a season       |
+| Whole Gem catalog            | 14,400  | ~15 seasons             | ~7 seasons (with pass)    | ~5 seasons (with pass)    |
+
+The design rule still holds: a casual player buys the next season's pass
+from one season of play, without counting milestones, events or one-offs
+(`packages/content/test/economy.test.ts` checks the casual recurring row,
+built from the live data, against the pass price), and nothing Gem-priced is
+out of reach of a free player.
+
+**Flagged for design review (not changed):**
+
+- Renewing the pass costs a net 150 Gems, so a regular free player keeps the
+  pass every season and still banks about 2,000 Gems: two or three
+  Legendaries a season, the whole Gem catalog in under two years. That is
+  much faster than the "one season of saving per Legendary" this page used
+  to promise. Whether Gem items should be that reachable without paying (and
+  what it leaves for Gem packs) is a pricing call, not a correction.
+- First Crowns are half of a grinder's budget (1,365 of 2,915), so Gem income
+  scales with winning, not just with play; casual players see a third of it.
 
 ### 3.1 Buying Gems
 

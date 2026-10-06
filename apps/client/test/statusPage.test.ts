@@ -95,7 +95,8 @@ describe('status page hosting', () => {
     expect(block).toContain('/status /status/ /status.html');
     expect(block).toContain('rewrite * /status.html');
     expect(block).toContain('Cache-Control "no-cache"');
-    expect(block).toContain('X-Frame-Options "DENY"');
+    // Frame protection is site-wide (see securityHeaders.test.ts).
+    expect(caddy.slice(0, caddy.indexOf('handle'))).toContain('X-Frame-Options "DENY"');
     expect(block).not.toContain('X-Robots-Tag');
 
     const vercel = JSON.parse(read('vercel.json')) as {

@@ -37,6 +37,7 @@ import {
   type ClubReportReason,
 } from '@tumble/shared';
 import { Button, Segmented, Swatch } from '../../components/controls.tsx';
+import { streamerSafeAccount } from '../../names.ts';
 import { linesOf } from '../../store/chatChannels.ts';
 import {
   CLUB_REPORT_LABEL,
@@ -677,34 +678,38 @@ function Goals(): JSX.Element {
 
 function Requests(): JSX.Element {
   const requests = useClubs((s) => s.joinRequests);
+  const streamer = useUI((s) => s.settings.gameplay.streamerMode);
   if (requests.length === 0) return <small className="tr-muted">No one is waiting to join.</small>;
   return (
     <div className="tr-col" style={{ gap: '0.3em' }} data-testid="club-requests">
-      {requests.map((r) => (
-        <div key={r.userId} className="tr-friend">
-          <div className="tr-col tr-grow" style={{ gap: 0, minWidth: 0 }}>
-            <b className="tr-ellipsis">
-              {r.name}
-              <small className="tr-muted">#{r.tag}</small>
-            </b>
-            <small className="tr-muted">Level {r.level}</small>
+      {requests.map((r) => {
+        const shown = streamerSafeAccount(r, streamer);
+        return (
+          <div key={r.userId} className="tr-friend">
+            <div className="tr-col tr-grow" style={{ gap: 0, minWidth: 0 }}>
+              <b className="tr-ellipsis">
+                {shown.name}
+                <small className="tr-muted">#{shown.tag}</small>
+              </b>
+              <small className="tr-muted">Level {r.level}</small>
+            </div>
+            <Button
+              size="sm"
+              variant="mint"
+              onClick={() => uiEvents.emit('clubRequestAnswer', { userId: r.userId, accept: true })}
+            >
+              Accept
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => uiEvents.emit('clubRequestAnswer', { userId: r.userId, accept: false })}
+            >
+              Decline
+            </Button>
           </div>
-          <Button
-            size="sm"
-            variant="mint"
-            onClick={() => uiEvents.emit('clubRequestAnswer', { userId: r.userId, accept: true })}
-          >
-            Accept
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => uiEvents.emit('clubRequestAnswer', { userId: r.userId, accept: false })}
-          >
-            Decline
-          </Button>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

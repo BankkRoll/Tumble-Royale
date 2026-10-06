@@ -151,6 +151,16 @@ export async function syncCatalog(ctx: AppContext): Promise<void> {
     .where(and(eq(challenges.active, true), notInArray(challenges.id, challengeIds)));
 }
 
+/** Stable error codes for Fastify's own 4xx errors (body too large, wrong content type…). */
+const FASTIFY_ERROR_CODES: Partial<Record<number, string>> = {
+  400: 'bad_request',
+  404: 'not_found',
+  405: 'method_not_allowed',
+  406: 'not_acceptable',
+  413: 'payload_too_large',
+  415: 'unsupported_media_type',
+};
+
 /**
  * Builds the API.
  *
@@ -260,16 +270,42 @@ export async function buildApp(config: ApiConfig, opts: BuildOptions = {}): Prom
         ...(err.details !== undefined ? { details: err.details } : {}),
       });
     }
-    const e = err as { statusCode?: number; code?: string; message?: string; error?: string };
+    const e = err as {
+      statusCode?: number;
+      code?: string;
+      message?: string;
+      validation?: readonly { instancePath?: string; message?: string }[];
+    };
     if (e.statusCode === 429)
       return reply.code(429).send({ error: 'rate_limited', message: e.message ?? 'Too many requests' });
     if (e.statusCode && e.statusCode >= 400 && e.statusCode < 500) {
+      // Fastify's own codes (FST_ERR_*) are internals, not part of the error contract clients switch on.
+      if (e.code === 'FST_ERR_VALIDATION' || e.validation) {
+        return reply.code(400).send({
+          error: 'bad_request',
+          message: 'Request validation failed',
+          details: (e.validation ?? []).map((v) => ({
+            path: (v.instancePath ?? '').replace(/^\//, '').replace(/\//g, '.'),
+            message: v.message ?? 'invalid',
+          })),
+        });
+      }
+      const code = e.code?.startsWith('FST_') || !e.code ? FASTIFY_ERROR_CODES[e.statusCode] : e.code;
       return reply
         .code(e.statusCode)
-        .send({ error: e.code ?? 'bad_request', message: e.message ?? 'Bad request' });
+        .send({ error: code ?? 'bad_request', message: e.message ?? 'Bad request' });
     }
     req.log.error({ err }, 'unhandled error');
-    return reply.code(500).send({ error: 'internal', message: 'Something went wrong' });
+    // A plugin's deliberate 5xx (503 while a dependency is down) keeps its status, so clients and load
+    // balancers can tell "retry later" from a bug; the details stay in the log.
+    const status = e.statusCode && e.statusCode > 500 && e.statusCode < 600 ? e.statusCode : 500;
+    return reply
+      .code(status)
+      .send(
+        status === 503
+          ? { error: 'unavailable', message: 'Temporarily unavailable; try again shortly' }
+          : { error: 'internal', message: 'Something went wrong' },
+      );
   });
   app.setNotFoundHandler((req, reply) =>
     reply.code(404).send({ error: 'not_found', message: `No route ${req.method} ${req.url}` }),

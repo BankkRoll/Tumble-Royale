@@ -271,7 +271,15 @@ export class ReplayController {
     const header = this.library.get(h.key)?.data.header;
     const ref = (id: number): HighlightEntry['player'] => {
       const p = header?.players.find((q) => q.id === id);
-      return p ? { id, name: p.name, isBot: p.isBot, isLocal: id === header?.localId } : null;
+      return p
+        ? {
+            id,
+            name: p.name,
+            isBot: p.isBot,
+            isLocal: id === header?.localId,
+            ...(this.live.partyMates.has(id) ? { isParty: true } : {}),
+          }
+        : null;
     };
     return {
       id: h.id,

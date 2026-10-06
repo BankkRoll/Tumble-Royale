@@ -284,6 +284,9 @@ export class Tumbler implements TumblerVisual, RagdollHost {
     this.body.visible = own && this.lod < 2;
     this.outline.visible = this.body.visible;
     this.lod2.visible = own;
+    // PERF: while a crowd draws this Tumbler its own meshes never render, so the scene warm-up
+    // skips their shaders (the skinned toon body alone was a 60-110 ms build on a round load).
+    for (const m of [this.body, this.outline, this.lod2]) m.userData.warmUp = own;
   }
 
   // ---------------------------------------------------------------------------

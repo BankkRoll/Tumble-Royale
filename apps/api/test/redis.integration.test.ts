@@ -63,9 +63,17 @@ describe.skipIf(!TEST_REDIS_URL)('RedisKV against a real server', () => {
     expect([...hits].sort((x, y) => x - y)).toEqual(Array.from({ length: 50 }, (_, i) => i + 1));
   });
 
+  /** Two instances of one environment: same Redis, same prefix. */
+  const pair = (): [RedisKV, RedisKV] => {
+    const prefix = `tumble-test:${randomUUID()}:`;
+    const a = new RedisKV(url, prefix);
+    const b = new RedisKV(url, prefix);
+    open.push(a, b);
+    return [a, b];
+  };
+
   it('delivers published messages to subscribers on another connection', async () => {
-    const pub = kv();
-    const sub = kv();
+    const [pub, sub] = pair();
     const got: string[] = [];
     const unsubscribe = await sub.subscribe('test:chan', (m) => got.push(m));
     await pub.publish('test:chan', 'hello');
@@ -74,6 +82,42 @@ describe.skipIf(!TEST_REDIS_URL)('RedisKV against a real server', () => {
     await pub.publish('test:chan', 'after');
     await sleep(100);
     expect(got).toEqual(['hello']);
+  });
+
+  it('keeps pub/sub of environments with different prefixes apart', async () => {
+    const prod = kv();
+    const staging = kv();
+    const got: string[] = [];
+    await prod.subscribe(BAN_INVALIDATION_CHANNEL, (m) => got.push(m));
+    await staging.publish(BAN_INVALIDATION_CHANNEL, 'staging-user');
+    await prod.publish(BAN_INVALIDATION_CHANNEL, 'prod-user');
+    await until(async () => got.length === 1);
+    await sleep(100);
+    expect(got).toEqual(['prod-user']);
+  });
+
+  it('resolves every concurrent subscribe only once the channel is really subscribed', async () => {
+    const [pub, sub] = pair();
+    const got: string[] = [];
+    await Promise.all([
+      sub.subscribe('test:race', (m) => got.push(`1:${m}`)),
+      sub.subscribe('test:race', (m) => got.push(`2:${m}`)),
+    ]);
+    await pub.publish('test:race', 'now');
+    await until(async () => got.length === 2);
+    expect(got.sort()).toEqual(['1:now', '2:now']);
+  });
+
+  it('releases and renews a lock only for its holder', async () => {
+    const [a, b] = pair();
+    expect(await a.setNX('lock:x', 'token-a', 200)).toBe(true);
+    expect(await b.delIfEquals('lock:x', 'token-b')).toBe(false);
+    expect(await b.expireIfEquals('lock:x', 'token-b', 60_000)).toBe(false);
+    expect(await a.expireIfEquals('lock:x', 'token-a', 60_000)).toBe(true);
+    await sleep(300);
+    expect(await b.get('lock:x')).toBe('token-a');
+    expect(await a.delIfEquals('lock:x', 'token-a')).toBe(true);
+    expect(await b.get('lock:x')).toBeNull();
   });
 });
 
@@ -93,9 +137,11 @@ describe.skipIf(!TEST_REDIS_URL)('ban invalidation across API instances on Redis
     dropDatabase = scratch?.drop;
     database = await openDatabase({ databaseUrl: scratch?.url, pgliteDir: 'memory://' });
     const db = { ...database, close: async () => undefined };
-    // Two connections, as two API processes would have; ban invalidations travel between them.
-    const kvA = isolatedRedisKV(TEST_REDIS_URL!);
-    const kvB = isolatedRedisKV(TEST_REDIS_URL!);
+    // Two connections of one environment (one prefix), as two API processes would have;
+    // ban invalidations travel between them.
+    const prefix = `tumble-test:${randomUUID()}:`;
+    const kvA = new RedisKV(TEST_REDIS_URL!, prefix);
+    const kvB = new RedisKV(TEST_REDIS_URL!, prefix);
     const a = await createTestApi(undefined, {}, { kv: kvA, database: db });
     const b = await createTestApi(undefined, {}, { kv: kvB, database: db });
     apis = [a, b];

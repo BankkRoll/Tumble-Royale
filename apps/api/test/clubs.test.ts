@@ -4,9 +4,10 @@
  * leave and on account deletion, discovery and the kill switch.
  */
 import { and, eq } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { CLUB_MAX_MEMBERS } from '@tumble/shared';
-import { clubKicks, clubs, clubMembers, featureFlags } from '../src/db/schema.ts';
+import { removeMember } from '../src/clubs/service.ts';
+import { clubInvites, clubKicks, clubReports, clubs, clubMembers, featureFlags } from '../src/db/schema.ts';
 import { invalidateLiveOps } from '../src/liveops/state.ts';
 import { userChannel, type RealtimeEvent } from '../src/realtime/notifier.ts';
 import {
@@ -155,7 +156,7 @@ describe('joining', () => {
     const b = await player(api);
     expect((await call(a, 'POST', `/clubs/${club.id}/join`)).json().status).toBe('requested');
     expect((await call(b, 'POST', `/clubs/${club.id}/join`)).json().status).toBe('requested');
-    expect(seen.filter((e) => e.type === 'club_request')).toHaveLength(2);
+    await vi.waitFor(() => expect(seen.filter((e) => e.type === 'club_request')).toHaveLength(2));
     expect((await myClub(api, a)).requests).toEqual([
       expect.objectContaining({ club: expect.objectContaining({ id: club.id }) }),
     ]);
@@ -187,7 +188,9 @@ describe('joining', () => {
     await befriend(api, owner, friend);
     const seen = await events(friend);
     expect((await call(owner, 'POST', '/clubs/me/invites', { userId: friend.id })).statusCode).toBe(201);
-    expect(seen).toContainEqual(expect.objectContaining({ type: 'club_invite', clubId: club.id }));
+    await vi.waitFor(() =>
+      expect(seen).toContainEqual(expect.objectContaining({ type: 'club_invite', clubId: club.id })),
+    );
     expect((await myClub(api, friend)).invites).toEqual([
       expect.objectContaining({
         club: expect.objectContaining({ id: club.id }),
@@ -268,8 +271,10 @@ describe('role permissions', () => {
     expect(roles).toEqual({ [member.id]: 'owner', [owner.id]: 'officer', [officer.id]: 'member' });
     const seen = await events(officer);
     expect((await call(member, 'POST', '/clubs/me/disband')).statusCode).toBe(204);
-    expect(seen).toContainEqual(
-      expect.objectContaining({ type: 'club_removed', clubId: club.id, reason: 'disbanded' }),
+    await vi.waitFor(() =>
+      expect(seen).toContainEqual(
+        expect.objectContaining({ type: 'club_removed', clubId: club.id, reason: 'disbanded' }),
+      ),
     );
     expect((await myClub(api, owner)).club).toBeNull();
     // The name is free again once the club is gone.
@@ -311,11 +316,57 @@ describe('caps and concurrency', () => {
     expect(rows).toHaveLength(1);
   });
 
+  /** Owners on the roster, and the stored count against the real rows. */
+  async function integrity(clubId: string) {
+    const rows = await api.ctx.db.select().from(clubMembers).where(eq(clubMembers.clubId, clubId));
+    const [row] = await api.ctx.db.select().from(clubs).where(eq(clubs.id, clubId));
+    return {
+      owners: rows.filter((r) => r.role === 'owner').length,
+      rows: rows.length,
+      memberCount: row!.memberCount,
+    };
+  }
+
+  it('keeps exactly one owner when the owner transfers and leaves at once', async () => {
+    for (let round = 0; round < 3; round++) {
+      const { club, owner, member } = await trio();
+      await Promise.all([
+        call(owner, 'POST', '/clubs/me/transfer', { userId: member.id }),
+        call(owner, 'POST', '/clubs/me/leave'),
+      ]);
+      const after = await integrity(club.id);
+      expect(after.owners).toBe(1);
+      expect(after.memberCount).toBe(after.rows);
+    }
+  });
+
+  it('counts a member out once when a kick and a leave race', async () => {
+    const { club, owner, member } = await trio();
+    await Promise.all([
+      call(owner, 'POST', `/clubs/me/members/${member.id}/kick`),
+      call(member, 'POST', '/clubs/me/leave'),
+    ]);
+    expect(await integrity(club.id)).toEqual({ owners: 1, rows: 2, memberCount: 2 });
+  });
+
+  it('removes a member once when two removals run concurrently', async () => {
+    const { club, member } = await trio();
+    const now = api.clock.now();
+    const results = await Promise.all([
+      api.ctx.db.transaction((tx) => removeMember(tx, member.id, now)),
+      api.ctx.db.transaction((tx) => removeMember(tx, member.id, now)),
+    ]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(await integrity(club.id)).toEqual({ owners: 1, rows: 2, memberCount: 2 });
+  });
+
   it('keeps a kicked player out until the cooldown ends', async () => {
     const { club, owner, member } = await trio();
     const seen = await events(member);
     expect((await call(owner, 'POST', `/clubs/me/members/${member.id}/kick`)).statusCode).toBe(204);
-    expect(seen).toContainEqual(expect.objectContaining({ type: 'club_removed', reason: 'kicked' }));
+    await vi.waitFor(() =>
+      expect(seen).toContainEqual(expect.objectContaining({ type: 'club_removed', reason: 'kicked' })),
+    );
     const back = await call(member, 'POST', `/clubs/${club.id}/join`);
     expect(back.statusCode).toBe(403);
     expect(back.json().error).toBe('kick_cooldown');
@@ -343,8 +394,10 @@ describe('ownership hand-over', () => {
     await call(owner, 'POST', `/clubs/me/members/${later.id}/role`, { role: 'officer' });
     const seen = await events(later);
     expect((await call(owner, 'POST', '/clubs/me/leave')).statusCode).toBe(204);
-    expect(seen).toContainEqual(
-      expect.objectContaining({ type: 'notification', title: `You now own ${club.name}` }),
+    await vi.waitFor(() =>
+      expect(seen).toContainEqual(
+        expect.objectContaining({ type: 'notification', title: `You now own ${club.name}` }),
+      ),
     );
     expect((await myClub(api, later)).role).toBe('owner');
 
@@ -372,6 +425,20 @@ describe('ownership hand-over', () => {
     const [row] = await api.ctx.db.select().from(clubs).where(eq(clubs.id, lonely.id));
     expect(row!.disbandedAt).not.toBeNull();
     expect(club.id).not.toBe(lonely.id);
+  });
+});
+
+describe('account erasure', () => {
+  it('withdraws the club invites the erased player sent', async () => {
+    const { officer } = await trio();
+    const friend = await player(api);
+    await befriend(api, officer, friend);
+    expect((await call(officer, 'POST', '/clubs/me/invites', { userId: friend.id })).statusCode).toBe(201);
+    expect((await myClub(api, friend)).invites).toHaveLength(1);
+    expect((await call(officer, 'DELETE', '/me', { confirm: 'DELETE' })).statusCode).toBe(204);
+    expect((await myClub(api, friend)).invites).toEqual([]);
+    const left = await api.ctx.db.select().from(clubInvites).where(eq(clubInvites.invitedBy, officer.id));
+    expect(left).toEqual([]);
   });
 });
 
@@ -424,11 +491,90 @@ describe('party up', () => {
     const seen = await events(member);
     const res = await call(owner, 'POST', '/clubs/me/party-up', { userId: member.id });
     expect(res.statusCode).toBe(200);
-    const invite = seen.find((e) => e.type === 'party_invite') as { code: string } | undefined;
-    expect(invite).toBeDefined();
+    const invite = await vi.waitFor(() => {
+      const found = seen.find((e) => e.type === 'party_invite') as { code: string } | undefined;
+      expect(found).toBeDefined();
+      return found;
+    });
     expect((await call(member, 'POST', '/party/join', { code: invite!.code })).statusCode).toBe(200);
     const outsider = await player(api);
     expect((await call(owner, 'POST', '/clubs/me/party-up', { userId: outsider.id })).statusCode).toBe(404);
+  });
+
+  it('hides a club mate who blocked, or was blocked by, anyone in the party', async () => {
+    const { owner, officer, member } = await trio();
+    const stranger = await api.guest();
+    const { code } = (await call(owner, 'POST', '/party')).json().party;
+    expect((await call(stranger, 'POST', '/party/join', { code })).statusCode).toBe(200);
+    expect((await call(member, 'POST', '/friends/block', { userId: stranger.id })).statusCode).toBe(200);
+    await call(member, 'POST', '/presence', { status: 'in_menu' });
+    const seen = await events(member);
+    expect((await call(owner, 'POST', '/clubs/me/party-up', { userId: member.id })).statusCode).toBe(404);
+    expect(seen.some((e) => e.type === 'party_invite')).toBe(false);
+    expect((await call(member, 'POST', '/party/join', { code })).statusCode).toBe(404);
+
+    await call(officer, 'POST', '/presence', { status: 'in_menu' });
+    expect((await call(stranger, 'POST', '/friends/block', { userId: officer.id })).statusCode).toBe(200);
+    expect((await call(owner, 'POST', '/clubs/me/party-up', { userId: officer.id })).statusCode).toBe(404);
+  });
+});
+
+describe('requests and reports', () => {
+  it('tells the club about a cancelled request only when there was one', async () => {
+    const owner = await player(api);
+    const club = await createClub(api, owner, { joinMode: 'request' });
+    const asker = await player(api);
+    const seen = await events(owner);
+    expect((await call(asker, 'DELETE', `/clubs/${club.id}/request`)).statusCode).toBe(204);
+    expect(seen.filter((e) => e.type === 'club_update')).toHaveLength(0);
+    expect((await call(asker, 'POST', `/clubs/${club.id}/join`)).json().status).toBe('requested');
+    expect((await call(asker, 'DELETE', `/clubs/${club.id}/request`)).statusCode).toBe(204);
+    expect(seen.filter((e) => e.type === 'club_update')).toHaveLength(1);
+  });
+
+  it('hides join requests from players in a blocked pair with the officer', async () => {
+    const owner = await player(api);
+    const club = await createClub(api, owner, { joinMode: 'request' });
+    const blocked = await player(api);
+    const blocker = await player(api);
+    const fine = await player(api);
+    for (const u of [blocked, blocker, fine])
+      expect((await call(u, 'POST', `/clubs/${club.id}/join`)).json().status).toBe('requested');
+    expect((await call(owner, 'POST', '/friends/block', { userId: blocked.id })).statusCode).toBe(200);
+    expect((await call(blocker, 'POST', '/friends/block', { userId: owner.id })).statusCode).toBe(200);
+    const ids = (await myClub(api, owner)).joinRequests.map((r: { userId: string }) => r.userId);
+    expect(ids).toEqual([fine.id]);
+  });
+
+  it('hands back the open club report instead of filing a duplicate', async () => {
+    const owner = await player(api);
+    const club = await createClub(api, owner);
+    const reporter = await player(api);
+    const first = await call(reporter, 'POST', `/clubs/${club.id}/report`, { reason: 'name' });
+    expect(first.statusCode).toBe(201);
+    const racing = await Promise.all(
+      Array.from({ length: 3 }, () => call(reporter, 'POST', `/clubs/${club.id}/report`, { reason: 'name' })),
+    );
+    expect(racing.map((r) => [r.statusCode, r.json().id])).toEqual(
+      Array.from({ length: 3 }, () => [200, first.json().id]),
+    );
+    const other = await call(reporter, 'POST', `/clubs/${club.id}/report`, { reason: 'description' });
+    expect(other.statusCode).toBe(201);
+    const rows = await api.ctx.db.select().from(clubReports).where(eq(clubReports.clubId, club.id));
+    expect(rows).toHaveLength(2);
+  });
+
+  it('files one report when the first copies race', async () => {
+    const owner = await player(api);
+    const club = await createClub(api, owner);
+    const reporter = await player(api);
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () => call(reporter, 'POST', `/clubs/${club.id}/report`, { reason: 'name' })),
+    );
+    expect(results.filter((r) => r.statusCode === 201)).toHaveLength(1);
+    expect(new Set(results.map((r) => r.json().id)).size).toBe(1);
+    const rows = await api.ctx.db.select().from(clubReports).where(eq(clubReports.clubId, club.id));
+    expect(rows).toHaveLength(1);
   });
 });
 

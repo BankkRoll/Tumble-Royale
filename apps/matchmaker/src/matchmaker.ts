@@ -3,7 +3,7 @@
  * join tickets and custom lobbies. State lives in an {@link MMStore}; realtime
  * events go out on per-user channels that the WebSocket layer relays.
  */
-import { randomInt, randomUUID } from 'node:crypto';
+import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { DEFAULT_SHOW_PLAYERS, filterChat } from '@tumble/shared';
 import { STATIC_LIVEOPS, type LiveOpsSource } from '@tumble/shared/liveops-client';
 import { NO_BANS, type BanLookup } from './bans.ts';
@@ -33,6 +33,15 @@ import {
 } from './tickets.ts';
 
 export { MMError };
+
+/**
+ * Stable id of a signed queue ticket for single-use checks (tickets carry no `jti`).
+ *
+ * @param token - The ticket as the client sent it.
+ */
+export function queueTicketId(token: string): string {
+  return createHash('sha256').update(token).digest('base64url');
+}
 
 /** Server-side record of a placed match (served to game servers). */
 export interface MatchRecord {
@@ -120,6 +129,22 @@ export const LOBBY_CHAT_MAX = 6;
 /** Lobby chat rate-limit window. */
 export const LOBBY_CHAT_WINDOW_MS = 10_000;
 
+/** What a non-member holding the code sees of a custom lobby (`GET /lobbies/:code`). */
+export interface PublicLobby {
+  code: string;
+  region: string;
+  settings: CustomSettings;
+  status: CustomLobby['status'];
+  locked: boolean;
+  /** Players seated. */
+  players: number;
+  /** Spectators seated. */
+  spectators: number;
+  createdAt: number;
+  /** Marks the reduced view. */
+  public: true;
+}
+
 /** A member's seat in a custom lobby. */
 export interface LobbySeat {
   userId: string;
@@ -183,6 +208,33 @@ export interface ServerReport {
   humans?: number;
   /** Ticketed players who reached a room since the last report; their pending `match_found` is cleared. */
   joined?: readonly { matchId: string; userId: string }[];
+  /** The server is shutting down: no new matches, but its running shows stay reachable. */
+  draining?: boolean;
+}
+
+/** What a game server learns from its heartbeat. */
+export interface HeartbeatAnswer extends GameServer {
+  /**
+   * Matches placed on this server that no player has reached yet. A draining
+   * server waits for this to reach 0 (or the join tickets to expire) before
+   * it stops waiting for late arrivals.
+   */
+  pendingMatches: number;
+}
+
+/**
+ * What the API checks show results against: where the matchmaker placed the
+ * match and who it sent there.
+ */
+export interface MatchPlacement {
+  matchId: string;
+  serverId: string;
+  queue: MatchRecord['queue'];
+  playlistId: string;
+  /** Accounts placed as players. */
+  players: string[];
+  /** Accounts placed as spectators (they never appear in results). */
+  spectators: string[];
 }
 
 const ENTRIES = 'entries';
@@ -195,7 +247,22 @@ const RESERVATIONS = 'reservations';
  */
 export const RESERVATION_TTL_MS = JOIN_TICKET_TTL_SEC * 1000 + 30_000;
 const SERVER_WAIT_TTL_MS = 30 * 60_000;
+/** Match records live this long after placement, renewed by every heartbeat that reports the match. */
 const MATCH_TTL_MS = 30 * 60_000;
+/**
+ * Placements stay checkable this long: a game server whose results waited in
+ * its outbox through an API outage must still be able to deliver them.
+ */
+export const MATCH_PLACEMENT_TTL_MS = 24 * 3_600_000;
+/** Registry entries of servers silent this long are deleted (they are ignored after {@link SERVER_TTL_MS}). */
+export const SERVER_PRUNE_MS = 10 * 60_000;
+/**
+ * Serializes "pick a server, reserve its seats" across matchmaker instances
+ * and between the queue tick and private-show starts, so two placements
+ * never both see the same free capacity.
+ */
+const PLACEMENT_LOCK = 'placement-lock';
+const PLACEMENT_LOCK_TTL_MS = 5000;
 const LOBBY_TTL_MS = 2 * 3_600_000;
 /** Hash of live lobby codes, walked by the away sweep. */
 const LOBBY_INDEX = 'lobby-index';
@@ -204,6 +271,7 @@ const TICK_LOCK = 'tick-lock';
 /** Tick lock lifetime; renewed every {@link TICK_LOCK_RENEW_MS} while a tick runs. */
 export const TICK_LOCK_TTL_MS = 5000;
 const TICK_LOCK_RENEW_MS = 1500;
+const newMatchId = (): string => `m_${randomUUID().replace(/-/g, '')}`;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 /** Default custom lobby settings. */
@@ -217,6 +285,7 @@ export const DEFAULT_CUSTOM: CustomSettings = {
   spectatorSlots: 2,
   minPlayers: 1,
   roundVoting: true,
+  spectatorChat: false,
 };
 
 /** Receives placement events (metrics). */
@@ -376,9 +445,14 @@ export class Matchmaker {
    * Queues a party (or solo) from an API-issued ticket. Only the ticket's
    * leader may submit it; any previous entry of a member is replaced.
    *
-   * @throws {MMError} 403 when the caller is not the ticket's leader, 409 when in a custom lobby.
+   * SECURITY: a ticket queues once. Replaying an old party ticket would
+   * otherwise drag members who have since left the party back into a queue.
+   *
+   * @param ticketId - A stable id of the signed ticket (see {@link queueTicketId}); omitted, replays are not checked.
+   * @throws {MMError} 403 when the caller is not the ticket's leader, 409 when in a custom lobby,
+   *   401 `invalid_ticket` when the ticket was already used.
    */
-  async enqueue(caller: Player, ticket: QueueTicket): Promise<QueueEntry> {
+  async enqueue(caller: Player, ticket: QueueTicket, ticketId?: string): Promise<QueueEntry> {
     if (ticket.sub !== caller.userId || ticket.leaderId !== caller.userId) {
       throw new MMError(403, 'not_leader', 'Only the party leader can queue the party');
     }
@@ -388,14 +462,23 @@ export class Matchmaker {
       ticket.members.map((m) => m.userId),
       ticket.queue === 'ranked',
     );
+    // Every member is checked before any previous entry is touched: a refusal must leave the queue as it was.
+    const previous: QueueEntry[] = [];
     for (const m of ticket.members) {
       if (await this.store.get(`lobby-user:${m.userId}`))
         throw new MMError(409, 'in_lobby', 'Leave the custom lobby before queueing');
       const prev = await this.entryFor(m.userId);
-      if (prev) await this.removeEntry(prev);
-      else if (await this.store.get(`user-entry:${m.userId}`))
+      if (prev) {
+        if (!previous.some((p) => p.id === prev.id)) previous.push(prev);
+      } else if (await this.store.get(`user-entry:${m.userId}`))
         throw new MMError(409, 'match_forming', 'A match is being formed for you; try again in a moment');
     }
+    if (ticketId !== undefined) {
+      const ttl = ticket.exp ? Math.max(1000, ticket.exp * 1000 - this.now() + 60_000) : 15 * 60_000;
+      if (!(await this.store.setNX(`queue-ticket:${ticketId}`, '1', ttl)))
+        throw new MMError(401, 'invalid_ticket', 'Queue ticket already used; request a new one from the API');
+    }
+    for (const prev of previous) await this.removeEntry(prev);
     const entry: QueueEntry = {
       id: randomUUID(),
       partyId: ticket.pid,
@@ -500,7 +583,18 @@ export class Matchmaker {
         // Lost the lock (expired during a stall): stop; the new holder re-forms from the store.
         if (!owned || !(await this.store.expireIfEquals(TICK_LOCK, token, TICK_LOCK_TTL_MS))) break;
         const fallback = await this.serverWait(lobby);
-        const server = await this.allocateServer(lobby.region, lobby.size, fallback.otherRegions);
+        const matchId = newMatchId();
+        const server = await this.reserveServer(
+          matchId,
+          lobby.region,
+          lobby.size,
+          fallback.otherRegions,
+        ).catch((err: unknown) => {
+          if (err instanceof MMError && err.code === 'placement_busy') return undefined;
+          throw err;
+        });
+        // Another instance is placing right now; this lobby is formed again on the next tick.
+        if (server === undefined) continue;
         if (!server) {
           if (fallback.changed) {
             const event: MMEvent = {
@@ -512,8 +606,11 @@ export class Matchmaker {
           }
           continue;
         }
-        if (!(await this.claimEntries(lobby.entries))) continue;
-        created.push(await this.placeMatch(lobby, server));
+        if (!(await this.claimEntries(lobby.entries))) {
+          await this.store.hdel(RESERVATIONS, matchId);
+          continue;
+        }
+        created.push(await this.placeMatch(lobby, server, matchId));
       }
       return created;
     } finally {
@@ -573,11 +670,11 @@ export class Matchmaker {
     return { otherRegions: true, changed: fallbackStarted };
   }
 
-  private async placeMatch(lobby: FormedLobby, server: GameServer): Promise<MatchRecord> {
+  private async placeMatch(lobby: FormedLobby, server: GameServer, matchId: string): Promise<MatchRecord> {
     const teamOf = new Map<string, number>();
     if (lobby.teamSize > 1) lobby.teams.forEach((t, i) => t.forEach((u) => teamOf.set(u, i)));
     const record: MatchRecord = {
-      matchId: `m_${randomUUID().replace(/-/g, '')}`,
+      matchId,
       serverId: server.id,
       serverUrl: server.url,
       playlistId: lobby.playlistId,
@@ -600,7 +697,7 @@ export class Matchmaker {
       custom: null,
       createdAt: this.now(),
     };
-    await this.publishMatch(record, server, lobby.size);
+    await this.publishMatch(record, server);
     this.observer?.placed(
       record,
       lobby.entries.flatMap((e) => e.members.map(() => record.createdAt - e.enqueuedAt)),
@@ -609,14 +706,13 @@ export class Matchmaker {
   }
 
   /**
-   * Reserves the seats, stores the match, signs join tickets and notifies
-   * every participant. Each `match_found` is also kept per user for the
+   * Stores the match (its seats are already reserved), signs join tickets
+   * and notifies every participant. Each `match_found` is also kept per user for the
    * ticket's lifetime: pub/sub is fire-and-forget, so a player whose socket
    * was reconnecting at this moment would otherwise lose the match.
    */
-  private async publishMatch(record: MatchRecord, server: GameServer, seats: number): Promise<void> {
-    await this.reserve(record.matchId, server, seats);
-    await this.store.set(`match:${record.matchId}`, JSON.stringify(record), MATCH_TTL_MS);
+  private async publishMatch(record: MatchRecord, server: GameServer): Promise<void> {
+    await this.saveMatch(record);
     for (const r of record.roster) {
       const event = await this.matchFoundFor(record, server, r);
       const pending: PendingMatch = { ...event, expiresAt: this.now() + JOIN_TICKET_TTL_SEC * 1000 };
@@ -746,6 +842,30 @@ export class Matchmaker {
     return null;
   }
 
+  /** Stores a match record and the placement the API checks its results against. */
+  private async saveMatch(record: MatchRecord): Promise<void> {
+    await this.store.set(`match:${record.matchId}`, JSON.stringify(record), MATCH_TTL_MS);
+    const placement: MatchPlacement = {
+      matchId: record.matchId,
+      serverId: record.serverId,
+      queue: record.queue,
+      playlistId: record.playlistId,
+      players: record.roster.filter((r) => r.role === 'player').map((r) => r.userId),
+      spectators: record.roster.filter((r) => r.role === 'spectator').map((r) => r.userId),
+    };
+    await this.store.set(
+      `match-placement:${record.matchId}`,
+      JSON.stringify(placement),
+      MATCH_PLACEMENT_TTL_MS,
+    );
+  }
+
+  /** Where a match was placed and who was sent there (the API's results check); null once forgotten. */
+  async getPlacement(matchId: string): Promise<MatchPlacement | null> {
+    const raw = await this.store.get(`match-placement:${matchId}`);
+    return raw ? (JSON.parse(raw) as MatchPlacement) : null;
+  }
+
   /** A placed match, for game servers. */
   async getMatch(matchId: string): Promise<MatchRecord | null> {
     const raw = await this.store.get(`match:${matchId}`);
@@ -771,7 +891,7 @@ export class Matchmaker {
    * @param report - A bare number is the legacy `load`-only heartbeat.
    * @throws {MMError} 404 when unknown (the server should re-register).
    */
-  async heartbeat(id: string, report: number | ServerReport): Promise<GameServer> {
+  async heartbeat(id: string, report: number | ServerReport): Promise<HeartbeatAnswer> {
     const r: ServerReport = typeof report === 'number' ? { load: report } : report;
     const raw = (await this.store.hgetall(SERVERS))[id];
     if (!raw) throw new MMError(404, 'unknown_server', 'Register first');
@@ -782,18 +902,25 @@ export class Matchmaker {
       ...(r.humans !== undefined ? { humans: r.humans } : {}),
       lastSeen: this.now(),
     };
+    if (r.draining) server.draining = true;
+    else delete server.draining;
     await this.store.hset(SERVERS, id, JSON.stringify(server));
     for (const j of r.joined ?? []) await this.clearPendingMatch(j.userId, j.matchId);
-    if (r.matches?.length) {
-      const hosted = new Set(r.matches);
+    const hosted = new Set(r.matches ?? []);
+    for (const matchId of hosted) {
       // Rejoin tickets are only issued while the hosting server keeps reporting the match.
-      for (const matchId of hosted) await this.store.set(`match-live:${matchId}`, id, SERVER_TTL_MS);
-      for (const [matchId, v] of Object.entries(await this.store.hgetall(RESERVATIONS))) {
-        if (hosted.has(matchId) && (JSON.parse(v) as Reservation).serverId === id)
-          await this.store.hdel(RESERVATIONS, matchId);
-      }
+      await this.store.set(`match-live:${matchId}`, id, SERVER_TTL_MS);
+      // A show may outlast the record's TTL; rejoins and host kicks need it until the show ends.
+      await this.store.expire(`match:${matchId}`, MATCH_TTL_MS);
     }
-    return server;
+    let pendingMatches = 0;
+    for (const [matchId, v] of Object.entries(await this.store.hgetall(RESERVATIONS))) {
+      const res = JSON.parse(v) as Reservation;
+      if (res.serverId !== id) continue;
+      if (hosted.has(matchId)) await this.store.hdel(RESERVATIONS, matchId);
+      else if (this.now() - res.at <= RESERVATION_TTL_MS) pendingMatches++;
+    }
+    return { ...server, pendingMatches };
   }
 
   /**
@@ -814,12 +941,20 @@ export class Matchmaker {
     await this.store.hdel(SERVERS, id);
   }
 
-  /** Live servers as last reported (without reservations). */
+  /**
+   * Live servers as last reported (without reservations). Entries silent for
+   * {@link SERVER_PRUNE_MS} are deleted on the way: a server that crashed
+   * never sends its DELETE.
+   */
   async servers(): Promise<GameServer[]> {
     const now = this.now();
-    return Object.values(await this.store.hgetall(SERVERS))
-      .map((v) => JSON.parse(v) as GameServer)
-      .filter((s) => now - s.lastSeen <= SERVER_TTL_MS);
+    const live: GameServer[] = [];
+    for (const [id, v] of Object.entries(await this.store.hgetall(SERVERS))) {
+      const s = JSON.parse(v) as GameServer;
+      if (now - s.lastSeen <= SERVER_TTL_MS) live.push(s);
+      else if (now - s.lastSeen > SERVER_PRUNE_MS) await this.store.hdel(SERVERS, id);
+    }
+    return live;
   }
 
   /** Live reservations per server; expired ones are dropped on the way. */
@@ -857,6 +992,57 @@ export class Matchmaker {
     if (server.id === 'default') return;
     const r: Reservation = { serverId: server.id, seats, at: this.now() };
     await this.store.hset(RESERVATIONS, matchId, JSON.stringify(r));
+  }
+
+  /**
+   * Picks a server and reserves `seats` on it for `matchId` in one step under
+   * the placement lock (see {@link PLACEMENT_LOCK}).
+   *
+   * @returns The server, or null when none has room.
+   * @throws {MMError} 503 `placement_busy` when the lock stays taken for ~2 s.
+   */
+  private async reserveServer(
+    matchId: string,
+    region: string,
+    seats: number,
+    otherRegions: boolean,
+  ): Promise<GameServer | null> {
+    return this.withStoreLock(PLACEMENT_LOCK, PLACEMENT_LOCK_TTL_MS, 'placement_busy', async () => {
+      const server = await this.allocateServer(region, seats, otherRegions);
+      if (server) await this.reserve(matchId, server, seats);
+      return server;
+    });
+  }
+
+  /**
+   * Runs `fn` holding a store lock, renewed while it runs so a slow step
+   * (Redis latency, a slow ban lookup) cannot let it lapse into another
+   * holder's hands. Only its owner releases it.
+   *
+   * @throws {MMError} 503 `busyCode` when the lock stays taken for ~2 s.
+   */
+  private async withStoreLock<T>(
+    key: string,
+    ttlMs: number,
+    busyCode: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const token = randomUUID();
+    for (let i = 0; !(await this.store.setNX(key, token, ttlMs)); i++) {
+      if (i >= 100) throw new MMError(503, busyCode, 'Busy, try again');
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    const renew = setInterval(
+      () => void this.store.expireIfEquals(key, token, ttlMs).catch(() => undefined),
+      Math.max(100, Math.floor(ttlMs / 3)),
+    );
+    renew.unref?.();
+    try {
+      return await fn();
+    } finally {
+      clearInterval(renew);
+      await this.store.delIfEquals(key, token);
+    }
   }
 
   /**
@@ -916,17 +1102,9 @@ export class Matchmaker {
    * leave) cannot overwrite each other's change.
    */
   private async withLobby<T>(code: string, fn: (lobby: CustomLobby) => Promise<T>): Promise<T> {
-    const key = `lobby-lock:${code}`;
-    const token = randomUUID();
-    for (let i = 0; !(await this.store.setNX(key, token, LOBBY_LOCK_TTL_MS)); i++) {
-      if (i >= 100) throw new MMError(503, 'lobby_busy', 'The lobby is busy, try again');
-      await new Promise((r) => setTimeout(r, 20));
-    }
-    try {
-      return await fn(await this.loadLobby(code));
-    } finally {
-      await this.store.delIfEquals(key, token);
-    }
+    return this.withStoreLock(`lobby-lock:${code}`, LOBBY_LOCK_TTL_MS, 'lobby_busy', async () =>
+      fn(await this.loadLobby(code)),
+    );
   }
 
   private async freshCode(): Promise<string> {
@@ -986,6 +1164,29 @@ export class Matchmaker {
   }
 
   /**
+   * A lobby as `viewerId` may see it: members get everything, anyone else
+   * holding the code only what the join screen needs.
+   *
+   * SECURITY: codes get shared on stream; who is in the lobby (account ids)
+   * and whom the host banned is for its members only.
+   */
+  async viewLobby(viewerId: string, code: string): Promise<CustomLobby | PublicLobby> {
+    const lobby = await this.loadLobby(code);
+    if (rules.seatOf(lobby, viewerId)) return lobby;
+    return {
+      code: lobby.code,
+      region: lobby.region,
+      settings: lobby.settings,
+      status: lobby.status,
+      locked: lobby.locked,
+      players: lobby.players.length,
+      spectators: lobby.spectators.length,
+      createdAt: lobby.createdAt,
+      public: true,
+    };
+  }
+
+  /**
    * Sends a chat line to every member of the caller's open lobby. The text is
    * filtered with the shared chat filter; clients hide lines from players they
    * blocked or muted.
@@ -993,6 +1194,10 @@ export class Matchmaker {
    * @throws {MMError} 404 `no_lobby`, 403 `chat_banned`, 400 `empty_message`, 429 `chat_rate`.
    */
   async lobbyChat(userId: string, raw: unknown): Promise<LobbyChatLine> {
+    // PERF: the limiter comes first, so a flood costs one counter hit per line
+    // instead of lobby reads, a ban lookup and the filter.
+    if (!(await this.chatLimiter.hit(userId)).allowed)
+      throw new MMError(429, 'chat_rate', 'Slow down a little');
     const lobby = await this.lobbyOf(userId);
     const seat = lobby ? rules.seatOf(lobby, userId) : undefined;
     if (!lobby || !seat) throw new MMError(404, 'no_lobby', 'You are not in a private show');
@@ -1001,8 +1206,6 @@ export class Matchmaker {
       throw new MMError(403, 'chat_banned', 'Chat is disabled on this account');
     const filtered = filterChat(raw);
     if (!filtered) throw new MMError(400, 'empty_message', 'Say something first');
-    if (!(await this.chatLimiter.hit(userId)).allowed)
-      throw new MMError(429, 'chat_rate', 'Slow down a little');
     const line: LobbyChatLine = {
       id: randomUUID(),
       code: lobby.code,
@@ -1063,6 +1266,66 @@ export class Matchmaker {
     });
     await this.cancel(p.userId, 'joined_custom_lobby');
     return lobby;
+  }
+
+  /**
+   * Takes a spectator seat in a private show that is already running (the
+   * code was shared to a broadcaster or a late friend). Seats come from the
+   * host's spectator limit, counting the spectators the show started with;
+   * a seat taken this way belongs to the account until the show ends, so
+   * leaving and coming back does not cost another one. A member of the show
+   * gets their own seat back instead.
+   *
+   * SECURITY: the host's bans, lock and in-show removals apply, and the game
+   * server enforces the same limit again from the ticket.
+   *
+   * @throws {MMError} 404 `lobby_not_found`, 409 `lobby_open` (not started: join instead),
+   *   409 `no_spectators` / `spectators_full`, 403 `banned` / `lobby_locked` /
+   *   `removed_by_host`, 410 `match_over`.
+   */
+  async watchLobby(p: Player, code: string): Promise<MatchFoundEvent> {
+    const muted = await this.checkStanding([p.userId]);
+    return this.withLobby(code, async (lobby) => {
+      if (lobby.status !== 'started' || !lobby.matchId)
+        throw new MMError(409, 'lobby_open', 'That show has not started yet, join it with the code');
+      const record = await this.getMatch(lobby.matchId);
+      if (!record) throw new MMError(410, 'match_over', 'That show is over');
+      if (await this.store.get(`match-kicked:${record.matchId}:${p.userId}`))
+        throw new MMError(403, 'removed_by_host', 'The host removed you from that show');
+      if (record.roster.some((r) => r.userId === p.userId)) return this.rejoinMatch(p.userId, record.matchId);
+      rules.assertCanEnter(lobby, p.userId);
+      const slots = record.custom?.spectatorSlots ?? 0;
+      if (slots <= 0) throw new MMError(409, 'no_spectators', 'Spectating is turned off for this show');
+      let taken = 0;
+      for (const r of record.roster) {
+        // A watcher the host removed gives their seat back.
+        if (r.role === 'spectator' && !(await this.store.get(`match-kicked:${record.matchId}:${r.userId}`)))
+          taken++;
+      }
+      if (taken >= slots) throw new MMError(409, 'spectators_full', 'No spectator slots left');
+      const server = await this.liveServerFor(record);
+      if (!server) throw new MMError(410, 'match_over', 'That show is no longer running');
+      const seat: MatchRecord['roster'][number] = {
+        userId: p.userId,
+        name: p.name,
+        partyId: `custom:${code}`,
+        team: null,
+        role: 'spectator',
+        ...(muted.has(p.userId) ? { muted: true } : {}),
+      };
+      record.roster.push(seat);
+      await this.saveMatch(record);
+      // Listed with the lobby's spectators so the host's in-show tools can remove a watcher too.
+      lobby.spectators.push({
+        userId: p.userId,
+        name: p.name,
+        joinedAt: this.now(),
+        ready: false,
+        awaySince: null,
+      });
+      await this.saveLobby(lobby);
+      return this.matchFoundFor(record, server, seat, true);
+    });
   }
 
   /**
@@ -1289,7 +1552,7 @@ export class Matchmaker {
    */
   async startLobby(hostId: string, code: string, force = false): Promise<MatchRecord> {
     await this.assertNotInMaintenance();
-    const { lobby, record, server, seats } = await this.withLobby(code, async (lobby) => {
+    const { lobby, record, server } = await this.withLobby(code, async (lobby) => {
       rules.assertHost(lobby, hostId);
       rules.assertOpen(lobby);
       // Bans can land after someone joined: suspended players are left out, chat-suspended ones muted.
@@ -1304,10 +1567,11 @@ export class Matchmaker {
       const size = lobby.settings.maxPlayers;
       const seats = size + lobby.spectators.length;
       // A host pressing Start is waiting on us, so other regions are tried straight away.
-      const server = await this.allocateServer(lobby.region, seats, true);
+      const matchId = newMatchId();
+      const server = await this.reserveServer(matchId, lobby.region, seats, true);
       if (!server) throw new MMError(503, 'no_server', 'No game server available');
       const record: MatchRecord = {
-        matchId: `m_${randomUUID().replace(/-/g, '')}`,
+        matchId,
         serverId: server.id,
         serverUrl: server.url,
         playlistId: lobby.settings.playlistId,
@@ -1341,10 +1605,10 @@ export class Matchmaker {
       lobby.status = 'started';
       lobby.matchId = record.matchId;
       await this.saveLobby(lobby);
-      return { lobby, record, server, seats };
+      return { lobby, record, server };
     });
     for (const p of rules.members(lobby)) await this.store.del(`lobby-user:${p.userId}`);
-    await this.publishMatch(record, server, seats);
+    await this.publishMatch(record, server);
     this.observer?.placed(record, []);
     return record;
   }

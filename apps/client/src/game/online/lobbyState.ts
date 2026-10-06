@@ -159,6 +159,7 @@ export function lobbyOptions(st: LobbySettings): CustomLobbyOptions {
     countdownSec: st.lobbyCountdownSec,
     minPlayers: st.minPlayers ?? 1,
     roundVoting: st.roundVoting ?? true,
+    spectatorChat: st.spectatorChat ?? false,
     isPrivate: true,
   };
 }
@@ -167,7 +168,9 @@ export function lobbyOptions(st: LobbySettings): CustomLobbyOptions {
  * The running private show as its host's tools should list it: the lobby
  * roster freezes when the show starts, so members who have since left the
  * game server would still be offered for removal. Keeps the host and every
- * member the server still has in the show.
+ * player the server still has in the show, and every spectator: the server's
+ * roster never lists watchers, so it cannot say which ones left, and the host
+ * must still be able to remove one.
  *
  * @param lobby - The started lobby.
  * @param present - Account ids the game server lists right now; null before its first roster.
@@ -175,7 +178,7 @@ export function lobbyOptions(st: LobbySettings): CustomLobbyOptions {
 export function liveStartedLobby(lobby: Lobby, present: ReadonlySet<string> | null): Lobby {
   if (!present) return lobby;
   const keep = (s: LobbySeat): boolean => s.userId === lobby.hostId || present.has(s.userId);
-  return { ...lobby, players: lobby.players.filter(keep), spectators: lobby.spectators.filter(keep) };
+  return { ...lobby, players: lobby.players.filter(keep) };
 }
 
 /**
@@ -190,6 +193,7 @@ export function optionsToSettings(o: Partial<CustomLobbyOptions>): Partial<Lobby
   if (o.rounds !== undefined) out.rounds = o.rounds.slice(0, 10);
   if (o.bots !== undefined) out.bots = o.bots;
   if (o.roundVoting !== undefined) out.roundVoting = o.roundVoting;
+  if (o.spectatorChat !== undefined) out.spectatorChat = o.spectatorChat;
   if (o.maxPlayers !== undefined) out.maxPlayers = clamp(Math.round(o.maxPlayers), 2, MAX_PLAYERS);
   if (o.timerScale !== undefined) out.roundTimeScale = clamp(o.timerScale, 0.5, 2);
   if (o.countdownSec !== undefined) out.lobbyCountdownSec = clamp(Math.round(o.countdownSec), 0, 120);

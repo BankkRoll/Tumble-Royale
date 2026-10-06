@@ -22,7 +22,7 @@ export interface VoiceTeamsSink {
   /**
    * Reports a round's teams, or that it ended (`players` empty).
    *
-   * @param matchId - Room id.
+   * @param matchId - The matchmaker's match id (unique across game servers, unlike room ids).
    * @param round - Round index.
    * @param players - Humans with their team.
    */
@@ -42,7 +42,7 @@ export interface HttpVoiceTeamsOptions {
  *
  * @example
  * const voiceTeams = new HttpVoiceTeams({ apiUrl, secret });
- * voiceTeams.report(roomId, 2, [{ userId, team: 0, partyId: null }]);
+ * voiceTeams.report(match.matchId, 2, [{ userId, team: 0, partyId: null }]);
  */
 export class HttpVoiceTeams implements VoiceTeamsSink {
   constructor(private readonly opts: HttpVoiceTeamsOptions) {}
@@ -65,7 +65,10 @@ export class HttpVoiceTeams implements VoiceTeamsSink {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            ...signInternal(this.opts.secret, body, Date.now()),
+            ...signInternal(this.opts.secret, body, Date.now(), {
+              method: 'POST',
+              path: '/internal/voice/teams',
+            }),
           },
           body,
           signal: AbortSignal.timeout(5000),

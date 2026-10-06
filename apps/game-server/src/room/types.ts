@@ -233,6 +233,11 @@ export interface RoomDeps {
   randomSeed: () => number;
   /** Logger. */
   log?: (msg: string) => void;
+  /**
+   * The id this process registered with the matchmaker (`SERVER_ID`). Sent
+   * with show results so the API can check the match was placed here.
+   */
+  serverId?: string;
   /** Posts matchmade show results to the account API; null/absent disables reporting. */
   results?: ResultsSink | null;
   /** Tells the account API who is on which team in team rounds (team voice); null/absent disables it. */
@@ -276,6 +281,12 @@ export interface RoomConfig {
   lateJoinGraceMs: number;
   /** Snapshots go out every N × {@link snapshotEvery} ticks on the pre-show platform (bandwidth). */
   lobbySnapshotDivisor: number;
+  /**
+   * Spectators one room takes at most (late joiners plus private spectator
+   * seats). Each costs one snapshot encode per tick, like a player, so this
+   * bounds what watchers add to the tick.
+   */
+  maxSpectators: number;
 }
 
 /** Defaults per SPEC §3.1. */
@@ -290,4 +301,5 @@ export const DEFAULT_ROOM_CONFIG: RoomConfig = {
   ticketedFillWaitMs: 15_000,
   lateJoinGraceMs: 10_000,
   lobbySnapshotDivisor: 2,
+  maxSpectators: 16,
 };

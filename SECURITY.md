@@ -83,9 +83,13 @@ only, sent as a bearer header, never a cookie) is looked up by its hash, the
 account's staff role is re-read, and suspended or deleted accounts are
 refused. Moderators cannot reach live ops, economy corrections or staff
 management (`403 insufficient_role`). A player's ordinary access token is
-never accepted on an admin route, even for a staff account. The console page
-is served with `X-Frame-Options: DENY` and `frame-ancestors 'none'` so its
-confirm buttons cannot be clickjacked. Every admin action is written to the
+never accepted on an admin route, even for a staff account. Like every page
+of the site (game, invite links, sign-in returns, store, editor, status), the
+console is served with `X-Frame-Options: DENY` and a Content-Security-Policy
+with `frame-ancestors 'none'` and `script-src 'self'`, so its confirm buttons
+cannot be clickjacked and no other origin's script runs on it. Moderators
+cannot sanction, rename or warn staff of their own role or above, nor lift a
+ban an admin issued or a ban on their own account. Every admin action is written to the
 append-only `admin_audit_log`. Report evidence only includes the reported
 player's public global chat and whispers they sent to the reporter.
 
@@ -115,6 +119,27 @@ treats every club input as untrusted:
 - Goal rewards are paid once per player, week and goal, whichever club the
   player is in, so hopping between clubs cannot farm them.
 
+### Throwaway accounts and the realtime gateway
+
+Guests cost nothing to mint and arrive with fresh per-account budgets, so the
+API also budgets per client address (TRUST_PROXY aware, counted in the shared
+KV):
+
+- New guest accounts per IP per hour (`GUEST_SIGNUPS_PER_IP_HOUR`); a
+  returning device token is not counted.
+- Global chat: a guest must be `GLOBAL_CHAT_MIN_ACCOUNT_AGE_MINUTES` old before
+  posting (a linked sign-in posts at once), and one address shares a line
+  budget across all of its accounts (`GLOBAL_CHAT_IP_MAX`).
+- Realtime gateway: handshakes per IP and per account per minute, open
+  sockets per account and per IP, a frame token bucket per socket (excess is
+  dropped, a sustained flood closes the socket) and presence broadcasts
+  debounced per user. The matchmaker's status stream caps open sockets the
+  same way.
+- A gateway socket ends with the session: on every instance it closes when
+  the access token expires, the account is suspended or deleted, or that
+  session signs out. The replayed global chat history drops lines of banned
+  or deleted senders.
+
 ### Voice chat trust boundaries
 
 Voice is opt-in per player and audio travels peer to peer, so the server's
@@ -138,10 +163,11 @@ job is deciding who may connect to whom and never trusting a client about it:
   not all audio is refused by the API and again by the receiving client, so a
   peer cannot open video or data channels.
 - **IP exposure.** Directly connected peers see each other's IP addresses,
-  as with any WebRTC call; the first-use dialog says so. "Relay only" sets
+  as with any WebRTC call; the first-use dialog says so. Whenever the ICE
+  servers include TURN, team rooms (strangers) use
   `iceTransportPolicy: 'relay'`, so the browser gathers only TURN candidates
-  and peers see the relay's address. The API never logs or stores peer
-  addresses.
+  and peers see the relay's address. Party rooms connect directly unless the
+  player turns on "Relay only". The API never logs or stores peer addresses.
 - **TURN credentials.** The API mints TURN REST credentials
   (`expiry:userId.roomTag`, HMAC-SHA1 with `VOICE_TURN_SECRET`) valid for four
   hours, one player and one room. The secret never leaves the API and coturn.

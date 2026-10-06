@@ -11,7 +11,7 @@
  *   production on the in-process store unless that is explicitly allowed.
  */
 import { DEFAULT_SHOW_PLAYERS, MAX_PLAYERS } from '@tumble/shared';
-import { EnvIssues, type Env } from '@tumble/shared/env';
+import { EnvIssues, MAX_TIMER_MS, type Env } from '@tumble/shared/env';
 import { readMetricsExposure, type MetricsExposure } from '@tumble/shared/metrics';
 import type { TrustProxy } from '@tumble/shared/proxy';
 import { z } from 'zod';
@@ -32,18 +32,19 @@ const EnvSchema = z.object({
   ALLOWED_ORIGINS: optional,
   DEFAULT_GAME_SERVER_URL: optional,
   TARGET_SIZE: z.coerce.number().int().min(2).max(MAX_PLAYERS).default(DEFAULT_SHOW_PLAYERS),
-  MAX_WAIT_MS: z.coerce.number().int().min(1000).default(25_000),
-  HOT_MAX_WAIT_MS: z.coerce.number().int().min(1000).default(12_000),
+  MAX_WAIT_MS: z.coerce.number().int().min(1000).max(MAX_TIMER_MS).default(25_000),
+  HOT_MAX_WAIT_MS: z.coerce.number().int().min(1000).max(MAX_TIMER_MS).default(12_000),
   // Two full lobbies' worth of searchers: enough that waiting longer would not add humans.
   HOT_THRESHOLD: z.coerce
     .number()
     .int()
     .min(1)
     .default(2 * DEFAULT_SHOW_PLAYERS),
-  REGION_FALLBACK_MS: z.coerce.number().int().min(0).default(10_000),
+  REGION_FALLBACK_MS: z.coerce.number().int().min(0).max(MAX_TIMER_MS).default(10_000),
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(120),
   USER_RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(30),
-  TICK_MS: z.coerce.number().int().min(50).default(500),
+  TICK_MS: z.coerce.number().int().min(50).max(60_000).default(500),
+  ALLOW_STANDALONE: optional,
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   SENTRY_DSN: optional,
 });
@@ -122,7 +123,12 @@ export function loadConfig(env: Env = process.env): MatchmakerConfig {
   const jwtSecret = issues.secret('JWT_SECRET', 32);
   const gameTicketSecret = issues.secret('GAME_TICKET_SECRET', 16);
   const gameServerSecret = issues.secret('GAME_SERVER_SECRET', 16);
-  const parsed = EnvSchema.safeParse(env);
+  // NOTE: docker compose passes every optional variable as `${NAME:-}`, so an
+  // unset one arrives as ''. Coercion would read that as 0 and fail the
+  // minimums; blank means "use the default".
+  const parsed = EnvSchema.safeParse(
+    Object.fromEntries(Object.entries(env).filter(([, v]) => v === undefined || v.trim() !== '')),
+  );
   if (!parsed.success) issues.addSchemaIssues(parsed.error.issues);
   // Every field has a default, so parsing {} lets the remaining checks run and
   // report alongside the schema issues.
@@ -130,6 +136,15 @@ export function loadConfig(env: Env = process.env): MatchmakerConfig {
   const production = e.NODE_ENV === 'production';
   const trustProxy = issues.trustProxy();
   const apiUrl = e.API_URL ?? (e.NODE_ENV === 'development' ? 'http://localhost:7360' : undefined);
+  // Without the API the matchmaker checks no bans, follows no live ops
+  // (maintenance, playlists) and reports no capacity, silently.
+  if (production && !apiUrl && e.ALLOW_STANDALONE !== '1') {
+    issues.add(
+      'API_URL',
+      'is required in production: without it bans, maintenance and playlist windows are not enforced. ' +
+        'Set ALLOW_STANDALONE=1 to run without an account API anyway.',
+    );
+  }
   const internalHmacSecret = apiUrl ? issues.secret('INTERNAL_HMAC_SECRET', 16) : undefined;
   if (production && !e.REDIS_URL && e.ALLOW_MEMORY_STORE !== '1') {
     issues.add(

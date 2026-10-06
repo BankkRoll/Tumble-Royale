@@ -9,7 +9,9 @@ async function bootAndSettle(
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(`/?scene=test&backend=${backend}`);
   await page.waitForFunction(() => window.__tumble?.ready === true, undefined, { timeout: 60_000 });
-  await page.waitForTimeout(3000);
+  // Waits for frames rather than a fixed time: SwiftShader on a GPU-less runner
+  // draws this scene at a few fps, which says nothing about whether it renders.
+  await page.waitForFunction(() => window.__tumble!.frames > 30, undefined, { timeout: 30_000 });
   const info = await page.evaluate(() => ({
     backend: window.__tumble!.backend,
     fps: window.__tumble!.fps(),

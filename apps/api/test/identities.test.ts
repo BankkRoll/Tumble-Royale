@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp, type BuiltApp } from '../src/app.ts';
 import { MemoryMailer } from '../src/auth/mailer.ts';
 import { loadConfig } from '../src/config.ts';
-import { testEnv } from './helpers.ts';
+import { TEST_BINDING, TEST_NONCE, testEnv } from './helpers.ts';
 
 let built: BuiltApp;
 const mailer = new MemoryMailer();
@@ -60,14 +60,23 @@ async function guest(): Promise<{ id: string; token: string }> {
 }
 
 async function emailLink(address: string, token?: string) {
-  expect((await req('POST', '/auth/email/start', { token, body: { email: address } })).statusCode).toBe(202);
+  const start = await req('POST', '/auth/email/start', {
+    token,
+    body: { email: address, binding: TEST_BINDING },
+  });
+  expect(start.statusCode).toBe(202);
   const magic = /token=([A-Za-z0-9_-]+)/.exec(mailer.sent.at(-1)!.text)![1]!;
-  return req('POST', '/auth/email/verify', { body: { token: magic } });
+  return req('POST', '/auth/email/verify', { token, body: { token: magic, nonce: TEST_NONCE } });
+}
+
+/** Trades a callback code as the browser that started the flow, signed in as `token` when given. */
+function exchange(code: string, token?: string, nonce = TEST_NONCE) {
+  return req('POST', '/auth/exchange', { token, body: { code, nonce } });
 }
 
 async function discordFlow(subject: string, token?: string) {
   discordSubject = subject;
-  const start = await req('POST', '/auth/discord/start', { token });
+  const start = await req('POST', '/auth/discord/start', { token, body: { binding: TEST_BINDING } });
   const state = new URL(start.json().url).searchParams.get('state')!;
   const cb = await req('GET', `/auth/discord/callback?code=provider-code&state=${state}`);
   expect(cb.statusCode).toBe(302);
@@ -109,16 +118,71 @@ describe('sign-in outcomes', () => {
     expect(back.origin + back.pathname).toBe('https://play.example.com/auth/complete');
     expect(back.searchParams.get('provider')).toBe('discord');
     const code = back.searchParams.get('code')!;
-    const ex = await req('POST', '/auth/exchange', { body: { code } });
+    const ex = await exchange(code, u.token);
     expect(ex.json()).toMatchObject({ outcome: 'linked', provider: 'discord', user: { id: u.id } });
-    expect((await req('POST', '/auth/exchange', { body: { code } })).statusCode).toBe(400);
+    expect((await exchange(code, u.token)).statusCode).toBe(400);
 
     const other = await guest();
     const code2 = (await discordFlow('discord-link', other.token)).searchParams.get('code')!;
-    expect((await req('POST', '/auth/exchange', { body: { code: code2 } })).json()).toMatchObject({
+    expect((await exchange(code2, other.token)).json()).toMatchObject({
       outcome: 'switched',
       user: { id: u.id },
     });
+  });
+
+  it('refuses a callback code forwarded to another browser', async () => {
+    const attacker = await guest();
+    const code = (await discordFlow('discord-forwarded-code', attacker.token)).searchParams.get('code')!;
+    const victim = await guest();
+    // The victim's browser holds a different nonce (or none).
+    const res = await exchange(code, victim.token, 'victim-browser-nonce-0123456789');
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('browser_mismatch');
+    // The code is spent either way.
+    expect((await exchange(code, attacker.token)).json().error).toBe('invalid_code');
+  });
+
+  it('never links an authorize URL started by one account onto whoever finishes it', async () => {
+    // The attacker starts a link flow and gets the victim to complete it at the provider.
+    const attacker = await guest();
+    const back = await discordFlow('victims-discord', attacker.token);
+    const code = back.searchParams.get('code')!;
+    // The victim's browser lands on /auth/complete but holds no matching nonce.
+    const victim = await guest();
+    expect((await exchange(code, victim.token, 'victim-browser-nonce-0123456789')).statusCode).toBe(400);
+    const me = (await req('GET', '/me', { token: attacker.token })).json();
+    expect(me.linkedProviders).not.toContain('discord');
+  });
+
+  it('links only when the redeeming request is signed in as the account that asked', async () => {
+    const asker = await guest();
+    const code = (await discordFlow('discord-unsigned', asker.token)).searchParams.get('code')!;
+    // Same browser (nonce) but no access token: a plain sign-in, nothing linked to the asker.
+    const res = (await exchange(code)).json();
+    expect(res.outcome).toBe('created');
+    expect(res.user.id).not.toBe(asker.id);
+  });
+
+  it('refuses a magic link opened in another browser', async () => {
+    const victim = await guest();
+    const start = await req('POST', '/auth/email/start', {
+      body: { email: 'forwarded@example.com', binding: TEST_BINDING },
+    });
+    expect(start.statusCode).toBe(202);
+    const magic = /token=([A-Za-z0-9_-]+)/.exec(mailer.sent.at(-1)!.text)![1]!;
+    const res = await req('POST', '/auth/email/verify', {
+      token: victim.token,
+      body: { token: magic, nonce: 'victim-browser-nonce-0123456789' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('browser_mismatch');
+  });
+
+  it('requires a binding to start any flow', async () => {
+    expect((await req('POST', '/auth/discord/start', { body: {} })).statusCode).toBe(400);
+    expect((await req('POST', '/auth/email/start', { body: { email: 'x@example.com' } })).statusCode).toBe(
+      400,
+    );
   });
 
   it('names the provider on errors such as a cancelled consent screen', async () => {
@@ -142,7 +206,7 @@ describe('unlinking', () => {
     const u = await guest();
     await emailLink('two@example.com', u.token);
     const code = (await discordFlow('discord-two', u.token)).searchParams.get('code')!;
-    await req('POST', '/auth/exchange', { body: { code } });
+    await exchange(code, u.token);
     expect((await req('GET', '/me', { token: u.token })).json().linkedProviders).toEqual(
       expect.arrayContaining(['device', 'email', 'discord']),
     );

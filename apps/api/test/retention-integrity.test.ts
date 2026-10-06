@@ -5,7 +5,7 @@
  * every kind, refusing reports too old to recognise as replays, invites
  * whose officer is gone, and catalog rows content no longer has.
  */
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { syncCatalog } from '../src/app.ts';
 import {
@@ -17,6 +17,7 @@ import {
   eventMatchCredits,
   matches,
   rankHistory,
+  users,
 } from '../src/db/schema.ts';
 import { boardKey } from '../src/leaderboards/service.ts';
 import { MATCH_HISTORY_RETENTION_DAYS } from '../src/matches/ingest.ts';
@@ -145,18 +146,31 @@ describe.each(BACKENDS)('retention ($name)', (backend) => {
     expect(res.json().error).toBe('result_too_old');
   });
 
-  it('keeps an invite when the officer who sent it deletes their account', async () => {
+  it('never leaves an invite naming an inviter whose account is gone', async () => {
     const owner = await player(api);
-    const officer = await player(api);
-    const invitee = await player(api);
     const club = await createClub(api, owner);
-    await api.ctx.db
-      .insert(clubInvites)
-      .values({ clubId: club.id, userId: invitee.id, kind: 'invite', invitedBy: officer.id });
-    const del = await api.req('DELETE', '/me', { token: officer.accessToken, body: { confirm: 'DELETE' } });
+    const invite = async () => {
+      const officer = await player(api);
+      const invitee = await player(api);
+      await api.ctx.db
+        .insert(clubInvites)
+        .values({ clubId: club.id, userId: invitee.id, kind: 'invite', invitedBy: officer.id });
+      const find = async () =>
+        (await api.ctx.db.select().from(clubInvites).where(eq(clubInvites.userId, invitee.id)))[0];
+      return { officer, find };
+    };
+    // Account deletion takes the invites the officer sent with it.
+    const a = await invite();
+    const del = await api.req('DELETE', '/me', { token: a.officer.accessToken, body: { confirm: 'DELETE' } });
     expect(del.statusCode, del.body).toBe(204);
-    const [invite] = await api.ctx.db.select().from(clubInvites).where(eq(clubInvites.userId, invitee.id));
-    expect(invite).toMatchObject({ kind: 'invite', invitedBy: null });
+    expect(await a.find()).toBeUndefined();
+    // Any other way the user row goes, the foreign key clears the inviter.
+    const b = await invite();
+    await api.ctx.db.transaction(async (tx) => {
+      await tx.execute(sql`select set_config('tumble.erase_user', ${b.officer.id}, true)`);
+      await tx.delete(users).where(eq(users.id, b.officer.id));
+    });
+    expect(await b.find()).toMatchObject({ kind: 'invite', invitedBy: null });
   });
 
   it('marks catalog rows content no longer has as inactive', async () => {

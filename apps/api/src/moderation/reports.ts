@@ -19,6 +19,7 @@ import { bans, profiles, reports } from '../db/schema.ts';
 import { notFound, parse } from '../http/errors.ts';
 import { recordAudit } from '../staff/audit.ts';
 import { requireStaff } from '../staff/auth.ts';
+import { assertCanModerate } from './guard.ts';
 import {
   announceSanction,
   applySanction,
@@ -163,6 +164,9 @@ export function registerReportRoutes(app: FastifyInstance, ctx: AppContext): voi
         .from(reports)
         .where(inArray(reports.id, body.reportIds));
       if (found.length === 0) throw notFound('Report');
+      if (body.action !== 'dismiss' && body.action !== 'resolve')
+        for (const target of new Set(found.map((r) => r.targetUserId)))
+          await assertCanModerate(ctx, actor, target);
 
       const applied = await ctx.db.transaction(async (tx) => {
         const out: AppliedSanction[] = [];

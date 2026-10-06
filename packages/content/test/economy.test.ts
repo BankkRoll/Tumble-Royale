@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { COSMETICS, getCosmetic } from '../src/cosmetics/index.ts';
 import {
+  ACHIEVEMENTS,
   AUTHORED_SEASONS,
   GEM_EARN,
+  LOGIN_STREAK_LADDER,
+  MAX_LEVEL,
+  MILESTONE_CHALLENGES,
   PASS_TIERS,
   SEASON_LENGTH_MONTHS,
+  SEASONAL_CHALLENGE_POOL,
   SEASON_PASS,
   SHARDS_PER_CROWN,
   SHARD_SHOP_SLOTS,
@@ -140,14 +145,33 @@ describe('free Gem earn paths', () => {
       .flatMap((t) => t.free)
       .reduce((s, r) => s + (r.kind === 'gems' ? r.amount : 0), 0);
     expect(freeTrackGems).toBeGreaterThan(0);
-    // A casual season (see docs/design/ECONOMY.md): half the weeklies, two first-Crowns a week, one milestone.
+    // The casual row of docs/design/ECONOMY.md's season budget: half the free track, three weeklies and
+    // two first-Crowns a week, four full login streaks, the seasonal Crowns challenge. Recurring income
+    // only: no level milestones (lifetime-capped), events or achievements.
     const weeks = 13;
+    const loginGems = LOGIN_STREAK_LADDER.flatMap((d) => d.rewards).reduce(
+      (s, g) => s + (g.kind === 'gems' ? g.amount : 0),
+      0,
+    );
+    const crownChallenge = SEASONAL_CHALLENGE_POOL.find((c) => c.id === 's-crown-3')!;
     const casual =
       freeTrackGems / 2 +
       weeks * 3 * GEM_EARN.weeklyChallenge +
       weeks * 2 * GEM_EARN.firstCrownOfDay +
-      GEM_EARN.levelMilestone;
+      4 * loginGems +
+      crownChallenge.rewardGems;
+    expect(casual).toBe(1085);
     expect(casual).toBeGreaterThanOrEqual(SEASON_PASS.premiumPriceGems);
     expect(xpForLevel(GEM_EARN.levelMilestoneEvery)).toBeGreaterThan(0);
+  });
+
+  it('matches the lifetime one-off Gems the budget documents', () => {
+    expect(levelRangeGems(0, MAX_LEVEL)).toBe(1000);
+    const achievementGems = ACHIEVEMENTS.flatMap((a) => a.rewards).reduce(
+      (s, g) => s + (g.kind === 'gems' ? g.amount : 0),
+      0,
+    );
+    expect(achievementGems).toBe(350);
+    expect(MILESTONE_CHALLENGES.reduce((s, c) => s + c.rewardGems, 0)).toBe(100);
   });
 });

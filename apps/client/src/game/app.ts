@@ -42,6 +42,7 @@ import {
 import { bindChatRouter } from './social/chatRouter.ts';
 import { loadMutes, publishSocialAvailability, socialIntents } from './social/intents.ts';
 import { onLobbyChat, onLobbyChatError, syncLobbyChat } from './social/lobbyChat.ts';
+import { maskedProfile, streamerMode } from './social/streamerNames.ts';
 import { createRenderer, setTeamColorMode } from '@tumble/render';
 import { createPostPipeline, type PostPipeline } from '@tumble/render/post';
 import type { TumblerLoadout } from '@tumble/render/scenes';
@@ -57,7 +58,7 @@ import { keymapFromKeybinds, padMenuButtons, padmapFromPadBinds } from './bindin
 import { GamepadNavigator, firstStandardPad } from '../input/gamepadNav.ts';
 import { StatsOverlay } from '../debug/stats.ts';
 import { checkDeterminism } from '../debug/determinism.ts';
-import { drawBreakdown } from '../debug/drawBreakdown.ts';
+import { drawBreakdown, recordDrawPasses } from '../debug/drawBreakdown.ts';
 import { DEV_TOOLS } from '../devTools.ts';
 import { ApiClient, ApiError } from './api.ts';
 import { AudioBridge } from './audioBridge.ts';
@@ -91,7 +92,7 @@ import { OnlineAccount } from './online/account.ts';
 import { PhotoMode } from './photo/photoMode.ts';
 import { AccountAuth } from './online/auth.ts';
 import { finishCheckoutReturn } from './online/checkout.ts';
-import { joinWithCode } from './online/joinCode.ts';
+import { joinWithCode, partyOwnerLabel, watchStartedShow } from './online/joinCode.ts';
 import { priceChangedText } from './online/priceCheck.ts';
 import {
   liveStartedLobby,
@@ -383,6 +384,10 @@ export class GameApp {
             drawBreakdown: () => {
               const v = this.director.view;
               return v ? drawBreakdown(v.scene, v.camera) : {};
+            },
+            drawPasses: () => {
+              const v = this.director.view;
+              return v ? recordDrawPasses(renderer, v.camera) : Promise.resolve({});
             },
           }
         : {}),
@@ -1909,7 +1914,7 @@ export class GameApp {
         const show = privateShow(options);
         this.startOfflineShow(show.playlist, show.roundTimeScale);
       },
-      onInspectPlayer: ({ playerId, name, direct }) => {
+      onInspectPlayer: ({ playerId, name, direct, masked }) => {
         // Party members (slots, the 3D party lobby) open the player card first.
         const member = !direct ? s().party?.members.find((m) => m.id === playerId && !m.isSelf) : undefined;
         if (member) {
@@ -1933,8 +1938,9 @@ export class GameApp {
         void online()!
           .inspect(playerId)
           .then((card) => {
-            if (card) s().setInspectedProfile(card);
-            else s().pushToast({ kind: 'info', title: "Couldn't load that profile" });
+            if (!card) s().pushToast({ kind: 'info', title: "Couldn't load that profile" });
+            // SECURITY: the card comes back with the real Name#tag; a click on a masked name keeps the mask.
+            else s().setInspectedProfile(masked && streamerMode() ? maskedProfile(card, name) : card);
           });
       },
       onNewsRead: ({ ids }) => markNewsRead(ids),
@@ -2077,11 +2083,8 @@ export class GameApp {
       onToastAction: ({ actionId }) => {
         online()?.handleToastAction(actionId);
       },
-      onCopyInvite: ({ code }) => {
-        const url = online()?.party?.inviteUrl ?? `${location.origin}/join/${code}`;
-        void navigator.clipboard?.writeText(url).catch(() => undefined);
-        s().pushToast({ kind: 'success', title: 'Invite link copied!', body: url, icon: '📋' });
-      },
+      // The UI copied exactly what the player picked (lobby code, party code or link) and confirmed it.
+      onCopyInvite: ({ kind, what }) => track('invite.copy', { kind, what }),
       onNavUnhandled: ({ dir }) => {
         if (dir !== 'back') return;
         if (s().screen === 'menu' && s().overlay === 'none') {
@@ -2148,6 +2151,34 @@ export class GameApp {
    * Join with a code: a private show's lobby when one owns the code, else
    * the party behind it (asking before leaving a party with others in it).
    */
+  /**
+   * The code's private show already started: offer a spectator seat and, on
+   * yes, join the running show to watch it.
+   */
+  private async offerWatch(code: string): Promise<void> {
+    const s = ui.getState();
+    const mm = this.mm?.online ? this.mm : null;
+    if (!mm) return;
+    const choice = await this.ask({
+      id: 'watch-started-show',
+      kind: 'confirm',
+      title: 'That show already started',
+      body: 'Watch it from a spectator seat? Spectators never count as players and can follow anyone.',
+      buttons: [
+        { id: 'cancel', label: 'Not now', variant: 'secondary' },
+        { id: 'watch', label: 'Watch', variant: 'go', autofocus: true },
+      ],
+    });
+    if (choice !== 'watch' || this.session) return;
+    const r = await watchStartedShow(code, (c) => mm.watchLobby(c));
+    if (r.kind === 'error') {
+      s.showDialog({ id: 'watch-failed', kind: 'error', title: r.title, body: r.body, code: r.code });
+      return;
+    }
+    if (s.overlay === 'joinCode') s.setOverlay('none');
+    this.startMatchmadeShow(r.match);
+  }
+
   private async joinCode(code: string, leaveParty = false): Promise<void> {
     const s = ui.getState();
     const account = this.account?.active ? this.account : null;
@@ -2176,6 +2207,9 @@ export class GameApp {
       case 'lobby':
         this.applyLobby(r.lobby);
         return;
+      case 'started':
+        await this.offerWatch(r.code);
+        return;
       case 'party':
         account.adoptJoinedParty(r.party);
         if (s.overlay === 'joinCode') s.setOverlay('none');
@@ -2189,7 +2223,7 @@ export class GameApp {
         if (s.overlay === 'joinCode') s.setOverlay('none');
         return;
       case 'confirmLeaveParty': {
-        const who = r.preview.leader ? `${r.preview.leader.split('#')[0]}'s party` : 'that party';
+        const who = partyOwnerLabel(r.preview.leader, streamerMode());
         const choice = await this.ask({
           id: 'leave-party-confirm',
           kind: 'confirm',

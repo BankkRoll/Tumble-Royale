@@ -177,8 +177,9 @@ export interface PostPipeline {
    * view must stay hidden until the warm-up finished and settled.
    *
    * @param budgetMs - Target main-thread time per {@link SceneWarmUp.next}.
+   * @param paceFirstDraws - Also budget each render pipeline's first draw (see `SceneWarmUpOptions.paceFirstDraws`).
    */
-  beginWarmUp(budgetMs?: number): SceneWarmUp;
+  beginWarmUp(budgetMs?: number, paceFirstDraws?: boolean): SceneWarmUp;
   /** Resolves once the GPU executed everything submitted so far (see {@link waitForGpuIdle}). */
   gpuIdle(): Promise<void>;
   setSettings(patch: Partial<PostSettings>): void;
@@ -421,10 +422,11 @@ export function createPostPipeline(
       view = { scene: s, camera: cam };
       if (current.enabled) build();
     },
-    beginWarmUp(budgetMs?: number): SceneWarmUp {
+    beginWarmUp(budgetMs?: number, paceFirstDraws?: boolean): SceneWarmUp {
       return beginSceneWarmUp(renderer, view.scene, {
         render: () => api.render(),
         ...(budgetMs !== undefined ? { budgetMs } : {}),
+        ...(paceFirstDraws ? { paceFirstDraws } : {}),
       });
     },
     gpuIdle(): Promise<void> {

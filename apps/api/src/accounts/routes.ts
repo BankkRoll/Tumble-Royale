@@ -12,6 +12,7 @@ import { requireUser } from '../http/auth.ts';
 import { conflict, notFound, parse } from '../http/errors.ts';
 import { LOADOUT_COUNT, LoadoutItemsSchema, validateLoadout } from '../inventory/loadout.ts';
 import { displayTier, moveLeaderboardRegion } from '../leaderboards/service.ts';
+import { isBlockedEitherWay } from '../social/friends.ts';
 import { accountRegion, changeDisplayName, getProfileCard, RegionSchema } from './accounts.ts';
 import { deleteAccount } from './erase.ts';
 
@@ -125,8 +126,10 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: AppContext): vo
   });
 
   app.get('/profile/:id', async (req) => {
-    await requireUser(ctx, req);
+    const auth = await requireUser(ctx, req);
     const { id } = parse(IdParam, req.params);
+    // SECURITY: a blocked pair reads as a missing profile either way, the same 404 as an unknown id.
+    if (await isBlockedEitherWay(ctx.db, auth.userId, id)) throw notFound('Profile');
     return getProfileCard(ctx.db, ctx.catalog, id, shownTier(ctx, id));
   });
 

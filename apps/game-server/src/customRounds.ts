@@ -54,7 +54,10 @@ export class HttpCustomRoundSource implements CustomRoundSource {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            ...signInternal(this.opts.secret, body, Date.now()),
+            ...signInternal(this.opts.secret, body, Date.now(), {
+              method: 'POST',
+              path: '/internal/custom-rounds/resolve',
+            }),
           },
           body,
           signal: AbortSignal.timeout(this.opts.timeoutMs ?? 5000),

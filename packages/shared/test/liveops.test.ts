@@ -160,9 +160,12 @@ describe('ApiLiveOps', () => {
     await live.get();
     const h = calls[0]!.headers as Record<string, string>;
     const expected = createHmac('sha256', secret)
-      .update(`${h['x-tumble-timestamp']}.${h['x-tumble-nonce']}.${String(calls[0]!.body)}`)
+      .update(
+        `POST\n/internal/liveops\n${h['x-tumble-timestamp']}\n${h['x-tumble-nonce']}\n${String(calls[0]!.body)}`,
+      )
       .digest('hex');
     expect(h['x-tumble-signature']).toBe(expected);
+    expect(h['x-tumble-signature-version']).toBe('2');
   });
 
   it('caches for 30 s and shares one request between concurrent callers', async () => {
@@ -262,7 +265,7 @@ describe('apiErrorReporter', () => {
   });
 
   it('signs with the same scheme as signInternal', () => {
-    const h = signInternal('k', '{}', 1_700_000_000_000);
+    const h = signInternal('k', '{}', 1_700_000_000_000, { method: 'POST', path: '/internal/errors' });
     expect(h['x-tumble-timestamp']).toBe('1700000000000');
     expect(h['x-tumble-nonce']).toMatch(/^[0-9a-f]{32}$/);
   });

@@ -3,7 +3,7 @@
  * in-process KV, or on the Postgres and Redis named by `DATABASE_URL` and
  * `REDIS_URL` when those are set (see `backing.ts`).
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { DEFAULT_SHOW_PLAYERS } from '@tumble/shared';
 import type { Env } from '@tumble/shared/env';
 import type { LightMyRequestResponse } from 'fastify';
@@ -15,8 +15,13 @@ import { HMAC_HEADERS, signInternal } from '../src/http/auth.ts';
 import type { MatchResultInput } from '../src/matches/schema.ts';
 import { createScratchDatabase, isolatedRedisKV, TEST_DATABASE_URL, TEST_REDIS_URL } from './backing.ts';
 
+/** The nonce a test "browser" keeps while signing in (`/auth/exchange`, `/auth/email/verify`). */
+export const TEST_NONCE = 'test-browser-nonce-0123456789';
+/** Its binding, sent to `/auth/:provider/start` and `/auth/email/start`. */
+export const TEST_BINDING = createHash('sha256').update(TEST_NONCE).digest('hex');
+
 /** Admin bearer used by tests. */
-export const ADMIN_TOKEN = 'test-admin-token-0123456789';
+export const ADMIN_TOKEN = 'test-admin-token-0123456789-abcdefghij';
 
 /** Explicit secrets for tests, which never read `.env` files. */
 export const TEST_SECRETS = {
@@ -129,6 +134,14 @@ export async function createTestApi(
         ADMIN_TOKEN,
         // Short enough for tests to watch a disconnect turn into "offline".
         PRESENCE_GRACE_MS: '150',
+        // Every test socket and chat line comes from 127.0.0.1, and suites mint
+        // fresh guests by the dozen; abuse tests lower these again.
+        WS_IP_UPGRADES_PER_MINUTE: '100000',
+        WS_USER_UPGRADES_PER_MINUTE: '100000',
+        WS_MAX_SOCKETS_PER_IP: '100000',
+        GUEST_SIGNUPS_PER_IP_HOUR: '100000',
+        GLOBAL_CHAT_MIN_ACCOUNT_AGE_MINUTES: '0',
+        GLOBAL_CHAT_IP_MAX: '100000',
         ...env,
         ...(scratch ? { DATABASE_URL: scratch.url } : {}),
       }),
@@ -168,7 +181,10 @@ export async function createTestApi(
     const body = JSON.stringify(payload);
     const ts = String(opts.timestamp ?? clock.now().getTime());
     const nonce = opts.nonce ?? randomUUID();
-    const sig = signInternal(opts.secret ?? config.internalHmacSecret, ts, nonce, body);
+    const sig = signInternal(opts.secret ?? config.internalHmacSecret, ts, nonce, body, {
+      method: 'POST',
+      path: url.split('?')[0] ?? url,
+    });
     return built.app.inject({
       method: 'POST',
       url,
@@ -177,6 +193,7 @@ export async function createTestApi(
         [HMAC_HEADERS.timestamp]: ts,
         [HMAC_HEADERS.nonce]: nonce,
         [HMAC_HEADERS.signature]: sig,
+        [HMAC_HEADERS.version]: '2',
       },
       payload: body,
     });
@@ -186,10 +203,18 @@ export async function createTestApi(
   const freshIp = () =>
     `10.${guestNo % 250}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`;
   const emailSignIn: TestApi['emailSignIn'] = async (email, token) => {
-    const start = await req('POST', '/auth/email/start', { token, body: { email }, ip: freshIp() });
+    const start = await req('POST', '/auth/email/start', {
+      token,
+      body: { email, binding: TEST_BINDING },
+      ip: freshIp(),
+    });
     if (start.statusCode !== 202) throw new Error(`email start failed: ${start.statusCode} ${start.body}`);
     const magic = /token=([A-Za-z0-9_-]+)/.exec(mailer.sent.at(-1)!.text)![1]!;
-    return req('POST', '/auth/email/verify', { body: { token: magic }, ip: freshIp() });
+    return req('POST', '/auth/email/verify', {
+      token,
+      body: { token: magic, nonce: TEST_NONCE },
+      ip: freshIp(),
+    });
   };
   const guest: TestApi['guest'] = async (displayName) => {
     guestNo++;

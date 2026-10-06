@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import { describe, expect, it } from 'vitest';
@@ -16,7 +16,12 @@ const issueNames = (env: Record<string, string | undefined>): string[] => {
   return [];
 };
 
-const prod = testEnv({ NODE_ENV: 'production', DATABASE_URL: 'postgres://db/tumble' });
+const prod = testEnv({
+  NODE_ENV: 'production',
+  DATABASE_URL: 'postgres://db/tumble',
+  PUBLIC_WEB_URL: 'https://play.example',
+  PUBLIC_API_URL: 'https://play.example/api',
+});
 
 describe('api config', () => {
   it('requires secrets in every environment and reports all problems at once', () => {
@@ -39,6 +44,19 @@ describe('api config', () => {
     expect(issueNames(prod)).toEqual(['REDIS_URL']);
     expect(loadConfig({ ...prod, REDIS_URL: 'redis://r' }).memoryStoreInProduction).toBe(false);
     expect(loadConfig({ ...prod, ALLOW_MEMORY_STORE: '1' }).memoryStoreInProduction).toBe(true);
+  });
+
+  it('requires the public URLs in production instead of defaulting to localhost', () => {
+    const bare = { ...prod, REDIS_URL: 'redis://r', PUBLIC_WEB_URL: undefined, PUBLIC_API_URL: undefined };
+    expect(issueNames(bare)).toEqual(['PUBLIC_WEB_URL', 'PUBLIC_API_URL']);
+    expect(issueNames({ ...prod, REDIS_URL: 'redis://r' })).toEqual([]);
+  });
+
+  it('bounds the retention interval below the timer limit', () => {
+    expect(issueNames(testEnv({ RETENTION_INTERVAL_MINUTES: '40000' }))).toEqual([
+      'RETENTION_INTERVAL_MINUTES',
+    ]);
+    expect(issueNames(testEnv({ RETENTION_INTERVAL_MINUTES: '35000' }))).toEqual([]);
   });
 
   it('refuses the embedded database in production unless explicitly allowed', () => {
@@ -89,6 +107,93 @@ describe('api config', () => {
   });
 });
 
+describe('sign-in providers', () => {
+  const appleKey = generateKeyPairSync('ec', { namedCurve: 'P-256' })
+    .privateKey.export({ format: 'pem', type: 'pkcs8' })
+    .toString();
+  const apple = {
+    APPLE_CLIENT_ID: 'com.example.web',
+    APPLE_TEAM_ID: 'TEAM',
+    APPLE_KEY_ID: 'KEY',
+    APPLE_PRIVATE_KEY: appleKey,
+  };
+
+  it('enables each OAuth provider only when both of its keys are set', () => {
+    const c = loadConfig(
+      testEnv({
+        GITHUB_CLIENT_ID: 'gh',
+        GITHUB_CLIENT_SECRET: 'gh-secret',
+        TWITCH_CLIENT_ID: 'tw',
+        TWITCH_CLIENT_SECRET: 'tw-secret',
+      }),
+    );
+    expect(c.github).toEqual({ clientId: 'gh', clientSecret: 'gh-secret' });
+    expect(c.twitch).toEqual({ clientId: 'tw', clientSecret: 'tw-secret' });
+    expect([c.discord, c.google, c.apple]).toEqual([undefined, undefined, undefined]);
+  });
+
+  it('reports half a pair instead of silently hiding the provider', () => {
+    expect(issueNames(testEnv({ GITHUB_CLIENT_ID: 'gh' }))).toEqual(['GITHUB_CLIENT_SECRET']);
+    expect(issueNames(testEnv({ DISCORD_CLIENT_SECRET: 's' }))).toEqual(['DISCORD_CLIENT_ID']);
+  });
+
+  it('reads the Apple key with escaped newlines and refuses an incomplete or unreadable one', () => {
+    const c = loadConfig(testEnv({ ...apple, APPLE_PRIVATE_KEY: appleKey.trim().replace(/\n/g, '\\n') }));
+    expect(c.apple).toMatchObject({ clientId: 'com.example.web', teamId: 'TEAM', keyId: 'KEY' });
+    expect(c.apple?.privateKey).toContain('\n');
+    expect(issueNames(testEnv({ APPLE_CLIENT_ID: 'com.example.web' }))).toEqual([
+      'APPLE_TEAM_ID',
+      'APPLE_KEY_ID',
+      'APPLE_PRIVATE_KEY',
+    ]);
+    expect(issueNames(testEnv({ ...apple, APPLE_PRIVATE_KEY: 'not a key' }))).toEqual(['APPLE_PRIVATE_KEY']);
+  });
+});
+
+describe('ADMIN_TOKEN', () => {
+  it('is optional, but refuses a placeholder or short value when set', () => {
+    expect(loadConfig(testEnv()).adminToken).toBeUndefined();
+    expect(loadConfig(testEnv({ ADMIN_TOKEN: '  ' })).adminToken).toBeUndefined();
+    expect(issueNames(testEnv({ ADMIN_TOKEN: 'change-me' }))).toEqual(['ADMIN_TOKEN']);
+    expect(issueNames(testEnv({ ADMIN_TOKEN: 'short' }))).toEqual(['ADMIN_TOKEN']);
+    expect(
+      loadConfig(testEnv({ ADMIN_TOKEN: 'a-long-enough-admin-token-0123456789abcdef' })).adminToken,
+    ).toBe('a-long-enough-admin-token-0123456789abcdef');
+  });
+});
+
+describe('DEV_ADMIN_EMAIL', () => {
+  it('applies in development only and is refused in production', () => {
+    expect(
+      loadConfig(testEnv({ NODE_ENV: 'development', DEV_ADMIN_EMAIL: 'Dev@Localhost.test' })).devAdminEmail,
+    ).toBe('dev@localhost.test');
+    expect(loadConfig(testEnv({ DEV_ADMIN_EMAIL: 'dev@localhost.test' })).devAdminEmail).toBeUndefined();
+    expect(issueNames({ ...prod, REDIS_URL: 'redis://r', DEV_ADMIN_EMAIL: 'dev@localhost.test' })).toEqual([
+      'DEV_ADMIN_EMAIL',
+    ]);
+    expect(issueNames(testEnv({ DEV_ADMIN_EMAIL: 'not-an-email' }))).toEqual(['DEV_ADMIN_EMAIL']);
+  });
+});
+
+describe('.env from pnpm setup:env (development)', () => {
+  it('boots the API with the dev admin seed on', () => {
+    const files = ['../../../.env.example', '../.env.example'];
+    const merged = Object.assign(
+      {},
+      ...files.map((f) => parseEnv(readFileSync(new URL(f, import.meta.url), 'utf8'))),
+    ) as Record<string, string>;
+    const env = Object.fromEntries(
+      Object.entries(merged).map(([k, v]) => [
+        k,
+        v === 'change-me' ? randomBytes(32).toString('base64url') : v,
+      ]),
+    );
+    const c = loadConfig(env);
+    expect(c).toMatchObject({ env: 'development', devAdminEmail: 'admin@tumble.localhost' });
+    expect(c.adminToken).toBe(env.ADMIN_TOKEN);
+  });
+});
+
 describe('deploy/.env from pnpm setup:env --production', () => {
   it('boots the API in production behind the edge proxy', () => {
     const example = parseEnv(readFileSync(new URL('../../../deploy/.env.example', import.meta.url), 'utf8'));
@@ -98,10 +203,14 @@ describe('deploy/.env from pnpm setup:env --production', () => {
         v === 'change-me' ? randomBytes(32).toString('base64url') : v,
       ]),
     );
+    // setup:env writes the generated Redis password into REDIS_URL too.
+    env.REDIS_URL = env.REDIS_URL!.replace('change-me', env.REDIS_PASSWORD!);
     expect(loadConfig(env)).toMatchObject({
       env: 'production',
       databaseUrl: expect.stringMatching(/^postgres:\/\/tumble:.+@postgres:5432\/tumble$/),
-      redisUrl: 'redis://redis:6379',
+      redisUrl: `redis://:${env.REDIS_PASSWORD}@redis:6379`,
+      gameServerHmacSecret: env.GAME_SERVER_HMAC_SECRET,
+      internalHmacAllowV1: false,
       publicWebUrl: 'https://example.com',
       publicApiUrl: 'https://example.com/api',
       corsOrigins: ['https://example.com'],

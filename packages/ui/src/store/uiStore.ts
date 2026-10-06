@@ -597,10 +597,10 @@ export const ui = createStore<UIState>()((set, get) => ({
     const variant = input.variant ?? (get().screen === 'round' && feedable ? 'feed' : 'card');
     const toast: Toast = { ...input, id, kind: input.kind ?? 'info', variant, createdAt: performance.now() };
     const toasts = [...get().toasts, toast];
-    // Old feed lines are dropped first; sticky cards survive.
+    // The oldest goes first, but sticky toasts (an update to apply, an invite) outlast timed ones.
     while (toasts.filter((t) => t.variant === variant).length > (variant === 'feed' ? 5 : 4)) {
-      const idx = toasts.findIndex((t) => t.variant === variant);
-      toasts.splice(idx, 1);
+      const timed = toasts.findIndex((t) => t.variant === variant && t.durationMs !== 0 && t.id !== id);
+      toasts.splice(timed >= 0 ? timed : toasts.findIndex((t) => t.variant === variant), 1);
     }
     set({ toasts });
     return id;

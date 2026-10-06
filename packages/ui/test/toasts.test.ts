@@ -20,3 +20,12 @@ describe('toast variants in a round', () => {
     expect(variant(invite)).toBe('card');
   });
 });
+
+describe('toast queue', () => {
+  it('a full queue drops timed toasts before the sticky update toast', () => {
+    const s = ui.getState();
+    const update = s.pushToast({ title: 'Update available', durationMs: 0 });
+    for (let i = 0; i < 6; i++) s.pushToast({ title: 'Hello ' + String(i) });
+    expect(ui.getState().toasts.some((t) => t.id === update)).toBe(true);
+  });
+});

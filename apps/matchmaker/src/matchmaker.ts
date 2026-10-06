@@ -1552,7 +1552,7 @@ export class Matchmaker {
    */
   async startLobby(hostId: string, code: string, force = false): Promise<MatchRecord> {
     await this.assertNotInMaintenance();
-    const { lobby, record, server, seats } = await this.withLobby(code, async (lobby) => {
+    const { lobby, record, server } = await this.withLobby(code, async (lobby) => {
       rules.assertHost(lobby, hostId);
       rules.assertOpen(lobby);
       // Bans can land after someone joined: suspended players are left out, chat-suspended ones muted.
@@ -1605,7 +1605,7 @@ export class Matchmaker {
       lobby.status = 'started';
       lobby.matchId = record.matchId;
       await this.saveLobby(lobby);
-      return { lobby, record, server, seats };
+      return { lobby, record, server };
     });
     for (const p of rules.members(lobby)) await this.store.del(`lobby-user:${p.userId}`);
     await this.publishMatch(record, server);

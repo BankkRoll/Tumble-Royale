@@ -145,6 +145,37 @@ describe('matchmaker link', () => {
     expect(calls).toHaveLength(4);
   });
 
+  it('deregisters on stop even when the registration answer was lost, after it settled', async () => {
+    const order: string[] = [];
+    let answer!: () => void;
+    const fakeFetch = (async (url: string, init: RequestInit) => {
+      order.push(`${String(init.method)} ${new URL(url).pathname}`);
+      if (url.endsWith('/servers/register')) {
+        await new Promise<void>((r) => (answer = r));
+        throw new Error('socket hang up');
+      }
+      return new Response(null, { status: 204 });
+    }) as typeof fetch;
+    const link = startMatchmakerLink({
+      matchmakerUrl: 'http://mm.test',
+      secret: 'secret',
+      serverId: 'gs-a',
+      publicUrl: 'ws://gs-a/ws',
+      region: 'eu',
+      capacity: 400,
+      report: () => ({ load: 0, rooms: 0, matches: [] }),
+      fetch: fakeFetch,
+      intervalMs: 60_000,
+    });
+    const stopping = link.stop();
+    await new Promise((r) => setTimeout(r, 0));
+    // The DELETE waits for the registration in flight instead of racing it.
+    expect(order).toEqual(['POST /servers/register']);
+    answer();
+    await stopping;
+    expect(order).toEqual(['POST /servers/register', 'DELETE /servers/gs-a']);
+  });
+
   it('reports ticketed joins on the heartbeat and carries them over a failed one', async () => {
     const heartbeats: Record<string, unknown>[] = [];
     let fail = false;

@@ -14,7 +14,7 @@ import { SimpleShowController } from '../src/show/SimpleShowController.ts';
 import { signJoinTicket, type JoinTicketClaims } from '../src/tickets.ts';
 import type { VoiceTeamEntry } from '../src/voiceTeams.ts';
 import type { FakeMatchSim } from './helpers.ts';
-import { FakeConnection, TEST_SECRETS, TestClient, testDeps } from './helpers.ts';
+import { FakeConnection, TEST_SECRETS, TestClient, testDeps, testRound } from './helpers.ts';
 
 const SECRET = TEST_SECRETS.GAME_TICKET_SECRET;
 const TICK_MS = 1000 / 30;
@@ -122,7 +122,7 @@ function harness(deps: Partial<RoomDeps>, config: Partial<RoomConfig> = {}) {
       for (const c of clients) c.pump(clock.now);
     }
   };
-  return { clock, manager, metrics, posted, connect, advance };
+  return { clock, sims, manager, metrics, posted, connect, advance };
 }
 
 describe('team voice reports', () => {
@@ -188,6 +188,35 @@ describe('one seat per account', () => {
     expect(h.posted).toHaveLength(1);
     const users = h.posted[0]!.participants.flatMap((p) => (p.userId ? [p.userId] : []));
     expect(users.sort()).toEqual(['u-a', 'u-b', 'u-c']);
+  });
+});
+
+describe('chat bans and host removals', () => {
+  it('applies a chat ban that arrived with a rejoin ticket', () => {
+    const h = harness({}, { ticketedFillWaitMs: 600_000 });
+    const listener = h.connect(claims('u-l', { humans: 5 }));
+    const a = h.connect(claims('u-a', { humans: 5 }));
+    const id = a.welcome!.playerId;
+    a.conn.close(1006, 'network');
+    h.advance(1);
+    const back = h.connect(claims('u-a', { humans: 5, mute: true, rejoin: true }));
+    expect(back.welcome?.playerId).toBe(id);
+    back.chat('still talking');
+    h.advance(3);
+    expect((listener.lowFreq('chat') as Msg<'chat'>[]).filter((m) => m.from === id)).toEqual([]);
+  });
+
+  it('takes a removed player off the pre-show platform', () => {
+    const h = harness({ lobbyRound: testRound() }, { ticketedFillWaitMs: 600_000 });
+    h.connect(claims('u-host', { humans: 5 }));
+    const kicked = h.connect(claims('u-k', { humans: 5 }));
+    const id = kicked.welcome!.playerId;
+    h.advance(2);
+    const platform = h.sims.find((s) => s.opts.lobby)!;
+    expect(platform.states.has(id)).toBe(true);
+    expect(h.manager.kickUser('m_review', 'u-k')).toBe(true);
+    expect(platform.states.has(id)).toBe(false);
+    expect(() => h.advance(3)).not.toThrow();
   });
 });
 

@@ -103,6 +103,7 @@ import {
 import { queueRefusal, routePlay, type PlayKind } from './online/partyPlay.ts';
 import { RejoinStore, planRejoin, sessionStore, type RejoinPlan } from './online/rejoin.ts';
 import { onlineCounts, queueTarget } from './online/playerCounts.ts';
+import { QueueAttempts, enqueueParty } from './online/queueAttempt.ts';
 import { MatchmakerClient, gameSocketUrl, type Lobby, type MatchFound } from './online/matchmaker.ts';
 import {
   chooseRegion,
@@ -218,6 +219,7 @@ export class GameApp {
   private partyMembers: { userId: string; loadout: TumblerLoadout }[] = [];
   private partyRoster: PartyRoster | null = null;
   private queued = false;
+  private readonly queueAttempts = new QueueAttempts();
   private pendingJoin: string | null = deepLinkCode();
   private lobby: Lobby | null = null;
   /** A lobby arrived (e.g. restored after a reload) before the menu was up; open it there. */
@@ -1201,7 +1203,7 @@ export class GameApp {
   private async queue(playlistId: string): Promise<void> {
     const account = this.account;
     const mm = this.mm;
-    if (!account || !mm || this.queued) return;
+    if (!account || !mm || this.queued || this.queueAttempts.inFlight) return;
     const s = ui.getState();
     if (!account.isLeader) {
       s.pushToast({
@@ -1214,8 +1216,12 @@ export class GameApp {
     }
     this.showSearching(account.party?.members.length ?? 1, playlistId);
     try {
-      const { ticket } = await this.api.queueTicket(playlistId, this.region());
-      await mm.queue(ticket);
+      const outcome = await enqueueParty(this.queueAttempts, {
+        ticket: async () => (await this.api.queueTicket(playlistId, this.region())).ticket,
+        queue: (ticket) => mm.queue(ticket),
+        cancel: () => mm.cancel(),
+      });
+      if (outcome === 'cancelled') return;
       this.queued = true;
       account.setPresence('in_queue', { playlistId });
       // Only now are the members' ready votes spent: a refused enqueue keeps them.
@@ -1269,6 +1275,7 @@ export class GameApp {
     const mm = this.mm;
     if (!mm) return;
     mm.on('queued', (m) => {
+      if (this.queueAttempts.ignoringQueued) return;
       this.queued = true;
       const playlistId = typeof m.playlistId === 'string' ? m.playlistId : null;
       if (!this.session) this.showSearching(this.account?.party?.members.length ?? 1, playlistId);
@@ -1948,6 +1955,7 @@ export class GameApp {
       onReady: ({ ready }) => void online()?.setReady(ready),
       onCancelQueue: () => {
         this.trackQueueWait('cancelled');
+        this.queueAttempts.cancel();
         if (this.queued && this.mm) {
           this.queued = false;
           void this.mm.cancel().catch(() => undefined);

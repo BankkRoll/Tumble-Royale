@@ -592,7 +592,9 @@ export const ui = createStore<UIState>()((set, get) => ({
   closeDialog: () => set({ dialog: null }),
   pushToast: (input) => {
     const id = toastSeq++;
-    const variant = input.variant ?? (get().screen === 'round' ? 'feed' : 'card');
+    // Feed lines fade on their own and carry no buttons: a sticky or actionable toast (an invite) stays a card.
+    const feedable = input.durationMs !== 0 && !input.actions?.length;
+    const variant = input.variant ?? (get().screen === 'round' && feedable ? 'feed' : 'card');
     const toast: Toast = { ...input, id, kind: input.kind ?? 'info', variant, createdAt: performance.now() };
     const toasts = [...get().toasts, toast];
     // Old feed lines are dropped first; sticky cards survive.

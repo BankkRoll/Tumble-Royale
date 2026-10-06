@@ -67,7 +67,8 @@ function ToastCard({ toast }: { toast: Toast }): JSX.Element {
 }
 
 function FeedLine({ toast }: { toast: Toast }): JSX.Element {
-  const duration = toast.durationMs ?? 3500;
+  // Feed lines always fade: 0 (sticky) would otherwise dismiss at once.
+  const duration = toast.durationMs || 3500;
   useEffect(() => {
     const id = window.setTimeout(() => ui.getState().dismissToast(toast.id), duration);
     return () => window.clearTimeout(id);

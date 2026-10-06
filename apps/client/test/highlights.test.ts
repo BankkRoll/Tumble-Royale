@@ -473,4 +473,13 @@ describe('live recorder hooks', () => {
     expect(live.recordingOf(0)?.header.outcome).toEqual({ qualified: [ME], eliminated: [1] });
     expect(live.recordingOf(5)).toBeNull();
   });
+
+  it('remembers the party mates of the show for Streamer Mode, and forgets them with the show', () => {
+    const live = new LiveRecording(new ReplayLibrary(), () => undefined);
+    live.showStarted();
+    live.roundStarted({ ...info(0), partyMates: [1] }, source({ t: 0 }), null);
+    expect([...live.partyMates]).toEqual([1]);
+    live.showStarted();
+    expect(live.partyMates.size).toBe(0);
+  });
 });

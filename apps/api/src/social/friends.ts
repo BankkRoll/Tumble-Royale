@@ -19,6 +19,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.ts';
 import type { DbOrTx } from '../db/client.ts';
+import { lockXact } from '../db/locks.ts';
 import { clubMembers, clubs, friendships, matchParticipants, matches, profiles } from '../db/schema.ts';
 import { requireUser } from '../http/auth.ts';
 import { badRequest, conflict, notFound, parse } from '../http/errors.ts';
@@ -306,6 +307,8 @@ export function registerFriendRoutes(app: FastifyInstance, ctx: AppContext): voi
       const auth = await requireUser(ctx, req);
       const target = await findTarget(ctx, auth.userId, parse(RequestBody, req.body));
       const result = await ctx.db.transaction(async (tx) => {
+        // Two players asking each other at once would otherwise both miss the reverse row and leave two pending ones.
+        await lockXact(tx, 'friend-pair', ...[auth.userId, target.id].sort());
         const existing = await tx.select().from(friendships).where(pairWhere(auth.userId, target.id));
         if (existing.some((r) => r.status === 'accepted'))
           throw conflict('already_friends', 'Already friends');

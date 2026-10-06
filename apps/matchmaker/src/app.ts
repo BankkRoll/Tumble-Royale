@@ -15,6 +15,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { MAX_PLAYERS } from '@tumble/shared';
 import {
   ApiLiveOps,
+  INTERNAL_SIG_WINDOW_MS,
   STATIC_LIVEOPS,
   verifyInternal,
   type LiveOpsSource,
@@ -24,7 +25,7 @@ import { z } from 'zod';
 import { ApiBanLookup, NO_BANS, type BanLookup } from './bans.ts';
 import type { MatchmakerConfig } from './config.ts';
 import type { GameControl } from './gameControl.ts';
-import { DEFAULT_CUSTOM, Matchmaker, MMError, userChannel } from './matchmaker.ts';
+import { DEFAULT_CUSTOM, Matchmaker, MMError, queueTicketId, userChannel } from './matchmaker.ts';
 import { registerOps, requestIdOptions, type MatchmakerOps } from './ops.ts';
 import { SharedRateLimiter } from './rateLimit.ts';
 import { capacityByRegion } from './servers.ts';
@@ -65,6 +66,8 @@ const RegisterBody = z.object({
   humans: z.number().int().min(0).optional(),
   maxRooms: z.number().int().min(1).max(10_000).optional(),
   rooms: z.number().int().min(0).optional(),
+  /** Registering while already draining (the matchmaker restarted during a drain). */
+  draining: z.boolean().optional(),
 });
 const HeartbeatBody = z.object({
   serverId: z.string().min(1).max(64),
@@ -80,6 +83,8 @@ const HeartbeatBody = z.object({
     .optional(),
   /** Show results the server has not delivered to the API yet. */
   outbox: z.number().int().min(0).optional(),
+  /** Shutting down: no new matches, running shows stay reachable. */
+  draining: z.boolean().optional(),
 });
 const RejoinBody = z.object({ matchId: z.string().min(1).max(64) });
 const SettingsSchema = z
@@ -113,6 +118,11 @@ const LockBody = z.object({ locked: z.boolean() });
 const ReadyBody = z.object({ ready: z.boolean() });
 const RoleBody = z.object({ spectator: z.boolean() });
 const StartBody = z.object({ force: z.boolean().default(false) }).default({ force: false });
+
+/** Open status-stream sockets one account may hold on one instance (a few tabs). */
+export const MAX_SOCKETS_PER_USER = 5;
+/** Open status-stream sockets one client address may hold on one instance (households, NAT). */
+export const MAX_SOCKETS_PER_IP = 50;
 
 function parse<S extends z.ZodType>(schema: S, data: unknown): z.output<S> {
   const r = schema.safeParse(data);
@@ -267,16 +277,42 @@ export async function buildMatchmaker(
     return mm.stats();
   });
 
-  // The API's public status page asks this for live game-server capacity per region.
-  // SECURITY: HMAC-signed with INTERNAL_HMAC_SECRET; it is read-only, so the
-  // signature is checked without a nonce store (a replay only repeats counts).
-  app.get('/internal/capacity', async (req, reply) => {
+  /**
+   * SECURITY: checks an API call signed with INTERNAL_HMAC_SECRET over this
+   * method, path and body, and spends its nonce so it cannot be replayed.
+   *
+   * @returns False when internal calls are not configured (answer 404).
+   * @throws {MMError} 401 `bad_signature` / `replayed_request`.
+   */
+  const internalCall = async (req: FastifyRequest, path: string): Promise<boolean> => {
     const secret = cfg.internalHmacSecret;
-    if (!secret) return reply.code(404).send({ error: 'not_found', message: 'Not found' });
-    if (!verifyInternal(secret, req.headers, '', now()))
-      throw new MMError(401, 'bad_signature', 'Invalid internal signature');
+    if (!secret) return false;
+    const ok = verifyInternal(secret, req.headers, '', now(), { method: req.method, path });
+    if (!ok) throw new MMError(401, 'bad_signature', 'Invalid internal signature');
+    if (!(await store.setNX(`nonce:${ok.nonce}`, '1', INTERNAL_SIG_WINDOW_MS * 2)))
+      throw new MMError(401, 'replayed_request', 'Nonce already used');
+    return true;
+  };
+
+  // The API's public status page asks this for live game-server capacity per region.
+  app.get('/internal/capacity', async (req, reply) => {
+    if (!(await internalCall(req, '/internal/capacity')))
+      return reply.code(404).send({ error: 'not_found', message: 'Not found' });
     reply.header('cache-control', 'no-store');
     return { regions: capacityByRegion(await mm.servers()) };
+  });
+
+  // The API checks show results against this before granting anything: the
+  // reporting server must be the one the match was placed on, and every
+  // account in the results must have been sent there.
+  app.get('/internal/matches/:id/placement', async (req, reply) => {
+    const { id } = parse(z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/) }), req.params);
+    if (!(await internalCall(req, `/internal/matches/${id}/placement`)))
+      return reply.code(404).send({ error: 'not_found', message: 'Not found' });
+    reply.header('cache-control', 'no-store');
+    const placement = await mm.getPlacement(id);
+    if (!placement) throw new MMError(404, 'unknown_match', 'No match placed with that id');
+    return placement;
   });
 
   // --- Queue -----------------------------------------------------------------
@@ -290,7 +326,7 @@ export async function buildMatchmaker(
         'invalid_ticket',
         'Queue ticket invalid or expired; request a new one from the API',
       );
-    const entry = await mm.enqueue(p, t);
+    const entry = await mm.enqueue(p, t, queueTicketId(ticket));
     return { entryId: entry.id, status: await mm.status(p.userId) };
   });
 
@@ -335,6 +371,7 @@ export async function buildMatchmaker(
       ...(b.humans !== undefined ? { humans: b.humans } : {}),
       ...(b.maxRooms !== undefined ? { maxRooms: b.maxRooms } : {}),
       ...(b.rooms !== undefined ? { rooms: b.rooms } : {}),
+      ...(b.draining ? { draining: true } : {}),
     });
   });
 
@@ -348,6 +385,7 @@ export async function buildMatchmaker(
       ...(b.rooms !== undefined ? { rooms: b.rooms } : {}),
       ...(b.matches ? { matches: b.matches } : {}),
       ...(b.joined ? { joined: b.joined } : {}),
+      ...(b.draining ? { draining: true } : {}),
     });
   });
 
@@ -382,8 +420,8 @@ export async function buildMatchmaker(
   });
 
   app.get('/lobbies/:code', async (req) => {
-    await player(req);
-    return { lobby: await mm.getLobby(parse(CodeParam, req.params).code) };
+    const p = await player(req);
+    return { lobby: await mm.viewLobby(p.userId, parse(CodeParam, req.params).code) };
   });
 
   app.post('/lobbies/:code/join', async (req) => {
@@ -481,6 +519,7 @@ export async function buildMatchmaker(
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 });
   // NOTE: per instance; with Redis a reconnect may land on another instance, which marks the member present again.
   const sockets = new Map<string, number>();
+  const ipSockets = new Map<string, number>();
   const onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (url.pathname !== '/ws') return;
@@ -508,21 +547,43 @@ export async function buildMatchmaker(
         socket.destroy();
         return;
       }
+      // SECURITY: each socket holds a store subscription; without a cap one
+      // account or address could open them until the instance runs dry. No
+      // await between this check and the (synchronous) upgrade callback.
+      if (
+        (sockets.get(p.userId) ?? 0) >= MAX_SOCKETS_PER_USER ||
+        (ipSockets.get(ip) ?? 0) >= MAX_SOCKETS_PER_IP
+      ) {
+        socket.write('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n');
+        socket.destroy();
+        return;
+      }
       wss.handleUpgrade(req, socket, head, (ws) => {
+        sockets.set(p.userId, (sockets.get(p.userId) ?? 0) + 1);
+        ipSockets.set(ip, (ipSockets.get(ip) ?? 0) + 1);
+        let closed = false;
+        let unsubscribe: (() => Promise<void>) | null = null;
+        // NOTE: an over-size frame surfaces as 'error'; unhandled, it would crash the process.
+        ws.on('error', () => ws.terminate());
+        ws.on('close', () => {
+          closed = true;
+          void unsubscribe?.();
+          const ipLeft = (ipSockets.get(ip) ?? 1) - 1;
+          if (ipLeft > 0) ipSockets.set(ip, ipLeft);
+          else ipSockets.delete(ip);
+          const left = (sockets.get(p.userId) ?? 1) - 1;
+          if (left > 0) sockets.set(p.userId, left);
+          else {
+            sockets.delete(p.userId);
+            void mm.setLobbyPresence(p.userId, false);
+          }
+        });
         void (async () => {
-          const unsubscribe = await store.subscribe(userChannel(p.userId), (msg) => {
+          const unsub = await store.subscribe(userChannel(p.userId), (msg) => {
             if (ws.readyState === WebSocket.OPEN) ws.send(msg);
           });
-          sockets.set(p.userId, (sockets.get(p.userId) ?? 0) + 1);
-          ws.on('close', () => {
-            void unsubscribe();
-            const left = (sockets.get(p.userId) ?? 1) - 1;
-            if (left > 0) sockets.set(p.userId, left);
-            else {
-              sockets.delete(p.userId);
-              void mm.setLobbyPresence(p.userId, false);
-            }
-          });
+          if (closed) return void (await unsub());
+          unsubscribe = unsub;
           ws.on('message', (data) => {
             let msg: { type?: unknown; text?: unknown };
             try {

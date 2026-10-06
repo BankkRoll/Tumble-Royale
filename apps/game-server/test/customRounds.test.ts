@@ -134,7 +134,9 @@ describe('custom round catalog', () => {
     expect(seen!.url).toBe('http://api.test/internal/custom-rounds/resolve');
     const h = seen!.headers;
     const expected = createHmac('sha256', 'hmac-secret')
-      .update(`${h['x-tumble-timestamp']}.${h['x-tumble-nonce']}.${seen!.body}`)
+      .update(
+        `POST\n/internal/custom-rounds/resolve\n${h['x-tumble-timestamp']}\n${h['x-tumble-nonce']}\n${seen!.body}`,
+      )
       .digest('hex');
     expect(h['x-tumble-signature']).toBe(expected);
     const failing = new HttpCustomRoundSource({

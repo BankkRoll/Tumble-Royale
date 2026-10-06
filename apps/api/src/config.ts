@@ -76,6 +76,13 @@ const EnvSchema = z.object({
   NAME_CHANGE_COOLDOWN_DAYS: z.coerce.number().int().min(0).default(30),
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(300),
   PRESENCE_GRACE_MS: z.coerce.number().int().min(0).max(120_000).default(8_000),
+  WS_IP_UPGRADES_PER_MINUTE: z.coerce.number().int().min(1).default(60),
+  WS_USER_UPGRADES_PER_MINUTE: z.coerce.number().int().min(1).default(20),
+  WS_MAX_SOCKETS_PER_USER: z.coerce.number().int().min(1).default(5),
+  WS_MAX_SOCKETS_PER_IP: z.coerce.number().int().min(1).default(50),
+  GUEST_SIGNUPS_PER_IP_HOUR: z.coerce.number().int().min(1).default(10),
+  GLOBAL_CHAT_MIN_ACCOUNT_AGE_MINUTES: z.coerce.number().int().min(0).default(10),
+  GLOBAL_CHAT_IP_MAX: z.coerce.number().int().min(1).default(10),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   ...OpsEnvSchema.shape,
 });
@@ -123,6 +130,17 @@ export interface ApiConfig {
   jwtSecret: string;
   /** HMAC secret shared with game servers for `/internal/*` calls. */
   internalHmacSecret: string;
+  /**
+   * Narrow key for game servers (`GAME_SERVER_HMAC_SECRET`): accepted only on
+   * the internal routes game servers call, so a game server on its own host
+   * need not hold {@link internalHmacSecret}. Absent → game servers use the shared key.
+   */
+  gameServerHmacSecret: string | undefined;
+  /**
+   * Accept the legacy internal signature that does not cover the method and
+   * path (`INTERNAL_HMAC_ALLOW_V1=1`), while older callers are upgraded.
+   */
+  internalHmacAllowV1: boolean;
   /** Bearer token for admin-only internal routes; absent → those routes are disabled. */
   adminToken: string | undefined;
   /** Origin of the web client, used for redirects, invite links and magic links. */
@@ -160,6 +178,8 @@ export interface ApiConfig {
   rateLimitMax: number;
   /** How long a user stays "online" after their last realtime connection closes. */
   presenceGraceMs: number;
+  /** Per-IP and per-account caps against throwaway-account and socket floods. */
+  abuse: AbuseConfig;
   logLevel: string;
   /** Self-hosting and operations settings. */
   ops: ApiOpsConfig;
@@ -184,6 +204,31 @@ export interface VoiceServerConfig {
    * production, for LAN play and local testing).
    */
   available: boolean;
+}
+
+/**
+ * Abuse limits. Guests cost nothing to mint, so anything an account may do
+ * once per window is also capped per client IP.
+ */
+export interface AbuseConfig {
+  /** Realtime gateway handshakes per client IP per minute (`WS_IP_UPGRADES_PER_MINUTE`, 60). */
+  wsIpUpgradesPerMinute: number;
+  /** Realtime gateway handshakes per account per minute (`WS_USER_UPGRADES_PER_MINUTE`, 20). */
+  wsUserUpgradesPerMinute: number;
+  /** Open gateway sockets per account on one instance (`WS_MAX_SOCKETS_PER_USER`, 5). */
+  wsMaxSocketsPerUser: number;
+  /** Open gateway sockets per client IP on one instance (`WS_MAX_SOCKETS_PER_IP`, 50). */
+  wsMaxSocketsPerIp: number;
+  /** New guest accounts per client IP per hour (`GUEST_SIGNUPS_PER_IP_HOUR`, 10). */
+  guestSignupsPerIpHour: number;
+  /**
+   * How old a guest account must be before it may post in global chat
+   * (`GLOBAL_CHAT_MIN_ACCOUNT_AGE_MINUTES`, 10). Accounts with a linked
+   * sign-in (email, OAuth) may post at once.
+   */
+  globalChatMinAccountAgeMs: number;
+  /** Global chat lines per client IP per window, across accounts (`GLOBAL_CHAT_IP_MAX`, 10). */
+  globalChatIpMax: number;
 }
 
 /** Data-retention policy; a 0 day count keeps that data forever. */
@@ -310,7 +355,18 @@ export function loadConfig(env: Env = process.env): ApiConfig {
   const issues = new EnvIssues(env);
   const jwtSecret = issues.secret('JWT_SECRET', 32);
   const internalHmacSecret = issues.secret('INTERNAL_HMAC_SECRET', 16);
-  const parsed = EnvSchema.safeParse(env);
+  const gameServerHmacSecret =
+    issues.optional('GAME_SERVER_HMAC_SECRET') === undefined
+      ? undefined
+      : issues.secret('GAME_SERVER_HMAC_SECRET', 16) || undefined;
+  if (gameServerHmacSecret !== undefined && gameServerHmacSecret === internalHmacSecret)
+    issues.add('GAME_SERVER_HMAC_SECRET', 'must differ from INTERNAL_HMAC_SECRET');
+  const internalHmacAllowV1 = issues.flag('INTERNAL_HMAC_ALLOW_V1', false);
+  // NOTE: docker compose passes optional variables as `${NAME:-}`, so an unset
+  // one arrives as ''; blank means "use the default", not 0.
+  const parsed = EnvSchema.safeParse(
+    Object.fromEntries(Object.entries(env).filter(([, v]) => v === undefined || v.trim() !== '')),
+  );
   if (!parsed.success) issues.addSchemaIssues(parsed.error.issues);
   // Every field has a default, so parsing {} lets the remaining checks run and
   // report alongside the schema issues.
@@ -388,6 +444,8 @@ export function loadConfig(env: Env = process.env): ApiConfig {
     memoryStoreInProduction: e.NODE_ENV === 'production' && !e.REDIS_URL,
     jwtSecret,
     internalHmacSecret,
+    gameServerHmacSecret,
+    internalHmacAllowV1,
     adminToken,
     publicWebUrl: e.PUBLIC_WEB_URL.replace(/\/$/, ''),
     publicApiUrl: e.PUBLIC_API_URL.replace(/\/$/, ''),
@@ -408,6 +466,15 @@ export function loadConfig(env: Env = process.env): ApiConfig {
     trustProxy,
     rateLimitMax: e.RATE_LIMIT_MAX,
     presenceGraceMs: e.PRESENCE_GRACE_MS,
+    abuse: {
+      wsIpUpgradesPerMinute: e.WS_IP_UPGRADES_PER_MINUTE,
+      wsUserUpgradesPerMinute: e.WS_USER_UPGRADES_PER_MINUTE,
+      wsMaxSocketsPerUser: e.WS_MAX_SOCKETS_PER_USER,
+      wsMaxSocketsPerIp: e.WS_MAX_SOCKETS_PER_IP,
+      guestSignupsPerIpHour: e.GUEST_SIGNUPS_PER_IP_HOUR,
+      globalChatMinAccountAgeMs: e.GLOBAL_CHAT_MIN_ACCOUNT_AGE_MINUTES * 60_000,
+      globalChatIpMax: e.GLOBAL_CHAT_IP_MAX,
+    },
     logLevel: e.LOG_LEVEL,
     ops: {
       dbPoolMax: e.DB_POOL_MAX,

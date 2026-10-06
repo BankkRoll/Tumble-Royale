@@ -52,8 +52,9 @@ node scripts/setup-env.mjs --production --domain play.example.com --email you@ex
 - the public URLs for the domain (`PUBLIC_WEB_URL`, `PUBLIC_API_URL` used for
   OAuth redirects, `PUBLIC_WS_URL`) and the CORS allow-lists;
 - a fresh random value for every secret (`JWT_SECRET`,
-  `INTERNAL_HMAC_SECRET`, `GAME_TICKET_SECRET`, `GAME_SERVER_SECRET`,
-  `ADMIN_TOKEN`, `METRICS_TOKEN`, `POSTGRES_PASSWORD`, `VOICE_TURN_SECRET`);
+  `INTERNAL_HMAC_SECRET`, `GAME_SERVER_HMAC_SECRET`, `GAME_TICKET_SECRET`,
+  `GAME_SERVER_SECRET`, `ADMIN_TOKEN`, `METRICS_TOKEN`, `POSTGRES_PASSWORD`,
+  `REDIS_PASSWORD`, `VOICE_TURN_SECRET`);
 - `DATABASE_URL` and `REDIS_URL` for the Compose services, and
   `TRUST_PROXY=1` because Caddy is the one proxy in front of them;
 - every optional setting, commented out with its default: sign-in providers,
@@ -276,8 +277,9 @@ Rules worth knowing before you enable it:
   suspension ends the player's voice on every instance at once. Nothing is
   recorded; a voice report carries which room the two shared and when.
 - **Privacy:** peers connected directly see each other's IP address, as with
-  any WebRTC call. Players can turn on "Relay only (hide my IP)" to send
-  everything through your TURN relay instead.
+  any WebRTC call. With TURN configured, team rooms (strangers) always go
+  through the relay; party voice connects directly unless a player turns on
+  "Relay only (hide my IP)". Without TURN every room connects directly.
 
 ### Refunds
 
@@ -521,8 +523,11 @@ Every game server needs:
 | `REGION`        | `eu`                         | `na`, `eu`, `asia`, `sa` or `oce`                                             |
 | `CONTROL_URL`   | (derived)                    | where the matchmaker sends host kicks; defaults to the `PUBLIC_WS_URL` origin |
 
-and the same `GAME_TICKET_SECRET`, `GAME_SERVER_SECRET` and
-`INTERNAL_HMAC_SECRET` as the main server.
+and the same `GAME_TICKET_SECRET` and `GAME_SERVER_SECRET` as the main
+server, plus the main server's `GAME_SERVER_HMAC_SECRET` (see
+[Service keys](#service-keys)). Older setups give game servers
+`INTERNAL_HMAC_SECRET` instead; that still works, but it hands every game
+server host the key all internal API routes trust.
 
 **On another host** (more capacity, or closer to players in another region):
 
@@ -568,6 +573,45 @@ gs2.play.example.com {
 }
 ```
 
+### Service keys
+
+Services sign their calls to each other with HMAC keys over the method,
+path, timestamp, a single-use nonce and the body:
+
+| Key                       | Held by                       | Accepted for                                                                             |
+| ------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------- |
+| `INTERNAL_HMAC_SECRET`    | API, matchmaker               | every internal route (ban lookups, live ops, capacity, placements, …)                    |
+| `GAME_SERVER_HMAC_SECRET` | API, every game server        | only what game servers call: results, team voice, custom rounds, live ops, crash reports |
+| `GAME_SERVER_SECRET`      | matchmaker, every game server | game-server registration and heartbeats, host kicks                                      |
+| `GAME_TICKET_SECRET`      | matchmaker, every game server | join tickets                                                                             |
+
+The API also checks every show result against the matchmaker's placement
+before granting anything (the match must have been placed on the reporting
+server, in that queue, with those accounts), so a leaked game-server key
+cannot invent matches. This needs `MATCHMAKER_URL` on the API (the compose
+file's `deploy/.env` has it).
+
+Inside the compose stack, Postgres and Redis sit on an internal network the
+game server is not attached to, the matchmaker and game server receive only
+the variables they read, and Redis requires `REDIS_PASSWORD` when it is set.
+
+**Moving an existing deployment over** (no downtime needed):
+
+1. Generate two secrets (`openssl rand -hex 32`) and add them to
+   `deploy/.env` as `GAME_SERVER_HMAC_SECRET` and `REDIS_PASSWORD`.
+2. If game servers on other hosts run an older release, also set
+   `INTERNAL_HMAC_ALLOW_V1=1`: they sign without the method and path, and
+   the API refuses that otherwise. Their results wait in their outbox, not
+   lost, until either side is upgraded.
+3. `docker compose up -d` recreates Redis with the password and the
+   services with their new environment.
+4. On every other game server host, replace `INTERNAL_HMAC_SECRET` with
+   `GAME_SERVER_HMAC_SECRET` in `deploy/game-server/.env`, upgrade and
+   restart it.
+5. Once all of them run the new release, remove `INTERNAL_HMAC_ALLOW_V1`.
+   If a game server host had `INTERNAL_HMAC_SECRET`, rotate it on the API
+   and matchmaker.
+
 ## Upgrades
 
 ```sh
@@ -599,8 +643,12 @@ While the only game server drains, players cannot start new shows, so:
 - with several game servers, upgrade them one at a time.
 
 `stop_grace_period` (17 minutes) must stay longer than
-`DRAIN_SETTLE_MS + DRAIN_TIMEOUT_MS + OUTBOX_FLUSH_MS` plus 30 s; raise it
-together with them.
+`DRAIN_TIMEOUT_MS + OUTBOX_FLUSH_MS` plus 30 s (the settle wait for late
+arrivals, `DRAIN_SETTLE_MS`, runs inside `DRAIN_TIMEOUT_MS`); raise it together
+with them. While it drains, a game server stays registered with the matchmaker
+as draining: no new matches go to it, but players of running shows can still
+rejoin and hosts can still remove players. It deregisters once its last room
+closes, and a show cut off by the timeout reports the rounds played so far.
 
 ## Backups
 
@@ -670,30 +718,32 @@ development-only settings.
 
 ### Secrets
 
-| Variable               | Read by                      | Req.                  | Default | What it does                                                        |
-| ---------------------- | ---------------------------- | --------------------- | ------- | ------------------------------------------------------------------- |
-| `JWT_SECRET`           | API, matchmaker              | yes (32+)             | none    | Signs access tokens; a new value signs every player out             |
-| `INTERNAL_HMAC_SECRET` | API, matchmaker, game server | yes (16+)             | none    | Signs results and internal calls to the API                         |
-| `GAME_TICKET_SECRET`   | matchmaker, game server      | yes (16+)             | none    | Signs join tickets                                                  |
-| `GAME_SERVER_SECRET`   | matchmaker, game server      | yes (16+)             | none    | Game servers register with it; it also signs kicks                  |
-| `ADMIN_TOKEN`          | API, `pnpm admin`            | for the CLI (32+)     | none    | Operator bearer for `/internal/*`; acts as admin; mints staff links |
-| `METRICS_TOKEN`        | API, matchmaker, game server | no (16+)              | none    | Bearer for `/metrics` (and `/rooms` on game servers)                |
-| `VOICE_TURN_SECRET`    | API, coturn                  | with a TURN URL (16+) | none    | Shared TURN REST secret; players only get short-lived credentials   |
+| Variable                 | Read by                      | Req.                  | Default | What it does                                                              |
+| ------------------------ | ---------------------------- | --------------------- | ------- | ------------------------------------------------------------------------- |
+| `JWT_SECRET`             | API, matchmaker              | yes (32+)             | none    | Signs access tokens; a new value signs every player out                   |
+| `INTERNAL_HMAC_SECRET`   | API, matchmaker, game server | yes (16+)             | none    | Signs results and internal calls to the API                               |
+| `INTERNAL_HMAC_ALLOW_V1` | API                          | no                    | off     | `1` accepts the old internal signature (no method/path) during an upgrade |
+| `GAME_TICKET_SECRET`     | matchmaker, game server      | yes (16+)             | none    | Signs join tickets                                                        |
+| `GAME_SERVER_SECRET`     | matchmaker, game server      | yes (16+)             | none    | Game servers register with it; it also signs kicks                        |
+| `ADMIN_TOKEN`            | API, `pnpm admin`            | for the CLI (32+)     | none    | Operator bearer for `/internal/*`; acts as admin; mints staff links       |
+| `METRICS_TOKEN`          | API, matchmaker, game server | no (16+)              | none    | Bearer for `/metrics` (and `/rooms` on game servers)                      |
+| `VOICE_TURN_SECRET`      | API, coturn                  | with a TURN URL (16+) | none    | Shared TURN REST secret; players only get short-lived credentials         |
 
 ### Datastores
 
-| Variable             | Read by         | Req. | Default                | What it does                                                            |
-| -------------------- | --------------- | ---- | ---------------------- | ----------------------------------------------------------------------- |
-| `DATABASE_URL`       | API             | yes  | embedded PGlite        | Postgres connection string                                              |
-| `REDIS_URL`          | API, matchmaker | yes  | in-process             | Shared state, rate limits and pub/sub                                   |
-| `POSTGRES_USER`      | compose         | no   | `tumble`               | Role the Postgres container creates                                     |
-| `POSTGRES_DB`        | compose         | no   | `tumble`               | Database the Postgres container creates                                 |
-| `POSTGRES_PASSWORD`  | compose         | yes  | none                   | Applied only when the volume is first created                           |
-| `DB_POOL_MAX`        | API             | no   | `10` (`2` for migrate) | Postgres pool size per instance                                         |
-| `ALLOW_MEMORY_STORE` | API, matchmaker | no   | off                    | `1` runs production without Redis (one instance, state lost on restart) |
-| `ALLOW_EMBEDDED_DB`  | API             | no   | off                    | `1` runs production on PGlite (one instance)                            |
-| `PGLITE_DIR`         | API             | no   | `./.data/pglite`       | Embedded database directory                                             |
-| `MIGRATE_ON_BOOT`    | API             | no   | `1`                    | `0` skips migrations at boot (compose runs the `migrate` service)       |
+| Variable             | Read by         | Req. | Default                | What it does                                                                   |
+| -------------------- | --------------- | ---- | ---------------------- | ------------------------------------------------------------------------------ |
+| `DATABASE_URL`       | API             | yes  | embedded PGlite        | Postgres connection string                                                     |
+| `REDIS_URL`          | API, matchmaker | yes  | in-process             | Shared state, rate limits and pub/sub                                          |
+| `POSTGRES_USER`      | compose         | no   | `tumble`               | Role the Postgres container creates                                            |
+| `POSTGRES_DB`        | compose         | no   | `tumble`               | Database the Postgres container creates                                        |
+| `POSTGRES_PASSWORD`  | compose         | yes  | none                   | Applied only when the volume is first created                                  |
+| `REDIS_PASSWORD`     | compose         | no   | none                   | Redis requires it; compose puts it into the API's and matchmaker's `REDIS_URL` |
+| `DB_POOL_MAX`        | API             | no   | `10` (`2` for migrate) | Postgres pool size per instance                                                |
+| `ALLOW_MEMORY_STORE` | API, matchmaker | no   | off                    | `1` runs production without Redis (one instance, state lost on restart)        |
+| `ALLOW_EMBEDDED_DB`  | API             | no   | off                    | `1` runs production on PGlite (one instance)                                   |
+| `PGLITE_DIR`         | API             | no   | `./.data/pglite`       | Embedded database directory                                                    |
+| `MIGRATE_ON_BOOT`    | API             | no   | `1`                    | `0` skips migrations at boot (compose runs the `migrate` service)              |
 
 ### Services and game servers
 
@@ -754,26 +804,33 @@ development-only settings.
 
 ### Operations
 
-| Variable                       | Read by              | Req. | Default                          | What it does                                                       |
-| ------------------------------ | -------------------- | ---- | -------------------------------- | ------------------------------------------------------------------ |
-| `HOST`                         | API, matchmaker      | no   | `0.0.0.0`                        | Listen address                                                     |
-| `PORT`                         | all services         | no   | 7360 / 7370 / 7350               | Listen port (each image sets its own)                              |
-| `LOG_LEVEL`                    | all services         | no   | `info`                           | `fatal` … `trace`, or `silent`                                     |
-| `SENTRY_DSN`                   | all services         | no   | none                             | Sentry-compatible crash reports                                    |
-| `INTERNAL_PORT`                | all services         | no   | none                             | Private `/metrics` listener without auth; keep it off the internet |
-| `INTERNAL_HOST`                | all services         | no   | all interfaces                   | Interface for that listener                                        |
-| `RATE_LIMIT_MAX`               | API, matchmaker      | no   | `300` / `120`                    | Requests per minute per player or IP                               |
-| `NAME_CHANGE_COOLDOWN_DAYS`    | API                  | no   | `30`                             | Days between display name changes                                  |
-| `PRESENCE_GRACE_MS`            | API                  | no   | `8000`                           | How long a player stays online after disconnecting                 |
-| `STATUS_SAMPLE_SECONDS`        | API                  | no   | `60`                             | Status page uptime sampling; `0` keeps no history                  |
-| `RETENTION_INTERVAL_MINUTES`   | API                  | no   | `360`                            | Retention job interval (`0` never, at most 35000)                  |
-| `RETENTION_SESSION_GRACE_DAYS` | API                  | no   | `7`                              | Delete sessions this long after they expired                       |
-| `RETENTION_EVENTS_DAYS`        | API                  | no   | `90`                             | Delete analytics events older than this (`0` keeps them)           |
-| `RETENTION_GUEST_DAYS`         | API                  | no   | `0` (keep)                       | Delete guest accounts unused this long                             |
-| `BACKUP_INTERVAL_HOURS`        | compose, `backup.sh` | no   | `24`                             | Hours between `pg_dump`s                                           |
-| `BACKUP_KEEP_DAYS`             | compose, `backup.sh` | no   | `14`                             | Delete dumps older than this                                       |
-| `BACKUP_DIR`                   | `backup.sh`          | no   | `/backups`                       | Where dumps go (compose mounts the `backups` volume there)         |
-| `ADMIN_API_URL`                | `pnpm admin`         | no   | `PUBLIC_API_URL`, else `API_URL` | API the CLI talks to (the API image sets `http://127.0.0.1:7360`)  |
+| Variable                              | Read by              | Req. | Default                          | What it does                                                       |
+| ------------------------------------- | -------------------- | ---- | -------------------------------- | ------------------------------------------------------------------ |
+| `HOST`                                | API, matchmaker      | no   | `0.0.0.0`                        | Listen address                                                     |
+| `PORT`                                | all services         | no   | 7360 / 7370 / 7350               | Listen port (each image sets its own)                              |
+| `LOG_LEVEL`                           | all services         | no   | `info`                           | `fatal` … `trace`, or `silent`                                     |
+| `SENTRY_DSN`                          | all services         | no   | none                             | Sentry-compatible crash reports                                    |
+| `INTERNAL_PORT`                       | all services         | no   | none                             | Private `/metrics` listener without auth; keep it off the internet |
+| `INTERNAL_HOST`                       | all services         | no   | all interfaces                   | Interface for that listener                                        |
+| `RATE_LIMIT_MAX`                      | API, matchmaker      | no   | `300` / `120`                    | Requests per minute per player or IP                               |
+| `NAME_CHANGE_COOLDOWN_DAYS`           | API                  | no   | `30`                             | Days between display name changes                                  |
+| `PRESENCE_GRACE_MS`                   | API                  | no   | `8000`                           | How long a player stays online after disconnecting                 |
+| `STATUS_SAMPLE_SECONDS`               | API                  | no   | `60`                             | Status page uptime sampling; `0` keeps no history                  |
+| `WS_IP_UPGRADES_PER_MINUTE`           | API                  | no   | `60`                             | Realtime socket handshakes per minute per IP                       |
+| `WS_USER_UPGRADES_PER_MINUTE`         | API                  | no   | `20`                             | Realtime socket handshakes per minute per account                  |
+| `WS_MAX_SOCKETS_PER_USER`             | API                  | no   | `5`                              | Open realtime sockets per account                                  |
+| `WS_MAX_SOCKETS_PER_IP`               | API                  | no   | `50`                             | Open realtime sockets per IP                                       |
+| `GUEST_SIGNUPS_PER_IP_HOUR`           | API                  | no   | `10`                             | New guest accounts per IP per hour                                 |
+| `GLOBAL_CHAT_MIN_ACCOUNT_AGE_MINUTES` | API                  | no   | `10`                             | Minutes a guest waits before posting in global chat                |
+| `GLOBAL_CHAT_IP_MAX`                  | API                  | no   | `10`                             | Global chat lines per IP per 10 s, across accounts                 |
+| `RETENTION_INTERVAL_MINUTES`          | API                  | no   | `360`                            | Retention job interval (`0` never, at most 35000)                  |
+| `RETENTION_SESSION_GRACE_DAYS`        | API                  | no   | `7`                              | Delete sessions this long after they expired                       |
+| `RETENTION_EVENTS_DAYS`               | API                  | no   | `90`                             | Delete analytics events older than this (`0` keeps them)           |
+| `RETENTION_GUEST_DAYS`                | API                  | no   | `0` (keep)                       | Delete guest accounts unused this long                             |
+| `BACKUP_INTERVAL_HOURS`               | compose, `backup.sh` | no   | `24`                             | Hours between `pg_dump`s                                           |
+| `BACKUP_KEEP_DAYS`                    | compose, `backup.sh` | no   | `14`                             | Delete dumps older than this                                       |
+| `BACKUP_DIR`                          | `backup.sh`          | no   | `/backups`                       | Where dumps go (compose mounts the `backups` volume there)         |
+| `ADMIN_API_URL`                       | `pnpm admin`         | no   | `PUBLIC_API_URL`, else `API_URL` | API the CLI talks to (the API image sets `http://127.0.0.1:7360`)  |
 
 ### Edge, images and the client
 

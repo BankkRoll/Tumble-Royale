@@ -4,12 +4,18 @@
  *
  * Steps:
  * 1. Mark the server not ready (`/ready` → 503, `tumble_draining` → 1).
- * 2. Deregister from the matchmaker, which stops placing matches here.
- * 3. Wait `settleMs` for players of matches placed just before that to
- *    arrive (their tickets name this server; their rooms open on first join).
+ * 2. Tell the matchmaker we are draining: it stops placing matches here but
+ *    keeps the server registered, so rejoins and host kicks still reach the
+ *    shows that are running.
+ * 3. Wait for players of matches placed just before that to arrive (their
+ *    tickets name this server; their rooms open on first join): until the
+ *    matchmaker reports no placed match still waiting for its first player,
+ *    or `settleMs` passed. The default outlasts a join ticket (90 s), so a
+ *    player who loads slowly still finds their room.
  * 4. Wait until every room has closed, up to `timeoutMs` after the drain
  *    began; shows still running then are cut off.
- * 5. Close the transport and the HTTP server.
+ * 5. Deregister from the matchmaker, then close the transport and the HTTP
+ *    server (shows still running are cut off and report what they played).
  * 6. Retry undelivered results for up to `outboxFlushMs`; anything left stays
  *    in the outbox directory and is delivered by the next process that
  *    starts with the same `RESULTS_OUTBOX_DIR`.
@@ -18,8 +24,8 @@
 /** Collaborators of {@link drain}. */
 export interface DrainDeps {
   setDraining(): void;
-  /** Deregisters from the matchmaker; null when not linked. */
-  link: { stop(): Promise<void> } | null;
+  /** The matchmaker registration; null when not linked. */
+  link: { drain(): Promise<void>; stop(): Promise<void>; pendingMatches?(): number | null } | null;
   /** Rooms still open. */
   rooms(): number;
   closeServer(): Promise<void>;
@@ -55,10 +61,12 @@ export async function drain(d: DrainDeps): Promise<DrainResult> {
   d.setDraining();
   d.log(`[drain] draining: ${d.rooms()} room(s) open, up to ${Math.round(d.timeoutMs / 1000)} s`);
   if (d.link) {
-    await d.link.stop().catch(() => undefined);
-    d.log('[drain] deregistered from the matchmaker');
+    await d.link.drain().catch(() => undefined);
+    d.log('[drain] the matchmaker stopped placing matches here');
     const settleUntil = Math.min(started + d.settleMs, deadline);
-    while (now() < settleUntil) await sleep(Math.min(d.pollMs ?? 1000, settleUntil - now()));
+    // Unknown (the matchmaker did not answer) counts as "still waiting": better late than a lost show.
+    const waiting = (): boolean => (d.link?.pendingMatches?.() ?? 1) > 0;
+    while (now() < settleUntil && waiting()) await sleep(Math.min(d.pollMs ?? 1000, settleUntil - now()));
   }
   let lastReport = now();
   while (d.rooms() > 0 && now() < deadline) {
@@ -70,6 +78,7 @@ export async function drain(d: DrainDeps): Promise<DrainResult> {
   }
   const roomsCut = d.rooms();
   if (roomsCut > 0) d.log(`[drain] timeout reached; closing ${roomsCut} room(s) that are still running`);
+  if (d.link) await d.link.stop().catch(() => undefined);
   await d.closeServer();
   let outboxLeft = 0;
   if (d.outbox) {

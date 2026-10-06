@@ -172,6 +172,7 @@ export async function runRetention(ctx: AppContext, policy: RetentionConfig): Pr
       ran: true,
     };
   } finally {
-    if ((await ctx.kv.get(LOCK_KEY).catch(() => null)) === owner) await ctx.kv.del(LOCK_KEY).catch(() => {});
+    // Compare-and-delete in one step: a run that overran the TTL must not remove the next holder's lock.
+    await ctx.kv.delIfEquals(LOCK_KEY, owner).catch(() => false);
   }
 }

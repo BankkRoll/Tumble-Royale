@@ -53,7 +53,21 @@ export interface BotSafeSpotProvider {
    *   Receives the safe spot.
    * @returns True when a spot was written.
    */
-  botSafeSpot(t: number, out: Vec3): boolean;
+  botSafeSpot(t: number, out: Vec3, key?: number): boolean;
+  /** How hard the current question is to answer, 0–1 (logic floors). See `BotWorldView.logicDifficulty`. */
+  botDifficulty?(t: number): number;
+}
+
+/** Optional runtime extension: obstacles that push actors about (fans), predicted for bots. */
+export interface BotWindProvider {
+  /**
+   * Adds the push an actor at `point` would feel at time `t` (world, m/s²) to `out`.
+   *
+   * @param t - Match time (may be in the future: the push must be a pure function of time).
+   * @param point - Capsule centre (world).
+   * @param out - Accumulator.
+   */
+  botWind(t: number, point: Vec3, out: Vec3): void;
 }
 
 /**
@@ -264,7 +278,7 @@ export class ObstacleOracle {
    * obstacles offer a spot (tile fields split into rows), the one nearest the
    * hint wins.
    */
-  safeSpot(time: number, out: Vec3): boolean {
+  safeSpot(time: number, out: Vec3, key?: number): boolean {
     const hint = this.hint;
     hint.x = out.x;
     hint.y = out.y;
@@ -277,7 +291,7 @@ export class ObstacleOracle {
       c.x = hint.x;
       c.y = hint.y;
       c.z = hint.z;
-      if (!t.runtime.botSafeSpot(time, c)) continue;
+      if (!t.runtime.botSafeSpot(time, c, key)) continue;
       const d = hinted
         ? (c.x - hint.x) ** 2 + ((c.y - hint.y) * SAFE_SPOT_Y_WEIGHT) ** 2 + (c.z - hint.z) ** 2
         : 0;
@@ -290,6 +304,27 @@ export class ObstacleOracle {
       }
     }
     return best < Infinity;
+  }
+
+  /** See `BotWorldView.windAt`. */
+  windAt(time: number, point: Vec3, out: Vec3): Vec3 {
+    out.x = 0;
+    out.y = 0;
+    out.z = 0;
+    for (const t of this.tracked) {
+      const w = t.runtime as Partial<BotWindProvider>;
+      if (typeof w.botWind === 'function') w.botWind(time, point, out);
+    }
+    return out;
+  }
+
+  /** See `BotWorldView.logicDifficulty`: the hardest rating any provider gives, or 1 when none rates. */
+  logicDifficulty(time: number): number {
+    let d = -1;
+    for (const t of this.tracked) {
+      if (hasSafeSpot(t.runtime) && t.runtime.botDifficulty) d = Math.max(d, t.runtime.botDifficulty(time));
+    }
+    return d < 0 ? 1 : Math.min(1, d);
   }
 
   /** Number of loose props. */

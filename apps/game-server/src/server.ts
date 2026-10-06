@@ -222,7 +222,7 @@ export async function startGameServer(opts: GameServerOptions): Promise<GameServ
     port,
     internalPort,
     async close(): Promise<void> {
-      rooms.stop();
+      await rooms.stop();
       await transport.close();
       await new Promise<void>((resolve) => http.close(() => resolve()));
       if (internal) await new Promise<void>((resolve) => internal.close(() => resolve()));

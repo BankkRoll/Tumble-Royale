@@ -179,3 +179,50 @@ export function streamerSafeKeyedName(p: KeyedPlayer, streamer: boolean): string
   if (!streamer || p.known || p.isBot) return p.name;
   return p.seat !== undefined ? seatName(p.seat) : maskedName(p.key);
 }
+
+/** What Streamer Mode shows in place of a real `#tag`. */
+export const MASKED_TAG = '••••';
+
+/** Another account as named in menus, toasts and notifications. */
+export interface AccountName {
+  userId: string;
+  name: string;
+  tag?: string;
+}
+
+/**
+ * Another account's name and tag for the friends sheet, club lists, toasts
+ * and notifications. Streamer Mode masks everyone here, friends included:
+ * these surfaces list `Name#tag`, which is exactly what a viewer needs to
+ * find, add or harass that player.
+ *
+ * @param p - The account.
+ * @param streamer - Settings → Streamer mode.
+ * @returns The name and tag to show, and whether they are masked.
+ * @example
+ * streamerSafeAccount({ userId: 'u-1', name: 'Real', tag: '1234' }, true);
+ * // { name: maskedName('u-1'), tag: '••••', masked: true }
+ */
+export function streamerSafeAccount(
+  p: AccountName,
+  streamer: boolean,
+): { name: string; tag?: string; masked: boolean } {
+  if (!streamer) return { name: p.name, ...(p.tag ? { tag: p.tag } : {}), masked: false };
+  return { name: maskedName(p.userId), ...(p.tag ? { tag: MASKED_TAG } : {}), masked: true };
+}
+
+/**
+ * {@link streamerSafeAccount} as one line of text, for toasts and
+ * notification titles.
+ *
+ * @param p - The account.
+ * @param streamer - Settings → Streamer mode.
+ * @param withTag - Append `#tag` (`#••••` when masked).
+ * @returns `Name`, or `Name#tag` with `withTag`.
+ * @example
+ * streamerSafeAccountLabel({ userId: 'u-1', name: 'Real', tag: '1234' }, false, true); // 'Real#1234'
+ */
+export function streamerSafeAccountLabel(p: AccountName, streamer: boolean, withTag = false): string {
+  const v = streamerSafeAccount(p, streamer);
+  return withTag && v.tag ? `${v.name}#${v.tag}` : v.name;
+}

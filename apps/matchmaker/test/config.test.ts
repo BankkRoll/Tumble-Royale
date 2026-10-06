@@ -45,6 +45,13 @@ describe('matchmaker config', () => {
     expect(issueNames(testEnv({ TARGET_SIZE: String(MAX_PLAYERS + 1) }))).toEqual(['TARGET_SIZE']);
   });
 
+  it('treats blank variables, as docker compose passes unset ones, as defaults', () => {
+    const blank = { TARGET_SIZE: '', MAX_WAIT_MS: '', TICK_MS: ' ', RATE_LIMIT_MAX: '', LOG_LEVEL: '' };
+    const c = loadConfig(testEnv(blank));
+    expect(c.targetSize).toBe(DEFAULT_SHOW_PLAYERS);
+    expect(c.logLevel).toBe('info');
+  });
+
   it('refuses placeholder secrets copied from .env.example', () => {
     expect(issueNames(testEnv({ GAME_SERVER_SECRET: 'change-me' }))).toEqual(['GAME_SERVER_SECRET']);
   });
@@ -97,9 +104,11 @@ describe('deploy/.env from pnpm setup:env --production', () => {
         v === 'change-me' ? randomBytes(32).toString('base64url') : v,
       ]),
     );
+    // setup:env writes the generated Redis password into REDIS_URL too.
+    env.REDIS_URL = env.REDIS_URL!.replace('change-me', env.REDIS_PASSWORD!);
     expect(loadConfig(env)).toMatchObject({
       env: 'production',
-      redisUrl: 'redis://redis:6379',
+      redisUrl: `redis://:${env.REDIS_PASSWORD}@redis:6379`,
       apiUrl: 'http://api:7360',
       allowedOrigins: ['https://example.com'],
       memoryStoreInProduction: false,

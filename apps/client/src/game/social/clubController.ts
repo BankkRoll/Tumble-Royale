@@ -37,6 +37,7 @@ import { chatHint, setChatRoute, setClubChat } from './chatRouter.ts';
 import { uiPresence } from './friendsState.ts';
 import type { RealtimeLike } from './socialController.ts';
 import { socialErrorText } from './socialController.ts';
+import { otherPlayerName, type OtherPlayer } from './streamerNames.ts';
 
 /** What the controller needs from the account. */
 export interface ClubHost {
@@ -149,10 +150,10 @@ export class ClubController {
       }),
       this.rt.on('club_invite', (m) => this.onInvite(m)),
       this.rt.on('club_request', (m) => {
-        const from = m.from as { name?: string } | undefined;
+        const from = m.from as OtherPlayer | undefined;
         ui.getState().pushToast({
           kind: 'social',
-          title: `${from?.name ?? 'Someone'} wants to join your club`,
+          title: `${otherPlayerName(from, 'Someone')} wants to join your club`,
         });
         void this.refresh();
       }),
@@ -223,8 +224,8 @@ export class ClubController {
   private onInvite(m: TypedMessage): void {
     const clubId = String(m.clubId ?? '');
     if (!clubId) return;
-    const from = m.from as { name?: string } | undefined;
-    const title = `${from?.name ?? 'A friend'} invited you to ${String(m.name ?? 'a club')} [${String(m.tag ?? '')}]`;
+    const from = m.from as OtherPlayer | undefined;
+    const title = `${otherPlayerName(from, 'A friend')} invited you to ${String(m.name ?? 'a club')} [${String(m.tag ?? '')}]`;
     this.host.notify('invite', title, undefined, { kind: 'clubInvite', clubId });
     ui.getState().pushToast({
       kind: 'social',

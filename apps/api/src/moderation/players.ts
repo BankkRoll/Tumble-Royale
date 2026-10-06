@@ -46,6 +46,7 @@ import { badRequest, notFound, parse } from '../http/errors.ts';
 import { generateGuestName } from '../names/display-name.ts';
 import { recordAudit } from '../staff/audit.ts';
 import { requireStaff } from '../staff/auth.ts';
+import { assertCanModerate } from './guard.ts';
 import { announceSanction, applySanction } from './sanctions.ts';
 
 const UUID = z.string().uuid();
@@ -270,6 +271,7 @@ export function registerPlayerAdminRoutes(app: FastifyInstance, ctx: AppContext)
     const actor = await requireStaff(ctx, req, 'moderator');
     const { id } = parse(IdParams, req.params);
     const { reason } = parse(ReasonBody, req.body);
+    await assertCanModerate(ctx, actor, id);
     const applied = await ctx.db.transaction(async (tx) => {
       const s = await applySanction(tx, ctx.now(), {
         userId: id,
@@ -300,6 +302,7 @@ export function registerPlayerAdminRoutes(app: FastifyInstance, ctx: AppContext)
     const actor = await requireStaff(ctx, req, 'moderator');
     const { id } = parse(IdParams, req.params);
     const { reason } = parse(ReasonBody, req.body);
+    await assertCanModerate(ctx, actor, id);
     const result = await ctx.db.transaction(async (tx) => {
       const [before] = await tx
         .select({ name: profiles.displayName, tag: profiles.tag })

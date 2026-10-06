@@ -33,6 +33,8 @@ export interface LiveRoundInfo {
   /** Local player id, or -1 when the local player only spectates this round. */
   localId: number;
   players: ReplayPlayer[];
+  /** Show ids of the local player's party mates (Streamer Mode leaves their names alone). */
+  partyMates?: readonly number[];
 }
 
 /** What a show session reports to the replay system (`GameContext.replays`). */
@@ -117,6 +119,12 @@ export class LiveRecording implements ReplayHooks {
     this.source?.sample(id, out as PlayerSample) ?? false;
 
   private roundIndex = -1;
+  private party: ReadonlySet<number> = new Set();
+
+  /** Party mates' show ids in the current show (seat ids are stable for the whole show). */
+  get partyMates(): ReadonlySet<number> {
+    return this.party;
+  }
 
   /**
    * @param library - Where finished rounds go.
@@ -161,6 +169,7 @@ export class LiveRecording implements ReplayHooks {
     this.source = null;
     this.view = null;
     this.library.beginShow();
+    this.party = new Set();
     this.onChange();
   }
 
@@ -168,6 +177,7 @@ export class LiveRecording implements ReplayHooks {
     if (this.rec) this.roundEnded(null);
     this.rec = new ReplayRecorder(replayMeta(info, source));
     this.roundIndex = info.roundIndex;
+    this.party = new Set(info.partyMates);
     this.source = source;
     this.view = view;
     this.announced = false;

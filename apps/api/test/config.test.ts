@@ -203,10 +203,14 @@ describe('deploy/.env from pnpm setup:env --production', () => {
         v === 'change-me' ? randomBytes(32).toString('base64url') : v,
       ]),
     );
+    // setup:env writes the generated Redis password into REDIS_URL too.
+    env.REDIS_URL = env.REDIS_URL!.replace('change-me', env.REDIS_PASSWORD!);
     expect(loadConfig(env)).toMatchObject({
       env: 'production',
       databaseUrl: expect.stringMatching(/^postgres:\/\/tumble:.+@postgres:5432\/tumble$/),
-      redisUrl: 'redis://redis:6379',
+      redisUrl: `redis://:${env.REDIS_PASSWORD}@redis:6379`,
+      gameServerHmacSecret: env.GAME_SERVER_HMAC_SECRET,
+      internalHmacAllowV1: false,
       publicWebUrl: 'https://example.com',
       publicApiUrl: 'https://example.com/api',
       corsOrigins: ['https://example.com'],

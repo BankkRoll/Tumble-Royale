@@ -3,12 +3,15 @@
  * gateway, so a player can just type and talk without picking anyone.
  *
  * Responsibilities:
- * - {@link sendGlobalChat}: chat-ban check, the shared chat filter (slurs
- *   always masked, a fully masked copy for players with the filter on) and a
- *   per-account KV rate limit, then a publish on {@link GLOBAL_CHAT_CHANNEL};
+ * - {@link sendGlobalChat}: chat-ban check, the posting requirement (a linked
+ *   sign-in, or a guest account at least `GLOBAL_CHAT_MIN_ACCOUNT_AGE_MINUTES`
+ *   old), the shared chat filter (slurs always masked, a fully masked copy for
+ *   players with the filter on) and KV rate limits per account and per client
+ *   IP, then a publish on {@link GLOBAL_CHAT_CHANNEL};
  * - {@link GlobalChatRoom}: each gateway subscribes once, fans every line out
  *   to all of its sockets and keeps the last {@link GLOBAL_CHAT_HISTORY}
- *   lines so a fresh connection doesn't open on an empty room.
+ *   lines so a fresh connection doesn't open on an empty room, minus lines of
+ *   accounts since banned or deleted ({@link GlobalChatRoom.forget}).
  *
  * Blocks are applied by the client (it already hides blocked and muted
  * players everywhere), which keeps the fan-out a single publish instead of a
@@ -19,8 +22,11 @@
  */
 import { randomUUID } from 'node:crypto';
 import { filterChat } from '@tumble/shared';
+import { eq } from 'drizzle-orm';
 import type { AppContext } from '../context.ts';
+import { users } from '../db/schema.ts';
 import { activeBans } from '../http/auth.ts';
+import { hitWindow } from '../http/rate-limit.ts';
 import { requireFlag } from '../liveops/state.ts';
 import { ApiError, badRequest, forbidden } from '../http/errors.ts';
 import type { KV } from '../kv/index.ts';
@@ -56,12 +62,20 @@ export interface GlobalChatLine {
  * @param ctx - Shared services.
  * @param userId - Sender.
  * @param raw - Untrusted text.
+ * @param ip - Sender's client address, for the cap shared by every account
+ *   on it; server-side callers omit it.
  * @returns The relayed line.
- * @throws {ApiError} 403 `chat_banned`, 400 `empty_message`, 429 `chat_rate`.
+ * @throws {ApiError} 403 `chat_banned` / `chat_too_new`, 400 `empty_message`,
+ *   429 `chat_rate`.
  * @example
- * await sendGlobalChat(ctx, auth.userId, 'hi all');
+ * await sendGlobalChat(ctx, auth.userId, 'hi all', clientAddress);
  */
-export async function sendGlobalChat(ctx: AppContext, userId: string, raw: unknown): Promise<GlobalChatLine> {
+export async function sendGlobalChat(
+  ctx: AppContext,
+  userId: string,
+  raw: unknown,
+  ip?: string,
+): Promise<GlobalChatLine> {
   await requireFlag(ctx, 'chat.global', 'Global chat is switched off right now');
   const bans = await activeBans(ctx, userId);
   if (bans.some((b) => b.scope === 'chat' || b.scope === 'all'))
@@ -69,9 +83,15 @@ export async function sendGlobalChat(ctx: AppContext, userId: string, raw: unkno
   const filtered = filterChat(raw);
   if (!filtered) throw badRequest('empty_message', 'Say something first');
   const now = ctx.now().getTime();
+  await requireSeasonedAccount(ctx, userId, now);
   const window = Math.floor(now / GLOBAL_CHAT_WINDOW_MS);
   const count = await ctx.kv.incr(`global-chat-rate:${userId}:${window}`, GLOBAL_CHAT_WINDOW_MS * 2);
   if (count > GLOBAL_CHAT_MAX) throw new ApiError(429, 'chat_rate', 'Slow down a little');
+  // SECURITY: per-account limits multiply with every guest minted, so one
+  // address also shares a budget across all of its accounts.
+  const ipMax = ctx.config.abuse.globalChatIpMax;
+  if (ip && !(await hitWindow(ctx.kv, `global-chat:ip:${ip}`, ipMax, GLOBAL_CHAT_WINDOW_MS, now)))
+    throw new ApiError(429, 'chat_rate', 'Slow down a little');
   const line: GlobalChatLine = {
     id: randomUUID(),
     from: await socialRef(ctx.db, userId),
@@ -81,6 +101,28 @@ export async function sendGlobalChat(ctx: AppContext, userId: string, raw: unkno
   await ctx.kv.publish(GLOBAL_CHAT_CHANNEL, JSON.stringify(line));
   await rememberChatLine(ctx.kv, userId, { channel: 'global', text: line.text, at: now });
   return line;
+}
+
+/**
+ * Refuses throwaway accounts: a guest must have existed for
+ * `GLOBAL_CHAT_MIN_ACCOUNT_AGE_MINUTES` before it may post, so a chat ban
+ * cannot be shrugged off by minting a fresh guest. Accounts with a linked
+ * sign-in (email or OAuth) are not guests and may post at once.
+ */
+async function requireSeasonedAccount(ctx: AppContext, userId: string, now: number): Promise<void> {
+  const minAge = ctx.config.abuse.globalChatMinAccountAgeMs;
+  if (minAge <= 0) return;
+  const [u] = await ctx.db
+    .select({ isGuest: users.isGuest, createdAt: users.createdAt })
+    .from(users)
+    .where(eq(users.id, userId));
+  if (!u?.isGuest) return;
+  const waitMs = u.createdAt.getTime() + minAge - now;
+  if (waitMs > 0)
+    throw forbidden(
+      'chat_too_new',
+      `New guest accounts can post in global chat in ${Math.ceil(waitMs / 60_000)} min, or right away after linking a sign-in`,
+    );
 }
 
 /**
@@ -113,6 +155,17 @@ export class GlobalChatRoom {
       if (this.recent.length > GLOBAL_CHAT_HISTORY) this.recent.shift();
       this.deliver(line);
     });
+  }
+
+  /**
+   * Drops a sender's lines from the history replayed to new connections,
+   * after they were banned or deleted their account.
+   *
+   * @param userId - Sender to forget.
+   */
+  forget(userId: string): void {
+    for (let i = this.recent.length - 1; i >= 0; i--)
+      if (this.recent[i]!.from.userId === userId) this.recent.splice(i, 1);
   }
 
   /** The last {@link GLOBAL_CHAT_HISTORY} lines, oldest first. */

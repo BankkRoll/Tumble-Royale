@@ -33,7 +33,10 @@ function deps(overrides: Partial<DrainDeps> = {}): DrainDeps & { calls: string[]
   return {
     calls,
     setDraining: () => void calls.push('draining'),
-    link: { stop: async () => void calls.push('deregistered') },
+    link: {
+      drain: async () => void calls.push('draining-reported'),
+      stop: async () => void calls.push('deregistered'),
+    },
     rooms: () => 0,
     closeServer: async () => void calls.push('closed'),
     outbox: { flush: async () => (calls.push('flushed'), 0), stop: () => void calls.push('outbox-stopped') },
@@ -48,7 +51,7 @@ function deps(overrides: Partial<DrainDeps> = {}): DrainDeps & { calls: string[]
 }
 
 describe('drain', () => {
-  it('deregisters, settles, waits for rooms, closes and flushes in order', async () => {
+  it('reports draining, waits for rooms, deregisters only then, closes and flushes in order', async () => {
     let open = 2;
     const time = fakeTime();
     const d = deps({
@@ -61,7 +64,15 @@ describe('drain', () => {
       rooms: () => open,
     });
     const r = await drain(d);
-    expect(d.calls).toEqual(['draining', 'deregistered', 'closed', 'flushed', 'outbox-stopped']);
+    // Deregistering only after the rooms closed keeps rejoins and host kicks working for running shows.
+    expect(d.calls).toEqual([
+      'draining',
+      'draining-reported',
+      'deregistered',
+      'closed',
+      'flushed',
+      'outbox-stopped',
+    ]);
     expect(r).toEqual({ roomsCut: 0, outboxLeft: 0 });
     expect(time.now()).toBeGreaterThanOrEqual(120_000);
     expect(time.now()).toBeLessThan(125_000);
@@ -85,9 +96,36 @@ describe('drain', () => {
     expect(t2.now()).toBe(0);
   });
 
+  it('waits for placed matches longer than a join ticket lives, but stops once none is pending', async () => {
+    const time = fakeTime();
+    let pending = 2;
+    const d = deps({
+      settleMs: 100_000,
+      now: time.now,
+      sleep: async (ms) => {
+        time.advance(ms);
+        if (time.now() >= 40_000) pending = 0;
+      },
+      link: { drain: async () => undefined, stop: async () => undefined, pendingMatches: () => pending },
+    });
+    await drain(d);
+    expect(time.now()).toBe(40_000);
+    const slow = fakeTime();
+    // The matchmaker never answered: the full settle runs, past the 90 s ticket lifetime.
+    await drain(
+      deps({
+        settleMs: 100_000,
+        now: slow.now,
+        sleep: slow.sleep,
+        link: { drain: async () => undefined, stop: async () => undefined, pendingMatches: () => null },
+      }),
+    );
+    expect(slow.now()).toBe(100_000);
+  });
+
   it('survives a matchmaker that cannot be reached and reports what the outbox kept', async () => {
     const d = deps({
-      link: { stop: () => Promise.reject(new Error('down')) },
+      link: { drain: () => Promise.reject(new Error('down')), stop: () => Promise.reject(new Error('down')) },
       outbox: { flush: async () => 2, stop: () => undefined },
     });
     expect(await drain(d)).toEqual({ roomsCut: 0, outboxLeft: 2 });
@@ -196,7 +234,7 @@ describe('ops config', () => {
       logLevel: 'info',
       sentryDsn: undefined,
       drainTimeoutMs: 900_000,
-      drainSettleMs: 15_000,
+      drainSettleMs: 100_000,
       outboxFlushMs: 15_000,
     });
     expect(() => loadConfig({ ...base, LOG_LEVEL: 'loud', DRAIN_TIMEOUT_MS: '-1' })).toThrow(

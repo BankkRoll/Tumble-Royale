@@ -38,13 +38,14 @@ import {
 } from '@tumble/shared';
 import type { AppContext } from '../context.ts';
 import type { DbOrTx } from '../db/client.ts';
+import { lockXact } from '../db/locks.ts';
 import { clubInvites, clubMembers, clubReports, clubs, profiles } from '../db/schema.ts';
 import { readWallet } from '../economy/wallet.ts';
 import { requireUser } from '../http/auth.ts';
 import { badRequest, conflict, forbidden, isUniqueViolation, notFound, parse } from '../http/errors.ts';
 import { requireFlag } from '../liveops/state.ts';
 import { maskProfanity } from '../names/profanity.ts';
-import { isBlockedEitherWay, friendIds, socialRef } from '../social/friends.ts';
+import { blockedEitherWay, isBlockedEitherWay, friendIds, socialRef } from '../social/friends.ts';
 import { MAX_PARTY_SIZE, PartyService } from '../social/party.ts';
 import { getPresence } from '../social/presence.ts';
 import { CLUBS_OFF_MESSAGE, clubChatHistory, recentClubMessages, sendClubChat } from './chat.ts';
@@ -55,6 +56,7 @@ import {
   clubMembersAtLeast,
   liveClub,
   lockClub,
+  lockOwnClub,
   membershipOf,
   notifyClub,
   recordKick,
@@ -220,8 +222,9 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
     };
   };
 
-  /** Join requests waiting on a club (officers see these). */
-  const requestsOf = async (clubId: string) => {
+  /** Join requests waiting on a club, minus anyone in a blocked pair with the viewing officer. */
+  const requestsOf = async (clubId: string, viewerId: string) => {
+    const hidden = await blockedEitherWay(ctx.db, viewerId);
     const rows = await ctx.db
       .select({
         userId: clubInvites.userId,
@@ -234,7 +237,7 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
       .innerJoin(profiles, eq(profiles.userId, clubInvites.userId))
       .where(and(eq(clubInvites.clubId, clubId), eq(clubInvites.kind, 'request')))
       .orderBy(clubInvites.createdAt);
-    return rows.map((r) => ({ ...r, at: r.at.toISOString() }));
+    return rows.filter((r) => !hidden.has(r.userId)).map((r) => ({ ...r, at: r.at.toISOString() }));
   };
 
   /** Puts a player into a club and tells everyone who should know. */
@@ -242,12 +245,18 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
     clubId: string,
     userId: string,
     via: 'open' | 'invite' | 'request',
+    approverId?: string,
   ): Promise<ClubRow> => {
     const club = await friendly(
       () =>
         ctx.db.transaction(async (tx) => {
           await requireClubEligible(tx, userId, ctx.now());
           const c = await lockClub(tx, clubId);
+          if (approverId) {
+            const approver = await membershipOf(tx, approverId);
+            if (approver?.clubId !== c.id) throw notFound('Club');
+            requireRole(approver, 'acceptRequest');
+          }
           if (via === 'invite' || via === 'request') {
             const gone = await tx
               .delete(clubInvites)
@@ -280,7 +289,7 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
     return {
       club: { ...clubCard(club), members: await roster(ctx, club.id) },
       role: m.role,
-      joinRequests: clubCan(m.role, 'acceptRequest') ? await requestsOf(club.id) : [],
+      joinRequests: clubCan(m.role, 'acceptRequest') ? await requestsOf(club.id, auth.userId) : [],
       ...mine,
     };
   });
@@ -332,10 +341,9 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
     const club = await friendly(
       () =>
         ctx.db.transaction(async (tx) => {
-          const m = await requireMembership(tx, auth.userId);
+          const { club: c, m } = await lockOwnClub(tx, auth.userId);
           if (name !== undefined || tag !== undefined) requireRole(m, 'rename');
           if (description !== undefined || body.emblem || body.joinMode) requireRole(m, 'edit');
-          const c = await lockClub(tx, m.clubId);
           await requireFreeIdentity(tx, name, tag, c.id);
           const [after] = await tx
             .update(clubs)
@@ -453,12 +461,14 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
   app.delete('/clubs/:id/request', { config: MUTATE }, async (req, reply) => {
     const auth = await player(req);
     const { id } = parse(IdParams, req.params);
-    await ctx.db
+    const gone = await ctx.db
       .delete(clubInvites)
       .where(
         and(eq(clubInvites.clubId, id), eq(clubInvites.userId, auth.userId), eq(clubInvites.kind, 'request')),
-      );
-    await notifyClub(ctx, id, { type: 'club_update', clubId: id });
+      )
+      .returning({ clubId: clubInvites.clubId });
+    // SECURITY: without a request of their own, anyone could make any club's members refetch on demand.
+    if (gone.length) await notifyClub(ctx, id, { type: 'club_update', clubId: id });
     return reply.code(204).send();
   });
 
@@ -501,9 +511,8 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
   app.post('/clubs/me/disband', { config: MUTATE }, async (req, reply) => {
     const auth = await player(req);
     const result = await ctx.db.transaction(async (tx) => {
-      const m = await requireMembership(tx, auth.userId);
+      const { club: c, m } = await lockOwnClub(tx, auth.userId);
       requireRole(m, 'disband');
-      const c = await lockClub(tx, m.clubId);
       return { club: c, members: await disbandClub(tx, c.id, 'owner', ctx.now()) };
     });
     await ctx.notifier.notifyMany(result.members, {
@@ -520,13 +529,18 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
     const { userId } = parse(UserBody, req.body);
     if (userId === auth.userId) throw badRequest('self_transfer', 'You already own this club');
     const club = await ctx.db.transaction(async (tx) => {
-      const m = await requireMembership(tx, auth.userId);
+      const { club: c, m } = await lockOwnClub(tx, auth.userId);
       requireRole(m, 'transfer');
-      const c = await lockClub(tx, m.clubId);
       const target = await membershipOf(tx, userId);
       if (target?.clubId !== c.id) throw notFound('Member');
-      await tx.update(clubMembers).set({ role: 'owner' }).where(eq(clubMembers.userId, userId));
-      await tx.update(clubMembers).set({ role: 'officer' }).where(eq(clubMembers.userId, auth.userId));
+      await tx
+        .update(clubMembers)
+        .set({ role: 'owner' })
+        .where(and(eq(clubMembers.userId, userId), eq(clubMembers.clubId, c.id)));
+      await tx
+        .update(clubMembers)
+        .set({ role: 'officer' })
+        .where(and(eq(clubMembers.userId, auth.userId), eq(clubMembers.clubId, c.id)));
       return c;
     });
     await notifyClub(ctx, club.id, { type: 'club_update', clubId: club.id });
@@ -550,9 +564,8 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
       throw forbidden('not_friends', 'You can only invite friends');
     const now = ctx.now();
     const club = await ctx.db.transaction(async (tx) => {
-      const m = await requireMembership(tx, auth.userId);
+      const { club: c, m } = await lockOwnClub(tx, auth.userId);
       requireRole(m, 'invite');
-      const c = await lockClub(tx, m.clubId);
       const theirs = await membershipOf(tx, userId);
       if (theirs?.clubId === c.id) throw conflict('already_member', 'They are already in your club');
       await requireNotKicked(tx, c.id, userId, now);
@@ -580,7 +593,7 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
     const { userId } = parse(UserParams, req.params);
     const m = await requireMembership(ctx.db, auth.userId);
     requireRole(m, 'acceptRequest');
-    const club = await join(m.clubId, userId, 'request');
+    const club = await join(m.clubId, userId, 'request', auth.userId);
     await ctx.notifier.notifyUser(userId, {
       type: 'notification',
       kind: 'success',
@@ -614,14 +627,13 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
     if (userId === auth.userId) throw badRequest('self_kick', 'Use leave instead');
     const now = ctx.now();
     const club = await ctx.db.transaction(async (tx) => {
-      const m = await requireMembership(tx, auth.userId);
+      const { club: c, m } = await lockOwnClub(tx, auth.userId);
       requireRole(m, 'kick');
-      const c = await lockClub(tx, m.clubId);
       const target = await membershipOf(tx, userId);
       if (target?.clubId !== c.id) throw notFound('Member');
       if (!clubOutranks(m.role, target.role))
         throw forbidden('club_role', 'You can only remove members below your role');
-      await removeMember(tx, userId, now);
+      if (!(await removeMember(tx, userId, now))) throw notFound('Member');
       await recordKick(tx, c.id, userId, now);
       return c;
     });
@@ -641,12 +653,16 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
     const { role } = parse(RoleBody, req.body);
     if (userId === auth.userId) throw badRequest('self_role', 'Transfer ownership instead');
     const club = await ctx.db.transaction(async (tx) => {
-      const m = await requireMembership(tx, auth.userId);
+      const { club: c, m } = await lockOwnClub(tx, auth.userId);
       requireRole(m, 'setRole');
-      const c = await lockClub(tx, m.clubId);
       const target = await membershipOf(tx, userId);
       if (target?.clubId !== c.id) throw notFound('Member');
-      await tx.update(clubMembers).set({ role }).where(eq(clubMembers.userId, userId));
+      // Without this an owner target would be demoted, leaving the club with no owner.
+      if (target.role === 'owner') throw forbidden('club_role', 'Transfer ownership instead');
+      await tx
+        .update(clubMembers)
+        .set({ role })
+        .where(and(eq(clubMembers.userId, userId), eq(clubMembers.clubId, c.id)));
       return c;
     });
     await notifyClub(ctx, club.id, { type: 'club_update', clubId: club.id });
@@ -681,6 +697,8 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
     if (presence.status === 'in_queue' || presence.status === 'in_match')
       throw conflict('member_busy', 'They are in a show right now');
     const p = (await parties.current(auth.userId)) ?? (await parties.create(auth.userId));
+    // SECURITY: the same for a block between them and anyone else in the party; joining would be refused anyway.
+    if (await parties.blockedByMember(p, userId)) throw notFound('Member');
     if (p.members.some((x) => x.userId === userId))
       throw conflict('already_in_party', 'They are already in your party');
     if (p.members.length >= MAX_PARTY_SIZE) throw conflict('party_full', 'Party is full');
@@ -729,19 +747,37 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
       // SECURITY: chat is attached only for a member, who could read it; outsiders report what is public.
       const evidence =
         m?.clubId === id ? await recentClubMessages(ctx, id, CLUB_REPORT_EVIDENCE_LINES) : null;
-      const [row] = await ctx.db
-        .insert(clubReports)
-        .values({
-          reporterId: auth.userId,
-          clubId: id,
-          reason: body.reason,
-          details: body.details ? maskProfanity(body.details) : null,
-          snapshot: { name: club.name, tag: club.tag, description: club.description, emblem: club.emblem },
-          evidence: evidence?.length ? evidence : null,
-          createdAt: ctx.now(),
-        })
-        .returning({ id: clubReports.id });
-      return reply.code(201).send({ id: row!.id, status: 'open' });
+      const filed = await ctx.db.transaction(async (tx) => {
+        // Repeats of the same open report would only flood the moderation queue; hand back the first.
+        await lockXact(tx, 'club-report', auth.userId, id, body.reason);
+        const [open] = await tx
+          .select({ id: clubReports.id })
+          .from(clubReports)
+          .where(
+            and(
+              eq(clubReports.reporterId, auth.userId),
+              eq(clubReports.clubId, id),
+              eq(clubReports.reason, body.reason),
+              eq(clubReports.status, 'open'),
+            ),
+          )
+          .limit(1);
+        if (open) return { id: open.id, created: false };
+        const [row] = await tx
+          .insert(clubReports)
+          .values({
+            reporterId: auth.userId,
+            clubId: id,
+            reason: body.reason,
+            details: body.details ? maskProfanity(body.details) : null,
+            snapshot: { name: club.name, tag: club.tag, description: club.description, emblem: club.emblem },
+            evidence: evidence?.length ? evidence : null,
+            createdAt: ctx.now(),
+          })
+          .returning({ id: clubReports.id });
+        return { id: row!.id, created: true };
+      });
+      return reply.code(filed.created ? 201 : 200).send({ id: filed.id, status: 'open' });
     },
   );
 }

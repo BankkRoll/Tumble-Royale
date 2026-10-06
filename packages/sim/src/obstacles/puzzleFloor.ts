@@ -19,19 +19,29 @@
  *   and clients build the same show without sending it.
  * - Escalation per board round: a teaching round (the answer glows near the
  *   end), harder questions, fewer safe tiles, shorter reading time, and
- *   memory rounds where the floor goes blank part-way through.
+ *   memory rounds where the floor goes blank part-way through. Big fields get
+ *   extra answer tiles in the opening rounds ().
  * - DROP: wrong tiles shake, fall (colliders off) and rise again. A drop that
  *   would leave nobody standing on a safe tile is voided.
  * - Bot hint: `botSafeSpot` names a waiting tile until the bots have "solved"
- *   the puzzle (part-way through reading), then a safe tile; bots apply their
- *   own memory accuracy on top.
+ *   the puzzle (part-way through reading), then a nearby safe tile, with a
+ *   place of its own per bot; `botDifficulty` rates the question, and bots
+ *   apply their own memory accuracy scaled by it.
  * - Replication: per board round "voided" and "judged" bits.
  */
 import type { Collider } from '@dimforge/rapier3d-compat';
 import { SIM_DT, vec3, type Rng, type Vec3 } from '@tumble/shared';
 import { z } from 'zod';
 import { ObstacleGroups, RuntimeBase, actorLocal, toLocalPoint, toWorldPoint } from './helpers-a.ts';
-import { patternSeams, patternTileAt, patternTileCenter, type PatternSeam } from './patternBoard.ts';
+import {
+  LOGIC_TEACH_DIFFICULTY,
+  nearSafeTile,
+  patternSeams,
+  patternTileAt,
+  patternTileCenter,
+  placeOnTile,
+  type PatternSeam,
+} from './patternBoard.ts';
 import type { ObstacleBuildContext, ObstacleInstance, ObstacleModule, ObstacleStepContext } from './types.ts';
 
 // -----------------------------------------------------------------------------
@@ -75,6 +85,14 @@ export const PuzzleFloorSchema = z.object({
   fallDepth: z.number().positive().default(12),
   /** Board rounds pre-generated (the round's hard cap ends the show before these run out). */
   maxRounds: z.number().int().min(1).max(60).default(40),
+  /**
+   * Big fields: the opening `crowdRounds` board rounds offer at least one
+   * answer tile per this many entrants (up to `crowdTilesMax`), so a full
+   * field fits on the answers instead of shoving itself off them. 0 = off.
+   */
+  playersPerSafeTile: z.number().min(0).default(0),
+  crowdRounds: z.number().int().min(0).default(3),
+  crowdTilesMax: z.number().int().min(1).default(6),
   /** Fraction of the reading time after which bots know the answer. */
   botSolveAt: z.number().min(0).max(1).default(0.4),
   /** Screen centre relative to the origin, and its size (visual). */
@@ -313,16 +331,25 @@ export function stepFrom(i: number, d: number, p: Pick<PuzzleFloorParams, 'cols'
  * @param p - Params.
  * @param speedScale - Stage speed scale (divides reading time, down to `minThink`).
  * @param rng - The instance's seeded generator.
+ * @param entrants - Players starting the round (0 = unknown), for `playersPerSafeTile`.
  * @returns Board rounds back to back from `startTime`.
  */
-export function buildPuzzleSchedule(p: PuzzleFloorParams, speedScale: number, rng: Rng): PuzzleRound[] {
+export function buildPuzzleSchedule(
+  p: PuzzleFloorParams,
+  speedScale: number,
+  rng: Rng,
+  entrants = 0,
+): PuzzleRound[] {
   const out: PuzzleRound[] = [];
   let t = p.startTime;
   let prevAnswer = -1;
   const n = tileCount(p);
+  const crowdTiles =
+    p.playersPerSafeTile > 0 ? Math.min(p.crowdTilesMax, Math.ceil(entrants / p.playersPerSafeTile)) : 0;
   for (let k = 0; k < p.maxRounds; k++) {
     const number = p.startRound + k;
     const rule = ruleFor(number, p, rng);
+    if (k < p.crowdRounds) rule.safeTiles = Math.max(rule.safeTiles, crowdTiles);
     const think = Math.max(p.minThink, (rule.think * p.thinkScale) / Math.max(0.1, speedScale));
     const memory = p.memoryFrom > 0 && number >= p.memoryFrom;
     const safe = new Uint8Array(n);
@@ -405,10 +432,13 @@ export interface PuzzleFloorView {
 }
 
 const WORD_BITS = 30;
+/** Fields this size and up get the full-field slip easing; smaller ones slip more. */
+const SLIP_EASE_FIELD = 60;
 
 /** Live puzzle floor. */
 export class PuzzleFloorRuntime extends RuntimeBase implements PuzzleFloorView {
   readonly schedule: PuzzleRound[];
+  private readonly entrants: number;
   private readonly tiles: Collider[] = [];
   private readonly tileEnabled: boolean[] = [];
   private readonly seams: PatternSeam[];
@@ -429,7 +459,8 @@ export class PuzzleFloorRuntime extends RuntimeBase implements PuzzleFloorView {
     const p = params;
     const { R } = ctx;
     this.authoritative = ctx.authoritative ?? true;
-    this.schedule = buildPuzzleSchedule(p, ctx.speedScale, ctx.rng);
+    this.entrants = ctx.entrants ?? 0;
+    this.schedule = buildPuzzleSchedule(p, ctx.speedScale, ctx.rng, this.entrants);
     this.voided = new Uint8Array(this.schedule.length);
     this.judged = new Uint8Array(this.schedule.length);
     const board = this.addBody(R.RigidBodyDesc.fixed());
@@ -550,19 +581,27 @@ export class PuzzleFloorRuntime extends RuntimeBase implements PuzzleFloorView {
   /**
    * A spot to stand on. Until the bots have worked the puzzle out (part-way
    * through reading) it is on a spread-out waiting tile; after that on a safe
-   * tile. Bots think on staggered ticks, so the tick phase spreads them over
-   * the candidate tiles; within a tile the spot is the point nearest the
-   * asking bot, kept clear of the edges, so a crowd fills the tile from the
-   * sides it arrives from instead of piling onto one point.
+   * tile. With a `key` (the bot's id) the crowd is dealt evenly over the
+   * candidate tiles and each bot gets its own place on its tile, so nobody
+   * leans on a neighbour; without one, bots spread by their staggered
+   * thinking tick and take the point of the tile nearest them.
    */
-  botSafeSpot(t: number, out: Vec3): boolean {
+  botSafeSpot(t: number, out: Vec3, key?: number): boolean {
     const r = this.roundAt(t);
     if (!r) return false;
     const p = this.params;
-    const phase = ((Math.round(t / SIM_DT) % 6) + 6) % 6;
+    const solved = t >= r.start + (r.dropAt - r.start) * p.botSolveAt;
     const n = tileCount(p);
+    if (key !== undefined) {
+      const waiting = (key * 7 + r.index * 3 + 1) % n;
+      const tile = solved ? nearSafeTile(key, waiting, r.safe, p) : waiting;
+      if (tile < 0) return false;
+      toWorldPoint(this.frame, placeOnTile(key, tile, p, this.spot), out);
+      return true;
+    }
+    const phase = ((Math.round(t / SIM_DT) % 6) + 6) % 6;
     let tile: number;
-    if (t >= r.start + (r.dropAt - r.start) * p.botSolveAt) {
+    if (solved) {
       let safe = 0;
       for (let i = 0; i < n; i++) safe += r.safe[i]!;
       if (safe === 0) return false;
@@ -586,6 +625,27 @@ export class PuzzleFloorRuntime extends RuntimeBase implements PuzzleFloorView {
     this.spot.z += Math.max(-inner, Math.min(inner, hint.z - this.spot.z));
     toWorldPoint(this.frame, this.spot, out);
     return true;
+  }
+
+  /**
+   * How hard this board round's question is for a bot, 0–1: the teaching
+   * round's answer glows; then each later round, a memory floor and a
+   * difference sum make a slip likelier, and extra think time (`thinkScale`)
+   * makes it rarer.
+   */
+  botDifficulty(t: number): number {
+    const r = this.roundAt(t);
+    if (!r) return 0;
+    if (r.teach) return LOGIC_TEACH_DIFFICULTY;
+    const d =
+      0.1 +
+      0.12 * (r.number - 1) +
+      (r.memory ? 0.15 : 0) +
+      (r.op === MixOp.Subtract && this.params.puzzle === 'mix' ? 0.05 : 0);
+    // A small field only thins out through bot slips; easing them like a full
+    // field's let a two-bot round run to the buzzer with nobody cut.
+    const smallField = this.entrants > 0 ? Math.max(0, 1 - this.entrants / SLIP_EASE_FIELD) : 0;
+    return Math.min(1, Math.max(d / this.params.thinkScale, smallField));
   }
 
   telegraph(t: number): number {

@@ -16,8 +16,9 @@
  *   tile, that board round is voided and nothing drops.
  * - Sweeper: a low bar sweeping the board during DECIDE from a given board
  *   round on; its pose is pure, so bots can predict and jump it.
- * - Bot hint: `botSafeSpot` names a correct tile (spread over the safe tiles
- *   by bot decision phase); bots apply their own memory accuracy.
+ * - Bot hint: `botSafeSpot` names a correct tile (a nearby one, with a place
+ *   of its own per bot); `botDifficulty` rates the board round, and bots
+ *   apply their own memory accuracy scaled by it.
  * - Replication: per board round "voided" and "judged" bits.
  */
 import type { Collider, RigidBody } from '@dimforge/rapier3d-compat';
@@ -480,6 +481,81 @@ export function patternTileCenter(i: number, p: TileGrid, out: Vec3): Vec3 {
   return out;
 }
 
+/** Bot difficulty of a teaching round, whose answer stays lit: almost nobody gets it wrong. */
+export const LOGIC_TEACH_DIFFICULTY = 0.05;
+
+/** Bots keep this far inside a tile's edge (m): a capsule radius plus room to be jostled. */
+const PLACE_MARGIN = 0.9;
+/** ...and this far inside the board's outer edge, where a shove means a fall. */
+const PLACE_RIM_MARGIN = 2;
+
+/**
+ * Writes the `k`-th bot's own place on tile `tile` (local). Places follow a
+ * 2-D low-discrepancy (R2) sequence, so however many bots share the tile
+ * they cover it evenly instead of queueing on one point.
+ *
+ * @param k - The bot's index among the bots sent to this tile.
+ * @param tile - Tile index.
+ * @param p - Board layout.
+ * @param out - Receives the place.
+ * @returns `out`.
+ */
+export function placeOnTile(k: number, tile: number, p: TileGrid, out: Vec3): Vec3 {
+  patternTileCenter(tile, p, out);
+  const c = tile % p.cols;
+  const r = Math.floor(tile / p.cols);
+  const half = p.tileSize / 2;
+  const x0 = -half + (c === 0 ? PLACE_RIM_MARGIN : PLACE_MARGIN);
+  const x1 = half - (c === p.cols - 1 ? PLACE_RIM_MARGIN : PLACE_MARGIN);
+  const z0 = -half + (r === 0 ? PLACE_RIM_MARGIN : PLACE_MARGIN);
+  const z1 = half - (r === p.rows - 1 ? PLACE_RIM_MARGIN : PLACE_MARGIN);
+  const fx = (0.5 + k * 0.7548776662466927) % 1;
+  const fz = (0.5 + k * 0.5698402909980532) % 1;
+  out.x += x0 < x1 ? x0 + fx * (x1 - x0) : 0;
+  out.z += z0 < z1 ? z0 + fz * (z1 - z0) : 0;
+  return out;
+}
+
+/**
+ * The safe tile bot `key` heads for from tile `from` (where it waited): odd
+ * keys take the nearest safe tile, even keys the second nearest, so the crowd
+ * splits between neighbouring answers instead of piling onto one, and nobody
+ * crosses the whole board through everyone else.
+ *
+ * @param key - The bot's id.
+ * @param from - Tile the bot waited on.
+ * @param safe - Per tile, non-zero when it stays up (or a bitmask, bit i = tile i).
+ * @param p - Board layout.
+ * @returns A safe tile index, or -1 when none is safe.
+ */
+export function nearSafeTile(
+  key: number,
+  from: number,
+  safe: ArrayLike<number> | number,
+  p: TileGrid,
+): number {
+  const fc = from % p.cols;
+  const fr = Math.floor(from / p.cols);
+  let best = -1;
+  let bestD = Infinity;
+  let second = -1;
+  let secondD = Infinity;
+  for (let i = 0; i < p.cols * p.rows; i++) {
+    if (typeof safe === 'number' ? (safe & (1 << i)) === 0 : !safe[i]) continue;
+    const d = ((i % p.cols) - fc) ** 2 + (Math.floor(i / p.cols) - fr) ** 2;
+    if (d < bestD) {
+      second = best;
+      secondD = bestD;
+      best = i;
+      bestD = d;
+    } else if (d < secondD) {
+      second = i;
+      secondD = d;
+    }
+  }
+  return key % 2 === 0 && second >= 0 ? second : best;
+}
+
 /** Tile under a local point (on the tile itself, not the gaps), or -1. */
 export function patternTileAt(x: number, z: number, p: TileGrid): number {
   const pitch = p.tileSize + p.gap;
@@ -768,14 +844,23 @@ export class PatternBoardRuntime extends RuntimeBase implements PatternBoardView
 
   /**
    * A tile to stand on. With the target known (DECIDE and after) it is a safe
-   * tile; before that, a spread-out waiting tile. Bots think on staggered
-   * ticks, so the tick phase spreads them over the candidates.
+   * tile; before that, a spread-out waiting tile. With a `key` (the bot's id)
+   * the crowd is dealt evenly over the candidates and each bot gets its own
+   * place on its tile; without one, bots spread by their staggered thinking
+   * tick and head for the tile's middle.
    */
-  botSafeSpot(t: number, out: Vec3): boolean {
+  botSafeSpot(t: number, out: Vec3, key?: number): boolean {
     const r = this.roundAt(t);
     if (!r) return false;
-    const phase = ((Math.round(t / SIM_DT) % 6) + 6) % 6;
     const tiles = this.params.cols * this.params.rows;
+    if (key !== undefined) {
+      const waiting = (key * 5 + r.index * 3 + 1) % tiles;
+      const tile = t >= r.decideAt ? nearSafeTile(key, waiting, r.safeMask, this.params) : waiting;
+      if (tile < 0) return false;
+      toWorldPoint(this.frame, placeOnTile(key, tile, this.params, this.spot), out);
+      return true;
+    }
+    const phase = ((Math.round(t / SIM_DT) % 6) + 6) % 6;
     let tile: number;
     if (t >= r.decideAt) {
       let n = 0;
@@ -800,6 +885,24 @@ export class PatternBoardRuntime extends RuntimeBase implements PatternBoardView
     this.spot.z -= Math.sign(this.spot.z) * Math.min(2, Math.max(0, Math.abs(this.spot.z) - 4));
     toWorldPoint(this.frame, this.spot, out);
     return true;
+  }
+
+  /**
+   * How hard this board round is for a bot, 0–1: the teaching round's tiles
+   * stay lit; then each later round, a DOUBLE or NOT twist, a shifting board
+   * and two-second looks make a slip likelier.
+   */
+  botDifficulty(t: number): number {
+    const r = this.roundAt(t);
+    if (!r) return 0;
+    if (r.litDecide) return LOGIC_TEACH_DIFFICULTY;
+    const d =
+      0.1 +
+      0.1 * (r.number - 2) +
+      (r.kind !== PatternKind.Normal ? 0.1 : 0) +
+      (r.shift !== 0 ? 0.15 : 0) +
+      (this.params.showFlat > 0 ? 0.1 : 0);
+    return Math.min(1, d);
   }
 
   telegraph(t: number): number {

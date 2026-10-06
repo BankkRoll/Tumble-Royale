@@ -123,7 +123,12 @@ export function loadConfig(env: Env = process.env): MatchmakerConfig {
   const jwtSecret = issues.secret('JWT_SECRET', 32);
   const gameTicketSecret = issues.secret('GAME_TICKET_SECRET', 16);
   const gameServerSecret = issues.secret('GAME_SERVER_SECRET', 16);
-  const parsed = EnvSchema.safeParse(env);
+  // NOTE: docker compose passes every optional variable as `${NAME:-}`, so an
+  // unset one arrives as ''. Coercion would read that as 0 and fail the
+  // minimums; blank means "use the default".
+  const parsed = EnvSchema.safeParse(
+    Object.fromEntries(Object.entries(env).filter(([, v]) => v === undefined || v.trim() !== '')),
+  );
   if (!parsed.success) issues.addSchemaIssues(parsed.error.issues);
   // Every field has a default, so parsing {} lets the remaining checks run and
   // report alongside the schema issues.

@@ -26,6 +26,11 @@ export interface PlayerRef {
   isBot?: boolean;
   /** Club tag, shown as `[TAG]` beside the name (hidden for others in Streamer Mode). */
   club?: string;
+  /**
+   * `name` is a Streamer Mode mask: whatever opens from this ref (player
+   * card, profile, toasts) must not look up and show the real name or tag.
+   */
+  masked?: boolean;
 }
 
 /** A pending friend request. */

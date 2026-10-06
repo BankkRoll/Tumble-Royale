@@ -41,7 +41,8 @@ async function register(app: MatchmakerApp, id: string, region: string, capacity
   expect(res.statusCode).toBe(200);
 }
 
-const signed = (secret: string = TEST_SECRETS.INTERNAL_HMAC_SECRET, at = NOW) => signInternal(secret, '', at);
+const signed = (secret: string = TEST_SECRETS.INTERNAL_HMAC_SECRET, at = NOW, path = '/internal/capacity') =>
+  signInternal(secret, '', at, { method: 'GET', path });
 
 describe('capacityByRegion', () => {
   it('sums live servers per region and caps load at capacity', () => {
@@ -84,6 +85,18 @@ describe('GET /internal/capacity', () => {
     expect((await get({})).statusCode).toBe(401);
     expect((await get(signed('another-secret-0123456789'))).statusCode).toBe(401);
     expect((await get(signed(undefined, NOW - 10 * 60_000))).statusCode).toBe(401);
+  });
+
+  it('refuses a replayed request and a signature made for another endpoint', async () => {
+    const app = await build();
+    const get = (headers: Record<string, string>) =>
+      app.app.inject({ method: 'GET', url: '/internal/capacity', headers });
+    const once = signed();
+    expect((await get(once)).statusCode).toBe(200);
+    const replay = await get(once);
+    expect(replay.statusCode).toBe(401);
+    expect(replay.json().error).toBe('replayed_request');
+    expect((await get(signed(undefined, NOW, '/internal/matches/m_1/placement'))).statusCode).toBe(401);
   });
 
   it('does not exist when the matchmaker has no internal secret', async () => {

@@ -168,7 +168,7 @@ export function registerLiveOpsRoutes(app: FastifyInstance, ctx: AppContext): vo
 
   // Every matchmaker and game server polls this; HMAC proves who they are and they may share one NAT.
   app.post('/internal/liveops', { config: { rateLimit: false } }, async (req) => {
-    await requireInternalSignature(ctx, req);
+    await requireInternalSignature(ctx, req, { callers: ['game-server'] });
     const { flags, maintenance } = await liveOpsSnapshot(ctx);
     const playlists = (await scheduledPlaylists(ctx)).map(({ id, startsAt, endsAt, featured, hidden }) => ({
       id,
@@ -181,7 +181,7 @@ export function registerLiveOpsRoutes(app: FastifyInstance, ctx: AppContext): vo
   });
 
   app.post('/internal/errors', async (req, reply) => {
-    await requireInternalSignature(ctx, req);
+    await requireInternalSignature(ctx, req, { callers: ['game-server'] });
     const body = parse(ServerErrorBody, req.body);
     await ctx.db
       .insert(events)

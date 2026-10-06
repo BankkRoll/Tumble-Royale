@@ -6,19 +6,37 @@
 #   docker compose -f deploy/docker-compose.yml up -d --build
 #
 # Only Caddy publishes ports (80, 443). Every other service, including the
-# internal and metrics endpoints, is reachable only on the compose network.
+# internal and metrics endpoints, is reachable only on the compose networks.
 # The optional `voice` profile adds a coturn TURN relay on the host network.
+#
+# SECURITY: least privilege between services.
+# - Postgres and Redis sit on the internal `backend` network, which only the
+#   API, its migration, the matchmaker and the backup job join. The game
+#   server, the client and Caddy cannot reach them.
+# - Only the API reads all of deploy/.env. The matchmaker and the game server
+#   get the variables they use, listed below; the game server never sees the
+#   database, Redis, JWT_SECRET or (once GAME_SERVER_HMAC_SECRET is set) the
+#   deployment-wide INTERNAL_HMAC_SECRET.
+# - With REDIS_PASSWORD set, Redis requires it and the API and matchmaker
+#   connect with it.
 
 name: tumble
 
-x-app: &app
-  env_file: .env
+x-ops: &ops
   restart: unless-stopped
   logging:
     driver: json-file
     options:
       max-size: 20m
       max-file: '5'
+
+x-app: &app
+  <<: *ops
+  env_file: .env
+
+# Redis inside this stack, with the password when one is set. Replaces any
+# REDIS_URL in deploy/.env, which would not carry it.
+x-redis-url: &redis-url redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379
 
 x-api-build: &api-build
   context: ..
@@ -28,6 +46,7 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    networks: [backend]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-tumble}
       POSTGRES_DB: ${POSTGRES_DB:-tumble}
@@ -43,12 +62,22 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    networks: [backend]
+    environment:
+      # NOTE: read at run time by the shell below rather than interpolated
+      # into the command, so the password never shows in `docker inspect` args.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     # Append-only file: parties, presence and leaderboards survive a restart.
-    command: ['redis-server', '--appendonly', 'yes', '--appendfsync', 'everysec']
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        set -- redis-server --appendonly yes --appendfsync everysec
+        if [ -n "$$REDIS_PASSWORD" ]; then set -- "$$@" --requirepass "$$REDIS_PASSWORD"; fi
+        exec "$$@"
     volumes:
       - redis:/data
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
+      test: ['CMD-SHELL', 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
       interval: 5s
       timeout: 5s
       retries: 20
@@ -58,6 +87,7 @@ services:
     <<: *app
     image: tumble/api:${TAG:-latest}
     build: *api-build
+    networks: [backend]
     command: ['node', '--enable-source-maps', 'dist/migrate.js']
     restart: 'no'
     healthcheck:
@@ -70,8 +100,10 @@ services:
     <<: *app
     image: tumble/api:${TAG:-latest}
     build: *api-build
+    networks: [backend, default]
     environment:
       MIGRATE_ON_BOOT: '0'
+      REDIS_URL: *redis-url
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,11 +113,41 @@ services:
         condition: service_completed_successfully
 
   matchmaker:
-    <<: *app
+    <<: *ops
     image: tumble/matchmaker:${TAG:-latest}
     build:
       context: ..
       dockerfile: deploy/docker/matchmaker.Dockerfile
+    networks: [backend, default]
+    # Everything the matchmaker reads (apps/matchmaker/src/config.ts), nothing more.
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      JWT_SECRET: ${JWT_SECRET:-}
+      INTERNAL_HMAC_SECRET: ${INTERNAL_HMAC_SECRET:-}
+      GAME_TICKET_SECRET: ${GAME_TICKET_SECRET:-}
+      GAME_SERVER_SECRET: ${GAME_SERVER_SECRET:-}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      REDIS_URL: *redis-url
+      API_URL: ${API_URL:-http://api:7360}
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      INTERNAL_PORT: ${INTERNAL_PORT:-}
+      INTERNAL_HOST: ${INTERNAL_HOST:-}
+      HOST: ${HOST:-}
+      ALLOW_STANDALONE: ${ALLOW_STANDALONE:-}
+      ALLOW_MEMORY_STORE: ${ALLOW_MEMORY_STORE:-}
+      DEFAULT_GAME_SERVER_URL: ${DEFAULT_GAME_SERVER_URL:-}
+      TARGET_SIZE: ${TARGET_SIZE:-}
+      MAX_WAIT_MS: ${MAX_WAIT_MS:-}
+      HOT_MAX_WAIT_MS: ${HOT_MAX_WAIT_MS:-}
+      HOT_THRESHOLD: ${HOT_THRESHOLD:-}
+      REGION_FALLBACK_MS: ${REGION_FALLBACK_MS:-}
+      TICK_MS: ${TICK_MS:-}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-}
+      USER_RATE_LIMIT_MAX: ${USER_RATE_LIMIT_MAX:-}
     depends_on:
       redis:
         condition: service_healthy
@@ -93,16 +155,54 @@ services:
         condition: service_healthy
 
   game-server:
-    <<: *app
+    <<: *ops
     image: tumble/game-server:${TAG:-latest}
     build:
       context: ..
       dockerfile: deploy/docker/game-server.Dockerfile
+    # Not on `backend`: a game server has no business with Postgres or Redis.
+    networks: [default]
+    # Everything the game server reads (apps/game-server/src/config.ts), nothing more.
     environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      GAME_TICKET_SECRET: ${GAME_TICKET_SECRET:-}
+      GAME_SERVER_SECRET: ${GAME_SERVER_SECRET:-}
+      # Its own key when deploy/.env has one; the shared key otherwise (older .env files).
+      GAME_SERVER_HMAC_SECRET: ${GAME_SERVER_HMAC_SECRET:-${INTERNAL_HMAC_SECRET:-}}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      API_URL: ${API_URL:-http://api:7360}
+      MATCHMAKER_URL: ${MATCHMAKER_URL:-http://matchmaker:7370}
+      PUBLIC_WS_URL: ${PUBLIC_WS_URL:-}
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      SERVER_ID: ${SERVER_ID:-gs-1}
+      REGION: ${REGION:-na}
+      CONTROL_URL: ${CONTROL_URL:-http://game-server:7350}
       RESULTS_OUTBOX_DIR: /data/results-outbox
+      INTERNAL_PORT: ${INTERNAL_PORT:-}
+      INTERNAL_HOST: ${INTERNAL_HOST:-}
+      HELLO_TIMEOUT_MS: ${HELLO_TIMEOUT_MS:-}
+      MAX_PENDING_PER_IP: ${MAX_PENDING_PER_IP:-}
+      PLAYLIST: ${PLAYLIST:-}
+      ALLOW_UNTICKETED: ${ALLOW_UNTICKETED:-}
+      REPORT_RESULTS: ${REPORT_RESULTS:-}
+      ALLOW_STANDALONE: ${ALLOW_STANDALONE:-}
+      MAX_ROOMS: ${MAX_ROOMS:-}
+      ROOM_CAPACITY: ${ROOM_CAPACITY:-}
+      SERVER_CAPACITY: ${SERVER_CAPACITY:-}
+      FILL_WAIT_MS: ${FILL_WAIT_MS:-}
+      START_AT_HUMANS: ${START_AT_HUMANS:-}
+      TICKET_FILL_WAIT_MS: ${TICKET_FILL_WAIT_MS:-}
+      DRAIN_TIMEOUT_MS: ${DRAIN_TIMEOUT_MS:-}
+      DRAIN_SETTLE_MS: ${DRAIN_SETTLE_MS:-}
+      OUTBOX_FLUSH_MS: ${OUTBOX_FLUSH_MS:-}
     volumes:
       - results-outbox:/data/results-outbox
-    # SIGTERM drains: up to DRAIN_SETTLE_MS (15 s) + DRAIN_TIMEOUT_MS (15 min) +
+    # SIGTERM drains: up to DRAIN_TIMEOUT_MS (15 min, which includes the
+    # DRAIN_SETTLE_MS wait for late arrivals) +
     # OUTBOX_FLUSH_MS (15 s), and the server forces its own exit 30 s after
     # that. Docker kills the container after this period, so it must be longer;
     # raise both together.
@@ -158,6 +258,7 @@ services:
   backup:
     image: postgres:16-alpine
     restart: unless-stopped
+    networks: [backend]
     entrypoint: ['/bin/sh', '/usr/local/bin/tumble-backup.sh']
     environment:
       PGHOST: postgres
@@ -221,6 +322,13 @@ services:
       options:
         max-size: 20m
         max-file: '5'
+
+networks:
+  # Services that publish nothing still need the default network to reach each other and Caddy.
+  default:
+  # No route out of the host: only the services listed on it can reach the datastores.
+  backend:
+    internal: true
 
 volumes:
   postgres:

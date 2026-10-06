@@ -45,7 +45,19 @@ export interface MatchmakerLinkOptions {
 export interface MatchmakerLink {
   /** Sends one registration or heartbeat now (tests; the timer does this every 5 s). */
   beat(): Promise<void>;
+  /**
+   * Reports the server as draining (now and on every later heartbeat): the
+   * matchmaker places no new matches here but keeps routing rejoins and
+   * kicks to the shows still running.
+   */
+  drain(): Promise<void>;
+  /** Stops heartbeating and deregisters. */
   stop(): Promise<void>;
+  /**
+   * Matches the matchmaker placed here that no player has reached yet, as of
+   * the last heartbeat it answered; null before one was answered.
+   */
+  pendingMatches(): number | null;
 }
 
 /**
@@ -60,9 +72,18 @@ export function startMatchmakerLink(opts: MatchmakerLinkOptions): MatchmakerLink
   const headers = { authorization: `Bearer ${opts.secret}`, 'content-type': 'application/json' };
   const fetchFn = opts.fetch ?? fetch;
   let registered = false;
+  let draining = false;
+  let stopped = false;
+  let inflight: Promise<void> | null = null;
+  let pending: number | null = null;
   // Joins from a failed heartbeat ride along on the next one.
   let unsent: { matchId: string; userId: string }[] = [];
-  const call = async (path: string, method: string, body?: unknown): Promise<boolean> => {
+  const call = async (
+    path: string,
+    method: string,
+    body?: unknown,
+    onAnswer?: (json: unknown) => void,
+  ): Promise<boolean> => {
     try {
       const res = await fetchFn(`${base}${path}`, {
         method,
@@ -70,12 +91,18 @@ export function startMatchmakerLink(opts: MatchmakerLinkOptions): MatchmakerLink
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
         signal: AbortSignal.timeout(3000),
       });
+      if (res.ok && onAnswer) onAnswer(await res.json().catch(() => null));
       return res.ok;
     } catch {
       return false;
     }
   };
-  const beat = async (): Promise<void> => {
+  const notePending = (json: unknown): void => {
+    const n = (json as { pendingMatches?: unknown } | null)?.pendingMatches;
+    pending = typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : null;
+  };
+  const beatOnce = async (): Promise<void> => {
+    if (stopped) return;
     const r = opts.report();
     if (!registered) {
       registered = await call('/servers/register', 'POST', {
@@ -88,6 +115,7 @@ export function startMatchmakerLink(opts: MatchmakerLinkOptions): MatchmakerLink
         rooms: r.rooms,
         ...(opts.maxRooms !== undefined ? { maxRooms: opts.maxRooms } : {}),
         ...(opts.humans ? { humans: opts.humans() } : {}),
+        ...(draining ? { draining: true } : {}),
       });
       if (registered) opts.log?.(`[matchmaker] registered ${opts.serverId} at ${opts.publicUrl}`);
       return;
@@ -96,28 +124,52 @@ export function startMatchmakerLink(opts: MatchmakerLinkOptions): MatchmakerLink
     unsent = [];
     // A matchmaker restart forgets us; re-register when the heartbeat is refused.
     if (
-      !(await call('/servers/heartbeat', 'POST', {
-        serverId: opts.serverId,
-        load: r.load,
-        rooms: r.rooms,
-        matches: r.matches,
-        ...(opts.humans ? { humans: opts.humans() } : {}),
-        ...(opts.outbox ? { outbox: opts.outbox() } : {}),
-        ...(joined.length ? { joined } : {}),
-      }))
+      !(await call(
+        '/servers/heartbeat',
+        'POST',
+        {
+          serverId: opts.serverId,
+          load: r.load,
+          rooms: r.rooms,
+          matches: r.matches,
+          ...(opts.humans ? { humans: opts.humans() } : {}),
+          ...(opts.outbox ? { outbox: opts.outbox() } : {}),
+          ...(joined.length ? { joined } : {}),
+          ...(draining ? { draining: true } : {}),
+        },
+        notePending,
+      ))
     ) {
       registered = false;
       unsent = joined;
     }
+  };
+  // One beat at a time, so stop() can wait for a registration in flight instead of racing its DELETE.
+  const beat = (): Promise<void> => {
+    inflight ??= beatOnce().finally(() => {
+      inflight = null;
+    });
+    return inflight;
   };
   void beat();
   const timer = setInterval(() => void beat(), opts.intervalMs ?? 5000);
   timer.unref?.();
   return {
     beat,
+    pendingMatches: () => pending,
+    async drain(): Promise<void> {
+      draining = true;
+      await inflight;
+      await beat();
+      // A first beat that only registered carried no answer about pending matches; ask once more.
+      if (registered && pending === null) await beat();
+    },
     async stop(): Promise<void> {
       clearInterval(timer);
-      if (registered) await call(`/servers/${encodeURIComponent(opts.serverId)}`, 'DELETE');
+      await inflight;
+      stopped = true;
+      // Unconditional: a registration whose answer was lost still left an entry behind.
+      await call(`/servers/${encodeURIComponent(opts.serverId)}`, 'DELETE');
     },
   };
 }

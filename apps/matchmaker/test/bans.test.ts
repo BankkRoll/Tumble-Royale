@@ -25,7 +25,7 @@ describe('ApiBanLookup', () => {
       const h = init.headers as Record<string, string>;
       const body = String(init.body);
       const expected = createHmac('sha256', HMAC_SECRET)
-        .update(`${h['x-tumble-timestamp']}.${h['x-tumble-nonce']}.${body}`)
+        .update(`POST\n/internal/bans/lookup\n${h['x-tumble-timestamp']}\n${h['x-tumble-nonce']}\n${body}`)
         .digest('hex');
       if (h['x-tumble-signature'] !== expected) return new Response('{}', { status: 401 });
       const { userIds } = JSON.parse(body) as { userIds: string[] };
@@ -55,6 +55,11 @@ describe('ApiBanLookup', () => {
     expect(during.get('bad')!.size).toBe(0);
     expect(logs.some((l) => l.includes('ECONNREFUSED'))).toBe(true);
     down = false;
+    // Right after a failure the API is not asked again (an outage must not cost a timeout per chat line)…
+    expect((await lookup.scopes(['bad'])).get('bad')!.size).toBe(0);
+    expect(calls).toBe(2);
+    // …but the answer was never cached, so bans apply again as soon as the backoff ends.
+    clock += 5000;
     expect([...(await lookup.scopes(['bad'])).get('bad')!]).toEqual(['all']);
     expect(calls).toBe(3);
 

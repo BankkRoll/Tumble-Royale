@@ -160,6 +160,27 @@ export async function lockClub(tx: DbOrTx, clubId: string): Promise<ClubRow> {
 }
 
 /**
+ * Locks the caller's club and returns their membership as it stands under
+ * that lock.
+ *
+ * The membership read before the lock only names which club to lock: a
+ * concurrent transfer, kick or leave may have committed while this
+ * transaction waited, so role checks must use the re-read after it.
+ *
+ * @param tx - Open transaction.
+ * @param userId - The acting member.
+ * @returns The locked club and the member's current place in it.
+ * @throws {ApiError} 404 when they are in no club, or left it while waiting.
+ */
+export async function lockOwnClub(tx: DbOrTx, userId: string): Promise<{ club: ClubRow; m: Membership }> {
+  const before = await requireMembership(tx, userId);
+  const club = await lockClub(tx, before.clubId);
+  const m = await membershipOf(tx, userId);
+  if (m?.clubId !== club.id) throw notFound('Club');
+  return { club, m };
+}
+
+/**
  * Refuses accounts that may not take part in clubs.
  *
  * SECURITY: guests are a device secret with no recovery and no friction to
@@ -296,9 +317,18 @@ async function successorOf(tx: DbOrTx, clubId: string, excluding: string): Promi
  * @returns What happened, or null when they were in no club.
  */
 export async function removeMember(tx: DbOrTx, userId: string, now: Date): Promise<Removal | null> {
+  const before = await membershipOf(tx, userId);
+  if (!before) return null;
+  const club = await lockClub(tx, before.clubId);
+  // The role may have changed (a transfer) or the row gone (a racing kick) while waiting for the lock.
   const m = await membershipOf(tx, userId);
-  if (!m) return null;
-  const club = await lockClub(tx, m.clubId);
+  if (m?.clubId !== club.id) return null;
+  // Delete first and count only a row actually removed, so two racing removals cannot both decrement.
+  const gone = await tx
+    .delete(clubMembers)
+    .where(and(eq(clubMembers.userId, userId), eq(clubMembers.clubId, club.id)))
+    .returning({ userId: clubMembers.userId });
+  if (gone.length === 0) return null;
   let newOwnerId: string | null = null;
   if (m.role === 'owner') {
     newOwnerId = await successorOf(tx, club.id, userId);
@@ -311,7 +341,6 @@ export async function removeMember(tx: DbOrTx, userId: string, now: Date): Promi
       .set({ role: 'owner' })
       .where(and(eq(clubMembers.userId, newOwnerId), eq(clubMembers.clubId, club.id)));
   }
-  await tx.delete(clubMembers).where(eq(clubMembers.userId, userId));
   await tx
     .update(clubs)
     .set({ memberCount: sql`greatest(${clubs.memberCount} - 1, 0)`, updatedAt: now })

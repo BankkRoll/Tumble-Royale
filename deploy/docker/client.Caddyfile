@@ -9,6 +9,21 @@
 :8080 {
 	root * /srv/www
 
+	# SECURITY: every page (game, invites, sign-in returns, store, editor,
+	# console, status) stays out of other sites' frames, so no clickjacking of
+	# confirm and purchase buttons, and runs only this origin's scripts.
+	# connect-src takes any https:/wss: origin because config.json and the
+	# matchmaker name the API, matchmaker and game servers at run time;
+	# 'wasm-unsafe-eval' lets the physics engine compile its WebAssembly;
+	# blob: covers recorded clips, photos and downloads; the UI font comes from
+	# Google Fonts. Keep this policy in sync with apps/client/public/_headers
+	# and apps/client/vercel.json.
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https: wss:; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+	}
+
 	handle /health {
 		respond "ok" 200
 	}
@@ -32,31 +47,26 @@
 	}
 
 	# The public status page: its own small page and bundle. Always
-	# revalidated (it must never show a stale "all good"); kept out of frames
-	# like the console, but indexable so players can search for it.
+	# revalidated (it must never show a stale "all good"), but indexable so
+	# players can search for it.
 	@status path /status /status/ /status.html
 	handle @status {
 		rewrite * /status.html
 		header {
 			Cache-Control "no-cache"
-			X-Frame-Options "DENY"
-			Content-Security-Policy "frame-ancestors 'none'"
 			Referrer-Policy "strict-origin-when-cross-origin"
-			X-Content-Type-Options "nosniff"
 		}
 		file_server
 	}
 
 	# The admin console: its own page and bundle. It is only a client; every
-	# action is authorised by the API. These headers keep it out of frames
-	# (no clickjacking of confirm buttons), search engines and caches.
+	# action is authorised by the API. These headers keep it out of search
+	# engines and caches.
 	@admin path /admin /admin/ /admin.html
 	handle @admin {
 		rewrite * /admin.html
 		header {
 			Cache-Control "no-cache"
-			X-Frame-Options "DENY"
-			Content-Security-Policy "frame-ancestors 'none'"
 			Referrer-Policy "no-referrer"
 			X-Robots-Tag "noindex, nofollow"
 		}

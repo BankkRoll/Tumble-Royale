@@ -42,6 +42,7 @@ import {
 import { bindChatRouter } from './social/chatRouter.ts';
 import { loadMutes, publishSocialAvailability, socialIntents } from './social/intents.ts';
 import { onLobbyChat, onLobbyChatError, syncLobbyChat } from './social/lobbyChat.ts';
+import { maskedProfile, streamerMode } from './social/streamerNames.ts';
 import { createRenderer, setTeamColorMode } from '@tumble/render';
 import { createPostPipeline, type PostPipeline } from '@tumble/render/post';
 import type { TumblerLoadout } from '@tumble/render/scenes';
@@ -91,7 +92,7 @@ import { OnlineAccount } from './online/account.ts';
 import { PhotoMode } from './photo/photoMode.ts';
 import { AccountAuth } from './online/auth.ts';
 import { finishCheckoutReturn } from './online/checkout.ts';
-import { joinWithCode, watchStartedShow } from './online/joinCode.ts';
+import { joinWithCode, partyOwnerLabel, watchStartedShow } from './online/joinCode.ts';
 import {
   liveStartedLobby,
   lobbyOptions,
@@ -1880,7 +1881,7 @@ export class GameApp {
         const show = privateShow(options);
         this.startOfflineShow(show.playlist, show.roundTimeScale);
       },
-      onInspectPlayer: ({ playerId, name, direct }) => {
+      onInspectPlayer: ({ playerId, name, direct, masked }) => {
         const current = this.profileCards.begin();
         // Party members (slots, the 3D party lobby) open the player card first.
         const member = !direct ? s().party?.members.find((m) => m.id === playerId && !m.isSelf) : undefined;
@@ -1908,8 +1909,9 @@ export class GameApp {
           .then((card) => {
             // A later card was asked for, or the screen moved on (a show started): this one is not wanted.
             if (!current() || s().screenSeq !== asked) return;
-            if (card) s().setInspectedProfile(card);
-            else s().pushToast({ kind: 'info', title: "Couldn't load that profile" });
+            if (!card) s().pushToast({ kind: 'info', title: "Couldn't load that profile" });
+            // SECURITY: the card comes back with the real Name#tag; a click on a masked name keeps the mask.
+            else s().setInspectedProfile(masked && streamerMode() ? maskedProfile(card, name) : card);
           });
       },
       onNewsRead: ({ ids }) => markNewsRead(ids),
@@ -2050,11 +2052,8 @@ export class GameApp {
       onToastAction: ({ actionId }) => {
         online()?.handleToastAction(actionId);
       },
-      onCopyInvite: ({ code }) => {
-        const url = online()?.party?.inviteUrl ?? `${location.origin}/join/${code}`;
-        void navigator.clipboard?.writeText(url).catch(() => undefined);
-        s().pushToast({ kind: 'success', title: 'Invite link copied!', body: url, icon: '📋' });
-      },
+      // The UI copied exactly what the player picked (lobby code, party code or link) and confirmed it.
+      onCopyInvite: ({ kind, what }) => track('invite.copy', { kind, what }),
       onNavUnhandled: ({ dir }) => {
         if (dir !== 'back') return;
         if (s().screen === 'menu' && s().overlay === 'none') {
@@ -2193,7 +2192,7 @@ export class GameApp {
         if (s.overlay === 'joinCode') s.setOverlay('none');
         return;
       case 'confirmLeaveParty': {
-        const who = r.preview.leader ? `${r.preview.leader.split('#')[0]}'s party` : 'that party';
+        const who = partyOwnerLabel(r.preview.leader, streamerMode());
         const choice = await this.ask({
           id: 'leave-party-confirm',
           kind: 'confirm',

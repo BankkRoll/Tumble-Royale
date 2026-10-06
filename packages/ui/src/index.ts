@@ -29,12 +29,16 @@ export {
 } from './audio-cues.ts';
 export { fireConfetti, fireFireworks, CONSOLATION_LINES, type ConfettiOptions } from './transitions/index.ts';
 export {
+  MASKED_TAG,
   maskedName,
   randomTumblerName,
   seatName,
   validateDisplayName,
+  streamerSafeAccount,
+  streamerSafeAccountLabel,
   streamerSafeKeyedName,
   streamerSafeName,
+  type AccountName,
   type KeyedPlayer,
   type NamedPlayer,
 } from './names.ts';

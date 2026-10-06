@@ -169,6 +169,7 @@ export default defineRound({
         tileSize: TILE,
         gap: GAP,
         memoryFrom: 4,
+        playersPerSafeTile: 20,
         screen: { x: 0, y: 11, z: 21.4, width: 22, height: 10 },
       },
     },
@@ -218,5 +219,6 @@ export default defineRound({
   designNotes:
     'puzzleFloor (trail): seeded walks of 2 → 6 arrows from 3 (later 2) flag tiles to distinct landing tiles; walks may share ' +
     'arrows but never cross another walk’s flag or landing, and never revisit a tile; unused tiles get decoy arrows. Reading ' +
-    'time 8 s → 5 s ÷ stage speed (floor 3.5 s). Voids, bot solving and the quota end as in Colour Cauldron.',
+    'time 8 s → 5 s ÷ stage speed (floor 3.5 s). Big fields walk more trails in the first three board rounds (one per 20 ' +
+    'entrants, up to 6) so a full field fits on the landings. Voids, bot solving and the quota end as in Colour Cauldron.',
 });

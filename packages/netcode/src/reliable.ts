@@ -34,6 +34,18 @@ export interface ReliableOptions {
   maxRtoMs?: number;
   /** Messages queued beyond this are a sign the peer is gone; {@link ReliableEndpoint.overflowed} turns true. */
   maxPending?: number;
+  /** Out-of-order messages held for in-order delivery, at most (64). */
+  maxEarly?: number;
+  /** Bytes of out-of-order messages held, at most (64 KiB). */
+  maxEarlyBytes?: number;
+  /**
+   * A message further than this ahead of the next expected sequence (256) is
+   * a protocol violation: honest reordering never gets close, so it can only
+   * be a peer trying to make us buffer.
+   */
+  maxAhead?: number;
+  /** Largest message accepted from the peer; a bigger one is a protocol violation (default: no limit). */
+  maxMessageBytes?: number;
 }
 
 interface Outgoing {
@@ -59,12 +71,17 @@ export class ReliableEndpoint {
   private readonly minRto: number;
   private readonly maxRto: number;
   private readonly maxPending: number;
+  private readonly maxEarly: number;
+  private readonly maxEarlyBytes: number;
+  private readonly maxAhead: number;
+  private readonly maxMessageBytes: number;
 
   private readonly outgoing: Outgoing[] = [];
   private nextSendSeq = 0;
 
   private nextExpected = 0;
   private readonly early = new Map<number, Uint8Array>();
+  private earlyBytes = 0;
   private ackDirty = false;
   private receivedAny = false;
 
@@ -79,6 +96,10 @@ export class ReliableEndpoint {
     this.minRto = opts.minRtoMs ?? 100;
     this.maxRto = opts.maxRtoMs ?? 2000;
     this.maxPending = opts.maxPending ?? 4096;
+    this.maxEarly = opts.maxEarly ?? 64;
+    this.maxEarlyBytes = opts.maxEarlyBytes ?? 64 * 1024;
+    this.maxAhead = opts.maxAhead ?? 256;
+    this.maxMessageBytes = opts.maxMessageBytes ?? Infinity;
   }
 
   /** Messages sent but not yet acknowledged. */
@@ -162,7 +183,8 @@ export class ReliableEndpoint {
    *
    * @param r - Reader positioned after the type byte.
    * @param deliver - Called once per message, in sequence order. The payload may alias the packet buffer.
-   * @returns False if the packet was malformed.
+   * @returns False if the packet was malformed, carried an oversized message
+   *   or one implausibly far ahead (see {@link ReliableOptions}).
    */
   receive(r: BitReader, deliver: (payload: Uint8Array) => void): boolean {
     if (r.readBool()) this.applyAck(r.readBits(16));
@@ -171,14 +193,24 @@ export class ReliableEndpoint {
     for (let i = 0; i < count && !r.overflow; i++) {
       const seq = r.readBits(16);
       const data = r.readByteArray();
-      if (r.overflow) return false;
+      if (r.overflow || data.length > this.maxMessageBytes) return false;
       this.receivedAny = true;
       if (seq === this.nextExpected) {
         this.deliverOne(data, deliver);
         this.drainEarly(deliver);
       } else if (seqNewer(seq, this.nextExpected)) {
-        // Bound buffering so a hostile peer cannot grow the map without limit.
-        if (this.early.size < this.maxPending && !this.early.has(seq)) this.early.set(seq, data);
+        if ((seq - this.nextExpected + SEQ_MOD) % SEQ_MOD > this.maxAhead) return false;
+        // SECURITY: bounded by count and bytes, so a hostile peer cannot make us hold megabytes.
+        // A message dropped here is simply not acked and comes again.
+        if (
+          !this.early.has(seq) &&
+          this.early.size < this.maxEarly &&
+          this.earlyBytes + data.length <= this.maxEarlyBytes
+        ) {
+          // Copied: the payload may alias a packet buffer the caller reuses.
+          this.early.set(seq, data.slice());
+          this.earlyBytes += data.length;
+        }
       }
       // Older sequences are duplicates of delivered messages: ignore, but keep acking.
     }
@@ -191,6 +223,7 @@ export class ReliableEndpoint {
     this.nextSendSeq = 0;
     this.nextExpected = 0;
     this.early.clear();
+    this.earlyBytes = 0;
     this.ackDirty = false;
     this.receivedAny = false;
   }
@@ -206,6 +239,7 @@ export class ReliableEndpoint {
       const data = this.early.get(this.nextExpected);
       if (!data) return;
       this.early.delete(this.nextExpected);
+      this.earlyBytes -= data.length;
       this.deliverOne(data, deliver);
     }
   }

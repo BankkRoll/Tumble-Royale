@@ -5,17 +5,20 @@
  */
 import { ACCESS_TOKEN_TTL_SEC } from '../auth/tokens.ts';
 import type { KV } from '../kv/index.ts';
+import { disconnectUser } from '../realtime/disconnect.ts';
 
 const key = (userId: string) => `erased:${userId}`;
 
 /**
- * Marks an account as deleted for as long as any of its tokens could be valid.
+ * Marks an account as deleted for as long as any of its tokens could be valid,
+ * and closes its realtime sockets on every instance.
  *
  * @param kv - Shared KV (so every API instance sees it).
  * @param userId - Deleted account.
  */
 export async function markErased(kv: KV, userId: string): Promise<void> {
   await kv.set(key(userId), '1', (ACCESS_TOKEN_TTL_SEC + 60) * 1000);
+  await disconnectUser(kv, { userId, reason: 'erased' });
 }
 
 /**

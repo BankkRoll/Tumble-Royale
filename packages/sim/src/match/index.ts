@@ -35,6 +35,7 @@ export {
   isBotObjective,
   type BotObjectiveProvider,
   type BotSafeSpotProvider,
+  type BotWindProvider,
 } from './oracle.ts';
 export {
   SimpleController,

@@ -544,6 +544,57 @@ describe('puzzleFloor', () => {
     rt.dispose();
   });
 
+  it('keyed bots each get their own place on a nearby safe tile, clear of the board rim', () => {
+    const h = harness();
+    const rt = create<PuzzleFloorRuntime>('puzzleFloor', h, { puzzle: 'mix' });
+    const half = (5 * 5 + 4 * 0.8) / 2;
+    for (const r of rt.schedule.slice(0, 8)) {
+      const solved = r.start + (r.dropAt - r.start) * mix.botSolveAt + 0.05;
+      const places = new Set<string>();
+      const perTile = new Map<number, number>();
+      for (let key = 0; key < 60; key++) {
+        const out = { x: 0, y: 1, z: 0 };
+        expect(rt.botSafeSpot(solved, out, key)).toBe(true);
+        const tile = patternTileAt(out.x, out.z, mix);
+        expect(r.safe[tile], `round ${r.number} key ${key}`).toBe(1);
+        expect(Math.max(Math.abs(out.x), Math.abs(out.z))).toBeLessThanOrEqual(half - 2 + 1e-9);
+        places.add(`${out.x.toFixed(2)},${out.z.toFixed(2)}`);
+        perTile.set(tile, (perTile.get(tile) ?? 0) + 1);
+        const again = { x: 9, y: 1, z: -9 };
+        rt.botSafeSpot(solved + 0.5, again, key);
+        expect(again, 'a bot’s place does not follow it around').toEqual(out);
+      }
+      expect(places.size).toBe(60);
+      // Nobody crowds onto one answer while another stands empty.
+      expect(perTile.size).toBeGreaterThanOrEqual(Math.min(2, safeTiles(r).length));
+    }
+    rt.dispose();
+  });
+
+  it('rates the teaching round easy and later, memory rounds harder; extra think time eases it', () => {
+    const h = harness();
+    const rt = create<PuzzleFloorRuntime>('puzzleFloor', h, { puzzle: 'mix' });
+    const slow = create<PuzzleFloorRuntime>('puzzleFloor', harness(), { puzzle: 'mix', thinkScale: 1.2 });
+    const at = (k: number) => rt.schedule[k]!.start + 0.1;
+    expect(rt.botDifficulty(at(0))).toBeLessThan(0.1);
+    for (let k = 1; k < 6; k++) expect(rt.botDifficulty(at(k))).toBeGreaterThan(rt.botDifficulty(at(k - 1)));
+    expect(rt.botDifficulty(at(12))).toBe(1);
+    expect(slow.botDifficulty(slow.schedule[3]!.start + 0.1)).toBeLessThan(rt.botDifficulty(at(3)));
+    rt.dispose();
+    slow.dispose();
+  });
+
+  it('big fields get extra answer tiles in the opening board rounds only', () => {
+    for (const p of [mix, trail]) {
+      const crowd = PuzzleFloorSchema.parse({ puzzle: p.puzzle, playersPerSafeTile: 20 });
+      const base = buildPuzzleSchedule(crowd, 1, new Rng(5));
+      expect(buildPuzzleSchedule(crowd, 1, new Rng(5), 60)).toEqual(base);
+      const full = buildPuzzleSchedule(crowd, 1, new Rng(5), 100);
+      for (let k = 0; k < 3; k++) expect(safeTiles(full[k]!).length, `${p.puzzle} round ${k + 1}`).toBe(5);
+      expect(safeTiles(full[3]!).length).toBeLessThan(5);
+    }
+  });
+
   it('net state round-trips the voided/judged bits', () => {
     const h = harness();
     const a = create<PuzzleFloorRuntime>('puzzleFloor', h, { puzzle: 'mix' });

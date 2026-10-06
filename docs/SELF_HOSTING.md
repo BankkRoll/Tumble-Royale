@@ -52,8 +52,9 @@ node scripts/setup-env.mjs --production --domain play.example.com --email you@ex
 - the public URLs for the domain (`PUBLIC_WEB_URL`, `PUBLIC_API_URL` used for
   OAuth redirects, `PUBLIC_WS_URL`) and the CORS allow-lists;
 - a fresh random value for every secret (`JWT_SECRET`,
-  `INTERNAL_HMAC_SECRET`, `GAME_TICKET_SECRET`, `GAME_SERVER_SECRET`,
-  `ADMIN_TOKEN`, `METRICS_TOKEN`, `POSTGRES_PASSWORD`, `VOICE_TURN_SECRET`);
+  `INTERNAL_HMAC_SECRET`, `GAME_SERVER_HMAC_SECRET`, `GAME_TICKET_SECRET`,
+  `GAME_SERVER_SECRET`, `ADMIN_TOKEN`, `METRICS_TOKEN`, `POSTGRES_PASSWORD`,
+  `REDIS_PASSWORD`, `VOICE_TURN_SECRET`);
 - `DATABASE_URL` and `REDIS_URL` for the Compose services, and
   `TRUST_PROXY=1` because Caddy is the one proxy in front of them;
 - every optional setting, commented out with its default: sign-in providers,
@@ -716,30 +717,32 @@ development-only settings.
 
 ### Secrets
 
-| Variable               | Read by                      | Req.                  | Default | What it does                                                        |
-| ---------------------- | ---------------------------- | --------------------- | ------- | ------------------------------------------------------------------- |
-| `JWT_SECRET`           | API, matchmaker              | yes (32+)             | none    | Signs access tokens; a new value signs every player out             |
-| `INTERNAL_HMAC_SECRET` | API, matchmaker, game server | yes (16+)             | none    | Signs results and internal calls to the API                         |
-| `GAME_TICKET_SECRET`   | matchmaker, game server      | yes (16+)             | none    | Signs join tickets                                                  |
-| `GAME_SERVER_SECRET`   | matchmaker, game server      | yes (16+)             | none    | Game servers register with it; it also signs kicks                  |
-| `ADMIN_TOKEN`          | API, `pnpm admin`            | for the CLI (32+)     | none    | Operator bearer for `/internal/*`; acts as admin; mints staff links |
-| `METRICS_TOKEN`        | API, matchmaker, game server | no (16+)              | none    | Bearer for `/metrics` (and `/rooms` on game servers)                |
-| `VOICE_TURN_SECRET`    | API, coturn                  | with a TURN URL (16+) | none    | Shared TURN REST secret; players only get short-lived credentials   |
+| Variable                 | Read by                      | Req.                  | Default | What it does                                                              |
+| ------------------------ | ---------------------------- | --------------------- | ------- | ------------------------------------------------------------------------- |
+| `JWT_SECRET`             | API, matchmaker              | yes (32+)             | none    | Signs access tokens; a new value signs every player out                   |
+| `INTERNAL_HMAC_SECRET`   | API, matchmaker, game server | yes (16+)             | none    | Signs results and internal calls to the API                               |
+| `INTERNAL_HMAC_ALLOW_V1` | API                          | no                    | off     | `1` accepts the old internal signature (no method/path) during an upgrade |
+| `GAME_TICKET_SECRET`     | matchmaker, game server      | yes (16+)             | none    | Signs join tickets                                                        |
+| `GAME_SERVER_SECRET`     | matchmaker, game server      | yes (16+)             | none    | Game servers register with it; it also signs kicks                        |
+| `ADMIN_TOKEN`            | API, `pnpm admin`            | for the CLI (32+)     | none    | Operator bearer for `/internal/*`; acts as admin; mints staff links       |
+| `METRICS_TOKEN`          | API, matchmaker, game server | no (16+)              | none    | Bearer for `/metrics` (and `/rooms` on game servers)                      |
+| `VOICE_TURN_SECRET`      | API, coturn                  | with a TURN URL (16+) | none    | Shared TURN REST secret; players only get short-lived credentials         |
 
 ### Datastores
 
-| Variable             | Read by         | Req. | Default                | What it does                                                            |
-| -------------------- | --------------- | ---- | ---------------------- | ----------------------------------------------------------------------- |
-| `DATABASE_URL`       | API             | yes  | embedded PGlite        | Postgres connection string                                              |
-| `REDIS_URL`          | API, matchmaker | yes  | in-process             | Shared state, rate limits and pub/sub                                   |
-| `POSTGRES_USER`      | compose         | no   | `tumble`               | Role the Postgres container creates                                     |
-| `POSTGRES_DB`        | compose         | no   | `tumble`               | Database the Postgres container creates                                 |
-| `POSTGRES_PASSWORD`  | compose         | yes  | none                   | Applied only when the volume is first created                           |
-| `DB_POOL_MAX`        | API             | no   | `10` (`2` for migrate) | Postgres pool size per instance                                         |
-| `ALLOW_MEMORY_STORE` | API, matchmaker | no   | off                    | `1` runs production without Redis (one instance, state lost on restart) |
-| `ALLOW_EMBEDDED_DB`  | API             | no   | off                    | `1` runs production on PGlite (one instance)                            |
-| `PGLITE_DIR`         | API             | no   | `./.data/pglite`       | Embedded database directory                                             |
-| `MIGRATE_ON_BOOT`    | API             | no   | `1`                    | `0` skips migrations at boot (compose runs the `migrate` service)       |
+| Variable             | Read by         | Req. | Default                | What it does                                                                   |
+| -------------------- | --------------- | ---- | ---------------------- | ------------------------------------------------------------------------------ |
+| `DATABASE_URL`       | API             | yes  | embedded PGlite        | Postgres connection string                                                     |
+| `REDIS_URL`          | API, matchmaker | yes  | in-process             | Shared state, rate limits and pub/sub                                          |
+| `POSTGRES_USER`      | compose         | no   | `tumble`               | Role the Postgres container creates                                            |
+| `POSTGRES_DB`        | compose         | no   | `tumble`               | Database the Postgres container creates                                        |
+| `POSTGRES_PASSWORD`  | compose         | yes  | none                   | Applied only when the volume is first created                                  |
+| `REDIS_PASSWORD`     | compose         | no   | none                   | Redis requires it; compose puts it into the API's and matchmaker's `REDIS_URL` |
+| `DB_POOL_MAX`        | API             | no   | `10` (`2` for migrate) | Postgres pool size per instance                                                |
+| `ALLOW_MEMORY_STORE` | API, matchmaker | no   | off                    | `1` runs production without Redis (one instance, state lost on restart)        |
+| `ALLOW_EMBEDDED_DB`  | API             | no   | off                    | `1` runs production on PGlite (one instance)                                   |
+| `PGLITE_DIR`         | API             | no   | `./.data/pglite`       | Embedded database directory                                                    |
+| `MIGRATE_ON_BOOT`    | API             | no   | `1`                    | `0` skips migrations at boot (compose runs the `migrate` service)              |
 
 ### Services and game servers
 

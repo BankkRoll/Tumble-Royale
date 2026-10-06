@@ -92,7 +92,7 @@ import {
 } from '../cosmetics.ts';
 import { loadoutWithItem, profileDressing, randomizedLoadout } from '../profile.ts';
 import { ClubController } from '../social/clubController.ts';
-import { SocialController } from '../social/socialController.ts';
+import { SocialController, type RealtimeLike } from '../social/socialController.ts';
 import { onlineStoreShelves } from '../storeOffers.ts';
 import {
   giftErrorText,
@@ -300,6 +300,11 @@ export class OnlineAccount {
       applyParty: (p) => this.applyParty(p),
       notify: (kind, title, body, action) => this.addNotification(kind, title, body, action),
     });
+  }
+
+  /** The realtime gateway socket, for features that ride it (voice signalling). */
+  get socket(): RealtimeLike {
+    return this.realtime;
   }
 
   /** True once `/me` loaded. */

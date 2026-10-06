@@ -40,6 +40,7 @@ import { EventCard } from './EventsView.tsx';
 import { LobbyGameHudSlot, LobbyGamesButton } from './LobbyGames.tsx';
 import { openNewsPost } from './NewsTab.tsx';
 import { openJoinCode, openPrivateShow } from '../overlays/PrivateShow.tsx';
+import { PartyVoiceMark } from '../overlays/VoicePanel.tsx';
 
 /** Tips shown while queueing. */
 export const MATCHMAKING_TIPS: readonly string[] = [
@@ -460,6 +461,9 @@ function PartyRow(): JSX.Element {
                   <Icon name="crown" size="1em" />
                 </span>
               )}
+              <span className="tr-party-voice">
+                <PartyVoiceMark userId={m.id} isSelf={m.isSelf} />
+              </span>
               {leading && !m.isSelf && (
                 <button
                   type="button"

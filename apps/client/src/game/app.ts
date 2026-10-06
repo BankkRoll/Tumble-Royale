@@ -60,6 +60,7 @@ import { drawBreakdown } from '../debug/drawBreakdown.ts';
 import { DEV_TOOLS } from '../devTools.ts';
 import { ApiClient, ApiError } from './api.ts';
 import { AudioBridge } from './audioBridge.ts';
+import { startVoice, type VoiceHandle } from './voice/voiceWiring.ts';
 import { installAutoplay } from './autoplay.ts';
 import { resolveTumblerFactory, type ResolvedTumblerFactory } from './characters.ts';
 import type { GameConfig } from './config.ts';
@@ -139,6 +140,7 @@ function mergeSettings(base: Settings, saved: Partial<Settings> | null): Setting
     audio: { ...base.audio, ...saved.audio },
     accessibility: { ...base.accessibility, ...saved.accessibility },
     gameplay: { ...base.gameplay, ...saved.gameplay },
+    voice: { ...base.voice, ...saved.voice },
   };
 }
 
@@ -204,6 +206,8 @@ export class GameApp {
   private lastMemoryView: object | null = null;
   private readonly ctx: GameContext;
   private readonly account: OnlineAccount | null;
+  /** Voice chat, wired once an online account is signed in (off until the player opts in). */
+  private voice: VoiceHandle | null = null;
   private readonly mm: MatchmakerClient | null;
   private partyLooks: TumblerLoadout[] = [];
   private partyMembers: { userId: string; loadout: TumblerLoadout }[] = [];
@@ -581,6 +585,12 @@ export class GameApp {
     if (!ok || !(await account.load())) return;
     if (welcome && fresh) await account.adoptWelcomeColors(welcome.colors);
     account.startRealtime();
+    this.voice ??= startVoice({
+      realtime: account.socket,
+      api: this.api,
+      selfId: () => account.userId,
+      engine: this.audio.engine,
+    });
     // Rollouts are per account, and an offline boot may have skipped the first fetch.
     void this.liveOps.refresh();
     publishSocialAvailability(true);
@@ -658,6 +668,7 @@ export class GameApp {
     // PERF: an opaque loading screen hides the canvas; drawing it would only steal frame time from the build.
     if (!d.covered) d.update(dt * warp, realDt);
     this.photo.update(realDt);
+    this.voice?.tick(now);
     this.audio.setListener(d.listenerPos, d.listenerFwd, d.listenerUp);
     this.audio.update();
     this.post.update(realDt);

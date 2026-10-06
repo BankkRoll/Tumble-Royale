@@ -1023,7 +1023,8 @@ export interface PwaState {
 export type Presence = 'online' | 'inShow' | 'inMenu' | 'inQueue' | 'offline';
 
 /** Reasons offered by the report dialog (the API's report reasons). */
-export type ReportReason = 'cheating' | 'harassment' | 'offensive_name' | 'griefing' | 'spam' | 'other';
+export type ReportReason =
+  'cheating' | 'harassment' | 'offensive_name' | 'griefing' | 'spam' | 'voice' | 'other';
 
 /** How the local player relates to another player. */
 export type Relation = 'friend' | 'incoming' | 'outgoing' | 'none';
@@ -1577,7 +1578,8 @@ export type BindAction =
   | 'emote4'
   | 'spectatePrev'
   | 'spectateNext'
-  | 'pause';
+  | 'pause'
+  | 'pushToTalk';
 
 /** `KeyboardEvent.code` (or `Mouse0`…`Mouse4`) per action: [primary, secondary]. */
 export type Keybinds = Record<BindAction, [string, string]>;
@@ -1594,7 +1596,8 @@ export type PadBindAction =
   | 'emote4'
   | 'pause'
   | 'spectatePrev'
-  | 'spectateNext';
+  | 'spectateNext'
+  | 'pushToTalk';
 
 /**
  * Standard-mapping gamepad button index per action: [primary, secondary],
@@ -1671,6 +1674,37 @@ export interface Settings {
      */
     analytics: boolean | null;
   };
+  voice: VoiceSettings;
+}
+
+/** Voice chat choices (Settings → Voice). Voice is strictly opt-in: `enabled` starts false. */
+export interface VoiceSettings {
+  /** The player switched voice on. Never true unless they did. */
+  enabled: boolean;
+  /** The first-use explanation was read and accepted. */
+  introSeen: boolean;
+  /** Push-to-talk (the default) or open mic gated by {@link VoiceSettings.threshold}. */
+  mode: 'ptt' | 'open';
+  /** Open mic sensitivity: the level (0..1) the microphone must pass to send. */
+  threshold: number;
+  /** `MediaDeviceInfo.deviceId`; empty = the browser's default microphone. */
+  inputDeviceId: string;
+  /** Voice chat volume 0..1 (under master volume). */
+  volume: number;
+  /** Connect through the TURN relay only, so peers never see this player's IP address. */
+  relayOnly: boolean;
+  /** In team rounds, also talk to teammates outside the party. */
+  teamVoice: boolean;
+  noiseSuppression: boolean;
+  echoCancellation: boolean;
+  /** With Streamer Mode on: show "Teammate 1"-style labels instead of voice names. */
+  streamerHideNames: boolean;
+  /** With Streamer Mode on: do not play anyone's voice (indicators still show). */
+  streamerMute: boolean;
+  /** Per-player volume 0..1 by user id. */
+  peerVolume: Record<string, number>;
+  /** Players muted locally by user id. */
+  peerMuted: Record<string, boolean>;
 }
 
 /** Photo mode look filters. */

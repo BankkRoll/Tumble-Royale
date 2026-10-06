@@ -31,6 +31,7 @@ export const DEFAULT_KEYBINDS: Keybinds = {
   spectatePrev: ['KeyQ', ''],
   spectateNext: ['KeyE', ''],
   pause: ['Escape', ''],
+  pushToTalk: ['KeyV', ''],
 };
 
 /** Human labels for rebindable actions, in settings display order. */
@@ -50,6 +51,7 @@ export const BIND_ACTION_LABELS: Record<BindAction, string> = {
   spectatePrev: 'Spectate previous',
   spectateNext: 'Spectate next',
   pause: 'Menu',
+  pushToTalk: 'Push to talk',
 };
 
 /**
@@ -70,6 +72,7 @@ export const DEFAULT_PAD_BINDS: PadBinds = {
   pause: [9, -1],
   spectatePrev: [4, -1],
   spectateNext: [5, -1],
+  pushToTalk: [8, -1],
 };
 
 /** Human labels for remappable controller actions, in settings display order. */
@@ -85,6 +88,7 @@ export const PAD_BIND_ACTION_LABELS: Record<PadBindAction, string> = {
   pause: 'Menu',
   spectatePrev: 'Spectate previous',
   spectateNext: 'Spectate next',
+  pushToTalk: 'Push to talk',
 };
 
 /** Default settings. */
@@ -122,6 +126,23 @@ export const DEFAULT_SETTINGS: Settings = {
     showChat: true,
     region: 'auto',
     analytics: null,
+  },
+  // Voice is strictly opt-in: nothing here may switch it on or play anyone by default.
+  voice: {
+    enabled: false,
+    introSeen: false,
+    mode: 'ptt',
+    threshold: 0.45,
+    inputDeviceId: '',
+    volume: 0.9,
+    relayOnly: false,
+    teamVoice: false,
+    noiseSuppression: true,
+    echoCancellation: true,
+    streamerHideNames: true,
+    streamerMute: false,
+    peerVolume: {},
+    peerMuted: {},
   },
 };
 

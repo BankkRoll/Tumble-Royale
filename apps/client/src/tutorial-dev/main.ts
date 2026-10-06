@@ -61,6 +61,7 @@ async function boot(): Promise<void> {
       audio: { ...d.audio, ...saved.audio },
       accessibility: { ...d.accessibility, ...saved.accessibility },
       gameplay: { ...d.gameplay, ...saved.gameplay },
+      voice: { ...d.voice, ...saved.voice },
     });
   }
   mountUI(document.getElementById('ui') as HTMLElement);

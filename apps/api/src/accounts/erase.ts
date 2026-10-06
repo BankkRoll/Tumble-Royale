@@ -15,6 +15,7 @@
  *   stop working immediately instead of at their 15-minute expiry.
  * - Leave the player's club first: an owner's club passes to the
  *   longest-serving officer (else member); a club left empty is disbanded.
+ *   Club invites the player sent are withdrawn.
  * - Settle gifts: unopened gifts to the account go back to their senders,
  *   notes the account wrote are erased (`economy/gifts.ts`).
  * - Write an audit event.
@@ -22,7 +23,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { notifyClub, removeMember } from '../clubs/service.ts';
 import type { AppContext } from '../context.ts';
-import { events, matchParticipants, users } from '../db/schema.ts';
+import { clubInvites, events, matchParticipants, users } from '../db/schema.ts';
 import { announceErasedGifts, settleGiftsOnErasure } from '../economy/gifts.ts';
 import { invalidateBanCache } from '../http/auth.ts';
 import { notFound } from '../http/errors.ts';
@@ -65,6 +66,8 @@ export async function deleteAccount(
     await tx.execute(sql`select set_config('tumble.erase_user', ${userId}, true)`);
     // Before the cascade: an owner's club passes to the next in line rather than losing its owner.
     const removal = await removeMember(tx, userId, now);
+    // `invited_by` has no foreign key, so these would outlive the account and still name it as the inviter.
+    await tx.delete(clubInvites).where(eq(clubInvites.invitedBy, userId));
     await tx
       .update(matchParticipants)
       .set({ userId: null, name: DELETED_PLAYER_NAME })

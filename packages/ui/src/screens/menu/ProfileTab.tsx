@@ -566,7 +566,7 @@ const ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 /** Local cards (bots, offline players) have no account id, so only mute applies to them. */
 function inspectRef(p: ProfileData): PlayerRef {
   return ACCOUNT_ID.test(p.id)
-    ? { userId: p.id, name: p.name, tag: p.tag, key: p.id }
+    ? { userId: p.id, name: p.name, tag: p.tag, key: p.id, ...(p.masked ? { masked: true } : {}) }
     : { name: p.name, key: `name:${p.name}`, isBot: true };
 }
 

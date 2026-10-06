@@ -248,6 +248,18 @@ BACKUP_KEEP_DAYS=14
 # PRESENCE_GRACE_MS=8000
 # Postgres pool size per API instance (default: 10).
 # DB_POOL_MAX=10
+# Realtime socket abuse limits: handshakes per minute per IP and per account,
+# and open sockets per account and per IP.
+# WS_IP_UPGRADES_PER_MINUTE=60
+# WS_USER_UPGRADES_PER_MINUTE=20
+# WS_MAX_SOCKETS_PER_USER=5
+# WS_MAX_SOCKETS_PER_IP=50
+# New guest accounts per IP per hour (returning devices don't count).
+# GUEST_SIGNUPS_PER_IP_HOUR=10
+# Global chat: minutes a guest must wait before posting (linked accounts post at
+# once), and lines per IP per 10 seconds across all accounts.
+# GLOBAL_CHAT_MIN_ACCOUNT_AGE_MINUTES=10
+# GLOBAL_CHAT_IP_MAX=10
 # Retention job: run interval, days past expiry before sessions go, non-audit
 # event age, and guest accounts unused this long (0 = keep forever).
 # RETENTION_INTERVAL_MINUTES=360

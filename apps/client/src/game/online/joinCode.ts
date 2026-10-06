@@ -46,6 +46,20 @@ export const NO_CODE_MATCH: Extract<JoinCodeOutcome, { kind: 'error' }> = {
   code: 'E-CODE-404',
 };
 
+/**
+ * Whose party the leave-and-join question names.
+ *
+ * @param leader - The preview's `name#tag` of the leader, if any.
+ * @param streamer - Settings → Streamer mode.
+ * @returns e.g. `Wobbleton's party`, or `that party`.
+ */
+export function partyOwnerLabel(leader: string | null, streamer: boolean): string {
+  // SECURITY: the preview names the leader by Name#tag only, with no account id to mask by,
+  // so Streamer Mode drops the name entirely.
+  if (!leader || streamer) return 'that party';
+  return `${leader.split('#')[0]}'s party`;
+}
+
 const unreachable = (body: string): Extract<JoinCodeOutcome, { kind: 'error' }> => ({
   kind: 'error',
   title: "Couldn't check that code",

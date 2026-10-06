@@ -245,7 +245,6 @@ export function installMockGame(): () => void {
     },
     onStartCustom: () => void runShow({ win: true }),
     onInviteFriend: () => s().pushToast({ kind: 'social', title: 'Invite sent!', icon: '💌' }),
-    onCopyInvite: () => s().pushToast({ kind: 'success', title: 'Invite link copied!', icon: '📋' }),
     onAddFriend: ({ nameTag }) =>
       s().pushToast({ kind: 'social', title: `Friend request sent to ${nameTag}` }),
     onEmote: ({ id }) => s().pushToast({ title: `You did: ${id}`, icon: '💃', variant: 'feed' }),

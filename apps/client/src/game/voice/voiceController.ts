@@ -10,8 +10,9 @@
  *   longer listed is hung up at once. The smaller user id offers; ICE
  *   candidates trickle; a failed connection gets an ICE restart (the
  *   answerer asks the offerer for one);
- * - "relay only": `iceTransportPolicy: 'relay'`, so peers only ever see the
- *   TURN server's address;
+ * - `iceTransportPolicy: 'relay'` whenever TURN is offered, except in a party
+ *   room without the "relay only" setting, so strangers in a team room only
+ *   ever see the TURN server's address ({@link voiceIcePolicy});
  * - sending: push-to-talk or open mic gated by a level threshold, by
  *   enabling the outgoing track, so no audio leaves while the gate is shut;
  *   paused while the tab is hidden;
@@ -47,6 +48,39 @@ export const DISCONNECT_GRACE_MS = 4000;
 export const MAX_RESTARTS = 3;
 /** Credentials are refreshed this long before they expire. */
 const REFRESH_LEAD_MS = 10 * 60_000;
+
+/**
+ * True when the ICE server list includes a TURN relay (`turn:` or `turns:`).
+ *
+ * @param servers - ICE servers from the latest `voice_room`.
+ * @returns Whether relayed candidates can be gathered at all.
+ */
+export function hasTurnServer(servers: readonly VoiceIceServer[]): boolean {
+  return servers.some((s) => s.urls.some((u) => /^turns?:/i.test(u)));
+}
+
+/**
+ * The ICE transport policy for a voice room.
+ *
+ * @param kind - The room's kind; null before the first `voice_room` names one.
+ * @param relayChosen - Settings → relay only.
+ * @param servers - ICE servers from the latest `voice_room`.
+ * @returns `'relay'` or `'all'`.
+ * @example
+ * voiceIcePolicy('team', false, [{ urls: ['turn:t.example:3478'] }]); // 'relay'
+ * voiceIcePolicy('party', false, [{ urls: ['turn:t.example:3478'] }]); // 'all'
+ */
+export function voiceIcePolicy(
+  kind: VoiceRoomKind | null,
+  relayChosen: boolean,
+  servers: readonly VoiceIceServer[],
+): RTCIceTransportPolicy {
+  // NOTE: relay-only without a TURN server would gather no candidates at all, so voice would never connect.
+  if (!hasTurnServer(servers)) return 'all';
+  // SECURITY: host and server-reflexive candidates carry the player's own IP addresses.
+  // Party mates chose each other; a team room pairs strangers, so it always relays.
+  return relayChosen || kind !== 'party' ? 'relay' : 'all';
+}
 
 /** The choices that shape a session (from `Settings.voice` and Streamer Mode). */
 export interface VoiceOptions extends Pick<
@@ -401,11 +435,20 @@ export class VoiceController {
     const room = m.room as { id: string; kind: VoiceRoomKind } | null;
     const peers = (Array.isArray(m.peers) ? m.peers : []) as VoicePeer[];
     const ice = m.ice as { servers?: VoiceIceServer[]; expiresAt?: number; relay?: boolean } | undefined;
+    const wasRelay = this.relayOnly();
     this.ice = { servers: ice?.servers ?? [], expiresAt: ice?.expiresAt ?? 0, relay: ice?.relay === true };
     this.room = room;
     const keep = new Set(peers.map((p) => p.userId));
     for (const id of [...this.links.keys()]) if (!keep.has(id)) this.hangUp(id);
-    for (const link of this.links.values()) this.configure(link);
+    const policyChanged = wasRelay !== this.relayOnly();
+    for (const link of this.links.values()) {
+      this.configure(link);
+      // A party mate who stays on into a team room must re-gather relay-only candidates.
+      if (policyChanged) {
+        link.restarts = 0;
+        this.restart(link);
+      }
+    }
     for (const p of peers) if (!this.links.has(p.userId)) this.call(p);
     voice.getState().setRoom(
       room ? { kind: room.kind } : null,
@@ -465,14 +508,12 @@ export class VoiceController {
   // ---------------------------------------------------------------------------
 
   private relayOnly(): boolean {
-    return this.opts.relayOnly && this.ice.relay;
+    return voiceIcePolicy(this.room?.kind ?? null, this.opts.relayOnly, this.ice.servers) === 'relay';
   }
 
   private rtcConfig(): RTCConfiguration {
     return {
       iceServers: this.ice.servers.map((s) => ({ ...s })),
-      // SECURITY: relay-only never gathers host or server-reflexive candidates,
-      // so the player's own addresses never reach a peer.
       iceTransportPolicy: this.relayOnly() ? 'relay' : 'all',
       bundlePolicy: 'max-bundle',
     };

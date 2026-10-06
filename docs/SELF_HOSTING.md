@@ -276,8 +276,9 @@ Rules worth knowing before you enable it:
   suspension ends the player's voice on every instance at once. Nothing is
   recorded; a voice report carries which room the two shared and when.
 - **Privacy:** peers connected directly see each other's IP address, as with
-  any WebRTC call. Players can turn on "Relay only (hide my IP)" to send
-  everything through your TURN relay instead.
+  any WebRTC call. With TURN configured, team rooms (strangers) always go
+  through the relay; party voice connects directly unless a player turns on
+  "Relay only (hide my IP)". Without TURN every room connects directly.
 
 ### Refunds
 
@@ -754,26 +755,33 @@ development-only settings.
 
 ### Operations
 
-| Variable                       | Read by              | Req. | Default                          | What it does                                                       |
-| ------------------------------ | -------------------- | ---- | -------------------------------- | ------------------------------------------------------------------ |
-| `HOST`                         | API, matchmaker      | no   | `0.0.0.0`                        | Listen address                                                     |
-| `PORT`                         | all services         | no   | 7360 / 7370 / 7350               | Listen port (each image sets its own)                              |
-| `LOG_LEVEL`                    | all services         | no   | `info`                           | `fatal` … `trace`, or `silent`                                     |
-| `SENTRY_DSN`                   | all services         | no   | none                             | Sentry-compatible crash reports                                    |
-| `INTERNAL_PORT`                | all services         | no   | none                             | Private `/metrics` listener without auth; keep it off the internet |
-| `INTERNAL_HOST`                | all services         | no   | all interfaces                   | Interface for that listener                                        |
-| `RATE_LIMIT_MAX`               | API, matchmaker      | no   | `300` / `120`                    | Requests per minute per player or IP                               |
-| `NAME_CHANGE_COOLDOWN_DAYS`    | API                  | no   | `30`                             | Days between display name changes                                  |
-| `PRESENCE_GRACE_MS`            | API                  | no   | `8000`                           | How long a player stays online after disconnecting                 |
-| `STATUS_SAMPLE_SECONDS`        | API                  | no   | `60`                             | Status page uptime sampling; `0` keeps no history                  |
-| `RETENTION_INTERVAL_MINUTES`   | API                  | no   | `360`                            | Retention job interval (`0` never, at most 35000)                  |
-| `RETENTION_SESSION_GRACE_DAYS` | API                  | no   | `7`                              | Delete sessions this long after they expired                       |
-| `RETENTION_EVENTS_DAYS`        | API                  | no   | `90`                             | Delete analytics events older than this (`0` keeps them)           |
-| `RETENTION_GUEST_DAYS`         | API                  | no   | `0` (keep)                       | Delete guest accounts unused this long                             |
-| `BACKUP_INTERVAL_HOURS`        | compose, `backup.sh` | no   | `24`                             | Hours between `pg_dump`s                                           |
-| `BACKUP_KEEP_DAYS`             | compose, `backup.sh` | no   | `14`                             | Delete dumps older than this                                       |
-| `BACKUP_DIR`                   | `backup.sh`          | no   | `/backups`                       | Where dumps go (compose mounts the `backups` volume there)         |
-| `ADMIN_API_URL`                | `pnpm admin`         | no   | `PUBLIC_API_URL`, else `API_URL` | API the CLI talks to (the API image sets `http://127.0.0.1:7360`)  |
+| Variable                              | Read by              | Req. | Default                          | What it does                                                       |
+| ------------------------------------- | -------------------- | ---- | -------------------------------- | ------------------------------------------------------------------ |
+| `HOST`                                | API, matchmaker      | no   | `0.0.0.0`                        | Listen address                                                     |
+| `PORT`                                | all services         | no   | 7360 / 7370 / 7350               | Listen port (each image sets its own)                              |
+| `LOG_LEVEL`                           | all services         | no   | `info`                           | `fatal` … `trace`, or `silent`                                     |
+| `SENTRY_DSN`                          | all services         | no   | none                             | Sentry-compatible crash reports                                    |
+| `INTERNAL_PORT`                       | all services         | no   | none                             | Private `/metrics` listener without auth; keep it off the internet |
+| `INTERNAL_HOST`                       | all services         | no   | all interfaces                   | Interface for that listener                                        |
+| `RATE_LIMIT_MAX`                      | API, matchmaker      | no   | `300` / `120`                    | Requests per minute per player or IP                               |
+| `NAME_CHANGE_COOLDOWN_DAYS`           | API                  | no   | `30`                             | Days between display name changes                                  |
+| `PRESENCE_GRACE_MS`                   | API                  | no   | `8000`                           | How long a player stays online after disconnecting                 |
+| `STATUS_SAMPLE_SECONDS`               | API                  | no   | `60`                             | Status page uptime sampling; `0` keeps no history                  |
+| `WS_IP_UPGRADES_PER_MINUTE`           | API                  | no   | `60`                             | Realtime socket handshakes per minute per IP                       |
+| `WS_USER_UPGRADES_PER_MINUTE`         | API                  | no   | `20`                             | Realtime socket handshakes per minute per account                  |
+| `WS_MAX_SOCKETS_PER_USER`             | API                  | no   | `5`                              | Open realtime sockets per account                                  |
+| `WS_MAX_SOCKETS_PER_IP`               | API                  | no   | `50`                             | Open realtime sockets per IP                                       |
+| `GUEST_SIGNUPS_PER_IP_HOUR`           | API                  | no   | `10`                             | New guest accounts per IP per hour                                 |
+| `GLOBAL_CHAT_MIN_ACCOUNT_AGE_MINUTES` | API                  | no   | `10`                             | Minutes a guest waits before posting in global chat                |
+| `GLOBAL_CHAT_IP_MAX`                  | API                  | no   | `10`                             | Global chat lines per IP per 10 s, across accounts                 |
+| `RETENTION_INTERVAL_MINUTES`          | API                  | no   | `360`                            | Retention job interval (`0` never, at most 35000)                  |
+| `RETENTION_SESSION_GRACE_DAYS`        | API                  | no   | `7`                              | Delete sessions this long after they expired                       |
+| `RETENTION_EVENTS_DAYS`               | API                  | no   | `90`                             | Delete analytics events older than this (`0` keeps them)           |
+| `RETENTION_GUEST_DAYS`                | API                  | no   | `0` (keep)                       | Delete guest accounts unused this long                             |
+| `BACKUP_INTERVAL_HOURS`               | compose, `backup.sh` | no   | `24`                             | Hours between `pg_dump`s                                           |
+| `BACKUP_KEEP_DAYS`                    | compose, `backup.sh` | no   | `14`                             | Delete dumps older than this                                       |
+| `BACKUP_DIR`                          | `backup.sh`          | no   | `/backups`                       | Where dumps go (compose mounts the `backups` volume there)         |
+| `ADMIN_API_URL`                       | `pnpm admin`         | no   | `PUBLIC_API_URL`, else `API_URL` | API the CLI talks to (the API image sets `http://127.0.0.1:7360`)  |
 
 ### Edge, images and the client
 

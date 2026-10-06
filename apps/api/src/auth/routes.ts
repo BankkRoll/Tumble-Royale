@@ -19,8 +19,9 @@ import type { DbOrTx } from '../db/client.ts';
 import { users } from '../db/schema.ts';
 import { invalidateBanCache, optionalUser, requireUser } from '../http/auth.ts';
 import { reapplyRetainedBans, type StableIdentifier } from '../moderation/ban-evasion.ts';
+import { disconnectSessionFamily } from '../realtime/disconnect.ts';
 import { ApiError, parse } from '../http/errors.ts';
-import { AUTH_RATE } from '../http/rate-limit.ts';
+import { AUTH_RATE, limitGuestSignups } from '../http/rate-limit.ts';
 import {
   completeOAuth,
   OAUTH_PROVIDERS,
@@ -218,6 +219,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
       // Device tokens are server-issued, so an unknown one means local data
       // from a wiped server (or a deleted account); start a fresh guest rather
       // than failing the launch.
+      await limitGuestSignups(ctx, req.ip);
       let deviceToken = randomToken();
       const created = await createAccount(tx, ctx.catalog, {
         isGuest: true,
@@ -250,10 +252,13 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
 
   app.post('/auth/logout', async (req, reply) => {
     const body = parse(LogoutBody, req.body);
-    if (body?.refreshToken) await revokeByRefreshToken(ctx.db, body.refreshToken, ctx.now());
-    else {
+    if (body?.refreshToken) {
+      await revokeByRefreshToken(ctx.db, body.refreshToken, ctx.now());
+      await disconnectSessionFamily(ctx.db, ctx.kv, { refreshToken: body.refreshToken });
+    } else {
       const auth = await requireUser(ctx, req);
       await revokeBySessionId(ctx.db, auth.sessionId, ctx.now());
+      await disconnectSessionFamily(ctx.db, ctx.kv, { sessionId: auth.sessionId });
     }
     return reply.code(204).send();
   });

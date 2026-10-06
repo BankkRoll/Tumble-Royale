@@ -1,28 +1,31 @@
-# Netlify / Cloudflare Pages: keep the admin console out of frames (no
-# clickjacking of its confirm buttons), search engines and shared caches.
-/admin
+# Netlify / Cloudflare Pages.
+#
+# Every page stays out of other sites' frames (no clickjacking of confirm and
+# purchase buttons) and runs only this origin's scripts. connect-src takes any
+# https:/wss: origin because config.json and the matchmaker name the API,
+# matchmaker and game servers at run time; 'wasm-unsafe-eval' lets the physics
+# engine compile its WebAssembly; blob: covers recorded clips, photos and
+# downloads; the UI font comes from Google Fonts. Keep the policy in sync with
+# deploy/docker/client.Caddyfile and vercel.json. The page rules below add headers only, never these again:
+# both hosts join a header set by two matching rules into one value.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https: wss:; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
   X-Frame-Options: DENY
-  Content-Security-Policy: frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+# The admin console: kept out of search engines and shared caches.
+/admin
   Referrer-Policy: no-referrer
   X-Robots-Tag: noindex, nofollow
   Cache-Control: no-cache
 /admin.html
-  X-Frame-Options: DENY
-  Content-Security-Policy: frame-ancestors 'none'
   Referrer-Policy: no-referrer
   X-Robots-Tag: noindex, nofollow
   Cache-Control: no-cache
-# The public status page: always revalidated and kept out of frames, but
-# indexable so players can find it.
+# The public status page: always revalidated, but indexable so players can
+# find it.
 /status
-  X-Frame-Options: DENY
-  Content-Security-Policy: frame-ancestors 'none'
   Referrer-Policy: strict-origin-when-cross-origin
-  X-Content-Type-Options: nosniff
   Cache-Control: no-cache
 /status.html
-  X-Frame-Options: DENY
-  Content-Security-Policy: frame-ancestors 'none'
   Referrer-Policy: strict-origin-when-cross-origin
-  X-Content-Type-Options: nosniff
   Cache-Control: no-cache

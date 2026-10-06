@@ -82,6 +82,12 @@ test.beforeAll(async () => {
       PGLITE_DIR: join(dataDir, 'pglite'),
       PUBLIC_WEB_URL: GAME,
       RATE_LIMIT_MAX: '5000',
+      // Every spec signs in fresh guests from localhost.
+      GUEST_SIGNUPS_PER_IP_HOUR: '5000',
+      GLOBAL_CHAT_MIN_ACCOUNT_AGE_MINUTES: '0',
+      GLOBAL_CHAT_IP_MAX: '5000',
+      WS_IP_UPGRADES_PER_MINUTE: '5000',
+      WS_MAX_SOCKETS_PER_IP: '5000',
     });
     start('apps/matchmaker', {
       PORT: String(BASE + 370),

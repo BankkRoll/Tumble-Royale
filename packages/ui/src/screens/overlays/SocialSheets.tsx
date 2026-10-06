@@ -14,11 +14,12 @@
  * - offline: an honest empty state with Retry instead of dead buttons;
  * - notifications with inline Accept/Decline and Join/Decline (party and club).
  */
-import { useEffect, useRef, useState, type JSX } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
 import { Button, Segmented } from '../../components/controls.tsx';
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
 import { Icon } from '../../components/icons/index.tsx';
+import { MASKED_TAG, streamerSafeAccount } from '../../names.ts';
 import { clubs, useClubs } from '../../store/clubs.ts';
 import { uiEvents } from '../../store/events.ts';
 import {
@@ -47,12 +48,32 @@ const PRESENCE_CLS: Record<Presence, string> = {
 /** `name#1234` exactly: an add-by-tag request rather than a search. */
 const NAME_TAG = /^.{3,16}#\d{4}$/;
 
-const refOf = (f: { id: string; name: string; tag?: string }): PlayerRef => ({
+/**
+ * Streamer Mode on and not revealed: every other player's name and tag in
+ * the sheet is masked (the party's names stay, as everywhere else).
+ */
+const NamesHidden = createContext(false);
+
+/** The name and tag a row shows, honouring {@link NamesHidden}. */
+function useShownName(p: { id: string; name: string; tag?: string }): ReturnType<typeof streamerSafeAccount> {
+  const hide = useContext(NamesHidden);
+  return streamerSafeAccount({ userId: p.id, name: p.name, ...(p.tag ? { tag: p.tag } : {}) }, hide);
+}
+
+const refOf = (f: { id: string }, shown: { name: string; tag?: string; masked: boolean }): PlayerRef => ({
   userId: f.id,
-  name: f.name,
-  ...(f.tag ? { tag: f.tag } : {}),
+  name: shown.name,
+  ...(shown.tag ? { tag: shown.tag } : {}),
   key: f.id,
+  ...(shown.masked ? { masked: true } : {}),
 });
+
+const inspect = (id: string, shown: { name: string; masked: boolean }): void =>
+  uiEvents.emit('inspectPlayer', {
+    playerId: id,
+    name: shown.name,
+    ...(shown.masked ? { masked: true } : {}),
+  });
 
 function presenceText(f: Friend): string {
   const base = PRESENCE_LABEL[f.presence];
@@ -63,7 +84,7 @@ function presenceText(f: Friend): string {
 
 function Name({ name, tag }: { name: string; tag?: string }): JSX.Element {
   return (
-    <b className="tr-ellipsis">
+    <b className="tr-ellipsis" data-testid="social-name">
       {name}
       {tag && <small className="tr-muted">#{tag}</small>}
     </b>
@@ -73,14 +94,15 @@ function Name({ name, tag }: { name: string; tag?: string }): JSX.Element {
 function FriendRow({ f, inParty }: { f: Friend; inParty: boolean }): JSX.Element {
   const [sent, setSent] = useState(false);
   const [more, setMore] = useState(false);
+  const shown = useShownName(f);
   const canInvite = !inParty && f.presence !== 'offline';
   return (
     <div className="tr-friend-wrap">
       <div className="tr-friend">
-        <PlayerButton player={refOf(f)}>
+        <PlayerButton player={refOf(f, shown)}>
           <TumblerAvatar colors={f.colors} size="2.4em" blink={false} noShadow />
           <div className="tr-col tr-grow" style={{ gap: 0, minWidth: 0 }}>
-            <Name name={f.name} tag={f.tag} />
+            <Name {...shown} />
             <span className={`tr-presence ${PRESENCE_CLS[f.presence]}`}>{presenceText(f)}</span>
           </div>
         </PlayerButton>
@@ -111,7 +133,7 @@ function FriendRow({ f, inParty }: { f: Friend; inParty: boolean }): JSX.Element
           size="sm"
           variant="ghost"
           aria-expanded={more}
-          aria-label={`More for ${f.name}`}
+          aria-label={`More for ${shown.name}`}
           onClick={() => setMore((m) => !m)}
         >
           More
@@ -119,20 +141,16 @@ function FriendRow({ f, inParty }: { f: Friend; inParty: boolean }): JSX.Element
       </div>
       {more && (
         <div className="tr-friend-more">
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => uiEvents.emit('inspectPlayer', { playerId: f.id, name: f.name })}
-          >
+          <Button size="sm" variant="secondary" onClick={() => inspect(f.id, shown)}>
             View profile
           </Button>
-          <Button size="sm" variant="secondary" onClick={() => confirmRemoveFriend(f.id, f.name)}>
+          <Button size="sm" variant="secondary" onClick={() => confirmRemoveFriend(f.id, shown.name)}>
             Remove friend
           </Button>
-          <Button size="sm" variant="secondary" onClick={() => confirmBlock(f.id, f.name)}>
+          <Button size="sm" variant="secondary" onClick={() => confirmBlock(f.id, shown.name)}>
             Block
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => social.getState().openPlayerMenu(refOf(f))}>
+          <Button size="sm" variant="ghost" onClick={() => social.getState().openPlayerMenu(refOf(f, shown))}>
             Mute or report
           </Button>
         </div>
@@ -180,12 +198,13 @@ function RelationButton({
 
 function RecentRow({ f }: { f: Friend }): JSX.Element {
   const friend = f.relation === 'friend';
+  const shown = useShownName(f);
   return (
     <div className="tr-friend">
-      <PlayerButton player={refOf(f)}>
+      <PlayerButton player={refOf(f, shown)}>
         <TumblerAvatar colors={f.colors} size="2.4em" blink={false} noShadow />
         <div className="tr-col tr-grow" style={{ gap: 0, minWidth: 0 }}>
-          <Name name={f.name} tag={f.tag} />
+          <Name {...shown} />
           {friend ? (
             <span className={`tr-presence ${PRESENCE_CLS[f.presence]}`}>{presenceText(f)}</span>
           ) : (
@@ -193,12 +212,25 @@ function RecentRow({ f }: { f: Friend }): JSX.Element {
           )}
         </div>
       </PlayerButton>
-      <RelationButton userId={f.id} name={f.name} relation={f.relation ?? 'none'} />
-      <Button
-        size="sm"
-        variant="ghost"
-        onClick={() => uiEvents.emit('inspectPlayer', { playerId: f.id, name: f.name })}
-      >
+      <RelationButton userId={f.id} name={shown.name} relation={f.relation ?? 'none'} />
+      <Button size="sm" variant="ghost" onClick={() => inspect(f.id, shown)}>
+        Profile
+      </Button>
+    </div>
+  );
+}
+
+function SearchResult({ r }: { r: PlayerSearchResult }): JSX.Element {
+  const shown = useShownName({ id: r.userId, name: r.name, tag: r.tag });
+  return (
+    <div className="tr-friend">
+      <div className="tr-col tr-grow" style={{ gap: 0, minWidth: 0 }}>
+        <Name {...shown} />
+        <small className="tr-muted">Level {r.level}</small>
+      </div>
+      {r.relation === 'friend' && <span className="tr-chip tr-chip--good">Friend</span>}
+      <RelationButton userId={r.userId} name={shown.name} relation={r.relation} />
+      <Button size="sm" variant="ghost" onClick={() => inspect(r.userId, shown)}>
         Profile
       </Button>
     </div>
@@ -209,24 +241,14 @@ function SearchResults({ results }: { results: PlayerSearchResult[] }): JSX.Elem
   return (
     <div className="tr-col" style={{ gap: '0.3em' }} data-testid="search-results">
       {results.map((r) => (
-        <div key={r.userId} className="tr-friend">
-          <div className="tr-col tr-grow" style={{ gap: 0, minWidth: 0 }}>
-            <Name name={r.name} tag={r.tag} />
-            <small className="tr-muted">Level {r.level}</small>
-          </div>
-          {r.relation === 'friend' && <span className="tr-chip tr-chip--good">Friend</span>}
-          <RelationButton userId={r.userId} name={r.name} relation={r.relation} />
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => uiEvents.emit('inspectPlayer', { playerId: r.userId, name: r.name })}
-          >
-            Profile
-          </Button>
-        </div>
+        <SearchResult key={r.userId} r={r} />
       ))}
     </div>
   );
+}
+
+function RequestName({ r }: { r: { userId: string; name: string; tag: string } }): JSX.Element {
+  return <Name {...useShownName({ id: r.userId, name: r.name, tag: r.tag })} />;
 }
 
 function AddFriend(): JSX.Element {
@@ -303,7 +325,7 @@ function Requests(): JSX.Element | null {
         <div key={`in-${r.userId}`} className="tr-friend">
           <TumblerAvatar colors={r.colors} size="2.4em" blink={false} noShadow />
           <div className="tr-col tr-grow" style={{ gap: 0, minWidth: 0 }}>
-            <Name name={r.name} tag={r.tag} />
+            <RequestName r={r} />
             <small className="tr-muted">Wants to be friends</small>
           </div>
           <Button
@@ -326,7 +348,7 @@ function Requests(): JSX.Element | null {
         <div key={`out-${r.userId}`} className="tr-friend">
           <TumblerAvatar colors={r.colors} size="2.4em" blink={false} noShadow />
           <div className="tr-col tr-grow" style={{ gap: 0, minWidth: 0 }}>
-            <Name name={r.name} tag={r.tag} />
+            <RequestName r={r} />
             <small className="tr-muted">Request sent</small>
           </div>
           <Button
@@ -361,7 +383,7 @@ function Blocked(): JSX.Element | null {
         blocked.map((b) => (
           <div key={b.userId} className="tr-friend">
             <div className="tr-col tr-grow" style={{ gap: 0, minWidth: 0 }}>
-              <Name name={b.name} tag={b.tag} />
+              <RequestName r={b} />
             </div>
             <Button
               size="sm"
@@ -389,7 +411,7 @@ function MyTag({ masked }: { masked: boolean }): JSX.Element | null {
         <span className="tr-label">Your name</span>
         <b className="tr-ellipsis">
           {profile.name}
-          <span className="tr-my-tag-num">#{masked ? '••••' : profile.tag}</span>
+          <span className="tr-my-tag-num">#{masked ? MASKED_TAG : profile.tag}</span>
         </b>
       </span>
       <Button
@@ -434,6 +456,24 @@ function OfflineFriends(): JSX.Element {
   );
 }
 
+/**
+ * Copies the party's code or invite link and confirms it. The game only
+ * hears about it for analytics, so nothing overwrites the clipboard after.
+ *
+ * @param what - Which one the player picked.
+ * @param text - The code or the link itself.
+ */
+export function copyPartyInvite(what: 'code' | 'link', text: string): void {
+  void navigator.clipboard?.writeText(text);
+  uiEvents.emit('copyInvite', { kind: 'party', what });
+  // SECURITY: the toast never repeats the code or link; on a stream it would hand out the party.
+  ui.getState().pushToast({
+    kind: 'success',
+    title: what === 'code' ? 'Party code copied!' : 'Invite link copied!',
+    icon: '📋',
+  });
+}
+
 /** Friends & party side sheet. */
 export function FriendsSheet(): JSX.Element {
   const friends = useUI((s) => s.friends);
@@ -447,8 +487,7 @@ export function FriendsSheet(): JSX.Element {
   const code = party?.code ?? '';
   const link = `${globalThis.location?.origin ?? ''}/join/${code}`;
   const copy = (what: 'code' | 'link'): void => {
-    void navigator.clipboard?.writeText(what === 'code' ? code : link);
-    uiEvents.emit('copyInvite', { code });
+    copyPartyInvite(what, what === 'code' ? code : link);
     setCopied(what);
     window.setTimeout(() => setCopied(null), 1600);
   };
@@ -506,7 +545,7 @@ export function FriendsSheet(): JSX.Element {
           ) : section === 'club' ? (
             <ClubPanel />
           ) : (
-            <>
+            <NamesHidden.Provider value={streamer && !reveal}>
               <MyTag masked={streamer && !reveal} />
               <Button variant="sky" block onClick={openJoinCode}>
                 <Icon name="key" size="1em" /> Join a party or show with a code
@@ -561,7 +600,7 @@ export function FriendsSheet(): JSX.Element {
                           {m.isLeader ? <Icon name="crown" size="0.9em" /> : null}
                           {m.name}
                           {m.tag && (
-                            <small className="tr-muted">#{streamer && !reveal ? '••••' : m.tag}</small>
+                            <small className="tr-muted">#{streamer && !reveal ? MASKED_TAG : m.tag}</small>
                           )}
                           {m.isSelf ? ' (you)' : ''}
                         </b>
@@ -676,7 +715,7 @@ export function FriendsSheet(): JSX.Element {
                 </div>
               )}
               <Blocked />
-            </>
+            </NamesHidden.Provider>
           )}
         </div>
       </aside>

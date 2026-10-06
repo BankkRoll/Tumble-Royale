@@ -76,6 +76,13 @@ const EnvSchema = z.object({
   NAME_CHANGE_COOLDOWN_DAYS: z.coerce.number().int().min(0).default(30),
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(300),
   PRESENCE_GRACE_MS: z.coerce.number().int().min(0).max(120_000).default(8_000),
+  WS_IP_UPGRADES_PER_MINUTE: z.coerce.number().int().min(1).default(60),
+  WS_USER_UPGRADES_PER_MINUTE: z.coerce.number().int().min(1).default(20),
+  WS_MAX_SOCKETS_PER_USER: z.coerce.number().int().min(1).default(5),
+  WS_MAX_SOCKETS_PER_IP: z.coerce.number().int().min(1).default(50),
+  GUEST_SIGNUPS_PER_IP_HOUR: z.coerce.number().int().min(1).default(10),
+  GLOBAL_CHAT_MIN_ACCOUNT_AGE_MINUTES: z.coerce.number().int().min(0).default(10),
+  GLOBAL_CHAT_IP_MAX: z.coerce.number().int().min(1).default(10),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   ...OpsEnvSchema.shape,
 });
@@ -160,6 +167,8 @@ export interface ApiConfig {
   rateLimitMax: number;
   /** How long a user stays "online" after their last realtime connection closes. */
   presenceGraceMs: number;
+  /** Per-IP and per-account caps against throwaway-account and socket floods. */
+  abuse: AbuseConfig;
   logLevel: string;
   /** Self-hosting and operations settings. */
   ops: ApiOpsConfig;
@@ -184,6 +193,31 @@ export interface VoiceServerConfig {
    * production, for LAN play and local testing).
    */
   available: boolean;
+}
+
+/**
+ * Abuse limits. Guests cost nothing to mint, so anything an account may do
+ * once per window is also capped per client IP.
+ */
+export interface AbuseConfig {
+  /** Realtime gateway handshakes per client IP per minute (`WS_IP_UPGRADES_PER_MINUTE`, 60). */
+  wsIpUpgradesPerMinute: number;
+  /** Realtime gateway handshakes per account per minute (`WS_USER_UPGRADES_PER_MINUTE`, 20). */
+  wsUserUpgradesPerMinute: number;
+  /** Open gateway sockets per account on one instance (`WS_MAX_SOCKETS_PER_USER`, 5). */
+  wsMaxSocketsPerUser: number;
+  /** Open gateway sockets per client IP on one instance (`WS_MAX_SOCKETS_PER_IP`, 50). */
+  wsMaxSocketsPerIp: number;
+  /** New guest accounts per client IP per hour (`GUEST_SIGNUPS_PER_IP_HOUR`, 10). */
+  guestSignupsPerIpHour: number;
+  /**
+   * How old a guest account must be before it may post in global chat
+   * (`GLOBAL_CHAT_MIN_ACCOUNT_AGE_MINUTES`, 10). Accounts with a linked
+   * sign-in (email, OAuth) may post at once.
+   */
+  globalChatMinAccountAgeMs: number;
+  /** Global chat lines per client IP per window, across accounts (`GLOBAL_CHAT_IP_MAX`, 10). */
+  globalChatIpMax: number;
 }
 
 /** Data-retention policy; a 0 day count keeps that data forever. */
@@ -408,6 +442,15 @@ export function loadConfig(env: Env = process.env): ApiConfig {
     trustProxy,
     rateLimitMax: e.RATE_LIMIT_MAX,
     presenceGraceMs: e.PRESENCE_GRACE_MS,
+    abuse: {
+      wsIpUpgradesPerMinute: e.WS_IP_UPGRADES_PER_MINUTE,
+      wsUserUpgradesPerMinute: e.WS_USER_UPGRADES_PER_MINUTE,
+      wsMaxSocketsPerUser: e.WS_MAX_SOCKETS_PER_USER,
+      wsMaxSocketsPerIp: e.WS_MAX_SOCKETS_PER_IP,
+      guestSignupsPerIpHour: e.GUEST_SIGNUPS_PER_IP_HOUR,
+      globalChatMinAccountAgeMs: e.GLOBAL_CHAT_MIN_ACCOUNT_AGE_MINUTES * 60_000,
+      globalChatIpMax: e.GLOBAL_CHAT_IP_MAX,
+    },
     logLevel: e.LOG_LEVEL,
     ops: {
       dbPoolMax: e.DB_POOL_MAX,

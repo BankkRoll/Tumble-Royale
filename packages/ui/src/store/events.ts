@@ -114,6 +114,8 @@ export interface UIIntents {
     name?: string;
     /** Open the full profile even for party members (whose click opens the player card). */
     direct?: boolean;
+    /** `name` is a Streamer Mode mask: the card keeps it and hides the tag. */
+    masked?: boolean;
   };
   /** News posts the player has opened (clears unread badges). */
   newsRead: { ids: string[] };
@@ -180,7 +182,11 @@ export interface UIIntents {
   spectateCustom: { spectator: boolean };
   inviteFriend: { friendId: string };
   addFriend: { nameTag: string };
-  copyInvite: { code: string };
+  /**
+   * The UI already copied an invite (and said so): analytics only. Carries
+   * no code, so nothing downstream can echo it on a stream.
+   */
+  copyInvite: { kind: 'party' | 'lobby'; what: 'code' | 'link' };
   kickPartyMember: { memberId: string };
   /** Solo player or party leader starts a lobby mini-game on the menu platform. */
   lobbyGameStart: { game: LobbyGameId };

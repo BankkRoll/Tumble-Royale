@@ -121,10 +121,12 @@ jobs:
             sleep 2
           done
           # WebSocket upgrades reach the game server through the edge.
-          curl -sS -o /dev/null --max-time 5 -w '%{http_code}' "$base/gs/ws" \
+          # An upgraded socket stays open, so curl always ends on its --max-time
+          # (exit 28); judge the status code, not curl's exit under pipefail.
+          code=$(curl -sS -o /dev/null --max-time 5 -w '%{http_code}' "$base/gs/ws" \
             -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
-            -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H "Origin: $base" | grep -q 101 || {
-            echo "/gs/ws did not upgrade" >&2; exit 1; }
+            -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H "Origin: $base" || true)
+          test "$code" = 101 || { echo "/gs/ws did not upgrade (HTTP $code)" >&2; exit 1; }
           # Metrics stay behind their token.
           test "$(curl -s -o /dev/null -w '%{http_code}' "$base/api/metrics")" != 200
       - name: Game server drains and exits on stop

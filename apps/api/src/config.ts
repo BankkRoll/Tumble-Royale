@@ -362,7 +362,11 @@ export function loadConfig(env: Env = process.env): ApiConfig {
   if (gameServerHmacSecret !== undefined && gameServerHmacSecret === internalHmacSecret)
     issues.add('GAME_SERVER_HMAC_SECRET', 'must differ from INTERNAL_HMAC_SECRET');
   const internalHmacAllowV1 = issues.flag('INTERNAL_HMAC_ALLOW_V1', false);
-  const parsed = EnvSchema.safeParse(env);
+  // NOTE: docker compose passes optional variables as `${NAME:-}`, so an unset
+  // one arrives as ''; blank means "use the default", not 0.
+  const parsed = EnvSchema.safeParse(
+    Object.fromEntries(Object.entries(env).filter(([, v]) => v === undefined || v.trim() !== '')),
+  );
   if (!parsed.success) issues.addSchemaIssues(parsed.error.issues);
   // Every field has a default, so parsing {} lets the remaining checks run and
   // report alongside the schema issues.

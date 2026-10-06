@@ -45,6 +45,13 @@ describe('matchmaker config', () => {
     expect(issueNames(testEnv({ TARGET_SIZE: String(MAX_PLAYERS + 1) }))).toEqual(['TARGET_SIZE']);
   });
 
+  it('treats blank variables, as docker compose passes unset ones, as defaults', () => {
+    const blank = { TARGET_SIZE: '', MAX_WAIT_MS: '', TICK_MS: ' ', RATE_LIMIT_MAX: '', LOG_LEVEL: '' };
+    const c = loadConfig(testEnv(blank));
+    expect(c.targetSize).toBe(DEFAULT_SHOW_PLAYERS);
+    expect(c.logLevel).toBe('info');
+  });
+
   it('refuses placeholder secrets copied from .env.example', () => {
     expect(issueNames(testEnv({ GAME_SERVER_SECRET: 'change-me' }))).toEqual(['GAME_SERVER_SECRET']);
   });

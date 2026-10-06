@@ -7,7 +7,7 @@ import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CLUB_MAX_MEMBERS } from '@tumble/shared';
 import { removeMember } from '../src/clubs/service.ts';
-import { clubKicks, clubReports, clubs, clubMembers, featureFlags } from '../src/db/schema.ts';
+import { clubInvites, clubKicks, clubReports, clubs, clubMembers, featureFlags } from '../src/db/schema.ts';
 import { invalidateLiveOps } from '../src/liveops/state.ts';
 import { userChannel, type RealtimeEvent } from '../src/realtime/notifier.ts';
 import {
@@ -417,6 +417,20 @@ describe('ownership hand-over', () => {
     const [row] = await api.ctx.db.select().from(clubs).where(eq(clubs.id, lonely.id));
     expect(row!.disbandedAt).not.toBeNull();
     expect(club.id).not.toBe(lonely.id);
+  });
+});
+
+describe('account erasure', () => {
+  it('withdraws the club invites the erased player sent', async () => {
+    const { officer } = await trio();
+    const friend = await player(api);
+    await befriend(api, officer, friend);
+    expect((await call(officer, 'POST', '/clubs/me/invites', { userId: friend.id })).statusCode).toBe(201);
+    expect((await myClub(api, friend)).invites).toHaveLength(1);
+    expect((await call(officer, 'DELETE', '/me', { confirm: 'DELETE' })).statusCode).toBe(204);
+    expect((await myClub(api, friend)).invites).toEqual([]);
+    const left = await api.ctx.db.select().from(clubInvites).where(eq(clubInvites.invitedBy, officer.id));
+    expect(left).toEqual([]);
   });
 });
 

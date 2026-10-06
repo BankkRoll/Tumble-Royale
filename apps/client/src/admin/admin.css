@@ -423,6 +423,13 @@ a {
   color: var(--adm-bad);
   margin: 6px 0;
 }
+.adm-inline-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+  color: var(--adm-muted);
+}
 .adm-spinner {
   display: inline-block;
   width: 12px;

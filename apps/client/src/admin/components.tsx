@@ -94,6 +94,22 @@ export interface Loaded<T> {
 }
 
 /**
+ * The state as a load starts. A new key (another filter, another player)
+ * drops the old data, so its rows never show under the new filter, nor stay
+ * on screen when that load fails; a reload of the same key keeps them up.
+ *
+ * @param prev - State before the load.
+ * @param keyChanged - The load is for a different key.
+ * @returns State while loading.
+ */
+export function loadStarting<T>(
+  prev: { data: T | null; error: string | null; loading: boolean },
+  keyChanged: boolean,
+): { data: T | null; error: string | null; loading: boolean } {
+  return keyChanged ? { data: null, error: null, loading: true } : { ...prev, loading: true, error: null };
+}
+
+/**
  * Loads data when `key` changes; stale answers from an older key are ignored.
  *
  * @param key - Identity of the request (URL); null skips loading.
@@ -108,13 +124,17 @@ export function useLoad<T>(key: string | null, load: () => Promise<T>): Loaded<T
   const [tick, setTick] = useState(0);
   const loadRef = useRef(load);
   loadRef.current = load;
+  const loadedKey = useRef<string | null>(null);
   useEffect(() => {
     if (key === null) {
+      loadedKey.current = null;
       setState({ data: null, error: null, loading: false });
       return;
     }
     let live = true;
-    setState((s) => ({ ...s, loading: true, error: null }));
+    const keyChanged = loadedKey.current !== key;
+    loadedKey.current = key;
+    setState((s) => loadStarting(s, keyChanged));
     loadRef.current().then(
       (data) => live && setState({ data, error: null, loading: false }),
       (err: unknown) => live && setState((s) => ({ ...s, error: errorMessage(err), loading: false })),
@@ -163,6 +183,11 @@ export function StateBlock<T>(props: {
     );
   return (
     <>
+      {state.loading && (
+        <p className="adm-inline-status" role="status" aria-live="polite">
+          <span className="adm-spinner" aria-hidden="true" /> Refreshing…
+        </p>
+      )}
       {state.error && (
         <p className="adm-inline-error" role="alert">
           Refresh failed: {state.error}

@@ -333,6 +333,10 @@ export class OnlineShowSession extends ShowSession {
     this.net.sendLowFreq({ t: 'spectate', target: id });
   }
 
+  protected override onSpectatorFocus(focus: [number, number, number]): void {
+    this.net.sendLowFreq({ t: 'spectate', target: -1, focus });
+  }
+
   /** Pre-show player count and join feed from the server's roster (not the offline fake feed). */
   private updatePreShowFeed(): void {
     if (!this.lobbyLive) return;
@@ -543,6 +547,11 @@ export class OnlineShowSession extends ShowSession {
     this.showInfo = m;
     this.showName = m.showName;
     this.roundCount = Math.max(1, m.roundCount);
+    // A spectator seat the host did not let chat watches quietly: no typing, no pings.
+    this.chat.setQuiet(m.canChat === false);
+    const seat = ui.getState().showSeat;
+    if (seat && (seat.canChat ?? true) !== (m.canChat ?? true))
+      ui.getState().setShowSeat({ ...seat, canChat: m.canChat ?? true });
   }
 
   private onPlayerList(list: NetPlayerInfo[]): void {

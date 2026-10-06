@@ -74,10 +74,12 @@ describe('lobbyOptions', () => {
       countdownSec: 20,
       minPlayers: 3,
       roundVoting: true,
+      spectatorChat: false,
       isPrivate: true,
     });
     expect(o.rounds).not.toBe(l.settings.rounds);
     expect(lobbyOptions({ ...l.settings, roundVoting: false }).roundVoting).toBe(false);
+    expect(lobbyOptions({ ...l.settings, spectatorChat: true }).spectatorChat).toBe(true);
   });
 });
 

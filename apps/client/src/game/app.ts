@@ -221,6 +221,7 @@ export class GameApp {
   private partyRoster: PartyRoster | null = null;
   private queued = false;
   private readonly queueAttempts = new QueueAttempts();
+  private probingServer = false;
   private pendingJoin: string | null = deepLinkCode();
   private lobby: Lobby | null = null;
   /** A lobby arrived (e.g. restored after a reload) before the menu was up; open it there. */
@@ -1149,7 +1150,7 @@ export class GameApp {
   }
 
   private async startShow(playlistId: string | null): Promise<void> {
-    if (this.session) return;
+    if (this.session || this.probingServer) return;
     if (this.canMatchmake && this.refuseForMaintenance()) return;
     this.beginShow();
     this.menu?.setIdlePlay(false);
@@ -1164,7 +1165,16 @@ export class GameApp {
     }
     let session: ShowSession | null = null;
     if (this.cfg.online) {
-      if (await gameServerAvailable()) session = new OnlineShowSession(this.ctx);
+      // A second Play during the server probe would start a second session over the first.
+      this.probingServer = true;
+      let up = false;
+      try {
+        up = await gameServerAvailable();
+      } finally {
+        this.probingServer = false;
+      }
+      if (this.session) return;
+      if (up) session = new OnlineShowSession(this.ctx);
       else
         ui.getState().pushToast({
           kind: 'warning',

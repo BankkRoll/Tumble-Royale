@@ -20,6 +20,20 @@ export interface KV {
   set(key: string, value: string, ttlMs?: number): Promise<void>;
   /** Sets only when the key is absent. Returns true when the value was written. */
   setNX(key: string, value: string, ttlMs: number): Promise<boolean>;
+  /**
+   * Deletes `key` only while it still holds `value`, in one atomic step:
+   * releases a lock this caller owns, never one another holder took after it
+   * expired.
+   *
+   * @returns True when the key was deleted.
+   */
+  delIfEquals(key: string, value: string): Promise<boolean>;
+  /**
+   * Resets the TTL of `key` only while it still holds `value` (lock renewal), atomically.
+   *
+   * @returns True when the caller still owns the key.
+   */
+  expireIfEquals(key: string, value: string, ttlMs: number): Promise<boolean>;
   del(...keys: string[]): Promise<void>;
   /** Atomically reads and deletes a key (one-time tokens). */
   getDel(key: string): Promise<string | null>;
@@ -37,7 +51,10 @@ export interface KV {
   zcard(key: string): Promise<number>;
 
   publish(channel: string, message: string): Promise<void>;
-  /** Subscribes to a channel; the returned function unsubscribes this handler. */
+  /**
+   * Subscribes to a channel; resolves once messages published from now on are
+   * delivered. The returned function unsubscribes this handler.
+   */
   subscribe(channel: string, handler: MessageHandler): Promise<() => Promise<void>>;
 
   /** Checks the backing store answers (health checks); rejects when it does not. */

@@ -5,6 +5,7 @@
 import { memo, type JSX } from 'react';
 import { Icon } from '../components/icons/index.tsx';
 import { openInGameMenu } from '../screens/overlays/InGameMenu.tsx';
+import { VoiceRoster } from '../screens/overlays/VoicePanel.tsx';
 import { useUI } from '../store/uiStore.ts';
 import { tutorialUi, useTutorialUI } from '../tutorial/store.ts';
 import { EmoteWheel } from './EmoteWheel.tsx';
@@ -66,6 +67,7 @@ export const Hud = memo(function Hud(): JSX.Element {
           )}
           <NetStats />
           <TeamScores />
+          <VoiceRoster />
         </div>
       </div>
       <ControlsHint />

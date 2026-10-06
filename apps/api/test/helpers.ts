@@ -73,7 +73,7 @@ export interface TestApi extends BuiltApp {
     opts?: { secret?: string; nonce?: string; timestamp?: number },
   ): Promise<LightMyRequestResponse>;
   /** Bans a user through the admin route. */
-  ban(userId: string, scope?: 'all' | 'ranked' | 'chat'): Promise<void>;
+  ban(userId: string, scope?: 'all' | 'ranked' | 'chat' | 'voice'): Promise<void>;
 }
 
 /** Build overrides for {@link createTestApi}. */

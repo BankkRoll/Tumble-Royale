@@ -38,7 +38,7 @@ const roundScreen: SpectatorKeyState = {
 describe('spectator hotkeys', () => {
   it('map the default keys to spectator actions', () => {
     const b = DEFAULT_KEYBINDS;
-    expect(spectatorKeyAction('KeyV', b, 'follow')).toBe('camera');
+    expect(spectatorKeyAction('KeyF', b, 'follow')).toBe('camera');
     expect(spectatorKeyAction('KeyL', b, 'follow')).toBe('leader');
     expect(spectatorKeyAction('Tab', b, 'follow')).toBe('roster');
     expect(spectatorKeyAction('KeyP', b, 'follow')).toBe('pin');
@@ -54,13 +54,13 @@ describe('spectator hotkeys', () => {
   it('leave Q/E to the free camera for flying', () => {
     expect(spectatorKeyAction('KeyQ', DEFAULT_KEYBINDS, 'free')).toBeNull();
     expect(spectatorKeyAction('KeyE', DEFAULT_KEYBINDS, 'free')).toBeNull();
-    expect(spectatorKeyAction('KeyV', DEFAULT_KEYBINDS, 'free')).toBe('camera');
+    expect(spectatorKeyAction('KeyF', DEFAULT_KEYBINDS, 'free')).toBe('camera');
   });
 
   it('follow rebinding', () => {
     const binds = { ...DEFAULT_KEYBINDS, spectateCamera: ['KeyC', ''] as [string, string] };
     expect(spectatorKeyAction('KeyC', binds, 'follow')).toBe('camera');
-    expect(spectatorKeyAction('KeyV', binds, 'follow')).toBeNull();
+    expect(spectatorKeyAction('KeyF', binds, 'follow')).toBeNull();
   });
 
   it('only fire on the round screen while watching, with nothing else open', () => {
@@ -78,6 +78,8 @@ describe('spectator hotkeys', () => {
     expect(spectatorKeysLive({ ...roundScreen, replay: {} as SpectatorKeyState['replay'] }, true)).toBe(
       false,
     );
+    const elimReplay = {} as NonNullable<SpectatorKeyState['elimReplay']>;
+    expect(spectatorKeysLive({ ...roundScreen, elimReplay }, true)).toBe(false);
   });
 
   it('never share a default key with gameplay or each other', () => {

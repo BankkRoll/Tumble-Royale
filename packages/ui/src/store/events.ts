@@ -249,6 +249,13 @@ export interface UIIntents {
   clubChat: { text: string };
   /** Report a club. */
   clubReport: { clubId: string; reason: ClubReportReason; details?: string };
+  /**
+   * Switch voice chat on (after the first-use explanation; the game then asks
+   * for the microphone) or off.
+   */
+  voiceToggle: { on: boolean };
+  /** Settings → Voice opened: re-check availability and list microphones. */
+  voiceRefresh: undefined;
   /** In-show text chat (online shows only). */
   sendChat: { text: string };
   /** The in-show chat input opened or closed (the game frees the mouse and held keys). */
@@ -293,6 +300,12 @@ export interface UIIntents {
   replayOpenFile: { name: string; bytes: ArrayBuffer };
   /** Replay viewer control. */
   replayCommand: ReplayCommand;
+  /** Skip the "How you went out" replay (its button; keys, clicks and pad buttons skip it too). */
+  elimReplaySkip: undefined;
+  /** Play highlights in the replay viewer, one after another (`HighlightEntry.id`s, in order). */
+  highlightPlay: { ids: string[] };
+  /** A highlight's Share button opened the share sheet on it (analytics). */
+  highlightShare: { id: string };
   /** Share sheet: render the show's share card. */
   shareCard: { format: ShareCardFormat; includeName: boolean };
   /** Share sheet: render a clip of a recorded round (window in recording seconds). */

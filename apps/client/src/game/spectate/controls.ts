@@ -6,7 +6,8 @@
  *
  * Rules:
  * - hotkeys only fire on the round screen while spectating, with no overlay,
- *   dialog, photo mode or replay open, and never while a text field or the
+ *   dialog, photo mode, replay or "How you went out" replay open, and never
+ *   while a text field or the
  *   chat owns the keyboard (the caller checks `keyboardBusy`);
  * - controller buttons only fire while menu navigation does not own the pad
  *   (`menuOwnsPad`), so A on the eliminated sheet is never also "leader";
@@ -46,7 +47,9 @@ const PAD_ACTIONS: readonly [keyof PadBinds, SpectatorAction][] = [
 ];
 
 /** The UI fields that decide whether spectator hotkeys are live. */
-export type SpectatorKeyState = Pick<UIState, 'screen' | 'overlay' | 'dialog' | 'photo' | 'replay'>;
+export type SpectatorKeyState = Pick<UIState, 'screen' | 'overlay' | 'dialog' | 'photo' | 'replay'> & {
+  elimReplay?: UIState['elimReplay'];
+};
 
 /**
  * Whether spectator keyboard hotkeys may fire right now.
@@ -56,7 +59,13 @@ export type SpectatorKeyState = Pick<UIState, 'screen' | 'overlay' | 'dialog' | 
  */
 export function spectatorKeysLive(s: SpectatorKeyState, watching: boolean): boolean {
   return (
-    watching && s.screen === 'round' && s.overlay === 'none' && !s.dialog && !s.photo.active && !s.replay
+    watching &&
+    s.screen === 'round' &&
+    s.overlay === 'none' &&
+    !s.dialog &&
+    !s.photo.active &&
+    !s.replay &&
+    !s.elimReplay
   );
 }
 
@@ -68,7 +77,7 @@ export function spectatorKeysLive(s: SpectatorKeyState, watching: boolean): bool
  * @param mode - Camera mode (the free camera keeps previous/next keys for flying).
  * @returns The action, or null when the key is not a spectator key here.
  * @example
- * spectatorKeyAction('KeyV', binds, 'follow'); // 'camera'
+ * spectatorKeyAction('KeyF', binds, 'follow'); // 'camera'
  */
 export function spectatorKeyAction(
   code: string,

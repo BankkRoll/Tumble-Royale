@@ -34,6 +34,7 @@ import { setChatOpen } from '../../hud/ChatWidget.tsx';
 import { ClubPanel } from './ClubPanel.tsx';
 import { confirmBlock, confirmRemoveFriend, PlayerButton } from './PlayerActions.tsx';
 import { openJoinCode } from './PrivateShow.tsx';
+import { PartyVoiceMark } from './VoicePanel.tsx';
 
 const PRESENCE_CLS: Record<Presence, string> = {
   online: 'is-online',
@@ -565,6 +566,7 @@ export function FriendsSheet(): JSX.Element {
                           {m.isSelf ? ' (you)' : ''}
                         </b>
                       </PlayerButton>
+                      <PartyVoiceMark userId={m.id} isSelf={m.isSelf} />
                       {m.isLeader ? (
                         <span
                           className="tr-chip tr-chip--lemon"

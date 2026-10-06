@@ -29,13 +29,15 @@ export interface SanctionRef {
 
 /** A captured chat line. */
 export interface EvidenceLine {
-  channel: 'global' | 'whisper';
+  /** `voice` lines are room and time metadata; voice is never recorded. */
+  channel: 'global' | 'whisper' | 'club' | 'voice';
   text: string;
   at: number;
 }
 
 /** Report reasons. */
-export type ReportReason = 'cheating' | 'harassment' | 'offensive_name' | 'griefing' | 'spam' | 'other';
+export type ReportReason =
+  'cheating' | 'harassment' | 'offensive_name' | 'griefing' | 'spam' | 'voice' | 'other';
 /** Report statuses. */
 export type ReportStatus = 'open' | 'resolved' | 'dismissed' | 'actioned';
 
@@ -61,7 +63,7 @@ export interface ReportPage {
 }
 
 /** Decisions the queue offers. */
-export type ReportAction = 'dismiss' | 'resolve' | 'warn' | 'mute' | 'ban';
+export type ReportAction = 'dismiss' | 'resolve' | 'warn' | 'mute' | 'voice_mute' | 'ban';
 
 /** A ban row (`GET /internal/bans`, player page). */
 export interface BanRow {

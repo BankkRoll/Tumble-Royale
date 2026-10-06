@@ -66,6 +66,8 @@ import type {
   PhotoModeState,
   ReplayRoundEntry,
   ReplayViewerState,
+  EliminationReplayState,
+  HighlightEntry,
   RewardsSummary,
   CustomRoundLookup,
   RoundCatalogEntry,
@@ -247,6 +249,10 @@ export interface UIState {
   replayLive: boolean;
   /** The open replay viewer (null = closed). While open it covers the screen and HUD. */
   replay: ReplayViewerState | null;
+  /** The "How you went out" replay after a knock-out (null = not showing). */
+  elimReplay: EliminationReplayState | null;
+  /** The show's automatic highlights, best first (empty while replays are off). */
+  highlights: HighlightEntry[];
 
   // --- actions: screens ----------------------------------------------------
   /** Changes screen, with the screen's default transition unless overridden. */
@@ -388,6 +394,11 @@ export interface UIState {
   setReplay: (replay: ReplayViewerState | null) => void;
   /** Merges viewer fields (playhead updates at ~15 Hz). */
   patchReplay: (patch: Partial<ReplayViewerState>) => void;
+  /** Shows (state) or hides (null) the elimination replay. */
+  setElimReplay: (state: EliminationReplayState | null) => void;
+  /** Merges elimination replay fields (progress at ~10 Hz); ignored when none shows. */
+  patchElimReplay: (patch: Partial<EliminationReplayState>) => void;
+  setHighlights: (highlights: HighlightEntry[]) => void;
 
   // --- internal (TumbleWipe component) -------------------------------------
   /** @internal Cover animation finished. */
@@ -510,6 +521,8 @@ export const ui = createStore<UIState>()((set, get) => ({
   replays: [],
   replayLive: false,
   replay: null,
+  elimReplay: null,
+  highlights: [],
 
   setScreen: (screen, opts = {}) => {
     const s = get();
@@ -785,6 +798,18 @@ export const ui = createStore<UIState>()((set, get) => ({
       }
     }
   },
+  setElimReplay: (elimReplay) => set({ elimReplay }),
+  patchElimReplay: (patch) => {
+    const r = get().elimReplay;
+    if (!r) return;
+    for (const k in patch) {
+      if (r[k as keyof EliminationReplayState] !== patch[k as keyof EliminationReplayState]) {
+        set({ elimReplay: { ...r, ...patch } });
+        return;
+      }
+    }
+  },
+  setHighlights: (highlights) => set({ highlights }),
 }));
 
 function applyScreen(screen: ScreenId, transition: TransitionKind): void {

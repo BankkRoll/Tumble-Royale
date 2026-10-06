@@ -30,7 +30,7 @@ export const DEFAULT_KEYBINDS: Keybinds = {
   emote4: ['Digit4', ''],
   spectatePrev: ['KeyQ', ''],
   spectateNext: ['KeyE', ''],
-  spectateCamera: ['KeyV', ''],
+  spectateCamera: ['KeyF', ''],
   spectateLeader: ['KeyL', ''],
   spectateRoster: ['Tab', ''],
   spectatePin: ['KeyP', ''],
@@ -38,6 +38,7 @@ export const DEFAULT_KEYBINDS: Keybinds = {
   broadcastHelp: ['KeyH', ''],
   broadcastChroma: ['KeyK', ''],
   pause: ['Escape', ''],
+  pushToTalk: ['KeyV', ''],
 };
 
 /** Human labels for rebindable actions, in settings display order. */
@@ -64,6 +65,7 @@ export const BIND_ACTION_LABELS: Record<BindAction, string> = {
   broadcastHelp: 'Broadcast help',
   broadcastChroma: 'Chroma-key backdrop',
   pause: 'Menu',
+  pushToTalk: 'Push to talk',
 };
 
 /**
@@ -92,6 +94,7 @@ export const DEFAULT_PAD_BINDS: PadBinds = {
   spectatePin: [1, -1],
   broadcastOverlay: [11, -1],
   broadcastHelp: [12, -1],
+  pushToTalk: [8, -1],
 };
 
 /** Human labels for remappable controller actions, in settings display order. */
@@ -113,6 +116,7 @@ export const PAD_BIND_ACTION_LABELS: Record<PadBindAction, string> = {
   spectatePin: 'Pin player',
   broadcastOverlay: 'Broadcast overlay',
   broadcastHelp: 'Broadcast help',
+  pushToTalk: 'Push to talk',
 };
 
 /** Default settings. */
@@ -145,11 +149,29 @@ export const DEFAULT_SETTINGS: Settings = {
     streamerMode: false,
     showPing: true,
     autoSpectate: true,
+    eliminationReplay: true,
     botTags: true,
     chatFilter: true,
     showChat: true,
     region: 'auto',
     analytics: null,
+  },
+  // Voice is strictly opt-in: nothing here may switch it on or play anyone by default.
+  voice: {
+    enabled: false,
+    introSeen: false,
+    mode: 'ptt',
+    threshold: 0.45,
+    inputDeviceId: '',
+    volume: 0.9,
+    relayOnly: false,
+    teamVoice: false,
+    noiseSuppression: true,
+    echoCancellation: true,
+    streamerHideNames: true,
+    streamerMute: false,
+    peerVolume: {},
+    peerMuted: {},
   },
 };
 

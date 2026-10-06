@@ -13,6 +13,8 @@
  *   director cameras, roster, pin, broadcast overlay) through a small host;
  * - mirrors the between-rounds round vote onto the vote card and sends the
  *   local player's ballot through {@link sendVote};
+ * - notes the local player's knock-out and plays "How you went out" before
+ *   the watch choice ({@link SessionElimination});
  * - builds the end-of-show recap for the wall and the rewards payload.
  *
  * Subclasses supply the data (director events or server messages) through the
@@ -68,6 +70,7 @@ import {
 } from '../views/ceremonies.ts';
 import type { GameContext, RoundOutcomeInfo, RoundStart, SessionPlayer, SessionSummary } from './context.ts';
 import { acceptsLocalVote, roundVoteState, type SessionVote, type SessionVoteResult } from './vote.ts';
+import { SessionElimination, eliminationFacts } from './elimination.ts';
 import { wonShow } from './crown.ts';
 import { showMenuKeyAction } from '../inputRouting.ts';
 import { withEventNote } from '../liveEvents.ts';
@@ -310,9 +313,12 @@ export abstract class ShowSession {
   /** Who the server was last told this client watches (-1: a free camera; -2: nothing yet this round). */
   private serverTarget = -2;
   private readonly directorSample = createPlayerSample();
+  /** "How you went out": the online tape and the knock-out waiting for its replay. */
+  private readonly elim: SessionElimination;
 
   constructor(protected readonly ctx: GameContext) {
     this.pool = new TumblerPool(ctx.tumblers.create);
+    this.elim = new SessionElimination(ctx.eliminations, this.isOnline());
     this.chat = new ShowChat(
       {
         localId: () => this.localId,
@@ -653,6 +659,8 @@ export abstract class ShowSession {
     if (document.pointerLockElement) document.exitPointerLock();
     this.ctx.input.settings.pointerLock = false;
     this.ctx.replays?.roundEnded(null);
+    this.elim.reset();
+    this.ctx.eliminations?.stop();
     ui.setState({ cameraLock: 'off' });
     ui.getState().setEmoteWheel(false);
     ui.getState().setSpectate(null);
@@ -936,6 +944,7 @@ export abstract class ShowSession {
   protected onRoundSelected(rs: RoundStart): void {
     const prevEntrants = this.round?.start.players.length ?? this.order.length;
     this.fpsSampler.take();
+    this.elim.reset();
     if (rs.players.some((p) => p.id === this.localId))
       track('round_start', { round: rs.round.id, index: rs.index, final: rs.isFinal });
     this.round = {
@@ -1323,7 +1332,11 @@ export abstract class ShowSession {
         } else r.view?.followLocal();
         s.setScreen('round', { transition: 'fade' });
         if (!set.gameplay.showPing) s.setHud({ ping: -1 });
-        if (r.source) this.ctx.replays?.roundStarted(this.replayInfo(r), r.source, r.view);
+        if (r.source) {
+          const info = this.replayInfo(r);
+          this.ctx.replays?.roundStarted(info, r.source, r.view);
+          this.elim.roundStarted(info, r.source);
+        }
         break;
       }
       case RoundPhase.Playing:
@@ -1438,6 +1451,12 @@ export abstract class ShowSession {
         r.source = null;
       }
     });
+    // Knocked out at the end of the round (the cut, the team result, the clock): the replay
+    // plays over the results wall, which never waits for it.
+    if (r.inRound && !qualified.has(this.localId)) {
+      this.elim.knockedOut(rs.index, this.knockoutFacts(r));
+      this.playElimination(true);
+    }
     this.ctx.audio.game.onRoundPhase(RoundPhase.Results, rs.round.type, {
       playersRemaining: o.qualified.length,
       theme: rs.round.theme,
@@ -1614,6 +1633,7 @@ export abstract class ShowSession {
     for (const e of events) {
       view?.handleEvent(e);
       this.ctx.replays?.event(e);
+      this.elim.event(e);
       if (audio) this.ctx.audio.game.handleSimEvent(e, lp);
       const cue = this.haptics.map(e, this.localId);
       if (cue && rumble && this.hapticGate.allow(cue.kind, now)) this.ctx.input.rumble(cue.pattern);
@@ -1700,9 +1720,12 @@ export abstract class ShowSession {
     s.setEmoteWheel(false);
     s.showStamp('eliminated');
     if (document.pointerLockElement) document.exitPointerLock();
+    this.elim.knockedOut(r.start.index, this.knockoutFacts(r));
     const plan = planAfterEliminated(this.watch, this.watchPrefs());
     this.after(plan.afterS, () => {
       if (this.round !== r || r.fate !== 'eliminated' || (this.phase ?? 0) >= RoundPhase.RoundEnd) return;
+      // The choice is offered as before; the UI holds it back until the replay is done.
+      this.playElimination(false);
       if (plan.kind === 'spectate') {
         this.beginSpectating();
         return;
@@ -1711,6 +1734,22 @@ export abstract class ShowSession {
       this.offerWatchChoice(plan.autoAfterS, this.stillInCount(), false);
       ui.getState().setEliminatedSheet(true);
     });
+  }
+
+  /** What the elimination replay's attribution needs from the live round right now. */
+  private knockoutFacts(r: ActiveRound): ReturnType<typeof eliminationFacts> {
+    const teams = new Map(r.start.players.map((p) => [p.id, p.team]));
+    return eliminationFacts(r.source?.alive ? r.source : null, r.start.round, teams, this.localId);
+  }
+
+  /**
+   * Plays "How you went out" for the noted knock-out, if the feature is on.
+   *
+   * @param atRoundEnd - Over the results wall (the knock-out ended the round for this player).
+   */
+  private playElimination(atRoundEnd: boolean): void {
+    const still = this.ctx.settings().accessibility.reduceMotion;
+    this.elim.play((id) => (id === this.localId ? 'you' : this.publicName(id)), still, atRoundEnd);
   }
 
   /** Entrants of the current round not yet knocked out. */
@@ -2017,6 +2056,7 @@ export abstract class ShowSession {
       us.screen === 'round' &&
       us.overlay === 'none' &&
       !us.replay &&
+      !us.elimReplay &&
       !social.getState().chat.open &&
       !us.photo.active;
     if (
@@ -2032,6 +2072,7 @@ export abstract class ShowSession {
     this.updateGrabHud();
     if (!view || !r) return;
     this.ctx.replays?.frame();
+    this.elim.frame(view);
     const flying = this.spectator.frame(realDt, look);
     if ((active || spectating) && !flying) view.rig.addLook(look.yaw, look.pitch);
 

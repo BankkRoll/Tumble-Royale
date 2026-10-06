@@ -29,6 +29,7 @@ import {
   shareUI,
   useShare,
   type ShareCardFormat,
+  type ShareClipPrefill,
   type ShareClipRound,
   type ShareOffer,
   type ShareResult,
@@ -127,15 +128,46 @@ function outcomeLabel(c: ShareClipRound): string {
 }
 
 /**
- * The clip window picker: round chips, length presets and a start trimmer.
+ * Where the clip tab starts: a highlight's window (centred in the nearest
+ * offered length) or the default round's suggested window.
+ *
+ * @param offer - The show's offer.
+ * @param prefill - A highlight's window, if the sheet was opened from one.
+ * @returns The round key, length and start.
  */
-function ClipOptions({ offer }: { offer: ShareOffer }): JSX.Element {
+export function initialClipWindow(
+  offer: Pick<ShareOffer, 'clips' | 'defaultClipKey'>,
+  prefill: ShareClipPrefill | null,
+): { key: string; length: number; start: number } {
+  const pre = prefill ? offer.clips.find((c) => c.key === prefill.key) : undefined;
+  if (pre && prefill) {
+    const length = CLIP_LENGTHS.reduce((best, v) =>
+      Math.abs(v - prefill.length) < Math.abs(best - prefill.length) ? v : best,
+    );
+    const start = Math.max(0, prefill.start - Math.max(0, length - prefill.length) / 2);
+    return { key: pre.key, length, start };
+  }
   const first =
     offer.clips.find((c) => c.key === offer.defaultClipKey) ?? offer.clips[offer.clips.length - 1];
+  return { key: first?.key ?? '', length: first?.defaultLength ?? 10, start: first?.defaultStart ?? 0 };
+}
+
+/**
+ * The clip window picker: round chips, length presets and a start trimmer.
+ */
+function ClipOptions({
+  offer,
+  prefill,
+}: {
+  offer: ShareOffer;
+  prefill: ShareClipPrefill | null;
+}): JSX.Element {
+  const [initial] = useState(() => initialClipWindow(offer, prefill));
+  const first = offer.clips.find((c) => c.key === initial.key) ?? offer.clips[offer.clips.length - 1];
   const [key, setKey] = useState(first?.key ?? '');
   const round = offer.clips.find((c) => c.key === key) ?? first;
-  const [length, setLength] = useState(first?.defaultLength ?? 10);
-  const [start, setStart] = useState(first?.defaultStart ?? 0);
+  const [length, setLength] = useState(initial.length);
+  const [start, setStart] = useState(initial.start);
   if (!round) return <p className="tr-muted">No rounds were recorded in this show.</p>;
   const len = Math.min(length, round.duration);
   const maxStart = Math.max(0, round.duration - len);
@@ -428,7 +460,7 @@ export function ShareLayer(): JSX.Element | null {
           (tab === 'card' ? (
             <CardOptions offer={offer} />
           ) : clipsUsable && offer.clipSupport !== 'checking' ? (
-            <ClipOptions offer={offer} />
+            <ClipOptions offer={offer} prefill={sheet.prefill} />
           ) : (
             <ClipUnavailable offer={offer} replaysOn={replaysOn} />
           ))}

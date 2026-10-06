@@ -176,12 +176,12 @@ describe('spectator controller', () => {
   it('cycles camera modes on the camera key and keeps Q/E for flying in the free camera', () => {
     const h = harness();
     h.ctl.goLive();
-    expect(h.key('KeyV')).toBe(true);
+    expect(h.key('KeyF')).toBe(true);
     expect(ui.getState().spectator!.mode).toBe('free');
     expect(h.key('KeyE')).toBe(false);
     expect(h.cycles).toEqual([]);
-    h.key('KeyV');
-    h.key('KeyV');
+    h.key('KeyF');
+    h.key('KeyF');
     expect(ui.getState().spectator!.mode).toBe('director');
     h.key('KeyE');
     // Picking a player by hand leaves the director for a plain follow.
@@ -221,7 +221,7 @@ describe('spectator controller', () => {
     for (let i = 0; i < 30; i++) h.frame();
     expect(h.camera.position.distanceTo(rest)).toBeLessThan(1e-3);
     expect(rest.distanceTo(at)).toBeLessThan(3);
-    expect(h.key('KeyV')).toBe(false);
+    expect(h.key('KeyF')).toBe(false);
     expect(ui.getState().spectator!.mode).toBe('free');
   });
 

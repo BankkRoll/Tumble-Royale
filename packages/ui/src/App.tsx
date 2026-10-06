@@ -25,6 +25,7 @@ import { FriendsSheet, NotificationsPanel } from './screens/overlays/SocialSheet
 import { WatchChoiceLayer } from './screens/overlays/WatchChoice.tsx';
 import { RoundVoteLayer } from './screens/RoundVote.tsx';
 import { ReplayLayer } from './screens/Replay.tsx';
+import { ElimReplayLayer } from './screens/ElimReplay.tsx';
 import { ShareLayer } from './screens/overlays/ShareSheet.tsx';
 import { ScreenLayer } from './screens/ScreenLayer.tsx';
 import { broadcastActive } from './store/spectator.ts';
@@ -70,6 +71,7 @@ export function App(): JSX.Element {
   const photo = useUI((s) => s.photo.active);
   const replay = useUI((s) => s.replay !== null);
   const broadcast = useUI(broadcastActive);
+  const elimReplay = useUI((s) => (s.elimReplay && s.elimReplay.mode !== 'loading' ? 'true' : undefined));
   const touchContext = useUI((s) => touchMode(s)?.context);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -96,6 +98,7 @@ export function App(): JSX.Element {
       data-photo={String(photo)}
       data-replay={replay ? 'true' : undefined}
       data-broadcast={broadcast ? 'true' : undefined}
+      data-elim-replay={elimReplay}
       data-touch-play={touchContext}
       style={{ ['--ui-scale' as string]: String(a.uiScale) }}
     >
@@ -120,6 +123,7 @@ export function App(): JSX.Element {
       {!photo && <WatchChoiceLayer />}
       <ToastLayer />
       <ReplayLayer />
+      <ElimReplayLayer />
       <ShareLayer />
       {photo ? <PhotoModeBar /> : <OverlayLayer />}
       {!photo && <SocialLayer />}

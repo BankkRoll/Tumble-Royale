@@ -24,6 +24,7 @@ import { requireUser } from '../http/auth.ts';
 import { badRequest, conflict, notFound, parse } from '../http/errors.ts';
 import { parseNameTag } from '../names/display-name.ts';
 import { REPORTABLE_PRESENCE, type SocialRef } from '../realtime/notifier.ts';
+import { refreshVoice } from '../voice/service.ts';
 import { PRESENCE_RANK, presenceView, presenceViews, setPresence } from './presence.ts';
 
 /** Maximum accepted friends per player. */
@@ -461,6 +462,7 @@ export function registerFriendRoutes(app: FastifyInstance, ctx: AppContext): voi
     });
     // The blocked player sees an ordinary removal; the block itself stays private.
     await notifyRemoval(ctx, auth.userId, userId, removed);
+    await refreshVoice(ctx, [auth.userId, userId]);
     return { status: 'blocked' };
   });
 
@@ -476,6 +478,7 @@ export function registerFriendRoutes(app: FastifyInstance, ctx: AppContext): voi
           eq(friendships.status, 'blocked'),
         ),
       );
+    await refreshVoice(ctx, [auth.userId, userId]);
     return reply.code(204).send();
   });
 

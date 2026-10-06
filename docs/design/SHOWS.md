@@ -574,7 +574,7 @@ Controls and screens are in SCREENS.md §9.9.1.
    showing: round card, clock, qualified count or team scores, a standings
    strip and the followed player's name card, with the personal HUD, chat,
    toasts and menu pill hidden. **B** toggles it, **H** the help card.
-4. **V** cycles the camera: Follow, Free (fly with WASD, Q/E or Space,
+4. **F** cycles the camera: Follow, Free (fly with WASD, Q/E or Space,
    Shift for speed), Overview (the whole course) and Director (cuts between
    the leader, close races, the qualifying bubble, near-eliminations, team
    swings and the final on its own). **Tab** finds a player by name or place,

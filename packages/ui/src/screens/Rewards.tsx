@@ -20,6 +20,7 @@ import { confettiSets, rarityLabels } from '../theme/tokens.ts';
 import { fireConfetti } from '../transitions/Confetti.tsx';
 import { Icon } from '../components/icons/index.tsx';
 import { RankEmblem } from './menu/ProfileTab.tsx';
+import { HighlightsReel } from './Highlights.tsx';
 import { ReplayPicker } from './Replay.tsx';
 import { ShareButton } from './overlays/ShareSheet.tsx';
 
@@ -124,6 +125,7 @@ function beats(r: RewardsSummary, p: Plan): { at: number; fire: () => void }[] {
 function RewardsActions({ hint }: { hint?: string | undefined }): JSX.Element {
   return (
     <div className="tr-rewards-actions tr-interactive" data-nav-scope="1">
+      <HighlightsReel />
       <ReplayPicker />
       <ShareButton />
       {hint && <span className="tr-small tr-muted">{hint}</span>}

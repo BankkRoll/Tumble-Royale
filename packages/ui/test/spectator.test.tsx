@@ -61,6 +61,7 @@ function spectating(over: Partial<SpectatorState> = {}): void {
         id: 1,
         name: 'Player 1',
         colors: { primary: '#ff4f9a', secondary: '#ffd23f', pattern: 'plain' },
+        isBot: true,
       },
       detail: 'In the lead',
       qualified: false,

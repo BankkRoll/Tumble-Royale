@@ -29,6 +29,7 @@ import { RANKED_QUEUE } from '../leaderboards/service.ts';
 import { refuseDuringMaintenance, requireLivePlaylist } from '../liveops/state.ts';
 import { DEFAULT_RATING, skillOrdinal } from '../ranked/rating.ts';
 import { broadcastPresence, friendIds, socialRef } from './friends.ts';
+import { refreshVoice } from '../voice/service.ts';
 import { sendPartyChat } from './partyChat.ts';
 import { getPresence, getPresenceMany } from './presence.ts';
 
@@ -122,6 +123,10 @@ export class PartyService {
     await this.ctx.notifier.notifyMany(
       p.members.map((m) => m.userId),
       { type: 'party_update', party: this.view(p) },
+    );
+    await refreshVoice(
+      this.ctx,
+      p.members.map((m) => m.userId),
     );
   }
 
@@ -233,6 +238,7 @@ export class PartyService {
     if (after === 'empty')
       await this.ctx.notifier.notifyUser(userId, { type: 'party_disbanded', partyId: cur.id });
     else if (after) await this.broadcast(after);
+    await refreshVoice(this.ctx, [userId]);
     await this.presenceChanged([
       userId,
       ...(after && after !== 'empty' ? after.members.map((m) => m.userId) : []),
@@ -259,6 +265,7 @@ export class PartyService {
       return p.members.map((m) => m.userId);
     });
     await this.ctx.notifier.notifyMany(members, { type: 'party_disbanded', partyId: cur.id });
+    await refreshVoice(this.ctx, members);
     await this.presenceChanged(members);
   }
 
@@ -288,6 +295,7 @@ export class PartyService {
     });
     await this.ctx.kv.del(`user-party:${targetId}`);
     await this.ctx.notifier.notifyUser(targetId, { type: 'party_kicked', partyId: p.id });
+    await refreshVoice(this.ctx, [targetId]);
     await this.presenceChanged([targetId, ...p.members.map((m) => m.userId)]);
     return p;
   }

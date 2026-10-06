@@ -39,6 +39,7 @@ export const PAD_GLYPHS: Record<BindAction, string> = {
   broadcastHelp: 'D-pad up',
   broadcastChroma: '—',
   pause: 'Start',
+  pushToTalk: 'Back',
 };
 
 /** Left stick glyph: movement is never remapped. */

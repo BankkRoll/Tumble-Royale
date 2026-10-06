@@ -105,6 +105,7 @@ import { RejoinStore, planRejoin, sessionStore, type RejoinPlan } from './online
 import { onlineCounts, queueTarget } from './online/playerCounts.ts';
 import { QueueAttempts, enqueueParty } from './online/queueAttempt.ts';
 import { SignInQueue } from './online/signInQueue.ts';
+import { LatestRequest } from './latest.ts';
 import { OnlineStatusCheck } from './online/onlineStatus.ts';
 import { askDialog } from './askDialog.ts';
 import { MatchmakerClient, gameSocketUrl, type Lobby, type MatchFound } from './online/matchmaker.ts';
@@ -207,6 +208,7 @@ export class GameApp {
   private queued = false;
   private readonly queueAttempts = new QueueAttempts();
   private probingServer = false;
+  private readonly profileCards = new LatestRequest();
   private readonly signIns = new SignInQueue();
   private readonly onlineStatus = new OnlineStatusCheck({
     disabled: () => !this.cfg.api && !this.cfg.online,
@@ -1875,6 +1877,7 @@ export class GameApp {
         this.startOfflineShow(show.playlist, show.roundTimeScale);
       },
       onInspectPlayer: ({ playerId, name, direct }) => {
+        const current = this.profileCards.begin();
         // Party members (slots, the 3D party lobby) open the player card first.
         const member = !direct ? s().party?.members.find((m) => m.id === playerId && !m.isSelf) : undefined;
         if (member) {
@@ -1895,9 +1898,12 @@ export class GameApp {
           s().pushToast({ kind: 'info', title: `${name ?? 'That Tumbler'} has no public card yet` });
           return;
         }
+        const asked = s().screenSeq;
         void online()!
           .inspect(playerId)
           .then((card) => {
+            // A later card was asked for, or the screen moved on (a show started): this one is not wanted.
+            if (!current() || s().screenSeq !== asked) return;
             if (card) s().setInspectedProfile(card);
             else s().pushToast({ kind: 'info', title: "Couldn't load that profile" });
           });

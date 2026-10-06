@@ -693,6 +693,8 @@ export function registerClubRoutes(app: FastifyInstance, ctx: AppContext): void 
     if (presence.status === 'in_queue' || presence.status === 'in_match')
       throw conflict('member_busy', 'They are in a show right now');
     const p = (await parties.current(auth.userId)) ?? (await parties.create(auth.userId));
+    // SECURITY: the same for a block between them and anyone else in the party; joining would be refused anyway.
+    if (await parties.blockedByMember(p, userId)) throw notFound('Member');
     if (p.members.some((x) => x.userId === userId))
       throw conflict('already_in_party', 'They are already in your party');
     if (p.members.length >= MAX_PARTY_SIZE) throw conflict('party_full', 'Party is full');

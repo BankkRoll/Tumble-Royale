@@ -475,6 +475,23 @@ describe('party up', () => {
     const outsider = await player(api);
     expect((await call(owner, 'POST', '/clubs/me/party-up', { userId: outsider.id })).statusCode).toBe(404);
   });
+
+  it('hides a club mate who blocked, or was blocked by, anyone in the party', async () => {
+    const { owner, officer, member } = await trio();
+    const stranger = await api.guest();
+    const { code } = (await call(owner, 'POST', '/party')).json().party;
+    expect((await call(stranger, 'POST', '/party/join', { code })).statusCode).toBe(200);
+    expect((await call(member, 'POST', '/friends/block', { userId: stranger.id })).statusCode).toBe(200);
+    await call(member, 'POST', '/presence', { status: 'in_menu' });
+    const seen = await events(member);
+    expect((await call(owner, 'POST', '/clubs/me/party-up', { userId: member.id })).statusCode).toBe(404);
+    expect(seen.some((e) => e.type === 'party_invite')).toBe(false);
+    expect((await call(member, 'POST', '/party/join', { code })).statusCode).toBe(404);
+
+    await call(officer, 'POST', '/presence', { status: 'in_menu' });
+    expect((await call(stranger, 'POST', '/friends/block', { userId: officer.id })).statusCode).toBe(200);
+    expect((await call(owner, 'POST', '/clubs/me/party-up', { userId: officer.id })).statusCode).toBe(404);
+  });
 });
 
 describe('clubs.enabled', () => {

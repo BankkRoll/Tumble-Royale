@@ -1311,6 +1311,10 @@ class SimBotView implements BotWorldView {
     return this.oracle.safeSpot(this.sim.time, out, key);
   }
 
+  windAt(point: Vec3, ahead: number, out: Vec3): Vec3 {
+    return this.oracle.windAt(this.sim.time + Math.max(0, ahead), point, out);
+  }
+
   logicDifficulty(): number {
     return this.oracle.logicDifficulty(this.sim.time);
   }

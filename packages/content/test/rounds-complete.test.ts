@@ -101,10 +101,11 @@ interface Played {
 }
 
 /**
- * Plays `round` (authored variation) with `n` bots from countdown to the end of the rules, giving
- * up one second past timer + overtime.
+ * Plays `round` with `n` bots from countdown to the end of the rules, giving up one second past
+ * timer + overtime. The authored layout unless `variationId` names another.
  */
-function play(round: RoundDefinition, n: number, seed: number): Played {
+function play(round: RoundDefinition, n: number, seed: number, variationId?: string): Played {
+  const variation = variationId ?? round.variations[0]?.id;
   const sim: MatchSimHandle = createMatchSim(
     {
       R,
@@ -113,9 +114,7 @@ function play(round: RoundDefinition, n: number, seed: number): Played {
       stage: 0,
       players: bots(n),
       mode: 'offline',
-      // The authored layout: harder variations (Cannonball Canyon's rogue-wave surf blows rock-hoppers
-      // off, 46 of 65 by the buzzer) are a challenge bots are not built to time.
-      ...(round.variations[0] ? { variationId: round.variations[0].id } : {}),
+      ...(variation ? { variationId: variation } : {}),
     },
     deps,
   );
@@ -278,6 +277,16 @@ describe('every round to completion with a full field of bots', () => {
     const n = round.players.max;
     it.runIf(SLOW)(`${round.id}: ${n} bots`, () => check(play(round, n, 101)), 900_000);
   }
+});
+
+describe('variations bots must still complete with a full field', () => {
+  // The surf blows rock-hoppers off the stepping rocks unless they steer into it.
+  const canyon = rounds.find((r) => r.id === 'cannonball-canyon')!;
+  it.runIf(SLOW)(
+    'cannonball-canyon/rogue-wave: 100 bots',
+    () => check(play(canyon, 100, 101, 'rogue-wave')),
+    900_000,
+  );
 });
 
 describe('finals, team rounds and score-target hunts to completion (default run)', () => {

@@ -17,7 +17,8 @@
  *   moving platform to bridge the leg (`waitForPlatform`).
  * - *Reflexes* layered on top: jumping incoming low beams / diving under high
  *   ones (predicted via obstacle poses, lasers included), hopping low lips,
- *   silly moments, emotes.
+ *   steering into crosswinds (fans, surf), silly moments (never a dive off
+ *   an edge), emotes.
  * - *Stuck recovery* measures route progress against a fixed baseline over
  *   a time window and escalates through a plan picked by what is ahead:
  *   walls get sidesteps, back-offs and re-paths to a sibling branch; lips
@@ -60,6 +61,13 @@ const DIVE_HOLD_TICKS = 3;
 const MAX_GAP_WAIT_SECONDS = 6;
 /** Lifts run long cycles; walking into the void is never the fallback, re-pathing is. */
 const MAX_PLATFORM_WAIT_SECONDS = 24;
+/**
+ * Seconds of push a character keeps as sideways speed in steady wind (its
+ * push half-life over ln 2), for steering upwind.
+ */
+const WIND_DRIFT_SECONDS = 0.36;
+/** Largest crosswind correction, as a sideways offset on the unit heading (about 40°). */
+const WIND_COMP_MAX = 0.85;
 /** Route metres that count as "getting somewhere" within one stuck window. */
 const STUCK_PROGRESS = 1;
 /** A branch abandoned by the stuck routine is avoided for this long. */
@@ -275,6 +283,11 @@ export class DefaultBotBrain implements BotBrainLike {
   private hangSince = -1;
   private hangWait = 0;
 
+  private readonly windW = vec3();
+  /** Steering correction against the push the bot is in, as a unit-direction offset. */
+  private windCompX = 0;
+  private windCompZ = 0;
+
   // Scratch.
   private readonly s1 = vec3();
   private readonly s2 = vec3();
@@ -386,6 +399,7 @@ export class DefaultBotBrain implements BotBrainLike {
       this.ledgeReflex(view, self);
       this.reflexes(view, self);
       this.checkStuck(view, self);
+      this.trackWind(view, self);
       this.silly(view, self);
     } else if (this.lineValid && this.lineChecked && this.waitObstacle === null && !this.atGoal) {
       this.stepTakeoff(view, self);
@@ -1635,7 +1649,20 @@ export class DefaultBotBrain implements BotBrainLike {
     const dx = this.target.x - self.pos.x;
     const dz = this.target.z - self.pos.z;
     const d = Math.hypot(dx, dz);
-    if (d > 0.05) this.yaw = Math.atan2(dx, dz);
+    if (d > 0.05) {
+      const ux = dx / d;
+      const uz = dz / d;
+      // Only the crosswind part: steering against a tailwind would turn a strong fan's push into a U-turn.
+      const along = this.windCompX * ux + this.windCompZ * uz;
+      let cx = this.windCompX - along * ux;
+      let cz = this.windCompZ - along * uz;
+      const c = Math.hypot(cx, cz);
+      if (c > WIND_COMP_MAX) {
+        cx *= WIND_COMP_MAX / c;
+        cz *= WIND_COMP_MAX / c;
+      }
+      this.yaw = Math.atan2(ux + cx, uz + cz);
+    }
     out.yaw = this.yaw + this.noise;
     // Ease off when arriving so we don't overshoot narrow platforms (never on take-off runs).
     const arrive = this.fullSpeed || d >= 1.2 ? 1 : Math.max(0.35, d / 1.2);
@@ -1715,6 +1742,22 @@ export class DefaultBotBrain implements BotBrainLike {
     this.target.y = y;
     this.target.z = z;
     this.hasTarget = true;
+  }
+
+  /**
+   * A push (fans, surf) adds a velocity that the run input does not cancel,
+   * decaying over the character's push half-life; steady wind therefore
+   * carries a bot about `push × WIND_DRIFT_SECONDS` m/s sideways. Steering
+   * that much upwind holds the line.
+   */
+  private trackWind(view: BotWorldView, self: BotSelfView): void {
+    this.windCompX = 0;
+    this.windCompZ = 0;
+    if (!view.windAt) return;
+    const w = view.windAt(self.pos, 0, this.windW);
+    if (w.x * w.x + w.z * w.z < 0.25) return;
+    this.windCompX = (-w.x * WIND_DRIFT_SECONDS) / RUN_SPEED;
+    this.windCompZ = (-w.z * WIND_DRIFT_SECONDS) / RUN_SPEED;
   }
 
   private faceTowards(from: Vec3, to: Vec3): void {

@@ -14,6 +14,7 @@ import {
   dutyEnvelope,
   leadTelegraph,
   modPos,
+  toLocalPoint,
 } from './helpers-a.ts';
 import type { ObstacleBuildContext, ObstacleInstance, ObstacleModule, ObstacleStepContext } from './types.ts';
 
@@ -115,6 +116,22 @@ class FanZoneRuntime extends RuntimeBase {
 
   telegraph(t: number): number {
     return fanZoneTelegraph(t, this.p);
+  }
+
+  /**
+   * Adds this fan's push at time `t` on an actor at `point` (world, m/s²) to
+   * `out`: what {@link update} would apply, predicted from the pure duty cycle.
+   */
+  botWind(t: number, point: Vec3, out: Vec3): void {
+    const p = this.p;
+    const k = fanIntensity(t, p);
+    if (k <= 0) return;
+    const l = toLocalPoint(this.frame, point, this.local);
+    if (l.z < 0 || l.z > p.length || Math.abs(l.x) > p.width / 2 || Math.abs(l.y) > p.height / 2) return;
+    const a = p.strength * k * (1 - p.falloff * (l.z / p.length));
+    out.x += this.dir.x * a;
+    out.y += this.dir.y * a;
+    out.z += this.dir.z * a;
   }
 }
 

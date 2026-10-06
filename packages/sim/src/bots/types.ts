@@ -80,6 +80,13 @@ export interface BotWorldView {
    * obstacle rates its question.
    */
   logicDifficulty?(): number;
+  /**
+   * Push from fans and gusts on a capsule centred at `point`, `ahead` seconds
+   * from now (world, m/s²), predicted from the fans' pure duty cycles.
+   *
+   * @returns `out`.
+   */
+  windAt?(point: Vec3, ahead: number, out: Vec3): Vec3;
   /** Number of loose dynamic props (eggs, balls) currently tracked. */
   propCount(): number;
   /** Writes prop `index`'s position. */

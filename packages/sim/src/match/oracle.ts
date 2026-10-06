@@ -58,6 +58,18 @@ export interface BotSafeSpotProvider {
   botDifficulty?(t: number): number;
 }
 
+/** Optional runtime extension: obstacles that push actors about (fans), predicted for bots. */
+export interface BotWindProvider {
+  /**
+   * Adds the push an actor at `point` would feel at time `t` (world, m/s²) to `out`.
+   *
+   * @param t - Match time (may be in the future: the push must be a pure function of time).
+   * @param point - Capsule centre (world).
+   * @param out - Accumulator.
+   */
+  botWind(t: number, point: Vec3, out: Vec3): void;
+}
+
 /**
  * Optional runtime extension: a safe-spot provider whose spot is the round's
  * objective (the nearest pickup, a scoring zone, a free seat) rather than mere
@@ -292,6 +304,18 @@ export class ObstacleOracle {
       }
     }
     return best < Infinity;
+  }
+
+  /** See `BotWorldView.windAt`. */
+  windAt(time: number, point: Vec3, out: Vec3): Vec3 {
+    out.x = 0;
+    out.y = 0;
+    out.z = 0;
+    for (const t of this.tracked) {
+      const w = t.runtime as Partial<BotWindProvider>;
+      if (typeof w.botWind === 'function') w.botWind(time, point, out);
+    }
+    return out;
   }
 
   /** See `BotWorldView.logicDifficulty`: the hardest rating any provider gives, or 1 when none rates. */

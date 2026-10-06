@@ -1029,7 +1029,9 @@ export class ApiClient {
   tutorialComplete = (): Promise<ApiTutorialComplete> => this.request('POST', '/me/tutorial-complete');
   leaderboard = (type: string, scope: 'global' | 'regional' | 'friends'): Promise<ApiLeaderboard> =>
     this.request('GET', `/leaderboards/${type}?scope=${scope}&limit=50`);
-  myMatches = (): Promise<{ matches: ApiMatch[] }> => this.request('GET', '/me/matches');
+  /** The newest 20 shows, or the 20 before `before` (a previous page's `nextCursor`). */
+  myMatches = (before?: string): Promise<{ matches: ApiMatch[]; nextCursor?: string | null }> =>
+    this.request('GET', before ? `/me/matches?before=${encodeURIComponent(before)}` : '/me/matches');
   /**
    * The caller's reward for one show; 404 (`not_found`) until the game
    * server's results reach the API, `reward: null` when there was none.

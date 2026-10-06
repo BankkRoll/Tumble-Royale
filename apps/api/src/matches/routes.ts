@@ -1,7 +1,8 @@
 /**
  * Match routes: signed results ingest from game servers, match detail, the
- * player's recent show history and their reward for one show (the rewards
- * screen's fallback when the game server's forward never arrived).
+ * player's show history (newest first, paged by `?before=`) and their reward
+ * for one show (the rewards screen's fallback when the game server's forward
+ * never arrived).
  */
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
@@ -10,11 +11,16 @@ import type { AppContext } from '../context.ts';
 import { matches, matchParticipants, matchRounds, roundResults } from '../db/schema.ts';
 import { requireInternalSignature, requireUser } from '../http/auth.ts';
 import { notFound, parse } from '../http/errors.ts';
+import { CursorParam, encodeCursor, olderThan } from '../util/cursor.ts';
 import { ingestMatch, type PlayerRewardSummary } from './ingest.ts';
 import { MatchResultSchema } from './schema.ts';
 
 const MatchIdParam = z.object({ id: z.string().regex(/^[A-Za-z0-9_-]{6,64}$/) });
-const HistoryQuery = z.object({ limit: z.coerce.number().int().min(1).max(20).default(20) });
+const HistoryQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(20).default(20),
+  /** `nextCursor` of the previous page. */
+  before: CursorParam.optional(),
+});
 
 /**
  * Registers match routes.
@@ -89,15 +95,24 @@ export function registerMatchRoutes(app: FastifyInstance, ctx: AppContext): void
 
   app.get('/me/matches', async (req) => {
     const auth = await requireUser(ctx, req);
-    const { limit } = parse(HistoryQuery, req.query);
-    const mine = await ctx.db
+    const { limit, before } = parse(HistoryQuery, req.query);
+    const fetched = await ctx.db
       .select({ m: matches, p: matchParticipants })
       .from(matchParticipants)
       .innerJoin(matches, eq(matches.id, matchParticipants.matchId))
-      .where(eq(matchParticipants.userId, auth.userId))
-      .orderBy(desc(matches.endedAt))
-      .limit(limit);
-    if (!mine.length) return { matches: [] };
+      .where(
+        and(
+          eq(matchParticipants.userId, auth.userId),
+          before ? olderThan(matches.endedAt, matches.id, before) : undefined,
+        ),
+      )
+      .orderBy(desc(matches.endedAt), desc(matches.id))
+      .limit(limit + 1);
+    const mine = fetched.slice(0, limit);
+    const last = mine.at(-1);
+    /** Pass as `before` for the next (older) page; null on the last page. */
+    const nextCursor = fetched.length > limit && last ? encodeCursor(last.m.endedAt, last.m.id) : null;
+    if (!mine.length) return { matches: [], nextCursor };
     const ids = mine.map((x) => x.m.id);
     const rounds = await ctx.db.select().from(matchRounds).where(inArray(matchRounds.matchId, ids));
     const results = await ctx.db
@@ -110,6 +125,7 @@ export function registerMatchRoutes(app: FastifyInstance, ctx: AppContext): void
         ),
       );
     return {
+      nextCursor,
       matches: mine.map(({ m, p }) => ({
         id: m.id,
         queue: m.queue,

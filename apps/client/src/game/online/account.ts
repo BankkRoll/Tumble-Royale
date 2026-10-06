@@ -67,6 +67,7 @@ import {
 import {
   ApiError,
   idempotencyKey,
+  type ApiMatch,
   settledChallengeToast,
   type ApiClient,
   type ApiGrant,
@@ -228,6 +229,26 @@ const CHALLENGE_ICON: Partial<Record<ChallengeMetric | string, string>> = {
 function describe(err: unknown): string {
   if (err instanceof ApiError) return err.status === 0 ? 'The server could not be reached.' : err.message;
   return err instanceof Error ? err.message : 'Something went wrong.';
+}
+
+/** One show from `/me/matches` as Match History lists it. */
+function historyEntry(m: ApiMatch): MatchHistoryEntry {
+  const last = m.rounds[m.rounds.length - 1];
+  const reachedFinal = !!last && last.roundType === 'final' && last.played;
+  return {
+    id: m.id,
+    time: Date.parse(m.endedAt),
+    playlist: getPlaylist(m.playlistId)?.name ?? m.playlistId,
+    rounds: m.rounds
+      .filter((r) => r.played)
+      .map((r) => ({
+        name: getRound(r.roundId)?.name ?? r.roundId,
+        type: r.roundType as RoundType,
+        qualified: r.qualified,
+      })),
+    result: m.crowned ? 'crown' : reachedFinal ? 'final' : 'eliminated',
+    xp: m.xp,
+  };
 }
 
 /** Hooks the account calls back into the app. */
@@ -1628,29 +1649,33 @@ export class OnlineAccount {
   /** Loads the last 20 shows into Match History. */
   async history(): Promise<void> {
     try {
-      const { matches } = await this.api.myMatches();
-      const entries: MatchHistoryEntry[] = matches.map((m) => {
-        const last = m.rounds[m.rounds.length - 1];
-        const reachedFinal = !!last && last.roundType === 'final' && last.played;
-        return {
-          id: m.id,
-          time: Date.parse(m.endedAt),
-          playlist: getPlaylist(m.playlistId)?.name ?? m.playlistId,
-          rounds: m.rounds
-            .filter((r) => r.played)
-            .map((r) => ({
-              name: getRound(r.roundId)?.name ?? r.roundId,
-              type: r.roundType as RoundType,
-              qualified: r.qualified,
-            })),
-          result: m.crowned ? 'crown' : reachedFinal ? 'final' : 'eliminated',
-          xp: m.xp,
-        };
-      });
+      const { matches, nextCursor } = await this.api.myMatches();
+      const entries = matches.map(historyEntry);
       ui.getState().setMatchHistory(entries);
+      ui.getState().setMatchHistoryPaging({ next: nextCursor ?? null, loading: false });
       this.applyHistoryStats(entries);
     } catch (err) {
       console.warn('[account] history failed', err);
+    }
+  }
+
+  /** Appends the next 20 older shows to Match History. */
+  async moreHistory(): Promise<void> {
+    const s = ui.getState();
+    const paging = s.matchHistoryPaging;
+    if (!paging?.next || paging.loading) return;
+    s.setMatchHistoryPaging({ ...paging, loading: true });
+    try {
+      const { matches, nextCursor } = await this.api.myMatches(paging.next);
+      const shown = new Set(ui.getState().matchHistory.map((e) => e.id));
+      s.setMatchHistory([
+        ...ui.getState().matchHistory,
+        ...matches.filter((m) => !shown.has(m.id)).map(historyEntry),
+      ]);
+      s.setMatchHistoryPaging({ next: nextCursor ?? null, loading: false });
+    } catch (err) {
+      s.setMatchHistoryPaging({ ...paging, loading: false });
+      s.pushToast({ kind: 'error', title: "Couldn't load older shows", body: describe(err) });
     }
   }
 

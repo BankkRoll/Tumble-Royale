@@ -80,6 +80,8 @@ export interface UIIntents {
   refundPurchase: { purchaseId: string; reason?: string };
   /** Profile → Gifts opened or refreshed. */
   requestGifts: undefined;
+  /** Match history scrolled to the end: fetch the next older page (online accounts). */
+  loadMoreMatches: undefined;
   /** Profile → Gifts: fetch older settled received gifts, or older sent gifts. */
   loadMoreGifts: { direction: 'received' | 'sent' };
   /** Open or decline a received gift, or cancel a sent one (already confirmed where it costs anything). */

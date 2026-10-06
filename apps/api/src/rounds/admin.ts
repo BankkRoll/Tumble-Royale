@@ -81,8 +81,8 @@ export function registerCustomRoundAdminRoutes(app: FastifyInstance, ctx: AppCon
       q.reported === '1'
         ? base
             .where(and(...conds, isNotNull(openReports.roundId)))
-            .orderBy(desc(openReports.n), asc(customRounds.createdAt))
-        : base.where(and(...conds)).orderBy(desc(customRounds.createdAt))
+            .orderBy(desc(openReports.n), asc(customRounds.createdAt), asc(customRounds.id))
+        : base.where(and(...conds)).orderBy(desc(customRounds.createdAt), desc(customRounds.id))
     )
       .limit(q.limit)
       .offset(q.offset);

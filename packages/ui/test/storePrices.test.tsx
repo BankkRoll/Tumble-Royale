@@ -7,6 +7,7 @@
  */
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { MatchHistoryScreen } from '../src/screens/MatchHistory.tsx';
 import { CurrencyPanel } from '../src/screens/menu/CurrencyPanel.tsx';
 import { GiftsSection } from '../src/screens/menu/Gifting.tsx';
 import { PurchaseHistorySection } from '../src/screens/menu/PurchaseHistory.tsx';
@@ -147,6 +148,28 @@ describe('older pages', () => {
     );
     ui.getState().setPurchaseHistory(history({ nextCursor: null }));
     expect(renderToStaticMarkup(<PurchaseHistorySection />)).not.toContain('purchases-more');
+  });
+
+  it('offers older shows to an online account and keeps the offline list at 20', () => {
+    const entry = (i: number) => ({
+      id: `m${i}`,
+      time: Date.now() - i * 60_000,
+      playlist: 'Main Show',
+      rounds: [],
+      result: 'eliminated' as const,
+      xp: 10,
+    });
+    ui.getState().setMatchHistory(Array.from({ length: 25 }, (_, i) => entry(i)));
+    ui.getState().setMatchHistoryPaging(null);
+    let html = renderToStaticMarkup(<MatchHistoryScreen />);
+    expect(html.match(/tr-history-row/g)).toHaveLength(20);
+    expect(html).not.toContain('history-more');
+    ui.getState().setMatchHistoryPaging({ next: 'c1', loading: false });
+    html = renderToStaticMarkup(<MatchHistoryScreen />);
+    expect(html.match(/tr-history-row/g)).toHaveLength(25);
+    expect(html).toContain('data-testid="history-more"');
+    ui.getState().setMatchHistoryPaging({ next: null, loading: false });
+    expect(renderToStaticMarkup(<MatchHistoryScreen />)).not.toContain('history-more');
   });
 
   it('offers older gifts for the open list', () => {

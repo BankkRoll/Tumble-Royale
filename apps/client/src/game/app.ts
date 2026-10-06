@@ -1795,6 +1795,10 @@ export class GameApp {
         const a = online();
         if (a) void a.loadMoreGifts(direction);
       },
+      onLoadMoreMatches: () => {
+        const a = online();
+        if (a) void a.moreHistory();
+      },
       onGiftAction: ({ giftId, action }) => {
         const a = online();
         if (a) void a.giftAction(giftId, action);
@@ -1942,7 +1946,10 @@ export class GameApp {
       onRequestMatchHistory: () => {
         const a = online();
         if (a) void a.history();
-        else s().setMatchHistory(this.profile.uiHistory());
+        else {
+          s().setMatchHistory(this.profile.uiHistory());
+          s().setMatchHistoryPaging(null);
+        }
       },
       onSettingsChange: ({ settings, section }) => {
         saveJson('settings', settings);

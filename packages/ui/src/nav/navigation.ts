@@ -219,6 +219,38 @@ export function focusInitial(root: HTMLElement): void {
   if (el && visible(el)) el.focus({ preventScroll: true });
 }
 
+/** Delay before the second focus attempt, once entrance animations have placed the layer. */
+const LAYER_SETTLE_MS = 120;
+
+function focusable(el: Element | null): el is HTMLElement {
+  return !!el && typeof (el as HTMLElement).focus === 'function' && el !== document.body;
+}
+
+/**
+ * A layer (overlay, sheet, dialog, popover) opened over the screen: moves
+ * focus into it and hands it back when it closes. Focus left on the control
+ * underneath would otherwise take Enter and Space, so Esc then Enter on the
+ * main menu would press Play behind Settings.
+ *
+ * @param root - The UI root (`.tr-root`).
+ * @returns Call when the layer closes: restores focus to the control that
+ *   had it, unless focus already moved somewhere still on screen.
+ * @example
+ * useEffect(() => (layerOpen ? enterLayer(root) : undefined), [layerKey]);
+ */
+export function enterLayer(root: HTMLElement): () => void {
+  const opener = focusable(document.activeElement) ? document.activeElement : null;
+  if (opener && !activeScope(root).contains(opener)) opener.blur();
+  focusInitial(root);
+  const settle = window.setTimeout(() => focusInitial(root), LAYER_SETTLE_MS);
+  return () => {
+    window.clearTimeout(settle);
+    const now = document.activeElement;
+    if (focusable(now) && now.isConnected) return;
+    if (opener?.isConnected && visible(opener)) opener.focus({ preventScroll: true });
+  };
+}
+
 const TEXT_INPUT = /^(INPUT|TEXTAREA|SELECT)$/;
 
 /**

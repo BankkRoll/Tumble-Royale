@@ -14,7 +14,7 @@ import { SHOW_MENU_SCREENS, menuOwnsInput, type UIState } from '@tumble/ui';
 export type RoutingState = Pick<
   UIState,
   'inputMode' | 'dialog' | 'overlay' | 'screen' | 'eliminatedSheet' | 'watchChoice' | 'photo' | 'replay'
->;
+> & { elimReplay?: UIState['elimReplay'] };
 
 /** Game-side facts the routing rules need. */
 export interface RoutingContext {
@@ -27,8 +27,8 @@ export interface RoutingContext {
 }
 
 /**
- * Whether menu navigation owns the gamepad: photo mode and the replay viewer
- * always; otherwise menu screens, overlays, dialogs and the watch choice
+ * Whether menu navigation owns the gamepad: photo mode, the replay viewer and
+ * the elimination replay always; otherwise menu screens, overlays, dialogs and the watch choice
  * (on any show screen, not only the round), unless idle play has the pad.
  *
  * @param s - UI state.
@@ -37,7 +37,7 @@ export interface RoutingContext {
  * input.setGamepadGameplay(!menuOwnsPad(ui.getState(), menu.idlePlaying));
  */
 export function menuOwnsPad(s: RoutingState, idlePlaying: boolean): boolean {
-  return s.photo.active || s.replay !== null || (!idlePlaying && menuOwnsInput(s));
+  return s.photo.active || s.replay !== null || !!s.elimReplay || (!idlePlaying && menuOwnsInput(s));
 }
 
 /** What pad Start does. */

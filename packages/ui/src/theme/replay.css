@@ -45,6 +45,13 @@
 .tr-replay-sub {
   opacity: 0.8;
 }
+.tr-replay-reel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  color: var(--lemon);
+  font-weight: 700;
+}
 .tr-replay-badge {
   display: inline-flex;
   align-items: center;
@@ -241,7 +248,170 @@
   margin-top: 0.8em;
 }
 
+/* "How you went out": letterboxed, with the cause over the lower third. */
+.tr-root[data-elim-replay='true'] > .tr-stage,
+.tr-root[data-elim-replay='true'] > .tr-confetti {
+  visibility: hidden;
+}
+
+.tr-elim-replay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+  color: var(--cloud);
+  z-index: 24;
+}
+.tr-elim-replay.is-loading {
+  justify-content: flex-end;
+}
+.tr-elim-replay-bar {
+  background: rgba(20, 12, 50, 0.9);
+  min-height: 9vh;
+  animation: tr-letterbox-top 0.35s ease-out both;
+}
+.tr-elim-replay-bar.is-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+  padding: 0.6em calc(var(--safe-r) + 1em) calc(var(--safe-b) + 0.7em) calc(var(--safe-l) + 1em);
+  animation-name: tr-letterbox-bottom;
+}
+.tr-elim-replay.is-loading .tr-elim-replay-bar.is-top,
+.tr-elim-replay.is-loading .tr-elim-replay-head {
+  display: none;
+}
+@keyframes tr-letterbox-top {
+  from {
+    transform: translateY(-100%);
+  }
+}
+@keyframes tr-letterbox-bottom {
+  from {
+    transform: translateY(100%);
+  }
+}
+.tr-elim-replay-head {
+  position: absolute;
+  top: calc(9vh + 0.8em);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  padding: 0.35em 0.9em;
+  border-radius: var(--rad-md);
+  background: rgba(43, 26, 94, 0.72);
+  white-space: nowrap;
+}
+.tr-elim-replay-head .tr-title {
+  color: var(--cloud);
+  margin: 0;
+}
+.tr-elim-replay-slow {
+  background: var(--lemon);
+  color: var(--ink);
+  font-weight: 800;
+}
+.tr-elim-replay-cause {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(9vh + var(--safe-b) + 4.2em);
+  width: fit-content;
+  max-width: min(36em, 90vw);
+  margin: 0 auto;
+  padding: 0.35em 1em;
+  border-radius: 0.8em;
+  border: 0.14em solid var(--ink);
+  background: var(--tangerine);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 1.5em;
+  text-align: center;
+  box-shadow: 0 0.18em 0 var(--ink);
+  animation: tr-pop-in 0.4s var(--ease-spring) both;
+}
+.tr-elim-replay.is-loading .tr-elim-replay-cause {
+  bottom: calc(var(--safe-b) + 7em);
+}
+.tr-elim-replay-progress {
+  height: 0.45em;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+.tr-elim-replay-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--lemon);
+}
+.tr-elim-replay-actions {
+  justify-content: flex-end;
+  gap: 0.8em;
+}
+.tr-elim-replay-hint {
+  opacity: 0.8;
+}
+
+/* Highlights on the rewards screen */
+.tr-highlights {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4em;
+}
+.tr-highlights-head {
+  gap: 0.6em;
+  justify-content: center;
+}
+.tr-highlights-head .tr-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  color: var(--cloud);
+}
+.tr-highlights-empty {
+  margin: 0;
+  color: var(--cloud);
+}
+.tr-highlights-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-width: 64em;
+}
+.tr-highlight {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  width: 19em;
+  max-width: 100%;
+  padding: 0.35em 0.5em 0.35em 0.7em;
+  border-radius: var(--rad-md);
+  border: 0.14em solid var(--ink);
+  background: var(--cloud);
+  color: var(--ink);
+}
+.tr-highlight.is-finalWin {
+  background: var(--lemon);
+}
+.tr-highlight-text {
+  gap: 0;
+  min-width: 0;
+}
+
 @media (max-width: 760px) {
+  .tr-elim-replay-cause {
+    font-size: 1.15em;
+  }
   .tr-replay-top {
     flex-wrap: wrap;
   }

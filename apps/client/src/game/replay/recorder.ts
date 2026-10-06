@@ -249,6 +249,39 @@ export class ReplayRecorder {
     obstacles: ReadonlyMap<string, readonly number[]> | null,
   ): boolean {
     if (!this.due(t)) return false;
+    this.write(t, sample, camera, obstacles);
+    return true;
+  }
+
+  /**
+   * Records a frame that was already sampled on a rate grid elsewhere (a
+   * {@link ReplayTape} being turned into a recording): only time order is
+   * enforced, since its sample times need not line up with this recorder's grid.
+   *
+   * @param t - Round time the frame was sampled at.
+   * @param sample - Player sampler.
+   * @param camera - Live camera, or null when not known.
+   * @param obstacles - Replicated obstacle states by id, or null.
+   * @returns True when a frame was written.
+   */
+  append(
+    t: number,
+    sample: PlayerSampler,
+    camera: RecordableCamera | null,
+    obstacles: ReadonlyMap<string, readonly number[]> | null,
+  ): boolean {
+    if (this.finished || !Number.isFinite(t)) return false;
+    if (!Number.isNaN(this.startTime) && t + 5e-4 < this.startTime + this.lastMs / 1000) return false;
+    this.write(t, sample, camera, obstacles);
+    return true;
+  }
+
+  private write(
+    t: number,
+    sample: PlayerSampler,
+    camera: RecordableCamera | null,
+    obstacles: ReadonlyMap<string, readonly number[]> | null,
+  ): void {
     if (Number.isNaN(this.startTime)) this.startTime = t;
     // Frames are due on the rate grid but stamped with the real sample time, so
     // irregular frame pacing (or a late frame) never shifts the recorded state in time.
@@ -266,7 +299,6 @@ export class ReplayRecorder {
     }
     this.writeObstacles(obstacles);
     this.frameCount++;
-    return true;
   }
 
   private writeCamera(c: RecordableCamera | null): void {

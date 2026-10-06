@@ -454,6 +454,16 @@ export function Section({ id }: { id: SettingsSection }): JSX.Element {
               onChange={(autoSpectate) => up('gameplay', { autoSpectate })}
             />
           </Row>
+          <Row
+            label="Elimination replay"
+            hint="Show how you were knocked out before you choose to keep watching (a still frame with Reduce Motion)"
+          >
+            <Toggle
+              label="Elimination replay"
+              checked={s.gameplay.eliminationReplay}
+              onChange={(eliminationReplay) => up('gameplay', { eliminationReplay })}
+            />
+          </Row>
           <Row label="Show bot tags" hint="Marks computer-controlled players with a small BOT tag">
             <Toggle
               label="Show bot tags"

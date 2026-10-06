@@ -76,6 +76,7 @@ export {
   type ShareResult,
   type ShareStatus,
   type ShareClipRound,
+  type ShareClipPrefill,
   type ShareCardFormat,
   type ClipSupport,
 } from './share.ts';
@@ -123,3 +124,4 @@ export {
   overlayAfterScreenChange,
   watchChoiceVisible,
 } from './inputOwnership.ts';
+export { HIGHLIGHT_HEADINGS, highlightPlace, highlightTitle } from './highlights.ts';

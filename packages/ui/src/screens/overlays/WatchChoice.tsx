@@ -89,7 +89,8 @@ export const WatchChoicePanel = memo(function WatchChoicePanel({
 export function WatchChoiceLayer(): JSX.Element | null {
   const choice = useUI((s) => s.watchChoice);
   const inRound = useUI((s) => s.screen === 'round');
-  if (!choice || inRound) return null;
+  const elimReplay = useUI((s) => s.elimReplay !== null);
+  if (!choice || inRound || elimReplay) return null;
   return (
     <div className="tr-elim-sheet tr-interactive" data-nav-scope="8">
       <WatchChoicePanel choice={choice} title="You're out of the show" />

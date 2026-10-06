@@ -317,6 +317,9 @@ export class GameApp {
         const m = renderer.info.memory;
         this.memoryLog.push({ round: label, geometries: m.geometries, textures: m.textures });
       },
+      replaysEnabled: () => flag('replays.enabled'),
+      eliminationReplay: () => ui.getState().settings.gameplay.eliminationReplay,
+      track: (name, props) => track(name, props),
     });
     this.share = new ShareController({
       renderer,
@@ -351,6 +354,7 @@ export class GameApp {
       settings: () => ui.getState().settings,
       onEnd: (reason) => this.onSessionEnd(reason),
       replays: gatedReplays(this.replays.live, () => flag('replays.enabled')),
+      eliminations: this.replays.eliminations,
       onShowResult: (facts) => this.share.showFinished(facts),
     };
     this.hooks = {
@@ -698,7 +702,8 @@ export class GameApp {
   private pollPadNav(now: number): void {
     const s = ui.getState();
     const photo = s.photo.active;
-    const replay = s.replay !== null;
+    // The elimination replay reads the pad itself (any button skips it).
+    const replay = s.replay !== null || s.elimReplay !== null;
     const padToMenu = menuOwnsPad(s, this.menu?.idlePlaying ?? false);
     this.input.setGamepadGameplay(!padToMenu);
     const pad =

@@ -301,6 +301,15 @@ export const ANALYTICS_EVENTS = [
   'share.clip',
   /** A round-vote ballot was cast or changed: `round` (index), `option`, `changed`, `online`. */
   'vote.cast',
+  /**
+   * An elimination replay ended: `outcome` (watched/skipped/interrupted/unavailable),
+   * `cause` (kind), `still` (Reduce Motion), `online`, `seconds` (planned length).
+   */
+  'replay.elimination',
+  /** Highlights were played: `kind` (the first), `count`, `mode` (single/reel), `local`. */
+  'highlight.view',
+  /** A highlight's Share opened the clip sheet: `kind`, `local`, `final`. */
+  'highlight.share',
 ] as const;
 
 /** An allow-listed analytics event name. */

@@ -1,10 +1,11 @@
 /**
  * `/auth/*` routes: guest device sign-in, refresh rotation, logout, OAuth
- * (Discord, Google), email magic links and the one-time login-code exchange.
+ * (Discord, Google, GitHub, Twitch, Apple), email magic links and the one-time
+ * login-code exchange.
  * Every sign-in re-applies bans retained from a deleted account that shared an
  * identity, email address or device secret (`moderation/ban-evasion.ts`).
  */
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
   createAccount,
@@ -20,7 +21,15 @@ import { invalidateBanCache, optionalUser, requireUser } from '../http/auth.ts';
 import { reapplyRetainedBans, type StableIdentifier } from '../moderation/ban-evasion.ts';
 import { ApiError, parse } from '../http/errors.ts';
 import { AUTH_RATE } from '../http/rate-limit.ts';
-import { completeOAuth, startOAuth, type OAuthProviderId } from './oauth.ts';
+import {
+  completeOAuth,
+  OAUTH_PROVIDERS,
+  providerEnabled,
+  startOAuth,
+  type OAuthIdentity,
+  type OAuthIntent,
+  type OAuthProviderId,
+} from './oauth.ts';
 import {
   revokeByRefreshToken,
   revokeBySessionId,
@@ -28,7 +37,7 @@ import {
   startSession,
   type TokenPair,
 } from './sessions.ts';
-import { randomToken, sha256 } from './tokens.ts';
+import { randomToken, safeEqual, sha256 } from './tokens.ts';
 import { eq } from 'drizzle-orm';
 
 const LOGIN_CODE_TTL_MS = 60_000;
@@ -42,51 +51,92 @@ const GuestBody = z.object({
 });
 const RefreshBody = z.object({ refreshToken: z.string().min(20).max(200) });
 const LogoutBody = z.object({ refreshToken: z.string().min(20).max(200).optional() }).optional();
-const ProviderParam = z.object({ provider: z.enum(['discord', 'google']) });
+const ProviderParam = z.object({ provider: z.enum(OAUTH_PROVIDERS) });
+const IntentSchema = z.enum(['link', 'signIn']);
+/** Hex SHA-256 of a random nonce the starting browser keeps (it never leaves that browser until redemption). */
+const Binding = z.string().regex(/^[0-9a-f]{64}$/, 'binding must be a hex SHA-256');
+/** The nonce behind a binding, presented when redeeming. */
+const Nonce = z.string().min(20).max(200);
+const StartBody = z.object({ intent: IntentSchema.optional(), binding: Binding }).strict();
+const StartQuery = z.object({ binding: Binding });
+/** Apple's form POST; `user` (JSON with the name) arrives only on the first authorization. */
+const AppleCallbackBody = z.object({
+  code: z.string().max(2048).optional(),
+  state: z.string().max(256).optional(),
+  error: z.string().max(256).optional(),
+  user: z.string().max(4096).optional(),
+});
 const CallbackQuery = z.object({
   code: z.string().max(2048).optional(),
   state: z.string().max(256).optional(),
   error: z.string().max(256).optional(),
 });
-const CodeBody = z.object({ code: z.string().min(16).max(128) });
+const CodeBody = z.object({ code: z.string().min(16).max(128), nonce: Nonce });
 const EmailStartBody = z.object({
   email: z
     .string()
     .email()
     .max(254)
     .transform((e) => e.toLowerCase()),
+  intent: IntentSchema.optional(),
+  binding: Binding,
 });
-const EmailVerifyBody = z.object({ token: z.string().min(20).max(200) });
+const EmailVerifyBody = z.object({ token: z.string().min(20).max(200), nonce: Nonce });
 
 /**
  * What a completed OAuth / magic-link sign-in did, so the client can say so
  * honestly and ask before replacing the Tumbler on the device:
  * - `linked`: the identity now belongs to the signed-in account;
  * - `alreadyLinked`: it already did;
- * - `switched`: the signed-in account asked to link it, but another account
- *   owns it, so the tokens are for that other account (sign-in on a new device);
+ * - `switched`: the signed-in account asked to sign in with it, but another
+ *   account owns it, so the tokens are for that other account (sign-in on a
+ *   new device);
  * - `signedIn`: no account was signed in and an existing one owns it;
  * - `created`: no account owned it, so a new one was made.
  */
 export type AuthOutcome = 'linked' | 'alreadyLinked' | 'switched' | 'signedIn' | 'created';
 
+/**
+ * How a session was obtained: a sign-in method, or `link` for a one-time
+ * staff sign-in link (`pnpm admin staff bootstrap` / `staff link`).
+ */
+export type AuthMethod = OAuthProviderId | 'email' | 'link';
+
 /** Body of `/auth/exchange` and `/auth/email/verify`: the session plus what happened. */
-export type AuthResult = TokenPair & { outcome: AuthOutcome; provider: 'discord' | 'google' | 'email' };
+export type AuthResult = TokenPair & { outcome: AuthOutcome; provider: AuthMethod };
+
+/** An external identity proven by a provider or an email link. */
+interface ProvenIdentity {
+  provider: IdentityProvider;
+  subject: string;
+  /** Verified address only; an unverified one is never used to find an account. */
+  email: string | null;
+  name: string | null;
+  linkUserId: string | null;
+  intent: OAuthIntent;
+}
+
+/** Turns a provider's name into a display-name suggestion `createAccount` may accept. */
+function nameSuggestion(name: string): string {
+  return name.replace(/[^A-Za-z0-9_ ]/g, '').slice(0, 16);
+}
 
 /** Signs in (or creates/links) the account behind an external identity. */
 async function resolveIdentity(
   tx: DbOrTx,
   ctx: AppContext,
-  id: {
-    provider: IdentityProvider;
-    subject: string;
-    email: string | null;
-    name: string | null;
-    linkUserId: string | null;
-  },
+  id: ProvenIdentity,
 ): Promise<{ userId: string; outcome: AuthOutcome }> {
   const owner = await findIdentity(tx, id.provider, id.subject);
   if (id.linkUserId) {
+    // "Connect" from Settings must never move the device to another account.
+    if (owner && owner !== id.linkUserId && id.intent === 'link') {
+      throw new ApiError(
+        409,
+        'identity_in_use',
+        'That login is linked to another player; unlink it there first',
+      );
+    }
     // The player proved they control the identity, so handing them the account
     // that owns it is safe; the client confirms before abandoning the current one.
     if (owner && owner !== id.linkUserId) return { userId: owner, outcome: 'switched' };
@@ -95,17 +145,24 @@ async function resolveIdentity(
     return { userId: id.linkUserId, outcome: 'linked' };
   }
   if (owner) return { userId: owner, outcome: 'signedIn' };
-  if (id.email) {
-    const [byEmail] = await tx.select({ id: users.id }).from(users).where(eq(users.email, id.email));
-    if (byEmail) {
-      await linkIdentity(tx, byEmail.id, id.provider, id.subject, id.email);
-      return { userId: byEmail.id, outcome: 'signedIn' };
+  let email = id.email;
+  if (email) {
+    // SECURITY: only an address proven by an email magic link joins a new
+    // login to an account. `users.email` may have come from another provider
+    // during linking, and matching on it would let anyone with that address
+    // at some provider take over the account.
+    const proven = await findIdentity(tx, 'email', email);
+    if (proven && id.provider !== 'email') {
+      await linkIdentity(tx, proven, id.provider, id.subject, email);
+      return { userId: proven, outcome: 'signedIn' };
     }
+    const [holder] = await tx.select({ id: users.id }).from(users).where(eq(users.email, email));
+    if (holder) email = null;
   }
   const account = await createAccount(tx, ctx.catalog, {
     isGuest: false,
-    email: id.email,
-    ...(id.name ? { displayName: id.name.replace(/[^A-Za-z0-9_ ]/g, '').slice(0, 16) } : {}),
+    email,
+    ...(id.name ? { displayName: nameSuggestion(id.name) } : {}),
     identity: { provider: id.provider, subject: id.subject },
   });
   return { userId: account.userId, outcome: 'created' };
@@ -121,7 +178,7 @@ async function resolveIdentity(
  */
 async function signInWithIdentity(
   ctx: AppContext,
-  id: Parameters<typeof resolveIdentity>[2],
+  id: ProvenIdentity,
   userAgent: string | undefined,
 ): Promise<TokenPair & { outcome: AuthOutcome }> {
   const { userId, outcome, reapplied } = await ctx.db.transaction(async (tx) => {
@@ -201,64 +258,148 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     return reply.code(204).send();
   });
 
+  // The client renders only the methods reported here.
   app.get('/auth/providers', async () => ({
-    discord: Boolean(ctx.config.discord),
-    google: Boolean(ctx.config.google),
+    ...Object.fromEntries(OAUTH_PROVIDERS.map((p) => [p, providerEnabled(ctx.config, p)])),
     email: ctx.mailer.id !== 'disabled',
     guest: true,
   }));
 
   app.get('/auth/:provider/start', { config: AUTH_RATE }, async (req, reply) => {
     const { provider } = parse(ProviderParam, req.params);
-    return reply.redirect(await startOAuth(ctx.config, ctx.kv, provider, null));
+    const { binding } = parse(StartQuery, req.query);
+    return reply.redirect(await startOAuth(ctx.config, ctx.kv, provider, null, 'signIn', binding));
   });
 
-  // POST lets a signed-in guest start an upgrade: browsers cannot attach an
+  // POST lets a signed-in player link or switch: browsers cannot attach an
   // Authorization header to a top-level navigation, so the URL is returned instead.
   app.post('/auth/:provider/start', { config: AUTH_RATE }, async (req) => {
     const { provider } = parse(ProviderParam, req.params);
+    const body = parse(StartBody, req.body);
     const auth = await optionalUser(ctx, req);
-    return { url: await startOAuth(ctx.config, ctx.kv, provider, auth?.userId ?? null) };
+    return {
+      url: await startOAuth(
+        ctx.config,
+        ctx.kv,
+        provider,
+        auth?.userId ?? null,
+        body.intent ?? 'signIn',
+        body.binding,
+      ),
+    };
   });
 
-  app.get('/auth/:provider/callback', async (req, reply) => {
-    const { provider } = parse(ProviderParam, req.params);
-    const q = parse(CallbackQuery, req.query);
+  /**
+   * Shared tail of both callback shapes: finish the flow with the provider and
+   * send the browser back to the client with a one-time code (or an error
+   * code). Nothing is signed in or linked yet: that waits for `/auth/exchange`
+   * from the browser holding the binding's nonce.
+   */
+  const finishCallback = async (
+    reply: FastifyReply,
+    provider: OAuthProviderId,
+    q: { code?: string; state?: string; error?: string },
+    appleUser?: string,
+  ) => {
     const back = `${ctx.config.publicWebUrl}/auth/complete?provider=${provider}`;
     const fail = (code: string) => reply.redirect(`${back}&error=${encodeURIComponent(code)}`);
-    if (q.error || !q.code || !q.state) return fail(q.error ?? 'missing_code');
+    if (q.error || !q.code || !q.state) {
+      // Apple reports a closed consent sheet as `user_cancelled_authorize`.
+      const error = q.error === 'user_cancelled_authorize' ? 'access_denied' : q.error;
+      return fail(error ?? 'missing_code');
+    }
     try {
       const identity = await completeOAuth(
         ctx.config,
         ctx.kv,
         ctx.fetch,
-        provider as OAuthProviderId,
+        provider,
         q.code,
         q.state,
+        ctx.now(),
+        appleUser,
       );
-      const result = {
-        ...(await signInWithIdentity(ctx, identity, req.headers['user-agent'])),
-        provider,
-      };
       const code = randomToken(24);
-      await ctx.kv.set(`login:${code}`, JSON.stringify(result), LOGIN_CODE_TTL_MS);
+      await ctx.kv.set(`login:${sha256(code)}`, JSON.stringify(identity), LOGIN_CODE_TTL_MS);
       return reply.redirect(`${back}&code=${code}`);
     } catch (err) {
       if (err instanceof ApiError) return fail(err.code);
       throw err;
     }
+  };
+
+  app.get('/auth/:provider/callback', async (req, reply) => {
+    const { provider } = parse(ProviderParam, req.params);
+    return finishCallback(reply, provider, parse(CallbackQuery, req.query));
   });
+
+  // SECURITY: Apple's `response_mode=form_post` arrives as a cross-site form
+  // POST, so this route parses urlencoded bodies in its own scope only; the
+  // single-use `state` stored at start is what ties it to a real sign-in.
+  app.register(async (scope) => {
+    scope.addContentTypeParser(
+      'application/x-www-form-urlencoded',
+      { parseAs: 'string', bodyLimit: 16 * 1024 },
+      (_req, body, done) => done(null, Object.fromEntries(new URLSearchParams(String(body)))),
+    );
+    scope.post('/auth/apple/callback', { config: AUTH_RATE }, async (req, reply) => {
+      const body = parse(AppleCallbackBody, req.body ?? {});
+      return finishCallback(reply, 'apple', body, body.user);
+    });
+  });
+
+  /**
+   * The account a redemption request is signed in as, if any. Linking only
+   * applies to that account; a suspended one just signs in fresh (and is then
+   * refused if the identity's account is suspended too).
+   */
+  const presentUser = async (req: FastifyRequest): Promise<string | null> => {
+    try {
+      return (await optionalUser(ctx, req))?.userId ?? null;
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403) return null;
+      throw err;
+    }
+  };
+
+  /**
+   * SECURITY: a code or magic link alone proves nothing about who opened it;
+   * an attacker can forward theirs to a victim (or the authorize URL they
+   * started) to plant their login on the victim's device or the victim's
+   * login on their account. The session is only minted for the browser that
+   * holds the nonce behind the binding, and linking only happens when that
+   * request is also signed in as the account that asked to link.
+   */
+  const redeem = async (
+    req: FastifyRequest,
+    nonce: string,
+    identity: ProvenIdentity & { binding: string },
+  ): Promise<TokenPair & { outcome: AuthOutcome }> => {
+    if (!safeEqual(sha256(nonce), identity.binding)) {
+      throw new ApiError(
+        400,
+        'browser_mismatch',
+        'This sign-in was started in another browser; start it again here',
+      );
+    }
+    const userId = await presentUser(req);
+    const linkUserId = identity.linkUserId && identity.linkUserId === userId ? identity.linkUserId : null;
+    return signInWithIdentity(ctx, { ...identity, linkUserId }, req.headers['user-agent']);
+  };
 
   // Tokens never travel in a redirect URL; the client trades this one-time code for them.
   app.post('/auth/exchange', { config: AUTH_RATE }, async (req) => {
-    const { code } = parse(CodeBody, req.body);
-    const raw = await ctx.kv.getDel(`login:${code}`);
+    const { code, nonce } = parse(CodeBody, req.body);
+    // Read first: a 401 on an expired access token must not burn the code before the client refreshes.
+    await presentUser(req);
+    const raw = await ctx.kv.getDel(`login:${sha256(code)}`);
     if (!raw) throw new ApiError(400, 'invalid_code', 'Login code expired or already used');
-    return JSON.parse(raw) as AuthResult;
+    const identity = JSON.parse(raw) as OAuthIdentity;
+    return { ...(await redeem(req, nonce, identity)), provider: identity.provider } satisfies AuthResult;
   });
 
   app.post('/auth/email/start', { config: AUTH_RATE }, async (req, reply) => {
-    const { email } = parse(EmailStartBody, req.body);
+    const { email, intent, binding } = parse(EmailStartBody, req.body);
     if (ctx.mailer.id === 'disabled') {
       throw new ApiError(
         503,
@@ -272,7 +413,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     const token = randomToken();
     await ctx.kv.set(
       `magic:${sha256(token)}`,
-      JSON.stringify({ email, linkUserId: auth?.userId ?? null }),
+      JSON.stringify({ email, linkUserId: auth?.userId ?? null, intent: intent ?? 'signIn', binding }),
       MAGIC_LINK_TTL_MS,
     );
     const link = `${ctx.config.publicWebUrl}/auth/email?token=${token}`;
@@ -291,15 +432,25 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
   });
 
   app.post('/auth/email/verify', { config: AUTH_RATE }, async (req) => {
-    const { token } = parse(EmailVerifyBody, req.body);
+    const { token, nonce } = parse(EmailVerifyBody, req.body);
+    await presentUser(req);
     const raw = await ctx.kv.getDel(`magic:${sha256(token)}`);
     if (!raw) throw new ApiError(400, 'invalid_token', 'Sign-in link expired or already used');
-    const { email, linkUserId } = JSON.parse(raw) as { email: string; linkUserId: string | null };
-    const signedIn = await signInWithIdentity(
-      ctx,
-      { provider: 'email', subject: email, email, name: null, linkUserId },
-      req.headers['user-agent'],
-    );
+    const { email, linkUserId, intent, binding } = JSON.parse(raw) as {
+      email: string;
+      linkUserId: string | null;
+      intent: OAuthIntent;
+      binding: string;
+    };
+    const signedIn = await redeem(req, nonce, {
+      provider: 'email',
+      subject: email,
+      email,
+      name: null,
+      linkUserId,
+      intent,
+      binding,
+    });
     return { ...signedIn, provider: 'email' } satisfies AuthResult;
   });
 }

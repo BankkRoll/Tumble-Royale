@@ -15,6 +15,7 @@
 import { eq } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import { isErased } from '../accounts/tombstone.ts';
+import { familyState } from '../auth/sessions.ts';
 import { randomToken, safeEqual, sha256 } from '../auth/tokens.ts';
 import type { AppContext } from '../context.ts';
 import { profiles, staffMembers } from '../db/schema.ts';
@@ -49,7 +50,15 @@ export interface StaffActor {
 interface StoredSession {
   userId: string;
   expiresAt: number;
+  /** Refresh family of the game session that opened the console; signing it out ends this too. */
+  familyId: string;
 }
+
+/**
+ * Opening the console needs a game sign-in at most this old, so a stolen
+ * access token or a long-unattended session cannot be turned into one.
+ */
+export const CONSOLE_REAUTH_MS = 10 * 60_000;
 
 const sessionKey = (hash: string) => `staff-session:${hash}`;
 
@@ -82,15 +91,17 @@ export async function staffRoleOf(
  *
  * @param ctx - Shared services.
  * @param userId - A staff account (the caller has checked the role).
+ * @param familyId - Refresh family of the game session presented.
  * @returns The bearer token (shown once) and its expiry.
  */
 export async function createStaffSession(
   ctx: AppContext,
   userId: string,
+  familyId: string,
 ): Promise<{ token: string; expiresAt: Date }> {
   const token = `${STAFF_TOKEN_PREFIX}${randomToken(32)}`;
   const expiresAt = new Date(ctx.now().getTime() + STAFF_SESSION_TTL_MS);
-  const stored: StoredSession = { userId, expiresAt: expiresAt.getTime() };
+  const stored: StoredSession = { userId, expiresAt: expiresAt.getTime(), familyId };
   await ctx.kv.set(sessionKey(sha256(token)), JSON.stringify(stored), STAFF_SESSION_TTL_MS);
   return { token, expiresAt };
 }
@@ -117,6 +128,13 @@ async function sessionActor(ctx: AppContext, token: string): Promise<StaffActor>
   // The KV TTL is the primary expiry; the stored deadline also holds under a fake clock or a KV without TTLs.
   if (!stored || stored.expiresAt <= ctx.now().getTime())
     throw unauthorized('Console session expired; sign in again');
+  // SECURITY: signing out of the game (or reuse detection revoking it) ends
+  // the console session it opened, on every instance, at the next request.
+  const family = stored.familyId ? await familyState(ctx.db, stored.familyId, ctx.now()) : null;
+  if (!family?.alive) {
+    await ctx.kv.del(sessionKey(hash));
+    throw unauthorized('You signed out of the game; sign in again to use the console');
+  }
   const staff = await staffRoleOf(ctx, stored.userId);
   const suspended =
     (await isErased(ctx.kv, stored.userId)) ||

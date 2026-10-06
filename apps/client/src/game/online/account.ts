@@ -40,9 +40,11 @@ import type { PlayerRewardMsg } from '@tumble/netcode';
 import type { TumblerLoadout } from '@tumble/render/scenes';
 import { hashString } from '@tumble/shared';
 import {
+  AUTH_PROVIDERS,
   grantText,
   maskedName,
   ui,
+  type AuthProviderId,
   type ChallengeCadence,
   type ChallengesData,
   type CollectionSourceView,
@@ -469,8 +471,8 @@ export class OnlineAccount {
       shardsPerCrown: SHARDS_PER_CROWN,
       ...profileDressing(this.loadout),
       showcase: owned.slice(-3).map((c) => uiItem(c, true)),
-      linkedProviders: m.linkedProviders.filter(
-        (p): p is 'discord' | 'google' | 'email' => p === 'discord' || p === 'google' || p === 'email',
+      linkedProviders: m.linkedProviders.filter((p): p is AuthProviderId =>
+        (AUTH_PROVIDERS as readonly string[]).includes(p),
       ),
     };
   }
@@ -2218,6 +2220,16 @@ export class OnlineAccount {
   /** True when the local player leads (or is solo). */
   get isLeader(): boolean {
     return !this.party || this.party.leaderId === this.userId;
+  }
+
+  /**
+   * The server refused this device's session for good: stop the realtime
+   * socket (it would only reconnect into 401s) and go inactive until the
+   * player signs in again.
+   */
+  endExpiredSession(): void {
+    this.realtime.stop();
+    this.me = null;
   }
 
   /** Tears down sockets and subscriptions. */

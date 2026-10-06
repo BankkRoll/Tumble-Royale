@@ -53,16 +53,16 @@ What comes next, in order. Each item should land with tests, docs and a green
 
 ## 2b. Operator setup and sign-in
 
-- [ ] **Env completeness**: every variable each service reads is listed in
+- [x] **Env completeness**: every variable each service reads is listed in
       `deploy/.env.example` (and the game-server example), grouped as required
       or optional with what it enables (Discord, Google, Stripe, SMTP, TURN…);
       `setup:env --production` and the config tests agree with it.
-- [ ] **First admin**: a safe bootstrap path for a fresh server (e.g.
+- [x] **First admin**: a safe bootstrap path for a fresh server (e.g.
       `pnpm admin staff bootstrap` creating or promoting an account and a
       one-time sign-in link), documented.
-- [ ] **Admin guide**: one `docs/ADMIN.md` page covering roles, the console,
+- [x] **Admin guide**: one `docs/ADMIN.md` page covering roles, the console,
       and every `pnpm admin` command with examples and common runbooks.
-- [ ] **More sign-in providers**: add GitHub, Twitch and Apple next to email,
+- [x] **More sign-in providers**: add GitHub, Twitch and Apple next to email,
       Discord and Google, each enabled by its keys alone, with account linking
       in Settings and docs for creating each provider's app.
 

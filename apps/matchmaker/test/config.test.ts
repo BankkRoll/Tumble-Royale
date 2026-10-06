@@ -17,7 +17,12 @@ const issueNames = (env: Record<string, string | undefined>): string[] => {
   return [];
 };
 
-const prod = testEnv({ NODE_ENV: 'production', INTERNAL_HMAC_SECRET: undefined, REDIS_URL: 'redis://r' });
+const prod = testEnv({
+  NODE_ENV: 'production',
+  INTERNAL_HMAC_SECRET: undefined,
+  REDIS_URL: 'redis://r',
+  ALLOW_STANDALONE: '1',
+});
 
 describe('matchmaker config', () => {
   it('requires every secret and reports them together', () => {
@@ -62,6 +67,17 @@ describe('matchmaker config', () => {
       'https://play.example.com',
     ]);
     expect(loadConfig(testEnv({ NODE_ENV: 'development' })).allowedOrigins).toBe(true);
+  });
+
+  it('requires the account API in production unless explicitly standalone', () => {
+    expect(issueNames({ ...prod, ALLOW_STANDALONE: undefined })).toEqual(['API_URL']);
+    expect(issueNames({ ...prod, ALLOW_STANDALONE: undefined, API_URL: 'https://api.example.com' })).toEqual([
+      'INTERNAL_HMAC_SECRET',
+    ]);
+  });
+
+  it('bounds timer settings below the setTimeout limit', () => {
+    expect(issueNames(testEnv({ MAX_WAIT_MS: '3000000000' }))).toEqual(['MAX_WAIT_MS']);
   });
 
   it('refuses to run production on memory unless explicitly allowed', () => {

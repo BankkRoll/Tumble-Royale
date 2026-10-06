@@ -80,7 +80,7 @@ describe('game server config', () => {
   });
 
   it('reports results in production only when API_URL is set', () => {
-    const prod = testEnv({ NODE_ENV: 'production', INTERNAL_HMAC_SECRET: undefined });
+    const prod = testEnv({ NODE_ENV: 'production', INTERNAL_HMAC_SECRET: undefined, ALLOW_STANDALONE: '1' });
     expect(loadConfig(prod).results).toBeNull();
     expect(loadConfig(prod).allowUnticketed).toBe(false);
     expect(issueNames({ ...prod, API_URL: 'https://api' })).toEqual(['INTERNAL_HMAC_SECRET']);
@@ -92,6 +92,17 @@ describe('game server config', () => {
         RESULTS_OUTBOX_DIR: '/var/lib/tumble/outbox',
       }).results,
     ).toMatchObject({ apiUrl: 'https://api', outboxDir: '/var/lib/tumble/outbox' });
+  });
+
+  it('requires results reporting in production unless explicitly standalone', () => {
+    const prod = testEnv({ NODE_ENV: 'production', INTERNAL_HMAC_SECRET: undefined });
+    expect(issueNames(prod)).toEqual(['API_URL']);
+    expect(issueNames({ ...prod, REPORT_RESULTS: '0' })).toEqual(['REPORT_RESULTS']);
+    expect(issueNames({ ...prod, ALLOW_STANDALONE: '1' })).toEqual([]);
+  });
+
+  it('bounds timer settings below the setTimeout limit', () => {
+    expect(issueNames(testEnv({ DRAIN_TIMEOUT_MS: '3000000000' }))).toEqual(['DRAIN_TIMEOUT_MS']);
   });
 
   it('links to the matchmaker only with a URL, and then requires the server secret', () => {
@@ -121,7 +132,12 @@ describe('game server config', () => {
       maxPendingPerIp: 8,
     });
     const prod = loadConfig(
-      testEnv({ NODE_ENV: 'production', PUBLIC_WEB_URL: 'https://play.example/', ALLOW_UNTICKETED: '0' }),
+      testEnv({
+        NODE_ENV: 'production',
+        PUBLIC_WEB_URL: 'https://play.example/',
+        ALLOW_UNTICKETED: '0',
+        ALLOW_STANDALONE: '1',
+      }),
     ).exposure;
     expect(prod).toMatchObject({ debug: false, allowedOrigins: ['https://play.example'] });
     const custom = loadConfig(
@@ -173,6 +189,32 @@ describe('deploy/.env from pnpm setup:env --production', () => {
         controlUrl: 'http://game-server:7350',
       },
       exposure: { allowedOrigins: ['https://example.com'], debug: false },
+    });
+  });
+});
+
+describe('deploy/game-server/.env.example', () => {
+  it('boots a standalone game server once its secrets are filled in', () => {
+    const example = parseEnv(
+      readFileSync(new URL('../../../deploy/game-server/.env.example', import.meta.url), 'utf8'),
+    );
+    const env = Object.fromEntries(
+      Object.entries(example).map(([k, v]) => [
+        k,
+        v === 'change-me' ? randomBytes(32).toString('base64url') : v,
+      ]),
+    );
+    expect(loadConfig(env)).toMatchObject({
+      env: 'production',
+      allowUnticketed: false,
+      results: { apiUrl: 'https://example.com/api' },
+      link: {
+        matchmakerUrl: 'https://example.com/mm',
+        serverId: 'gs-eu-1',
+        publicUrl: 'wss://gs-eu.example.com/ws',
+        region: 'eu',
+      },
+      exposure: { allowedOrigins: ['https://example.com'], debug: false, trustProxy: 1 },
     });
   });
 });

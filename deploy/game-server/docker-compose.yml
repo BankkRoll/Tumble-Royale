@@ -39,6 +39,7 @@ services:
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-${GS_DOMAIN:?set GS_DOMAIN in deploy/game-server/.env}}
       CADDY_GLOBAL_OPTIONS: ${CADDY_GLOBAL_OPTIONS:-${ACME_EMAIL:+email ${ACME_EMAIL}}}
+      GAME_SERVER_UPSTREAM: ${GAME_SERVER_UPSTREAM:-game-server:7350}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

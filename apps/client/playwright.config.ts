@@ -16,7 +16,11 @@ const channel = channelEnv === 'chromium' || channelEnv === '' ? undefined : cha
 
 export default defineConfig({
   testDir: './e2e',
-  timeout: 90_000,
+  // COMPAT: CI's GPU-less runners draw through SwiftShader at a few fps, and
+  // every click waits for the element to hold still across two frames. The
+  // longest menu specs take ~1 min under SwiftShader on a desktop CPU and over
+  // 90 s on a runner.
+  timeout: process.env.CI ? 240_000 : 90_000,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: `http://localhost:${PORT}`,

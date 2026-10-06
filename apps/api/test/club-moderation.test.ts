@@ -7,7 +7,7 @@
 import { randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { eq } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { DEFAULT_CLUB_EMBLEM } from '@tumble/shared';
 import { sendClubChat } from '../src/clubs/chat.ts';
@@ -69,7 +69,9 @@ describe('club chat', () => {
     expect(line).toMatchObject({ clubId: c.id, text: 'what the fuck, gg' });
     expect(line.masked).toMatch(/^what the \*{4}/);
     expect(line.from).toMatchObject({ userId: c.owner.id, club: (await myClub(api, c.owner)).club.tag });
-    expect(seen).toContainEqual(expect.objectContaining({ type: 'club_chat', id: line.id }));
+    await vi.waitFor(() =>
+      expect(seen).toContainEqual(expect.objectContaining({ type: 'club_chat', id: line.id })),
+    );
     const history = (await call(c.member, 'GET', '/clubs/me/chat')).json().lines as { id: string }[];
     expect(history.map((l) => l.id)).toEqual([line.id]);
     const outsider = await player(api);
@@ -187,7 +189,9 @@ describe('admin console: clubs', () => {
     const seen = await events(c.member);
     expect((await act('disband', {})).statusCode).toBe(400);
     expect((await act('disband', { reason: 'hate club' })).statusCode).toBe(200);
-    expect(seen).toContainEqual(expect.objectContaining({ type: 'club_removed', reason: 'disbanded' }));
+    await vi.waitFor(() =>
+      expect(seen).toContainEqual(expect.objectContaining({ type: 'club_removed', reason: 'disbanded' })),
+    );
     expect((await myClub(api, c.member)).club).toBeNull();
     expect((await act('clear-description', { reason: 'too late' })).json().error).toBe('club_disbanded');
     const audit = await api.ctx.db.select().from(adminAuditLog).where(eq(adminAuditLog.targetId, c.id));

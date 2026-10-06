@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { userChannel, type RealtimeEvent } from '../src/realtime/notifier.ts';
 import { createTestApi, type TestApi } from './helpers.ts';
 
@@ -29,7 +29,7 @@ describe('party_disbanded', () => {
 
     expect((await api.req('POST', '/party/disband', { token: member.accessToken })).statusCode).toBe(403);
     expect((await api.req('POST', '/party/disband', { token: leader.accessToken })).statusCode).toBe(204);
-    expect(seen).toContainEqual({ type: 'party_disbanded', partyId });
+    await vi.waitFor(() => expect(seen).toContainEqual({ type: 'party_disbanded', partyId }));
     expect((await api.req('GET', '/party', { token: member.accessToken })).json().party).toBeNull();
     expect((await api.req('GET', '/party', { token: leader.accessToken })).json().party).toBeNull();
     expect((await api.req('GET', `/party/code/${code}`, { token: leader.accessToken })).statusCode).toBe(404);
@@ -40,6 +40,6 @@ describe('party_disbanded', () => {
     const partyId = (await api.req('POST', '/party', { token: solo.accessToken })).json().party.id;
     const seen = await events(solo.id);
     await api.req('POST', '/party/leave', { token: solo.accessToken });
-    expect(seen).toContainEqual({ type: 'party_disbanded', partyId });
+    await vi.waitFor(() => expect(seen).toContainEqual({ type: 'party_disbanded', partyId }));
   });
 });

@@ -13,7 +13,7 @@ import {
   type LobbyGameWire,
   type LobbyPose,
 } from '@tumble/shared';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { userChannel } from '../src/realtime/notifier.ts';
 import { PartyLobbyRelay } from '../src/realtime/partyLobby.ts';
 import { PartyService } from '../src/social/party.ts';
@@ -61,6 +61,13 @@ async function inbox(userId: string): Promise<Record<string, unknown>[]> {
   return out;
 }
 
+/** Resolves once `box` holds `n` frames: Redis delivers them after PUBLISH has returned. */
+const arrived = (box: Record<string, unknown>[], n: number) =>
+  vi.waitFor(() => {
+    expect(box).toHaveLength(n);
+    return box;
+  });
+
 const game = (players: string[], over: Partial<LobbyGameWire> = {}): LobbyGameWire => ({
   op: 'start',
   id: 5,
@@ -94,7 +101,7 @@ describe('party lobby games', () => {
     await r.handle(b.id, frame(1, { game: game(ids) }), 300);
     await r.handle(lead.id, frame(2, { game: game([lead.id, randomUUID()]) }), 300);
 
-    const [fromLead, fromB, fromLead2] = atC;
+    const [fromLead, fromB, fromLead2] = await arrived(atC, 3);
     expect(fromLead).toMatchObject({
       userId: lead.id,
       game: { kind: 'potato', players: ids, score: [99, 0, 0] },
@@ -116,6 +123,8 @@ describe('party lobby games', () => {
     await r.handle(b.id, frame(3, { claim: { id: 5, k: 'hit', t: 1, g: 4 } }), 200);
     await r.handle(lead.id, frame(1, { claim: { id: 5, k: 'tag', target: b.id } }), 200);
 
+    await arrived(atLead, 3);
+    await arrived(atB, 1);
     expect(atLead[0]).toMatchObject({ userId: b.id, claim: { k: 'tag', target: c.id } });
     expect(atLead[1]!.claim).toBeUndefined();
     expect(atLead[2]).toMatchObject({ claim: { k: 'hit', t: 1, g: 4 } });

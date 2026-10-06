@@ -140,12 +140,15 @@ interface RendererInternals {
  * @param renderer - The renderer about to draw a warm-up frame.
  * @param mayBuild - Whether another new shader still fits this slice.
  * @param onSkip - Called for every object left out.
+ * @param firstDraws - When given, the first draw of every render pipeline counts as a build too
+ *   (and the pipelines drawn are added to it).
  * @returns Removes the wrapper.
  */
 export function limitShaderBuilds(
   renderer: WebGPURenderer,
   mayBuild: () => boolean,
   onSkip: () => void,
+  firstDraws?: Set<unknown>,
 ): () => void {
   const r = renderer as unknown as RendererInternals;
   const objects = r._objects;
@@ -167,11 +170,15 @@ export function limitShaderBuilds(
       passId,
     );
     const built = nodes.get(ro).nodeBuilderState !== undefined || cache.has(ro.initialCacheKey);
-    if (!built && !mayBuild()) {
+    const pipeline = (ro as { pipeline?: unknown }).pipeline;
+    const fresh = firstDraws !== undefined && pipeline != null && !firstDraws.has(pipeline);
+    if ((!built || fresh) && !mayBuild()) {
       onSkip();
       return;
     }
     direct.apply(this, args);
+    const drawn = (ro as { pipeline?: unknown }).pipeline;
+    if (firstDraws && drawn != null) firstDraws.add(drawn);
   };
   return () => {
     delete r._renderObjectDirect;
@@ -221,16 +228,24 @@ function hasPositions(o: Object3D): boolean {
 /**
  * Renderables of `root` that a render can reach (every ancestor visible),
  * including ones hidden themselves: pooled VFX, spare cosmetics and other
- * parts that only appear mid-round need their pipelines too.
+ * parts that only appear mid-round need their pipelines too. A hidden leaf
+ * that can never show in this scene opts out with `userData.warmUp = false`.
  */
 function collectRenderables(root: Object3D): Object3D[] {
   const out: Object3D[] = [];
   const walk = (o: Object3D): void => {
     if (isRenderable(o)) out.push(o);
     for (const c of o.children) if (c.visible) walk(c);
-    // Hidden renderable leaves are still collected; hidden subtrees are not.
+    // Hidden renderable leaves are still collected (unless they opted out); hidden subtrees are not.
     for (const c of o.children)
-      if (!c.visible && isRenderable(c) && c.children.length === 0 && hasPositions(c)) out.push(c);
+      if (
+        !c.visible &&
+        isRenderable(c) &&
+        c.children.length === 0 &&
+        hasPositions(c) &&
+        c.userData.warmUp !== false
+      )
+        out.push(c);
   };
   walk(root);
   return out;
@@ -272,6 +287,54 @@ function firstOfEachShaderFirst(objects: Object3D[]): Object3D[] {
     }
   }
   return first.concat(rest);
+}
+
+type Countable = Object3D & {
+  isInstancedMesh?: boolean;
+  isPoints?: boolean;
+  isLine?: boolean;
+  count?: number;
+  geometry?: {
+    drawRange: { start: number; count: number };
+    setDrawRange(start: number, count: number): void;
+  };
+};
+
+/** What {@link forceNonEmptyDraws} changed, to put back. */
+type EmptyDrawPatch = [o: Countable, count: number | undefined, rangeStart: number, rangeCount: number][];
+
+/**
+ * Makes every object in `objects` issue a real draw: an instanced mesh with
+ * no instances draws one, a geometry with an empty draw range draws one
+ * primitive. Nothing shows: the warm-up runs under the loading cover.
+ *
+ * PERF: three skips empty draws, and ANGLE (WebGL2 on D3D11) builds a
+ * program's driver shaders for the real vertex layout and render targets on
+ * its first actual draw. Batches, trails, particle pools and LOD meshes are
+ * often empty while the warm-up runs, so their first visible draw after the
+ * reveal stalled the GPU process for seconds.
+ */
+function forceNonEmptyDraws(objects: readonly Object3D[], from: number, to: number): EmptyDrawPatch {
+  const patch: EmptyDrawPatch = [];
+  for (let i = from; i < to; i++) {
+    const o = objects[i] as Countable;
+    const g = o.geometry;
+    if (!g?.drawRange) continue;
+    const instanced = o.isInstancedMesh === true && o.count === 0;
+    const empty = g.drawRange.count === 0;
+    if (!instanced && !empty) continue;
+    patch.push([o, o.count, g.drawRange.start, g.drawRange.count]);
+    if (instanced) o.count = 1;
+    if (empty) g.setDrawRange(0, o.isPoints ? 1 : o.isLine ? 2 : 3);
+  }
+  return patch;
+}
+
+function restoreDraws(patch: EmptyDrawPatch): void {
+  for (const [o, count, start, n] of patch) {
+    if (count !== undefined) o.count = count;
+    o.geometry?.setDrawRange(start, n);
+  }
 }
 
 /** For each warmed object, the scene child it hangs under (null if it is one). */
@@ -330,6 +393,14 @@ export interface SceneWarmUpOptions {
   now?: () => number;
   /** Target main-thread time per {@link SceneWarmUp.next} (ms). */
   budgetMs?: number;
+  /**
+   * Spend the slice budget on first draws of each render pipeline as well as on shader builds.
+   *
+   * PERF: on WebGL2 (ANGLE/D3D11) the first real draw of a program compiles its driver shaders in
+   * the GPU process, and the next synchronous GL call waits for all of it: drawing every object of
+   * a round in one go blocked the main thread for 9-10 s. Paced, each slice waits for a few.
+   */
+  paceFirstDraws?: boolean;
 }
 
 /** A warm-up in progress. */
@@ -400,6 +471,7 @@ export function beginSceneWarmUp(
   let batch = FIRST_BATCH;
   let retries = 0;
   let active = true;
+  const firstDraws = opts.paceFirstDraws ? new Set<unknown>() : undefined;
   for (const o of objects) {
     o.visible = false;
     o.frustumCulled = false;
@@ -427,6 +499,7 @@ export function beginSceneWarmUp(
       const end = Math.min(objects.length, index + batch);
       for (let i = index; i < end; i++) (objects[i] as Object3D).visible = true;
       const pruned = pruneBranches(branches, objects, index, end);
+      const patched = forceNonEmptyDraws(objects, index, end);
       const t0 = now();
       let skipped = false;
       let builds = 0;
@@ -439,12 +512,14 @@ export function beginSceneWarmUp(
         () => {
           skipped = true;
         },
+        firstDraws,
       );
       try {
         opts.render();
       } finally {
         unlimit();
         unforce();
+        restoreDraws(patched);
         for (const b of pruned) b.visible = true;
         for (let i = index; i < end; i++) (objects[i] as Object3D).visible = false;
       }

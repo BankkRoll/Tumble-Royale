@@ -4,7 +4,7 @@
  * leave and on account deletion, discovery and the kill switch.
  */
 import { and, eq } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { CLUB_MAX_MEMBERS } from '@tumble/shared';
 import { clubKicks, clubs, clubMembers, featureFlags } from '../src/db/schema.ts';
 import { invalidateLiveOps } from '../src/liveops/state.ts';
@@ -155,7 +155,7 @@ describe('joining', () => {
     const b = await player(api);
     expect((await call(a, 'POST', `/clubs/${club.id}/join`)).json().status).toBe('requested');
     expect((await call(b, 'POST', `/clubs/${club.id}/join`)).json().status).toBe('requested');
-    expect(seen.filter((e) => e.type === 'club_request')).toHaveLength(2);
+    await vi.waitFor(() => expect(seen.filter((e) => e.type === 'club_request')).toHaveLength(2));
     expect((await myClub(api, a)).requests).toEqual([
       expect.objectContaining({ club: expect.objectContaining({ id: club.id }) }),
     ]);
@@ -187,7 +187,9 @@ describe('joining', () => {
     await befriend(api, owner, friend);
     const seen = await events(friend);
     expect((await call(owner, 'POST', '/clubs/me/invites', { userId: friend.id })).statusCode).toBe(201);
-    expect(seen).toContainEqual(expect.objectContaining({ type: 'club_invite', clubId: club.id }));
+    await vi.waitFor(() =>
+      expect(seen).toContainEqual(expect.objectContaining({ type: 'club_invite', clubId: club.id })),
+    );
     expect((await myClub(api, friend)).invites).toEqual([
       expect.objectContaining({
         club: expect.objectContaining({ id: club.id }),
@@ -268,8 +270,10 @@ describe('role permissions', () => {
     expect(roles).toEqual({ [member.id]: 'owner', [owner.id]: 'officer', [officer.id]: 'member' });
     const seen = await events(officer);
     expect((await call(member, 'POST', '/clubs/me/disband')).statusCode).toBe(204);
-    expect(seen).toContainEqual(
-      expect.objectContaining({ type: 'club_removed', clubId: club.id, reason: 'disbanded' }),
+    await vi.waitFor(() =>
+      expect(seen).toContainEqual(
+        expect.objectContaining({ type: 'club_removed', clubId: club.id, reason: 'disbanded' }),
+      ),
     );
     expect((await myClub(api, owner)).club).toBeNull();
     // The name is free again once the club is gone.
@@ -315,7 +319,9 @@ describe('caps and concurrency', () => {
     const { club, owner, member } = await trio();
     const seen = await events(member);
     expect((await call(owner, 'POST', `/clubs/me/members/${member.id}/kick`)).statusCode).toBe(204);
-    expect(seen).toContainEqual(expect.objectContaining({ type: 'club_removed', reason: 'kicked' }));
+    await vi.waitFor(() =>
+      expect(seen).toContainEqual(expect.objectContaining({ type: 'club_removed', reason: 'kicked' })),
+    );
     const back = await call(member, 'POST', `/clubs/${club.id}/join`);
     expect(back.statusCode).toBe(403);
     expect(back.json().error).toBe('kick_cooldown');
@@ -343,8 +349,10 @@ describe('ownership hand-over', () => {
     await call(owner, 'POST', `/clubs/me/members/${later.id}/role`, { role: 'officer' });
     const seen = await events(later);
     expect((await call(owner, 'POST', '/clubs/me/leave')).statusCode).toBe(204);
-    expect(seen).toContainEqual(
-      expect.objectContaining({ type: 'notification', title: `You now own ${club.name}` }),
+    await vi.waitFor(() =>
+      expect(seen).toContainEqual(
+        expect.objectContaining({ type: 'notification', title: `You now own ${club.name}` }),
+      ),
     );
     expect((await myClub(api, later)).role).toBe('owner');
 
@@ -424,8 +432,11 @@ describe('party up', () => {
     const seen = await events(member);
     const res = await call(owner, 'POST', '/clubs/me/party-up', { userId: member.id });
     expect(res.statusCode).toBe(200);
-    const invite = seen.find((e) => e.type === 'party_invite') as { code: string } | undefined;
-    expect(invite).toBeDefined();
+    const invite = await vi.waitFor(() => {
+      const found = seen.find((e) => e.type === 'party_invite') as { code: string } | undefined;
+      expect(found).toBeDefined();
+      return found;
+    });
     expect((await call(member, 'POST', '/party/join', { code: invite!.code })).statusCode).toBe(200);
     const outsider = await player(api);
     expect((await call(owner, 'POST', '/clubs/me/party-up', { userId: outsider.id })).statusCode).toBe(404);

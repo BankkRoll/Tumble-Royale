@@ -23,18 +23,27 @@ COPY . .
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile --offline --filter "@tumble/game-server..." --filter tumble-royale
 RUN pnpm --filter @tumble/game-server build
-# Production dependencies only, as real files rather than links into the workspace.
+# Production dependencies only, pinned by the lockfile, in a tree that holds
+# nothing but the workspace manifests. Workspace packages are bundled into dist/.
+# NOTE: not `pnpm deploy`: without inject-workspace-packages it falls back to the
+# legacy mode, which re-resolves every version from the registry.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm --filter @tumble/game-server deploy --prod --legacy --offline /out \
-    && rm -rf /out/src /out/test /out/dist \
-    && cp -r apps/game-server/dist /out/dist
+    mkdir /out \
+    && cp package.json pnpm-lock.yaml pnpm-workspace.yaml /out/ \
+    && find apps packages tools -mindepth 2 -maxdepth 2 -name package.json -exec cp --parents {} /out \; \
+    && cd /out \
+    && pnpm install --prod --frozen-lockfile --offline --filter @tumble/game-server \
+    && rm -rf apps/game-server/node_modules/@tumble \
+    && cp -r /repo/apps/game-server/dist apps/game-server/dist
 
 FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production \
     PORT=7350 \
     RESULTS_OUTBOX_DIR=/data/results-outbox
-WORKDIR /app
-COPY --from=build /out ./
+# The app's node_modules links into the virtual store two levels up.
+WORKDIR /app/apps/game-server
+COPY --from=build /out/node_modules /app/node_modules
+COPY --from=build /out/apps/game-server ./
 # A named volume mounted here starts with this directory's owner, so the
 # unprivileged user can write the outbox.
 RUN mkdir -p /data/results-outbox && chown -R node:node /data

@@ -49,8 +49,11 @@ export {
   VictoryScreen,
   WinnerCamScreen,
 } from './Results.tsx';
+export { RoundVoteCard, RoundVoteLayer, voteAnnouncement, voteFooter } from './RoundVote.tsx';
 export { PlayerWall, PlayerWallScreen, wallGrid, type PlayerWallProps } from './PlayerWall.tsx';
 export { RewardsScreen } from './Rewards.tsx';
+export { ElimReplayLayer } from './ElimReplay.tsx';
+export { HighlightsReel } from './Highlights.tsx';
 export { MatchHistoryScreen } from './MatchHistory.tsx';
 export { InGameMenu, openInGameMenu } from './overlays/InGameMenu.tsx';
 export { JoinCodeDialog, PrivateShowDialog, openJoinCode, openPrivateShow } from './overlays/PrivateShow.tsx';

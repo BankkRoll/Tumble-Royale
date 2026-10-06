@@ -12,7 +12,7 @@ import { playCue } from '../../audio-cues.ts';
 import { Bar, CurrencyPill } from '../../components/bits.tsx';
 import { Icon } from '../../components/icons/index.tsx';
 import { useNow } from '../../components/hooks.ts';
-import { maintenanceHeadline } from '../../store/liveOps.ts';
+import { maintenanceHeadline, STATUS_PAGE_URL } from '../../store/liveOps.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import { MENU_TABS, type MenuTab } from '../../store/types.ts';
 import { ChallengesTab } from './ChallengesTab.tsx';
@@ -262,6 +262,15 @@ export function MaintenanceBanner(): JSX.Element | null {
           {active ? `${notice.message} Vs Bots still works offline.` : notice.message}
         </small>
       </span>
+      <a
+        className="tr-maintenance-link"
+        href={STATUS_PAGE_URL}
+        target="_blank"
+        rel="noopener"
+        data-testid="maintenance-status-link"
+      >
+        Status
+      </a>
     </div>
   );
 }

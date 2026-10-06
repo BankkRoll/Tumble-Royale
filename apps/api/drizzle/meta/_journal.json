@@ -99,6 +99,13 @@
       "when": 1791296514620,
       "tag": "0013_custom_rounds",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791297567375,
+      "tag": "0014_status_page",
+      "breakpoints": true
     }
   ]
 }

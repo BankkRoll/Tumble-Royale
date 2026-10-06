@@ -19,6 +19,7 @@ import { uiEvents } from './events.ts';
 import { overlayAfterScreenChange } from './inputOwnership.ts';
 import type {
   BetweenRoundsInfo,
+  RoundVoteState,
   BootState,
   AchievementsData,
   ChallengesData,
@@ -65,6 +66,8 @@ import type {
   PhotoModeState,
   ReplayRoundEntry,
   ReplayViewerState,
+  EliminationReplayState,
+  HighlightEntry,
   RewardsSummary,
   CustomRoundLookup,
   RoundCatalogEntry,
@@ -80,6 +83,7 @@ import type {
   ShowSeat,
   ShowSummary,
   SpectateInfo,
+  SpectatorState,
   StampEntry,
   StampKind,
   StoreData,
@@ -215,9 +219,13 @@ export interface UIState {
   /** The local seat in the running show (null outside shows). */
   showSeat: ShowSeat | null;
   spectate: SpectateInfo | null;
+  /** Spectator camera, roster and broadcast overlay for the running show (null outside shows). */
+  spectator: SpectatorState | null;
   emoteWheelOpen: boolean;
   results: RoundResults | null;
   betweenRounds: BetweenRoundsInfo | null;
+  /** The next round's ballot between rounds (null when no vote is running). */
+  roundVote: RoundVoteState | null;
   finalHype: FinalHypeInfo | null;
   victory: VictoryInfo | null;
   playerWall: ShowSummary | null;
@@ -241,6 +249,10 @@ export interface UIState {
   replayLive: boolean;
   /** The open replay viewer (null = closed). While open it covers the screen and HUD. */
   replay: ReplayViewerState | null;
+  /** The "How you went out" replay after a knock-out (null = not showing). */
+  elimReplay: EliminationReplayState | null;
+  /** The show's automatic highlights, best first (empty while replays are off). */
+  highlights: HighlightEntry[];
 
   // --- actions: screens ----------------------------------------------------
   /** Changes screen, with the screen's default transition unless overridden. */
@@ -356,9 +368,17 @@ export interface UIState {
   setWatchChoice: (choice: WatchChoice | null) => void;
   setShowSeat: (seat: ShowSeat | null) => void;
   setSpectate: (info: SpectateInfo | null) => void;
+  /** Replaces the spectator tools (null when the show ends). */
+  setSpectator: (state: SpectatorState | null) => void;
+  /** Merges into the spectator tools; ignored outside shows. */
+  patchSpectator: (patch: Partial<SpectatorState>) => void;
   setEmoteWheel: (open: boolean) => void;
   setResults: (results: RoundResults | null) => void;
   setBetweenRounds: (info: BetweenRoundsInfo | null) => void;
+  /** Replaces the round vote (null hides the card). */
+  setRoundVote: (vote: RoundVoteState | null) => void;
+  /** Merges into the running round vote; ignored when none is running. */
+  patchRoundVote: (patch: Partial<RoundVoteState>) => void;
   setFinalHype: (info: FinalHypeInfo | null) => void;
   setVictory: (info: VictoryInfo | null) => void;
   /** Loads the end-of-show wall; call before `setScreen('playerWall')`. */
@@ -374,6 +394,11 @@ export interface UIState {
   setReplay: (replay: ReplayViewerState | null) => void;
   /** Merges viewer fields (playhead updates at ~15 Hz). */
   patchReplay: (patch: Partial<ReplayViewerState>) => void;
+  /** Shows (state) or hides (null) the elimination replay. */
+  setElimReplay: (state: EliminationReplayState | null) => void;
+  /** Merges elimination replay fields (progress at ~10 Hz); ignored when none shows. */
+  patchElimReplay: (patch: Partial<EliminationReplayState>) => void;
+  setHighlights: (highlights: HighlightEntry[]) => void;
 
   // --- internal (TumbleWipe component) -------------------------------------
   /** @internal Cover animation finished. */
@@ -480,9 +505,11 @@ export const ui = createStore<UIState>()((set, get) => ({
   watchChoice: null,
   showSeat: null,
   spectate: null,
+  spectator: null,
   emoteWheelOpen: false,
   results: null,
   betweenRounds: null,
+  roundVote: null,
   finalHype: null,
   victory: null,
   playerWall: null,
@@ -494,6 +521,8 @@ export const ui = createStore<UIState>()((set, get) => ({
   replays: [],
   replayLive: false,
   replay: null,
+  elimReplay: null,
+  highlights: [],
 
   setScreen: (screen, opts = {}) => {
     const s = get();
@@ -671,6 +700,7 @@ export const ui = createStore<UIState>()((set, get) => ({
       spectate: null,
       results: null,
       betweenRounds: null,
+      roundVote: null,
       finalHype: null,
       victory: null,
       playerWall: null,
@@ -724,9 +754,25 @@ export const ui = createStore<UIState>()((set, get) => ({
   setWatchChoice: (watchChoice) => set({ watchChoice }),
   setShowSeat: (showSeat) => set({ showSeat }),
   setSpectate: (spectate) => set({ spectate }),
+  setSpectator: (spectator) => set({ spectator }),
+  patchSpectator: (patch) => {
+    const cur = get().spectator;
+    if (!cur) return;
+    for (const k in patch) {
+      if (cur[k as keyof SpectatorState] !== patch[k as keyof SpectatorState]) {
+        set({ spectator: { ...cur, ...patch } });
+        return;
+      }
+    }
+  },
   setEmoteWheel: (emoteWheelOpen) => set({ emoteWheelOpen }),
   setResults: (results) => set({ results }),
   setBetweenRounds: (betweenRounds) => set({ betweenRounds }),
+  setRoundVote: (roundVote) => set({ roundVote }),
+  patchRoundVote: (patch) => {
+    const cur = get().roundVote;
+    if (cur) set({ roundVote: { ...cur, ...patch } });
+  },
   setFinalHype: (finalHype) => set({ finalHype }),
   setVictory: (victory) => set({ victory }),
   setPlayerWall: (playerWall, opts) =>
@@ -752,6 +798,18 @@ export const ui = createStore<UIState>()((set, get) => ({
       }
     }
   },
+  setElimReplay: (elimReplay) => set({ elimReplay }),
+  patchElimReplay: (patch) => {
+    const r = get().elimReplay;
+    if (!r) return;
+    for (const k in patch) {
+      if (r[k as keyof EliminationReplayState] !== patch[k as keyof EliminationReplayState]) {
+        set({ elimReplay: { ...r, ...patch } });
+        return;
+      }
+    }
+  },
+  setHighlights: (highlights) => set({ highlights }),
 }));
 
 function applyScreen(screen: ScreenId, transition: TransitionKind): void {

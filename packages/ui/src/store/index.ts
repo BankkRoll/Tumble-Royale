@@ -67,6 +67,16 @@ export {
   type ClubContributionView,
 } from './clubs.ts';
 export {
+  voice,
+  useVoice,
+  VOICE_UNAVAILABLE_TEXT,
+  type VoiceState,
+  type VoiceStatus,
+  type VoiceUnavailableReason,
+  type VoicePeerView,
+  type VoiceDeviceView,
+} from './voice.ts';
+export {
   shareUI,
   useShare,
   CLOSED_SHARE_SHEET,
@@ -76,6 +86,7 @@ export {
   type ShareResult,
   type ShareStatus,
   type ShareClipRound,
+  type ShareClipPrefill,
   type ShareCardFormat,
   type ClipSupport,
 } from './share.ts';
@@ -123,3 +134,15 @@ export {
   overlayAfterScreenChange,
   watchChoiceVisible,
 } from './inputOwnership.ts';
+export {
+  SPECTATOR_HELP,
+  SPECTATOR_MODES,
+  SPECTATOR_MODE_LABELS,
+  broadcastActive,
+  foldForSearch,
+  initialSpectatorState,
+  nextSpectatorMode,
+  searchRoster,
+  type SpectatorHelpRow,
+} from './spectator.ts';
+export { HIGHLIGHT_HEADINGS, highlightPlace, highlightTitle } from './highlights.ts';

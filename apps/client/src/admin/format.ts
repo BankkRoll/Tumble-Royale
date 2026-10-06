@@ -34,6 +34,7 @@ export const REASON_LABELS: Record<string, string> = {
   offensive_name: 'Offensive name',
   griefing: 'Griefing',
   spam: 'Spam',
+  voice: 'Voice chat',
   other: 'Other',
 };
 
@@ -41,6 +42,7 @@ export const REASON_LABELS: Record<string, string> = {
 export const SCOPE_LABELS: Record<string, string> = {
   all: 'Suspended',
   chat: 'Muted',
+  voice: 'Voice muted',
   ranked: 'Ranked ban',
 };
 
@@ -50,6 +52,7 @@ export const ACTION_META: Record<ReportAction, { label: string; danger: boolean;
   resolve: { label: 'Resolve', danger: false, verb: 'Resolve' },
   warn: { label: 'Warn', danger: false, verb: 'Warn' },
   mute: { label: 'Mute chat…', danger: true, verb: 'Mute' },
+  voice_mute: { label: 'Mute voice…', danger: true, verb: 'Mute voice' },
   ban: { label: 'Ban…', danger: true, verb: 'Ban' },
 };
 
@@ -173,7 +176,9 @@ export function reportActionBody(
     reportIds: [...reportIds],
     action,
     reason: reason.trim(),
-    ...((action === 'mute' || action === 'ban') && hours ? { durationHours: hours } : {}),
+    ...((action === 'mute' || action === 'voice_mute' || action === 'ban') && hours
+      ? { durationHours: hours }
+      : {}),
   };
 }
 
@@ -188,6 +193,7 @@ export type Route =
   | { view: 'players'; id?: string; q?: string }
   | { view: 'sanctions' }
   | { view: 'liveops' }
+  | { view: 'status' }
   | { view: 'refunds'; id?: string }
   | { view: 'clubs'; id?: string; q?: string }
   | { view: 'audit'; target?: string }
@@ -211,6 +217,8 @@ export function parseRoute(hash: string): Route {
       };
     case 'sanctions':
       return { view: 'sanctions' };
+    case 'status':
+      return { view: 'status' };
     case 'liveops':
       return { view: 'liveops' };
     case 'refunds':

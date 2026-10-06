@@ -10,7 +10,7 @@ import type { BitReader, BitWriter } from './bits.ts';
 import type { Bounds } from './quantize.ts';
 
 /** Bumped on any incompatible wire change; peers with different versions are rejected in the handshake. */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 7;
 
 /**
  * WebSocket close reason (with code 1000) a client sends when the player chose
@@ -258,6 +258,25 @@ export interface ShowInfoMsg {
   queue: 'casual' | 'ranked' | 'custom' | 'dev';
   /** Estimated rounds (the real count depends on results). */
   roundCount: number;
+  /**
+   * v7: whether this connection may chat into the show. False for a private
+   * show's spectator seat unless the host allowed spectator chat; older
+   * servers leave it out (treated as allowed).
+   */
+  canChat?: boolean;
+}
+
+/**
+ * Client → server: who or where a spectator watches (drives interest
+ * management). Sent when the followed player changes and, with `target` -1,
+ * while a free or overview camera moves (v7, at most 2 Hz).
+ */
+export interface SpectateMsg {
+  t: 'spectate';
+  /** Followed player id, or -1 for a camera not tied to anyone. */
+  target: number;
+  /** v7: world point `[x, y, z]` (whole metres) a camera not tied to anyone looks at. */
+  focus?: [number, number, number];
 }
 
 /** One labelled reward line (the API's `RewardLine`). */
@@ -366,6 +385,73 @@ export interface LoadingStatusMsg {
   waitingOn: number[];
 }
 
+/** Most options a round-vote ballot carries. */
+export const VOTE_MAX_OPTIONS = 4;
+
+/**
+ * Server → client (v6), per connection: the ballot for the next round
+ * opened. Also re-sent on (re)attach while a ballot is running, so a player
+ * who reconnected mid-vote sees it again with their own ballot marked.
+ */
+export interface VoteOptionsMsg {
+  t: 'voteOptions';
+  /** Round the ballot is for. */
+  roundIndex: number;
+  /** The ballot is for the final (playlists that vote on finals). */
+  isFinal: boolean;
+  /** Candidate round ids, in display order (at most {@link VOTE_MAX_OPTIONS}). */
+  options: string[];
+  /** Raw ballots per option so far. */
+  counts: number[];
+  /** Ballots cast so far. */
+  voted: number;
+  /** Players allowed to vote. */
+  eligible: number;
+  /** Time until the ballot closes at the latest. */
+  closesInMs: number;
+  /** This connection's player may vote (false for eliminated players and spectators). */
+  canVote: boolean;
+  /** This player's current ballot (option index), or -1. */
+  yourVote: number;
+  /** Bot ballots count for less than a human's. */
+  botsDiscounted: boolean;
+}
+
+/**
+ * Client → server (v6): vote for (or change to) an option. Ignored unless
+ * the ballot for `roundIndex` is open and the sender may vote.
+ */
+export interface CastVoteMsg {
+  t: 'castVote';
+  roundIndex: number;
+  /** Option index in {@link VoteOptionsMsg.options}. */
+  option: number;
+}
+
+/** Server → client (v6), at most 4 Hz while ballots change. */
+export interface VoteTallyMsg {
+  t: 'voteTally';
+  roundIndex: number;
+  /** Raw ballots per option. */
+  counts: number[];
+  /** Ballots cast. */
+  voted: number;
+}
+
+/** Server → client (v6): the ballot closed. */
+export interface VoteResultMsg {
+  t: 'voteResult';
+  roundIndex: number;
+  /** Winning option index, or -1 when the vote was called off (the show ended). */
+  winner: number;
+  /** Winning round id ('' when called off). */
+  roundId: string;
+  /** Final raw ballots per option. */
+  counts: number[];
+  /** How it was decided: most votes, a seeded tie-break, or a seeded pick with no votes. */
+  reason: 'votes' | 'tie' | 'noVotes' | 'cancelled';
+}
+
 /** Union of low-frequency messages. `t` is the discriminant. */
 export type LowFreqMessage =
   | JoinRoundMsg
@@ -377,15 +463,18 @@ export type LowFreqMessage =
   | { t: 'loaded'; roundId: string }
   | LoadProgressMsg
   | LoadingStatusMsg
-  /** Client → server: who to spectate (drives interest management). */
-  | { t: 'spectate'; target: number }
+  | SpectateMsg
   /** Server → client: lobby countdown before the show fills with bots. */
   | { t: 'lobby'; humans: number; capacity: number; startsInMs: number }
   /** `startsInMs` (v3, PreShow only): time until round 1 is selected. */
   | { t: 'showPhase'; phase: ShowPhaseId; startsInMs?: number }
   | { t: 'roundPhase'; phase: RoundPhaseId; time: number }
   | ShowInfoMsg
-  | ShowRewardsMsg;
+  | ShowRewardsMsg
+  | VoteOptionsMsg
+  | CastVoteMsg
+  | VoteTallyMsg
+  | VoteResultMsg;
 
 /** Low-frequency message type discriminant. */
 export type LowFreqType = LowFreqMessage['t'];

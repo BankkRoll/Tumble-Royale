@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Live status of Tumble Royale: servers, matchmaking, store, chat, incidents and uptime."
+    />
+    <meta name="color-scheme" content="light dark" />
+    <title>Tumble Royale status</title>
+    <link
+      rel="alternate"
+      type="application/atom+xml"
+      title="Tumble Royale incidents"
+      href="/api/status/feed.atom"
+    />
+    <link
+      rel="alternate"
+      type="application/feed+json"
+      title="Tumble Royale incidents"
+      href="/api/status/feed.json"
+    />
+  </head>
+  <body>
+    <main id="status">
+      <div class="st-page">
+        <header class="st-head"><h1>Tumble Royale status</h1></header>
+        <section class="st-banner st-none" role="status">
+          <h2>Loading live status…</h2>
+          <p>
+            If this message stays, JavaScript is off or our servers cannot be reached right now. Incident
+            updates are also published as an <a href="/api/status/feed.atom">Atom feed</a> and a
+            <a href="/api/status/feed.json">JSON feed</a>.
+          </p>
+        </section>
+      </div>
+    </main>
+    <script type="module" src="/src/status/main.ts"></script>
+  </body>
+</html>

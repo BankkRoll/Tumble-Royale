@@ -113,6 +113,10 @@ export interface CustomSettings {
   spectatorSlots: number;
   /** Players needed before the host can start (bots fill the rest). */
   minPlayers: number;
+  /** Players vote on each next round (only ever between the rounds the host picked). */
+  roundVoting: boolean;
+  /** Spectator seats may chat into the show (off: they watch quietly). */
+  spectatorChat: boolean;
 }
 
 /**

@@ -28,6 +28,14 @@ export interface ReportFilters {
   targetUserId: string;
 }
 
+/** How each evidence channel is labelled (voice lines are metadata: nothing is recorded). */
+const EVIDENCE_CHANNEL: Record<string, string> = {
+  global: 'global',
+  whisper: 'whisper to reporter',
+  club: 'club chat',
+  voice: 'voice room (no recording)',
+};
+
 /**
  * One report row: who, what, evidence, and its selection box.
  *
@@ -89,13 +97,15 @@ export function ReportRowView(props: {
         {r.details ? <p className="adm-quote">{r.details}</p> : <span className="adm-muted">No details</span>}
         {r.evidence && r.evidence.length > 0 && (
           <details className="adm-evidence">
-            <summary>Chat evidence ({r.evidence.length})</summary>
+            <summary>
+              {r.evidence.some((l) => l.channel === 'voice') ? 'Evidence' : 'Chat evidence'} (
+              {r.evidence.length})
+            </summary>
             <ol>
               {r.evidence.map((l, i) => (
                 <li key={i}>
                   <span className="adm-muted">
-                    {shortTime(new Date(l.at).toISOString())} ·{' '}
-                    {l.channel === 'whisper' ? 'whisper to reporter' : 'global'}
+                    {shortTime(new Date(l.at).toISOString())} · {EVIDENCE_CHANNEL[l.channel] ?? l.channel}
                   </span>{' '}
                   {l.text}
                 </li>
@@ -150,6 +160,8 @@ export function describeAction(action: ReportAction, reports: number, players: n
       return `Record a warning on ${p} and notify them, then close ${r}.`;
     case 'mute':
       return `Turn off chat for ${p} (global, party and whispers), then close ${r}.`;
+    case 'voice_mute':
+      return `Turn off voice chat for ${p} and drop them from every voice room at once, then close ${r}.`;
     case 'ban':
       return `Suspend ${p}: they are signed out of everything at once. Closes every open report against them.`;
   }
@@ -199,7 +211,7 @@ export function ReportsView() {
       body: describeAction(action, ids.length, players),
       confirmLabel: ACTION_META[action].verb,
       danger: ACTION_META[action].danger,
-      ...(action === 'mute'
+      ...(action === 'mute' || action === 'voice_mute'
         ? { durations: MUTE_DURATIONS }
         : action === 'ban'
           ? { durations: BAN_DURATIONS }

@@ -107,6 +107,13 @@ export class RoundView implements GameView {
    * paused (dt 0) but keep the camera live.
    */
   cameraDt: number | null = null;
+  /**
+   * Runs after the gameplay rig placed the camera each frame and may move it
+   * (spectator free camera, overview and blended cuts), and may move `focus`,
+   * the point shadows and environment detail centre on, to where it looks.
+   * Null leaves the rig in charge.
+   */
+  cameraDriver: ((dt: number, camera: PerspectiveCamera, focus: Vector3) => void) | null = null;
 
   /**
    * Cheap setup only. Call {@link loadSteps} (time-sliced) or {@link build}
@@ -609,6 +616,7 @@ export class RoundView implements GameView {
       this.focus.set(p.x, p.y, p.z);
     }
     this.rig.update(this.cameraDt ?? dt, this.follow);
+    this.cameraDriver?.(this.cameraDt ?? dt, this.camera, this.focus);
 
     this.camera.getWorldPosition(this.camPos);
     this.ragdollMgr?.update(dt, this.camPos);

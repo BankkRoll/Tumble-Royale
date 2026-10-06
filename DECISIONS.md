@@ -219,6 +219,29 @@ same item, and decline/cancel races without a lock table of its own.
 Overdue gifts are auto-accepted lazily on read and by the retention sweep,
 so the 30-day rule needs no new background process.
 
+## Voice chat is a peer-to-peer mesh, not an SFU
+
+Voice rooms are small: a party is at most 4 players, and team voice splits a
+team into squads of at most 8. In a full mesh each player uploads one Opus
+stream per peer, about 30 kbit/s each, so even a full squad costs ~210 kbit/s
+up, which any connection that can play the game already has. An SFU would
+cut that to one upload but adds a media server to run, scale and secure, and
+puts every conversation's audio through infrastructure the operator then has
+to explain. Self-hosters already run a TURN relay for players behind strict
+NATs; a mesh needs nothing else.
+
+The cost of the mesh is that peers who connect directly see each other's IP
+addresses. Players can choose "Relay only", which forces TURN and hides it;
+the first-use dialog says so before the microphone is ever requested.
+
+Squads are fixed when a team round starts (parties first, largest first, then
+solo players) rather than "the 8 nearest teammates", because proximity
+changes every second and every regrouping would tear down and renegotiate
+connections mid-round. Signalling rides the existing authenticated realtime
+socket instead of a new endpoint, so origin checks, bans and cross-instance
+delivery come for free; the API decides room membership from server state
+and re-checks it on every relayed message.
+
 ## Custom rounds: one validator, no physics, the server ships the definition
 
 Player-made rounds are untrusted data that run on the same game servers as

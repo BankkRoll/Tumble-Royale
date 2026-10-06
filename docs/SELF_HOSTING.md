@@ -174,6 +174,76 @@ settings changed).
   [Refunds](#refunds) for how Gem pack refund requests reach Stripe.
 - **Crash reports:** `SENTRY_DSN` (any Sentry-compatible service) for the
   servers; `sentryDsn` in the client overrides below for browsers.
+- **Voice chat:** needs a TURN relay; see [Voice chat](#voice-chat).
+
+### Voice chat
+
+Voice chat is opt-in for every player and off on the server until you set it
+up: players talk peer to peer (WebRTC, Opus audio only) inside their party,
+and in team rounds with up to eight teammates who also opted in. The API only
+relays signalling between players it has put in the same room. Many home and
+mobile networks cannot connect peer to peer, so voice needs a TURN relay, and
+the client hides voice entirely until one is configured and the
+`voice.enabled` flag is on.
+
+1. **Secret.** `pnpm setup:env --production` writes `VOICE_TURN_SECRET` to
+   `deploy/.env`. Older files: add `VOICE_TURN_SECRET=` with 32+ random
+   characters (`openssl rand -base64 32`). It is shared only by the API and
+   coturn; players get short-lived credentials derived from it (valid four
+   hours, for one player and one room), never the secret.
+2. **ICE servers.** Uncomment `VOICE_ICE_SERVERS` in `deploy/.env`:
+
+   ```sh
+   VOICE_ICE_SERVERS=stun:DOMAIN:3478,turn:DOMAIN:3478?transport=udp,turn:DOMAIN:3478?transport=tcp
+   ```
+
+   Any `turn:`/`turns:` URL requires `VOICE_TURN_SECRET` (the API refuses to
+   start otherwise). An external TURN service that supports the "TURN REST
+   API" shared-secret scheme (coturn's `use-auth-secret`) works the same way.
+
+3. **Start the relay** with the `voice` profile:
+
+   ```sh
+   docker compose -f deploy/docker-compose.yml --profile voice up -d
+   ```
+
+   coturn runs on the host network (Docker's port publishing is slow for a UDP
+   range). It refuses to relay to loopback, private, link-local and
+   carrier-grade NAT ranges, so it cannot be used to reach Postgres, Redis or a
+   cloud metadata service, and it caps each account's allocations and
+   bandwidth. On a cloud VM behind 1:1 NAT (AWS, GCP) add
+   `--external-ip=PUBLIC_IP/PRIVATE_IP` to the `turnserver` line in the
+   compose file.
+
+4. **Firewall.** Open `3478/udp`, `3478/tcp` and `49160-49200/udp` (the relay
+   range; widen `--min-port`/`--max-port` for more than ~40 relayed calls).
+5. **Switch it on:** `pnpm admin flags set voice.enabled on`. Players then see
+   Settings → Voice; they still have to switch it on themselves.
+
+`VOICE_REQUIRE_TURN` defaults to `1` in production. Setting it to `0` lets
+voice run without TURN (direct connections only: fine on a LAN, unreliable on
+the internet); it is `0` by default in development so voice can be tried on
+`localhost` with two browser windows.
+
+Rules worth knowing before you enable it:
+
+- **Rooms:** a party (up to 4) is one room. In team rounds, players who
+  turned on "Team voice" are grouped into squads of up to 8 teammates, with
+  queue parties kept together; the game server reports teams to the API over
+  the signed internal channel. Everyone else stays in their party room.
+- **Guests and new accounts** can use party voice (a party is joined by a
+  friend's invite or a code someone shared), but never team voice with
+  strangers: that needs a linked account at least three days old. The game
+  collects no ages, so there is no age gate; voice is off by default and
+  push-to-talk is the default mode.
+- **Moderation:** blocks are mutual (two players who blocked each other are
+  never connected, even in a shared room). A moderator's voice mute
+  (`pnpm admin` / the console's "Mute voice…", ban scope `voice`) or a
+  suspension ends the player's voice on every instance at once. Nothing is
+  recorded; a voice report carries which room the two shared and when.
+- **Privacy:** peers connected directly see each other's IP address, as with
+  any WebRTC call. Players can turn on "Relay only (hide my IP)" to send
+  everything through your TURN relay instead.
 
 ### Refunds
 
@@ -257,8 +327,11 @@ pnpm admin flags set analytics.sample on --payload 0.25
 | `mutators.chaos`   | Chaos Mode plays without its per-show mutator                       |
 | `analytics.sample` | no analytics are stored; with `on` the payload is the sampled share |
 | `events.enabled`   | events count nothing and pay nothing; the menu says they are paused |
+| `shows.mapVoting`  | no round votes; shows pick every round from the seed (next show)    |
+| `voice.enabled`    | voice chat is hidden and every session ends (**off unless set**)    |
 
-A flag that was never set is on. `--rollout N` turns a flag on for a sticky N%
+A flag that was never set is on, except `voice.enabled`, which needs a TURN
+relay first ([Voice chat](#voice-chat)). `--rollout N` turns a flag on for a sticky N%
 of players (client-side features only; servers read the master switch).
 `maintenance` is reserved for the maintenance window above.
 
@@ -322,6 +395,81 @@ Uncaught browser errors and server crashes land in the same table:
 pnpm admin errors top                 # client errors, last 24 h
 pnpm admin errors top --server --hours 168
 ```
+
+## 7. Status page and incidents
+
+`https://DOMAIN/status` is a public status page: the overall state, each
+component (Website, Accounts & API, Matchmaking, Game servers and one row
+per region once there are two or more, Store & payments, Chat), the current
+and next maintenance window, open incidents with their updates, 90 days of
+daily uptime bars and the past 90 days of incidents. It is a separate,
+framework-free page (a few kilobytes), so it loads when the game does not;
+the installed app never caches it. The in-game maintenance banner and the
+"Servers offline" Play tile link to it.
+
+### What it checks
+
+The API computes the states itself (cached 5 s per instance):
+
+| Component        | Major outage                                 | Degraded / other                        |
+| ---------------- | -------------------------------------------- | --------------------------------------- |
+| Accounts & API   | database unreachable (KV down: partial)      | database or KV slower than 1 s          |
+| Matchmaking      | `MATCHMAKER_URL/health` fails or takes > 2 s | answers slower than 1 s                 |
+| Game servers     | no live server, or every region down         | a region at 90 % of its seats           |
+| Game servers · X | a region seen in the last 7 days has none    | that region at 90 % of its seats        |
+| Store & payments | database unreachable                         | `store.enabled` off → under maintenance |
+| Chat             | KV unreachable                               | `chat.global` off → under maintenance   |
+| Website          | only through an incident                     |                                         |
+
+Matchmaking and Game servers need `MATCHMAKER_URL` on the API (the compose
+`.env` already has it) and `API_URL` plus `INTERNAL_HMAC_SECRET` on the
+matchmaker, which answers per-region capacity on a signed
+`/internal/capacity`. Without them those rows are left out (or show
+Unknown). A major outage of the API, matchmaking or every game server is a
+major outage overall; a major outage of anything else (one region, the
+store, chat) reads as a partial outage. During an active maintenance window
+everything but the website shows "Under maintenance".
+
+### Uptime history
+
+Each API instance runs a sampler every `STATUS_SAMPLE_SECONDS` (60; `0`
+turns history off). A KV lock per interval makes exactly one instance write,
+however many run. Samples land in `status_uptime`, one row per component and
+UTC day; rows older than 90 days are deleted as it goes. A day's uptime
+counts a major outage as down, a partial outage as half down, degraded as up,
+and leaves maintenance and unknown samples out.
+
+### Incidents runbook
+
+Admins publish incidents from the console (**Status**) or the CLI;
+moderators can read them. Titles and updates are public plain text (markup
+shows literally); every write is in the audit log.
+
+```sh
+pnpm admin status summary                       # what the page shows now
+pnpm admin status incident open --title "Queues are slow" --impact major \
+  --components matchmaking,gameservers:eu --message "We are looking into slow queues."
+pnpm admin status incident list                 # open incidents and their ids
+pnpm admin status incident update <id> --status identified --message "A queue worker is stuck."
+pnpm admin status incident update <id> --status monitoring --message "Fix deployed; watching."
+pnpm admin status incident resolve <id> --message "Queues are back to normal."
+```
+
+- Impact: `minor` (shows the components as degraded), `major` (partial
+  outage) or `critical` (major outage). No `--components` means the whole
+  service. Probes can make a component look worse than the incident, never
+  better.
+- Post an update whenever something changes and at least every 30 minutes
+  while it is open; players watch the page instead of guessing.
+- For planned work use maintenance (`pnpm admin maintenance on --in 30
+--for 60 --message "…"`): the page shows it as scheduled, then in
+  progress, without an incident.
+- A non-resolved update on a resolved incident reopens it.
+
+Subscribers can follow `https://DOMAIN/api/status/feed.atom` or
+`/api/status/feed.json` (incidents of the last 90 days). The summary is
+`GET /api/status/summary`, the history `GET /api/status/history`; both are
+public, rate limited per client and cacheable for 15 s and 5 min.
 
 ## Scaling
 

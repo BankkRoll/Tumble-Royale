@@ -36,6 +36,15 @@ describe('flags', () => {
     expect(analyticsSampleRate({ 'analytics.sample': { enabled: true, payload: -1 } })).toBe(0);
     expect(analyticsSampleRate({ 'analytics.sample': { enabled: true, payload: 'x' } })).toBe(1);
   });
+
+  it('ships round voting on by default and allow-lists its small vote.cast event', () => {
+    expect(flagEnabled(null, 'shows.mapVoting')).toBe(true);
+    expect(flagEnabled({ 'shows.mapVoting': { enabled: false, payload: null } }, 'shows.mapVoting')).toBe(
+      false,
+    );
+    expect(isAnalyticsEvent('vote.cast')).toBe(true);
+    expect(validAnalyticsProps({ round: 2, option: 1, changed: false, online: true })).not.toBeNull();
+  });
 });
 
 describe('maintenance windows', () => {

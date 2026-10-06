@@ -36,6 +36,29 @@ OAuth redirect URIs to register: `${PUBLIC_API_URL}/auth/discord/callback`,
 `STRIPE_WEBHOOK_SECRET` is required whenever `STRIPE_SECRET_KEY` is set. Refund,
 chargeback and Gem-debt policy: [ECONOMY.md §3.2](../../docs/design/ECONOMY.md).
 
+## Voice chat
+
+Opt-in WebRTC voice for parties and team-round squads (`src/voice/`). The API
+decides every room and relays signalling only between current peers; audio
+never touches it. Configuration: `VOICE_ICE_SERVERS` (comma-separated
+`stun:`/`turn:`/`turns:` URLs), `VOICE_TURN_SECRET` (coturn's
+`static-auth-secret`, required with any TURN URL) and `VOICE_REQUIRE_TURN`
+(default `1` in production: without TURN, voice stays unavailable). The
+`voice.enabled` flag defaults to off.
+
+- `GET /voice/config` (user): `{ available, reason, relay, teamVoice }`.
+- `POST /internal/voice/teams` (game server, HMAC):
+  `{ matchId, round, players: [{ userId, team, partyId? }] }`; an empty
+  `players` ends the round's squads.
+- Realtime, client → server: `voice_join { cid, team }`, `voice_leave { cid }`,
+  `voice_signal { cid, to, kind: offer|answer|ice|restart, sdp?, candidate? }`.
+  Server → client: `voice_room { cid, room, peers, ice }`,
+  `voice_signal { from, roomId, kind, … }`, `voice_off { cid?, reason }`, and
+  `error` with `voice_disabled`, `voice_muted` or `voice_rate` for a refused
+  join.
+- Ban scope `voice` (report action `voice_mute`) mutes voice only; `POST
+/report` accepts reason `voice` and attaches the shared room and time.
+
 ## Auth flow (client)
 
 1. First launch: `POST /auth/guest { displayName?, region? }` → `{ accessToken (15 min), refreshToken (30 d), deviceToken, user }`. Store `deviceToken` + `refreshToken`. `region` is one of `na`, `eu`, `asia`, `oce`, `sa` (case-insensitive, 400 otherwise) and only applies when a new guest is created.

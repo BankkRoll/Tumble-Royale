@@ -22,6 +22,7 @@ import type {
   ScreenId,
   Settings,
   SettingsSection,
+  SpectatorCamMode,
   TumblerColors,
 } from './types.ts';
 import type { ClubEmblem, ClubJoinMode, ClubReportReason } from '@tumble/shared';
@@ -135,6 +136,16 @@ export interface UIIntents {
   };
   spectate: undefined;
   spectateNext: { dir: 1 | -1 };
+  /** Spectator camera mode: a specific one, or the next in Follow → Free → Overview → Director. */
+  spectatorCamera: { mode: SpectatorCamMode | 'next' };
+  /** Follow a player picked on the roster (or the leader with `id` -1). */
+  spectatorFollow: { id: number };
+  /** Pin a player (null unpins). */
+  spectatorPin: { id: number | null };
+  /** Broadcast overlay, its help card or the chroma-key backdrop (omit `on` to toggle). */
+  broadcastToggle: { what: 'overlay' | 'help' | 'chroma'; on?: boolean };
+  /** Vote (or change the vote) for the next round on the between-rounds card. */
+  castVote: { roundIndex: number; option: number };
   playAgain: undefined;
   backToLobby: undefined;
   emote: { slot: number; id: string };
@@ -238,6 +249,13 @@ export interface UIIntents {
   clubChat: { text: string };
   /** Report a club. */
   clubReport: { clubId: string; reason: ClubReportReason; details?: string };
+  /**
+   * Switch voice chat on (after the first-use explanation; the game then asks
+   * for the microphone) or off.
+   */
+  voiceToggle: { on: boolean };
+  /** Settings → Voice opened: re-check availability and list microphones. */
+  voiceRefresh: undefined;
   /** In-show text chat (online shows only). */
   sendChat: { text: string };
   /** The in-show chat input opened or closed (the game frees the mouse and held keys). */
@@ -282,6 +300,12 @@ export interface UIIntents {
   replayOpenFile: { name: string; bytes: ArrayBuffer };
   /** Replay viewer control. */
   replayCommand: ReplayCommand;
+  /** Skip the "How you went out" replay (its button; keys, clicks and pad buttons skip it too). */
+  elimReplaySkip: undefined;
+  /** Play highlights in the replay viewer, one after another (`HighlightEntry.id`s, in order). */
+  highlightPlay: { ids: string[] };
+  /** A highlight's Share button opened the share sheet on it (analytics). */
+  highlightShare: { id: string };
   /** Share sheet: render the show's share card. */
   shareCard: { format: ShareCardFormat; includeName: boolean };
   /** Share sheet: render a clip of a recorded round (window in recording seconds). */

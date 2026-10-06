@@ -5,12 +5,13 @@ import {
   PROTOCOL_VERSION,
   packLowFreq,
   readHello,
+  VOTE_MAX_OPTIONS,
   unpackLowFreq,
   writeHello,
   type LowFreqMessage,
 } from './protocol.ts';
 
-describe('protocol v5', () => {
+describe('protocol v7', () => {
   it('round-trips a Hello with a join ticket', () => {
     const ticket = `${'a'.repeat(40)}.${'b'.repeat(700)}.${'c'.repeat(43)}`;
     const w = new BitWriter(64);
@@ -49,8 +50,7 @@ describe('protocol v5', () => {
     expect(unpackLowFreq(packLowFreq(rewards))).toEqual(rewards);
   });
 
-  it('carries load progress and the loading roster (v4, unchanged in v5)', () => {
-    expect(PROTOCOL_VERSION).toBe(5);
+  it('carries load progress and the loading roster (v4, unchanged since)', () => {
     const progress: LowFreqMessage = { t: 'loadProgress', roundId: 'tilt-town', pct: 0.42 };
     expect(unpackLowFreq(packLowFreq(progress))).toEqual(progress);
     const status: LowFreqMessage = {
@@ -94,5 +94,58 @@ describe('protocol v5', () => {
       { t: 'spectate', target: 7 },
     ];
     for (const m of msgs) expect(unpackLowFreq(packLowFreq(m))).toEqual(m);
+  });
+
+  it('carries the v7 spectator camera hint and chat permission', () => {
+    expect(PROTOCOL_VERSION).toBe(7);
+    const msgs: LowFreqMessage[] = [
+      { t: 'spectate', target: -1, focus: [13, 3, -40] },
+      { t: 'spectate', target: 9 },
+      {
+        t: 'showInfo',
+        matchId: 'm_abcdef',
+        playlistId: 'main-show',
+        showName: 'Main Show',
+        queue: 'custom',
+        roundCount: 4,
+        canChat: false,
+      },
+    ];
+    for (const m of msgs) expect(unpackLowFreq(packLowFreq(m))).toEqual(m);
+    // Sent up to 2 Hz while a free camera moves, rounded to whole metres: it must stay tiny.
+    expect(packLowFreq(msgs[0]!).byteLength).toBeLessThan(40);
+  });
+
+  it('carries the v6 round-vote messages, small enough for one reliable packet', () => {
+    const msgs: LowFreqMessage[] = [
+      {
+        t: 'voteOptions',
+        roundIndex: 2,
+        isFinal: false,
+        options: ['tile-panic', 'egg-heist', 'pattern-panic', 'tail-chase'],
+        counts: [3, 0, 12, 1],
+        voted: 16,
+        eligible: 60,
+        closesInMs: 6400,
+        canVote: true,
+        yourVote: -1,
+        botsDiscounted: true,
+      },
+      { t: 'castVote', roundIndex: 2, option: 1 },
+      { t: 'voteTally', roundIndex: 2, counts: [30, 4, 25, 1], voted: 60 },
+      {
+        t: 'voteResult',
+        roundIndex: 2,
+        winner: 0,
+        roundId: 'tile-panic',
+        counts: [30, 4, 25, 1],
+        reason: 'votes',
+      },
+      { t: 'voteResult', roundIndex: 3, winner: -1, roundId: '', counts: [0, 0], reason: 'cancelled' },
+    ];
+    for (const m of msgs) expect(unpackLowFreq(packLowFreq(m))).toEqual(m);
+    expect(packLowFreq(msgs[0]!).byteLength).toBeLessThan(200);
+    expect(packLowFreq(msgs[1]!).byteLength).toBeLessThan(40);
+    expect(VOTE_MAX_OPTIONS).toBe(4);
   });
 });

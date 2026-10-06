@@ -5,13 +5,14 @@
  *
  * Responsibilities:
  * - builds the round from the recording with its own Tumbler pool and its
- *   own replay-only sim, and disposes all of it (GPU resources included) on
- *   exit;
+ *   own replay-only sim, at once (viewer, clips) or in time-sliced steps
+ *   ({@link ReplayView.load}, the elimination replay mid-round), and disposes
+ *   all of it (GPU resources included) on exit;
  * - advances the playhead, replays recorded sim events into VFX while
  *   playing forward (skipped across seeks), freezes the world while paused
  *   but keeps the camera live;
- * - camera modes: follow any player (prev/next), free orbit around a pannable
- *   point, and the local player's recorded live camera.
+ * - camera modes: follow any player (prev/next, or locked on one), free orbit
+ *   around a pannable point, and the local player's recorded live camera.
  *
  * The per-frame path reuses every object it touches.
  */
@@ -23,8 +24,9 @@ import type { RoundDefinition } from '@tumble/shared';
 import { CharacterState, type Rapier, type SimEvent } from '@tumble/sim';
 import type { MatchDeps } from '@tumble/sim/match';
 import type { ReplayCameraMode, ReplayCommand } from '@tumble/ui';
+import { runLoadPipeline } from '../round/loadPipeline.ts';
 import { TumblerPool } from '../round/playerVisuals.ts';
-import { RoundView } from '../round/roundView.ts';
+import { RoundView, type RoundViewOptions } from '../round/roundView.ts';
 import { createPlayerSample } from '../round/source.ts';
 import type { CeremonyPost } from '../views/ceremonies.ts';
 import type { GameView } from '../views/types.ts';
@@ -94,25 +96,66 @@ export class ReplayView implements GameView {
   readonly move = { x: 0, y: 0, z: 0 };
   private readonly defaultDistance: number;
   private readonly onEvent = (e: SimEvent): void => this.roundView.handleEvent(e);
+  /** Never move the follow camera to someone else (scripted playback). */
+  private locked = false;
   private disposed = false;
 
-  constructor(opts: ReplayViewOptions) {
-    const tl = opts.timeline;
-    this.timeline = tl;
-    this.clock = new ReplayClock(tl.duration);
-    this.pool = new TumblerPool(opts.createTumbler);
-    const sim = createReplaySim(opts.R, opts.deps, opts.round, tl);
-    this.source = new ReplayRoundSource(sim, tl);
-    this.source.setTime(0);
+  /**
+   * Builds the view in time-sliced steps, so a replay can be prepared while
+   * a round is still running without a long frame.
+   *
+   * @param opts - View options.
+   * @param isCancelled - Checked between steps; a cancelled build is disposed.
+   * @returns The view, or null when cancelled.
+   */
+  static async load(opts: ReplayViewOptions, isCancelled: () => boolean): Promise<ReplayView | null> {
+    const parts = ReplayView.parts(opts);
+    const roundView = new RoundView(parts.roundOpts);
     try {
-      this.roundView = RoundView.build({
+      const t = await runLoadPipeline(roundView.loadSteps(), { label: 'replay', isCancelled, log: null });
+      if (t.cancelled || isCancelled()) {
+        roundView.dispose();
+        parts.pool.dispose();
+        parts.source.dispose();
+        return null;
+      }
+    } catch (err) {
+      roundView.dispose();
+      parts.pool.dispose();
+      parts.source.dispose();
+      throw err;
+    }
+    roundView.startLoops();
+    return new ReplayView(opts, { ...parts, roundView });
+  }
+
+  /** Pool, replay sim and round view options for a recording (nothing built yet). */
+  private static parts(opts: ReplayViewOptions): {
+    pool: TumblerPool;
+    source: ReplayRoundSource;
+    roundOpts: RoundViewOptions;
+  } {
+    const tl = opts.timeline;
+    const pool = new TumblerPool(opts.createTumbler);
+    let source: ReplayRoundSource;
+    try {
+      source = new ReplayRoundSource(createReplaySim(opts.R, opts.deps, opts.round, tl), tl);
+    } catch (err) {
+      pool.dispose();
+      throw err;
+    }
+    source.setTime(0);
+    return {
+      pool,
+      source,
+      roundOpts: {
         R: opts.R,
-        source: this.source,
+        source,
         round: opts.round,
         stage: tl.header.stage,
         seed: tl.header.seed,
         loadouts: opts.loadouts,
-        pool: this.pool,
+        pool,
         preset: opts.preset,
         // The live round (still running underneath when spectating online) owns the audio routing.
         audio: null,
@@ -122,11 +165,36 @@ export class ReplayView implements GameView {
         reduceShake: opts.reduceShake,
         nameplates: opts.nameplates,
         streamerMode: opts.streamerMode,
-      });
-    } catch (err) {
-      this.pool.dispose();
-      this.source.dispose();
-      throw err;
+      },
+    };
+  }
+
+  /**
+   * @param opts - View options.
+   * @param built - Parts from {@link load}; without them the view builds synchronously.
+   */
+  constructor(
+    opts: ReplayViewOptions,
+    built?: { pool: TumblerPool; source: ReplayRoundSource; roundView: RoundView },
+  ) {
+    const tl = opts.timeline;
+    this.timeline = tl;
+    this.clock = new ReplayClock(tl.duration);
+    if (built) {
+      this.pool = built.pool;
+      this.source = built.source;
+      this.roundView = built.roundView;
+    } else {
+      const parts = ReplayView.parts(opts);
+      this.pool = parts.pool;
+      this.source = parts.source;
+      try {
+        this.roundView = RoundView.build(parts.roundOpts);
+      } catch (err) {
+        this.pool.dispose();
+        this.source.dispose();
+        throw err;
+      }
     }
     this.defaultDistance = this.roundView.rig.settings.distance;
     const c = this.source.cursor;
@@ -245,6 +313,35 @@ export class ReplayView implements GameView {
     else this.roundView.spectate(this.target);
   }
 
+  /**
+   * Follows a player (a highlight's subject); the viewer may move on from
+   * them as usual.
+   *
+   * @param id - Player to follow; unknown or absent players fall back to the default target.
+   */
+  followPlayer(id: number): void {
+    if (this.timeline.slotOf(id) >= 0) this.target = id;
+    // A seek just moved the clock: check presence where the playhead is now, not where it was.
+    this.source.setTime(this.clock.time);
+    this.setCamera('follow');
+  }
+
+  /**
+   * Follows one player for good: the camera stays on them even once they are
+   * out (the elimination replay ends on the local player falling).
+   *
+   * @param id - Player to follow; unknown ids fall back to the default target.
+   */
+  lockFollow(id: number): void {
+    this.locked = true;
+    this.mode = 'follow';
+    this.povMode = -1;
+    this.povTarget = -2;
+    this.roundView.rig.settings.distance = this.defaultDistance;
+    this.target = this.timeline.slotOf(id) >= 0 ? id : this.firstTarget();
+    if (this.target >= 0) this.roundView.spectate(this.target);
+  }
+
   /** Camera look input (radians before sensitivity); ignored in "your view". */
   look(dYaw: number, dPitch: number): void {
     if (this.mode === 'pov' || (dYaw === 0 && dPitch === 0)) return;
@@ -353,7 +450,7 @@ export class ReplayView implements GameView {
 
     if (this.mode === 'pov') this.applyPov();
     else if (this.mode === 'free') this.applyFree(realDt);
-    else if (this.target >= 0 && !this.visible(this.target) && clock.playing) {
+    else if (!this.locked && this.target >= 0 && !this.visible(this.target) && clock.playing) {
       // The followed player just went out: move on to someone still running.
       const next = this.firstTarget();
       if (next !== this.target && next >= 0) {

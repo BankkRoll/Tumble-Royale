@@ -17,7 +17,14 @@ import { createStore } from 'zustand/vanilla';
 export type AuthProviderId = 'discord' | 'google' | 'github' | 'twitch' | 'apple' | 'email';
 
 /** Every portable sign-in method, in display order. */
-export const AUTH_PROVIDERS: readonly AuthProviderId[] = ['discord', 'google', 'github', 'twitch', 'apple', 'email'];
+export const AUTH_PROVIDERS: readonly AuthProviderId[] = [
+  'discord',
+  'google',
+  'github',
+  'twitch',
+  'apple',
+  'email',
+];
 
 /** Display names for sign-in methods. */
 export const AUTH_PROVIDER_LABELS: Record<AuthProviderId, string> = {
@@ -36,9 +43,10 @@ export type AuthProviders = Record<AuthProviderId, boolean>;
  * Where this device's Tumbler lives:
  * - `local`: only on this device (no server account, or accounts are off);
  * - `online`: a server account that is signed in and reachable;
- * - `unreachable`: a server account exists but the server can't be reached.
+ * - `unreachable`: a server account exists but the server can't be reached;
+ * - `expired`: a server account exists but this browser must sign in to it again.
  */
-export type AccountSession = 'local' | 'online' | 'unreachable';
+export type AccountSession = 'local' | 'online' | 'unreachable' | 'expired';
 
 /** What an email link is for: adding email to this Tumbler, or signing in to another. */
 export type EmailPurpose = 'link' | 'signIn';

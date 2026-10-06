@@ -8,7 +8,7 @@ import {
   type MailTransport,
 } from '../src/auth/mailer.ts';
 import { loadConfig } from '../src/config.ts';
-import { testEnv } from './helpers.ts';
+import { TEST_BINDING, testEnv } from './helpers.ts';
 
 const PROD = testEnv({
   NODE_ENV: 'production',
@@ -78,7 +78,7 @@ describe('email sign-in without a mailer', () => {
       method: 'POST',
       url: '/auth/email/start',
       headers: { 'content-type': 'application/json' },
-      payload: JSON.stringify({ email: 'a@b.co' }),
+      payload: JSON.stringify({ email: 'a@b.co', binding: TEST_BINDING }),
     });
     expect(res.statusCode).toBe(503);
     expect(res.json().error).toBe('provider_disabled');
@@ -97,7 +97,7 @@ describe('email delivery failure', () => {
         method: 'POST',
         url: '/auth/email/start',
         headers: { 'content-type': 'application/json' },
-        payload: JSON.stringify({ email: 'a@b.co' }),
+        payload: JSON.stringify({ email: 'a@b.co', binding: TEST_BINDING }),
       });
       expect(res.statusCode).toBe(502);
       expect(res.json().error).toBe('email_failed');

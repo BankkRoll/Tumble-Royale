@@ -27,7 +27,8 @@ import {
 } from '@tumble/ui';
 import { ApiError, type ApiAuthResult, type ApiClient } from '../api.ts';
 import type { ProfileStore } from '../profile.ts';
-import { storageKeyName } from '../storage.ts';
+import { loadJson, storageKeyName } from '../storage.ts';
+import { beginBinding, clearBinding, pendingNonce } from './browserBinding.ts';
 import type { OnlineAccount } from './account.ts';
 import {
   PROVIDER_LABELS,
@@ -35,6 +36,7 @@ import {
   cleanReturnUrl,
   outcomeMessage,
   parseBootReturn,
+  tokenSubject,
   type BootReturn,
   type LoginProvider,
   type OAuthProvider,
@@ -108,6 +110,17 @@ export class AccountAuth {
     this.bootReturn = parseBootReturn(loc.pathname, loc.search);
     // A one-time code must never be replayed by a reload or a shared link.
     if (this.bootReturn) history.replaceState(null, '', cleanReturnUrl(loc.search));
+    deps.api.onExpired(() => {
+      deps.account?.endExpiredSession();
+      this.publishSession();
+      ui.getState().pushToast({
+        kind: 'error',
+        title: 'Your session expired',
+        body: 'Sign in again (Settings → Account) to get back to your Tumbler. Nothing on it was lost.',
+        icon: '🔒',
+        durationMs: 10_000,
+      });
+    });
   }
 
   private get online(): OnlineAccount | null {
@@ -139,14 +152,23 @@ export class AccountAuth {
       return;
     }
     if (ret.kind === 'checkout') return;
+    // SECURITY: a code or magic link is only redeemed by the browser that
+    // asked for it; one that arrives without a pending sign-in here was
+    // forwarded (or is stale) and must not sign this device in to anything.
+    const nonce = ret.kind === 'staffLink' ? null : pendingNonce();
+    if (ret.kind !== 'staffLink' && !nonce) {
+      this.toastError('browser_mismatch', ret.kind === 'email' ? 'email' : ret.provider);
+      return;
+    }
     let result: ApiAuthResult;
     try {
       result =
         ret.kind === 'oauth'
-          ? await api.exchangeCode(ret.code)
+          ? await api.exchangeCode(ret.code, nonce!)
           : ret.kind === 'email'
-            ? await api.verifyEmail(ret.token)
+            ? await api.verifyEmail(ret.token, nonce!)
             : await api.verifyStaffLink(ret.token);
+      if (nonce) clearBinding();
     } catch (err) {
       const code = err instanceof ApiError ? (err.status === 0 ? 'network' : err.code) : 'unknown';
       if (ret.kind === 'staffLink') this.toastError(code === 'invalid_token' ? 'invalid_link' : code, null);
@@ -174,7 +196,8 @@ export class AccountAuth {
   publishSession(): void {
     const a = this.online;
     const s = accountUi.getState();
-    s.setSession(a ? 'online' : this.deps.api.signedIn ? 'unreachable' : 'local');
+    const api = this.deps.api;
+    s.setSession(a ? 'online' : api.expired ? 'expired' : api.signedIn ? 'unreachable' : 'local');
     const at = a?.me?.nameChangeAvailableAt;
     s.setNameChangeAvailableAt(at ? Date.parse(at) : null);
   }
@@ -182,7 +205,8 @@ export class AccountAuth {
   /**
    * Moves the device onto a session from a completed sign-in. The same
    * account just takes the fresh tokens; another account replaces the local
-   * Tumbler, after a confirmation when that Tumbler has no other way back.
+   * Tumbler only after the player confirms, with a stronger warning when that
+   * Tumbler has no other way back.
    *
    * @returns False when the player kept the Tumbler already on this device.
    */
@@ -196,18 +220,19 @@ export class AccountAuth {
       return true;
     }
     const here = await this.currentTumbler();
-    if (here?.atRisk) {
+    if (here) {
       const whose =
         result.provider === 'link'
           ? 'That sign-in link is for'
           : `That ${PROVIDER_LABELS[result.provider]} login belongs to`;
+      const fate = here.atRisk
+        ? `${here.name}, the Tumbler on this device now, isn't linked to any login, so its items, Crowns and progress will be gone for good.`
+        : `${here.name} stays safe on its own login; sign back in to it any time.`;
       const pick = await choose({
         id: 'auth-switch',
         kind: 'confirm',
-        title: `Switch to ${name}?`,
-        body:
-          `${whose} ${name}#${result.user.tag}. Switching puts ${name} on this device. ` +
-          `${here.name}, the Tumbler on this device now, isn't linked to any login, so its items, Crowns and progress will be gone for good.`,
+        title: `Sign in as ${name}#${result.user.tag}?`,
+        body: `${whose} ${name}#${result.user.tag}. Switching puts ${name} on this device. ${fate}`,
         buttons: [
           { id: 'keep', label: `Keep ${here.name}`, variant: 'secondary', autofocus: true },
           { id: 'switch', label: `Switch to ${name}`, variant: 'danger' },
@@ -218,7 +243,9 @@ export class AccountAuth {
         ui.getState().pushToast({
           kind: 'info',
           title: `Kept ${here.name}`,
-          body: `Nothing changed. Link a login in Settings first if you want to keep both.`,
+          body: here.atRisk
+            ? 'Nothing changed. Link a login in Settings first if you want to keep both.'
+            : 'Nothing changed.',
           icon: '🔒',
         });
         return false;
@@ -315,7 +342,8 @@ export class AccountAuth {
     const s = accountUi.getState();
     s.setPending(`${verb}-${provider}`);
     try {
-      const { url } = await this.deps.api.startOAuth(provider, this.online !== null, verb);
+      const binding = await beginBinding();
+      const { url } = await this.deps.api.startOAuth(provider, this.online !== null, verb, binding);
       this.navigate(url);
     } catch (err) {
       s.setPending(null);
@@ -336,7 +364,7 @@ export class AccountAuth {
     }
     s.setEmailFlow({ status: 'sending', purpose, address });
     try {
-      await this.deps.api.startEmail(address, this.online !== null, verb);
+      await this.deps.api.startEmail(address, this.online !== null, verb, await beginBinding());
       s.setEmailFlow({ status: 'sent', purpose, address });
       this.watchOtherTab();
     } catch (err) {
@@ -355,17 +383,30 @@ export class AccountAuth {
   }
 
   /**
-   * The magic link usually opens in a new tab, which finishes the sign-in and
-   * stores the new session. Reload this tab when that happens so it shows the
-   * same Tumbler instead of a stale one.
+   * The magic link usually opens in a new tab, which redeems it and clears
+   * the pending binding. Only that event counts (routine token refreshes in
+   * other tabs also write the session): a link to this same account just
+   * refreshes what this tab shows, a sign-in to another account reloads so
+   * the tab shows that Tumbler. The listener is removed after one sign-in.
    */
   private watchOtherTab(): void {
     if (this.watchingOtherTab) return;
     this.watchingOtherTab = true;
-    window.addEventListener('storage', (e) => {
-      if (e.key !== storageKeyName('auth') || accountUi.getState().emailFlow.status !== 'sent') return;
-      this.reload();
-    });
+    const before = this.deps.api.currentUserId();
+    const onStorage = (e: StorageEvent): void => {
+      if (e.key !== storageKeyName('authBinding') || e.newValue !== null) return;
+      if (accountUi.getState().emailFlow.status !== 'sent') return;
+      window.removeEventListener('storage', onStorage);
+      this.watchingOtherTab = false;
+      const stored = loadJson<{ accessToken?: string }>('auth');
+      if (tokenSubject(stored?.accessToken) !== before) {
+        this.reload();
+        return;
+      }
+      accountUi.getState().setEmailFlow({ status: 'idle' });
+      void this.online?.refreshProgress();
+    };
+    window.addEventListener('storage', onStorage);
   }
 
   private async unlink(provider: AuthProviderId): Promise<void> {
@@ -446,7 +487,7 @@ export class AccountAuth {
       await eraseLocal();
       return;
     }
-    if (session === 'unreachable') {
+    if (session === 'unreachable' || session === 'expired') {
       ui.getState().showDialog({
         id: 'delete-failed',
         kind: 'error',

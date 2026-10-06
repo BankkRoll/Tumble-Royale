@@ -5,16 +5,18 @@
  * Flow:
  * 1. `start` creates a random `state` (plus a PKCE verifier where the provider
  *    supports PKCE, and a `nonce` for Apple's ID token), stores them in KV for
- *    10 minutes with the signed-in user id and intent when linking, and
- *    returns the provider's authorize URL.
+ *    10 minutes with the signed-in user id and intent when linking and the
+ *    browser binding (SHA-256 of a nonce only the starting browser holds),
+ *    and returns the provider's authorize URL.
  * 2. The provider returns to `/auth/<provider>/callback` with `code` and
  *    `state`: a GET query, or for Apple a cross-site form POST.
  * 3. `complete` consumes the state (one-time), exchanges the code, reads the
- *    provider's profile and returns a normalised identity.
+ *    provider's profile and returns a normalised identity with the binding;
+ *    the session is only minted when that browser proves the nonce.
  *
  * The provider's stable user id is the identity key. An email address is only
- * returned when the provider says it verified it, because a verified address
- * may sign in to (and link onto) the account that already uses it.
+ * returned when the provider says it verified it (lowercased), because a
+ * verified address may sign in to the account that proved it by magic link.
  */
 import { createHash } from 'node:crypto';
 import { createLocalJWKSet, importPKCS8, jwtVerify, SignJWT, type JSONWebKeySet } from 'jose';
@@ -166,7 +168,13 @@ const PROVIDERS: Record<OAuthProviderId, ProviderSpec> = {
       )) as Record<string, unknown>;
       // The public profile email may be unverified or absent; only the
       // primary address GitHub marks verified counts.
-      const emails = await getJson(http, 'GitHub', 'https://api.github.com/user/emails', access, GITHUB_HEADERS);
+      const emails = await getJson(
+        http,
+        'GitHub',
+        'https://api.github.com/user/emails',
+        access,
+        GITHUB_HEADERS,
+      );
       const primary = Array.isArray(emails)
         ? (emails as Record<string, unknown>[]).find((e) => e.primary === true && e.verified === true)
         : undefined;
@@ -217,7 +225,8 @@ const PROVIDERS: Record<OAuthProviderId, ProviderSpec> = {
       const idToken = str(token.id_token);
       if (!idToken) throw new ApiError(400, 'oauth_failed', 'Apple returned no ID token');
       const keysRes = await http('https://appleid.apple.com/auth/keys');
-      if (!keysRes.ok) throw new ApiError(400, 'oauth_failed', `Could not read Apple keys (${keysRes.status})`);
+      if (!keysRes.ok)
+        throw new ApiError(400, 'oauth_failed', `Could not read Apple keys (${keysRes.status})`);
       const jwks = createLocalJWKSet((await keysRes.json()) as JSONWebKeySet);
       let claims: Record<string, unknown>;
       try {
@@ -268,16 +277,21 @@ interface OAuthState {
   /** Signed-in user linking or switching, if any. */
   linkUserId: string | null;
   intent: OAuthIntent;
+  /** Hex SHA-256 of the starting browser's nonce. */
+  binding: string;
 }
 
 /** Normalised identity returned by a completed flow. */
 export interface OAuthIdentity {
   provider: OAuthProviderId;
   subject: string;
+  /** Verified, lowercased address, or null. */
   email: string | null;
   name: string | null;
   linkUserId: string | null;
   intent: OAuthIntent;
+  /** Hex SHA-256 of the nonce the browser that started the flow holds. */
+  binding: string;
 }
 
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -363,6 +377,7 @@ export function redirectUri(config: ApiConfig, provider: OAuthProviderId): strin
  * @param provider - Provider to sign in with.
  * @param linkUserId - The signed-in account, when linking or switching from one.
  * @param intent - What a signed-in player asked for (ignored without `linkUserId`).
+ * @param binding - Hex SHA-256 of a nonce only the starting browser keeps.
  * @returns The provider authorize URL to send the browser to.
  * @throws {ApiError} 503 `provider_disabled` when credentials are missing.
  */
@@ -371,14 +386,15 @@ export async function startOAuth(
   kv: KV,
   provider: OAuthProviderId,
   linkUserId: string | null,
-  intent: OAuthIntent = 'signIn',
+  intent: OAuthIntent,
+  binding: string,
 ): Promise<string> {
   const clientId = clientIdFor(config, provider);
   const spec = PROVIDERS[provider];
   const state = randomToken(24);
   const verifier = spec.pkce ? randomToken(48) : null;
   const nonce = provider === 'apple' ? randomToken(24) : null;
-  const saved: OAuthState = { provider, verifier, nonce, linkUserId, intent };
+  const saved: OAuthState = { provider, verifier, nonce, linkUserId, intent, binding };
   await kv.set(`oauth:${state}`, JSON.stringify(saved), STATE_TTL_MS);
   const params = new URLSearchParams({
     response_type: 'code',
@@ -451,5 +467,13 @@ export async function completeOAuth(
 
   const profile = await spec.identify({ http, token, clientId, saved, appleUser });
   if (!profile.subject) throw new ApiError(400, 'oauth_failed', `${spec.label} profile had no id`);
-  return { provider, ...profile, linkUserId: saved.linkUserId, intent: saved.intent ?? 'signIn' };
+  return {
+    provider,
+    ...profile,
+    // Providers keep the case the person typed; accounts are matched lowercased.
+    email: profile.email?.toLowerCase() ?? null,
+    linkUserId: saved.linkUserId,
+    intent: saved.intent,
+    binding: saved.binding,
+  };
 }

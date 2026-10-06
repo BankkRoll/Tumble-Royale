@@ -2222,6 +2222,16 @@ export class OnlineAccount {
     return !this.party || this.party.leaderId === this.userId;
   }
 
+  /**
+   * The server refused this device's session for good: stop the realtime
+   * socket (it would only reconnect into 401s) and go inactive until the
+   * player signs in again.
+   */
+  endExpiredSession(): void {
+    this.realtime.stop();
+    this.me = null;
+  }
+
   /** Tears down sockets and subscriptions. */
   dispose(): void {
     for (const off of this.offs) off();

@@ -34,8 +34,7 @@ const asAdmin = (method: 'POST' | 'PUT' | 'GET' | 'DELETE', url: string, body?: 
   });
 
 const tokenOf = (link: string) => new URL(link).searchParams.get('token')!;
-const redeem = (token: string) =>
-  api.req('POST', '/auth/staff-link', { body: { token }, ip: freshIp() });
+const redeem = (token: string) => api.req('POST', '/auth/staff-link', { body: { token }, ip: freshIp() });
 const auditRows = (action: string) =>
   api.ctx.db.select().from(adminAuditLog).where(eq(adminAuditLog.action, action));
 
@@ -97,7 +96,10 @@ describe('POST /internal/staff/bootstrap', () => {
       expect(res.statusCode).toBeGreaterThanOrEqual(401);
       expect(res.statusCode).toBeLessThanOrEqual(403);
     }
-    const viaConsole = await api.req('POST', `/internal/staff/${body.userId}/link`, { token: session, ip: freshIp() });
+    const viaConsole = await api.req('POST', `/internal/staff/${body.userId}/link`, {
+      token: session,
+      ip: freshIp(),
+    });
     expect(viaConsole.json().error).toBe('operator_token_required');
   });
 
@@ -130,7 +132,11 @@ describe('staff sign-in links', () => {
     const res = await redeem(tokenOf(b.link));
     expect(res.statusCode).toBe(200);
     const s = res.json();
-    expect(s).toMatchObject({ outcome: 'signedIn', provider: 'link', user: { id: b.userId, isGuest: false } });
+    expect(s).toMatchObject({
+      outcome: 'signedIn',
+      provider: 'link',
+      user: { id: b.userId, isGuest: false },
+    });
     const console = await api.req('POST', '/admin/session', { token: s.accessToken, ip: freshIp() });
     expect(console.statusCode).toBe(201);
     expect(console.json().actor.role).toBe('admin');
@@ -167,9 +173,9 @@ describe('staff sign-in links', () => {
     const res = await asAdmin('POST', `/internal/staff/${player.id}/link`);
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe('not_staff');
-    expect((await asAdmin('POST', '/internal/staff/00000000-0000-4000-8000-000000000000/link')).statusCode).toBe(
-      404,
-    );
+    expect(
+      (await asAdmin('POST', '/internal/staff/00000000-0000-4000-8000-000000000000/link')).statusCode,
+    ).toBe(404);
   });
 
   it('refuse a made-up token', async () => {
@@ -183,7 +189,10 @@ describe('development seed (DEV_ADMIN_EMAIL)', () => {
     try {
       const lines: string[] = [];
       const log = { info: (m: string) => lines.push(m), warn: (m: string) => lines.push(`WARN ${m}`) };
-      const dev = { ...fresh.ctx, config: { ...fresh.ctx.config, env: 'development' as const, devAdminEmail: 'dev@localhost.test' } };
+      const dev = {
+        ...fresh.ctx,
+        config: { ...fresh.ctx.config, env: 'development' as const, devAdminEmail: 'dev@localhost.test' },
+      };
       const first = await seedDevAdmin(dev, log);
       expect(first?.url).toMatch(/\/auth\/staff\?token=/);
       expect(lines.join('\n')).toContain('dev@localhost.test is now an admin');

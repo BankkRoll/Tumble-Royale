@@ -164,6 +164,7 @@ export async function linkIdentity(
   if (!owner) await tx.insert(authIdentities).values({ userId, provider, subject });
   if (provider !== 'device') {
     const patch: { isGuest: boolean; email?: string } = { isGuest: false };
+    email = email?.toLowerCase();
     if (email) {
       const [clash] = await tx.select({ id: users.id }).from(users).where(eq(users.email, email));
       if (!clash || clash.id === userId) patch.email = email;

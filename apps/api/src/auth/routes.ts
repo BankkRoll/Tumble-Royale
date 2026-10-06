@@ -5,7 +5,7 @@
  * Every sign-in re-applies bans retained from a deleted account that shared an
  * identity, email address or device secret (`moderation/ban-evasion.ts`).
  */
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
   createAccount,
@@ -26,6 +26,7 @@ import {
   OAUTH_PROVIDERS,
   providerEnabled,
   startOAuth,
+  type OAuthIdentity,
   type OAuthIntent,
   type OAuthProviderId,
 } from './oauth.ts';
@@ -36,7 +37,7 @@ import {
   startSession,
   type TokenPair,
 } from './sessions.ts';
-import { randomToken, sha256 } from './tokens.ts';
+import { randomToken, safeEqual, sha256 } from './tokens.ts';
 import { eq } from 'drizzle-orm';
 
 const LOGIN_CODE_TTL_MS = 60_000;
@@ -52,7 +53,12 @@ const RefreshBody = z.object({ refreshToken: z.string().min(20).max(200) });
 const LogoutBody = z.object({ refreshToken: z.string().min(20).max(200).optional() }).optional();
 const ProviderParam = z.object({ provider: z.enum(OAUTH_PROVIDERS) });
 const IntentSchema = z.enum(['link', 'signIn']);
-const StartBody = z.object({ intent: IntentSchema.optional() }).strict().optional();
+/** Hex SHA-256 of a random nonce the starting browser keeps (it never leaves that browser until redemption). */
+const Binding = z.string().regex(/^[0-9a-f]{64}$/, 'binding must be a hex SHA-256');
+/** The nonce behind a binding, presented when redeeming. */
+const Nonce = z.string().min(20).max(200);
+const StartBody = z.object({ intent: IntentSchema.optional(), binding: Binding }).strict();
+const StartQuery = z.object({ binding: Binding });
 /** Apple's form POST; `user` (JSON with the name) arrives only on the first authorization. */
 const AppleCallbackBody = z.object({
   code: z.string().max(2048).optional(),
@@ -65,7 +71,7 @@ const CallbackQuery = z.object({
   state: z.string().max(256).optional(),
   error: z.string().max(256).optional(),
 });
-const CodeBody = z.object({ code: z.string().min(16).max(128) });
+const CodeBody = z.object({ code: z.string().min(16).max(128), nonce: Nonce });
 const EmailStartBody = z.object({
   email: z
     .string()
@@ -73,8 +79,9 @@ const EmailStartBody = z.object({
     .max(254)
     .transform((e) => e.toLowerCase()),
   intent: IntentSchema.optional(),
+  binding: Binding,
 });
-const EmailVerifyBody = z.object({ token: z.string().min(20).max(200) });
+const EmailVerifyBody = z.object({ token: z.string().min(20).max(200), nonce: Nonce });
 
 /**
  * What a completed OAuth / magic-link sign-in did, so the client can say so
@@ -138,16 +145,23 @@ async function resolveIdentity(
     return { userId: id.linkUserId, outcome: 'linked' };
   }
   if (owner) return { userId: owner, outcome: 'signedIn' };
-  if (id.email) {
-    const [byEmail] = await tx.select({ id: users.id }).from(users).where(eq(users.email, id.email));
-    if (byEmail) {
-      await linkIdentity(tx, byEmail.id, id.provider, id.subject, id.email);
-      return { userId: byEmail.id, outcome: 'signedIn' };
+  let email = id.email;
+  if (email) {
+    // SECURITY: only an address proven by an email magic link joins a new
+    // login to an account. `users.email` may have come from another provider
+    // during linking, and matching on it would let anyone with that address
+    // at some provider take over the account.
+    const proven = await findIdentity(tx, 'email', email);
+    if (proven && id.provider !== 'email') {
+      await linkIdentity(tx, proven, id.provider, id.subject, email);
+      return { userId: proven, outcome: 'signedIn' };
     }
+    const [holder] = await tx.select({ id: users.id }).from(users).where(eq(users.email, email));
+    if (holder) email = null;
   }
   const account = await createAccount(tx, ctx.catalog, {
     isGuest: false,
-    email: id.email,
+    email,
     ...(id.name ? { displayName: nameSuggestion(id.name) } : {}),
     identity: { provider: id.provider, subject: id.subject },
   });
@@ -253,7 +267,8 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
 
   app.get('/auth/:provider/start', { config: AUTH_RATE }, async (req, reply) => {
     const { provider } = parse(ProviderParam, req.params);
-    return reply.redirect(await startOAuth(ctx.config, ctx.kv, provider, null));
+    const { binding } = parse(StartQuery, req.query);
+    return reply.redirect(await startOAuth(ctx.config, ctx.kv, provider, null, 'signIn', binding));
   });
 
   // POST lets a signed-in player link or switch: browsers cannot attach an
@@ -263,19 +278,27 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     const body = parse(StartBody, req.body);
     const auth = await optionalUser(ctx, req);
     return {
-      url: await startOAuth(ctx.config, ctx.kv, provider, auth?.userId ?? null, body?.intent ?? 'signIn'),
+      url: await startOAuth(
+        ctx.config,
+        ctx.kv,
+        provider,
+        auth?.userId ?? null,
+        body.intent ?? 'signIn',
+        body.binding,
+      ),
     };
   });
 
   /**
-   * Shared tail of both callback shapes: finish the flow, sign in, and send
-   * the browser back to the client with a one-time code (or an error code).
+   * Shared tail of both callback shapes: finish the flow with the provider and
+   * send the browser back to the client with a one-time code (or an error
+   * code). Nothing is signed in or linked yet: that waits for `/auth/exchange`
+   * from the browser holding the binding's nonce.
    */
   const finishCallback = async (
     reply: FastifyReply,
     provider: OAuthProviderId,
     q: { code?: string; state?: string; error?: string },
-    userAgent: string | undefined,
     appleUser?: string,
   ) => {
     const back = `${ctx.config.publicWebUrl}/auth/complete?provider=${provider}`;
@@ -296,9 +319,8 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
         ctx.now(),
         appleUser,
       );
-      const result: AuthResult = { ...(await signInWithIdentity(ctx, identity, userAgent)), provider };
       const code = randomToken(24);
-      await ctx.kv.set(`login:${code}`, JSON.stringify(result), LOGIN_CODE_TTL_MS);
+      await ctx.kv.set(`login:${sha256(code)}`, JSON.stringify(identity), LOGIN_CODE_TTL_MS);
       return reply.redirect(`${back}&code=${code}`);
     } catch (err) {
       if (err instanceof ApiError) return fail(err.code);
@@ -308,7 +330,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
 
   app.get('/auth/:provider/callback', async (req, reply) => {
     const { provider } = parse(ProviderParam, req.params);
-    return finishCallback(reply, provider, parse(CallbackQuery, req.query), req.headers['user-agent']);
+    return finishCallback(reply, provider, parse(CallbackQuery, req.query));
   });
 
   // SECURITY: Apple's `response_mode=form_post` arrives as a cross-site form
@@ -322,20 +344,62 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     );
     scope.post('/auth/apple/callback', { config: AUTH_RATE }, async (req, reply) => {
       const body = parse(AppleCallbackBody, req.body ?? {});
-      return finishCallback(reply, 'apple', body, req.headers['user-agent'], body.user);
+      return finishCallback(reply, 'apple', body, body.user);
     });
   });
 
+  /**
+   * The account a redemption request is signed in as, if any. Linking only
+   * applies to that account; a suspended one just signs in fresh (and is then
+   * refused if the identity's account is suspended too).
+   */
+  const presentUser = async (req: FastifyRequest): Promise<string | null> => {
+    try {
+      return (await optionalUser(ctx, req))?.userId ?? null;
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403) return null;
+      throw err;
+    }
+  };
+
+  /**
+   * SECURITY: a code or magic link alone proves nothing about who opened it;
+   * an attacker can forward theirs to a victim (or the authorize URL they
+   * started) to plant their login on the victim's device or the victim's
+   * login on their account. The session is only minted for the browser that
+   * holds the nonce behind the binding, and linking only happens when that
+   * request is also signed in as the account that asked to link.
+   */
+  const redeem = async (
+    req: FastifyRequest,
+    nonce: string,
+    identity: ProvenIdentity & { binding: string },
+  ): Promise<TokenPair & { outcome: AuthOutcome }> => {
+    if (!safeEqual(sha256(nonce), identity.binding)) {
+      throw new ApiError(
+        400,
+        'browser_mismatch',
+        'This sign-in was started in another browser; start it again here',
+      );
+    }
+    const userId = await presentUser(req);
+    const linkUserId = identity.linkUserId && identity.linkUserId === userId ? identity.linkUserId : null;
+    return signInWithIdentity(ctx, { ...identity, linkUserId }, req.headers['user-agent']);
+  };
+
   // Tokens never travel in a redirect URL; the client trades this one-time code for them.
   app.post('/auth/exchange', { config: AUTH_RATE }, async (req) => {
-    const { code } = parse(CodeBody, req.body);
-    const raw = await ctx.kv.getDel(`login:${code}`);
+    const { code, nonce } = parse(CodeBody, req.body);
+    // Read first: a 401 on an expired access token must not burn the code before the client refreshes.
+    await presentUser(req);
+    const raw = await ctx.kv.getDel(`login:${sha256(code)}`);
     if (!raw) throw new ApiError(400, 'invalid_code', 'Login code expired or already used');
-    return JSON.parse(raw) as AuthResult;
+    const identity = JSON.parse(raw) as OAuthIdentity;
+    return { ...(await redeem(req, nonce, identity)), provider: identity.provider } satisfies AuthResult;
   });
 
   app.post('/auth/email/start', { config: AUTH_RATE }, async (req, reply) => {
-    const { email, intent } = parse(EmailStartBody, req.body);
+    const { email, intent, binding } = parse(EmailStartBody, req.body);
     if (ctx.mailer.id === 'disabled') {
       throw new ApiError(
         503,
@@ -349,7 +413,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     const token = randomToken();
     await ctx.kv.set(
       `magic:${sha256(token)}`,
-      JSON.stringify({ email, linkUserId: auth?.userId ?? null, intent: intent ?? 'signIn' }),
+      JSON.stringify({ email, linkUserId: auth?.userId ?? null, intent: intent ?? 'signIn', binding }),
       MAGIC_LINK_TTL_MS,
     );
     const link = `${ctx.config.publicWebUrl}/auth/email?token=${token}`;
@@ -368,19 +432,25 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
   });
 
   app.post('/auth/email/verify', { config: AUTH_RATE }, async (req) => {
-    const { token } = parse(EmailVerifyBody, req.body);
+    const { token, nonce } = parse(EmailVerifyBody, req.body);
+    await presentUser(req);
     const raw = await ctx.kv.getDel(`magic:${sha256(token)}`);
     if (!raw) throw new ApiError(400, 'invalid_token', 'Sign-in link expired or already used');
-    const { email, linkUserId, intent } = JSON.parse(raw) as {
+    const { email, linkUserId, intent, binding } = JSON.parse(raw) as {
       email: string;
       linkUserId: string | null;
-      intent?: OAuthIntent;
+      intent: OAuthIntent;
+      binding: string;
     };
-    const signedIn = await signInWithIdentity(
-      ctx,
-      { provider: 'email', subject: email, email, name: null, linkUserId, intent: intent ?? 'signIn' },
-      req.headers['user-agent'],
-    );
+    const signedIn = await redeem(req, nonce, {
+      provider: 'email',
+      subject: email,
+      email,
+      name: null,
+      linkUserId,
+      intent,
+      binding,
+    });
     return { ...signedIn, provider: 'email' } satisfies AuthResult;
   });
 }

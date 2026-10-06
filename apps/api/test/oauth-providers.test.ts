@@ -12,7 +12,7 @@ import { buildApp, type BuiltApp } from '../src/app.ts';
 import { MemoryMailer } from '../src/auth/mailer.ts';
 import { OAUTH_PROVIDERS, type OAuthProviderId } from '../src/auth/oauth.ts';
 import { loadConfig } from '../src/config.ts';
-import { testEnv } from './helpers.ts';
+import { TEST_BINDING, TEST_NONCE, testEnv } from './helpers.ts';
 
 /** What the stubbed provider says about the person signing in. */
 interface FakePerson {
@@ -78,7 +78,11 @@ const stubFetch = (async (input: string | URL | Request, init?: RequestInit) => 
     case 'https://openidconnect.googleapis.com/v1/userinfo':
       return Response.json({ sub: p.sub, given_name: p.name, email: p.email, email_verified: p.verified });
     case 'https://api.github.com/user':
-      return Response.json({ id: Number(p.sub.replace(/\D/g, '')) || 7, login: p.name ?? 'octo', name: null });
+      return Response.json({
+        id: Number(p.sub.replace(/\D/g, '')) || 7,
+        login: p.name ?? 'octo',
+        name: null,
+      });
     case 'https://api.github.com/user/emails':
       return Response.json(
         p.email
@@ -97,7 +101,9 @@ const stubFetch = (async (input: string | URL | Request, init?: RequestInit) => 
       });
     case 'https://appleid.apple.com/auth/keys':
       return Response.json({
-        keys: [{ ...(await exportJWK(appleIdTokenKeys.publicKey)), kid: APPLE_KID, alg: 'RS256', use: 'sig' }],
+        keys: [
+          { ...(await exportJWK(appleIdTokenKeys.publicKey)), kid: APPLE_KID, alg: 'RS256', use: 'sig' },
+        ],
       });
     default:
       return new Response(`not stubbed: ${url}`, { status: 500 });
@@ -165,9 +171,10 @@ async function guest(): Promise<{ id: string; token: string }> {
 }
 
 async function emailAccount(address: string): Promise<{ id: string; token: string }> {
-  expect((await req('POST', '/auth/email/start', { body: { email: address } })).statusCode).toBe(202);
+  const begun = await req('POST', '/auth/email/start', { body: { email: address, binding: TEST_BINDING } });
+  expect(begun.statusCode).toBe(202);
   const magic = /token=([A-Za-z0-9_-]+)/.exec(mailer.sent.at(-1)!.text)![1]!;
-  const j = (await req('POST', '/auth/email/verify', { body: { token: magic } })).json();
+  const j = (await req('POST', '/auth/email/verify', { body: { token: magic, nonce: TEST_NONCE } })).json();
   return { id: j.user.id, token: j.accessToken };
 }
 
@@ -175,7 +182,7 @@ async function emailAccount(address: string): Promise<{ id: string; token: strin
 async function start(provider: OAuthProviderId, opts: { token?: string; intent?: 'link' | 'signIn' } = {}) {
   const res = await req('POST', `/auth/${provider}/start`, {
     token: opts.token,
-    ...(opts.intent ? { body: { intent: opts.intent } } : {}),
+    body: { binding: TEST_BINDING, ...(opts.intent ? { intent: opts.intent } : {}) },
   });
   expect(res.statusCode).toBe(200);
   const url = new URL(res.json().url);
@@ -195,7 +202,10 @@ async function callback(
             string
           >,
         })
-      : await req('GET', `/auth/${provider}/callback?${new URLSearchParams(params as Record<string, string>)}`);
+      : await req(
+          'GET',
+          `/auth/${provider}/callback?${new URLSearchParams(params as Record<string, string>)}`,
+        );
   expect(res.statusCode).toBe(302);
   return new URL(res.headers.location as string);
 }
@@ -216,8 +226,11 @@ async function signIn(
   });
   const error = back.searchParams.get('error');
   if (error) return { error, back };
-  const ex = await req('POST', '/auth/exchange', { body: { code: back.searchParams.get('code') } });
-  expect(ex.statusCode).toBe(200);
+  const ex = await req('POST', '/auth/exchange', {
+    token: opts.token,
+    body: { code: back.searchParams.get('code'), nonce: TEST_NONCE },
+  });
+  if (ex.statusCode !== 200) return { error: ex.json().error as string, back };
   return { result: ex.json(), back };
 }
 
@@ -249,7 +262,9 @@ describe('authorize URLs', () => {
     };
     for (const provider of OAUTH_PROVIDERS) {
       const { url } = await start(provider);
-      expect(url.searchParams.get('redirect_uri')).toBe(`https://play.example.com/api/auth/${provider}/callback`);
+      expect(url.searchParams.get('redirect_uri')).toBe(
+        `https://play.example.com/api/auth/${provider}/callback`,
+      );
       expect(url.searchParams.get('response_type')).toBe('code');
       expect(url.searchParams.get('state')).toMatch(/^[\w-]{32}$/);
       expect(url.searchParams.get('code_challenge_method') === 'S256').toBe(pkce[provider]);
@@ -284,9 +299,9 @@ describe.each(OAUTH_PROVIDERS)('%s', (provider) => {
 
   it('refuses an unknown state, a replayed state and a state from another provider', async () => {
     person = { sub: unique(provider) };
-    expect((await callback(provider, { code: 'c', state: 'not-a-real-state' })).searchParams.get('error')).toBe(
-      'invalid_state',
-    );
+    expect(
+      (await callback(provider, { code: 'c', state: 'not-a-real-state' })).searchParams.get('error'),
+    ).toBe('invalid_state');
     const { url, state } = await start(provider);
     appleNonce = url.searchParams.get('nonce') ?? '';
     expect((await callback(provider, { code: 'c', state })).searchParams.get('code')).toBeTruthy();
@@ -351,6 +366,28 @@ describe.each(OAUTH_PROVIDERS)('%s', (provider) => {
   });
 });
 
+describe('email matching', () => {
+  it('matches a verified address whatever its case', async () => {
+    const address = `${unique('case')}@example.com`;
+    const owner = await emailAccount(address);
+    const res = await signIn('google', {
+      sub: unique('google'),
+      email: address.toUpperCase(),
+      verified: true,
+    });
+    expect(res.result).toMatchObject({ outcome: 'signedIn', user: { id: owner.id } });
+  });
+
+  it('never joins an account whose address only came from another provider', async () => {
+    const address = `${unique('relay')}@example.com`;
+    const first = await signIn('github', { sub: unique('github'), email: address, verified: true });
+    expect(first.result.outcome).toBe('created');
+    const second = await signIn('google', { sub: unique('google'), email: address, verified: true });
+    expect(second.result.outcome).toBe('created');
+    expect(second.result.user.id).not.toBe(first.result.user.id);
+  });
+});
+
 describe('provider specifics', () => {
   it('GitHub: an error in a 200 token response fails the sign-in', async () => {
     tokenOverride = { error: 'bad_verification_code' };
@@ -382,7 +419,9 @@ describe('provider specifics', () => {
     const res = await signIn(
       'apple',
       { sub: unique('apple') },
-      { appleUser: JSON.stringify({ name: { firstName: 'Ada', lastName: 'L' }, email: 'spoof@example.com' }) },
+      {
+        appleUser: JSON.stringify({ name: { firstName: 'Ada', lastName: 'L' }, email: 'spoof@example.com' }),
+      },
     );
     expect(res.result).toMatchObject({ outcome: 'created', user: { displayName: 'Ada' } });
   });
@@ -412,7 +451,12 @@ describe('disabled providers', () => {
     const bare = await buildApp(config, { mailer: new MemoryMailer(), fetch: stubFetch, logger: false });
     try {
       for (const provider of OAUTH_PROVIDERS) {
-        const res = await bare.app.inject({ method: 'POST', url: `/auth/${provider}/start` });
+        const res = await bare.app.inject({
+          method: 'POST',
+          url: `/auth/${provider}/start`,
+          headers: { 'content-type': 'application/json' },
+          payload: JSON.stringify({ binding: TEST_BINDING }),
+        });
         expect(res.statusCode).toBe(503);
         expect(res.json().error).toBe('provider_disabled');
       }

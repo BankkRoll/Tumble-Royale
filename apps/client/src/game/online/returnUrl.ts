@@ -70,7 +70,9 @@ export function parseBootReturn(pathname: string, search: string): BootReturn | 
   }
   if (path === '/auth/staff') {
     const token = q.get('token');
-    return token ? { kind: 'staffLink', token } : { kind: 'oauthError', error: 'invalid_link', provider: null };
+    return token
+      ? { kind: 'staffLink', token }
+      : { kind: 'oauthError', error: 'invalid_link', provider: null };
   }
   if (path === '/store') {
     const status = q.get('checkout');
@@ -128,6 +130,11 @@ export function authErrorMessage(error: string, p: LoginProvider | null): Messag
       return {
         title: 'That email link has expired',
         body: 'Sign-in links work once, for 15 minutes. Ask for a new one in Settings.',
+      };
+    case 'browser_mismatch':
+      return {
+        title: 'Finish signing in where you started',
+        body: 'For your safety, a sign-in only completes in the browser that started it. Start it again here.',
       };
     case 'invalid_link':
       return {

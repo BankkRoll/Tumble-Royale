@@ -87,7 +87,10 @@ const LINK_RATE = { rateLimit: { max: 10, timeWindow: '1 minute', keyGenerator: 
 async function requireOperatorToken(ctx: AppContext, req: FastifyRequest): Promise<StaffActor> {
   const actor = await requireStaff(ctx, req);
   if (actor.kind !== 'token')
-    throw forbidden('operator_token_required', 'This action needs ADMIN_TOKEN (pnpm admin), not a console session');
+    throw forbidden(
+      'operator_token_required',
+      'This action needs ADMIN_TOKEN (pnpm admin), not a console session',
+    );
   return actor;
 }
 

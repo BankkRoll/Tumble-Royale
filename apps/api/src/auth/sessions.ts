@@ -130,7 +130,36 @@ export async function startSession(
 }
 
 /**
- * Exchanges a refresh token for a new pair (rotation).
+ * How long a just-rotated refresh token still refreshes. Two tabs (or the game
+ * and the admin console) holding the same token race to rotate it; without a
+ * grace window the loser looks like a thief and the whole family is revoked.
+ */
+export const REFRESH_REUSE_GRACE_MS = 30_000;
+
+/**
+ * True when `row` was rotated (not revoked by logout) moments ago and its
+ * successor is still live, so presenting it again is a racing tab, not a
+ * replayed copy.
+ */
+async function withinRotationGrace(
+  tx: DbOrTx,
+  row: typeof sessions.$inferSelect,
+  now: Date,
+): Promise<boolean> {
+  if (!row.revokedAt || !row.replacedBy || row.expiresAt <= now) return false;
+  if (now.getTime() - row.revokedAt.getTime() > REFRESH_REUSE_GRACE_MS) return false;
+  const [next] = await tx
+    .select({ revokedAt: sessions.revokedAt, replacedBy: sessions.replacedBy })
+    .from(sessions)
+    .where(eq(sessions.id, row.replacedBy));
+  // A successor revoked without a replacement means logout or reuse detection ended the family.
+  return Boolean(next && (!next.revokedAt || next.replacedBy));
+}
+
+/**
+ * Exchanges a refresh token for a new pair (rotation). A token rotated within
+ * {@link REFRESH_REUSE_GRACE_MS} mints a sibling in the same family instead of
+ * tripping reuse detection.
  *
  * @throws {ApiError} 401 `invalid_refresh` (unknown/expired) or `refresh_reused`
  *   (family revoked because a rotated token was replayed); 403 `banned` while suspended.
@@ -149,6 +178,13 @@ export async function rotateSession(
       .where(eq(sessions.tokenHash, sha256(refreshToken)))
       .for('update');
     if (!row) throw new ApiError(401, 'invalid_refresh', 'Unknown refresh token');
+    if (row.revokedAt && (await withinRotationGrace(tx, row, now))) {
+      await assertNotSuspended(tx, row.userId, now);
+      const account = await getAccountRef(tx, row.userId);
+      const sibling = await mint(tx, secret, account, row.familyId, now, userAgent);
+      await tx.update(users).set({ lastSeenAt: now }).where(eq(users.id, row.userId));
+      return sibling.pair;
+    }
     if (row.revokedAt) {
       await tx
         .update(sessions)

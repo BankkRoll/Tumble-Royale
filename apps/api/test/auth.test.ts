@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestApi, type TestApi } from './helpers.ts';
+import { createTestApi, TEST_BINDING, TEST_NONCE, type TestApi } from './helpers.ts';
 
 let api: TestApi;
 beforeAll(async () => {
@@ -55,12 +55,34 @@ describe('guest auth', () => {
     expect(r2.statusCode).toBe(200);
     const t2 = r2.json();
 
-    // Replaying the first (already rotated) token revokes the whole family.
+    // Replaying the first (already rotated) token after the grace window revokes the whole family.
+    api.clock.advance(31_000);
     const reuse = await api.req('POST', '/auth/refresh', { body: { refreshToken: u.refreshToken } });
     expect(reuse.statusCode).toBe(401);
     expect(reuse.json().error).toBe('refresh_reused');
     const after = await api.req('POST', '/auth/refresh', { body: { refreshToken: t2.refreshToken } });
     expect(after.statusCode).toBe(401);
+  });
+
+  it('lets a racing tab refresh with the token another tab just rotated', async () => {
+    const u = await api.guest();
+    const first = await api.req('POST', '/auth/refresh', { body: { refreshToken: u.refreshToken } });
+    api.clock.advance(5_000);
+    const racing = await api.req('POST', '/auth/refresh', { body: { refreshToken: u.refreshToken } });
+    expect(racing.statusCode).toBe(200);
+    // Both tabs' new tokens keep working: the family was not revoked.
+    for (const t of [first.json().refreshToken, racing.json().refreshToken]) {
+      expect((await api.req('POST', '/auth/refresh', { body: { refreshToken: t } })).statusCode).toBe(200);
+    }
+  });
+
+  it('gives no grace to a just-rotated token whose family was logged out', async () => {
+    const u = await api.guest();
+    const next = (await api.req('POST', '/auth/refresh', { body: { refreshToken: u.refreshToken } })).json();
+    await api.req('POST', '/auth/logout', { body: { refreshToken: next.refreshToken } });
+    expect(
+      (await api.req('POST', '/auth/refresh', { body: { refreshToken: u.refreshToken } })).statusCode,
+    ).toBe(401);
   });
 
   it('logout revokes the refresh family', async () => {
@@ -74,7 +96,7 @@ describe('guest auth', () => {
   });
 
   it('reports OAuth providers as disabled without credentials', async () => {
-    const res = await api.req('GET', '/auth/discord/start');
+    const res = await api.req('GET', `/auth/discord/start?binding=${'a'.repeat(64)}`);
     expect(res.statusCode).toBe(503);
     expect(res.json().error).toBe('provider_disabled');
     expect((await api.req('GET', '/auth/providers')).json()).toMatchObject({
@@ -88,15 +110,16 @@ describe('guest auth', () => {
     const u = await api.guest();
     const start = await api.req('POST', '/auth/email/start', {
       token: u.accessToken,
-      body: { email: 'Player@Example.com' },
+      body: { email: 'Player@Example.com', binding: TEST_BINDING },
     });
     expect(start.statusCode).toBe(202);
     const mail = api.mailer.sent.at(-1)!;
     const token = /token=([A-Za-z0-9_-]+)/.exec(mail.text)![1]!;
-    const verify = await api.req('POST', '/auth/email/verify', { body: { token } });
+    const body = { token, nonce: TEST_NONCE };
+    const verify = await api.req('POST', '/auth/email/verify', { token: u.accessToken, body });
     expect(verify.statusCode).toBe(200);
     expect(verify.json().user).toMatchObject({ id: u.id, isGuest: false });
-    expect((await api.req('POST', '/auth/email/verify', { body: { token } })).statusCode).toBe(400);
+    expect((await api.req('POST', '/auth/email/verify', { body })).statusCode).toBe(400);
   });
 
   it('enforces display name rules and cooldown', async () => {

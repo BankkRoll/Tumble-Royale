@@ -165,7 +165,10 @@ describe('.env from pnpm setup:env (development)', () => {
       ...files.map((f) => parseEnv(readFileSync(new URL(f, import.meta.url), 'utf8'))),
     ) as Record<string, string>;
     const env = Object.fromEntries(
-      Object.entries(merged).map(([k, v]) => [k, v === 'change-me' ? randomBytes(32).toString('base64url') : v]),
+      Object.entries(merged).map(([k, v]) => [
+        k,
+        v === 'change-me' ? randomBytes(32).toString('base64url') : v,
+      ]),
     );
     const c = loadConfig(env);
     expect(c).toMatchObject({ env: 'development', devAdminEmail: 'admin@tumble.localhost' });

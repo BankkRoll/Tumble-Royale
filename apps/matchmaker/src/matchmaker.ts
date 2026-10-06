@@ -1094,8 +1094,13 @@ export class Matchmaker {
       rules.assertCanEnter(lobby, p.userId);
       const slots = record.custom?.spectatorSlots ?? 0;
       if (slots <= 0) throw new MMError(409, 'no_spectators', 'Spectating is turned off for this show');
-      if (record.roster.filter((r) => r.role === 'spectator').length >= slots)
-        throw new MMError(409, 'spectators_full', 'No spectator slots left');
+      let taken = 0;
+      for (const r of record.roster) {
+        // A watcher the host removed gives their seat back.
+        if (r.role === 'spectator' && !(await this.store.get(`match-kicked:${record.matchId}:${r.userId}`)))
+          taken++;
+      }
+      if (taken >= slots) throw new MMError(409, 'spectators_full', 'No spectator slots left');
       const server = await this.liveServerFor(record);
       if (!server) throw new MMError(410, 'match_over', 'That show is no longer running');
       const seat: MatchRecord['roster'][number] = {
@@ -1108,6 +1113,15 @@ export class Matchmaker {
       };
       record.roster.push(seat);
       await this.store.set(`match:${record.matchId}`, JSON.stringify(record), MATCH_TTL_MS);
+      // Listed with the lobby's spectators so the host's in-show tools can remove a watcher too.
+      lobby.spectators.push({
+        userId: p.userId,
+        name: p.name,
+        joinedAt: this.now(),
+        ready: false,
+        awaySince: null,
+      });
+      await this.saveLobby(lobby);
       return this.matchFoundFor(record, server, seat, true);
     });
   }

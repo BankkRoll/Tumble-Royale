@@ -125,6 +125,25 @@ describe.each(BACKENDS)('watching a running private show ($name)', (backend) => 
     expect(res.body.error).toBe('lobby_locked');
   });
 
+  it('lists a mid-show watcher with the spectators so the host can remove them', async () => {
+    const { code, host } = await show({ spectatorSlots: 2 });
+    await call(`/lobbies/${code}/watch`, 'viewer-1');
+    const lobby = await mmApp.app.inject({
+      method: 'GET',
+      url: `/lobbies/${code}`,
+      headers: { authorization: `Bearer ${await access(host)}` },
+    });
+    expect((lobby.json() as { lobby: CustomLobby }).lobby.spectators.map((s) => s.userId)).toContain(
+      'viewer-1',
+    );
+    expect((await call(`/lobbies/${code}/kick`, host, { userId: 'viewer-1' })).status).toBe(200);
+    expect((await call(`/lobbies/${code}/watch`, 'viewer-1')).body.error).toBe('removed_by_host');
+    // The removed watcher's seat is free again.
+    expect((await call(`/lobbies/${code}/watch`, 'viewer-2')).status).toBe(200);
+    expect((await call(`/lobbies/${code}/watch`, 'viewer-3')).status).toBe(200);
+    expect((await call(`/lobbies/${code}/watch`, 'viewer-4')).body.error).toBe('spectators_full');
+  });
+
   it('carries "Spectators can chat" to the ticket', async () => {
     const { code } = await show({ spectatorSlots: 2, spectatorChat: true });
     const claims = await ticketOf((await call(`/lobbies/${code}/watch`, 'viewer-1')).body);

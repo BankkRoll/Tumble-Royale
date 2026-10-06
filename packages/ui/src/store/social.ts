@@ -24,6 +24,8 @@ export interface PlayerRef {
   /** Mute key: the account id, or `name:<name>` for players without one. */
   key: string;
   isBot?: boolean;
+  /** Club tag, shown as `[TAG]` beside the name (hidden for others in Streamer Mode). */
+  club?: string;
 }
 
 /** A pending friend request. */

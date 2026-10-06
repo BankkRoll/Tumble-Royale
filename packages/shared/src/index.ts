@@ -12,3 +12,4 @@ export * from './chat/profanity.ts';
 export * from './chat/chat.ts';
 export * from './social/partyLobby.ts';
 export * from './social/lobbyGame.ts';
+export * from './social/clubs.ts';

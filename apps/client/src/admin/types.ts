@@ -359,3 +359,94 @@ export interface SharedRoundDetail {
     reporter: { id: string; name: string | null };
   }[];
 }
+/** A club in the console's list. */
+export interface ClubListRow {
+  id: string;
+  name: string;
+  tag: string;
+  description: string;
+  joinMode: string;
+  memberCount: number;
+  maxMembers: number;
+  lastActivityAt: string;
+  createdAt: string;
+  disbandedAt: string | null;
+  openReports: number;
+}
+
+/** A club chat line kept as evidence. */
+export interface ClubChatEvidence {
+  id: string;
+  from: { userId: string; name: string; tag: string };
+  text: string;
+  masked?: string;
+  at: number;
+}
+
+/** A report against a club. */
+export interface ClubReportRow {
+  id: string;
+  reason: string;
+  details: string | null;
+  status: string;
+  snapshot: { name: string; tag: string; description: string };
+  evidence: ClubChatEvidence[] | null;
+  createdAt: string;
+  reporterId: string;
+  reporterName: string | null;
+  reporterTag: string | null;
+}
+
+/** `GET /internal/clubs/:id`. */
+export interface ClubDetail {
+  club: Omit<ClubListRow, 'openReports'> & { disbandReason: string | null };
+  members: {
+    userId: string;
+    displayName: string;
+    tag: string;
+    role: string;
+    presence: string;
+    joinedAt: string;
+  }[];
+  chat: ClubChatEvidence[];
+  reports: ClubReportRow[];
+  audit: AuditEntry[];
+}
+
+/** Gift statuses (`apps/api/src/economy/gifts.ts`). */
+export type GiftStatus = 'pending' | 'opened' | 'declined' | 'cancelled' | 'returned' | 'reversed';
+
+/** One gift on a player's page (`GET /internal/users/:id/gifts`). */
+export interface AdminGift {
+  giftId: string;
+  offerId: string;
+  title: string;
+  items: { id: string; name: string; slot: string | null; rarity: string | null }[];
+  price: { currency: string; amount: number };
+  message: { text: string; masked?: string } | null;
+  status: GiftStatus;
+  refunded: boolean;
+  autoAccepted: boolean;
+  note: 'recipient_owns' | 'recipient_deleted' | 'staff' | null;
+  sentAt: string;
+  opensAutomaticallyAt: string;
+  resolvedAt: string | null;
+  from: { userId: string; name: string; tag: string } | null;
+  to: { userId: string; name: string; tag: string } | null;
+  /** The gift's ledger rows: the sender's charge and any refund. */
+  ledger: {
+    userId: string;
+    currency: string;
+    delta: number;
+    reason: string;
+    ref: string;
+    createdAt: string;
+  }[];
+}
+
+/** `GET /internal/users/:id/gifts`. */
+export interface PlayerGifts {
+  userId: string;
+  sent: AdminGift[];
+  received: AdminGift[];
+}

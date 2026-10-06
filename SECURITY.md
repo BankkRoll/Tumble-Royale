@@ -46,6 +46,35 @@ submit refunds once. Real-money refunds are only ever issued by an admin
 (moderators can deny but not approve), each decision is audited, and the
 Stripe refund carries an idempotency key per approval attempt.
 
+### Gifting abuse
+
+Gifting moves value between accounts, which makes it the obvious channel for
+laundering stolen currency, farming with throwaway accounts, and harassment.
+The server enforces every limit ([ECONOMY.md §3.4](docs/design/ECONOMY.md)):
+
+- **Throwaways:** only linked (non-guest) accounts at least 7 days old can
+  send, the guest flag is read from the database rather than the token, and
+  only to friends of at least 3 days, so a fresh account cannot be set up to
+  move currency the same day.
+- **Volume:** 5 gifts per sender per UTC day (cancelled and declined ones
+  count, so cancel-and-resend does not reset it), 30 unopened gifts per
+  recipient, and per-route rate limits (`POST /gifts` 10/min).
+- **Harassment:** blocks end gifting in both directions and read exactly like
+  "not friends", suspended players cannot receive gifts, notes go through the
+  chat filter and chat-muted accounts cannot attach one, and a recipient can
+  decline (which refunds the sender) or ignore a gift.
+- **Double spending:** both players' profile rows are locked in id order
+  before any check, the send is idempotent per `Idempotency-Key`, and each
+  refund is a single `gift_refund` / `gift:<id>` ledger row under the ledger's
+  unique key, so races, retries and replays charge and refund at most once.
+- **Trail:** every gift is a row with both parties, price and outcome; the
+  ledger rows carry `gift:<id>`. Moderators can list a player's gifts in the
+  console, and only admins can reverse one, audited in the same transaction.
+- **Privacy:** wish lists are friends-only by default and can be hidden, and
+  every refusal of someone else's list is the same `wishlist_hidden`, so it
+  never reveals a block or whether an account exists. Streamer Mode masks the
+  names in gift toasts, the inbox and the friend picker.
+
 ### Admin console trust boundary
 
 The console at `/admin` is only a client. Every action is authorised by the
@@ -59,3 +88,29 @@ is served with `X-Frame-Options: DENY` and `frame-ancestors 'none'` so its
 confirm buttons cannot be clickjacked. Every admin action is written to the
 append-only `admin_audit_log`. Report evidence only includes the reported
 player's public global chat and whispers they sent to the reporter.
+
+### Clubs and abuse
+
+Clubs (persistent groups with a chat) are a new place for abuse, so the API
+treats every club input as untrusted:
+
+- Only full accounts take part; founding also needs an account at least three
+  days old, so throwaway guests cannot squat names or flood club chat.
+- Club names, tags and descriptions go through the shared profanity filter,
+  reserved staff-like names are refused, and emblems can only use the banner
+  motifs and the Tumbler palette.
+- Club chat uses the same filter, mute and suspension checks as every other
+  channel (read through the ban cache that every instance drops the moment a
+  moderator acts), a per-account rate limit held in the shared KV, and never
+  reaches members who blocked the sender.
+- Every club route is rate limited, role-checked on the server
+  (`CLUB_PERMISSIONS`), and switchable off with `clubs.enabled`.
+- Reports carry evidence: a club report snapshots the name, tag, description
+  and emblem, and attaches recent club chat only when the reporter is a
+  member who could read it; a player report attaches club chat only from the
+  reporter's own club. Club chat is deleted after 30 days.
+- Moderators can rename, reset to a neutral name, clear the description,
+  reset the emblem or disband a club from the console; each action needs a
+  reason and is written to `admin_audit_log` in the same transaction.
+- Goal rewards are paid once per player, week and goal, whichever club the
+  player is in, so hopping between clubs cannot farm them.

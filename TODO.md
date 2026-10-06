@@ -15,11 +15,11 @@ What comes next, in order. Each item should land with tests, docs and a green
       clip pipeline.
 - [ ] **Spectator / broadcast mode**: a free camera, player switching and a
       clean overlay for streaming shows.
-- [ ] **Gifting and a wish list**: gift store items to friends, with abuse and
+- [x] **Gifting and a wish list**: gift store items to friends, with abuse and
       refund rules that match the refund policy in `docs/ECONOMY.md`.
 - [ ] **Voice chat**: opt-in, party and team scoped, with mute, push-to-talk,
       reporting and Streamer Mode support.
-- [ ] **Clubs**: persistent groups with a roster, roles, chat and club
+- [x] **Clubs**: persistent groups with a roster, roles, chat and club
       challenges.
 - [ ] **Public status page**: service health, maintenance windows and incident
       notes, fed by the existing `/status` and live-ops data.

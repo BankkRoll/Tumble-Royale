@@ -1,0 +1,158 @@
+/* Clubs: the Club section of the social sheet (ClubPanel.tsx) and club tags in chat. */
+
+.tr-club-tag {
+  margin-right: 0.3em;
+  font-weight: 800;
+  color: var(--grape);
+  white-space: nowrap;
+}
+
+.tr-club-emblem {
+  display: inline-block;
+  flex: none;
+  border-radius: 0.6em;
+  border: 0.15em solid var(--ink);
+  background-color: var(--a);
+  box-shadow: 0 0.12em 0 var(--ink);
+}
+.tr-club-emblem--confetti {
+  background-image:
+    radial-gradient(circle at 25% 30%, var(--b) 10%, transparent 11%),
+    radial-gradient(circle at 70% 25%, var(--b) 8%, transparent 9%),
+    radial-gradient(circle at 55% 70%, var(--b) 10%, transparent 11%),
+    radial-gradient(circle at 20% 75%, var(--b) 7%, transparent 8%);
+}
+.tr-club-emblem--clouds {
+  background-image:
+    radial-gradient(ellipse at 35% 60%, var(--b) 22%, transparent 23%),
+    radial-gradient(ellipse at 65% 50%, var(--b) 26%, transparent 27%);
+}
+.tr-club-emblem--stripes {
+  background-image: repeating-linear-gradient(45deg, var(--b) 0 0.3em, transparent 0.3em 0.6em);
+}
+.tr-club-emblem--stars {
+  background-image:
+    radial-gradient(circle at 50% 50%, var(--b) 18%, transparent 19%),
+    radial-gradient(circle at 20% 25%, var(--b) 6%, transparent 7%),
+    radial-gradient(circle at 80% 75%, var(--b) 6%, transparent 7%);
+}
+.tr-club-emblem--candy {
+  background-image: repeating-linear-gradient(-45deg, var(--b) 0 0.5em, transparent 0.5em 1em);
+}
+.tr-club-emblem--waves {
+  background-image: repeating-radial-gradient(
+    circle at 50% 120%,
+    var(--b) 0 0.25em,
+    transparent 0.25em 0.6em
+  );
+}
+
+.tr-club-card {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.tr-club-desc {
+  overflow-wrap: anywhere;
+}
+.tr-club-note {
+  padding: 0.5em 0.7em;
+  border-radius: var(--rad-sm);
+  border: 0.12em dashed var(--ink-soft);
+  background: var(--cream);
+}
+
+.tr-club-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  min-width: 0;
+}
+
+.tr-club-tabs {
+  display: flex;
+  gap: 0.3em;
+  overflow-x: auto;
+}
+.tr-club-tab {
+  flex: none;
+  padding: 0.35em 0.8em;
+  border-radius: 999px;
+  border: 0.12em solid var(--ink);
+  background: var(--cloud);
+  font-weight: 700;
+  pointer-events: auto;
+}
+.tr-club-tab.is-active {
+  background: var(--lemon);
+  box-shadow: 0 0.12em 0 var(--ink);
+}
+
+.tr-club-swatches {
+  flex-wrap: wrap;
+  gap: 0.3em;
+}
+.tr-club-swatches .tr-swatch {
+  width: 1.8em;
+  height: 1.8em;
+}
+.tr-club-tag-input {
+  width: 6em;
+  text-transform: uppercase;
+}
+
+.tr-club-chat-lines {
+  max-height: 16em;
+  min-height: 6em;
+  padding: 0.4em;
+  border-radius: var(--rad-sm);
+  background: var(--cream);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2em;
+}
+.tr-club-chat-line {
+  overflow-wrap: anywhere;
+}
+
+.tr-club-goal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+  padding: 0.5em 0.6em;
+  border-radius: var(--rad-sm);
+  border: 0.12em solid var(--ink);
+  background: var(--cloud);
+}
+.tr-club-bar {
+  height: 0.7em;
+  border-radius: 999px;
+  border: 0.12em solid var(--ink);
+  background: #e9e2f6;
+  overflow: hidden;
+}
+.tr-club-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--mint);
+}
+
+.tr-club-board {
+  margin: 0;
+  padding-left: 1.4em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2em;
+}
+.tr-club-board li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2em 0.6em;
+  align-items: baseline;
+}
+
+@media (max-width: 520px) {
+  .tr-club-card > .tr-btn,
+  .tr-club-card > .tr-chip {
+    margin-left: auto;
+  }
+}

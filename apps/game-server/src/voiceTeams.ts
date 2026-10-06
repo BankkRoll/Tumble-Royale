@@ -65,7 +65,10 @@ export class HttpVoiceTeams implements VoiceTeamsSink {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            ...signInternal(this.opts.secret, body, Date.now()),
+            ...signInternal(this.opts.secret, body, Date.now(), {
+              method: 'POST',
+              path: '/internal/voice/teams',
+            }),
           },
           body,
           signal: AbortSignal.timeout(5000),

@@ -176,7 +176,15 @@ export function createStatusService(
     const [health, capacity] = await Promise.all([
       timedProbe((s) => getJson('/health', s), opts.timeoutMs),
       timedProbe(
-        (s) => getJson('/internal/capacity', s, signInternal(ctx.config.internalHmacSecret, '', nowMs())),
+        (s) =>
+          getJson(
+            '/internal/capacity',
+            s,
+            signInternal(ctx.config.internalHmacSecret, '', nowMs(), {
+              method: 'GET',
+              path: '/internal/capacity',
+            }),
+          ),
         opts.timeoutMs,
       ),
     ]);

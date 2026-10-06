@@ -77,6 +77,8 @@ export const PlacementSchema = z.object({
 export const MatchResultSchema = z.object({
   /** Game-server match id; the idempotency key for every grant. */
   matchId: z.string().regex(/^[A-Za-z0-9_-]{6,64}$/),
+  /** `SERVER_ID` of the reporting game server, checked against the matchmaker's placement. */
+  serverId: z.string().min(1).max(64).optional(),
   queue: z.enum(['casual', 'ranked', 'custom']),
   playlistId: z.string().min(1).max(64),
   /** Defaults to the API's active season. */

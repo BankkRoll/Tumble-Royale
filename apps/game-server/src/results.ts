@@ -5,14 +5,15 @@
  * - the wire contract (mirrors `MatchResult` in apps/api `src/matches/schema.ts`);
  * - placements from the show summary (1 = Crown, players knocked out in the
  *   same round share a value);
- * - HMAC signing (`hex(HMAC_SHA256(secret, "<ts>.<nonce>.<rawBody>"))`) and a
- *   few retries with fresh nonces; the API keys every grant by `matchId`, so a
+ * - HMAC signing (the shared internal scheme, `signInternal` in
+ *   `@tumble/shared/liveops-client`, bound to the endpoint) and a few retries
+ *   with fresh nonces; the API keys every grant by `matchId`, so a
  *   retry after a lost response replays the stored summaries.
  *
  * Reporting is optional: without `API_URL` and `INTERNAL_HMAC_SECRET` the
  * server never posts anything.
  */
-import { createHmac, randomBytes } from 'node:crypto';
+import { signInternal } from '@tumble/shared/liveops-client';
 import { matchRequestId, REQUEST_ID_HEADER } from '@tumble/shared/request-id';
 import type { RoundType } from '@tumble/shared';
 
@@ -135,13 +136,7 @@ export function computePlacements(
   return out;
 }
 
-/** Signing headers for an internal API call. */
-export function signInternal(secret: string, body: string, nowMs: number): Record<string, string> {
-  const timestamp = String(nowMs);
-  const nonce = randomBytes(16).toString('hex');
-  const signature = createHmac('sha256', secret).update(`${timestamp}.${nonce}.${body}`).digest('hex');
-  return { 'x-tumble-timestamp': timestamp, 'x-tumble-nonce': nonce, 'x-tumble-signature': signature };
-}
+export { signInternal };
 
 /** Options for {@link HttpResultsSink}. */
 export interface HttpResultsSinkOptions {
@@ -204,7 +199,7 @@ export async function sendResultsOnce(
         'content-type': 'application/json',
         // The API logs this as the request id, tying its ingest lines to this show.
         [REQUEST_ID_HEADER]: matchRequestId(payload.matchId),
-        ...signInternal(opts.secret, body, Date.now()),
+        ...signInternal(opts.secret, body, Date.now(), { method: 'POST', path: '/internal/match-results' }),
       },
       body,
       signal: AbortSignal.timeout(8000),

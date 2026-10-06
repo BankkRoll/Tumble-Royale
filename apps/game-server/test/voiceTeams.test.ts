@@ -22,7 +22,7 @@ describe('HttpVoiceTeams', () => {
     expect(JSON.parse(body)).toEqual({ matchId: 'room_1', round: 3, players });
     const h = calls[0]!.init.headers as Record<string, string>;
     const expected = createHmac('sha256', SECRET)
-      .update(`${h['x-tumble-timestamp']}.${h['x-tumble-nonce']}.${body}`)
+      .update(`POST\n/internal/voice/teams\n${h['x-tumble-timestamp']}\n${h['x-tumble-nonce']}\n${body}`)
       .digest('hex');
     expect(h['x-tumble-signature']).toBe(expected);
   });

@@ -28,6 +28,7 @@ import {
 } from '@tumble/sim/show';
 import { seatName } from '@tumble/ui';
 import { botLoadout } from '../cosmetics.ts';
+import { flag } from '../liveOps/flags.ts';
 import type { HudInput, HudPlayerStatus } from '../round/hud.ts';
 import { OfflineRoundSource, type RoundSource } from '../round/source.ts';
 import type { GameContext, RoundStart, SessionPlayer } from './context.ts';
@@ -92,6 +93,7 @@ export class OfflineShowSession extends ShowSession {
       // The round waits for this machine's build (and shader compile), however long it takes.
       localLoad: 'manual',
       ...(roundTimeScale !== undefined ? { roundTimeScale } : {}),
+      voting: flag('shows.mapVoting'),
     });
     this.localId = this.show.humanId;
     this.showName = playlist.name;
@@ -162,6 +164,10 @@ export class OfflineShowSession extends ShowSession {
     director.onPlayerLoaded(this.localId);
     // NOTE: the director clock is held while the loading card is up; a zero step still lets LOADING end now.
     director.tick(0);
+  }
+
+  protected override sendVote(roundIndex: number, option: number): void {
+    if (this.localId >= 0) this.show.director.castVote(this.localId, roundIndex, option);
   }
 
   protected createSource(rs: RoundStart): RoundSource | null {
@@ -235,6 +241,31 @@ export class OfflineShowSession extends ShowSession {
       }
       case 'roundPhase':
         this.onRoundPhase(e.phase);
+        break;
+      case 'voteOpen': {
+        const d = this.show.director;
+        this.onVoteOpen({
+          ...e.vote,
+          canVote: this.localId >= 0 && d.canVote(this.localId),
+          myVote: this.localId >= 0 ? d.ballotOf(this.localId) : -1,
+        });
+        break;
+      }
+      case 'voteTally':
+        this.onVoteTally(e.roundIndex, e.counts, e.voted);
+        break;
+      case 'voteClosed':
+        this.onVoteResult(
+          e.roundIndex,
+          e.result
+            ? {
+                roundIndex: e.roundIndex,
+                winner: e.result.winner,
+                counts: e.result.counts,
+                reason: e.result.reason,
+              }
+            : null,
+        );
         break;
       case 'roundResult': {
         const o = e.outcome;

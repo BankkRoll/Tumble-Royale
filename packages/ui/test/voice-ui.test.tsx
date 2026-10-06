@@ -6,6 +6,7 @@
  */
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { viewOpensQuickChat } from '../src/hud/ChatWidget.tsx';
 import { Hud } from '../src/hud/Hud.tsx';
 import { maskedName } from '../src/names.ts';
 import {
@@ -48,13 +49,20 @@ describe('defaults', () => {
     expect(DEFAULT_SETTINGS.voice.relayOnly).toBe(false);
     expect(DEFAULT_SETTINGS.voice.teamVoice).toBe(false);
     expect(DEFAULT_KEYBINDS.pushToTalk[0]).toBe('KeyV');
-    expect(DEFAULT_PAD_BINDS.pushToTalk[0]).toBe(8);
+    expect(DEFAULT_PAD_BINDS.pushToTalk[0]).toBe(10);
     expect(PAD_BIND_CONTEXT.pushToTalk).toBe('always');
-    // No other default uses V or the Back button.
+    // No other default uses V or L3, and View stays free for quick chat.
     const keys = Object.entries(DEFAULT_KEYBINDS).filter(([a]) => a !== 'pushToTalk');
     expect(keys.some(([, pair]) => pair.includes('KeyV'))).toBe(false);
     const pads = Object.entries(DEFAULT_PAD_BINDS).filter(([a]) => a !== 'pushToTalk');
-    expect(pads.some(([, pair]) => pair.includes(8))).toBe(false);
+    expect(pads.some(([, pair]) => pair.includes(10))).toBe(false);
+    expect(Object.values(DEFAULT_PAD_BINDS).some((pair) => pair.includes(8))).toBe(false);
+    expect(viewOpensQuickChat(DEFAULT_PAD_BINDS)).toBe(true);
+  });
+
+  it('View talks instead of opening quick chat when it is bound to push-to-talk', () => {
+    expect(viewOpensQuickChat({ pushToTalk: [8, -1] })).toBe(false);
+    expect(viewOpensQuickChat({ pushToTalk: [-1, 8] })).toBe(false);
   });
 });
 

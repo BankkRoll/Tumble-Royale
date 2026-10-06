@@ -34,7 +34,7 @@ import {
 import { uiEvents } from '../store/events.ts';
 import { streamerSafeKeyedName } from '../names.ts';
 import { social, useSocial, visibleChat, type PlayerRef, type VisibleChatLine } from '../store/social.ts';
-import type { ScreenId } from '../store/types.ts';
+import type { PadBinds, ScreenId } from '../store/types.ts';
 import { ui, useUI } from '../store/uiStore.ts';
 
 /** Seconds a line stays visible while the widget is collapsed. */
@@ -354,6 +354,16 @@ function hidden(): boolean {
   return u.photo.active || u.replay !== null || u.wipe.phase !== 'idle';
 }
 
+/**
+ * Whether the pad's View button opens quick chat. Bound to push-to-talk (a
+ * saved older default, or the player's own pick) it talks instead.
+ *
+ * @param padBinds - The controller mapping.
+ */
+export function viewOpensQuickChat(padBinds: Pick<PadBinds, 'pushToTalk'>): boolean {
+  return !padBinds.pushToTalk.includes(PAD_VIEW);
+}
+
 /** Opens on Enter/T and the gamepad View button. */
 function useOpenKeys(): void {
   useEffect(() => {
@@ -383,7 +393,7 @@ function useOpenKeys(): void {
       const pads = navigator.getGamepads?.() ?? [];
       let down = false;
       for (const p of pads) if (p?.connected && p.buttons[PAD_VIEW]?.pressed) down = true;
-      if (down && !was) {
+      if (down && !was && viewOpensQuickChat(ui.getState().settings.controls.padBinds)) {
         if (social.getState().chat.open) setChatOpen(false);
         else if (canOpenNow()) setChatOpen(true, { mode: 'quick' });
       }

@@ -13,11 +13,14 @@
  *   recent chat kept as report evidence.
  * - Leave a short-lived tombstone so access tokens minted before the deletion
  *   stop working immediately instead of at their 15-minute expiry.
+ * - Settle gifts: unopened gifts to the account go back to their senders,
+ *   notes the account wrote are erased (`economy/gifts.ts`).
  * - Write an audit event.
  */
 import { eq, sql } from 'drizzle-orm';
 import type { AppContext } from '../context.ts';
 import { events, matchParticipants, users } from '../db/schema.ts';
+import { announceErasedGifts, settleGiftsOnErasure } from '../economy/gifts.ts';
 import { invalidateBanCache } from '../http/auth.ts';
 import { notFound } from '../http/errors.ts';
 import { removeFromLeaderboards } from '../leaderboards/service.ts';
@@ -53,7 +56,7 @@ export async function deleteAccount(
   await new PartyService(ctx).leave(userId);
 
   const now = ctx.now();
-  await ctx.db.transaction(async (tx) => {
+  const gifts = await ctx.db.transaction(async (tx) => {
     // Transaction-local; lets the ledger trigger accept this user's cascade (migration 0002).
     await tx.execute(sql`select set_config('tumble.erase_user', ${userId}, true)`);
     await tx
@@ -64,6 +67,8 @@ export async function deleteAccount(
     // SECURITY: bans cascade away with the user row; keep them, keyed by
     // hashed identifiers, so deleting the account is no way out of a ban.
     await retainBans(tx, ctx, userId);
+    // Before the cascade, while the senders of unopened gifts can still be refunded.
+    const settled = await settleGiftsOnErasure(tx, ctx, userId);
     await tx.delete(users).where(eq(users.id, userId));
     await tx.insert(events).values({
       userId,
@@ -76,6 +81,7 @@ export async function deleteAccount(
       },
       createdAt: now,
     });
+    return settled;
   });
 
   await markErased(ctx.kv, userId);
@@ -84,4 +90,5 @@ export async function deleteAccount(
   await setPresence(ctx.kv, userId, 'offline', now.getTime());
   await removeFromLeaderboards(ctx, userId, user.region);
   await ctx.notifier.notifyMany(friends, { type: 'friend_removed', userId });
+  await announceErasedGifts(ctx, gifts);
 }

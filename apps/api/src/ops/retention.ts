@@ -11,6 +11,8 @@
  *   used for that long, through the same path as `DELETE /me`. A guest is
  *   only stale when it has no live session, never paid for anything and has
  *   no ban on record (deleting it would erase the ban).
+ * - Auto-accept gifts left unopened for 30 days (`economy/gifts.ts`), so they
+ *   settle even when neither player signs in again.
  * - Run on one instance at a time (a KV lock), in bounded batches so a large
  *   backlog never holds long locks or one huge transaction.
  */
@@ -19,6 +21,7 @@ import { deleteAccount } from '../accounts/erase.ts';
 import type { RetentionConfig } from '../config.ts';
 import type { AppContext } from '../context.ts';
 import { bans, events, purchases, sessions, users } from '../db/schema.ts';
+import { settleExpiredGifts } from '../economy/gifts.ts';
 
 const DAY_MS = 86_400_000;
 const LOCK_KEY = 'ops:retention:lock';
@@ -34,6 +37,8 @@ export interface RetentionResult {
   sessions: number;
   events: number;
   guests: number;
+  /** Overdue gifts auto-accepted (or returned). */
+  gifts: number;
   /** False when another instance held the lock and nothing ran. */
   ran: boolean;
 }
@@ -93,7 +98,7 @@ export async function runRetention(ctx: AppContext, policy: RetentionConfig): Pr
   const owner = globalThis.crypto.randomUUID();
   // Longer than any sane run; a crashed holder's lock simply expires.
   if (!(await ctx.kv.setNX(LOCK_KEY, owner, 30 * 60_000)))
-    return { sessions: 0, events: 0, guests: 0, ran: false };
+    return { sessions: 0, events: 0, guests: 0, gifts: 0, ran: false };
   try {
     const now = ctx.now().getTime();
     const sessionCutoff = new Date(now - policy.sessionGraceDays * DAY_MS);
@@ -138,7 +143,14 @@ export async function runRetention(ctx: AppContext, policy: RetentionConfig): Pr
         }
       }
     }
-    return { sessions: deletedSessions, events: deletedEvents, guests: deletedGuests, ran: true };
+    const settledGifts = await settleExpiredGifts(ctx);
+    return {
+      sessions: deletedSessions,
+      events: deletedEvents,
+      guests: deletedGuests,
+      gifts: settledGifts,
+      ran: true,
+    };
   } finally {
     if ((await ctx.kv.get(LOCK_KEY).catch(() => null)) === owner) await ctx.kv.del(LOCK_KEY).catch(() => {});
   }

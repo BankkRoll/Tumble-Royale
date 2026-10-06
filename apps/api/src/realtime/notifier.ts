@@ -85,7 +85,26 @@ export type RealtimeEvent =
       /** Set for achievement unlocks, so the client can refresh its achievements view. */
       achievementId?: string;
     }
-  | { type: 'wallet'; gumballs: number; gems: number; crownShards: number };
+  | { type: 'wallet'; gumballs: number; gems: number; crownShards: number }
+  /**
+   * A gift changed: `received` reaches the recipient, every later status
+   * (`opened`, `declined`, `cancelled`, `returned`, `reversed`) both sides.
+   * Clients reload `GET /gifts` for the details.
+   */
+  | {
+      type: 'gift';
+      giftId: string;
+      status: 'received' | 'opened' | 'declined' | 'cancelled' | 'returned' | 'reversed';
+      /** Whose point of view this event is for. */
+      role: 'sender' | 'recipient';
+      /** The other party, when they still exist. */
+      other: SocialRef | null;
+      /** Item or bundle name. */
+      title: string;
+      autoAccepted?: boolean;
+    }
+  /** Wished-for items are in the day's store (at most once per UTC day). */
+  | { type: 'wishlist_in_store'; day: string; items: { itemId: string; title: string }[] };
 
 /** Channel name for a user's personal event stream. */
 export const userChannel = (userId: string): string => `user:${userId}`;

@@ -199,3 +199,22 @@ renders one frame per animation frame with encoder back-pressure. The MP4 and
 WebM muxers are written in-house (one video track, laid out once the samples
 are known) because the small npm muxers are either deprecated or not
 MIT/Apache.
+
+## Gifts are their own ledger records, not purchases
+
+A gift is a `gifts` row plus at most two ledger rows on the sender (`gift`
+and `gift_refund`, both ref `gift:<id>`), not a `purchases` row on either
+side. Reusing purchases would have put gifts into `GET /purchases` and the
+self-service refund path, letting a recipient refund something they never
+paid for, or a sender refund an item someone else already wears. Keeping
+them apart makes "no refund after opening" structural instead of a special
+case in the refund policy.
+
+The recipient's copy has inventory source `gift`, which store refunds never
+touch and a staff reversal removes; an earned grant re-sources it, as it
+already did for `store` copies, so a reversal never takes an item the player
+earned another way. Every gift operation locks both profiles in id order
+before deciding, which serialises double submits, two friends gifting the
+same item, and decline/cancel races without a lock table of its own.
+Overdue gifts are auto-accepted lazily on read and by the retention sweep,
+so the 30-day rule needs no new background process.

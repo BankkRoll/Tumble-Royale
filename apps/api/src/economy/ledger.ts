@@ -42,6 +42,10 @@ export type LedgerReason =
   | 'shard_shop'
   /** Currency given back by a self-service store refund (ref `refund:<purchaseId>`). */
   | 'store_refund'
+  /** A store item bought for a friend (ref `gift:<giftId>`). */
+  | 'gift'
+  /** A gift's price given back to its sender: declined, cancelled, returned or reversed (ref `gift:<giftId>`). */
+  | 'gift_refund'
   /** Gems (and debt) taken back after a refund or dispute (ref `<purchaseId>:<n>`). */
   | 'gem_reversal'
   /** Gems given back when a dispute is won (ref `<purchaseId>:<n>`). */

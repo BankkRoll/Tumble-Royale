@@ -1,6 +1,7 @@
 /**
  * Player lookup and the player page: account summary, balances, reports,
- * sanctions, warnings, name history and the moderation actions on one player.
+ * sanctions, warnings, name history, gifts (`GiftsCard.tsx`) and the
+ * moderation actions on one player.
  */
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Badge, PlayerLink, StateBlock, useConsole, useLoad, type ActionRequest } from '../components.tsx';
@@ -15,6 +16,7 @@ import {
   shortTime,
 } from '../format.ts';
 import type { LookupUser, PlayerSummary } from '../types.ts';
+import { PlayerGiftsCard } from './GiftsCard.tsx';
 
 /** Player lookup with results, or the page of one player. */
 export function PlayersView(props: { id?: string | undefined; q?: string | undefined }) {
@@ -558,6 +560,7 @@ function PlayerPage(props: { id: string }) {
                     </table>
                   </div>
                 </Card>
+                <PlayerGiftsCard id={a.id} />
                 <Card title="Recent matches" wide>
                   {p.matches.recent.length === 0 ? (
                     <p className="adm-muted">None recorded.</p>

@@ -11,6 +11,13 @@
  */
 import type { PlayerRewardMsg } from '@tumble/netcode';
 import type { WalletLedger } from './online/checkout.ts';
+import type {
+  ApiGiftInbox,
+  ApiGiftPicker,
+  ApiGiftResult,
+  ApiWishlist,
+  ApiWishlistEntry,
+} from './online/gifts.ts';
 import type { ApiPurchaseHistory, ApiRefundResult } from './online/purchaseHistory.ts';
 import { tokenSubject, type AuthOutcome, type LoginProvider } from './online/returnUrl.ts';
 import { loadJson, removeJson, saveJson } from './storage.ts';
@@ -812,6 +819,31 @@ export class ApiClient {
   /** Refunds a store purchase, or files a Gem pack refund request (`reason` required there). */
   refundPurchase = (purchaseId: string, reason?: string): Promise<ApiRefundResult> =>
     this.request('POST', `/purchases/${encodeURIComponent(purchaseId)}/refund`, reason ? { reason } : {});
+  /** Gifts sent and received, with today's count and the policy. */
+  gifts = (): Promise<ApiGiftInbox> => this.request('GET', '/gifts');
+  /** Every friend with whether they can be gifted this offer now. */
+  giftPicker = (offerId: string): Promise<ApiGiftPicker> =>
+    this.request('GET', `/gifts/eligibility?offerId=${encodeURIComponent(offerId)}`);
+  /** Buys an offer for a friend; the key makes a retried send replay the first. */
+  sendGift = (
+    body: { recipientId: string; offerId: string; message?: string },
+    key: string,
+  ): Promise<ApiGiftResult & { wallet: ApiMe['wallet'] }> =>
+    this.request('POST', '/gifts', body, { idempotencyKey: key });
+  /** Opens or declines a received gift, or cancels a sent one. */
+  giftAction = (giftId: string, action: 'open' | 'decline' | 'cancel'): Promise<ApiGiftResult> =>
+    this.request('POST', `/gifts/${encodeURIComponent(giftId)}/${action}`);
+  wishlist = (): Promise<ApiWishlist> => this.request('GET', '/wishlist');
+  wishlistAdd = (itemId: string): Promise<ApiWishlist> => this.request('POST', '/wishlist', { itemId });
+  wishlistRemove = (itemId: string): Promise<ApiWishlist> =>
+    this.request('DELETE', `/wishlist/${encodeURIComponent(itemId)}`);
+  wishlistOrder = (itemIds: string[]): Promise<ApiWishlist> =>
+    this.request('PUT', '/wishlist/order', { itemIds });
+  wishlistSettings = (patch: { visibility?: 'friends' | 'nobody'; alerts?: boolean }): Promise<ApiWishlist> =>
+    this.request('PATCH', '/wishlist/settings', patch);
+  /** A friend's wish list (403 `wishlist_hidden` when they don't share it with you). */
+  friendWishlist = (userId: string): Promise<{ userId: string; entries: ApiWishlistEntry[] }> =>
+    this.request('GET', `/players/${encodeURIComponent(userId)}/wishlist`);
   shardShop = (): Promise<ApiShardShop> => this.request('GET', '/shop/shards');
   buyShardOffer = (offerId: string, key: string): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> =>
     this.request('POST', '/shop/shards/buy', { offerId }, { idempotencyKey: key });

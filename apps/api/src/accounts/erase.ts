@@ -7,7 +7,8 @@
  *   purchases, pass/challenge progress, ratings, friendships, reports, bans.
  * - Keep active bans as hashed-identifier marks (`moderation/ban-evasion.ts`)
  *   so a new account with the same login, email or device inherits them.
- * - Anonymise the player in other people's match history and drop their
+ * - Anonymise the player in other people's match history (names and stored
+ *   reward summaries) and in club report evidence, and drop their
  *   analytics events (no foreign keys there).
  * - Clear KV state: party membership, presence, live leaderboard rows and
  *   recent chat kept as report evidence.
@@ -22,7 +23,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { notifyClub, removeMember } from '../clubs/service.ts';
 import type { AppContext } from '../context.ts';
-import { events, matchParticipants, users } from '../db/schema.ts';
+import { clubReports, events, matches, matchParticipants, users } from '../db/schema.ts';
 import { announceErasedGifts, settleGiftsOnErasure } from '../economy/gifts.ts';
 import { invalidateBanCache } from '../http/auth.ts';
 import { notFound } from '../http/errors.ts';
@@ -65,6 +66,23 @@ export async function deleteAccount(
     await tx.execute(sql`select set_config('tumble.erase_user', ${userId}, true)`);
     // Before the cascade: an owner's club passes to the next in line rather than losing its owner.
     const removal = await removeMember(tx, userId, now);
+    // The show's stored reward summaries (replayed to game servers) name the
+    // player too; only shows they were in need rewriting.
+    await tx.execute(sql`
+      update ${matches} set rewards = coalesce((
+        select jsonb_agg(e order by ord) from jsonb_array_elements(${matches.rewards}) with ordinality as x(e, ord)
+        where e->>'userId' is distinct from ${userId}
+      ), '[]'::jsonb)
+      where ${matches.id} in (
+        select ${matchParticipants.matchId} from ${matchParticipants} where ${matchParticipants.userId} = ${userId}
+      )`);
+    // Club reports keep recent club chat as evidence; the player's lines go with them.
+    await tx.execute(sql`
+      update ${clubReports} set evidence = (
+        select jsonb_agg(e order by ord) from jsonb_array_elements(${clubReports.evidence}) with ordinality as x(e, ord)
+        where e->'from'->>'userId' is distinct from ${userId}
+      )
+      where ${clubReports.evidence} @> jsonb_build_array(jsonb_build_object('from', jsonb_build_object('userId', ${userId}::text)))`);
     await tx
       .update(matchParticipants)
       .set({ userId: null, name: DELETED_PLAYER_NAME })
@@ -95,7 +113,7 @@ export async function deleteAccount(
   await forgetVoice(ctx, userId);
   await invalidateBanCache(ctx, userId);
   await setPresence(ctx.kv, userId, 'offline', now.getTime());
-  await removeFromLeaderboards(ctx, userId, user.region);
+  await removeFromLeaderboards(ctx, userId);
   await ctx.notifier.notifyMany(friends, { type: 'friend_removed', userId });
   if (club && !club.disbanded) {
     await notifyClub(ctx, club.clubId, { type: 'club_update', clubId: club.clubId });

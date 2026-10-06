@@ -11,11 +11,18 @@ import type { TestApi, TestUser } from './helpers.ts';
 export type Account = TestUser & { email: string };
 
 let clubNo = 0;
+const NAME_WORDS = ['Amber', 'Bramble', 'Cobalt', 'Dapple', 'Ember', 'Fable', 'Gusty', 'Hazel'];
+
+/** A distinct, filter-safe word pair for the nth club. */
+const clubName = (n: number): string =>
+  `${NAME_WORDS[n % NAME_WORDS.length]} ${NAME_WORDS[Math.floor(n / NAME_WORDS.length) % NAME_WORDS.length]} ${Math.floor(n / 64) || ''}`.trim();
 
 /** A fresh, valid club name and tag. */
 export function freshIdentity(): { name: string; tag: string } {
   clubNo++;
-  return { name: `Wobble Crew ${clubNo}${Math.floor(Math.random() * 1000)}`, tag: `W${clubNo % 1000}` };
+  // Counted, not random: random digits sometimes spelled numbers the name filter
+  // blocks (69, 420, 88). Each test API has its own database, so a counter is unique enough.
+  return { name: `Wobble Crew ${clubName(clubNo)}`, tag: `W${clubNo % 1000}` };
 }
 
 /**

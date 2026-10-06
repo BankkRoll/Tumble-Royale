@@ -49,7 +49,10 @@ describe('lockXact', () => {
   // NOTE: PGlite runs one transaction at a time, so the race above only bites on Postgres; this checks the lock itself.
   it('holds an advisory lock until the transaction ends', async () => {
     const held = async (db: DbOrTx) => {
-      const res = await db.execute(sql`select count(*)::int as n from pg_locks where locktype = 'advisory'`);
+      // pg_locks is server-wide; other test workers share the server, so count this database only.
+      const res = await db.execute(
+        sql`select count(*)::int as n from pg_locks where locktype = 'advisory' and database = (select oid from pg_database where datname = current_database())`,
+      );
       return (res as unknown as { rows: { n: number }[] }).rows[0]!.n;
     };
     const inside = await api.ctx.db.transaction(async (tx) => {

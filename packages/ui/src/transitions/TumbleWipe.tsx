@@ -44,6 +44,25 @@ function afterPaint(fn: () => void): () => void {
   return () => cancelAnimationFrame(id);
 }
 
+/**
+ * Starts a wipe phase after paint, with its safety timeout armed right away:
+ * hidden tabs never run animation frames, so a timer armed inside
+ * {@link afterPaint} would never arm and the wipe would never finish.
+ *
+ * @param start - Starts the phase's animations.
+ * @param safetyMs - When to finish the phase regardless.
+ * @param finish - Finishes the phase.
+ * @returns Cancels both.
+ */
+export function startWipePhase(start: () => void, safetyMs: number, finish: () => void): () => void {
+  const safety = window.setTimeout(finish, safetyMs);
+  const cancelStart = afterPaint(start);
+  return () => {
+    cancelStart();
+    window.clearTimeout(safety);
+  };
+}
+
 /** Mounted once by `App`; driven by `ui.wipe`. */
 export function TumbleWipe(): JSX.Element | null {
   const phase = useUI((s) => s.wipe.phase);
@@ -70,43 +89,41 @@ export function TumbleWipe(): JSX.Element | null {
 
     if (phase === 'covering') {
       for (const b of bands) b.style.transform = BELOW;
-      let safety = 0;
-      const cancelStart = afterPaint(() => {
-        playCue('ui.whoosh');
-        bands.forEach((b, i) => {
-          anims.current.push(
-            b.animate([{ transform: BELOW }, { transform: COVERED }], {
-              duration: COVER_MS,
-              delay: i * STAGGER_MS,
-              easing: COVER_EASE,
-              fill: 'forwards',
-            }),
+      // NOTE: background tabs can stall WAAPI; never leave the player stuck behind candy.
+      return startWipePhase(
+        () => {
+          playCue('ui.whoosh');
+          bands.forEach((b, i) => {
+            anims.current.push(
+              b.animate([{ transform: BELOW }, { transform: COVERED }], {
+                duration: COVER_MS,
+                delay: i * STAGGER_MS,
+                easing: COVER_EASE,
+                fill: 'forwards',
+              }),
+            );
+          });
+          const runner = runnerRef.current;
+          if (runner) {
+            anims.current.push(
+              runner.animate(
+                [
+                  { transform: 'translate3d(-25vw, 12vh, 0) rotate(0deg)' },
+                  { transform: 'translate3d(50vw, -14vh, 0) rotate(380deg)', offset: 0.55 },
+                  { transform: 'translate3d(125vw, 6vh, 0) rotate(720deg)' },
+                ],
+                { duration: 760, delay: 60, easing: 'cubic-bezier(.3,.1,.4,1)', fill: 'forwards' },
+              ),
+            );
+          }
+          anims.current[bands.length - 1]?.finished.then(
+            () => ui.getState()._wipeCovered(),
+            () => {},
           );
-        });
-        const runner = runnerRef.current;
-        if (runner) {
-          anims.current.push(
-            runner.animate(
-              [
-                { transform: 'translate3d(-25vw, 12vh, 0) rotate(0deg)' },
-                { transform: 'translate3d(50vw, -14vh, 0) rotate(380deg)', offset: 0.55 },
-                { transform: 'translate3d(125vw, 6vh, 0) rotate(720deg)' },
-              ],
-              { duration: 760, delay: 60, easing: 'cubic-bezier(.3,.1,.4,1)', fill: 'forwards' },
-            ),
-          );
-        }
-        anims.current[bands.length - 1]?.finished.then(
-          () => ui.getState()._wipeCovered(),
-          () => {},
-        );
-        // NOTE: background tabs can stall WAAPI; never leave the player stuck behind candy.
-        safety = window.setTimeout(() => ui.getState()._wipeCovered(), WIPE_COVER_TOTAL_MS + 400);
-      });
-      return () => {
-        cancelStart();
-        window.clearTimeout(safety);
-      };
+        },
+        WIPE_COVER_TOTAL_MS + 400,
+        () => ui.getState()._wipeCovered(),
+      );
     }
 
     if (phase === 'covered') {
@@ -116,29 +133,27 @@ export function TumbleWipe(): JSX.Element | null {
 
     if (phase === 'revealing') {
       for (const b of bands) b.style.transform = COVERED;
-      let safety = 0;
-      const cancelStart = afterPaint(() => {
-        playCue('ui.whoosh');
-        bands.forEach((b, i) => {
-          anims.current.push(
-            b.animate([{ transform: COVERED }, { transform: ABOVE }], {
-              duration: REVEAL_MS,
-              delay: i * STAGGER_MS,
-              easing: REVEAL_EASE,
-              fill: 'forwards',
-            }),
+      return startWipePhase(
+        () => {
+          playCue('ui.whoosh');
+          bands.forEach((b, i) => {
+            anims.current.push(
+              b.animate([{ transform: COVERED }, { transform: ABOVE }], {
+                duration: REVEAL_MS,
+                delay: i * STAGGER_MS,
+                easing: REVEAL_EASE,
+                fill: 'forwards',
+              }),
+            );
+          });
+          Promise.all(anims.current.map((a) => a.finished)).then(
+            () => ui.getState()._wipeDone(),
+            () => {},
           );
-        });
-        Promise.all(anims.current.map((a) => a.finished)).then(
-          () => ui.getState()._wipeDone(),
-          () => {},
-        );
-        safety = window.setTimeout(() => ui.getState()._wipeDone(), WIPE_REVEAL_TOTAL_MS + 400);
-      });
-      return () => {
-        cancelStart();
-        window.clearTimeout(safety);
-      };
+        },
+        WIPE_REVEAL_TOTAL_MS + 400,
+        () => ui.getState()._wipeDone(),
+      );
     }
   }, [phase, seq]);
 

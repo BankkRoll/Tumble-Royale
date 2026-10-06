@@ -19,7 +19,8 @@ const invite = (a: OnlineAccount) =>
     from: { userId: 'u-pal', name: 'Pal', tag: '0002' },
   });
 
-const partyToasts = () => ui.getState().toasts.filter((t) => t.actions?.some((x) => x.id.startsWith('party-')));
+const partyToasts = () =>
+  ui.getState().toasts.filter((t) => t.actions?.some((x) => x.id.startsWith('party-')));
 const openInvites = () =>
   ui.getState().notifications.filter((n) => n.action?.kind === 'partyInvite' && !n.resolved);
 

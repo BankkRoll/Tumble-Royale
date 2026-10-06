@@ -73,7 +73,11 @@ export function menuOwnsInput(
   },
 ): boolean {
   return (
-    s.inputMode === 'menu' || s.dialog !== null || s.overlay !== 'none' || watchChoiceVisible(s) || socialOwnsInput()
+    s.inputMode === 'menu' ||
+    s.dialog !== null ||
+    s.overlay !== 'none' ||
+    watchChoiceVisible(s) ||
+    socialOwnsInput()
   );
 }
 

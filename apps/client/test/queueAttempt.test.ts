@@ -33,7 +33,11 @@ describe('queue attempts', () => {
     const attempts = new QueueAttempts();
     const ticket = deferred<string>();
     const queue = vi.fn(() => Promise.resolve());
-    const run = enqueueParty(attempts, { ticket: () => ticket.promise, queue, cancel: () => Promise.resolve() });
+    const run = enqueueParty(attempts, {
+      ticket: () => ticket.promise,
+      queue,
+      cancel: () => Promise.resolve(),
+    });
     expect(attempts.inFlight).toBe(true);
     expect(attempts.cancel()).toBe(true);
     expect(attempts.ignoringQueued).toBe(true);
@@ -47,7 +51,11 @@ describe('queue attempts', () => {
     const attempts = new QueueAttempts();
     const enq = deferred<void>();
     const cancel = vi.fn(() => Promise.resolve());
-    const run = enqueueParty(attempts, { ticket: () => Promise.resolve('t'), queue: () => enq.promise, cancel });
+    const run = enqueueParty(attempts, {
+      ticket: () => Promise.resolve('t'),
+      queue: () => enq.promise,
+      cancel,
+    });
     await Promise.resolve();
     attempts.cancel();
     expect(attempts.ignoringQueued).toBe(true);

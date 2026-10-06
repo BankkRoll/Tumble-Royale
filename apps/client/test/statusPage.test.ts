@@ -405,7 +405,12 @@ describe('status page controller', () => {
           )
         : Promise.resolve(Response.json(history()))) as typeof fetch;
     const { root } = fakeRoot();
-    const page = startStatusPage({ root, api: 'https://play.example.com/api', fetch: fetchFn, now: () => NOW });
+    const page = startStatusPage({
+      root,
+      api: 'https://play.example.com/api',
+      fetch: fetchFn,
+      now: () => NOW,
+    });
     try {
       const older = page.refresh();
       const newer = page.refresh();

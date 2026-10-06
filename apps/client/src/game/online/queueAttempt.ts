@@ -96,7 +96,10 @@ export interface EnqueueSteps {
  *   attempt was cancelled (anything it enqueued has been withdrawn).
  * @throws The request error, only while the attempt is still current.
  */
-export async function enqueueParty(attempts: QueueAttempts, steps: EnqueueSteps): Promise<'queued' | 'cancelled'> {
+export async function enqueueParty(
+  attempts: QueueAttempts,
+  steps: EnqueueSteps,
+): Promise<'queued' | 'cancelled'> {
   const id = attempts.begin();
   try {
     const ticket = await steps.ticket();

@@ -550,9 +550,16 @@ export function createEditorStore(deps: EditorDeps): StoreApi<EditorState> {
             // the next Update from the open one doesn't overwrite this shared round.
             const stored = await deps.drafts.get(draftId).catch(() => null);
             await deps.drafts
-              .put(stored ? { ...stored, sharedCode: summary.code } : draftOf({ ...s, sharedCode: summary.code }, round))
+              .put(
+                stored
+                  ? { ...stored, sharedCode: summary.code }
+                  : draftOf({ ...s, sharedCode: summary.code }, round),
+              )
               .catch(() => undefined);
-            set({ busy: false, status: { tone: 'ok', text: `Shared ${String(round.name)} as ${summary.code}` } });
+            set({
+              busy: false,
+              status: { tone: 'ok', text: `Shared ${String(round.name)} as ${summary.code}` },
+            });
             void get().refreshDrafts();
             void get().refreshShared();
             return summary.code;

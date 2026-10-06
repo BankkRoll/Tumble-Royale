@@ -100,7 +100,10 @@ describe('padStartAction', () => {
     for (const status of ['connecting', 'reconnecting', 'lost'] as const) {
       const connection = { status };
       expect(padStartAction(state({ connection }), show), status).toBe('none');
-      expect(showMenuKeyAction({ screen: 'round', overlay: 'none', dialog: null, connection }), status).toBeNull();
+      expect(
+        showMenuKeyAction({ screen: 'round', overlay: 'none', dialog: null, connection }),
+        status,
+      ).toBeNull();
     }
     expect(padStartAction(state({ connection: { status: 'online' } }), show)).toBe('openShowMenu');
   });

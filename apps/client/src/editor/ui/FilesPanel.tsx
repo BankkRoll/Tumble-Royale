@@ -70,7 +70,12 @@ export function FilesPanel(): JSX.Element {
                 <div className="ed-muted">{new Date(d.updatedAt).toLocaleString()}</div>
               </div>
               <div className="ed-chips">
-                <button type="button" className="ed-chip" disabled={busy} onClick={() => void openDraft(d.id)}>
+                <button
+                  type="button"
+                  className="ed-chip"
+                  disabled={busy}
+                  onClick={() => void openDraft(d.id)}
+                >
                   Open
                 </button>
                 {confirm === d.id ? (

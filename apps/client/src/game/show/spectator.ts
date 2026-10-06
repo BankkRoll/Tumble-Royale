@@ -188,7 +188,11 @@ export type SpectateFollowUp =
  * @param finishedFor - Seconds since the watched player dropped out of the targets.
  * @returns The step.
  */
-export function spectateFollowUp(list: readonly number[], watchedId: number, finishedFor: number): SpectateFollowUp {
+export function spectateFollowUp(
+  list: readonly number[],
+  watchedId: number,
+  finishedFor: number,
+): SpectateFollowUp {
   const i = list.indexOf(watchedId);
   if (i >= 0) return { kind: 'refresh', index: i };
   if (finishedFor < SPECTATE_MOVE_ON_S || list.length === 0) return { kind: 'finished' };

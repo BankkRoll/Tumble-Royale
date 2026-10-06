@@ -177,7 +177,13 @@ describe('club controller', () => {
   it('drops club chat history that lands after the player left the club', async () => {
     let release!: () => void;
     let api = mine;
-    const line = { id: '7', clubId: 'c-1', from: { userId: 'u-pal', name: 'Pal', tag: '0002' }, text: 'old', at: 1 };
+    const line = {
+      id: '7',
+      clubId: 'c-1',
+      from: { userId: 'u-pal', name: 'Pal', tag: '0002' },
+      text: 'old',
+      at: 1,
+    };
     const c = new ClubController(
       fakeApi({
         myClub: async () => api,

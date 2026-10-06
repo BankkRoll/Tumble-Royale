@@ -435,14 +435,23 @@ describe('audit log paging', () => {
       page: { entries: [entry('p2')], nextBefore: null },
     });
     expect(s.entries).toEqual([]);
-    s = auditReducer(s, { type: 'loaded', key: '?action=flag.', page: { entries: [entry('f1')], nextBefore: null } });
+    s = auditReducer(s, {
+      type: 'loaded',
+      key: '?action=flag.',
+      page: { entries: [entry('f1')], nextBefore: null },
+    });
     expect(s.entries.map((e) => e.id)).toEqual(['f1']);
   });
 
   it('appends the next page of the same filter', () => {
     let s = loaded('', ['a'], 10);
     s = auditReducer(s, { type: 'more', key: '' });
-    s = auditReducer(s, { type: 'appended', key: '', before: 10, page: { entries: [entry('b')], nextBefore: null } });
+    s = auditReducer(s, {
+      type: 'appended',
+      key: '',
+      before: 10,
+      page: { entries: [entry('b')], nextBefore: null },
+    });
     expect(s.entries.map((e) => e.id)).toEqual(['a', 'b']);
     expect(s.next).toBeNull();
     expect(s.loading).toBe(false);

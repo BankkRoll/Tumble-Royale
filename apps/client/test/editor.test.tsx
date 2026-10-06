@@ -326,7 +326,13 @@ describe('editor store', () => {
         fetchRound: (code) =>
           new Promise((resolve) => {
             release = () =>
-              resolve({ code, name: 'Their Race', description: '', author: null, definition: starterRound() });
+              resolve({
+                code,
+                name: 'Their Race',
+                description: '',
+                author: null,
+                definition: starterRound(),
+              });
           }),
       }).api,
     );

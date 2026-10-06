@@ -26,7 +26,15 @@ class BrokenRoundSession extends ShowSession {
   /** Puts a round under the held loading wipe and asks for its build. */
   load(): void {
     this.round = {
-      start: { index: 0, isFinal: false, round: { id: 'broken' }, players: [], seed: 1, stage: 0, qualifyTarget: 1 },
+      start: {
+        index: 0,
+        isFinal: false,
+        round: { id: 'broken' },
+        players: [],
+        seed: 1,
+        stage: 0,
+        qualifyTarget: 1,
+      },
       source: null,
       view: null,
       hud: null,

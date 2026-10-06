@@ -101,7 +101,8 @@ const PAD_VIEW = 8;
 /** Keys that open the chat. */
 const CHAT_KEYS = new Set(['Enter', 'NumpadEnter', 'KeyT']);
 /** Pointer targets that keep their press: the chat and real controls (the replay's own Skip included). */
-const OWN_POINTER_SELECTOR = '.tr-chat, .tr-chat-wrap, button, a, input, textarea, select, [role="button"], [data-nav]';
+const OWN_POINTER_SELECTOR =
+  '.tr-chat, .tr-chat-wrap, button, a, input, textarea, select, [role="button"], [data-nav]';
 
 /**
  * Keys and buttons that belong to something else while the replay plays:

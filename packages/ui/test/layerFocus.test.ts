@@ -46,7 +46,8 @@ class FakeElement {
     if (!this.parent) return;
     this.parent.children.splice(this.parent.children.indexOf(this), 1);
     this.parent = null;
-    if (doc.activeElement !== doc.body && !(doc.activeElement as FakeElement).isConnected) doc.activeElement = doc.body;
+    if (doc.activeElement !== doc.body && !(doc.activeElement as FakeElement).isConnected)
+      doc.activeElement = doc.body;
   }
 
   contains(other: FakeElement | null): boolean {

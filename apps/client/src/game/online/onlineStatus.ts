@@ -62,7 +62,8 @@ export class OnlineStatusCheck {
       result = { up: false };
     }
     if (gen !== this.gen) return null;
-    const status: OnlineStatus = this.settled() ??
+    const status: OnlineStatus =
+      this.settled() ??
       (result.up
         ? { state: 'online', ...result.counts }
         : { state: 'offline', message: 'The game servers are offline right now.' });

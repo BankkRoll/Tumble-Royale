@@ -77,7 +77,8 @@ export function voteAnnouncement(vote: RoundVoteState): string {
 export function voteFooter(vote: RoundVoteState): string {
   if (vote.result?.reason === 'tie') return 'A tie! The show picked one of the leaders at random.';
   if (vote.result?.reason === 'noVotes') return 'Nobody voted, so the show picked.';
-  if (vote.result) return 'Most votes wins.';
+  // A discounted bot crowd can out-count the winner, so "most votes wins" would read as a bug.
+  if (vote.result) return vote.botsDiscounted ? 'Player votes outweigh bot votes.' : 'Most votes wins.';
   const tally = `${vote.voted} of ${vote.eligible} voted`;
   if (!vote.canVote) return `${tally} · only players still in the show can vote`;
   return vote.botsDiscounted ? `${tally} · bot votes count for less than yours` : tally;

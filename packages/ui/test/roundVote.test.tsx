@@ -120,7 +120,12 @@ describe('vote copy', () => {
   });
 
   it('explains how the winner was decided', () => {
-    expect(voteFooter({ ...VOTE, result: { winner: 0, reason: 'votes' } })).toBe('Most votes wins.');
+    expect(voteFooter({ ...VOTE, result: { winner: 0, reason: 'votes' } })).toBe(
+      'Player votes outweigh bot votes.',
+    );
+    expect(voteFooter({ ...VOTE, botsDiscounted: false, result: { winner: 0, reason: 'votes' } })).toBe(
+      'Most votes wins.',
+    );
     expect(voteFooter({ ...VOTE, result: { winner: 0, reason: 'tie' } })).toMatch(/tie/i);
     expect(voteFooter({ ...VOTE, result: { winner: 0, reason: 'noVotes' } })).toMatch(/Nobody voted/);
     expect(voteFooter({ ...VOTE, botsDiscounted: false })).toBe('5 of 30 voted');

@@ -199,3 +199,56 @@ renders one frame per animation frame with encoder back-pressure. The MP4 and
 WebM muxers are written in-house (one video track, laid out once the samples
 are known) because the small npm muxers are either deprecated or not
 MIT/Apache.
+
+## Gifts are their own ledger records, not purchases
+
+A gift is a `gifts` row plus at most two ledger rows on the sender (`gift`
+and `gift_refund`, both ref `gift:<id>`), not a `purchases` row on either
+side. Reusing purchases would have put gifts into `GET /purchases` and the
+self-service refund path, letting a recipient refund something they never
+paid for, or a sender refund an item someone else already wears. Keeping
+them apart makes "no refund after opening" structural instead of a special
+case in the refund policy.
+
+The recipient's copy has inventory source `gift`, which store refunds never
+touch and a staff reversal removes; an earned grant re-sources it, as it
+already did for `store` copies, so a reversal never takes an item the player
+earned another way. Every gift operation locks both profiles in id order
+before deciding, which serialises double submits, two friends gifting the
+same item, and decline/cancel races without a lock table of its own.
+Overdue gifts are auto-accepted lazily on read and by the retention sweep,
+so the 30-day rule needs no new background process.
+
+## Custom rounds: one validator, no physics, the server ships the definition
+
+Player-made rounds are untrusted data that run on the same game servers as
+built-in rounds, so one validator (`@tumble/content/custom`) runs unchanged in
+the editor, in the API on every publish and update, and on the game server
+before a show plays the round, and again on each client before it builds
+what the server sent. The editor's verdict is never trusted.
+
+The playability checks (spawn on solid ground, reachable finish) use a
+physics-free model of walkable surfaces rather than Rapier: the API does not
+ship the physics engine, and the same answer everywhere matters more than a
+precise one. The model errs toward "reachable"; a false "unreachable" would
+block a fair round, while a false "reachable" is caught by Test play.
+
+Shared rounds are not in any client build. The game server fetches the
+stored definition over the signed internal channel when a private show
+starts, holds the show in its lobby until it has it, and sends the exact
+definition in `joinRound`, so the authoritative sim and every prediction sim
+build the same round. Codes that are gone or fail validation drop out and the
+show falls back to its base playlist instead of stalling. A takedown stops a
+code for the editor, lobbies and every show created afterwards; a show
+already running finishes with its copy.
+
+Publishing needs a full (non-guest) account: shared rounds reach other
+players and must be attributable, and a guest account is one cookie clear
+away from gone. Guests still build, save locally and test play. Bots on
+custom races follow generated straight legs between checkpoints with jumps at
+gaps, and the editor says when a leg crosses a gap they cannot jump; we chose
+honest and simple over a navmesh.
+
+The editor is its own Vite entry (`/editor`): players never download it with
+the game, and it shares the origin so it can reuse the player's session and
+hand Test play rounds to the game tab through IndexedDB.

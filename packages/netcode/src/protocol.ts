@@ -4,7 +4,7 @@
  * bit budgets. Every binary message starts with one byte: {@link MsgType}.
  */
 import { Packr } from 'msgpackr';
-import type { RoundPhaseId, ShowPhaseId } from '@tumble/shared';
+import type { RoundDefinitionInput, RoundPhaseId, ShowPhaseId } from '@tumble/shared';
 import type { MatchPlayerInfo } from './simTypes.ts';
 import type { BitReader, BitWriter } from './bits.ts';
 import type { Bounds } from './quantize.ts';
@@ -239,6 +239,12 @@ export interface JoinRoundMsg {
   mutatorId?: string | null;
   /** Round timer multiplier the server applies (0.5–2). Absent: 1. */
   roundTimeScale?: number;
+  /**
+   * A shared custom round (`custom:<CODE>` ids) is not in any client build:
+   * the server sends the exact definition it plays. Clients validate it with
+   * the same rules before building it.
+   */
+  round?: RoundDefinitionInput;
 }
 
 /** Show context, sent once per connection right after Welcome. */

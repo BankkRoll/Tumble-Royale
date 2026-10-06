@@ -51,15 +51,28 @@ What a player can do today:
   seasonal soft reset) and a gentler First Show for newcomers; players vote
   on the next round between rounds (server-authoritative, seeded tie-breaks)
 - **Private shows:** invite codes, host-picked rounds (with or without round
-  voting) and rules changed live,
-  kick/ban, lock, transfer host, ready checks and spectator slots
+  voting) and rules changed live, kick/ban, lock, transfer host, ready checks
+  and spectator slots; hosts can also add a player-made round by its share
+  code
+- **Round editor (`/editor`):** build races, survivals, hunts and logic rounds
+  from the shipped level parts and obstacle library in 3D (grid snapping,
+  move/turn/size gizmo, multi-select, copy/paste, undo/redo, generated
+  obstacle settings), with live checks (reachable finish, spawn on solid
+  ground, 100-player budgets), local saves, JSON import/export, Test play
+  against bots, and sharing by code (full accounts; reports and takedowns go
+  through the admin console)
 - **Social:** friends (requests, presence, join), party and in-show text chat
   with a filter, quick pings, report / block / mute, streamer mode
+- **Clubs:** persistent groups of up to 50 with owner / officer / member
+  roles, open, request or invite-only joining, a club chat, club tags beside
+  names, "Party up" with online members, weekly club goals that pay everyone
+  who played, discovery and moderation from the admin console
 - **Progression:** accounts (guest, Discord, Google, email link), seasons,
   a 100-tier pass, daily/weekly/seasonal/milestone challenges, 45
   achievements (some hidden), a collection log, a daily login streak,
   limited-time events with their own challenges, points track and cosmetics,
   store with self-service refunds (Gem packs go to a staff refund queue),
+  gifting store items to friends and wish lists friends can gift from,
   Crown Shard shop, free Gem paths, live news and notifications
 - **Watch & share:** keep spectating after elimination, round replays (save and
   reopen them), photo mode, share cards for wins and deep runs, and 5–15 s
@@ -175,7 +188,9 @@ pnpm admin errors top                                   # most frequent client e
   Vs Bots keeps working and running shows finish on their game servers.
 - **Feature flags** (`store.enabled`, `chat.global`, `party.lobbyGames`,
   `replays.enabled`, `mutators.chaos`, `analytics.sample`, `events.enabled`,
-  `shows.mapVoting`) default to on.
+  `clubs.enabled`, `shows.mapVoting`) default to on. With `clubs.enabled`
+  off every club route answers `503 feature_disabled`, club chat stops and
+  shows stop counting toward club goals; clubs and their members are kept.
   The client fetches them at boot and on reconnect and caches them for
   offline boots; the matchmaker and game servers read them from the API
   over the internal HMAC channel, cached 30 s.
@@ -219,6 +234,7 @@ how the game runs or point the client at another server.
 | `?fresh=1`                                  | Ignore the saved profile (replays the first-launch flow)          |
 | `?api=0` / `?apiUrl=` / `?mmUrl=` / `?gs=`  | Disable or redirect the API, matchmaker or game server            |
 | `?scene=test`                               | Phase 0 renderer/physics test scene                               |
+| `?playtest=1`                               | Test play the round editor's last saved Test play round           |
 
 ### Dev sandboxes
 

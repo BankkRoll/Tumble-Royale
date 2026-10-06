@@ -46,6 +46,7 @@ import {
   type RoundStatus,
   type SnapshotFrame,
 } from '@tumble/netcode';
+import { isCustomRoundId } from '@tumble/content/custom';
 import type { CharacterInput, SimEvent } from '@tumble/sim';
 import { assignBotSkills, assignShowParties, lobbySpawnPoint } from '@tumble/sim/show';
 import {
@@ -253,7 +254,9 @@ export class Room {
   private readonly slots = new Map<number, PlayerSlot>();
   private readonly chat = new ChatRelay();
   private readonly sessions = new Set<ClientSession>();
-  private readonly show: ShowController;
+  private show: ShowController;
+  /** A custom show is still fetching its picked rounds; it starts once they are in (or failed). */
+  private preparing = false;
   private sim: MatchSim | null = null;
   private round: RoundDefinition | null = null;
   private quantizer: PositionQuantizer | null = null;
@@ -354,6 +357,22 @@ export class Room {
       leaders: this.leaders,
       quantizer: new PositionQuantizer({ min: { x: -1, y: -1, z: -1 }, max: { x: 1, y: 1, z: 1 } }),
     };
+    const prep = match ? deps.prepareMatch?.(match) : null;
+    if (prep) {
+      this.preparing = true;
+      const ready = (): void => {
+        this.preparing = false;
+        // Built again so the show sees what the preparation loaded. Nothing has
+        // reached the first controller yet: the show starts after this.
+        if (this.state === 'lobby') this.show = deps.createShowController({ roomId: id, match });
+      };
+      prep.then(ready, (err: unknown) => {
+        this.log(
+          `[room ${id}] match preparation failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        ready();
+      });
+    }
   }
 
   /** Global sim tick of the room's current state (lag-compensation timeline). */
@@ -744,8 +763,9 @@ export class Room {
       if (humans === 0) {
         this.firstJoinAt = -1;
       } else if (
-        now - this.firstJoinAt >= this.config.fillWaitMs ||
-        humans >= Math.min(this.config.startAtHumans, this.config.capacity)
+        !this.preparing &&
+        (now - this.firstJoinAt >= this.config.fillWaitMs ||
+          humans >= Math.min(this.config.startAtHumans, this.config.capacity))
       ) {
         this.startShow();
       } else if (now - this.lastLobbyBroadcast >= 1000) {
@@ -1458,6 +1478,8 @@ export class Room {
       variationId: this.sim.variationId ?? null,
       mutatorId: plan?.mutatorId ?? null,
       roundTimeScale: plan?.roundTimeScale ?? 1,
+      // Clients do not ship shared rounds: they build this exact definition.
+      ...(isCustomRoundId(this.round.id) ? { round: this.round } : {}),
     });
   }
 

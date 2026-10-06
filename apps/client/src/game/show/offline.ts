@@ -7,7 +7,7 @@
  * can capture every step for interpolation, and the UI can hold the show clock
  * while a title card is on screen.
  */
-import { showRoundCatalog } from '@tumble/content/rounds';
+import { catalogWithCustomRounds } from '../../customRounds/registry.ts';
 import {
   MAX_PLAYERS,
   RoundPhase,
@@ -78,7 +78,7 @@ export class OfflineShowSession extends ShowSession {
     roundTimeScale?: number,
   ) {
     super(ctx);
-    this.rounds = showRoundCatalog();
+    this.rounds = catalogWithCustomRounds();
     this.show = createOfflineShow({
       R: ctx.R,
       deps: ctx.matchDeps,

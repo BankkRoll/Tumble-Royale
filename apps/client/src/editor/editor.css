@@ -1,0 +1,472 @@
+:root {
+  --ed-bg: #17112b;
+  --ed-panel: #221a3d;
+  --ed-panel-2: #2c2350;
+  --ed-line: #3d3268;
+  --ed-text: #f1ecff;
+  --ed-muted: #a99fd0;
+  --ed-accent: #ffd23f;
+  --ed-go: #6ee7a8;
+  --ed-bad: #ff5d7a;
+  --ed-warn: #ffb347;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#editor {
+  margin: 0;
+  height: 100%;
+  background: var(--ed-bg);
+  color: var(--ed-text);
+  font:
+    14px/1.4 system-ui,
+    sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+.ed-app {
+  display: grid;
+  grid-template-columns: 300px 1fr 330px;
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    'bar bar bar'
+    'left view right';
+  height: 100%;
+  overflow: hidden;
+}
+
+.ed-toolbar {
+  grid-area: bar;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  background: var(--ed-panel);
+  border-bottom: 1px solid var(--ed-line);
+}
+.ed-title {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+}
+.ed-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ed-group--end {
+  margin-left: auto;
+}
+.ed-status-line {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 13px;
+  color: var(--ed-muted);
+}
+.ed-status-line--ok {
+  color: var(--ed-go);
+}
+.ed-status-line--error {
+  color: var(--ed-bad);
+}
+
+.ed-tool,
+.ed-chip,
+.ed-btn,
+.ed-tab {
+  border: 1px solid var(--ed-line);
+  background: var(--ed-panel-2);
+  border-radius: 8px;
+  padding: 6px 10px;
+  min-height: 34px;
+  cursor: pointer;
+}
+.ed-tool:disabled,
+.ed-chip:disabled,
+.ed-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.ed-tool.is-on,
+.ed-chip.is-on,
+.ed-tab.is-on {
+  background: var(--ed-accent);
+  border-color: var(--ed-accent);
+  color: #21183a;
+}
+.ed-tool:focus-visible,
+.ed-chip:focus-visible,
+.ed-btn:focus-visible,
+.ed-tab:focus-visible,
+.ed-input:focus-visible {
+  outline: 2px solid var(--ed-accent);
+  outline-offset: 1px;
+}
+.ed-btn {
+  font-weight: 600;
+}
+.ed-btn--go {
+  background: var(--ed-go);
+  border-color: var(--ed-go);
+  color: #102a1d;
+}
+.ed-btn--danger,
+.ed-chip--danger {
+  background: var(--ed-bad);
+  border-color: var(--ed-bad);
+  color: #2a0d14;
+}
+.ed-chip {
+  padding: 4px 9px;
+  min-height: 30px;
+  font-size: 13px;
+}
+.ed-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.ed-left,
+.ed-right {
+  background: var(--ed-panel);
+  overflow: auto;
+}
+.ed-left {
+  grid-area: left;
+  border-right: 1px solid var(--ed-line);
+}
+.ed-right {
+  grid-area: right;
+  border-left: 1px solid var(--ed-line);
+  padding: 10px;
+}
+.ed-view {
+  grid-area: view;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+.ed-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+.ed-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  position: sticky;
+  top: 0;
+  background: var(--ed-panel);
+  z-index: 1;
+}
+.ed-tab {
+  flex: 1;
+}
+.ed-tabpanel {
+  padding: 0 10px 12px;
+}
+
+.ed-section {
+  margin: 10px 0 14px;
+}
+.ed-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.ed-section-head h2 {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ed-muted);
+}
+.ed-hint,
+.ed-muted {
+  color: var(--ed-muted);
+  font-size: 13px;
+}
+.ed-hint {
+  margin: 4px 0 8px;
+}
+.ed-empty p {
+  color: var(--ed-muted);
+}
+
+.ed-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+.ed-row > label,
+.ed-row-label {
+  font-size: 13px;
+  color: var(--ed-muted);
+}
+.ed-row > label.is-changed {
+  color: var(--ed-accent);
+}
+.ed-row-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.ed-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--ed-line);
+  background: var(--ed-bg);
+}
+.ed-row-control > .ed-input {
+  flex: 1;
+}
+.ed-input--num {
+  width: 6em;
+}
+.ed-input--small {
+  width: auto;
+}
+.ed-input[aria-invalid='true'] {
+  border-color: var(--ed-bad);
+}
+.ed-vec3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+.ed-vec3 .ed-input--num {
+  width: 100%;
+}
+.ed-field-error {
+  flex-basis: 100%;
+  color: var(--ed-bad);
+  font-size: 12px;
+}
+.ed-reset {
+  border: 0;
+  background: none;
+  color: var(--ed-accent);
+  cursor: pointer;
+  min-width: 28px;
+  min-height: 28px;
+}
+.ed-json {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.ed-points {
+  border: 1px solid var(--ed-line);
+  border-radius: 8px;
+  margin: 6px 0;
+  padding: 6px;
+}
+.ed-point {
+  display: flex;
+  align-items: center;
+}
+.ed-point .ed-row {
+  flex: 1;
+  grid-template-columns: 40px 1fr;
+}
+.ed-id {
+  font-size: 12px;
+  color: var(--ed-muted);
+}
+
+.ed-issues {
+  border-top: 1px solid var(--ed-line);
+  margin-top: 10px;
+  padding-top: 10px;
+}
+.ed-badge {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 99px;
+}
+.ed-badge--bad {
+  background: var(--ed-bad);
+  color: #2a0d14;
+}
+.ed-badge--good {
+  background: var(--ed-go);
+  color: #102a1d;
+}
+.ed-issue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.ed-issue button {
+  width: 100%;
+  text-align: left;
+  background: var(--ed-panel-2);
+  border: 1px solid var(--ed-line);
+  border-left-width: 4px;
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.ed-issue--error button {
+  border-left-color: var(--ed-bad);
+}
+.ed-issue--warning button {
+  border-left-color: var(--ed-warn);
+}
+.ed-issue-kind {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--ed-muted);
+}
+.ed-budgets {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+.ed-budget {
+  display: grid;
+  grid-template-columns: 100px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.ed-budget meter {
+  width: 100%;
+}
+.ed-budget--over .ed-budget-num {
+  color: var(--ed-bad);
+}
+.ed-budget--near .ed-budget-num {
+  color: var(--ed-warn);
+}
+
+.ed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.ed-list-row {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  background: var(--ed-panel-2);
+  border-radius: 8px;
+}
+.ed-list-row.is-current {
+  outline: 1px solid var(--ed-accent);
+}
+.ed-status {
+  font-size: 12px;
+  color: var(--ed-muted);
+}
+.ed-status--taken_down {
+  color: var(--ed-bad);
+}
+.ed-code {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+}
+.ed-code strong {
+  letter-spacing: 0.12em;
+  color: var(--ed-accent);
+}
+.ed-inline {
+  display: flex;
+  gap: 6px;
+}
+.ed-viewing,
+.ed-report {
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--ed-panel-2);
+  display: grid;
+  gap: 6px;
+}
+.ed-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.ed-sheet-toggles {
+  display: none;
+}
+
+/* Tablets in portrait and small screens: the side panels become sheets over the view. */
+@media (max-width: 900px) {
+  .ed-app {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas:
+      'bar'
+      'toggles'
+      'view';
+  }
+  .ed-sheet-toggles {
+    grid-area: toggles;
+    display: flex;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--ed-panel);
+  }
+  .ed-left,
+  .ed-right {
+    display: none;
+    grid-area: view;
+    z-index: 2;
+    max-height: 100%;
+    width: min(360px, 100%);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
+  }
+  .ed-app--sheet-side .ed-left {
+    display: block;
+    justify-self: start;
+  }
+  .ed-app--sheet-inspect .ed-right {
+    display: block;
+    justify-self: end;
+  }
+  .ed-tool,
+  .ed-chip,
+  .ed-btn,
+  .ed-tab {
+    min-height: 40px;
+  }
+}

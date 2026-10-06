@@ -41,6 +41,7 @@ import type { TumblerLoadout } from '@tumble/render/scenes';
 import { hashString } from '@tumble/shared';
 import {
   grantText,
+  maskedName,
   ui,
   type ChallengeCadence,
   type ChallengesData,
@@ -90,8 +91,20 @@ import {
   uiPatternToContent,
 } from '../cosmetics.ts';
 import { loadoutWithItem, profileDressing, randomizedLoadout } from '../profile.ts';
+import { ClubController } from '../social/clubController.ts';
 import { SocialController } from '../social/socialController.ts';
 import { onlineStoreShelves } from '../storeOffers.ts';
+import {
+  giftErrorText,
+  giftEventToast,
+  toGiftPicker,
+  toGifts,
+  toWishlist,
+  toWishlistEntries,
+  type ApiWishlist,
+  type GiftEvent,
+  type ItemResolver,
+} from './gifts.ts';
 import { refundErrorText, refundToast, toPurchaseHistory } from './purchaseHistory.ts';
 import { explainGemCheckoutRefusal, gemCheckoutMode, type GemCheckoutMode } from './gemCheckout.ts';
 import type { PartyLobbyLink } from '../views/partyLobbyView.ts';
@@ -242,6 +255,8 @@ export class OnlineAccount {
   private notifications: NotificationItem[] = [];
   /** Friends, requests, blocking, reports and party chat. */
   readonly social: SocialController;
+  /** The player's club, its chat and goals. */
+  readonly clubs: ClubController;
   /** Party members' live menu Tumblers over the realtime gateway. */
   readonly lobbyLink: PartyLobbyLink;
   /** Last reported presence, re-sent whenever the gateway reconnects. */
@@ -279,6 +294,11 @@ export class OnlineAccount {
       colorsOf: (id) => this.colorsOf(id),
       applyParty: (p) => this.applyParty(p),
       partyId: () => this.party?.id ?? null,
+    });
+    this.clubs = new ClubController(api, this.realtime, {
+      userId: () => this.userId,
+      applyParty: (p) => this.applyParty(p),
+      notify: (kind, title, body, action) => this.addNotification(kind, title, body, action),
     });
   }
 
@@ -358,6 +378,8 @@ export class OnlineAccount {
       this.refreshFriends(),
       this.refreshParty(),
       this.history(),
+      this.loadWishlist(),
+      this.loadGifts(),
     ]);
     return true;
   }
@@ -1112,6 +1134,273 @@ export class OnlineAccount {
     if (after) s.setPurchaseHistory({ ...after, busyId: null });
   }
 
+  // ---------------------------------------------------------------------------
+  // Gifts & wish lists
+  // ---------------------------------------------------------------------------
+
+  private readonly resolveItem: ItemResolver = (id) => {
+    const c = getCosmetic(id);
+    return c ? uiItem(c, this.owns(id)) : null;
+  };
+
+  /** The other party's name for toasts, masked under Streamer Mode. */
+  private giftName(p: { userId: string; name: string; tag: string } | null): string {
+    if (!p) return 'Someone';
+    return ui.getState().settings.gameplay.streamerMode ? maskedName(p.userId) : p.name;
+  }
+
+  /** Loads Profile → Gifts, keeping what is shown (and a running reveal) while it refreshes. */
+  async loadGifts(): Promise<void> {
+    const s = ui.getState();
+    const current = s.gifts;
+    s.setGifts(
+      current
+        ? { ...current, status: 'loading' }
+        : {
+            status: 'loading',
+            received: [],
+            sent: [],
+            unopened: 0,
+            limits: { daily: 0, sentToday: 0, resetsAt: 0 },
+            policy: { minFriendDays: 0, minAccountDays: 0, autoAcceptDays: 0, messageMax: 80 },
+          },
+    );
+    try {
+      const next = toGifts(await this.api.gifts(), this.resolveItem);
+      const latest = ui.getState().gifts;
+      s.setGifts({ ...next, busyId: latest?.busyId ?? null, revealed: latest?.revealed ?? null });
+    } catch (err) {
+      const latest = ui.getState().gifts!;
+      s.setGifts({ ...latest, status: 'error', error: giftErrorText(err) });
+    }
+  }
+
+  /** Opens or declines a received gift, or cancels a sent one (the latter two already confirmed). */
+  async giftAction(giftId: string, action: 'open' | 'decline' | 'cancel'): Promise<void> {
+    const s = ui.getState();
+    if (s.gifts) s.setGifts({ ...s.gifts, busyId: giftId });
+    try {
+      const r = await this.api.giftAction(giftId, action);
+      if (action === 'open' && r.gift.status === 'opened' && (r.granted?.length ?? 0) > 0) {
+        for (const id of r.granted!) this.owned.add(id);
+        this.pushInventory();
+        const items = r.granted!.flatMap((id) => {
+          const item = this.resolveItem(id);
+          return item ? [item] : [];
+        });
+        const g = ui.getState().gifts;
+        if (g && items.length > 0) s.setGifts({ ...g, revealed: { giftId, items } });
+      } else if (action === 'open' && r.gift.status === 'returned') {
+        s.pushToast({
+          kind: 'info',
+          title: 'You already had this one',
+          body: `${r.gift.title} went back to ${this.giftName(r.gift.from)}, who got their currency back.`,
+        });
+      } else if (action === 'decline') {
+        s.pushToast({ kind: 'info', title: 'Gift declined', body: 'The sender got their currency back.' });
+      } else if (action === 'cancel') {
+        s.pushToast({
+          kind: 'success',
+          title: 'Gift cancelled',
+          body: 'Your currency is back in your wallet.',
+        });
+        await this.refreshProgress();
+      }
+    } catch (err) {
+      s.showDialog({
+        id: 'gift-failed',
+        kind: 'error',
+        title: action === 'open' ? "Couldn't open that gift" : "Couldn't do that",
+        body: giftErrorText(err),
+        ...(err instanceof ApiError && err.code ? { code: err.code } : {}),
+      });
+    }
+    await this.loadGifts();
+    const after = ui.getState().gifts;
+    if (after) s.setGifts({ ...after, busyId: null });
+  }
+
+  /** Opens the gift sheet for an offer and asks which friends can receive it. */
+  async openGiftPicker(offerId: string, recipientId?: string): Promise<void> {
+    const s = ui.getState();
+    const bundle = s.store?.bundles?.find((b) => b.id === offerId);
+    const heroId = bundle?.item.id ?? offerId;
+    const title = bundle?.title ?? getCosmetic(offerId)?.name ?? 'this item';
+    const messageMax = s.gifts?.policy.messageMax || 80;
+    s.setGiftPicker({
+      offerId,
+      title,
+      item: this.resolveItem(heroId),
+      status: 'loading',
+      sender: null,
+      friends: [],
+      sentToday: s.gifts?.limits.sentToday ?? 0,
+      dailyLimit: s.gifts?.limits.daily ?? 0,
+      messageMax,
+      recipientId: recipientId ?? null,
+    });
+    try {
+      const p = await this.api.giftPicker(offerId);
+      if (ui.getState().giftPicker?.offerId !== offerId) return;
+      s.setGiftPicker(toGiftPicker(p, this.resolveItem, heroId, recipientId ?? null, messageMax));
+    } catch (err) {
+      const open = ui.getState().giftPicker;
+      if (open?.offerId === offerId) s.setGiftPicker({ ...open, status: 'error', error: giftErrorText(err) });
+    }
+  }
+
+  /**
+   * Sends a gift the player confirmed. A lost answer is retried with the
+   * same key, which the API replays instead of charging twice.
+   */
+  async sendGift(offerId: string, recipientId: string, message?: string): Promise<void> {
+    const s = ui.getState();
+    const picker = s.giftPicker;
+    if (picker) s.setGiftPicker({ ...picker, status: 'sending' });
+    const key = idempotencyKey('gift');
+    const body = { recipientId, offerId, ...(message ? { message } : {}) };
+    try {
+      let res;
+      try {
+        res = await this.api.sendGift(body, key);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 0) res = await this.api.sendGift(body, key);
+        else throw err;
+      }
+      if (this.me) this.me.wallet = res.wallet;
+      this.pushProfile();
+      s.setGiftPicker(null);
+      s.pushToast({
+        kind: 'success',
+        title: `Gift sent to ${this.giftName(res.gift.to)}!`,
+        body: 'You can cancel it under Profile → Gifts until they open it.',
+      });
+      await this.loadGifts();
+    } catch (err) {
+      s.showDialog({
+        id: 'gift-failed',
+        kind: 'error',
+        title: "Couldn't send that gift",
+        body: giftErrorText(err),
+        ...(err instanceof ApiError && err.code ? { code: err.code } : {}),
+      });
+      if (ui.getState().giftPicker) await this.openGiftPicker(offerId, recipientId);
+    }
+  }
+
+  private applyWishlist(w: ApiWishlist): void {
+    ui.getState().setWishlist(toWishlist(w, this.resolveItem));
+  }
+
+  private async changeWishlist(run: () => Promise<ApiWishlist>, failure: string): Promise<void> {
+    try {
+      this.applyWishlist(await run());
+    } catch (err) {
+      const current = ui.getState().wishlist;
+      ui.getState().pushToast({ kind: 'warning', title: failure, body: giftErrorText(err) });
+      if (current) await this.loadWishlist();
+    }
+  }
+
+  /** Loads Profile → Wish list (and the stars on store items). */
+  async loadWishlist(): Promise<void> {
+    try {
+      this.applyWishlist(await this.api.wishlist());
+    } catch (err) {
+      const current = ui.getState().wishlist;
+      ui.getState().setWishlist({
+        ...(current ?? { entries: [], visibility: 'friends', alerts: true, limit: 50 }),
+        status: 'error',
+        error: giftErrorText(err),
+      });
+    }
+  }
+
+  /** Puts an offer on the wish list or takes it off, showing the change at once. */
+  async wishlistToggle(itemId: string, on: boolean): Promise<void> {
+    const s = ui.getState();
+    if (s.wishlist && !on)
+      s.setWishlist({ ...s.wishlist, entries: s.wishlist.entries.filter((e) => e.itemId !== itemId) });
+    await this.changeWishlist(
+      () => (on ? this.api.wishlistAdd(itemId) : this.api.wishlistRemove(itemId)),
+      on ? "Couldn't add that to your wish list" : "Couldn't remove that",
+    );
+    if (on) s.pushToast({ kind: 'success', title: 'Added to your wish list' });
+  }
+
+  /** Saves a new wish list order, showing it at once. */
+  async wishlistReorder(itemIds: string[]): Promise<void> {
+    const s = ui.getState();
+    if (s.wishlist) {
+      const by = new Map(s.wishlist.entries.map((e) => [e.itemId, e]));
+      s.setWishlist({ ...s.wishlist, entries: itemIds.flatMap((id) => (by.has(id) ? [by.get(id)!] : [])) });
+    }
+    await this.changeWishlist(() => this.api.wishlistOrder(itemIds), "Couldn't reorder your wish list");
+  }
+
+  /** Changes wish list privacy or store alerts. */
+  async wishlistSettings(patch: { visibility?: 'friends' | 'nobody'; alerts?: boolean }): Promise<void> {
+    const s = ui.getState();
+    if (s.wishlist) s.setWishlist({ ...s.wishlist, ...patch });
+    await this.changeWishlist(() => this.api.wishlistSettings(patch), "Couldn't save that setting");
+  }
+
+  /** Loads a friend's wish list onto their open profile card. */
+  async loadFriendWishlist(userId: string): Promise<void> {
+    const s = ui.getState();
+    s.setFriendWishlist({ userId, status: 'loading', entries: [] });
+    try {
+      const w = await this.api.friendWishlist(userId);
+      if (ui.getState().friendWishlist?.userId !== userId) return;
+      s.setFriendWishlist({
+        userId,
+        status: 'ready',
+        entries: toWishlistEntries(w.entries, this.resolveItem),
+      });
+    } catch (err) {
+      if (ui.getState().friendWishlist?.userId !== userId) return;
+      const hidden = err instanceof ApiError && err.code === 'wishlist_hidden';
+      s.setFriendWishlist({ userId, status: hidden ? 'hidden' : 'error', entries: [] });
+    }
+  }
+
+  private onGiftEvent(m: TypedMessage): void {
+    const e = m as unknown as GiftEvent;
+    if (!e.giftId) return;
+    const toast = giftEventToast(e, this.giftName(e.other));
+    if (toast) {
+      if (e.role === 'recipient' && e.status === 'received') {
+        this.addNotification('reward', toast.title, toast.body, undefined);
+        ui.getState().pushToast({
+          kind: 'reward',
+          ...toast,
+          actions: [{ id: 'gift-inbox:open', label: 'Open' }],
+        });
+      } else {
+        ui.getState().pushToast({ kind: e.status === 'opened' ? 'reward' : 'info', ...toast });
+      }
+    }
+    if (e.status === 'reversed' || (e.status === 'opened' && e.role === 'recipient'))
+      void this.refreshProgress();
+    void this.loadGifts();
+  }
+
+  private onWishlistInStore(m: TypedMessage): void {
+    const items = (m.items as { title: string }[] | undefined) ?? [];
+    if (items.length === 0) return;
+    const title =
+      items.length === 1
+        ? `${items[0]!.title} is in the store today`
+        : `${items.length} wish list items are in the store today`;
+    this.addNotification('news', title, 'From your wish list');
+    ui.getState().pushToast({
+      kind: 'info',
+      title,
+      body: 'From your wish list',
+      actions: [{ id: 'wishlist-store:today', label: 'Take a look' }],
+    });
+  }
+
   /** Buys a Gem pack: instant test credit with the dev fake provider, otherwise a Stripe redirect. */
   async buyGems(packId: string): Promise<void> {
     const s = ui.getState();
@@ -1417,6 +1706,7 @@ export class OnlineAccount {
   startRealtime(): void {
     const rt = this.realtime;
     this.social.bind();
+    this.clubs.bind();
     this.offs.push(
       rt.on('wallet', (m) => {
         if (!this.me) return;
@@ -1473,6 +1763,8 @@ export class OnlineAccount {
       }),
       rt.on('party_disbanded', () => this.applyParty(null)),
       rt.on('party_invite', (m) => this.onPartyInvite(m)),
+      rt.on('gift', (m) => this.onGiftEvent(m)),
+      rt.on('wishlist_in_store', (m) => this.onWishlistInStore(m)),
       rt.on('notification', (m) => {
         this.addNotification(
           'reward',
@@ -1538,7 +1830,8 @@ export class OnlineAccount {
   private resolveNotifications(userId: string, label: string, kind?: 'friendRequest' | 'partyInvite'): void {
     let changed = false;
     this.notifications = this.notifications.map((n) => {
-      if (!n.action || n.resolved || n.action.userId !== userId || (kind && n.action.kind !== kind)) return n;
+      const who = n.action && 'userId' in n.action ? n.action.userId : null;
+      if (!n.action || n.resolved || who !== userId || (kind && n.action.kind !== kind)) return n;
       changed = true;
       return { ...n, resolved: label, read: true };
     });
@@ -1601,6 +1894,14 @@ export class OnlineAccount {
       void this.answerFriendRequest(arg, kind === 'friend-accept' ? 'accept' : 'decline');
       return true;
     }
+    if (kind === 'gift-inbox') {
+      ui.getState().openProfile('gifts');
+      return true;
+    }
+    if (kind === 'wishlist-store') {
+      ui.getState().openStore('today');
+      return true;
+    }
     if (kind === 'party-join' && arg) {
       void this.joinParty(arg);
       return true;
@@ -1610,6 +1911,7 @@ export class OnlineAccount {
       this.social.declineInvite(arg);
       return true;
     }
+    if (this.clubs.handleToastAction(actionId)) return true;
     return kind === 'party-ignore';
   }
 
@@ -1918,6 +2220,7 @@ export class OnlineAccount {
     for (const off of this.offs) off();
     this.offs.length = 0;
     this.social.dispose();
+    this.clubs.dispose();
     this.realtime.stop();
   }
 }

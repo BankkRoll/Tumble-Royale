@@ -34,6 +34,7 @@ export const FLAG_KEYS = [
   'mutators.chaos',
   'analytics.sample',
   'events.enabled',
+  'clubs.enabled',
   /** Round voting between rounds (game servers read it per show, the offline client per show). */
   'shows.mapVoting',
 ] as const;
@@ -64,6 +65,7 @@ export const FLAG_DEFAULTS: Readonly<Record<FlagKey, FlagValue>> = {
   'mutators.chaos': { enabled: true, payload: null },
   'analytics.sample': { enabled: true, payload: null },
   'events.enabled': { enabled: true, payload: null },
+  'clubs.enabled': { enabled: true, payload: null },
   'shows.mapVoting': { enabled: true, payload: null },
 };
 

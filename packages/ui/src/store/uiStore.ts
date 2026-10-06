@@ -36,6 +36,11 @@ import type {
   CosmeticSlot,
   StoreSection,
   PurchaseHistoryData,
+  FriendWishlistData,
+  GiftPickerData,
+  GiftsData,
+  ProfileSection,
+  WishlistData,
   LeaderboardId,
   LeaderboardInfo,
   LeaderboardRow,
@@ -62,6 +67,7 @@ import type {
   ReplayRoundEntry,
   ReplayViewerState,
   RewardsSummary,
+  CustomRoundLookup,
   RoundCatalogEntry,
   RoundIntroInfo,
   RoundLoadingState,
@@ -156,6 +162,8 @@ export interface UIState {
   lobbyGames: LobbyGamesState;
   customLobby: CustomLobbyState | null;
   roundCatalog: RoundCatalogEntry[];
+  /** The last shared-round code lookup from a round picker. */
+  customRoundLookup: CustomRoundLookup;
   /** Rendered cosmetic thumbnails (data/blob URLs) by item id; cards fall back to the emoji icon. */
   thumbnails: Record<string, string>;
   /** Top-bar currency popover. */
@@ -176,6 +184,16 @@ export interface UIState {
   storeSection: StoreSection | null;
   /** Store purchase history with refund eligibility (online accounts; null until asked for). */
   purchaseHistory: PurchaseHistoryData | null;
+  /** Section the Profile tab should open on (deep links such as a gift toast). */
+  profileSection: ProfileSection | null;
+  /** Gifts sent and received (online accounts; null until asked for). */
+  gifts: GiftsData | null;
+  /** The gift sheet (null = closed). */
+  giftPicker: GiftPickerData | null;
+  /** The player's own wish list (online accounts; null until asked for). */
+  wishlist: WishlistData | null;
+  /** The wish list on the profile card being viewed. */
+  friendWishlist: FriendWishlistData | null;
 
   // --- show ----------------------------------------------------------------
   queue: QueueState;
@@ -260,6 +278,10 @@ export interface UIState {
   setInventory: (inventory: InventoryData | null) => void;
   setStoreData: (store: StoreData | null) => void;
   setPurchaseHistory: (history: PurchaseHistoryData | null) => void;
+  setGifts: (gifts: GiftsData | null) => void;
+  setGiftPicker: (picker: GiftPickerData | null) => void;
+  setWishlist: (wishlist: WishlistData | null) => void;
+  setFriendWishlist: (wishlist: FriendWishlistData | null) => void;
   setPass: (pass: SeasonPassData | null) => void;
   setChallenges: (challenges: ChallengesData | null) => void;
   /** Daily login streak card (null offline). */
@@ -287,6 +309,9 @@ export interface UIState {
   setLobbyGames: (patch: Partial<LobbyGamesState>) => void;
   setCustomLobby: (lobby: CustomLobbyState | null) => void;
   setRoundCatalog: (rounds: RoundCatalogEntry[]) => void;
+  /** Adds (or refreshes) a shared custom round in the pickers. */
+  addCustomRoundEntry: (entry: RoundCatalogEntry) => void;
+  setCustomRoundLookup: (lookup: CustomRoundLookup) => void;
   /** Adds rendered thumbnails (merged into `thumbnails`). */
   setThumbnails: (thumbs: Record<string, string>) => void;
   setCurrencyPanel: (panel: 'none' | 'gumballs' | 'gems') => void;
@@ -299,6 +324,8 @@ export interface UIState {
   openLocker: (slot: CosmeticSlot | null) => void;
   /** Opens the Store tab on a section. */
   openStore: (section: StoreSection | null) => void;
+  /** Switches to the Profile tab on a section. */
+  openProfile: (section: ProfileSection) => void;
 
   // --- actions: show -------------------------------------------------------
   setQueue: (queue: Partial<QueueState>) => void;
@@ -422,6 +449,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   lobbyGames: { pickerOpen: false, canStart: true, players: 1, hud: null },
   customLobby: null,
   roundCatalog: [],
+  customRoundLookup: { status: 'idle' },
   thumbnails: {},
   currencyPanel: 'none',
   playMode: 'offline',
@@ -432,6 +460,11 @@ export const ui = createStore<UIState>()((set, get) => ({
   lockerSlot: null,
   storeSection: null,
   purchaseHistory: null,
+  profileSection: null,
+  gifts: null,
+  giftPicker: null,
+  wishlist: null,
+  friendWishlist: null,
 
   queue: {
     status: 'idle',
@@ -562,6 +595,10 @@ export const ui = createStore<UIState>()((set, get) => ({
   setInventory: (inventory) => set({ inventory }),
   setStoreData: (store) => set({ store }),
   setPurchaseHistory: (purchaseHistory) => set({ purchaseHistory }),
+  setGifts: (gifts) => set({ gifts }),
+  setGiftPicker: (giftPicker) => set({ giftPicker }),
+  setWishlist: (wishlist) => set({ wishlist }),
+  setFriendWishlist: (friendWishlist) => set({ friendWishlist }),
   setPass: (pass) => set({ pass }),
   setChallenges: (challenges) => set({ challenges }),
   setLoginStreak: (loginStreak) => set({ loginStreak }),
@@ -601,6 +638,9 @@ export const ui = createStore<UIState>()((set, get) => ({
   setLobbyGames: (patch) => set({ lobbyGames: { ...get().lobbyGames, ...patch } }),
   setCustomLobby: (customLobby) => set({ customLobby }),
   setRoundCatalog: (roundCatalog) => set({ roundCatalog }),
+  addCustomRoundEntry: (entry) =>
+    set((s) => ({ roundCatalog: [...s.roundCatalog.filter((r) => r.id !== entry.id), entry] })),
+  setCustomRoundLookup: (customRoundLookup) => set({ customRoundLookup }),
   setThumbnails: (thumbs) => set({ thumbnails: { ...get().thumbnails, ...thumbs } }),
   setCurrencyPanel: (currencyPanel) => set({ currencyPanel }),
   setPlayMode: (playMode) => {
@@ -618,6 +658,10 @@ export const ui = createStore<UIState>()((set, get) => ({
   openStore: (storeSection) => {
     set({ storeSection });
     get().setMenuTab('store');
+  },
+  openProfile: (profileSection) => {
+    set({ profileSection });
+    get().setMenuTab('profile');
   },
 
   setQueue: (queue) => set({ queue: { ...get().queue, ...queue } }),

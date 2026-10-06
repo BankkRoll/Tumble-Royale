@@ -4,12 +4,13 @@
  * lobby Tumbler in the middle, and real stats from the player's show history
  * (win rate, qualify rate, favourite round, best race times, gameplay
  * totals), the showcase (rarest owned cosmetics) and the last 20 shows with
- * expandable per-round results. The Achievements and Collection sections
- * swap the right-hand side for those views and keep the card. `ProfileOverlay`
+ * expandable per-round results. The Achievements, Collection, Wish list and
+ * Gifts sections (the last two for online accounts, `Gifting.tsx`) swap the
+ * right-hand side for those views and keep the card. `ProfileOverlay`
  * shows the same card for another player (ranks, results).
  * docs/design/SCREENS.md §5.5.
  */
-import { useState, type JSX } from 'react';
+import { useEffect, useState, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
 import { Bar, BotTag, TypeBadge } from '../../components/bits.tsx';
 import { ItemPreview, Nameplate, bannerStyle } from '../../components/ItemPreview.tsx';
@@ -19,6 +20,7 @@ import { Button, Segmented } from '../../components/controls.tsx';
 import { formatNumber, ordinal, useDisplayName } from '../../components/hooks.ts';
 import { Icon, type IconName } from '../../components/icons/index.tsx';
 import { TumblerAvatar } from '../../components/TumblerAvatar.tsx';
+import { useAccountUI } from '../../store/account.ts';
 import { uiEvents } from '../../store/events.ts';
 import { ui, useUI } from '../../store/uiStore.ts';
 import { PlayerActionRow } from '../overlays/PlayerActions.tsx';
@@ -27,6 +29,7 @@ import type {
   MatchHistoryEntry,
   MetOfflineInfo,
   ProfileData,
+  ProfileSection,
   RankInfo,
   RankTier,
 } from '../../store/types.ts';
@@ -34,6 +37,7 @@ import { rarityLabels } from '../../theme/tokens.ts';
 import { OpenReplayButton } from '../Replay.tsx';
 import { AchievementsView } from './AchievementsView.tsx';
 import { CollectionView } from './CollectionView.tsx';
+import { FriendWishlistPanel, GiftsSection, WishlistSection } from './Gifting.tsx';
 
 /** Ranked ladder tiers, lowest first, with display colours. */
 export const RANK_TIERS: { tier: RankTier; label: string; color: string; dark: string }[] = [
@@ -469,8 +473,7 @@ export function openMatchHistory(): void {
   ui.getState().setScreen('matchHistory', { transition: 'fade' });
 }
 
-/** Sections of the Profile tab. */
-export type ProfileSection = 'overview' | 'achievements' | 'collection';
+export type { ProfileSection };
 
 /** Profile tab (self). */
 export function ProfileTab({
@@ -478,7 +481,15 @@ export function ProfileTab({
 }: { initialSection?: ProfileSection } = {}): JSX.Element {
   const p = useUI((s) => s.profile);
   const history = useUI((s) => s.matchHistory);
-  const [section, setSection] = useState<ProfileSection>(initialSection);
+  const deepSection = useUI((s) => s.profileSection);
+  const unopened = useUI((s) => s.gifts?.unopened ?? 0);
+  const online = useAccountUI((a) => a.session === 'online');
+  const [section, setSection] = useState<ProfileSection>(() => deepSection ?? initialSection);
+  useEffect(() => {
+    if (!deepSection) return;
+    setSection(deepSection);
+    ui.setState({ profileSection: null });
+  }, [deepSection]);
   if (!p) return <div className="tr-panel tr-empty">Create your Tumbler to see your profile.</div>;
   return (
     <div className={`tr-profile tr-profile--${section}`}>
@@ -491,6 +502,12 @@ export function ProfileTab({
             { value: 'overview', label: 'Overview' },
             { value: 'achievements', label: 'Achievements' },
             { value: 'collection', label: 'Collection' },
+            ...(online
+              ? [
+                  { value: 'wishlist' as const, label: 'Wish list' },
+                  { value: 'gifts' as const, label: unopened > 0 ? `Gifts (${unopened})` : 'Gifts' },
+                ]
+              : []),
           ]}
         />
         <ProfileCard p={p} self />
@@ -508,6 +525,14 @@ export function ProfileTab({
       ) : section === 'collection' ? (
         <div className="tr-profile-wide">
           <CollectionView />
+        </div>
+      ) : section === 'wishlist' ? (
+        <div className="tr-profile-wide tr-scroll">
+          <WishlistSection />
+        </div>
+      ) : section === 'gifts' ? (
+        <div className="tr-profile-wide tr-scroll">
+          <GiftsSection />
         </div>
       ) : (
         <ProfileOverviewRight p={p} history={history} />
@@ -588,6 +613,7 @@ export function MetOfflineCard({ p, info }: { p: ProfileData; info: MetOfflineIn
 export function ProfileOverlay(): JSX.Element | null {
   const p = useUI((s) => s.inspectedProfile);
   const selfId = useUI((s) => s.profile?.id);
+  const isFriend = useUI((s) => !!p && s.friends.some((f) => f.id === p.id && !f.recent));
   if (!p) return null;
   const close = (): void => {
     playCue('ui.back');
@@ -614,6 +640,7 @@ export function ProfileOverlay(): JSX.Element | null {
           )}
         </div>
         {p.id !== selfId && <PlayerActionRow p={inspectRef(p)} compact />}
+        {isFriend && <FriendWishlistPanel userId={p.id} />}
         <Button
           variant="secondary"
           data-nav-back=""

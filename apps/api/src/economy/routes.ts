@@ -2,7 +2,8 @@
  * Store, purchases, wallet, Gem checkout, the Crown Shard shop, the Stripe
  * webhook and the admin Gem-debt write-off. Refund and chargeback handling
  * lives in `reversals.ts`; refund requests and self-service refunds in
- * `refunds.ts` and `refundAdmin.ts`.
+ * `refunds.ts` and `refundAdmin.ts`; gifts in `gifts.ts` and `giftAdmin.ts`;
+ * wish lists in `wishlist.ts`.
  *
  * Purchases are idempotent per `(user, Idempotency-Key)`: the purchase row is
  * inserted first inside the transaction, so a concurrent retry with the same
@@ -33,6 +34,9 @@ import { requireStaff } from '../staff/auth.ts';
 import { registerRefundAdminRoutes } from './refundAdmin.ts';
 import { registerRefundRoutes } from './refunds.ts';
 import { registerShardShopRoutes } from './shards.ts';
+import { registerGiftAdminRoutes } from './giftAdmin.ts';
+import { registerGiftRoutes } from './gifts.ts';
+import { checkWishlistAlert, registerWishlistRoutes, removeFromWishlist } from './wishlist.ts';
 import { grantCosmetic, readWallet } from './wallet.ts';
 import { bundleQuotes, currentRotation, priceOffer, storeCatalog } from './store.ts';
 
@@ -135,6 +139,7 @@ export async function purchaseOffer(
         ref: purchaseId,
       });
       for (const id of grants) await grantCosmetic(tx, userId, id, 'store');
+      await removeFromWishlist(tx, userId, [offerId, ...grants]);
       const result: PurchaseResult = {
         purchaseId,
         offerId,
@@ -219,6 +224,9 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
         .from(inventoryItems)
         .where(eq(inventoryItems.userId, auth.userId));
       owned = new Set(rows.map((r) => r.id));
+      await checkWishlistAlert(ctx, auth.userId).catch((err: unknown) =>
+        req.log.warn({ err }, 'wish list alert'),
+      );
     }
     const mark = <T extends { offerId: string }>(o: T) => ({ ...o, owned: owned.has(o.offerId) });
     const owns = (id: string): boolean => owned.has(id);
@@ -363,6 +371,9 @@ export function registerEconomyRoutes(app: FastifyInstance, ctx: AppContext): vo
   });
 
   registerShardShopRoutes(app, ctx, idempotencyKey);
+  registerGiftRoutes(app, ctx, idempotencyKey);
+  registerGiftAdminRoutes(app, ctx);
+  registerWishlistRoutes(app, ctx);
   registerRefundRoutes(app, ctx);
   registerRefundAdminRoutes(app, ctx);
 

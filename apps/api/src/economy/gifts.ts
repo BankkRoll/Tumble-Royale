@@ -529,7 +529,7 @@ async function announce(
   ctx: AppContext,
   gift: Pick<GiftRow, 'id' | 'senderId' | 'recipientId' | 'offerId'>,
   status: Exclude<GiftStatus, 'pending'> | 'received',
-  opts: { walletOf?: string | null; autoAccepted?: boolean; skip?: 'sender' | 'recipient' } = {},
+  opts: { walletOf?: string | null; autoAccepted?: boolean } = {},
 ): Promise<void> {
   const title = offerTitle(ctx, gift.offerId);
   const [sender, recipient] = await Promise.all([
@@ -538,7 +538,7 @@ async function announce(
   ]);
   const extra = opts.autoAccepted ? { autoAccepted: true } : {};
   const sends: Promise<void>[] = [];
-  if (gift.recipientId && opts.skip !== 'recipient')
+  if (gift.recipientId)
     sends.push(
       ctx.notifier.notifyUser(gift.recipientId, {
         type: 'gift',
@@ -550,7 +550,7 @@ async function announce(
         ...extra,
       }),
     );
-  if (gift.senderId && status !== 'received' && opts.skip !== 'sender')
+  if (gift.senderId && status !== 'received')
     sends.push(
       ctx.notifier.notifyUser(gift.senderId, {
         type: 'gift',
@@ -733,7 +733,8 @@ const ACTION_RESULT: Readonly<Record<GiftAction, GiftStatus>> = {
  * Declining and cancelling refund the sender in full; opening grants the
  * items with source `gift` (or returns the gift if the recipient already
  * owns something in it). Repeating the action that already happened answers
- * with the gift and `replayed: true`.
+ * with the gift and `replayed: true`. A gift past its auto-accept time is
+ * opened instead and the decline or cancel refused, since it was already due.
  *
  * @param ctx - Shared services.
  * @param userId - The caller.

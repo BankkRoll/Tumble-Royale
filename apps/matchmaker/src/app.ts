@@ -113,6 +113,11 @@ const ReadyBody = z.object({ ready: z.boolean() });
 const RoleBody = z.object({ spectator: z.boolean() });
 const StartBody = z.object({ force: z.boolean().default(false) }).default({ force: false });
 
+/** Open status-stream sockets one account may hold on one instance (a few tabs). */
+export const MAX_SOCKETS_PER_USER = 5;
+/** Open status-stream sockets one client address may hold on one instance (households, NAT). */
+export const MAX_SOCKETS_PER_IP = 50;
+
 function parse<S extends z.ZodType>(schema: S, data: unknown): z.output<S> {
   const r = schema.safeParse(data);
   if (!r.success) {
@@ -473,6 +478,7 @@ export async function buildMatchmaker(
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 });
   // NOTE: per instance; with Redis a reconnect may land on another instance, which marks the member present again.
   const sockets = new Map<string, number>();
+  const ipSockets = new Map<string, number>();
   const onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (url.pathname !== '/ws') return;
@@ -500,21 +506,43 @@ export async function buildMatchmaker(
         socket.destroy();
         return;
       }
+      // SECURITY: each socket holds a store subscription; without a cap one
+      // account or address could open them until the instance runs dry. No
+      // await between this check and the (synchronous) upgrade callback.
+      if (
+        (sockets.get(p.userId) ?? 0) >= MAX_SOCKETS_PER_USER ||
+        (ipSockets.get(ip) ?? 0) >= MAX_SOCKETS_PER_IP
+      ) {
+        socket.write('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n');
+        socket.destroy();
+        return;
+      }
       wss.handleUpgrade(req, socket, head, (ws) => {
+        sockets.set(p.userId, (sockets.get(p.userId) ?? 0) + 1);
+        ipSockets.set(ip, (ipSockets.get(ip) ?? 0) + 1);
+        let closed = false;
+        let unsubscribe: (() => Promise<void>) | null = null;
+        // NOTE: an over-size frame surfaces as 'error'; unhandled, it would crash the process.
+        ws.on('error', () => ws.terminate());
+        ws.on('close', () => {
+          closed = true;
+          void unsubscribe?.();
+          const ipLeft = (ipSockets.get(ip) ?? 1) - 1;
+          if (ipLeft > 0) ipSockets.set(ip, ipLeft);
+          else ipSockets.delete(ip);
+          const left = (sockets.get(p.userId) ?? 1) - 1;
+          if (left > 0) sockets.set(p.userId, left);
+          else {
+            sockets.delete(p.userId);
+            void mm.setLobbyPresence(p.userId, false);
+          }
+        });
         void (async () => {
-          const unsubscribe = await store.subscribe(userChannel(p.userId), (msg) => {
+          const unsub = await store.subscribe(userChannel(p.userId), (msg) => {
             if (ws.readyState === WebSocket.OPEN) ws.send(msg);
           });
-          sockets.set(p.userId, (sockets.get(p.userId) ?? 0) + 1);
-          ws.on('close', () => {
-            void unsubscribe();
-            const left = (sockets.get(p.userId) ?? 1) - 1;
-            if (left > 0) sockets.set(p.userId, left);
-            else {
-              sockets.delete(p.userId);
-              void mm.setLobbyPresence(p.userId, false);
-            }
-          });
+          if (closed) return void (await unsub());
+          unsubscribe = unsub;
           ws.on('message', (data) => {
             let msg: { type?: unknown; text?: unknown };
             try {

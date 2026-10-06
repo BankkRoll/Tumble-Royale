@@ -1415,7 +1415,7 @@ export abstract class ShowSession {
     // plays over the results wall, which never waits for it.
     if (r.inRound && !qualified.has(this.localId)) {
       this.elim.knockedOut(rs.index, this.knockoutFacts(r));
-      this.playElimination();
+      this.playElimination(true);
     }
     this.ctx.audio.game.onRoundPhase(RoundPhase.Results, rs.round.type, {
       playersRemaining: o.qualified.length,
@@ -1676,7 +1676,7 @@ export abstract class ShowSession {
     this.after(plan.afterS, () => {
       if (this.round !== r || r.fate !== 'eliminated' || (this.phase ?? 0) >= RoundPhase.RoundEnd) return;
       // The choice is offered as before; the UI holds it back until the replay is done.
-      this.playElimination();
+      this.playElimination(false);
       if (plan.kind === 'spectate') {
         this.beginSpectating();
         return;
@@ -1693,10 +1693,14 @@ export abstract class ShowSession {
     return eliminationFacts(r.source?.alive ? r.source : null, r.start.round, teams, this.localId);
   }
 
-  /** Plays "How you went out" for the noted knock-out, if the feature is on. */
-  private playElimination(): void {
+  /**
+   * Plays "How you went out" for the noted knock-out, if the feature is on.
+   *
+   * @param atRoundEnd - Over the results wall (the knock-out ended the round for this player).
+   */
+  private playElimination(atRoundEnd: boolean): void {
     const still = this.ctx.settings().accessibility.reduceMotion;
-    this.elim.play((id) => (id === this.localId ? 'you' : this.publicName(id)), still);
+    this.elim.play((id) => (id === this.localId ? 'you' : this.publicName(id)), still, atRoundEnd);
   }
 
   /** Entrants of the current round not yet knocked out. */

@@ -197,6 +197,11 @@ describe('end-of-round causes', () => {
     expect(causeText(huge, String)).toBe("Didn't make the cut");
   });
 
+  it('a mid-round knock-out without a fall (a forfeit) is generic, never a missed cut', () => {
+    const c = attributeElimination([out(30)], ctx({ roundType: 'race', eliminatedAt: 30, atRoundEnd: false }));
+    expect(c).toEqual({ kind: 'unknown', at: 30 });
+  });
+
   it('a fall long before the end is not what knocked a racer out', () => {
     const c = attributeElimination([fell(30), out(60)], ctx({ roundType: 'race', eliminatedAt: 60 }));
     expect(c.kind).toBe('missedCut');

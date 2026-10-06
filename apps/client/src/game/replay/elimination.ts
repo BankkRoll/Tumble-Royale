@@ -73,6 +73,8 @@ export interface EliminationFacts {
    * recording holds no `eliminated` event for them (it started too late).
    */
   eliminatedAt?: number;
+  /** The knock-out came with the end of the round (see `CauseContext.atRoundEnd`). */
+  atRoundEnd?: boolean;
 }
 
 /**
@@ -183,6 +185,7 @@ export function planElimination(data: ReplayData, facts: EliminationFacts): Elim
     teams: facts.teams,
     obstacles: facts.obstacles,
     finishGap: facts.finishGap,
+    ...(facts.atRoundEnd !== undefined ? { atRoundEnd: facts.atRoundEnd } : {}),
   });
   const window = selectEliminationWindow(h.duration, rel, cause.at - h.startTime);
   if (window.end - window.start < 1) return null;

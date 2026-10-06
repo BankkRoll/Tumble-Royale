@@ -174,16 +174,18 @@ export class SessionElimination {
    *
    * @param nameOf - Streamer Mode safe name for a player id.
    * @param still - Reduce Motion: a still frame.
+   * @param atRoundEnd - Played over the results: the round ended with the
+   *   knock-out (in-round, the round carried on, so it came mid-round).
    * @returns True when a replay started.
    */
-  play(nameOf: (id: number) => string, still: boolean): boolean {
+  play(nameOf: (id: number) => string, still: boolean, atRoundEnd: boolean): boolean {
     const k = this.knockout;
     const svc = this.svc;
     if (!k || k.replayed || !svc) return false;
     k.replayed = true;
     if (!svc.enabled()) return false;
     const data = this.recording(k);
-    const plan = data ? planElimination(data, k.facts) : null;
+    const plan = data ? planElimination(data, { ...k.facts, atRoundEnd }) : null;
     if (!data || !plan) return false;
     return svc.play({ data, plan, cause: causeText(plan.cause, nameOf), still, online: this.online });
   }

@@ -320,6 +320,7 @@ export class ReplayController {
     if (!view) return;
     this.reel = reel;
     view.command({ type: 'seek', t: h.start });
+    view.followPlayer(h.player);
     if (!view.clock.playing) view.command({ type: 'toggle' });
     const streamer = ui.getState().settings.gameplay.streamerMode;
     ui.getState().patchReplay({

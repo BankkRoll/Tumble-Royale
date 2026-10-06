@@ -4,8 +4,9 @@
  * hidden (not unmounted) so closing it returns to exactly the same state.
  */
 
-.tr-root[data-replay='true'] > .tr-stage,
-.tr-root[data-replay='true'] > .tr-confetti {
+/* Descendant, not child: the stage sits inside photo mode's wrapper. */
+.tr-root[data-replay='true'] .tr-stage,
+.tr-root[data-replay='true'] .tr-confetti {
   visibility: hidden;
 }
 
@@ -249,8 +250,8 @@
 }
 
 /* "How you went out": letterboxed, with the cause over the lower third. */
-.tr-root[data-elim-replay='true'] > .tr-stage,
-.tr-root[data-elim-replay='true'] > .tr-confetti {
+.tr-root[data-elim-replay='true'] .tr-stage,
+.tr-root[data-elim-replay='true'] .tr-confetti {
   visibility: hidden;
 }
 
@@ -406,6 +407,10 @@
 .tr-highlight-text {
   gap: 0;
   min-width: 0;
+}
+/* The rewards actions row paints its small print white for the dark backdrop; cards are light. */
+.tr-rewards-actions .tr-highlight .tr-small {
+  color: var(--ink);
 }
 
 @media (max-width: 760px) {

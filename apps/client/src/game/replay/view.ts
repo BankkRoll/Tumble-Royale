@@ -314,6 +314,19 @@ export class ReplayView implements GameView {
   }
 
   /**
+   * Follows a player (a highlight's subject); the viewer may move on from
+   * them as usual.
+   *
+   * @param id - Player to follow; unknown or absent players fall back to the default target.
+   */
+  followPlayer(id: number): void {
+    if (this.timeline.slotOf(id) >= 0) this.target = id;
+    // A seek just moved the clock: check presence where the playhead is now, not where it was.
+    this.source.setTime(this.clock.time);
+    this.setCamera('follow');
+  }
+
+  /**
    * Follows one player for good: the camera stays on them even once they are
    * out (the elimination replay ends on the local player falling).
    *

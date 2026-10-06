@@ -369,7 +369,7 @@ describe('session glue', () => {
     s.frame(null);
     s.knockedOut(1, eliminationFacts(null, { type: 'survival', triggers: [] }, new Map(), ME));
     expect(s.pending).toBe(false);
-    expect(s.play(String, false)).toBe(false);
+    expect(s.play(String, false, false)).toBe(false);
     expect(svc.plays).toHaveLength(0);
   });
 
@@ -391,9 +391,9 @@ describe('session glue', () => {
       }
     }
     expect(s.pending).toBe(true);
-    expect(s.play((id) => `P${id}`, true)).toBe(true);
+    expect(s.play((id) => `P${id}`, true, false)).toBe(true);
     expect(svc.plays[0]).toMatchObject({ still: true, online: true, cause: 'Knocked off by a sweeper' });
-    expect(s.play(String, false)).toBe(false);
+    expect(s.play(String, false, false)).toBe(false);
     expect(svc.plays).toHaveLength(1);
   });
 
@@ -403,7 +403,7 @@ describe('session glue', () => {
     s.roundStarted(info(), fakeSource({ now: 0 }, 40));
     expect(s.activeTape).toBeNull();
     s.knockedOut(1, facts);
-    expect(s.play(String, false)).toBe(true);
+    expect(s.play(String, false, true)).toBe(true);
     expect(svc.plays[0]?.plan.cause.kind).toBe('obstacle');
   });
 

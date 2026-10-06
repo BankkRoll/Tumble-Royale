@@ -52,6 +52,11 @@ export interface CauseContext {
    * when the round ended (see {@link finishGapSeconds}), or null.
    */
   finishGap: number | null;
+  /**
+   * The knock-out came with the end of the round. False for one mid-round
+   * without a fall (a forfeit), which is never "missed the cut" (default true).
+   */
+  atRoundEnd?: boolean;
 }
 
 /** Why the local player went out. `at` is the decisive round time. */
@@ -321,6 +326,7 @@ function teamTotals(events: readonly TimedEvent[]): { totals: Map<number, number
 /** The end-of-round reasons: the cut, the team result or the clock. */
 function endOfRoundCause(events: readonly TimedEvent[], ctx: CauseContext): EliminationCause {
   const at = ctx.eliminatedAt;
+  if (ctx.atRoundEnd === false) return { kind: 'unknown', at };
   const type = ctx.isFinal && ctx.roundType === 'final' ? 'final' : ctx.roundType;
   if (type === 'team') {
     const mine = ctx.teams.get(ctx.localId);

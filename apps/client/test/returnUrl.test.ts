@@ -33,9 +33,27 @@ describe('parseBootReturn', () => {
     });
   });
 
+  it('reads returns from GitHub, Twitch and Apple', () => {
+    for (const p of ['github', 'twitch', 'apple'] as const) {
+      expect(parseBootReturn('/auth/complete', `?provider=${p}&code=c1`)).toEqual({
+        kind: 'oauth',
+        code: 'c1',
+        provider: p,
+      });
+    }
+    expect(parseBootReturn('/auth/complete', '?provider=toString&code=c1')).toMatchObject({ provider: null });
+  });
+
   it('reads an email magic link', () => {
     expect(parseBootReturn('/auth/email', '?token=tok_123')).toEqual({ kind: 'email', token: 'tok_123' });
     expect(parseBootReturn('/auth/email', '')).toMatchObject({ kind: 'oauthError', error: 'invalid_token' });
+  });
+
+  it('reads a staff sign-in link', () => {
+    expect(parseBootReturn('/auth/staff', '?token=tok_9')).toEqual({ kind: 'staffLink', token: 'tok_9' });
+    expect(parseBootReturn('/auth/staff', '')).toMatchObject({ kind: 'oauthError', error: 'invalid_link' });
+    expect(cleanReturnUrl('?token=tok_9')).toBe('/');
+    expect(authErrorMessage('invalid_link', null).body).toMatch(/15 minutes/);
   });
 
   it('reads Stripe checkout returns', () => {

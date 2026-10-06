@@ -11,7 +11,7 @@ import { Button } from '../components/controls.tsx';
 import { TumblerAvatar } from '../components/TumblerAvatar.tsx';
 import { randomTumblerName, validateDisplayName } from '../names.ts';
 import { uiEvents } from '../store/events.ts';
-import { useUI } from '../store/uiStore.ts';
+import { ui, useUI } from '../store/uiStore.ts';
 import type { TumblerColors } from '../store/types.ts';
 import { shakeNo, squash } from '../theme/motion.ts';
 import { tumblerSwatches } from '../theme/tokens.ts';
@@ -93,7 +93,10 @@ export function SplashScreen(): JSX.Element {
   const fired = useRef(false);
   const logoRef = useRef<HTMLDivElement>(null);
   const start = (): void => {
-    if (fired.current) return;
+    // A dialog over the splash (an OAuth return asking before it switches
+    // Tumblers) owns the keyboard and pointer; the key or click that answers
+    // it closes it first, so a dialog closed a moment ago counts as open too.
+    if (fired.current || ui.getState().dialog || performance.now() - dialogClosedAt.current < 400) return;
     fired.current = true;
     playCue('music.sting');
     playCue('ui.confirm');
@@ -101,13 +104,22 @@ export function SplashScreen(): JSX.Element {
     fireConfetti({ x: 0.5, y: 0.45, ring: true, count: 90, speed: 800 });
     uiEvents.emit('start');
   };
+  const dialogClosedAt = useRef(-Infinity);
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.repeat) return;
       start();
     };
+    let open = ui.getState().dialog !== null;
+    const offDialog = ui.subscribe((s) => {
+      if (open && !s.dialog) dialogClosedAt.current = performance.now();
+      open = s.dialog !== null;
+    });
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      offDialog();
+      window.removeEventListener('keydown', onKey);
+    };
   }, []);
   return (
     <div className="tr-screen tr-splash tr-sky-bg tr-interactive" onPointerDown={start}>

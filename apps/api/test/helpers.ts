@@ -3,7 +3,7 @@
  * in-process KV, or on the Postgres and Redis named by `DATABASE_URL` and
  * `REDIS_URL` when those are set (see `backing.ts`).
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { DEFAULT_SHOW_PLAYERS } from '@tumble/shared';
 import type { Env } from '@tumble/shared/env';
 import type { LightMyRequestResponse } from 'fastify';
@@ -15,8 +15,13 @@ import { HMAC_HEADERS, signInternal } from '../src/http/auth.ts';
 import type { MatchResultInput } from '../src/matches/schema.ts';
 import { createScratchDatabase, isolatedRedisKV, TEST_DATABASE_URL, TEST_REDIS_URL } from './backing.ts';
 
+/** The nonce a test "browser" keeps while signing in (`/auth/exchange`, `/auth/email/verify`). */
+export const TEST_NONCE = 'test-browser-nonce-0123456789';
+/** Its binding, sent to `/auth/:provider/start` and `/auth/email/start`. */
+export const TEST_BINDING = createHash('sha256').update(TEST_NONCE).digest('hex');
+
 /** Admin bearer used by tests. */
-export const ADMIN_TOKEN = 'test-admin-token-0123456789';
+export const ADMIN_TOKEN = 'test-admin-token-0123456789-abcdefghij';
 
 /** Explicit secrets for tests, which never read `.env` files. */
 export const TEST_SECRETS = {
@@ -190,10 +195,18 @@ export async function createTestApi(
   const freshIp = () =>
     `10.${guestNo % 250}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`;
   const emailSignIn: TestApi['emailSignIn'] = async (email, token) => {
-    const start = await req('POST', '/auth/email/start', { token, body: { email }, ip: freshIp() });
+    const start = await req('POST', '/auth/email/start', {
+      token,
+      body: { email, binding: TEST_BINDING },
+      ip: freshIp(),
+    });
     if (start.statusCode !== 202) throw new Error(`email start failed: ${start.statusCode} ${start.body}`);
     const magic = /token=([A-Za-z0-9_-]+)/.exec(mailer.sent.at(-1)!.text)![1]!;
-    return req('POST', '/auth/email/verify', { body: { token: magic }, ip: freshIp() });
+    return req('POST', '/auth/email/verify', {
+      token,
+      body: { token: magic, nonce: TEST_NONCE },
+      ip: freshIp(),
+    });
   };
   const guest: TestApi['guest'] = async (displayName) => {
     guestNo++;

@@ -14,7 +14,7 @@
  */
 import { hostname } from 'node:os';
 import { DEFAULT_SHOW_PLAYERS, MAX_PLAYERS } from '@tumble/shared';
-import { EnvIssues, type Env, type NodeEnv } from '@tumble/shared/env';
+import { EnvIssues, MAX_TIMER_MS, type Env, type NodeEnv } from '@tumble/shared/env';
 import type { TrustProxy } from '@tumble/shared/proxy';
 
 /** How much this process hosts. */
@@ -141,9 +141,9 @@ function ops(issues: EnvIssues): OpsConfig {
   return {
     logLevel,
     sentryDsn: issues.url('SENTRY_DSN', HTTP),
-    drainTimeoutMs: issues.int('DRAIN_TIMEOUT_MS', 15 * 60_000, { min: 0 }),
-    drainSettleMs: issues.int('DRAIN_SETTLE_MS', 100_000, { min: 0 }),
-    outboxFlushMs: issues.int('OUTBOX_FLUSH_MS', 15_000, { min: 0 }),
+    drainTimeoutMs: issues.int('DRAIN_TIMEOUT_MS', 15 * 60_000, { min: 0, max: MAX_TIMER_MS }),
+    drainSettleMs: issues.int('DRAIN_SETTLE_MS', 100_000, { min: 0, max: MAX_TIMER_MS }),
+    outboxFlushMs: issues.int('OUTBOX_FLUSH_MS', 15_000, { min: 0, max: MAX_TIMER_MS }),
   };
 }
 
@@ -205,6 +205,15 @@ function capacity(issues: EnvIssues): CapacityConfig {
 function results(issues: EnvIssues, env: NodeEnv): ResultsConfig | null {
   const enabled = issues.flag('REPORT_RESULTS', true);
   const apiUrl = issues.url('API_URL', HTTP) ?? (env === 'development' ? 'http://localhost:7360' : undefined);
+  // The results API is also where maintenance and kill switches come from;
+  // without it a production server silently records nothing and obeys nothing.
+  if (env === 'production' && (!enabled || !apiUrl) && !issues.flag('ALLOW_STANDALONE', false)) {
+    issues.add(
+      enabled ? 'API_URL' : 'REPORT_RESULTS',
+      'production needs results reporting to the API (API_URL with INTERNAL_HMAC_SECRET): it also carries ' +
+        'maintenance and kill switches. Set ALLOW_STANDALONE=1 to run without an account API anyway.',
+    );
+  }
   if (!enabled || !apiUrl) return null;
   // SECURITY: a game server, possibly on a host of its own, should hold the
   // narrow game-server key rather than the key every internal API route trusts.
@@ -251,11 +260,11 @@ export function loadConfig(env: Env = process.env): GameServerConfig {
     env: nodeEnv,
     port,
     capacity: cap,
-    fillWaitMs: issues.int('FILL_WAIT_MS', 25_000, { min: 0 }),
+    fillWaitMs: issues.int('FILL_WAIT_MS', 25_000, { min: 0, max: MAX_TIMER_MS }),
     startAtHumans: issues.int('START_AT_HUMANS', cap.roomCapacity, { min: 1 }),
-    ticketedFillWaitMs: issues.int('TICKET_FILL_WAIT_MS', 15_000, { min: 0 }),
+    ticketedFillWaitMs: issues.int('TICKET_FILL_WAIT_MS', 15_000, { min: 0, max: MAX_TIMER_MS }),
     devSim: issues.flag('GS_DEV', false)
-      ? { playSeconds: issues.int('PLAY_SECONDS', 120, { min: 1 }) }
+      ? { playSeconds: issues.int('PLAY_SECONDS', 120, { min: 1, max: Math.floor(MAX_TIMER_MS / 1000) }) }
       : null,
     playlistId: issues.optional('PLAYLIST'),
     ticketSecret: issues.secret('GAME_TICKET_SECRET', 16),

@@ -99,7 +99,7 @@ describe('whispers', () => {
     await befriend(a, b);
     expect((await say('friends again')).statusCode).toBe(200);
     await api.req('POST', '/internal/bans', {
-      headers: { authorization: 'Bearer test-admin-token-0123456789' },
+      headers: { authorization: 'Bearer test-admin-token-0123456789-abcdefghij' },
       body: { userId: a.id, scope: 'chat', reason: 'abusive whispers', durationHours: 1 },
     });
     expect((await say('hello')).json().error).toBe('chat_banned');

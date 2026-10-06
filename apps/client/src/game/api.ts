@@ -20,15 +20,32 @@ import type {
   ApiWishlistEntry,
 } from './online/gifts.ts';
 import type { ApiPurchaseHistory, ApiRefundResult } from './online/purchaseHistory.ts';
-import { tokenSubject, type AuthOutcome, type LoginProvider } from './online/returnUrl.ts';
-import { loadJson, removeJson, saveJson } from './storage.ts';
+import {
+  tokenSubject,
+  type AuthOutcome,
+  type LoginProvider,
+  type OAuthProvider,
+} from './online/returnUrl.ts';
+import { loadJson, removeJson, saveJson, storageKeyName } from './storage.ts';
 
 /** Tokens returned by `/auth/guest` and `/auth/refresh`. */
 interface AuthTokens {
   accessToken: string;
   refreshToken: string;
   deviceToken: string;
+  /**
+   * The server refused the refresh token and there is no device token to fall
+   * back on: the account still exists but this browser must sign in again.
+   * Kept rather than deleted so a launch never mints a guest over it.
+   */
+  expired?: true;
 }
+
+/** Outcome of a refresh: rotated, refused by the server, or not answered. */
+export type RefreshResult = 'ok' | 'rejected' | 'unreachable';
+
+/** Web Locks name that serialises refreshes across this origin's tabs. */
+const REFRESH_LOCK = 'tumble-auth-refresh';
 
 const PROBE_TIMEOUT_MS = 900;
 const REQUEST_TIMEOUT_MS = 8000;
@@ -85,15 +102,19 @@ export interface ApiAuthResult {
   refreshToken: string;
   user: { id: string; displayName: string; tag: string; isGuest: boolean };
   outcome: AuthOutcome;
-  provider: LoginProvider;
+  /** `link` for a one-time staff sign-in link. */
+  provider: LoginProvider | 'link';
 }
 
-/** `GET /auth/providers`. */
-export interface ApiAuthProviders {
-  discord: boolean;
-  google: boolean;
-  email: boolean;
-}
+/** `GET /auth/providers`: which sign-in methods the server has turned on. */
+export type ApiAuthProviders = Record<LoginProvider, boolean>;
+
+/**
+ * What a signed-in player asks for when leaving for a provider: `link` adds
+ * the login to this account (refused if another account owns it), `signIn`
+ * may switch the device to the account that owns it.
+ */
+export type AuthIntent = 'link' | 'signIn';
 
 /** API loadout body (content `CosmeticLoadout` + banner/footsteps). */
 export interface ApiLoadoutItems {
@@ -610,13 +631,38 @@ export class ApiClient {
   /** True after a successful health probe. */
   online = false;
   private tokens: AuthTokens | null = loadJson<AuthTokens>('auth');
-  private refreshing: Promise<boolean> | null = null;
+  private refreshing: Promise<RefreshResult> | null = null;
+  private expiredListeners = new Set<() => void>();
 
-  constructor(readonly baseUrl: string) {}
+  constructor(readonly baseUrl: string) {
+    // Another tab (or the admin console) may rotate the shared session; follow
+    // it instead of refreshing with a copy the server has already replaced.
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', (e) => {
+        if (e.key === storageKeyName('auth')) this.tokens = loadJson<AuthTokens>('auth');
+      });
+    }
+  }
 
-  /** Whether a guest session exists (tokens stored). */
+  /** Whether a session exists (tokens stored), even an expired one. */
   get signedIn(): boolean {
     return this.tokens !== null;
+  }
+
+  /** The stored session was refused by the server and needs a fresh sign-in. */
+  get expired(): boolean {
+    return this.tokens?.expired === true;
+  }
+
+  /**
+   * Calls `fn` when the session is found expired (refused and nothing to fall
+   * back on), so the UI can ask the player to sign in again.
+   *
+   * @returns Unsubscribe.
+   */
+  onExpired(fn: () => void): () => void {
+    this.expiredListeners.add(fn);
+    return () => this.expiredListeners.delete(fn);
   }
 
   /** Realtime gateway URL for the current access token. */
@@ -664,14 +710,30 @@ export class ApiClient {
   }
 
   /**
-   * Rotates the refresh token at launch (falls back to device sign-in).
+   * Rotates the refresh token at launch. Only a refusal from the server falls
+   * back to the device sign-in, and only when this device holds a device
+   * token; a timeout or server error keeps the session for the next try, and a
+   * refused session without one is marked expired instead of being replaced
+   * by a new guest.
    *
-   * @param displayName - Current display name for the fallback.
+   * @param displayName - Current display name for the device fallback.
+   * @returns True when the session is usable.
    */
   async resume(displayName: string): Promise<boolean> {
-    if (!this.online || !this.tokens) return false;
-    if (await this.refresh()) return true;
-    return this.signInGuest(displayName);
+    if (!this.online || !this.tokens || this.tokens.expired) return false;
+    const result = await this.refresh();
+    if (result === 'ok') return true;
+    if (result === 'unreachable') return false;
+    if (this.tokens?.deviceToken) return this.signInGuest(displayName);
+    this.markExpired();
+    return false;
+  }
+
+  private markExpired(): void {
+    if (!this.tokens) return;
+    this.tokens = { ...this.tokens, expired: true };
+    saveJson('auth', this.tokens);
+    for (const fn of this.expiredListeners) fn();
   }
 
   /**
@@ -739,29 +801,67 @@ export class ApiClient {
     );
   }
 
-  /** Rotates the refresh token; concurrent callers share one rotation. */
-  private refresh(): Promise<boolean> {
+  /**
+   * Rotates the refresh token. Callers in this tab share one rotation, and
+   * tabs take turns through a Web Lock; each re-reads the stored session
+   * first, so a tab whose token another tab already rotated just adopts the
+   * result instead of presenting a stale copy.
+   */
+  private refresh(): Promise<RefreshResult> {
     if (this.refreshing) return this.refreshing;
-    const tokens = this.tokens;
-    if (!tokens) return Promise.resolve(false);
-    this.refreshing = (async () => {
-      const r = await fetchJson<{ accessToken: string; refreshToken: string }>(
-        `${this.baseUrl}/auth/refresh`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ refreshToken: tokens.refreshToken }),
-        },
-        REQUEST_TIMEOUT_MS,
-      );
-      if (!r?.accessToken) return false;
-      this.tokens = { ...tokens, accessToken: r.accessToken, refreshToken: r.refreshToken };
-      saveJson('auth', this.tokens);
-      return true;
-    })().finally(() => {
+    if (!this.tokens || this.tokens.expired) return Promise.resolve('rejected');
+    const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+    // COMPAT: without Web Locks (old Safari, some webviews) tabs race; the
+    // server's short reuse grace window keeps a racing tab signed in.
+    const locked = locks
+      ? new Promise<RefreshResult>((resolve, reject) => {
+          locks.request(REFRESH_LOCK, () => this.rotate().then(resolve, reject)).catch(reject);
+        })
+      : this.rotate();
+    const pending: Promise<RefreshResult> = locked.finally(() => {
       this.refreshing = null;
     });
-    return this.refreshing;
+    this.refreshing = pending;
+    return pending;
+  }
+
+  private async rotate(): Promise<RefreshResult> {
+    const stored = loadJson<AuthTokens>('auth');
+    const mine = this.tokens;
+    if (!mine) return 'rejected';
+    if (stored && stored.refreshToken !== mine.refreshToken) {
+      // Another tab rotated (or switched accounts) meanwhile; its result is current.
+      this.tokens = stored;
+      if (!stored.expired && secondsLeft(stored.accessToken) >= REFRESH_MARGIN_S) return 'ok';
+    }
+    const tokens = this.tokens;
+    if (!tokens || tokens.expired) return 'rejected';
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken: tokens.refreshToken }),
+        signal: ctrl.signal,
+      });
+    } catch {
+      return 'unreachable';
+    } finally {
+      window.clearTimeout(timer);
+    }
+    // Only a definite refusal ends the session; rate limits and outages do not.
+    if (res.status === 400 || res.status === 401 || res.status === 403) return 'rejected';
+    if (!res.ok) return 'unreachable';
+    const r = (await res.json().catch(() => null)) as { accessToken?: string; refreshToken?: string } | null;
+    if (!r?.accessToken || !r.refreshToken) return 'unreachable';
+    // The device may have switched accounts while the request was out; never
+    // write the old session's tokens over the new one.
+    if (this.tokens?.refreshToken !== tokens.refreshToken) return this.tokens ? 'ok' : 'rejected';
+    this.tokens = { ...tokens, accessToken: r.accessToken, refreshToken: r.refreshToken };
+    saveJson('auth', this.tokens);
+    return 'ok';
   }
 
   /**
@@ -769,9 +869,12 @@ export class ApiClient {
    * for the matchmaker and the realtime gateways.
    */
   async accessToken(): Promise<string | null> {
-    if (!this.tokens) return null;
-    if (secondsLeft(this.tokens.accessToken) < REFRESH_MARGIN_S) await this.refresh();
-    return this.tokens?.accessToken ?? null;
+    if (!this.tokens || this.tokens.expired) return null;
+    if (secondsLeft(this.tokens.accessToken) < REFRESH_MARGIN_S) {
+      const result = await this.refresh();
+      if (result === 'rejected' && !this.tokens?.deviceToken) this.markExpired();
+    }
+    return this.tokens?.expired ? null : (this.tokens?.accessToken ?? null);
   }
 
   /**
@@ -809,7 +912,11 @@ export class ApiClient {
     let res: Response;
     try {
       res = await send();
-      if (res.status === 401 && opts.auth !== false && (await this.refresh())) res = await send();
+      if (res.status === 401 && opts.auth !== false && this.tokens) {
+        const result = await this.refresh();
+        if (result === 'ok') res = await send();
+        else if (result === 'rejected' && !this.tokens?.deviceToken) this.markExpired();
+      }
     } catch (err) {
       throw new ApiError(0, 'network', err instanceof Error ? err.message : 'Network error');
     }
@@ -855,22 +962,42 @@ export class ApiClient {
 
   authProviders = (): Promise<ApiAuthProviders> =>
     this.request('GET', '/auth/providers', undefined, { auth: false });
-  /** Trades the one-time code from `/auth/complete` for a session. */
-  exchangeCode = (code: string): Promise<ApiAuthResult> =>
-    this.request('POST', '/auth/exchange', { code }, { auth: false });
-  /** Redeems an email magic-link token for a session. */
-  verifyEmail = (token: string): Promise<ApiAuthResult> =>
-    this.request('POST', '/auth/email/verify', { token }, { auth: false });
   /**
-   * Starts Discord/Google sign-in. With `link` the signed-in account is sent
-   * along, so a new identity is linked to it (or the device switches to the
-   * account that already owns it).
+   * Trades the one-time code from `/auth/complete` for a session. `nonce` is
+   * the secret behind the binding sent at start; the current session (if
+   * any) goes along, since only that account can receive a link.
    */
-  startOAuth = (provider: 'discord' | 'google', link: boolean): Promise<{ url: string }> =>
-    this.request('POST', `/auth/${provider}/start`, undefined, { auth: link });
-  /** Emails a magic link; `link` works as for {@link ApiClient.startOAuth}. */
-  startEmail = (email: string, link: boolean): Promise<{ sent: boolean }> =>
-    this.request('POST', '/auth/email/start', { email }, { auth: link });
+  exchangeCode = (code: string, nonce: string): Promise<ApiAuthResult> =>
+    this.request('POST', '/auth/exchange', { code, nonce });
+  /** Redeems an email magic-link token for a session; `nonce` as for {@link ApiClient.exchangeCode}. */
+  verifyEmail = (token: string, nonce: string): Promise<ApiAuthResult> =>
+    this.request('POST', '/auth/email/verify', { token, nonce });
+  /** Redeems a one-time staff sign-in link (`pnpm admin staff bootstrap` / `staff link`). */
+  verifyStaffLink = (token: string): Promise<ApiAuthResult> =>
+    this.request('POST', '/auth/staff-link', { token }, { auth: false });
+  /**
+   * Starts an OAuth sign-in. With `link` the signed-in account is sent along
+   * with the intent: a new identity is linked to it, and one another account
+   * owns is refused (`link`) or switched to (`signIn`). `binding` is the
+   * SHA-256 of a nonce this browser keeps until it redeems the code.
+   */
+  startOAuth = (
+    provider: OAuthProvider,
+    link: boolean,
+    intent: AuthIntent,
+    binding: string,
+  ): Promise<{ url: string }> =>
+    this.request('POST', `/auth/${provider}/start`, link ? { intent, binding } : { binding }, { auth: link });
+  /** Emails a magic link; `link`, `intent` and `binding` work as for {@link ApiClient.startOAuth}. */
+  startEmail = (
+    email: string,
+    link: boolean,
+    intent: AuthIntent,
+    binding: string,
+  ): Promise<{ sent: boolean }> =>
+    this.request('POST', '/auth/email/start', link ? { email, intent, binding } : { email, binding }, {
+      auth: link,
+    });
   unlinkIdentity = (provider: LoginProvider): Promise<{ linkedProviders: string[] }> =>
     this.request('DELETE', `/me/identities/${provider}`);
 

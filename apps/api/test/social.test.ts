@@ -154,7 +154,7 @@ describe('friends', () => {
     });
     expect(res.statusCode).toBe(201);
     const queue = await api.req('GET', '/internal/reports', {
-      headers: { authorization: 'Bearer test-admin-token-0123456789' },
+      headers: { authorization: 'Bearer test-admin-token-0123456789-abcdefghij' },
     });
     expect(queue.json().reports.some((r: { targetUserId: string }) => r.targetUserId === b.id)).toBe(true);
   });

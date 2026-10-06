@@ -14,7 +14,13 @@ import {
   renameLockedUntil,
   WelcomeSignIn,
 } from '../src/screens/overlays/AccountSheet.tsx';
-import { accountUi, enabledProviders, type AuthProviders } from '../src/store/account.ts';
+import {
+  AUTH_PROVIDERS,
+  accountUi,
+  enabledProviders,
+  type AuthProviderId,
+  type AuthProviders,
+} from '../src/store/account.ts';
 import { uiEvents } from '../src/store/events.ts';
 import type { ProfileData } from '../src/store/types.ts';
 import { ui } from '../src/store/uiStore.ts';
@@ -26,8 +32,11 @@ import { ui } from '../src/store/uiStore.ts';
 const EMOJI =
   /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}\u{25A0}-\u{25FF}\u{2700}-\u{27BF}]|\u{FE0F}/u;
 
-const ALL: AuthProviders = { discord: true, google: true, email: true };
-const NONE: AuthProviders = { discord: false, google: false, email: false };
+/** A server offering exactly `ids`. */
+const only = (...ids: AuthProviderId[]): AuthProviders =>
+  Object.fromEntries(AUTH_PROVIDERS.map((p) => [p, ids.includes(p)])) as AuthProviders;
+const ALL: AuthProviders = only(...AUTH_PROVIDERS);
+const NONE: AuthProviders = only();
 
 function profile(over: Partial<ProfileData> = {}): ProfileData {
   return {
@@ -79,7 +88,8 @@ beforeEach(() => {
 
 describe('enabledProviders', () => {
   it('keeps display order and drops disabled or unknown servers', () => {
-    expect(enabledProviders({ discord: false, google: true, email: true })).toEqual(['google', 'email']);
+    expect(enabledProviders(only('email', 'google'))).toEqual(['google', 'email']);
+    expect(enabledProviders(only('apple', 'github', 'twitch'))).toEqual(['github', 'twitch', 'apple']);
     expect(enabledProviders(null)).toEqual([]);
   });
 });
@@ -105,7 +115,7 @@ describe('Settings > Account', () => {
   it('shows only enabled methods, the linked state and guards the last login', () => {
     setup({
       session: 'online',
-      providers: { discord: true, google: false, email: true },
+      providers: only('discord', 'email'),
       profile: { isGuest: false, linkedProviders: ['email'] },
     });
     const html = renderToStaticMarkup(<AccountSection />);
@@ -122,13 +132,28 @@ describe('Settings > Account', () => {
   it('lets a method be unlinked while another remains, and still lists a linked method the server turned off', () => {
     setup({
       session: 'online',
-      providers: { discord: false, google: true, email: true },
+      providers: only('google', 'email'),
       profile: { isGuest: false, linkedProviders: ['discord', 'email'] },
     });
     const html = renderToStaticMarkup(<AccountSection />);
     expect(html).toContain('data-testid="method-discord"');
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Unlink/);
     expect(html).not.toContain('Link a second login');
+  });
+
+  it('lists GitHub, Twitch and Apple when the server enables them, with their linked state', () => {
+    setup({
+      session: 'online',
+      providers: only('github', 'twitch', 'apple'),
+      profile: { isGuest: false, linkedProviders: ['github', 'apple'] },
+    });
+    const html = renderToStaticMarkup(<AccountSection />);
+    for (const p of ['github', 'twitch', 'apple']) expect(html).toContain(`data-testid="method-${p}"`);
+    expect(html).toMatch(/method-github[\s\S]*?Linked/);
+    expect(html).toMatch(/method-twitch[\s\S]*?>Link</);
+    expect(html).toContain('data-testid="sign-in-twitch"');
+    expect(html).not.toContain('data-testid="method-discord"');
+    expect(buttons(html)).toEqual(expect.arrayContaining(['GitHub', 'Twitch', 'Apple']));
   });
 
   it('has no emoji on any control', () => {
@@ -170,7 +195,7 @@ describe('welcome screen', () => {
   it('offers sign-in to an existing Tumbler only when the server has a method', () => {
     setup({ session: 'local', providers: NONE });
     expect(renderToStaticMarkup(<WelcomeSignIn />)).toBe('');
-    accountUi.getState().setProviders({ discord: false, google: false, email: true });
+    accountUi.getState().setProviders(only('email'));
     expect(renderToStaticMarkup(<WelcomeScreen />)).toContain('Sign in to an existing Tumbler');
   });
 });

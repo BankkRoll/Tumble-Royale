@@ -140,7 +140,7 @@ it never overwrites an existing `.env`.
 | File                                                             | Holds                                                                                                    |
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | [`.env.example`](.env.example)                                   | Secrets and URLs shared by the API, matchmaker and game server (`JWT_SECRET`, `INTERNAL_HMAC_SECRET`, …) |
-| [`apps/api/.env.example`](apps/api/.env.example)                 | API overrides: database, Redis, OAuth, SMTP, Stripe, tuning                                              |
+| [`apps/api/.env.example`](apps/api/.env.example)                 | API overrides: database, Redis, OAuth (Discord, Google, GitHub, Twitch, Apple), SMTP, Stripe, tuning     |
 | [`apps/matchmaker/.env.example`](apps/matchmaker/.env.example)   | Matchmaker overrides: Redis, lobby timing, rate limits                                                   |
 | [`apps/game-server/.env.example`](apps/game-server/.env.example) | Game server overrides: public URL, region, capacity, results outbox                                      |
 | [`apps/client/.env.example`](apps/client/.env.example)           | Client build URLs (`VITE_*`, baked into the bundle) and the dev proxy target                             |
@@ -149,6 +149,13 @@ Each service loads its own `apps/<name>/.env`, then the root `.env`; real
 environment variables always win. Secrets have no built-in defaults: a service
 lists every missing or invalid variable and exits, and refuses the `change-me`
 placeholders from the examples. Tests never read `.env` files.
+
+The root `.env` also gets an `ADMIN_TOKEN` for `pnpm admin` and
+`DEV_ADMIN_EMAIL=admin@tumble.localhost`: on a `pnpm dev` boot with no staff
+yet, the API makes that address an admin and logs a one-time sign-in link
+for the game and `/admin` (a fresh one every boot). Remove the line to opt
+out; production refuses it. Every variable is listed in the
+[environment reference](docs/SELF_HOSTING.md#environment-reference).
 
 ### Deploying
 
@@ -185,9 +192,13 @@ Operators steer a running game with `pnpm admin` (it calls the API with
 `ADMIN_TOKEN`); nothing needs a restart or a client release:
 
 Staff can do the same, and work the report queue, from the web console at
-`/admin`: grant a full account a role with
+`/admin`. A fresh server gets its first admin with
+`pnpm admin staff bootstrap --email you@example.com`, which prints a one-time
+sign-in link (no email or OAuth setup needed); later staff get a role with
 `pnpm admin staff grant <userId> --role moderator|admin`, and every action is
-recorded in an audit log (see [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md#the-admin-console)).
+recorded in an audit log. **[docs/ADMIN.md](docs/ADMIN.md)** is the operator's
+handbook: roles, every `pnpm admin` command, sign-in provider setup and
+runbooks for reports, bans, refunds, incidents, backups and secret rotation.
 
 ```sh
 pnpm admin maintenance on --in 10 --for 30 --message "New rounds incoming!"

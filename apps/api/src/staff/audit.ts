@@ -37,6 +37,26 @@ export async function recordAudit(
   db: DbOrTx = ctx.db,
 ): Promise<void> {
   req.log.info({ audit: entry.action, actor: actor.label, target: entry.targetId ?? null }, 'admin action');
+  await writeAuditRow(db, actor, entry, req.ip, ctx.now());
+}
+
+/**
+ * Writes one audit row without a request (boot-time jobs such as the
+ * development admin seed).
+ *
+ * @param db - Database or transaction.
+ * @param actor - Who acted.
+ * @param entry - The action.
+ * @param ip - Client address, or null when there is no client.
+ * @param at - When it happened.
+ */
+export async function writeAuditRow(
+  db: DbOrTx,
+  actor: StaffActor,
+  entry: AuditEntry,
+  ip: string | null,
+  at: Date,
+): Promise<void> {
   await db.insert(adminAuditLog).values({
     actorUserId: actor.userId,
     actorLabel: actor.label,
@@ -46,7 +66,7 @@ export async function recordAudit(
     targetId: entry.targetId ?? null,
     reason: entry.reason ?? null,
     details: entry.details ?? null,
-    ip: req.ip,
-    createdAt: ctx.now(),
+    ip,
+    createdAt: at,
   });
 }

@@ -14,7 +14,7 @@ import { conflict, notFound, parse } from '../http/errors.ts';
  * Sign-in methods that work on any device. The `device` identity only signs
  * back in on the browser holding its secret, so it never counts as a fallback.
  */
-export const PORTABLE_PROVIDERS = ['discord', 'google', 'email'] as const;
+export const PORTABLE_PROVIDERS = ['discord', 'google', 'github', 'twitch', 'apple', 'email'] as const;
 
 const ProviderParam = z.object({ provider: z.enum(PORTABLE_PROVIDERS) });
 

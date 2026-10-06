@@ -9,7 +9,10 @@
  * - Refuse to boot without secrets, with placeholder secrets, with a Stripe
  *   key but no webhook secret, or in production without Redis unless that is
  *   explicitly allowed.
+ * - Refuse half-configured sign-in providers (an id without its secret, an
+ *   incomplete or unreadable Apple key) instead of silently hiding them.
  */
+import { createPrivateKey } from 'node:crypto';
 import { EnvIssues, type Env } from '@tumble/shared/env';
 import { readMetricsExposure, type MetricsExposure } from '@tumble/shared/metrics';
 import type { TrustProxy } from '@tumble/shared/proxy';
@@ -56,6 +59,15 @@ const EnvSchema = z.object({
   DISCORD_CLIENT_SECRET: optionalString,
   GOOGLE_CLIENT_ID: optionalString,
   GOOGLE_CLIENT_SECRET: optionalString,
+  GITHUB_CLIENT_ID: optionalString,
+  GITHUB_CLIENT_SECRET: optionalString,
+  TWITCH_CLIENT_ID: optionalString,
+  TWITCH_CLIENT_SECRET: optionalString,
+  APPLE_CLIENT_ID: optionalString,
+  APPLE_TEAM_ID: optionalString,
+  APPLE_KEY_ID: optionalString,
+  APPLE_PRIVATE_KEY: optionalString,
+  DEV_ADMIN_EMAIL: optionalString.pipe(z.string().email().optional()),
   STRIPE_SECRET_KEY: optionalString,
   STRIPE_WEBHOOK_SECRET: optionalString,
   SMTP_URL: optionalString,
@@ -71,6 +83,21 @@ const EnvSchema = z.object({
 export interface OAuthClientConfig {
   clientId: string;
   clientSecret: string;
+}
+
+/**
+ * Sign in with Apple credentials. Apple has no static client secret: every
+ * token exchange presents a short-lived ES256 JWT signed with the `.p8` key.
+ */
+export interface AppleClientConfig {
+  /** Services ID (`APPLE_CLIENT_ID`), e.g. `com.example.tumble.web`. */
+  clientId: string;
+  /** Apple Developer team id (`APPLE_TEAM_ID`), the client secret's issuer. */
+  teamId: string;
+  /** Id of the Sign in with Apple key (`APPLE_KEY_ID`). */
+  keyId: string;
+  /** PKCS#8 PEM of that key (`APPLE_PRIVATE_KEY`; `\n` escapes are accepted). */
+  privateKey: string;
 }
 
 /** Fully resolved API configuration. */
@@ -105,6 +132,15 @@ export interface ApiConfig {
   corsOrigins: string[] | true;
   discord: OAuthClientConfig | undefined;
   google: OAuthClientConfig | undefined;
+  github: OAuthClientConfig | undefined;
+  twitch: OAuthClientConfig | undefined;
+  apple: AppleClientConfig | undefined;
+  /**
+   * Development only (`DEV_ADMIN_EMAIL`): the account with this address is
+   * made admin at boot while no staff exist, and a one-time console sign-in
+   * link is logged. Refused in production; ignored in tests.
+   */
+  devAdminEmail: string | undefined;
   /**
    * Stripe credentials. The webhook secret is mandatory alongside the key:
    * without it refunds and chargebacks could never reach the ledger.
@@ -216,8 +252,47 @@ function readVoice(issues: EnvIssues, nodeEnv: ApiConfig['env']): VoiceServerCon
   };
 }
 
-function pair(id: string | undefined, secret: string | undefined): OAuthClientConfig | undefined {
-  return id && secret ? { clientId: id, clientSecret: secret } : undefined;
+/**
+ * One OAuth client from `<PREFIX>_CLIENT_ID` and `<PREFIX>_CLIENT_SECRET`.
+ * Half a pair is reported: it is a typo that would otherwise silently hide
+ * the provider.
+ */
+function pair(issues: EnvIssues, prefix: string): OAuthClientConfig | undefined {
+  const idKey = `${prefix}_CLIENT_ID`;
+  const secretKey = `${prefix}_CLIENT_SECRET`;
+  const id = issues.optional(idKey);
+  const secret = issues.optional(secretKey);
+  if (id && secret) return { clientId: id, clientSecret: secret };
+  if (id) issues.add(secretKey, `is required when ${idKey} is set`);
+  if (secret) issues.add(idKey, `is required when ${secretKey} is set`);
+  return undefined;
+}
+
+const APPLE_KEYS = ['APPLE_CLIENT_ID', 'APPLE_TEAM_ID', 'APPLE_KEY_ID', 'APPLE_PRIVATE_KEY'] as const;
+
+function readApple(issues: EnvIssues): AppleClientConfig | undefined {
+  const [clientId, teamId, keyId, rawKey] = APPLE_KEYS.map((k) => issues.optional(k));
+  if (!clientId && !teamId && !keyId && !rawKey) return undefined;
+  if (!clientId || !teamId || !keyId || !rawKey) {
+    for (const k of APPLE_KEYS) {
+      if (!issues.optional(k))
+        issues.add(k, `is required for Sign in with Apple (set all of ${APPLE_KEYS.join(', ')})`);
+    }
+    return undefined;
+  }
+  // NOTE: a .env value cannot portably span lines, so the PEM may arrive on
+  // one line with literal `\n` escapes.
+  const privateKey = rawKey.replace(/\\n/g, '\n');
+  try {
+    if (createPrivateKey(privateKey).asymmetricKeyType !== 'ec') throw new Error('not an EC key');
+  } catch {
+    issues.add(
+      'APPLE_PRIVATE_KEY',
+      'must be the contents of the .p8 key file Apple issued (-----BEGIN PRIVATE KEY----- …)',
+    );
+    return undefined;
+  }
+  return { clientId, teamId, keyId, privateKey };
 }
 
 /**
@@ -267,6 +342,21 @@ export function loadConfig(env: Env = process.env): ApiConfig {
   const trustProxy = issues.trustProxy();
   const metrics = readMetricsExposure(issues, e.PORT);
   const voice = readVoice(issues, e.NODE_ENV);
+  const oauth = {
+    discord: pair(issues, 'DISCORD'),
+    google: pair(issues, 'GOOGLE'),
+    github: pair(issues, 'GITHUB'),
+    twitch: pair(issues, 'TWITCH'),
+    apple: readApple(issues),
+  };
+  // SECURITY: the dev seed makes an admin reachable through a link printed to
+  // the log; a real deployment must never do that.
+  if (e.DEV_ADMIN_EMAIL && e.NODE_ENV === 'production') {
+    issues.add(
+      'DEV_ADMIN_EMAIL',
+      'is for local development only; unset it and create the first admin with `pnpm admin staff bootstrap`',
+    );
+  }
   issues.throwIfAny('api');
   const corsOrigins: string[] | true = e.CORS_ORIGINS
     ? e.CORS_ORIGINS.split(',')
@@ -289,8 +379,8 @@ export function loadConfig(env: Env = process.env): ApiConfig {
     publicWebUrl: e.PUBLIC_WEB_URL.replace(/\/$/, ''),
     publicApiUrl: e.PUBLIC_API_URL.replace(/\/$/, ''),
     corsOrigins,
-    discord: pair(e.DISCORD_CLIENT_ID, e.DISCORD_CLIENT_SECRET),
-    google: pair(e.GOOGLE_CLIENT_ID, e.GOOGLE_CLIENT_SECRET),
+    ...oauth,
+    devAdminEmail: e.NODE_ENV === 'development' ? e.DEV_ADMIN_EMAIL?.toLowerCase() : undefined,
     stripe:
       e.STRIPE_SECRET_KEY && e.STRIPE_WEBHOOK_SECRET
         ? { secretKey: e.STRIPE_SECRET_KEY, webhookSecret: e.STRIPE_WEBHOOK_SECRET }

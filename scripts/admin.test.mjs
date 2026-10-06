@@ -1,18 +1,21 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
   formatErrors,
   formatIncidents,
   formatRefunds,
+  formatStaffLink,
   formatSummary,
   loadEnv,
   parseArgs,
   run,
   toRequest,
+  USAGE,
 } from './admin.mjs';
 
 function capture() {
@@ -138,6 +141,35 @@ describe('toRequest', () => {
     assert.equal(req(['audit']).path, '/internal/audit');
     assert.throws(() => req(['staff', 'grant', 'u1', '--role', 'owner']), /--role/);
     assert.throws(() => req(['staff', 'grant']), /userId/);
+  });
+
+  it('maps the first-admin bootstrap and sign-in link commands', () => {
+    const boot = req(['staff', 'bootstrap', '--email', 'me@example.com', '--name', 'Owner']);
+    assert.equal(boot.method, 'POST');
+    assert.equal(boot.path, '/internal/staff/bootstrap');
+    assert.deepEqual(boot.body, { email: 'me@example.com', displayName: 'Owner' });
+    assert.deepEqual(req(['staff', 'bootstrap', '--email', 'me@example.com']).body, {
+      email: 'me@example.com',
+    });
+    assert.throws(() => req(['staff', 'bootstrap']), /--email/);
+    const link = req(['staff', 'link', 'u1']);
+    assert.deepEqual([link.method, link.path], ['POST', '/internal/staff/u1/link']);
+    assert.throws(() => req(['staff', 'link']), /userId/);
+  });
+
+  it('prints the bootstrap result with the link on its own line', () => {
+    const text = formatStaffLink({
+      userId: 'u1',
+      label: 'Owner#0001',
+      email: 'me@example.com',
+      created: true,
+      role: 'admin',
+      link: 'https://play.example/auth/staff?token=abc',
+      expiresAt: '2026-10-06T09:15:00.000Z',
+    });
+    assert.match(text, /^Created Owner#0001 \(u1\) for me@example.com; role: admin\./);
+    assert.match(text, /\n {2}https:\/\/play\.example\/auth\/staff\?token=abc$/);
+    assert.match(formatStaffLink({ userId: 'u1', role: 'moderator', link: 'x', expiresAt: 't' }), /^Sign-in link for u1/);
   });
 
   it('rejects bad usage', () => {
@@ -501,5 +533,39 @@ describe('loadEnv', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * Every command in the usage text, as the words before its first argument:
+ * `bans list`, `status incident open`, `audit`, …
+ *
+ * @param {string} usage
+ * @returns {string[]}
+ */
+function usageCommands(usage) {
+  const body = usage.slice(usage.indexOf('\n'), usage.indexOf('\nOptions'));
+  const commands = [];
+  for (const line of body.split('\n')) {
+    if (!/^ {2}[a-z]/.test(line)) continue;
+    for (const part of line.trim().split(/\s+\|\s+/)) {
+      const words = [];
+      for (const w of part.split(/\s+/)) {
+        if (!/^[a-z]+$/.test(w)) break;
+        words.push(w);
+      }
+      if (words.length) commands.push(words.join(' '));
+    }
+  }
+  return [...new Set(commands)];
+}
+
+describe('docs/ADMIN.md', () => {
+  it('documents every command in --help with a pnpm admin example', () => {
+    const doc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../docs/ADMIN.md'), 'utf8');
+    const commands = usageCommands(USAGE);
+    assert.ok(commands.length > 40, `parsed only ${commands.length} commands`);
+    const missing = commands.filter((c) => !doc.includes(`pnpm admin ${c}`));
+    assert.deepEqual(missing, [], `docs/ADMIN.md lacks examples for: ${missing.join(', ')}`);
   });
 });

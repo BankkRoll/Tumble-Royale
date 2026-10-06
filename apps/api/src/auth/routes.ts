@@ -1,10 +1,11 @@
 /**
  * `/auth/*` routes: guest device sign-in, refresh rotation, logout, OAuth
- * (Discord, Google), email magic links and the one-time login-code exchange.
+ * (Discord, Google, GitHub, Twitch, Apple), email magic links and the one-time
+ * login-code exchange.
  * Every sign-in re-applies bans retained from a deleted account that shared an
  * identity, email address or device secret (`moderation/ban-evasion.ts`).
  */
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import {
   createAccount,
@@ -20,7 +21,14 @@ import { invalidateBanCache, optionalUser, requireUser } from '../http/auth.ts';
 import { reapplyRetainedBans, type StableIdentifier } from '../moderation/ban-evasion.ts';
 import { ApiError, parse } from '../http/errors.ts';
 import { AUTH_RATE } from '../http/rate-limit.ts';
-import { completeOAuth, startOAuth, type OAuthProviderId } from './oauth.ts';
+import {
+  completeOAuth,
+  OAUTH_PROVIDERS,
+  providerEnabled,
+  startOAuth,
+  type OAuthIntent,
+  type OAuthProviderId,
+} from './oauth.ts';
 import {
   revokeByRefreshToken,
   revokeBySessionId,
@@ -42,7 +50,16 @@ const GuestBody = z.object({
 });
 const RefreshBody = z.object({ refreshToken: z.string().min(20).max(200) });
 const LogoutBody = z.object({ refreshToken: z.string().min(20).max(200).optional() }).optional();
-const ProviderParam = z.object({ provider: z.enum(['discord', 'google']) });
+const ProviderParam = z.object({ provider: z.enum(OAUTH_PROVIDERS) });
+const IntentSchema = z.enum(['link', 'signIn']);
+const StartBody = z.object({ intent: IntentSchema.optional() }).strict().optional();
+/** Apple's form POST; `user` (JSON with the name) arrives only on the first authorization. */
+const AppleCallbackBody = z.object({
+  code: z.string().max(2048).optional(),
+  state: z.string().max(256).optional(),
+  error: z.string().max(256).optional(),
+  user: z.string().max(4096).optional(),
+});
 const CallbackQuery = z.object({
   code: z.string().max(2048).optional(),
   state: z.string().max(256).optional(),
@@ -55,6 +72,7 @@ const EmailStartBody = z.object({
     .email()
     .max(254)
     .transform((e) => e.toLowerCase()),
+  intent: IntentSchema.optional(),
 });
 const EmailVerifyBody = z.object({ token: z.string().min(20).max(200) });
 
@@ -63,30 +81,55 @@ const EmailVerifyBody = z.object({ token: z.string().min(20).max(200) });
  * honestly and ask before replacing the Tumbler on the device:
  * - `linked`: the identity now belongs to the signed-in account;
  * - `alreadyLinked`: it already did;
- * - `switched`: the signed-in account asked to link it, but another account
- *   owns it, so the tokens are for that other account (sign-in on a new device);
+ * - `switched`: the signed-in account asked to sign in with it, but another
+ *   account owns it, so the tokens are for that other account (sign-in on a
+ *   new device);
  * - `signedIn`: no account was signed in and an existing one owns it;
  * - `created`: no account owned it, so a new one was made.
  */
 export type AuthOutcome = 'linked' | 'alreadyLinked' | 'switched' | 'signedIn' | 'created';
 
+/**
+ * How a session was obtained: a sign-in method, or `link` for a one-time
+ * staff sign-in link (`pnpm admin staff bootstrap` / `staff link`).
+ */
+export type AuthMethod = OAuthProviderId | 'email' | 'link';
+
 /** Body of `/auth/exchange` and `/auth/email/verify`: the session plus what happened. */
-export type AuthResult = TokenPair & { outcome: AuthOutcome; provider: 'discord' | 'google' | 'email' };
+export type AuthResult = TokenPair & { outcome: AuthOutcome; provider: AuthMethod };
+
+/** An external identity proven by a provider or an email link. */
+interface ProvenIdentity {
+  provider: IdentityProvider;
+  subject: string;
+  /** Verified address only; an unverified one is never used to find an account. */
+  email: string | null;
+  name: string | null;
+  linkUserId: string | null;
+  intent: OAuthIntent;
+}
+
+/** Turns a provider's name into a display-name suggestion `createAccount` may accept. */
+function nameSuggestion(name: string): string {
+  return name.replace(/[^A-Za-z0-9_ ]/g, '').slice(0, 16);
+}
 
 /** Signs in (or creates/links) the account behind an external identity. */
 async function resolveIdentity(
   tx: DbOrTx,
   ctx: AppContext,
-  id: {
-    provider: IdentityProvider;
-    subject: string;
-    email: string | null;
-    name: string | null;
-    linkUserId: string | null;
-  },
+  id: ProvenIdentity,
 ): Promise<{ userId: string; outcome: AuthOutcome }> {
   const owner = await findIdentity(tx, id.provider, id.subject);
   if (id.linkUserId) {
+    // "Connect" from Settings must never move the device to another account.
+    if (owner && owner !== id.linkUserId && id.intent === 'link') {
+      throw new ApiError(
+        409,
+        'identity_in_use',
+        'That login is linked to another player; unlink it there first',
+      );
+    }
     // The player proved they control the identity, so handing them the account
     // that owns it is safe; the client confirms before abandoning the current one.
     if (owner && owner !== id.linkUserId) return { userId: owner, outcome: 'switched' };
@@ -105,7 +148,7 @@ async function resolveIdentity(
   const account = await createAccount(tx, ctx.catalog, {
     isGuest: false,
     email: id.email,
-    ...(id.name ? { displayName: id.name.replace(/[^A-Za-z0-9_ ]/g, '').slice(0, 16) } : {}),
+    ...(id.name ? { displayName: nameSuggestion(id.name) } : {}),
     identity: { provider: id.provider, subject: id.subject },
   });
   return { userId: account.userId, outcome: 'created' };
@@ -121,7 +164,7 @@ async function resolveIdentity(
  */
 async function signInWithIdentity(
   ctx: AppContext,
-  id: Parameters<typeof resolveIdentity>[2],
+  id: ProvenIdentity,
   userAgent: string | undefined,
 ): Promise<TokenPair & { outcome: AuthOutcome }> {
   const { userId, outcome, reapplied } = await ctx.db.transaction(async (tx) => {
@@ -201,9 +244,9 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     return reply.code(204).send();
   });
 
+  // The client renders only the methods reported here.
   app.get('/auth/providers', async () => ({
-    discord: Boolean(ctx.config.discord),
-    google: Boolean(ctx.config.google),
+    ...Object.fromEntries(OAUTH_PROVIDERS.map((p) => [p, providerEnabled(ctx.config, p)])),
     email: ctx.mailer.id !== 'disabled',
     guest: true,
   }));
@@ -213,33 +256,47 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     return reply.redirect(await startOAuth(ctx.config, ctx.kv, provider, null));
   });
 
-  // POST lets a signed-in guest start an upgrade: browsers cannot attach an
+  // POST lets a signed-in player link or switch: browsers cannot attach an
   // Authorization header to a top-level navigation, so the URL is returned instead.
   app.post('/auth/:provider/start', { config: AUTH_RATE }, async (req) => {
     const { provider } = parse(ProviderParam, req.params);
+    const body = parse(StartBody, req.body);
     const auth = await optionalUser(ctx, req);
-    return { url: await startOAuth(ctx.config, ctx.kv, provider, auth?.userId ?? null) };
+    return {
+      url: await startOAuth(ctx.config, ctx.kv, provider, auth?.userId ?? null, body?.intent ?? 'signIn'),
+    };
   });
 
-  app.get('/auth/:provider/callback', async (req, reply) => {
-    const { provider } = parse(ProviderParam, req.params);
-    const q = parse(CallbackQuery, req.query);
+  /**
+   * Shared tail of both callback shapes: finish the flow, sign in, and send
+   * the browser back to the client with a one-time code (or an error code).
+   */
+  const finishCallback = async (
+    reply: FastifyReply,
+    provider: OAuthProviderId,
+    q: { code?: string; state?: string; error?: string },
+    userAgent: string | undefined,
+    appleUser?: string,
+  ) => {
     const back = `${ctx.config.publicWebUrl}/auth/complete?provider=${provider}`;
     const fail = (code: string) => reply.redirect(`${back}&error=${encodeURIComponent(code)}`);
-    if (q.error || !q.code || !q.state) return fail(q.error ?? 'missing_code');
+    if (q.error || !q.code || !q.state) {
+      // Apple reports a closed consent sheet as `user_cancelled_authorize`.
+      const error = q.error === 'user_cancelled_authorize' ? 'access_denied' : q.error;
+      return fail(error ?? 'missing_code');
+    }
     try {
       const identity = await completeOAuth(
         ctx.config,
         ctx.kv,
         ctx.fetch,
-        provider as OAuthProviderId,
+        provider,
         q.code,
         q.state,
+        ctx.now(),
+        appleUser,
       );
-      const result = {
-        ...(await signInWithIdentity(ctx, identity, req.headers['user-agent'])),
-        provider,
-      };
+      const result: AuthResult = { ...(await signInWithIdentity(ctx, identity, userAgent)), provider };
       const code = randomToken(24);
       await ctx.kv.set(`login:${code}`, JSON.stringify(result), LOGIN_CODE_TTL_MS);
       return reply.redirect(`${back}&code=${code}`);
@@ -247,6 +304,26 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
       if (err instanceof ApiError) return fail(err.code);
       throw err;
     }
+  };
+
+  app.get('/auth/:provider/callback', async (req, reply) => {
+    const { provider } = parse(ProviderParam, req.params);
+    return finishCallback(reply, provider, parse(CallbackQuery, req.query), req.headers['user-agent']);
+  });
+
+  // SECURITY: Apple's `response_mode=form_post` arrives as a cross-site form
+  // POST, so this route parses urlencoded bodies in its own scope only; the
+  // single-use `state` stored at start is what ties it to a real sign-in.
+  app.register(async (scope) => {
+    scope.addContentTypeParser(
+      'application/x-www-form-urlencoded',
+      { parseAs: 'string', bodyLimit: 16 * 1024 },
+      (_req, body, done) => done(null, Object.fromEntries(new URLSearchParams(String(body)))),
+    );
+    scope.post('/auth/apple/callback', { config: AUTH_RATE }, async (req, reply) => {
+      const body = parse(AppleCallbackBody, req.body ?? {});
+      return finishCallback(reply, 'apple', body, req.headers['user-agent'], body.user);
+    });
   });
 
   // Tokens never travel in a redirect URL; the client trades this one-time code for them.
@@ -258,7 +335,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
   });
 
   app.post('/auth/email/start', { config: AUTH_RATE }, async (req, reply) => {
-    const { email } = parse(EmailStartBody, req.body);
+    const { email, intent } = parse(EmailStartBody, req.body);
     if (ctx.mailer.id === 'disabled') {
       throw new ApiError(
         503,
@@ -272,7 +349,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     const token = randomToken();
     await ctx.kv.set(
       `magic:${sha256(token)}`,
-      JSON.stringify({ email, linkUserId: auth?.userId ?? null }),
+      JSON.stringify({ email, linkUserId: auth?.userId ?? null, intent: intent ?? 'signIn' }),
       MAGIC_LINK_TTL_MS,
     );
     const link = `${ctx.config.publicWebUrl}/auth/email?token=${token}`;
@@ -294,10 +371,14 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     const { token } = parse(EmailVerifyBody, req.body);
     const raw = await ctx.kv.getDel(`magic:${sha256(token)}`);
     if (!raw) throw new ApiError(400, 'invalid_token', 'Sign-in link expired or already used');
-    const { email, linkUserId } = JSON.parse(raw) as { email: string; linkUserId: string | null };
+    const { email, linkUserId, intent } = JSON.parse(raw) as {
+      email: string;
+      linkUserId: string | null;
+      intent?: OAuthIntent;
+    };
     const signedIn = await signInWithIdentity(
       ctx,
-      { provider: 'email', subject: email, email, name: null, linkUserId },
+      { provider: 'email', subject: email, email, name: null, linkUserId, intent: intent ?? 'signIn' },
       req.headers['user-agent'],
     );
     return { ...signedIn, provider: 'email' } satisfies AuthResult;

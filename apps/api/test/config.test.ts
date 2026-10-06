@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import { describe, expect, it } from 'vitest';
@@ -86,6 +86,62 @@ describe('api config', () => {
 
   it('keeps zero-setup memory state outside production', () => {
     expect(loadConfig(testEnv({ NODE_ENV: 'development' })).memoryStoreInProduction).toBe(false);
+  });
+});
+
+describe('sign-in providers', () => {
+  const appleKey = generateKeyPairSync('ec', { namedCurve: 'P-256' })
+    .privateKey.export({ format: 'pem', type: 'pkcs8' })
+    .toString();
+  const apple = {
+    APPLE_CLIENT_ID: 'com.example.web',
+    APPLE_TEAM_ID: 'TEAM',
+    APPLE_KEY_ID: 'KEY',
+    APPLE_PRIVATE_KEY: appleKey,
+  };
+
+  it('enables each OAuth provider only when both of its keys are set', () => {
+    const c = loadConfig(
+      testEnv({
+        GITHUB_CLIENT_ID: 'gh',
+        GITHUB_CLIENT_SECRET: 'gh-secret',
+        TWITCH_CLIENT_ID: 'tw',
+        TWITCH_CLIENT_SECRET: 'tw-secret',
+      }),
+    );
+    expect(c.github).toEqual({ clientId: 'gh', clientSecret: 'gh-secret' });
+    expect(c.twitch).toEqual({ clientId: 'tw', clientSecret: 'tw-secret' });
+    expect([c.discord, c.google, c.apple]).toEqual([undefined, undefined, undefined]);
+  });
+
+  it('reports half a pair instead of silently hiding the provider', () => {
+    expect(issueNames(testEnv({ GITHUB_CLIENT_ID: 'gh' }))).toEqual(['GITHUB_CLIENT_SECRET']);
+    expect(issueNames(testEnv({ DISCORD_CLIENT_SECRET: 's' }))).toEqual(['DISCORD_CLIENT_ID']);
+  });
+
+  it('reads the Apple key with escaped newlines and refuses an incomplete or unreadable one', () => {
+    const c = loadConfig(testEnv({ ...apple, APPLE_PRIVATE_KEY: appleKey.trim().replace(/\n/g, '\\n') }));
+    expect(c.apple).toMatchObject({ clientId: 'com.example.web', teamId: 'TEAM', keyId: 'KEY' });
+    expect(c.apple?.privateKey).toContain('\n');
+    expect(issueNames(testEnv({ APPLE_CLIENT_ID: 'com.example.web' }))).toEqual([
+      'APPLE_TEAM_ID',
+      'APPLE_KEY_ID',
+      'APPLE_PRIVATE_KEY',
+    ]);
+    expect(issueNames(testEnv({ ...apple, APPLE_PRIVATE_KEY: 'not a key' }))).toEqual(['APPLE_PRIVATE_KEY']);
+  });
+});
+
+describe('DEV_ADMIN_EMAIL', () => {
+  it('applies in development only and is refused in production', () => {
+    expect(
+      loadConfig(testEnv({ NODE_ENV: 'development', DEV_ADMIN_EMAIL: 'Dev@Localhost.test' })).devAdminEmail,
+    ).toBe('dev@localhost.test');
+    expect(loadConfig(testEnv({ DEV_ADMIN_EMAIL: 'dev@localhost.test' })).devAdminEmail).toBeUndefined();
+    expect(issueNames({ ...prod, REDIS_URL: 'redis://r', DEV_ADMIN_EMAIL: 'dev@localhost.test' })).toEqual([
+      'DEV_ADMIN_EMAIL',
+    ]);
+    expect(issueNames(testEnv({ DEV_ADMIN_EMAIL: 'not-an-email' }))).toEqual(['DEV_ADMIN_EMAIL']);
   });
 });
 

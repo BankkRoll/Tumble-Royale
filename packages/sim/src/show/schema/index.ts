@@ -32,6 +32,26 @@ export const BotSkillMixSchema = z.object({
 });
 
 /**
+ * Round voting between rounds (SHOWS.md §2.1). Hosts still need the
+ * `shows.mapVoting` live-ops flag on and must opt the director in; this only
+ * says whether the playlist allows it and how the ballot runs.
+ */
+export const PlaylistVotingSchema = z.object({
+  /** The playlist lets players vote on the next round. */
+  enabled: z.boolean().default(true),
+  /**
+   * Seconds the ballot stays open, counted from the start of RESULTS. The
+   * default fits inside the online RESULTS + TRANSITION gap (6 + 2 s); a
+   * longer window stretches TRANSITION to cover it.
+   */
+  seconds: z.number().min(3).max(20).default(8),
+  /** Candidates on the ballot (fewer when the pool cannot fill it). */
+  options: z.number().int().min(2).max(4).default(3),
+  /** Also vote on the final (off: the final is always the director's seeded pick). */
+  finals: z.boolean().default(false),
+});
+
+/**
  * A show playlist: which rounds can appear, how many, how fast the field
  * shrinks and who fills empty seats. Authored in `@tumble/content/shows`.
  */
@@ -80,6 +100,7 @@ export const ShowPlaylistSchema = z.object({
   endsAt: z.iso.datetime({ offset: true }).optional(),
   /** Spotlighted: announced as "Coming soon" before `startsAt`. */
   featured: z.boolean().default(false),
+  voting: PlaylistVotingSchema.default({ enabled: true, seconds: 8, options: 3, finals: false }),
 });
 
 /** Validated playlist. */

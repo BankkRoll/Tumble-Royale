@@ -19,6 +19,7 @@ import { uiEvents } from './events.ts';
 import { overlayAfterScreenChange } from './inputOwnership.ts';
 import type {
   BetweenRoundsInfo,
+  RoundVoteState,
   BootState,
   AchievementsData,
   ChallengesData,
@@ -218,6 +219,8 @@ export interface UIState {
   emoteWheelOpen: boolean;
   results: RoundResults | null;
   betweenRounds: BetweenRoundsInfo | null;
+  /** The next round's ballot between rounds (null when no vote is running). */
+  roundVote: RoundVoteState | null;
   finalHype: FinalHypeInfo | null;
   victory: VictoryInfo | null;
   playerWall: ShowSummary | null;
@@ -359,6 +362,10 @@ export interface UIState {
   setEmoteWheel: (open: boolean) => void;
   setResults: (results: RoundResults | null) => void;
   setBetweenRounds: (info: BetweenRoundsInfo | null) => void;
+  /** Replaces the round vote (null hides the card). */
+  setRoundVote: (vote: RoundVoteState | null) => void;
+  /** Merges into the running round vote; ignored when none is running. */
+  patchRoundVote: (patch: Partial<RoundVoteState>) => void;
   setFinalHype: (info: FinalHypeInfo | null) => void;
   setVictory: (info: VictoryInfo | null) => void;
   /** Loads the end-of-show wall; call before `setScreen('playerWall')`. */
@@ -483,6 +490,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   emoteWheelOpen: false,
   results: null,
   betweenRounds: null,
+  roundVote: null,
   finalHype: null,
   victory: null,
   playerWall: null,
@@ -671,6 +679,7 @@ export const ui = createStore<UIState>()((set, get) => ({
       spectate: null,
       results: null,
       betweenRounds: null,
+      roundVote: null,
       finalHype: null,
       victory: null,
       playerWall: null,
@@ -727,6 +736,11 @@ export const ui = createStore<UIState>()((set, get) => ({
   setEmoteWheel: (emoteWheelOpen) => set({ emoteWheelOpen }),
   setResults: (results) => set({ results }),
   setBetweenRounds: (betweenRounds) => set({ betweenRounds }),
+  setRoundVote: (roundVote) => set({ roundVote }),
+  patchRoundVote: (patch) => {
+    const cur = get().roundVote;
+    if (cur) set({ roundVote: { ...cur, ...patch } });
+  },
   setFinalHype: (finalHype) => set({ finalHype }),
   setVictory: (victory) => set({ victory }),
   setPlayerWall: (playerWall, opts) =>

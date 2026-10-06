@@ -49,6 +49,9 @@ export interface ConnectionLimits {
   /** Chat messages per second. */
   chatPerSec: number;
   chatBurst: number;
+  /** Round-vote ballots per second (a player changing their mind is a handful, not a stream). */
+  votesPerSec: number;
+  voteBurst: number;
   /** Violations tolerated within `violationWindowMs` before a kick. */
   maxViolations: number;
   violationWindowMs: number;
@@ -62,6 +65,8 @@ export const DEFAULT_LIMITS: ConnectionLimits = {
   bytesBurst: 32 * 1024,
   chatPerSec: 1,
   chatBurst: 4,
+  votesPerSec: 2,
+  voteBurst: 4,
   maxViolations: 60,
   violationWindowMs: 10_000,
 };
@@ -71,6 +76,7 @@ export class ConnectionGuard {
   private readonly messages: TokenBucket;
   private readonly bytes: TokenBucket;
   private readonly chat: TokenBucket;
+  private readonly votes: TokenBucket;
   private violations = 0;
   private windowStart: number;
 
@@ -85,6 +91,7 @@ export class ConnectionGuard {
     this.messages = new TokenBucket(limits.messagesPerSec, limits.messageBurst, now);
     this.bytes = new TokenBucket(limits.bytesPerSec, limits.bytesBurst, now);
     this.chat = new TokenBucket(limits.chatPerSec, limits.chatBurst, now);
+    this.votes = new TokenBucket(limits.votesPerSec, limits.voteBurst, now);
     this.windowStart = now;
   }
 
@@ -96,6 +103,11 @@ export class ConnectionGuard {
   /** @returns False if a chat message would exceed the chat rate. */
   admitChat(now: number): boolean {
     return this.chat.take(now);
+  }
+
+  /** @returns False if a round-vote ballot would exceed the vote rate. */
+  admitVote(now: number): boolean {
+    return this.votes.take(now);
   }
 
   /**

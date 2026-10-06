@@ -31,6 +31,11 @@ export interface RealDepsOptions {
    * mutator playlists (Chaos Mode) without their twist. Default: on.
    */
   mutatorsEnabled?: () => boolean;
+  /**
+   * The `shows.mapVoting` kill switch, read when each show starts: false
+   * plays every round from the seed, as before voting existed. Default: on.
+   */
+  votingEnabled?: () => boolean;
   /** Where private shows' custom rounds come from (the API); null plays only built-in rounds. */
   customRounds?: CustomRoundSource | null;
 }
@@ -51,7 +56,9 @@ function estimateRoundCount(p: ShowPlaylist, players: number): number {
 /**
  * The playlist a match plays. A custom lobby's host-picked rounds become the
  * pool (finals from the base playlist are kept when none was picked, so the
- * show can still end on a final).
+ * show can still end on a final). The lobby's "Round voting" setting (on
+ * unless the ticket says otherwise) decides whether players vote; host picks
+ * still win, because a ballot only ever offers rounds from the pool.
  */
 export function playlistForMatch(
   defaultId: string | undefined,
@@ -61,7 +68,8 @@ export function playlistForMatch(
   const id = match?.custom?.playlistId ?? match?.playlistId ?? defaultId;
   const base = ShowPlaylistSchema.parse((id && getPlaylist(id)) || MAIN_SHOW);
   const picks = (match?.custom?.rounds ?? []).filter((r) => lookup(r));
-  if (picks.length === 0) return base;
+  const voting = match?.custom?.roundVoting === false ? { ...base.voting, enabled: false } : base.voting;
+  if (picks.length === 0) return { ...base, voting };
   const pickedFinal = picks.some((r) => lookup(r)?.type === 'final');
   const finals = pickedFinal ? [] : base.pool.filter((e) => getRound(e.roundId)?.type === 'final');
   const firstType = lookup(picks[0]!)?.type;
@@ -73,6 +81,7 @@ export function playlistForMatch(
     minRounds: Math.min(base.minRounds, count),
     maxRounds: count,
     ...(firstType && firstType !== 'final' ? { firstRoundType: firstType } : {}),
+    voting,
   };
 }
 
@@ -129,6 +138,7 @@ export function createRealRoomDeps(R: Rapier, opts: RealDepsOptions = {}): RoomD
         rounds: picked.length > 0 ? new Map([...rounds, ...picked.map((r) => [r.id, r] as const)]) : rounds,
         ...customShowOptions(match),
         ...(opts.mutatorsEnabled?.() === false ? { mutatorId: null } : {}),
+        voting: opts.votingEnabled?.() ?? true,
       });
     },
     lobbyRound: PRE_SHOW_LOBBY_ROUND,

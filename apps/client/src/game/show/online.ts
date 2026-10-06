@@ -24,6 +24,7 @@ import { isCustomRoundId } from '@tumble/content/custom';
 import { lookupRound, registerCustomRound } from '../../customRounds/registry.ts';
 import {
   KickReason,
+  VOTE_MAX_OPTIONS,
   type DecodedSnapshot,
   type JoinRoundMsg,
   type LoadingStatusMsg,
@@ -324,6 +325,10 @@ export class OnlineShowSession extends ShowSession {
     return out;
   }
 
+  protected override sendVote(roundIndex: number, option: number): void {
+    this.net.sendLowFreq({ t: 'castVote', roundIndex, option });
+  }
+
   protected override onSpectateTarget(id: number): void {
     this.net.sendLowFreq({ t: 'spectate', target: id });
   }
@@ -400,6 +405,27 @@ export class OnlineShowSession extends ShowSession {
         if (m.t === 'showInfo') this.onShowInfo(m);
         else if (m.t === 'showRewards') this.apiReward = m.reward;
         else if (m.t === 'loadingStatus') this.onLoadingStatus(m);
+        else if (m.t === 'voteOptions')
+          this.onVoteOpen({
+            roundIndex: m.roundIndex,
+            isFinal: m.isFinal,
+            options: m.options.slice(0, VOTE_MAX_OPTIONS),
+            counts: m.counts,
+            voted: m.voted,
+            eligible: m.eligible,
+            closesIn: m.closesInMs / 1000,
+            canVote: m.canVote && !isSpectatorId(this.localId),
+            myVote: m.yourVote,
+            botsDiscounted: m.botsDiscounted,
+          });
+        else if (m.t === 'voteTally') this.onVoteTally(m.roundIndex, m.counts, m.voted);
+        else if (m.t === 'voteResult')
+          this.onVoteResult(
+            m.roundIndex,
+            m.reason === 'cancelled'
+              ? null
+              : { roundIndex: m.roundIndex, winner: m.winner, counts: m.counts, reason: m.reason },
+          );
         else if (m.t === 'showPhase' && m.phase === ShowPhase.PreShow && m.startsInMs !== undefined) {
           this.showStarted = true;
           this.preShowSeconds = m.startsInMs / 1000;

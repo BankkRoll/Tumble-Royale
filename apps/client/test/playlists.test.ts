@@ -52,6 +52,17 @@ describe('private show options', () => {
     expect(show.playlist.maxPlayers).toBe(24);
     expect(show.playlist.botsAllowed).toBe(true);
     expect(show.playlist.pool.map((p) => p.roundId)).toEqual(['gumdrop-gauntlet', 'crown-climb']);
+    // Round voting is on unless the host switched it off; ballots only offer the picked rounds.
+    expect(show.playlist.voting.enabled).toBe(true);
+    expect(
+      privateShow({
+        rounds: ['gumdrop-gauntlet'],
+        bots: true,
+        maxPlayers: 8,
+        timerScale: 1,
+        roundVoting: false,
+      }).playlist.voting.enabled,
+    ).toBe(false);
     expect(
       privateShow({ rounds: ['crown-climb'], bots: true, maxPlayers: MAX_PLAYERS + 1, timerScale: 9 }),
     ).toMatchObject({

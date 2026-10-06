@@ -158,6 +158,10 @@ describe('live settings', () => {
       rounds: ['gumdrop-gauntlet'],
     });
     expect(ok.status).toBe(200);
+    expect(lastLobby(bob)!.settings.roundVoting).toBe(true);
+    expect((await call('PATCH', `/lobbies/${code}`, 'host', { roundVoting: 'no' })).status).toBe(400);
+    expect((await call('PATCH', `/lobbies/${code}`, 'host', { roundVoting: false })).status).toBe(200);
+    expect(lastLobby(bob)!.settings.roundVoting).toBe(false);
     expect(lastLobby(bob)!.settings).toMatchObject({
       maxPlayers: 20,
       bots: false,

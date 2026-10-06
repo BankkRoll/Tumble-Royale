@@ -9,6 +9,8 @@
  * - swaps 3D views while the Tumble Wipe covers the screen;
  * - owns the round view, HUD mapper, gameplay input (look, emote wheel,
  *   spectate cycling), local fate stamps, slow-mo and the autoplay pilot;
+ * - mirrors the between-rounds round vote onto the vote card and sends the
+ *   local player's ballot through {@link sendVote};
  * - builds the end-of-show recap for the wall and the rewards payload.
  *
  * Subclasses supply the data (director events or server messages) through the
@@ -62,6 +64,7 @@ import {
   type PreShowView,
 } from '../views/ceremonies.ts';
 import type { GameContext, RoundOutcomeInfo, RoundStart, SessionPlayer, SessionSummary } from './context.ts';
+import { acceptsLocalVote, roundVoteState, type SessionVote, type SessionVoteResult } from './vote.ts';
 import { wonShow } from './crown.ts';
 import { showMenuKeyAction } from '../inputRouting.ts';
 import { withEventNote } from '../liveEvents.ts';
@@ -320,6 +323,7 @@ export abstract class ShowSession {
         },
         onSpectate: () => this.keepWatching(),
         onSpectateNext: ({ dir }) => this.cycleSpectate(dir),
+        onCastVote: ({ roundIndex, option }) => this.castLocalVote(roundIndex, option),
         onEmote: ({ slot }) => {
           this.pendingEmote = Math.min(4, slot + 1);
           this.counters.emotes = (this.counters.emotes ?? 0) + 1;
@@ -385,6 +389,15 @@ export abstract class ShowSession {
 
   /** The spectated player changed (online: tell the server for interest management). */
   protected onSpectateTarget(_id: number): void {}
+
+  /**
+   * Delivers the local player's round-vote ballot (offline: the director;
+   * online: `castVote` to the server).
+   *
+   * @param _roundIndex - Round the ballot is for.
+   * @param _option - Option index.
+   */
+  protected sendVote(_roundIndex: number, _option: number): void {}
 
   /** True when a subclass drives the pre-show join feed from real joins (online live lobby). */
   protected liveJoinFeed(): boolean {
@@ -811,6 +824,69 @@ export abstract class ShowSession {
   }
 
   // ---------------------------------------------------------------------------
+  // Round vote
+  // ---------------------------------------------------------------------------
+
+  /**
+   * A ballot for the next round opened (or was re-offered after a reconnect).
+   *
+   * @param v - The ballot.
+   */
+  protected onVoteOpen(v: SessionVote): void {
+    const scale = this.isOnline() ? 1 : Math.max(0.01, this.ctx.cfg.timeScale);
+    ui.getState().setRoundVote(roundVoteState(v, Date.now(), scale));
+    if (v.canVote && v.myVote < 0)
+      this.ctx.audio.game.announcer.sayText(v.isFinal ? 'Vote for the final!' : 'Vote for the next round!');
+  }
+
+  /**
+   * Ballots changed.
+   *
+   * @param roundIndex - Round the ballot is for.
+   * @param counts - Ballots per option.
+   * @param voted - Ballots cast.
+   */
+  protected onVoteTally(roundIndex: number, counts: readonly number[], voted: number): void {
+    const cur = ui.getState().roundVote;
+    if (!cur || cur.roundIndex !== roundIndex || cur.result) return;
+    ui.getState().patchRoundVote({ counts: [...counts], voted });
+  }
+
+  /**
+   * The ballot closed: reveal the winner on the card (null: called off).
+   *
+   * @param roundIndex - Round the ballot was for.
+   * @param r - The result, or null when the vote was called off.
+   */
+  protected onVoteResult(roundIndex: number, r: SessionVoteResult | null): void {
+    const s = ui.getState();
+    const cur = s.roundVote;
+    if (!cur || cur.roundIndex !== roundIndex) return;
+    if (!r || r.winner < 0 || r.winner >= cur.options.length) {
+      s.setRoundVote(null);
+      return;
+    }
+    s.patchRoundVote({
+      counts: [...r.counts],
+      voted: r.counts.reduce((a, b) => a + b, 0),
+      result: { winner: r.winner, reason: r.reason },
+    });
+    const name = cur.options[r.winner]?.name;
+    if (name) this.ctx.audio.game.announcer.sayText(`Next up: ${name}!`);
+  }
+
+  /** The vote card's click/tap/key: checks it can count, marks it at once and sends it. */
+  private castLocalVote(roundIndex: number, option: number): void {
+    const s = ui.getState();
+    const cur = s.roundVote;
+    if (!acceptsLocalVote(cur, roundIndex, option)) return;
+    const changed = (cur?.myVote ?? -1) >= 0;
+    s.patchRoundVote({ myVote: option });
+    track('vote.cast', { round: roundIndex, option, changed, online: this.isOnline() });
+    this.sendVote(roundIndex, option);
+  }
+
+  // ---------------------------------------------------------------------------
   // Round lifecycle
   // ---------------------------------------------------------------------------
 
@@ -851,6 +927,12 @@ export abstract class ShowSession {
     this.hold();
     const s = ui.getState();
     const roundType: RoundType = rs.isFinal ? 'final' : rs.round.type;
+    const vote = s.roundVote;
+    const voted =
+      !!vote?.result &&
+      vote.roundIndex === rs.index &&
+      vote.options[vote.result.winner]?.roundId === rs.round.id;
+    s.setRoundVote(null);
     let wait: number;
     if (rs.index === 0) {
       s.setShowIntro({ showName: this.showName, roundIndex: 0, roundCount: this.roundCount });
@@ -862,7 +944,7 @@ export abstract class ShowSession {
         remaining: rs.players.length,
         roundIndex: rs.index - 1,
         roundCount: this.roundCount,
-        next: { name: rs.round.name, type: roundType, isFinal: rs.isFinal },
+        next: { name: rs.round.name, type: roundType, isFinal: rs.isFinal, ...(voted ? { voted } : {}) },
       });
       s.setScreen('betweenRounds', { transition: 'fade' });
       wait = 3.8;

@@ -1,4 +1,4 @@
-# Tumble Royale wire protocol — v6
+# Tumble Royale wire protocol — v7
 
 `PROTOCOL_VERSION = 6` (`src/protocol.ts`). Any incompatible change bumps it;
 the server rejects a Hello with a different version (`Kick{VersionMismatch}`).
@@ -169,8 +169,9 @@ larger message is sent alone). Payloads:
   `roundResults`, `showSummary`, `lobby`, `chat`, `loadingStatus` (v4),
   `voteOptions`, `voteTally`, `voteResult` (v6);
   client→server: `chat`, `loaded`, `loadProgress` (v4), `castVote` (v6), `spectate` (sent
-  whenever the spectated player changes; drives interest management). Clients
-  may never send SimEvents.
+  whenever the spectated player changes, and with `target` -1 plus a `focus`
+  point while a free or overview camera moves (v7); drives interest
+  management). Clients may never send SimEvents.
 
   v3 additions: `playerList[].partyId` (duos/squads), `joinRound.lobby` (the
   live pre-show platform: a rule-less lobby sim players join and leave while
@@ -193,6 +194,10 @@ larger message is sent alone). Payloads:
   v6: round voting. `voteOptions`, `castVote`, `voteTally` and `voteResult`
   (see Round voting). v6 exists for the same reason as v4: a v5 server counts
   the unknown `castVote` as a protocol violation.
+
+  v7: spectator cameras. `spectate.focus` (`[x, y, z]`, whole metres) and
+  `showInfo.canChat` (see Spectators). Both are optional fields; the version
+  moves so a client and server always agree on what a spectator seat may do.
 
 ### Round loading (v4)
 
@@ -237,6 +242,54 @@ unchanged).
 Measured msgpack payloads with three options: `voteOptions` 150 B,
 `voteTally` 45 B (at most 4/s while the ballot is open), `voteResult` 79 B,
 `castVote` 34 B.
+
+### Spectators (v7)
+
+Spectators are connections without an entity: late joiners of a running
+show and a private show's spectator (broadcast) seats (join ticket role
+`spectator`). Their ids sit above the entity range (128–254).
+
+- **Seats**: a room takes at most `maxSpectators` (16); a private show's seat
+  holders at most the host's `spectatorSlots`. Over the limit the join is
+  refused like a full room. They never enter the round roster, the sim, the
+  loading gate, the ballot or results; inputs from them are dropped (their
+  input batches only carry snapshot acks).
+- **Chat**: a seat holder's `chat` is dropped quietly unless the host turned
+  on Spectators can chat (`custom.spectatorChat` in the ticket);
+  `showInfo.canChat` tells the client, which goes read-only.
+- **Camera hint**: `spectate { target, focus? }`. With a player id the
+  encoder centres interest on that player (priority 10⁵, as before). With
+  `target` -1 and `focus`, distance priority is measured from the focus point
+  (clamped into the round bounds) instead of every Tumbler getting the
+  "no reference" full rate. Clients send it at most 2 Hz and only after the
+  focus moved 6 m; the server rate-limits `spectate` at 4/s (burst 8) per
+  connection and drops extras silently. Malformed focus values are ignored.
+- **Cost**: each spectator is one snapshot encode per tick, the same
+  allocation-free encoder and 1200 B budget as a player, so watchers add
+  linearly and the cap bounds them. They ack snapshots while watching, so
+  their snapshots stay deltas.
+
+Measured, encoder only (`SnapshotEncoder`, 100 moving Tumblers spread over a
+220 m course, 900 snapshots, warmed up, same machine):
+
+| viewer                        | bytes / snapshot | down      | entities / snapshot | encode  |
+| ----------------------------- | ---------------- | --------- | ------------------- | ------- |
+| player                        | 326 B            | 9.5 KB/s  | 37.7                | 16.6 µs |
+| follow spectator (target)     | 322 B            | 9.4 KB/s  | 37.7                | 14.1 µs |
+| free camera (v7 focus)        | 322 B            | 9.4 KB/s  | 37.8                | 13.2 µs |
+| no reference (v6 free camera) | 820 B            | 24.0 KB/s | 100.0               | 21.1 µs |
+
+Over loopback WebSockets (`tools/bot-swarm --clients 40 --spectators 8
+--spectate-after 50 --duration 120` against `tsx` dev server, ticketed
+match of 40 swarm players + 60 bots, Main Show; the shared machine was busy,
+so timings are indicative): spectators averaged 633 B snapshots (99.7 %
+deltas), 17.0 KB/s down and 0.3 KB/s up each; players 19.4 KB/s down; server
+tick p50 9.9 / p95 13.2 / max 14.6 ms with snapshot encoding 2.3 ms mean for
+all 48 connections (≈ 0.05 ms per connection). The in-process tick-budget
+test (`apps/game-server/test/tickBudget.test.ts`) also runs the same seeded
+show with and without four free-camera spectators and checks every Tumbler
+ends in exactly the same place, and that spectator snapshots stay inside the
+budget; `TUMBLE_PERF=1` adds a 100 clients + 8 spectators timing run.
 
 ## Clock sync (Ping/Pong)
 

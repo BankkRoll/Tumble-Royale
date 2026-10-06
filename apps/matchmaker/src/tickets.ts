@@ -115,6 +115,8 @@ export interface CustomSettings {
   minPlayers: number;
   /** Players vote on each next round (only ever between the rounds the host picked). */
   roundVoting: boolean;
+  /** Spectator seats may chat into the show (off: they watch quietly). */
+  spectatorChat: boolean;
 }
 
 /**

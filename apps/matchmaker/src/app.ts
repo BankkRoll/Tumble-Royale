@@ -93,6 +93,7 @@ const SettingsSchema = z
     spectatorSlots: z.number().int().min(0).max(10),
     minPlayers: z.number().int().min(1).max(MAX_PLAYERS),
     roundVoting: z.boolean(),
+    spectatorChat: z.boolean(),
   })
   .partial();
 const CreateLobbyBody = z.object({
@@ -393,6 +394,13 @@ export async function buildMatchmaker(
   });
 
   // Host, after the show: the same code opens for the next one.
+  // Anyone with the code, once the show is running: a spectator seat's join ticket.
+  app.post('/lobbies/:code/watch', async (req) => {
+    const p = await player(req);
+    const { code } = parse(CodeParam, req.params);
+    return mm.watchLobby(p, code);
+  });
+
   app.post('/lobbies/:code/reopen', async (req) => {
     const p = await player(req);
     const { code } = parse(CodeParam, req.params);

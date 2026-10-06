@@ -41,6 +41,8 @@ export interface LobbySettings {
   minPlayers?: number;
   /** Round voting (absent on older matchmakers: on). */
   roundVoting?: boolean;
+  /** Spectator seats may chat into the show (absent on older matchmakers: off). */
+  spectatorChat?: boolean;
 }
 
 /** A member's seat (matchmaker `LobbySeat`; newer fields are optional for older matchmakers). */
@@ -165,6 +167,8 @@ export class MatchmakerClient {
   createLobby = (settings: Partial<LobbySettings>, region?: string): Promise<{ lobby: Lobby }> =>
     this.call('POST', '/lobbies', region ? { settings, region } : { settings });
   joinLobby = (code: string): Promise<{ lobby: Lobby }> => this.call('POST', `/lobbies/${code}/join`, {});
+  /** A spectator seat in a private show that already started. */
+  watchLobby = (code: string): Promise<MatchFound> => this.call('POST', `/lobbies/${code}/watch`, {});
   updateLobby = (code: string, settings: Partial<LobbySettings>): Promise<{ lobby: Lobby }> =>
     this.call('PATCH', `/lobbies/${code}`, settings);
   leaveLobby = (code: string): Promise<void> => this.call('POST', `/lobbies/${code}/leave`, {});

@@ -9,6 +9,7 @@ import { VoiceRoster } from '../screens/overlays/VoicePanel.tsx';
 import { useUI } from '../store/uiStore.ts';
 import { tutorialUi, useTutorialUI } from '../tutorial/store.ts';
 import { EmoteWheel } from './EmoteWheel.tsx';
+import { SpectatorBar } from './Spectator.tsx';
 import {
   CameraLockHint,
   ControlsHint,
@@ -72,6 +73,7 @@ export const Hud = memo(function Hud(): JSX.Element {
       <ControlsHint />
       <CameraLockHint />
       <GrabStatus />
+      <SpectatorBar />
       <SpectateBanner />
       <EmoteWheel />
       <CountdownNumerals />

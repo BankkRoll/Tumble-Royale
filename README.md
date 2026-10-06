@@ -52,8 +52,9 @@ What a player can do today:
   on the next round between rounds (server-authoritative, seeded tie-breaks)
 - **Private shows:** invite codes, host-picked rounds (with or without round
   voting) and rules changed live, kick/ban, lock, transfer host, ready checks
-  and spectator slots; hosts can also add a player-made round by its share
-  code
+  and spectator slots (broadcast seats that never count as players, can join
+  mid-show by code and stay quiet unless the host allows chat); hosts can
+  also add a player-made round by its share code
 - **Round editor (`/editor`):** build races, survivals, hunts and logic rounds
   from the shipped level parts and obstacle library in 3D (grid snapping,
   move/turn/size gizmo, multi-select, copy/paste, undo/redo, generated
@@ -82,7 +83,10 @@ What a player can do today:
   Crown Shard shop, free Gem paths, live news and notifications
 - **Watch & share:** a short "How you went out" replay after a knock-out
   (slowed at the decisive moment, with the cause), automatic highlights of
-  each show on the rewards screen, keep spectating after elimination, round
+  each show on the rewards screen, keep spectating after elimination with a
+  free camera, a course overview and an auto director, a searchable player
+  list with pin and party/club first, and a broadcast overlay for streaming
+  (see [Streaming a show](docs/design/SHOWS.md#8-streaming-a-show)), round
   replays (save and reopen them), photo mode, share cards for wins and deep
   runs, and 5–15 s clips of any recorded round or highlight, all made on the
   device (no upload)

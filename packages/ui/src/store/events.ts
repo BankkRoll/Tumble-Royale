@@ -22,6 +22,7 @@ import type {
   ScreenId,
   Settings,
   SettingsSection,
+  SpectatorCamMode,
   TumblerColors,
 } from './types.ts';
 import type { ClubEmblem, ClubJoinMode, ClubReportReason } from '@tumble/shared';
@@ -135,6 +136,14 @@ export interface UIIntents {
   };
   spectate: undefined;
   spectateNext: { dir: 1 | -1 };
+  /** Spectator camera mode: a specific one, or the next in Follow → Free → Overview → Director. */
+  spectatorCamera: { mode: SpectatorCamMode | 'next' };
+  /** Follow a player picked on the roster (or the leader with `id` -1). */
+  spectatorFollow: { id: number };
+  /** Pin a player (null unpins). */
+  spectatorPin: { id: number | null };
+  /** Broadcast overlay, its help card or the chroma-key backdrop (omit `on` to toggle). */
+  broadcastToggle: { what: 'overlay' | 'help' | 'chroma'; on?: boolean };
   /** Vote (or change the vote) for the next round on the between-rounds card. */
   castVote: { roundIndex: number; option: number };
   playAgain: undefined;

@@ -26,6 +26,8 @@ export interface TicketCustomSettings {
   spectatorSlots: number;
   /** "Round voting" in the lobby settings; absent from older matchmakers (treated as on). */
   roundVoting?: boolean;
+  /** "Spectators can chat"; absent from older matchmakers (spectator seats stay quiet). */
+  spectatorChat?: boolean;
 }
 
 /** Verified join ticket claims (matchmaker `JoinTicketClaims`). */

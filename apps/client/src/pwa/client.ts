@@ -139,12 +139,18 @@ export function installPwa(opts: InstallPwaOptions): () => void {
   let toastId: number | null = null;
 
   const restart = (): void => {
-    const waiting = reg?.waiting;
-    if (!waiting || restarting) return;
+    if (restarting) return;
     const st = s();
     if (!canOfferRestart(st.screen, st.overlay)) return;
-    restarting = true;
-    waiting.postMessage({ type: 'SKIP_WAITING' });
+    const waiting = reg?.waiting;
+    if (waiting) {
+      restarting = true;
+      waiting.postMessage({ type: 'SKIP_WAITING' });
+    } else if (st.pwa.updateReady) {
+      // Another tab already applied the update: the new worker controls this page, a reload picks it up.
+      restarting = true;
+      location.reload();
+    }
   };
   const offer = (): void => {
     const st = s();

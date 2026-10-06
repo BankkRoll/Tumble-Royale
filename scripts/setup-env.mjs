@@ -76,6 +76,7 @@ export const PRODUCTION_SECRETS = [
   'ADMIN_TOKEN',
   'METRICS_TOKEN',
   'POSTGRES_PASSWORD',
+  'VOICE_TURN_SECRET',
 ];
 
 const LABEL = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?';
@@ -136,6 +137,8 @@ GAME_SERVER_SECRET=${s.GAME_SERVER_SECRET}
 ADMIN_TOKEN=${s.ADMIN_TOKEN}
 # Bearer for /metrics on the API and matchmaker (${web}/api/metrics, /mm/metrics).
 METRICS_TOKEN=${s.METRICS_TOKEN}
+# Shared by the API and the coturn relay (compose profile \`voice\`); never sent to players.
+VOICE_TURN_SECRET=${s.VOICE_TURN_SECRET}
 
 # --- Datastores ---------------------------------------------------------------
 POSTGRES_USER=tumble
@@ -175,6 +178,10 @@ BACKUP_KEEP_DAYS=14
 # STRIPE_WEBHOOK_SECRET=
 # Sentry-compatible DSN for server crash reports.
 # SENTRY_DSN=
+# Voice chat (docs/SELF_HOSTING.md, "Voice chat"): start the relay with
+# \`docker compose --profile voice up -d\`, open 3478/udp+tcp and 49160-49200/udp,
+# then switch the voice.enabled flag on. Without a TURN URL voice stays hidden.
+# VOICE_ICE_SERVERS=stun:${domain}:3478,turn:${domain}:3478?transport=udp,turn:${domain}:3478?transport=tcp
 `;
 }
 

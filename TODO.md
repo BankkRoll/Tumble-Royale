@@ -17,7 +17,7 @@ What comes next, in order. Each item should land with tests, docs and a green
       clean overlay for streaming shows.
 - [x] **Gifting and a wish list**: gift store items to friends, with abuse and
       refund rules that match the refund policy in `docs/ECONOMY.md`.
-- [ ] **Voice chat**: opt-in, party and team scoped, with mute, push-to-talk,
+- [x] **Voice chat**: opt-in, party and team scoped, with mute, push-to-talk,
       reporting and Streamer Mode support.
 - [x] **Clubs**: persistent groups with a roster, roles, chat and club
       challenges.

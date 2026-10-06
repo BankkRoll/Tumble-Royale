@@ -3114,6 +3114,19 @@
   width: min(22em, 90vw);
   z-index: 45;
 }
+/* The menu's start cluster sits bottom-right under the stack: newest card on
+   top, and the stack stops short of it instead of covering Play. The cut is
+   vertical only so cards still slide in from the right edge. */
+.tr-root[data-screen='menu'] .tr-toasts,
+.tr-root[data-screen='matchmaking'] .tr-toasts {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-end;
+  max-height: calc(44vh - var(--safe-t) - 4.8em);
+  overflow-x: visible;
+  overflow-y: clip;
+  padding-bottom: 0.4em;
+}
 .tr-toast {
   position: relative;
   display: flex;
@@ -3205,7 +3218,8 @@
   inset: 0;
   display: grid;
   place-items: center;
-  z-index: 80;
+  /* Above the in-game menu (110), which sits above the wipe: the curtain is the last word. */
+  z-index: 120;
 }
 .tr-reconnect-card {
   display: grid;

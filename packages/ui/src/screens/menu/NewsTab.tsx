@@ -10,8 +10,8 @@ import { useNow } from '../../components/hooks.ts';
 import { SafeImg } from '../../components/SafeImg.tsx';
 import { Icon } from '../../components/icons/index.tsx';
 import { uiEvents } from '../../store/events.ts';
-import { keyboardBusy } from '../../store/inputOwnership.ts';
-import { useUI } from '../../store/uiStore.ts';
+import { keyboardBusy, layerAbove } from '../../store/inputOwnership.ts';
+import { ui, useUI } from '../../store/uiStore.ts';
 import type { NewsItem } from '../../store/types.ts';
 
 let pendingPost: string | null = null;
@@ -112,7 +112,7 @@ function Reader({ n, onBack }: { n: NewsItem; onBack: () => void }): JSX.Element
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       // Capture phase: stopping it here would starve the chat field of its own Esc.
-      if (e.code !== 'Escape' || keyboardBusy(e)) return;
+      if (e.code !== 'Escape' || keyboardBusy(e) || layerAbove(ui.getState(), 'screen')) return;
       e.preventDefault();
       e.stopPropagation();
       onBack();

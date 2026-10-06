@@ -7,8 +7,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type { PublicIncident, StatusHistory, StatusSummary } from '@tumble/shared/status';
-import { describe, expect, it } from 'vitest';
-import { isSummary, startStatusPage } from '../src/status/page.ts';
+import { describe, expect, it, vi } from 'vitest';
+import { SUMMARY_REFRESH_MS, isSummary, startStatusPage } from '../src/status/page.ts';
 import { h, toHtml } from '../src/status/vdom.ts';
 import { percent, relative, statusPage, type PageState } from '../src/status/view.ts';
 
@@ -394,6 +394,62 @@ describe('status page controller', () => {
       expect(page.state()).toMatchObject({ unreachable: false, lastOk: now });
     } finally {
       page.stop();
+    }
+  });
+
+  it('an older refresh answering last never paints over a newer one', async () => {
+    const answers: ((ok: boolean) => void)[] = [];
+    const fetchFn = ((url: string) =>
+      url.endsWith('/status/summary')
+        ? new Promise<Response>((resolve, reject) =>
+            answers.push((ok) => (ok ? resolve(Response.json(summary())) : reject(new TypeError('down')))),
+          )
+        : Promise.resolve(Response.json(history()))) as typeof fetch;
+    const { root } = fakeRoot();
+    const page = startStatusPage({
+      root,
+      api: 'https://play.example.com/api',
+      fetch: fetchFn,
+      now: () => NOW,
+    });
+    try {
+      const older = page.refresh();
+      const newer = page.refresh();
+      answers[2]!(true);
+      await newer;
+      answers[1]!(false);
+      await older;
+      expect(page.state().unreachable).toBe(false);
+    } finally {
+      answers[0]?.(true);
+      page.stop();
+    }
+  });
+
+  it('retries a failed history load on the next refresh, not ten minutes later', async () => {
+    vi.useFakeTimers();
+    let historyUp = false;
+    const calls: string[] = [];
+    const fetchFn = (async (url: string) => {
+      calls.push(url);
+      if (url.endsWith('/status/summary')) return Response.json(summary());
+      if (!historyUp) throw new TypeError('down');
+      return Response.json(history());
+    }) as typeof fetch;
+    const { root } = fakeRoot();
+    const page = startStatusPage({ root, api: 'https://play.example.com/api', fetch: fetchFn });
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(page.state().history).toBeNull();
+      historyUp = true;
+      await vi.advanceTimersByTimeAsync(SUMMARY_REFRESH_MS);
+      expect(calls.filter((c) => c.endsWith('/status/history'))).toHaveLength(2);
+      expect(page.state().history?.days).toHaveLength(90);
+      await vi.advanceTimersByTimeAsync(SUMMARY_REFRESH_MS);
+      expect(calls.filter((c) => c.endsWith('/status/history'))).toHaveLength(2);
+    } finally {
+      page.stop();
+      vi.useRealTimers();
     }
   });
 

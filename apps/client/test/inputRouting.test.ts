@@ -90,6 +90,33 @@ describe('padStartAction', () => {
     expect(padStartAction(state({ dialog: { id: 'x', kind: 'info', title: 'x' } }), show)).toBe('none');
   });
 
+  it('leaves Start to the elimination replay, which takes it as a skip', () => {
+    const elimReplay = { mode: 'playing', cause: 'x', progress: 0, slow: false } as const;
+    expect(padStartAction(state({ elimReplay }), show)).toBe('none');
+    expect(padStartAction(state({ screen: 'roundResults', elimReplay }), show)).toBe('none');
+  });
+
+  it('keeps the show menu shut while the connection curtain is up', () => {
+    for (const status of ['connecting', 'reconnecting', 'lost'] as const) {
+      const connection = { status };
+      expect(padStartAction(state({ connection }), show), status).toBe('none');
+      expect(
+        showMenuKeyAction({ screen: 'round', overlay: 'none', dialog: null, connection }),
+        status,
+      ).toBeNull();
+    }
+    expect(padStartAction(state({ connection: { status: 'online' } }), show)).toBe('openShowMenu');
+  });
+
+  it('a reconnect closes the dialog that was up, so nothing waits behind the curtain', () => {
+    ui.getState().showDialog({ id: 'leave-confirm', kind: 'confirm', title: 'Leave show?' });
+    ui.getState().setConnection({ status: 'connecting' });
+    expect(ui.getState().dialog?.id).toBe('leave-confirm');
+    ui.getState().setConnection({ status: 'reconnecting', attempt: 1, maxAttempts: 5 });
+    expect(ui.getState().dialog).toBeNull();
+    ui.getState().setConnection({ status: 'online' });
+  });
+
   it('never opens the show menu without a show', () => {
     expect(padStartAction(state({ screen: 'preShow' }), menus)).toBe('none');
   });

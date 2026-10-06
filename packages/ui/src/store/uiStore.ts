@@ -575,25 +575,34 @@ export const ui = createStore<UIState>()((set, get) => ({
     uiEvents.emit('menuTab', { tab });
   },
   setOverlay: (overlay) => {
-    set({ overlay });
+    // The wallet is a popover of the menu: an overlay opening over it closes it rather than sit under it.
+    set(
+      overlay !== 'none' && get().currencyPanel !== 'none' ? { overlay, currencyPanel: 'none' } : { overlay },
+    );
     uiEvents.emit('overlay', { overlay });
   },
   setTouch: (isTouch) => set({ isTouch }),
   navigate: (dir) => navigator?.(dir),
 
   setBoot: (boot) => set({ boot: { ...get().boot, ...boot } }),
-  setConnection: (connection) => set({ connection }),
+  setConnection: (connection) => {
+    const curtain = connection.status === 'reconnecting' || connection.status === 'lost';
+    // The curtain takes over: a question asked before the drop can't be answered behind it.
+    set(curtain && get().dialog ? { connection, dialog: null } : { connection });
+  },
   showDialog: (dialog) => set({ dialog }),
   closeDialog: () => set({ dialog: null }),
   pushToast: (input) => {
     const id = toastSeq++;
-    const variant = input.variant ?? (get().screen === 'round' ? 'feed' : 'card');
+    // Feed lines fade on their own and carry no buttons: a sticky or actionable toast (an invite) stays a card.
+    const feedable = input.durationMs !== 0 && !input.actions?.length;
+    const variant = input.variant ?? (get().screen === 'round' && feedable ? 'feed' : 'card');
     const toast: Toast = { ...input, id, kind: input.kind ?? 'info', variant, createdAt: performance.now() };
     const toasts = [...get().toasts, toast];
-    // Old feed lines are dropped first; sticky cards survive.
+    // The oldest goes first, but sticky toasts (an update to apply, an invite) outlast timed ones.
     while (toasts.filter((t) => t.variant === variant).length > (variant === 'feed' ? 5 : 4)) {
-      const idx = toasts.findIndex((t) => t.variant === variant);
-      toasts.splice(idx, 1);
+      const timed = toasts.findIndex((t) => t.variant === variant && t.durationMs !== 0 && t.id !== id);
+      toasts.splice(timed >= 0 ? timed : toasts.findIndex((t) => t.variant === variant), 1);
     }
     set({ toasts });
     return id;

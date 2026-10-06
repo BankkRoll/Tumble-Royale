@@ -16,10 +16,10 @@ const pad = (...down: number[]): { buttons: { pressed: boolean; value: number }[
 
 describe('assignPadButton', () => {
   it('binds a free button without touching anything else', () => {
-    const r = assignPadButton(DEFAULT_PAD_BINDS, 'jump', 1, P.LS);
+    const r = assignPadButton(DEFAULT_PAD_BINDS, 'jump', 1, P.LT);
     expect(r.rejected).toBeNull();
     expect(r.swappedWith).toBeNull();
-    expect(r.binds.jump).toEqual([P.A, P.LS]);
+    expect(r.binds.jump).toEqual([P.A, P.LT]);
     expect(r.binds.dive).toEqual(DEFAULT_PAD_BINDS.dive);
   });
 

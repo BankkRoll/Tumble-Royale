@@ -117,6 +117,7 @@ export class InputSystem {
   private readonly unlisten: (() => void)[] = [];
   private mouseActions = true;
   private padGameplay = true;
+  private kbGameplay = true;
   private grabToggled = false;
   private grabWasHeld = false;
 
@@ -210,6 +211,28 @@ export class InputSystem {
     for (const l of this.pad.values()) l.reset();
     this.padStick.x = this.padStick.y = 0;
     this.padLook.x = this.padLook.y = 0;
+  }
+
+  /**
+   * Keyboard gameplay switch. While a menu owns input (the in-round menu,
+   * dialogs, quick chat, the main menu) its keys press nothing in the game,
+   * so arrowing through a menu never walks the Tumbler and Space or Enter
+   * activate the focused control instead of jumping. Held keys are still
+   * tracked ({@link movementKeyHeld} starts idle play from the menu).
+   *
+   * @param enabled - False while menu navigation reads the keys.
+   */
+  setKeyboardGameplay(enabled: boolean): void {
+    if (enabled === this.kbGameplay) return;
+    this.kbGameplay = enabled;
+    if (!enabled) {
+      for (const l of this.kb.values()) l.reset();
+      return;
+    }
+    // A movement key held as the menu lets go (W starting idle play) walks at once; anything else
+    // held across the switch (Space or Enter that pressed a menu button) waits for a fresh press.
+    for (const a of MOVE_ACTIONS)
+      if (this.keymap[a].some((code) => this.downCodes.has(code))) this.kb.get(a)!.press();
   }
 
   /**
@@ -497,12 +520,14 @@ export class InputSystem {
       return;
     const actions = this.codeToActions.get(e.code);
     if (!actions) return;
-    if (PREVENT_DEFAULT_CODES.has(e.code) || e.ctrlKey) e.preventDefault();
+    // Only while the game reads the keys: Space must still press a focused menu button or switch.
+    if (this.kbGameplay && (PREVENT_DEFAULT_CODES.has(e.code) || e.ctrlKey)) e.preventDefault();
     if (down) {
       if (this.downCodes.has(e.code)) return;
       this.downCodes.add(e.code);
-      for (const a of actions) this.kb.get(a)!.press();
       this.lastDevice = 'keyboard';
+      if (!this.kbGameplay) return;
+      for (const a of actions) this.kb.get(a)!.press();
       // NOTE: a keypress counts as a user gesture, so the camera grabs the
       // mouse as soon as the player starts moving instead of waiting for a click.
       if (this.settings.pointerLock && actions.some((a) => LOCK_ON_ACTIONS.has(a))) this.lockPointer();

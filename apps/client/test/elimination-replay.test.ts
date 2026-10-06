@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CharacterState, type SimEvent } from '@tumble/sim';
-import { ui, uiEvents } from '@tumble/ui';
+import { social, ui, uiEvents } from '@tumble/ui';
 import { ReplayClock } from '../src/game/replay/clock.ts';
 import type { CauseObstacle } from '../src/game/replay/elimCause.ts';
 import {
@@ -626,6 +626,69 @@ describe('player', () => {
     expect(tracked[0]?.props).toMatchObject({ outcome: 'unavailable', online: true });
     // A build finishing afterwards is thrown away.
     resolveLoad?.(view as unknown as ReplayView);
+  });
+
+  it('plays over the results wall a covering wipe brings in, then yields to the next screen', async () => {
+    ui.getState().setScreen('round', { transition: 'cut' });
+    ui.getState().setScreen('roundResults', { transition: 'wipe' });
+    expect(ui.getState().wipe.phase).toBe('covering');
+    await start();
+    // Frames keep coming while the bands are still rising.
+    tick(0.1);
+    expect(ui.getState().elimReplay).toMatchObject({ mode: 'playing' });
+    ui.getState()._wipeCovered();
+    expect(ui.getState().screen).toBe('roundResults');
+    ui.getState()._wipeDone();
+    tick(0.1);
+    expect(ui.getState().elimReplay).toMatchObject({ mode: 'playing' });
+    ui.getState().setScreen('round', { transition: 'cut' });
+    tick(0.1);
+    expect(ui.getState().elimReplay).toBeNull();
+    expect(tracked[0]?.props.outcome).toBe('interrupted');
+  });
+
+  it('leaves chat typing, the chat keys and push-to-talk alone', async () => {
+    await start();
+    for (let i = 0; i < 30; i++) tick(1 / 60);
+    dom.key('keydown', 'Enter');
+    dom.key('keydown', 'KeyT');
+    dom.key('keydown', 'KeyV');
+    expect(ui.getState().elimReplay).not.toBeNull();
+    social.getState().dispatchChat({ type: 'open' });
+    try {
+      dom.key('keydown', 'KeyA');
+      expect(ui.getState().elimReplay).not.toBeNull();
+    } finally {
+      social.getState().dispatchChat({ type: 'close' });
+    }
+    dom.key('keydown', 'KeyA');
+    expect(ui.getState().elimReplay).toBeNull();
+  });
+
+  it('a press on the chat or a control keeps its click; elsewhere it skips', async () => {
+    await start();
+    for (let i = 0; i < 30; i++) tick(1 / 60);
+    Object.assign(window, { setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms) });
+    const press = (onControl: boolean): ReturnType<typeof vi.fn> => {
+      const stopPropagation = vi.fn();
+      const target = { closest: () => (onControl ? {} : null) };
+      (player as unknown as { onPointer: (e: unknown) => void }).onPointer({ target, stopPropagation });
+      return stopPropagation;
+    };
+    expect(press(true)).not.toHaveBeenCalled();
+    expect(ui.getState().elimReplay).not.toBeNull();
+    expect(press(false)).toHaveBeenCalled();
+    expect(ui.getState().elimReplay).toBeNull();
+  });
+
+  it('never skips on the pad View or push-to-talk button', async () => {
+    const pad = fakePad();
+    dom.pads.push(pad);
+    await start();
+    for (let i = 0; i < 40; i++) tick(1 / 60);
+    setButton(pad, 8, true);
+    tick(1 / 60);
+    expect(ui.getState().elimReplay).not.toBeNull();
   });
 
   it('never starts over the open replay viewer, and stops for it', async () => {

@@ -269,6 +269,7 @@ export class OnlineAccount {
     lobbyCode?: string;
   } = { status: 'in_menu' };
   private realtimeOpened = false;
+  private realtimeStarted = false;
   /** Account XP and season XP before the current show, for the rewards bars. */
   private snapshotBefore: { xp: number; passXp: number } | null = null;
   /** Party members away in a solo show (from `party_solo`), shown on the party line. */
@@ -1712,6 +1713,8 @@ export class OnlineAccount {
 
   /** Connects the realtime gateway and wires its events. */
   startRealtime(): void {
+    if (this.realtimeStarted) return;
+    this.realtimeStarted = true;
     const rt = this.realtime;
     this.social.bind();
     this.clubs.bind();
@@ -1844,10 +1847,12 @@ export class OnlineAccount {
       return { ...n, resolved: label, read: true };
     });
     if (changed) ui.getState().setNotifications(this.notifications);
-    // The toast for a resolved request is stale now.
+    // The toast for a resolved request or invite is stale now.
+    const prefixes =
+      kind === 'friendRequest' ? ['friend-'] : kind === 'partyInvite' ? ['party-'] : ['friend-', 'party-'];
     const s = ui.getState();
     for (const t of s.toasts)
-      if (t.actions?.some((a) => a.id.endsWith(`:${userId}`) && a.id.startsWith('friend-')))
+      if (t.actions?.some((a) => a.id.endsWith(`:${userId}`) && prefixes.some((pre) => a.id.startsWith(pre))))
         s.dismissToast(t.id);
   }
 
@@ -1913,6 +1918,12 @@ export class OnlineAccount {
       return true;
     }
     if (kind === 'party-join' && arg) {
+      // The notification for the same invite is answered too.
+      const invite = this.notifications.find(
+        (n) => !n.resolved && n.action?.kind === 'partyInvite' && 'code' in n.action && n.action.code === arg,
+      );
+      if (invite?.action && 'userId' in invite.action)
+        this.resolveNotifications(invite.action.userId, 'Joined', 'partyInvite');
       void this.joinParty(arg);
       return true;
     }

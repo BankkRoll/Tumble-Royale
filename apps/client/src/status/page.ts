@@ -98,27 +98,40 @@ export function startStatusPage(opts: StatusPageOptions): StatusPageHandle {
     return res.json();
   };
 
+  // Refreshes overlap when the API is slow (the timer, the tab becoming visible); an older
+  // answer landing last must not paint over a newer one.
+  let issued = 0;
+  let summaryShown = 0;
+  let historyShown = 0;
+  /** When history last loaded; a failed load is retried on the next tick, not ten minutes later. */
+  let lastHistory = -Infinity;
+
   const refresh = async (withHistory = false): Promise<void> => {
+    const n = ++issued;
     const [summary, history] = await Promise.all([
       getJson('/status/summary').catch(() => null),
       withHistory ? getJson('/status/history').catch(() => null) : Promise.resolve(undefined),
     ]);
     const t = now();
-    state = isSummary(summary)
-      ? { ...state, summary, unreachable: false, lastOk: t, now: t }
-      : { ...state, unreachable: true, now: t };
-    if (isHistory(history)) state = { ...state, history };
+    if (n > summaryShown) {
+      summaryShown = n;
+      state = isSummary(summary)
+        ? { ...state, summary, unreachable: false, lastOk: t, now: t }
+        : { ...state, unreachable: true, now: t };
+    }
+    if (isHistory(history) && n > historyShown) {
+      historyShown = n;
+      lastHistory = t;
+      state = { ...state, history };
+    }
     render();
   };
 
   render();
   void refresh(true);
-  let lastHistory = now();
   const tick = () => {
     if (typeof document !== 'undefined' && document.hidden) return;
-    const withHistory = now() - lastHistory >= HISTORY_REFRESH_MS;
-    if (withHistory) lastHistory = now();
-    void refresh(withHistory);
+    void refresh(now() - lastHistory >= HISTORY_REFRESH_MS);
   };
   const timer = setInterval(tick, SUMMARY_REFRESH_MS);
   const onVisible = () => {

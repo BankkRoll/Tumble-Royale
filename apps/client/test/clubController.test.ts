@@ -174,6 +174,32 @@ describe('club controller', () => {
     expect(posted).toEqual(['via http']);
   });
 
+  it('drops club chat history that lands after the player left the club', async () => {
+    let release!: () => void;
+    let api = mine;
+    const line = {
+      id: '7',
+      clubId: 'c-1',
+      from: { userId: 'u-pal', name: 'Pal', tag: '0002' },
+      text: 'old',
+      at: 1,
+    };
+    const c = new ClubController(
+      fakeApi({
+        myClub: async () => api,
+        clubChatHistory: () => new Promise((r) => (release = () => r({ clubId: 'c-1', lines: [line] }))),
+      }),
+      fakeRealtime(),
+      host,
+    );
+    await c.refresh();
+    api = { club: null, role: null, invites: [], requests: [] };
+    await c.refresh();
+    release();
+    await flush();
+    expect(social.getState().chat.lines.filter((l) => l.channel === 'club')).toEqual([]);
+  });
+
   it('shows clubs switched off rather than an error', async () => {
     const c = new ClubController(
       fakeApi({

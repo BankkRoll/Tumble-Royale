@@ -84,6 +84,7 @@ import {
   cycleSpectateIndex,
   planAfterEliminated,
   spectateCandidates,
+  spectateFollowUp,
   spectateDetail,
   type SpectateStatus,
   type WatchDecision,
@@ -104,6 +105,8 @@ interface ActiveRound {
   loadRequested: boolean;
   /** The chunked build is running. */
   building: boolean;
+  /** A failed build already had its one retry. */
+  buildRetried: boolean;
   /** This machine's build progress (0..1), for the loading screen and the server. */
   loadPct: number;
   /** This machine finished building while the round was still waiting on others (online). */
@@ -308,6 +311,8 @@ export abstract class ShowSession {
   /** The watch choice holds the (offline) show clock. */
   private choiceHeld = false;
   private spectateRefresh = 0;
+  /** How long the watched player has been out of the running (qualified or knocked out). */
+  private spectateFinishedFor = 0;
   /** Free / overview / director cameras, roster and broadcast tools. */
   private readonly spectator: SpectatorController;
   /** The live round as the spectator controller sees it (rebuilt when the view changes). */
@@ -369,6 +374,9 @@ export abstract class ShowSession {
           else if (from === 'playerWall' && this.awaiting === 'wall') this.goRewards();
         },
         onPlayerWallEvent: (e: PlayerWallEvent) => this.wall?.handle(e),
+        onDialogResult: ({ dialogId }) => {
+          if (dialogId === 'round-load-failed' && !this.ended) this.ctx.onEnd('failed');
+        },
       }),
     );
     window.addEventListener('keydown', this.onKey);
@@ -965,6 +973,7 @@ export abstract class ShowSession {
       inRound: rs.players.some((p) => p.id === this.localId),
       loadRequested: false,
       building: false,
+      buildRetried: false,
       loadPct: 0,
       waited: false,
       everyoneIn: false,
@@ -1149,6 +1158,31 @@ export abstract class ShowSession {
     this.buildRoundAsync(r, source).catch((err: unknown) => {
       r.building = false;
       console.error('[show] round build failed', err);
+      if (this.ended || this.round !== r) return;
+      if (!r.buildRetried) {
+        r.buildRetried = true;
+        this.requestRoundBuild();
+        return;
+      }
+      this.roundLoadFailed();
+    });
+  }
+
+  /**
+   * The round could not be built, even on a retry. The loading wipe is held
+   * (and offline, the show clock with it) until the round is up, so the show
+   * cannot go on: say so and offer the way out.
+   */
+  protected roundLoadFailed(): void {
+    const s = ui.getState();
+    s.releaseWipe();
+    s.showDialog({
+      id: 'round-load-failed',
+      kind: 'error',
+      title: "The round didn't load",
+      body: 'Something went wrong building this round. Head back to the menu and start another show.',
+      code: 'E-LOAD-01',
+      buttons: [{ id: 'menu', label: 'Back to menu', autofocus: true }],
     });
   }
 
@@ -1825,7 +1859,10 @@ export abstract class ShowSession {
   private spectatePlayer(id: number, index: number, count: number): void {
     const r = this.round;
     if (!r) return;
-    if (r.spectateId !== id) this.spectator.beforeCut();
+    if (r.spectateId !== id) {
+      this.spectator.beforeCut();
+      this.spectateFinishedFor = 0;
+    }
     if (this.serverTarget !== id) {
       this.serverTarget = id;
       this.onSpectateTarget(id);
@@ -1850,10 +1887,21 @@ export abstract class ShowSession {
     if (!r || r.fate !== 'spectating' || r.spectateId < 0 || !this.spectator.followsPlayers) return;
     this.spectateRefresh += realDt;
     if (this.spectateRefresh < SPECTATE_REFRESH_S) return;
+    const elapsed = this.spectateRefresh;
     this.spectateRefresh = 0;
     const list = this.candidates();
-    const i = list.indexOf(r.spectateId);
-    if (i >= 0) this.spectatePlayer(r.spectateId, i, list.length);
+    const step = spectateFollowUp(list, r.spectateId, this.spectateFinishedFor);
+    if (step.kind === 'refresh') {
+      this.spectateFinishedFor = 0;
+      this.spectatePlayer(r.spectateId, step.index, list.length);
+    } else if (step.kind === 'finished') {
+      this.spectateFinishedFor += elapsed;
+      const index = ui.getState().spectate?.index ?? 0;
+      this.spectatePlayer(r.spectateId, index, Math.max(list.length, index + 1));
+    } else {
+      this.spectateFinishedFor = 0;
+      this.spectatePlayer(step.id, step.index, list.length);
+    }
   }
 
   /** True for a member of the local player's club (online accounts only). */
@@ -2266,6 +2314,7 @@ export abstract class ShowSession {
   protected rewardsMissing(): void {}
 
   private rewardsWait = 0;
+  private rewardsWaiting = false;
 
   /**
    * The finished show from the local seat. Only rounds the player actually
@@ -2293,11 +2342,16 @@ export abstract class ShowSession {
   }
 
   private goRewards(): void {
-    if (this.awaiting === 'rewards' || !this.summary) return;
+    // Continue pressed again while the reward is late must not start a second wait sharing the budget.
+    if (this.awaiting === 'rewards' || !this.summary || this.rewardsWaiting) return;
     // Give the server's reward summary a few seconds before falling back to the local estimate.
     if (this.rewardsPending() && this.rewardsWait < 32) {
       this.rewardsWait++;
-      this.after(0.25, () => this.goRewards());
+      this.rewardsWaiting = true;
+      this.after(0.25, () => {
+        this.rewardsWaiting = false;
+        this.goRewards();
+      });
       return;
     }
     this.awaiting = 'rewards';

@@ -11,6 +11,7 @@ import { INITIAL_CHAT } from '../src/store/chatChannels.ts';
 import {
   isTypingTarget,
   keyboardBusy,
+  layerAbove,
   menuOwnsInput,
   overlayAfterScreenChange,
   watchChoiceVisible,
@@ -133,6 +134,60 @@ describe('input ownership', () => {
         watchChoice: choice,
       }),
     ).toBe(true);
+  });
+
+  it('gives the keys and pad to quick chat, the player card and the report dialog in a round', () => {
+    const round = {
+      inputMode: 'game' as const,
+      dialog: null,
+      overlay: 'none' as const,
+      screen: 'round' as const,
+      eliminatedSheet: false,
+      watchChoice: null,
+    };
+    const player = { key: 'u1', name: 'Mallow' };
+    try {
+      expect(menuOwnsInput(round)).toBe(false);
+      social.getState().dispatchChat({ type: 'open', mode: 'quick' });
+      expect(menuOwnsInput(round)).toBe(true);
+      social.getState().dispatchChat({ type: 'close' });
+      // The text field keeps its own keys; the pad is not the menu's then.
+      social.getState().dispatchChat({ type: 'open', mode: 'text' });
+      expect(menuOwnsInput(round)).toBe(false);
+      social.getState().dispatchChat({ type: 'close' });
+      social.getState().openPlayerMenu(player);
+      expect(menuOwnsInput(round)).toBe(true);
+      social.getState().openReport(player);
+      expect(menuOwnsInput(round)).toBe(true);
+      social.getState().openReport(null);
+      expect(menuOwnsInput(round)).toBe(false);
+    } finally {
+      social.getState().dispatchChat({ type: 'close' });
+      social.getState().openPlayerMenu(null);
+      social.getState().openReport(null);
+    }
+  });
+
+  it('leaves Esc to a layer above the news reader or the wallet', () => {
+    const none = { dialog: null, overlay: 'none' as const, currencyPanel: 'none' as const };
+    expect(layerAbove(none, 'screen')).toBe(false);
+    expect(layerAbove({ ...none, currencyPanel: 'gems' }, 'screen')).toBe(true);
+    expect(layerAbove({ ...none, currencyPanel: 'gems' }, 'wallet')).toBe(false);
+    expect(layerAbove({ ...none, overlay: 'settings' }, 'wallet')).toBe(true);
+    expect(layerAbove({ ...none, dialog: { id: 'x', kind: 'info', title: 'x' } }, 'wallet')).toBe(true);
+    social.getState().openPlayerMenu({ key: 'u1', name: 'Mallow' });
+    try {
+      expect(layerAbove(none, 'screen')).toBe(true);
+    } finally {
+      social.getState().openPlayerMenu(null);
+    }
+  });
+
+  it('an overlay opening over the wallet closes it instead of sitting under it', () => {
+    ui.getState().setCurrencyPanel('gems');
+    ui.getState().setOverlay('settings');
+    expect(ui.getState().currencyPanel).toBe('none');
+    ui.getState().setOverlay('none');
   });
 });
 

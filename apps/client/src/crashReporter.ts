@@ -41,6 +41,8 @@ export interface CrashReporterOptions {
   /** Distinct reports per page load (default 50). */
   perSession?: number;
   release?: string;
+  /** The player allows diagnostics (Settings → Share gameplay stats); checked at capture and send. */
+  allowed?: () => boolean;
 }
 
 const MAX_STACK = 4000;
@@ -134,6 +136,7 @@ export class CrashReporter {
     // A send in progress that fails must not report itself.
     if (this.sending && kind === 'unhandledrejection') return;
     this.captured++;
+    if (this.opts.allowed && !this.opts.allowed()) return;
     const d = describe(reason);
     const key = `${kind}|${d.type}|${d.message}|${where.source ?? ''}:${where.line ?? ''}`;
     const existing = this.queue.get(key);
@@ -173,6 +176,7 @@ export class CrashReporter {
     if (this.queue.size === 0) return;
     const batch = [...this.queue.values()];
     this.queue.clear();
+    if (this.opts.allowed && !this.opts.allowed()) return;
     this.sent += batch.length;
     this.sending = true;
     try {

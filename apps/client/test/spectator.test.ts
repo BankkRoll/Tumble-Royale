@@ -22,6 +22,8 @@ import {
   planAfterEliminated,
   spectateCandidates,
   spectateDetail,
+  SPECTATE_MOVE_ON_S,
+  spectateFollowUp,
   type SpectateStatus,
 } from '../src/game/show/spectator.ts';
 
@@ -221,4 +223,20 @@ describe('offline show after the human is knocked out', () => {
     expect(summary?.winner).not.toBeNull();
     show.dispose();
   }, 60_000);
+});
+
+describe('spectate banner follow-up', () => {
+  it('refreshes a player still running at their current place', () => {
+    expect(spectateFollowUp([4, 7, 9], 7, 0)).toEqual({ kind: 'refresh', index: 1 });
+  });
+
+  it('stays on a player who just qualified, then moves on to the leader', () => {
+    expect(spectateFollowUp([4, 9], 7, 0)).toEqual({ kind: 'finished' });
+    expect(spectateFollowUp([4, 9], 7, SPECTATE_MOVE_ON_S - 0.1)).toEqual({ kind: 'finished' });
+    expect(spectateFollowUp([4, 9], 7, SPECTATE_MOVE_ON_S)).toEqual({ kind: 'moveOn', id: 4, index: 0 });
+  });
+
+  it('stays put when nobody is left to watch', () => {
+    expect(spectateFollowUp([], 7, 10)).toEqual({ kind: 'finished' });
+  });
 });

@@ -51,8 +51,19 @@ export function watchChoiceVisible(
 }
 
 /**
+ * Whether a social panel that lives outside the overlay slot is open: the
+ * gamepad quick-chat picker, the player card or the report dialog. They float
+ * over rounds too, and are driven by menu navigation like any overlay.
+ */
+export function socialOwnsInput(): boolean {
+  const s = social.getState();
+  return (s.chat.open && s.chat.mode === 'quick') || s.playerMenu !== null || s.reportTarget !== null;
+}
+
+/**
  * Whether menu navigation owns the keys and the pad: menu screens, dialogs,
- * overlays and the watch choice. Gameplay ignores the pad meanwhile.
+ * overlays, the watch choice and the floating social panels
+ * ({@link socialOwnsInput}). Gameplay ignores the keys and the pad meanwhile.
  *
  * @param s - UI state.
  */
@@ -61,7 +72,30 @@ export function menuOwnsInput(
     elimReplay?: UIState['elimReplay'];
   },
 ): boolean {
-  return s.inputMode === 'menu' || s.dialog !== null || s.overlay !== 'none' || watchChoiceVisible(s);
+  return (
+    s.inputMode === 'menu' ||
+    s.dialog !== null ||
+    s.overlay !== 'none' ||
+    watchChoiceVisible(s) ||
+    socialOwnsInput()
+  );
+}
+
+/**
+ * Whether a layer is open above a menu panel that closes on Esc (the news
+ * reader on the menu screen, or the wallet popover), so Esc is that layer's.
+ *
+ * @param s - UI state.
+ * @param from - Where the panel lives: on the menu `screen`, or the `wallet` popover above it.
+ * @example
+ * if (e.code === 'Escape' && !layerAbove(ui.getState(), 'screen')) closeReader();
+ */
+export function layerAbove(
+  s: Pick<UIState, 'dialog' | 'overlay' | 'currencyPanel'>,
+  from: 'screen' | 'wallet',
+): boolean {
+  if (s.dialog !== null || s.overlay !== 'none' || socialOwnsInput()) return true;
+  return from === 'screen' && s.currencyPanel !== 'none';
 }
 
 /** Input types that take no typed text (keys there are still hotkeys). */

@@ -67,7 +67,8 @@ function ToastCard({ toast }: { toast: Toast }): JSX.Element {
 }
 
 function FeedLine({ toast }: { toast: Toast }): JSX.Element {
-  const duration = toast.durationMs ?? 3500;
+  // Feed lines always fade: 0 (sticky) would otherwise dismiss at once.
+  const duration = toast.durationMs || 3500;
   useEffect(() => {
     const id = window.setTimeout(() => ui.getState().dismissToast(toast.id), duration);
     return () => window.clearTimeout(id);
@@ -227,7 +228,7 @@ export const ConnectionLayer = memo(function ConnectionLayer(): JSX.Element | nu
     return (
       <div
         className="tr-reconnect tr-interactive"
-        data-nav-scope="15"
+        data-nav-scope="25"
         role="alertdialog"
         aria-live="assertive"
         data-testid="connection-lost"
@@ -266,7 +267,7 @@ export const ConnectionLayer = memo(function ConnectionLayer(): JSX.Element | nu
   if (conn.status !== 'reconnecting' && conn.status !== 'connecting') return null;
   const line = reconnectStatusLine(conn, now);
   return (
-    <div className="tr-reconnect tr-interactive" data-nav-scope="15" role="alertdialog" aria-live="assertive">
+    <div className="tr-reconnect tr-interactive" data-nav-scope="25" role="alertdialog" aria-live="assertive">
       <div className="tr-dim" />
       <div className="tr-panel tr-reconnect-card tr-enter-pop">
         <div className="tr-wheel" aria-hidden>

@@ -184,6 +184,8 @@ export class VoiceController {
   private opts: VoiceOptions;
   private cid: string | null = null;
   private starting = false;
+  /** Bumped when a pending microphone request is called off (voice switched off, teardown). */
+  private startGen = 0;
   private active = false;
   private stream: MediaStream | null = null;
   private meter: ReturnType<VoiceMixer['meter']> | null = null;
@@ -278,15 +280,24 @@ export class VoiceController {
     if (this.active || this.starting) return this.active;
     if (!this.deps.media.supported() || !voice.getState().available) return false;
     this.starting = true;
+    const gen = ++this.startGen;
     voice.getState().setStatus('requesting');
+    let stream: MediaStream;
     try {
-      await this.openMic();
+      stream = await this.acquire();
     } catch (err) {
+      if (gen !== this.startGen) return false;
       this.starting = false;
       this.failMic(err);
       this.deps.onEnabledChange(false);
       return false;
     }
+    // Switched off while the permission prompt was up: the granted microphone must not stay open.
+    if (gen !== this.startGen) {
+      for (const t of stream.getTracks()) t.stop();
+      return false;
+    }
+    this.useStream(stream);
     this.starting = false;
     this.active = true;
     this.cid = this.deps.newCid();
@@ -301,6 +312,13 @@ export class VoiceController {
 
   /** Switches voice off (the player's choice). */
   disable(): void {
+    if (this.starting) {
+      this.startGen++;
+      this.starting = false;
+      voice.getState().setStatus('off');
+      this.deps.onEnabledChange(false);
+      return;
+    }
     if (!this.active) return;
     if (this.cid && this.deps.realtime.connected)
       this.deps.realtime.send({ type: 'voice_leave', cid: this.cid });
@@ -701,11 +719,6 @@ export class VoiceController {
       if (!id || errorName(err) === 'NotAllowedError') throw err;
       return this.deps.media.getUserMedia(this.constraints(''));
     }
-  }
-
-  private async openMic(): Promise<void> {
-    const stream = await this.acquire();
-    this.useStream(stream);
   }
 
   private useStream(stream: MediaStream): void {

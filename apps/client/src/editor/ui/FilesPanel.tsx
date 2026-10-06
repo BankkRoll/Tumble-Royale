@@ -37,6 +37,8 @@ export function FilesPanel(): JSX.Element {
   const current = useEditor((s) => s.draftId);
   const dirty = useEditor((s) => s.dirty);
   const name = useEditor((s) => s.round.name);
+  // Sharing or loading a code applies to the open round when it lands: keep it open until then.
+  const busy = useEditor((s) => s.busy);
   const { refreshDrafts, openDraft, deleteDraft, newRound, importFile, exportFile } = useActions();
   const fileInput = useRef<HTMLInputElement>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
@@ -48,7 +50,7 @@ export function FilesPanel(): JSX.Element {
       <Section title="New round">
         <div className="ed-chips">
           {CUSTOM_ROUND_TYPES.map((t) => (
-            <button key={t} type="button" className="ed-chip" onClick={() => newRound(t)}>
+            <button key={t} type="button" className="ed-chip" disabled={busy} onClick={() => newRound(t)}>
               New {t}
             </button>
           ))}
@@ -68,7 +70,12 @@ export function FilesPanel(): JSX.Element {
                 <div className="ed-muted">{new Date(d.updatedAt).toLocaleString()}</div>
               </div>
               <div className="ed-chips">
-                <button type="button" className="ed-chip" onClick={() => void openDraft(d.id)}>
+                <button
+                  type="button"
+                  className="ed-chip"
+                  disabled={busy}
+                  onClick={() => void openDraft(d.id)}
+                >
                   Open
                 </button>
                 {confirm === d.id ? (
@@ -101,7 +108,12 @@ export function FilesPanel(): JSX.Element {
           >
             Export JSON
           </button>
-          <button type="button" className="ed-chip" onClick={() => fileInput.current?.click()}>
+          <button
+            type="button"
+            className="ed-chip"
+            disabled={busy}
+            onClick={() => fileInput.current?.click()}
+          >
             Import JSON
           </button>
         </div>

@@ -11,8 +11,10 @@ import {
   ConfirmDialog,
   ConsoleContext,
   StateBlock,
+  loadStarting,
   type ConsoleContextValue,
 } from '../src/admin/components.tsx';
+import { AUDIT_INITIAL, auditReducer, type AuditState } from '../src/admin/views/AuditView.tsx';
 import {
   banState,
   BAN_DURATIONS,
@@ -386,5 +388,72 @@ describe('views', () => {
       />,
     );
     expect(asAdmin).toContain('Live ops');
+  });
+});
+
+describe('loads across filters', () => {
+  it('a new filter drops the old rows; a reload keeps them up', () => {
+    const shown = { data: ['old row'], error: null, loading: false };
+    expect(loadStarting(shown, true)).toEqual({ data: null, error: null, loading: true });
+    expect(loadStarting(shown, false)).toEqual({ data: ['old row'], error: null, loading: true });
+  });
+
+  it('shows a reload in progress next to the rows it keeps', () => {
+    const html = renderToStaticMarkup(
+      <StateBlock
+        state={{ data: ['a'], error: null, loading: true, reload: () => undefined }}
+        empty="none"
+        isEmpty={(d) => d.length === 0}
+      >
+        {(d) => <p>{d.join()}</p>}
+      </StateBlock>,
+    );
+    expect(html).toContain('Refreshing');
+    expect(html).toContain('<p>a</p>');
+  });
+});
+
+describe('audit log paging', () => {
+  const entry = (id: string) => ({ id }) as unknown as AuditState['entries'][number];
+  const loaded = (key: string, ids: string[], next: number | null): AuditState =>
+    auditReducer(auditReducer(AUDIT_INITIAL, { type: 'load', key }), {
+      type: 'loaded',
+      key,
+      page: { entries: ids.map(entry), nextBefore: next },
+    });
+
+  it('a page asked for under the old filter never lands under the new one', () => {
+    let s = loaded('?action=player.', ['p1'], 40);
+    s = auditReducer(s, { type: 'more', key: '?action=player.' });
+    s = auditReducer(s, { type: 'load', key: '?action=flag.' });
+    expect(s.entries).toEqual([]);
+    expect(s.next).toBeNull();
+    s = auditReducer(s, {
+      type: 'appended',
+      key: '?action=player.',
+      before: 40,
+      page: { entries: [entry('p2')], nextBefore: null },
+    });
+    expect(s.entries).toEqual([]);
+    s = auditReducer(s, {
+      type: 'loaded',
+      key: '?action=flag.',
+      page: { entries: [entry('f1')], nextBefore: null },
+    });
+    expect(s.entries.map((e) => e.id)).toEqual(['f1']);
+  });
+
+  it('appends the next page of the same filter', () => {
+    let s = loaded('', ['a'], 10);
+    s = auditReducer(s, { type: 'more', key: '' });
+    s = auditReducer(s, {
+      type: 'appended',
+      key: '',
+      before: 10,
+      page: { entries: [entry('b')], nextBefore: null },
+    });
+    expect(s.entries.map((e) => e.id)).toEqual(['a', 'b']);
+    expect(s.next).toBeNull();
+    expect(s.loading).toBe(false);
   });
 });

@@ -68,6 +68,59 @@ export function keyLabel(code: string): string {
   return map[code] ?? code;
 }
 
+/** Result of {@link assignKeyBind}. */
+export interface KeyBindChange {
+  binds: Keybinds;
+  /** The action that had the key before, if any. */
+  tookFrom: BindAction | null;
+  /** It got the slot's previous key in exchange; false when that slot was empty, leaving it unbound there. */
+  swapped: boolean;
+}
+
+/**
+ * Binds a key to an action's slot. A key already on another action moves
+ * here, and that action gets this slot's previous key in exchange.
+ *
+ * @param binds - Current bindings.
+ * @param action - Action being rebound.
+ * @param slot - Primary (0) or secondary (1).
+ * @param code - `KeyboardEvent.code`, or `Mouse<n>`.
+ * @returns The new bindings and what was displaced.
+ */
+export function assignKeyBind(binds: Keybinds, action: BindAction, slot: 0 | 1, code: string): KeyBindChange {
+  const next: Keybinds = { ...binds };
+  const prev = next[action][slot];
+  let tookFrom: BindAction | null = null;
+  for (const a of Object.keys(next) as BindAction[]) {
+    const pair = next[a];
+    const idx = pair.indexOf(code);
+    if (idx >= 0 && !(a === action && idx === slot)) {
+      const swapped: [string, string] = [...pair];
+      swapped[idx] = prev;
+      next[a] = swapped;
+      if (a !== action) tookFrom = a;
+    }
+  }
+  const pair: [string, string] = [...next[action]];
+  pair[slot] = code;
+  next[action] = pair;
+  return { binds: next, tookFrom, swapped: prev !== '' };
+}
+
+/** Swallows the click that follows a mouse button captured for a binding. */
+function swallowNextClick(): void {
+  const swallow = (e: Event): void => {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  };
+  for (const type of ['click', 'auxclick', 'contextmenu'] as const)
+    window.addEventListener(type, swallow, { capture: true, once: true });
+  window.setTimeout(() => {
+    for (const type of ['click', 'auxclick', 'contextmenu'] as const)
+      window.removeEventListener(type, swallow, { capture: true });
+  }, 600);
+}
+
 function Rebinder(): JSX.Element {
   const binds = useUI((s) => s.settings.controls.keybinds);
   const [capture, setCapture] = useState<{ action: BindAction; slot: 0 | 1 } | null>(null);
@@ -75,28 +128,17 @@ function Rebinder(): JSX.Element {
   useEffect(() => {
     if (!capture) return;
     const apply = (code: string): void => {
-      const next: Keybinds = { ...binds };
-      const prev = next[capture.action][capture.slot];
-      for (const a of Object.keys(next) as BindAction[]) {
-        const pair = next[a];
-        const idx = pair.indexOf(code);
-        if (idx >= 0 && !(a === capture.action && idx === capture.slot)) {
-          // Swap rather than leave the other action unbound.
-          const swapped: [string, string] = [...pair];
-          swapped[idx] = prev;
-          next[a] = swapped;
-          ui.getState().pushToast({
-            kind: 'warning',
-            title: `${keyLabel(code)} was on “${BIND_ACTION_LABELS[a]}”`,
-            body: 'Swapped the two bindings.',
-          });
-        }
-      }
-      const pair: [string, string] = [...next[capture.action]];
-      pair[capture.slot] = code;
-      next[capture.action] = pair;
+      const r = assignKeyBind(binds, capture.action, capture.slot, code);
+      if (r.tookFrom)
+        ui.getState().pushToast({
+          kind: 'warning',
+          title: `${keyLabel(code)} was on “${BIND_ACTION_LABELS[r.tookFrom]}”`,
+          body: r.swapped
+            ? 'Swapped the two bindings.'
+            : `Removed it from “${BIND_ACTION_LABELS[r.tookFrom]}”.`,
+        });
       playCue('ui.confirm');
-      ui.getState().updateSettings('controls', { keybinds: next });
+      ui.getState().updateSettings('controls', { keybinds: r.binds });
       setCapture(null);
     };
     const onKey = (e: KeyboardEvent): void => {
@@ -113,6 +155,8 @@ function Rebinder(): JSX.Element {
       if ((e.target as HTMLElement | null)?.closest('.tr-bind-capture')) return;
       e.preventDefault();
       e.stopImmediatePropagation();
+      // The press's click would still land on whatever is under the pointer (a tab, Close).
+      swallowNextClick();
       apply(`Mouse${e.button}`);
     };
     const timeout = window.setTimeout(() => setCapture(null), 5000);
@@ -492,7 +536,7 @@ export function Section({ id }: { id: SettingsSection }): JSX.Element {
           <AppRows />
           <Row
             label="Share gameplay stats"
-            hint="Anonymous play statistics (rounds, load times, frame rate) that help tune the game. Starts off when your browser sends Do Not Track"
+            hint="Anonymous play statistics (rounds, load times, frame rate) and crash reports that help tune the game. Starts off when your browser sends Do Not Track"
           >
             <Toggle
               label="Share gameplay stats"

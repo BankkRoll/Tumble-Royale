@@ -104,6 +104,11 @@ import {
 import { queueRefusal, routePlay, type PlayKind } from './online/partyPlay.ts';
 import { RejoinStore, planRejoin, sessionStore, type RejoinPlan } from './online/rejoin.ts';
 import { onlineCounts, queueTarget } from './online/playerCounts.ts';
+import { QueueAttempts, enqueueParty } from './online/queueAttempt.ts';
+import { SignInQueue } from './online/signInQueue.ts';
+import { LatestRequest } from './latest.ts';
+import { OnlineStatusCheck } from './online/onlineStatus.ts';
+import { askDialog } from './askDialog.ts';
 import { MatchmakerClient, gameSocketUrl, type Lobby, type MatchFound } from './online/matchmaker.ts';
 import {
   chooseRegion,
@@ -120,7 +125,7 @@ import type { GameContext, SessionEnd } from './show/context.ts';
 import { OfflineShowSession } from './show/offline.ts';
 import { OnlineShowSession, gameServerAvailable } from './show/online.ts';
 import type { ShowSession } from './show/session.ts';
-import { loadJson, saveJson } from './storage.ts';
+import { forgetPlayerData, loadJson, saveJson } from './storage.ts';
 import type { CeremonyPost } from './views/ceremonies.ts';
 import { MenuView } from './views/menuView.ts';
 import { loadTimingsLog } from './round/loadPipeline.ts';
@@ -131,24 +136,7 @@ import { swapUnderWipe } from './wipe.ts';
 import { runTutorial } from './tutorial/index.ts';
 import { shouldOfferTutorial, tutorialAnswer } from './tutorial/prompt.ts';
 import { menuOwnsPad, padStartAction, showMenuKeyAction, type RoutingContext } from './inputRouting.ts';
-
-/** Merges saved settings over defaults so new fields always exist. */
-function mergeSettings(base: Settings, saved: Partial<Settings> | null): Settings {
-  if (!saved) return base;
-  return {
-    graphics: { ...base.graphics, ...saved.graphics },
-    controls: {
-      ...base.controls,
-      ...saved.controls,
-      keybinds: { ...base.controls.keybinds, ...saved.controls?.keybinds },
-      padBinds: { ...base.controls.padBinds, ...saved.controls?.padBinds },
-    },
-    audio: { ...base.audio, ...saved.audio },
-    accessibility: { ...base.accessibility, ...saved.accessibility },
-    gameplay: { ...base.gameplay, ...saved.gameplay },
-    voice: { ...base.voice, ...saved.voice },
-  };
-}
+import { mergeSettings } from './settingsMerge.ts';
 
 /** Extra wiring from `main.ts`. */
 export interface BootOptions {
@@ -219,6 +207,24 @@ export class GameApp {
   private partyMembers: { userId: string; loadout: TumblerLoadout }[] = [];
   private partyRoster: PartyRoster | null = null;
   private queued = false;
+  private readonly queueAttempts = new QueueAttempts();
+  private probingServer = false;
+  private readonly profileCards = new LatestRequest();
+  private readonly signIns = new SignInQueue();
+  private readonly onlineStatus = new OnlineStatusCheck({
+    disabled: () => !this.cfg.api && !this.cfg.online,
+    networkUp: () => navigator.onLine,
+    maintenance: () =>
+      !this.cfg.online && this.liveOps.maintenanceActive() ? this.liveOps.maintenance().message : null,
+    probe: async () => {
+      if (this.cfg.online) return { up: await gameServerAvailable() };
+      const mm = this.account?.active ? this.mm : null;
+      if (!mm || !(await mm.probe())) return { up: false };
+      return { up: true, counts: onlineCounts(await mm.stats(), mm.searching) };
+    },
+    publish: (status) => ui.getState().setOnlineStatus(status),
+  });
+  private matchmakerBound = false;
   private pendingJoin: string | null = deepLinkCode();
   private lobby: Lobby | null = null;
   /** A lobby arrived (e.g. restored after a reload) before the menu was up; open it there. */
@@ -579,9 +585,17 @@ export class GameApp {
    * Signs in (resume, or a fresh guest after the welcome screen) and loads the
    * account. Offline play continues untouched when anything fails.
    *
+   * Runs through {@link SignInQueue}: never two at once.
+   *
    * @param welcome - Name and colours from the welcome screen for a brand new guest.
    */
-  private async connectAccount(
+  private connectAccount(
+    welcome: { name: string; colors: Parameters<ProfileStore['create']>[1] } | null,
+  ): Promise<void> {
+    return this.signIns.run(() => this.connectAccountOnce(welcome), welcome === null);
+  }
+
+  private async connectAccountOnce(
     welcome: { name: string; colors: Parameters<ProfileStore['create']>[1] } | null,
   ): Promise<void> {
     const account = this.account;
@@ -722,6 +736,7 @@ export class GameApp {
     const replay = s.replay !== null || s.elimReplay !== null;
     const padToMenu = menuOwnsPad(s, this.menu?.idlePlaying ?? false);
     this.input.setGamepadGameplay(!padToMenu);
+    this.input.setKeyboardGameplay(!padToMenu);
     const pad =
       typeof navigator.getGamepads === 'function' ? firstStandardPad(navigator.getGamepads()) : null;
     // Edges are tracked even during a replay so its buttons never fire here afterwards.
@@ -811,6 +826,7 @@ export class GameApp {
   private async signOut(): Promise<void> {
     await this.api.signOut();
     this.profile.clear();
+    forgetPlayerData();
     window.location.reload();
   }
 
@@ -853,40 +869,11 @@ export class GameApp {
    * publishes it to the Play tab's mode tiles.
    */
   async refreshOnlineStatus(): Promise<void> {
+    const status = await this.onlineStatus.refresh();
+    if (!status || status.state === 'checking') return;
     const s = ui.getState();
-    if (!this.cfg.api && !this.cfg.online) {
-      s.setOnlineStatus({ state: 'disabled', message: 'Online play is turned off for this session.' });
-      return;
-    }
-    // NOTE: `onLine === false` is reliable (no network at all); `true` only means "maybe", so probe then.
-    if (!navigator.onLine) {
-      s.setOnlineStatus({
-        state: 'offline',
-        noNetwork: true,
-        message: "You're offline. Shows against bots still work.",
-      });
-      if (s.playMode === 'online') ui.setState({ playMode: 'offline' });
-      return;
-    }
-    if (!this.cfg.online && this.liveOps.maintenanceActive()) {
-      // Shown on the Play Online tile; Vs Bots stays available.
-      s.setOnlineStatus({ state: 'offline', message: this.liveOps.maintenance().message });
-      if (s.playMode === 'online') ui.setState({ playMode: 'offline' });
-      return;
-    }
-    s.setOnlineStatus({ state: 'checking' });
-    let up = false;
-    if (this.cfg.online) up = await gameServerAvailable();
-    else if (this.account?.active && this.mm) up = await this.mm.probe();
-    const mm = up && !this.cfg.online ? this.mm : null;
-    const counts = mm ? onlineCounts(await mm.stats(), mm.searching) : {};
-    s.setOnlineStatus(
-      up
-        ? { state: 'online', ...counts }
-        : { state: 'offline', message: 'The game servers are offline right now.' },
-    );
-    if (up && !this.modePicked) s.setPlayMode('online');
-    if (!up && s.playMode === 'online') ui.setState({ playMode: 'offline' });
+    if (status.state === 'online' && !this.modePicked) s.setPlayMode('online');
+    if (status.state === 'offline' && s.playMode === 'online') ui.setState({ playMode: 'offline' });
   }
 
   /**
@@ -953,19 +940,9 @@ export class GameApp {
     void this.account?.announceSolo(false);
   }
 
-  /**
-   * Shows a dialog and resolves with the pressed button id (the cancel
-   * button's id when it is dismissed).
-   */
-  private ask(spec: DialogSpec): Promise<string> {
-    return new Promise((resolve) => {
-      const off = uiEvents.on('dialogResult', ({ dialogId, buttonId }) => {
-        if (dialogId !== spec.id) return;
-        off();
-        resolve(buttonId);
-      });
-      ui.getState().showDialog(spec);
-    });
+  /** {@link askDialog}: the pressed button id, or null when another dialog replaced it. */
+  private ask(spec: DialogSpec): Promise<string | null> {
+    return askDialog(spec);
   }
 
   /**
@@ -1161,7 +1138,7 @@ export class GameApp {
   }
 
   private async startShow(playlistId: string | null): Promise<void> {
-    if (this.session) return;
+    if (this.session || this.probingServer) return;
     if (this.canMatchmake && this.refuseForMaintenance()) return;
     this.beginShow();
     this.menu?.setIdlePlay(false);
@@ -1176,7 +1153,16 @@ export class GameApp {
     }
     let session: ShowSession | null = null;
     if (this.cfg.online) {
-      if (await gameServerAvailable()) session = new OnlineShowSession(this.ctx);
+      // A second Play during the server probe would start a second session over the first.
+      this.probingServer = true;
+      let up: boolean;
+      try {
+        up = await gameServerAvailable();
+      } finally {
+        this.probingServer = false;
+      }
+      if (this.session) return;
+      if (up) session = new OnlineShowSession(this.ctx);
       else
         ui.getState().pushToast({
           kind: 'warning',
@@ -1206,7 +1192,7 @@ export class GameApp {
   private async queue(playlistId: string): Promise<void> {
     const account = this.account;
     const mm = this.mm;
-    if (!account || !mm || this.queued) return;
+    if (!account || !mm || this.queued || this.queueAttempts.inFlight) return;
     const s = ui.getState();
     if (!account.isLeader) {
       s.pushToast({
@@ -1219,8 +1205,12 @@ export class GameApp {
     }
     this.showSearching(account.party?.members.length ?? 1, playlistId);
     try {
-      const { ticket } = await this.api.queueTicket(playlistId, this.region());
-      await mm.queue(ticket);
+      const outcome = await enqueueParty(this.queueAttempts, {
+        ticket: async () => (await this.api.queueTicket(playlistId, this.region())).ticket,
+        queue: (ticket) => mm.queue(ticket),
+        cancel: () => mm.cancel(),
+      });
+      if (outcome === 'cancelled') return;
       this.queued = true;
       account.setPresence('in_queue', { playlistId });
       // Only now are the members' ready votes spent: a refused enqueue keeps them.
@@ -1272,8 +1262,10 @@ export class GameApp {
   /** Subscribes to the matchmaker stream (queue status, match found, custom lobbies). */
   private bindMatchmaker(): void {
     const mm = this.mm;
-    if (!mm) return;
+    if (!mm || this.matchmakerBound) return;
+    this.matchmakerBound = true;
     mm.on('queued', (m) => {
+      if (this.queueAttempts.ignoringQueued) return;
       this.queued = true;
       const playlistId = typeof m.playlistId === 'string' ? m.playlistId : null;
       if (!this.session) this.showSearching(this.account?.party?.members.length ?? 1, playlistId);
@@ -1402,7 +1394,8 @@ export class GameApp {
       ],
     });
     // The show may have started on its own meanwhile (a replayed match_found).
-    if (this.session) return;
+    // Unanswered (another dialog took its place) is not "Leave show": the record expires by itself.
+    if (this.session || choice === null) return;
     if (choice !== 'rejoin') {
       this.rejoin.finish(plan.record.matchId);
       return;
@@ -1889,6 +1882,7 @@ export class GameApp {
         this.startOfflineShow(show.playlist, show.roundTimeScale);
       },
       onInspectPlayer: ({ playerId, name, direct, masked }) => {
+        const current = this.profileCards.begin();
         // Party members (slots, the 3D party lobby) open the player card first.
         const member = !direct ? s().party?.members.find((m) => m.id === playerId && !m.isSelf) : undefined;
         if (member) {
@@ -1909,9 +1903,12 @@ export class GameApp {
           s().pushToast({ kind: 'info', title: `${name ?? 'That Tumbler'} has no public card yet` });
           return;
         }
+        const asked = s().screenSeq;
         void online()!
           .inspect(playerId)
           .then((card) => {
+            // A later card was asked for, or the screen moved on (a show started): this one is not wanted.
+            if (!current() || s().screenSeq !== asked) return;
             if (!card) s().pushToast({ kind: 'info', title: "Couldn't load that profile" });
             // SECURITY: the card comes back with the real Name#tag; a click on a masked name keeps the mask.
             else s().setInspectedProfile(masked && streamerMode() ? maskedProfile(card, name) : card);
@@ -1954,6 +1951,7 @@ export class GameApp {
       onReady: ({ ready }) => void online()?.setReady(ready),
       onCancelQueue: () => {
         this.trackQueueWait('cancelled');
+        this.queueAttempts.cancel();
         if (this.queued && this.mm) {
           this.queued = false;
           void this.mm.cancel().catch(() => undefined);

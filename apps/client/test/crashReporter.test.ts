@@ -22,6 +22,18 @@ const events = (s: Sent) =>
 afterEach(() => vi.useRealTimers());
 
 describe('CrashReporter', () => {
+  it('sends nothing while the player has opted out, including errors queued before', async () => {
+    const { sent, fetchFn } = recorder();
+    let allowed = true;
+    const r = new CrashReporter({ apiUrl: 'https://x.test/api', fetch: fetchFn, allowed: () => allowed });
+    r.capture('error', new TypeError('before'));
+    allowed = false;
+    r.capture('error', new TypeError('after'));
+    await r.flush();
+    expect(sent).toHaveLength(0);
+    expect(r.captured).toBe(2);
+  });
+
   it('batches errors to /events and folds duplicates', async () => {
     const { sent, fetchFn } = recorder();
     const r = new CrashReporter({ apiUrl: 'https://x.test/api', fetch: fetchFn });

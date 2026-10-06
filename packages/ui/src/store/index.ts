@@ -130,7 +130,9 @@ export {
   SHOW_MENU_SCREENS,
   isTypingTarget,
   keyboardBusy,
+  layerAbove,
   menuOwnsInput,
+  socialOwnsInput,
   overlayAfterScreenChange,
   watchChoiceVisible,
 } from './inputOwnership.ts';

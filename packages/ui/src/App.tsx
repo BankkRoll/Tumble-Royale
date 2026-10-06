@@ -28,6 +28,7 @@ import { ReplayLayer } from './screens/Replay.tsx';
 import { ElimReplayLayer } from './screens/ElimReplay.tsx';
 import { ShareLayer } from './screens/overlays/ShareSheet.tsx';
 import { ScreenLayer } from './screens/ScreenLayer.tsx';
+import { useLayerFocus } from './nav/layerFocus.ts';
 import { broadcastActive } from './store/spectator.ts';
 import { useUI } from './store/uiStore.ts';
 import { installEasingVars } from './theme/motion.ts';
@@ -74,6 +75,7 @@ export function App(): JSX.Element {
   const elimReplay = useUI((s) => (s.elimReplay && s.elimReplay.mode !== 'loading' ? 'true' : undefined));
   const touchContext = useUI((s) => touchMode(s)?.context);
   const ref = useRef<HTMLDivElement>(null);
+  useLayerFocus(ref);
 
   useEffect(() => {
     if (ref.current) installEasingVars(ref.current);

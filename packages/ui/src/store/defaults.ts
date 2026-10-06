@@ -74,7 +74,8 @@ export const BIND_ACTION_LABELS: Record<BindAction, string> = {
  * grab and spectate next because spectating only starts once the Tumbler is
  * out of the round; the other spectator tools reuse face buttons for the
  * same reason (Y camera, X player list, A leader, B pin, R3 broadcast
- * overlay, D-pad up help). View stays on quick chat.
+ * overlay, D-pad up help). View stays on quick chat, so push-to-talk sits
+ * on L3.
  */
 export const DEFAULT_PAD_BINDS: PadBinds = {
   jump: [0, -1],
@@ -94,7 +95,7 @@ export const DEFAULT_PAD_BINDS: PadBinds = {
   spectatePin: [1, -1],
   broadcastOverlay: [11, -1],
   broadcastHelp: [12, -1],
-  pushToTalk: [8, -1],
+  pushToTalk: [10, -1],
 };
 
 /** Human labels for remappable controller actions, in settings display order. */

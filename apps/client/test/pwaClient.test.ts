@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { canOfferRestart, detectInstall } from '../src/pwa/client.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ui, uiEvents } from '@tumble/ui';
+import { canOfferRestart, detectInstall, installPwa } from '../src/pwa/client.ts';
 
 const IPHONE_SAFARI =
   'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
@@ -49,5 +50,43 @@ describe('canOfferRestart', () => {
 
   it('never while the in-game menu is open', () => {
     expect(canOfferRestart('menu', 'inGameMenu')).toBe(false);
+  });
+});
+
+describe('Restart after another tab applied the update', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('reloads into the new version when no worker is waiting any more', async () => {
+    const win = Object.assign(new EventTarget(), {
+      setInterval: () => 1,
+      clearInterval: () => undefined,
+      matchMedia: () => ({ matches: false }),
+    });
+    const reg = Object.assign(new EventTarget(), {
+      waiting: { postMessage: vi.fn() } as { postMessage: ReturnType<typeof vi.fn> } | null,
+      installing: null,
+      update: () => Promise.resolve(),
+    });
+    const sw = Object.assign(new EventTarget(), {
+      controller: {},
+      register: () => Promise.resolve(reg),
+    });
+    const reload = vi.fn();
+    vi.stubGlobal('window', win);
+    vi.stubGlobal('navigator', { serviceWorker: sw, userAgent: '', maxTouchPoints: 0, onLine: true });
+    vi.stubGlobal('location', { reload });
+    ui.getState().setScreen('menu', { transition: 'none' });
+    const stop = installPwa({ register: true, base: '/' });
+    try {
+      await vi.waitFor(() => expect(ui.getState().pwa.updateReady).toBe(true));
+      // The other tab sent SKIP_WAITING: the worker activated and took this page over too.
+      reg.waiting = null;
+      sw.dispatchEvent(new Event('controllerchange'));
+      expect(reload).not.toHaveBeenCalled();
+      uiEvents.emit('applyUpdate');
+      expect(reload).toHaveBeenCalledOnce();
+    } finally {
+      stop();
+    }
   });
 });

@@ -8,10 +8,12 @@ import './styles.css';
 import { runTestScene } from './debug/testSceneMode.ts';
 import { GameApp } from './game/app.ts';
 import { readConfig } from './game/config.ts';
+import { analyticsAllowed, ui, type PrivacyNavigator, type Settings } from '@tumble/ui';
 import { CrashReporter } from './crashReporter.ts';
 import { DEV_TOOLS, devParam, ENDPOINTS } from './devTools.ts';
 import { installPwa } from './pwa/client.ts';
 import { loadRuntimeConfig } from './runtimeConfig.ts';
+import { loadJson } from './game/storage.ts';
 import './game/hooks.ts';
 
 const bootLabel = document.getElementById('boot-label');
@@ -39,6 +41,13 @@ const reporter =
     ? new CrashReporter({
         apiUrl: ENDPOINTS.api,
         sentryDsn: runtime.sentryDsn ?? (import.meta.env.VITE_SENTRY_DSN || undefined),
+        // Errors during boot arrive before the settings are loaded into the store: read the saved choice.
+        allowed: () =>
+          analyticsAllowed(
+            ui.getState().settings.gameplay.analytics ??
+              loadJson<Partial<Settings>>('settings')?.gameplay?.analytics,
+            navigator as PrivacyNavigator,
+          ),
       })
     : null;
 reporter?.install(window);

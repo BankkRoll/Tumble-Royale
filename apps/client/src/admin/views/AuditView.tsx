@@ -2,7 +2,7 @@
  * The audit log: every admin action from the console and the CLI, newest
  * first, filtered by kind or target and paged with "Load more".
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import { Badge, errorMessage, useConsole } from '../components.tsx';
 import { query, shortTime } from '../format.ts';
 import type { AuditEntry, AuditPage } from '../types.ts';
@@ -61,56 +61,90 @@ export function AuditRow(props: { entry: AuditEntry }) {
   );
 }
 
+/** The audit list for one filter. */
+export interface AuditState {
+  /** The filter the rows belong to. */
+  key: string;
+  entries: AuditEntry[];
+  next: number | null;
+  loading: boolean;
+  error: string | null;
+}
+
+/** What happens to the audit list; every answer names the filter it was asked for. */
+export type AuditAction =
+  | { type: 'load'; key: string }
+  | { type: 'loaded'; key: string; page: AuditPage }
+  | { type: 'more'; key: string }
+  | { type: 'appended'; key: string; before: number; page: AuditPage }
+  | { type: 'failed'; key: string; error: string };
+
+/** The audit list before anything loaded. */
+export const AUDIT_INITIAL: AuditState = { key: '', entries: [], next: null, loading: true, error: null };
+
+/**
+ * The audit list's state machine. A new filter clears the rows at once (no
+ * old rows under the new filter, no Load more for the old cursor), and an
+ * answer for another filter, or a page for a cursor already passed, is
+ * dropped.
+ *
+ * @param s - Current state.
+ * @param a - What happened.
+ * @returns Next state.
+ */
+export function auditReducer(s: AuditState, a: AuditAction): AuditState {
+  if (a.type === 'load')
+    return a.key === s.key
+      ? { ...s, loading: true, error: null }
+      : { key: a.key, entries: [], next: null, loading: true, error: null };
+  if (a.key !== s.key) return s;
+  switch (a.type) {
+    case 'loaded':
+      return { ...s, entries: a.page.entries, next: a.page.nextBefore, loading: false };
+    case 'more':
+      return { ...s, loading: true, error: null };
+    case 'appended':
+      if (a.before !== s.next) return { ...s, loading: false };
+      return { ...s, entries: [...s.entries, ...a.page.entries], next: a.page.nextBefore, loading: false };
+    case 'failed':
+      return { ...s, error: a.error, loading: false };
+  }
+}
+
 /** The audit log view. */
 export function AuditView(props: { target?: string | undefined }) {
   const { api } = useConsole();
   const [kind, setKind] = useState('');
   const [target, setTarget] = useState(props.target ?? '');
-  const [entries, setEntries] = useState<AuditEntry[]>([]);
-  const [next, setNext] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const base = { action: kind, targetId: target.trim() || undefined, limit: 50 };
+  const key = query(base);
+  const [state, dispatch] = useReducer(auditReducer, AUDIT_INITIAL);
+  const { entries, next, loading, error } = state;
+  const inFlight = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    let live = true;
-    setLoading(true);
-    setError(null);
-    api
-      .request<AuditPage>(
-        'GET',
-        `/internal/audit${query({ action: kind, targetId: target.trim() || undefined, limit: 50 })}`,
-      )
-      .then(
-        (p) => {
-          if (!live) return;
-          setEntries(p.entries);
-          setNext(p.nextBefore);
-          setLoading(false);
-        },
-        (err: unknown) => {
-          if (!live) return;
-          setError(errorMessage(err));
-          setLoading(false);
-        },
-      );
-    return () => {
-      live = false;
-    };
-  }, [api, kind, target, tick]);
+    inFlight.current?.abort();
+    const ctl = new AbortController();
+    inFlight.current = ctl;
+    dispatch({ type: 'load', key });
+    api.request<AuditPage>('GET', `/internal/audit${key}`).then(
+      (page) => !ctl.signal.aborted && dispatch({ type: 'loaded', key, page }),
+      (err: unknown) => !ctl.signal.aborted && dispatch({ type: 'failed', key, error: errorMessage(err) }),
+    );
+    return () => ctl.abort();
+  }, [api, key, tick]);
 
   const more = async () => {
-    if (next === null) return;
-    setLoading(true);
+    if (next === null || loading) return;
+    const before = next;
+    dispatch({ type: 'more', key });
     try {
-      const p = await api.request<AuditPage>('GET', `/internal/audit${query({ ...base, before: next })}`);
-      setEntries((e) => [...e, ...p.entries]);
-      setNext(p.nextBefore);
+      const page = await api.request<AuditPage>('GET', `/internal/audit${query({ ...base, before })}`);
+      dispatch({ type: 'appended', key, before, page });
     } catch (err) {
-      setError(errorMessage(err));
+      dispatch({ type: 'failed', key, error: errorMessage(err) });
     }
-    setLoading(false);
   };
 
   return (

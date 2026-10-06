@@ -187,6 +187,8 @@ export class ClubController {
       void this.api
         .clubChatHistory()
         .then((h) => {
+          // Left (or switched club) while it loaded: the lines belong to a club this player is not in.
+          if (this.historyFor !== clubId) return;
           for (const l of h.lines) this.pushLine(l);
         })
         .catch(() => undefined);

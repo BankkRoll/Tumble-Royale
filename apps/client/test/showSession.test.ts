@@ -54,7 +54,8 @@ function fakeContext(ends: SessionEnd[]): GameContext {
   return {
     cfg: { timeScale: 1 },
     tumblers: { create: () => ({}) },
-    input: { touch: null },
+    input: { touch: null, settings: {} },
+    director: { deferUntilSwap: () => undefined },
     settings: () => {
       throw new Error('the round could not be built');
     },
@@ -89,5 +90,33 @@ describe('show session: a round that cannot be built', () => {
     expect(ui.getState().wipe.phase).toBe('revealing');
     uiEvents.emit('dialogResult', { dialogId: 'round-load-failed', buttonId: 'menu' });
     expect(ends).toEqual(['failed']);
+    session.dispose();
+  });
+});
+
+class LateRewardSession extends BrokenRoundSession {
+  protected override rewardsPending(): boolean {
+    return true;
+  }
+
+  /** Puts the show on the player wall with its recap in. */
+  onWall(): void {
+    Object.assign(this, { awaiting: 'wall', summary: { rounds: [], placements: new Map() } });
+  }
+}
+
+describe('show session: Continue while the online reward is late', () => {
+  beforeEach(() => installFakeDom());
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('keeps one wait going however often Continue is pressed', () => {
+    const session = new LateRewardSession(fakeContext([]));
+    const waits = vi.spyOn(session as unknown as { after: (s: number, fn: () => void) => void }, 'after');
+    session.onWall();
+    uiEvents.emit('continue', { from: 'playerWall' });
+    uiEvents.emit('continue', { from: 'playerWall' });
+    uiEvents.emit('continue', { from: 'playerWall' });
+    expect(waits).toHaveBeenCalledTimes(1);
+    session.dispose();
   });
 });

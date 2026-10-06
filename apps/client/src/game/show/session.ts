@@ -2287,6 +2287,7 @@ export abstract class ShowSession {
   protected rewardsMissing(): void {}
 
   private rewardsWait = 0;
+  private rewardsWaiting = false;
 
   /**
    * The finished show from the local seat. Only rounds the player actually
@@ -2314,11 +2315,16 @@ export abstract class ShowSession {
   }
 
   private goRewards(): void {
-    if (this.awaiting === 'rewards' || !this.summary) return;
+    // Continue pressed again while the reward is late must not start a second wait sharing the budget.
+    if (this.awaiting === 'rewards' || !this.summary || this.rewardsWaiting) return;
     // Give the server's reward summary a few seconds before falling back to the local estimate.
     if (this.rewardsPending() && this.rewardsWait < 32) {
       this.rewardsWait++;
-      this.after(0.25, () => this.goRewards());
+      this.rewardsWaiting = true;
+      this.after(0.25, () => {
+        this.rewardsWaiting = false;
+        this.goRewards();
+      });
       return;
     }
     this.awaiting = 'rewards';

@@ -21,6 +21,7 @@ import './theme/account.css';
 import './theme/social.css';
 import './theme/replay.css';
 import './theme/share.css';
+import './theme/vote.css';
 
 /** Options for `mountUI`. */
 export interface MountOptions {

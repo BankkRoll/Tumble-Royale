@@ -22,6 +22,7 @@ import { PhotoModeBar } from './screens/overlays/PhotoMode.tsx';
 import { JoinCodeDialog, PrivateShowDialog } from './screens/overlays/PrivateShow.tsx';
 import { FriendsSheet, NotificationsPanel } from './screens/overlays/SocialSheets.tsx';
 import { WatchChoiceLayer } from './screens/overlays/WatchChoice.tsx';
+import { RoundVoteLayer } from './screens/RoundVote.tsx';
 import { ReplayLayer } from './screens/Replay.tsx';
 import { ShareLayer } from './screens/overlays/ShareSheet.tsx';
 import { ScreenLayer } from './screens/ScreenLayer.tsx';
@@ -108,6 +109,7 @@ export function App(): JSX.Element {
         </div>
         <ConfettiLayer />
       </div>
+      {!photo && <RoundVoteLayer />}
       {!photo && <WatchChoiceLayer />}
       <ToastLayer />
       <ReplayLayer />

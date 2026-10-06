@@ -114,6 +114,8 @@ export interface UIIntents {
   };
   spectate: undefined;
   spectateNext: { dir: 1 | -1 };
+  /** Vote (or change the vote) for the next round on the between-rounds card. */
+  castVote: { roundIndex: number; option: number };
   playAgain: undefined;
   backToLobby: undefined;
   emote: { slot: number; id: string };

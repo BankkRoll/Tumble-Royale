@@ -69,6 +69,8 @@ import {
 import {
   ApiError,
   idempotencyKey,
+  type ApiMatch,
+  settledChallengeToast,
   type ApiClient,
   type ApiGrant,
   type ApiLoadoutItems,
@@ -98,6 +100,7 @@ import { SocialController, type RealtimeLike } from '../social/socialController.
 import { otherPlayerName } from '../social/streamerNames.ts';
 import { onlineStoreShelves } from '../storeOffers.ts';
 import {
+  appendGiftPage,
   giftErrorText,
   giftEventToast,
   toGiftPicker,
@@ -108,8 +111,14 @@ import {
   type GiftEvent,
   type ItemResolver,
 } from './gifts.ts';
-import { refundErrorText, refundToast, toPurchaseHistory } from './purchaseHistory.ts';
-import { explainGemCheckoutRefusal, gemCheckoutMode, type GemCheckoutMode } from './gemCheckout.ts';
+import { changedPrice, priceChangedText, type Quote } from './priceCheck.ts';
+import { appendPurchasePage, refundErrorText, refundToast, toPurchaseHistory } from './purchaseHistory.ts';
+import {
+  explainGemCheckoutRefusal,
+  GemCheckoutGate,
+  gemCheckoutMode,
+  type GemCheckoutMode,
+} from './gemCheckout.ts';
 import type { PartyLobbyLink } from '../views/partyLobbyView.ts';
 import { JsonSocket, type TypedMessage } from './jsonSocket.ts';
 import { partyLobbyLink } from './partyLobbyLink.ts';
@@ -225,6 +234,26 @@ function describe(err: unknown): string {
   return err instanceof Error ? err.message : 'Something went wrong.';
 }
 
+/** One show from `/me/matches` as Match History lists it. */
+function historyEntry(m: ApiMatch): MatchHistoryEntry {
+  const last = m.rounds[m.rounds.length - 1];
+  const reachedFinal = !!last && last.roundType === 'final' && last.played;
+  return {
+    id: m.id,
+    time: Date.parse(m.endedAt),
+    playlist: getPlaylist(m.playlistId)?.name ?? m.playlistId,
+    rounds: m.rounds
+      .filter((r) => r.played)
+      .map((r) => ({
+        name: getRound(r.roundId)?.name ?? r.roundId,
+        type: r.roundType as RoundType,
+        qualified: r.qualified,
+      })),
+    result: m.crowned ? 'crown' : reachedFinal ? 'final' : 'eliminated',
+    xp: m.xp,
+  };
+}
+
 /** Hooks the account calls back into the app. */
 export interface AccountHooks {
   /** The active look changed (locker edit, loadout switch, sign-in). */
@@ -253,6 +282,7 @@ export class OnlineAccount {
   party: ApiParty | null = null;
   private readonly cards = new Map<string, TumblerLoadout>();
   private gemCheckout: GemCheckoutMode = 'comingSoon';
+  private readonly gemGate = new GemCheckoutGate();
   private readonly realtime: JsonSocket;
   private readonly offs: (() => void)[] = [];
   private notifications: NotificationItem[] = [];
@@ -549,7 +579,8 @@ export class OnlineAccount {
     });
   }
 
-  private async refreshStore(): Promise<void> {
+  /** Fetches the shelves, Gem packs and Crown Shard shop (also when the open Store's shelves rotate). */
+  async refreshStore(): Promise<void> {
     try {
       const [store, packs, shards] = await Promise.all([
         this.api.store(),
@@ -582,6 +613,7 @@ export class OnlineAccount {
         ...onlineStoreShelves(store, (id) => this.owns(id)),
         gemPacks,
         gemCheckout: this.gemCheckout,
+        gemCheckoutPending: ui.getState().store?.gemCheckoutPending ?? null,
         ...(shards
           ? {
               shardShop: {
@@ -685,14 +717,7 @@ export class OnlineAccount {
         rerollsPerDay: 1,
         ...(c.season ? { season: { name: c.season.name, endsAt: Date.parse(c.season.endsAt) } } : {}),
       });
-      for (const s of c.settled ?? []) {
-        ui.getState().pushToast({
-          kind: 'reward',
-          title: 'Seasonal challenge paid out',
-          body: `${s.title}: completed last season, rewards added.`,
-          icon: '🎯',
-        });
-      }
+      for (const s of c.settled ?? []) ui.getState().pushToast(settledChallengeToast(s));
     } catch (err) {
       console.warn('[account] challenges failed', err);
     }
@@ -1027,14 +1052,20 @@ export class OnlineAccount {
   // Economy & progression
   // ---------------------------------------------------------------------------
 
-  /** Buys a store offer (one idempotency key per attempt; retried once on a network error). */
-  async purchase(offerId: string): Promise<void> {
+  /**
+   * Buys a store offer (one idempotency key per attempt; retried once on a
+   * network error). `expectedPrice` is what the confirmation showed: if the
+   * shelves rotated meanwhile nothing is charged, the store is refreshed and
+   * the player is told the new price.
+   */
+  async purchase(offerId: string, expectedPrice?: Quote): Promise<void> {
     const key = idempotencyKey('buy');
     const s = ui.getState();
     // `shards:<id>` offers come from the Crown Shard shop; everything else is the daily store.
     const shard = offerId.startsWith('shards:');
     const itemId = shard ? offerId.slice('shards:'.length) : offerId;
-    const send = () => (shard ? this.api.buyShardOffer(itemId, key) : this.api.purchase(itemId, key));
+    const send = () =>
+      shard ? this.api.buyShardOffer(itemId, key) : this.api.purchase(itemId, key, expectedPrice);
     try {
       let res;
       try {
@@ -1058,6 +1089,18 @@ export class OnlineAccount {
       this.pushInventory();
       await this.refreshStore();
     } catch (err) {
+      const moved = changedPrice(err);
+      if (moved) {
+        await this.refreshStore();
+        s.showDialog({
+          id: 'purchase-price-changed',
+          kind: 'info',
+          title: 'The price changed',
+          body: priceChangedText(moved),
+          code: 'price_changed',
+        });
+        return;
+      }
       const code = err instanceof ApiError ? err.code : '';
       const body =
         code === 'feature_disabled'
@@ -1098,6 +1141,22 @@ export class OnlineAccount {
     } catch (err) {
       const latest = ui.getState().purchaseHistory!;
       s.setPurchaseHistory({ ...latest, status: 'error', error: refundErrorText(err) });
+    }
+  }
+
+  /** Appends the next older page to Store → Purchases. */
+  async loadMorePurchases(): Promise<void> {
+    const s = ui.getState();
+    const shown = s.purchaseHistory;
+    if (!shown?.nextCursor || shown.loadingMore) return;
+    s.setPurchaseHistory({ ...shown, loadingMore: true });
+    try {
+      const older = await this.api.purchaseHistory(shown.nextCursor);
+      s.setPurchaseHistory(appendPurchasePage(ui.getState().purchaseHistory ?? shown, older));
+    } catch (err) {
+      const latest = ui.getState().purchaseHistory ?? shown;
+      s.setPurchaseHistory({ ...latest, loadingMore: false });
+      s.pushToast({ kind: 'error', title: "Couldn't load older purchases", body: refundErrorText(err) });
     }
   }
 
@@ -1184,6 +1243,22 @@ export class OnlineAccount {
     }
   }
 
+  /** Appends the next older page of settled received gifts, or of sent gifts. */
+  async loadMoreGifts(direction: 'received' | 'sent'): Promise<void> {
+    const s = ui.getState();
+    const shown = s.gifts;
+    const cursor = shown?.nextCursor?.[direction];
+    if (!shown || !cursor || shown.loadingMore) return;
+    s.setGifts({ ...shown, loadingMore: direction });
+    try {
+      const page = await this.api.giftHistory(direction, cursor);
+      s.setGifts(appendGiftPage(ui.getState().gifts ?? shown, direction, page, this.resolveItem));
+    } catch (err) {
+      s.setGifts({ ...(ui.getState().gifts ?? shown), loadingMore: null });
+      s.pushToast({ kind: 'error', title: "Couldn't load older gifts", body: giftErrorText(err) });
+    }
+  }
+
   /** Opens or declines a received gift, or cancels a sent one (the latter two already confirmed). */
   async giftAction(giftId: string, action: 'open' | 'decline' | 'cancel'): Promise<void> {
     const s = ui.getState();
@@ -1267,7 +1342,14 @@ export class OnlineAccount {
     const picker = s.giftPicker;
     if (picker) s.setGiftPicker({ ...picker, status: 'sending' });
     const key = idempotencyKey('gift');
-    const body = { recipientId, offerId, ...(message ? { message } : {}) };
+    // The price the sheet showed for this friend (a bundle skips what they own).
+    const shown = picker?.offerId === offerId ? picker.friends.find((f) => f.userId === recipientId) : null;
+    const body = {
+      recipientId,
+      offerId,
+      ...(message ? { message } : {}),
+      ...(shown?.price ? { expectedPrice: shown.price } : {}),
+    };
     try {
       let res;
       try {
@@ -1410,7 +1492,10 @@ export class OnlineAccount {
     });
   }
 
-  /** Buys a Gem pack: instant test credit with the dev fake provider, otherwise a Stripe redirect. */
+  /**
+   * Buys a Gem pack: instant test credit with the dev fake provider, otherwise
+   * a Stripe redirect. One checkout at a time ({@link GemCheckoutGate}).
+   */
   async buyGems(packId: string): Promise<void> {
     const s = ui.getState();
     if (this.gemCheckout === 'comingSoon') {
@@ -1422,29 +1507,33 @@ export class OnlineAccount {
       });
       return;
     }
-    try {
-      const r = await this.api.gemCheckout(packId, idempotencyKey('gems'));
-      if (r.status === 'completed') {
-        s.pushToast({
-          kind: 'reward',
-          title: `+${r.gems} Gems!`,
-          ...(this.gemCheckout === 'test' ? { body: 'Test purchase (dev): no real money was taken.' } : {}),
-          icon: '💎',
+    await this.gemGate.run(packId, async () => {
+      try {
+        const r = await this.api.gemCheckout(packId, idempotencyKey('gems'));
+        if (r.status === 'completed') {
+          s.pushToast({
+            kind: 'reward',
+            title: `+${r.gems} Gems!`,
+            ...(this.gemCheckout === 'test' ? { body: 'Test purchase (dev): no real money was taken.' } : {}),
+            icon: '💎',
+          });
+          await this.refreshProgress();
+        } else if (r.checkoutUrl) {
+          window.location.assign(r.checkoutUrl);
+          return 'redirected';
+        }
+      } catch (err) {
+        if (err instanceof ApiError && explainGemCheckoutRefusal(err.code, err.details)) return 'done';
+        const soon = err instanceof ApiError && err.code === 'payments_unavailable';
+        s.showDialog({
+          id: 'gems-failed',
+          kind: soon ? 'info' : 'error',
+          title: soon ? 'Gems are coming soon' : 'Checkout failed',
+          body: soon ? 'Secure checkout via Stripe is on its way.' : describe(err),
         });
-        await this.refreshProgress();
-      } else if (r.checkoutUrl) {
-        window.location.assign(r.checkoutUrl);
       }
-    } catch (err) {
-      if (err instanceof ApiError && explainGemCheckoutRefusal(err.code, err.details)) return;
-      const soon = err instanceof ApiError && err.code === 'payments_unavailable';
-      s.showDialog({
-        id: 'gems-failed',
-        kind: soon ? 'info' : 'error',
-        title: soon ? 'Gems are coming soon' : 'Checkout failed',
-        body: soon ? 'Secure checkout via Stripe is on its way.' : describe(err),
-      });
-    }
+      return 'done';
+    });
   }
 
   /**
@@ -1564,29 +1653,33 @@ export class OnlineAccount {
   /** Loads the last 20 shows into Match History. */
   async history(): Promise<void> {
     try {
-      const { matches } = await this.api.myMatches();
-      const entries: MatchHistoryEntry[] = matches.map((m) => {
-        const last = m.rounds[m.rounds.length - 1];
-        const reachedFinal = !!last && last.roundType === 'final' && last.played;
-        return {
-          id: m.id,
-          time: Date.parse(m.endedAt),
-          playlist: getPlaylist(m.playlistId)?.name ?? m.playlistId,
-          rounds: m.rounds
-            .filter((r) => r.played)
-            .map((r) => ({
-              name: getRound(r.roundId)?.name ?? r.roundId,
-              type: r.roundType as RoundType,
-              qualified: r.qualified,
-            })),
-          result: m.crowned ? 'crown' : reachedFinal ? 'final' : 'eliminated',
-          xp: m.xp,
-        };
-      });
+      const { matches, nextCursor } = await this.api.myMatches();
+      const entries = matches.map(historyEntry);
       ui.getState().setMatchHistory(entries);
+      ui.getState().setMatchHistoryPaging({ next: nextCursor ?? null, loading: false });
       this.applyHistoryStats(entries);
     } catch (err) {
       console.warn('[account] history failed', err);
+    }
+  }
+
+  /** Appends the next 20 older shows to Match History. */
+  async moreHistory(): Promise<void> {
+    const s = ui.getState();
+    const paging = s.matchHistoryPaging;
+    if (!paging?.next || paging.loading) return;
+    s.setMatchHistoryPaging({ ...paging, loading: true });
+    try {
+      const { matches, nextCursor } = await this.api.myMatches(paging.next);
+      const shown = new Set(ui.getState().matchHistory.map((e) => e.id));
+      s.setMatchHistory([
+        ...ui.getState().matchHistory,
+        ...matches.filter((m) => !shown.has(m.id)).map(historyEntry),
+      ]);
+      s.setMatchHistoryPaging({ next: nextCursor ?? null, loading: false });
+    } catch (err) {
+      s.setMatchHistoryPaging({ ...paging, loading: false });
+      s.pushToast({ kind: 'error', title: "Couldn't load older shows", body: describe(err) });
     }
   }
 

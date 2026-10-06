@@ -44,7 +44,14 @@ import { readWallet } from '../economy/wallet.ts';
 import { recordEventShow, type EventShowUpdate } from '../events/progress.ts';
 import { countingEvents } from '../events/state.ts';
 import { badRequest, isUniqueViolation } from '../http/errors.ts';
-import { recordLeaderboards, RANKED_QUEUE } from '../leaderboards/service.ts';
+import {
+  displayTier,
+  RANKED_QUEUE,
+  recordLeaderboards,
+  type BoardType,
+  type LeaderboardUpdate,
+} from '../leaderboards/service.ts';
+import { DELETED_PLAYER_NAME } from '../accounts/erase.ts';
 import { serverFlag } from '../liveops/state.ts';
 import {
   notifyUnlocks,
@@ -162,12 +169,155 @@ const QUALIFY_METRIC: Record<string, ChallengeMetric | undefined> = {
   logic: 'logicRoundsQualified',
 };
 
+/**
+ * What still has to happen outside the transaction once a show committed:
+ * leaderboard writes and player notifications. Kept in KV until done, so a
+ * failure (KV hiccup, crash) is finished by the game server's retry, which
+ * replays the stored result and runs whatever is left.
+ */
+interface PendingEffects {
+  seasonId: string;
+  /** The show's end, which picks its weekly board. */
+  endedAt: string;
+  leaderboards: LeaderboardUpdate[];
+  notified: boolean;
+}
+
+/**
+ * Days a show's record is kept (`ops/retention.ts` prunes older ones). A
+ * report older than this is refused: its `matches` row may already be gone,
+ * so it could not be recognised as a replay and would pay out again.
+ */
+export const MATCH_HISTORY_RETENTION_DAYS = 365;
+
+/** Boards a Crown moves (the streak only ever grows on a win). */
+const CROWN_BOARDS: readonly BoardType[] = ['crowns', 'crowns_weekly', 'crowns_all_time', 'win_streak'];
+
+/** Long enough for the game server's outbox to retry; leaderboards also rebuild on their own. */
+const PENDING_TTL_MS = 86_400_000;
+const pendingKey = (matchId: string): string => `match:effects:${matchId}`;
+
 async function replayStored(ctx: AppContext, matchId: string): Promise<IngestResult | null> {
   const [row] = await ctx.db
     .select({ rewards: matches.rewards })
     .from(matches)
     .where(eq(matches.id, matchId));
-  return row ? { matchId, alreadyProcessed: true, rewards: row.rewards as PlayerRewardSummary[] } : null;
+  if (!row) return null;
+  const result = { matchId, alreadyProcessed: true, rewards: row.rewards as PlayerRewardSummary[] };
+  const raw = await ctx.kv.get(pendingKey(matchId)).catch(() => null);
+  if (raw) await finishEffects(ctx, result, JSON.parse(raw) as PendingEffects);
+  return result;
+}
+
+/**
+ * Runs the pending effects of a committed show. Each leaderboard write and
+ * each notification is attempted on its own; leaderboard writes that fail
+ * stay pending for the next replay (they are idempotent), notifications are
+ * sent at most once.
+ */
+async function finishEffects(ctx: AppContext, result: IngestResult, pending: PendingEffects): Promise<void> {
+  const failed: LeaderboardUpdate[] = [];
+  for (const u of pending.leaderboards) {
+    try {
+      await recordLeaderboards(ctx, u, { seasonId: pending.seasonId, at: new Date(pending.endedAt) });
+    } catch {
+      failed.push(u);
+    }
+  }
+  if (!pending.notified) await notifyShow(ctx, result);
+  await (
+    failed.length
+      ? ctx.kv.set(
+          pendingKey(result.matchId),
+          JSON.stringify({ ...pending, leaderboards: failed, notified: true }),
+          PENDING_TTL_MS,
+        )
+      : ctx.kv.del(pendingKey(result.matchId))
+  ).catch(() => undefined);
+}
+
+/** Best effort: one failed delivery must not stop the rest. */
+async function quietly(send: () => Promise<void>): Promise<void> {
+  try {
+    await send();
+  } catch {
+    // Realtime delivery is best effort; the player sees it all on next load.
+  }
+}
+
+async function notifyShow(ctx: AppContext, result: IngestResult): Promise<void> {
+  const clubGoalsDone = new Map<string, string[]>();
+  for (const r of result.rewards)
+    for (const g of r.club?.goals ?? [])
+      if (g.completed)
+        clubGoalsDone.set(r.club!.clubId, [...(clubGoalsDone.get(r.club!.clubId) ?? []), g.title]);
+  for (const [clubId, titles] of clubGoalsDone) {
+    for (const title of titles)
+      await quietly(() =>
+        notifyClub(ctx, clubId, {
+          type: 'notification',
+          kind: 'reward',
+          title: 'Club goal complete!',
+          body: title,
+        }),
+      );
+    await quietly(() => notifyClub(ctx, clubId, { type: 'club_update', clubId }));
+  }
+  for (const r of result.rewards) {
+    const notify = (event: Parameters<typeof ctx.notifier.notifyUser>[1]) =>
+      quietly(() => ctx.notifier.notifyUser(r.userId, event));
+    await notify({ type: 'wallet', ...r.wallet });
+    for (const g of r.gems?.lines ?? [])
+      await notify({ type: 'notification', kind: 'reward', title: `+${g.amount} Gems`, body: g.label });
+    for (const c of r.challenges.filter((x) => x.completed))
+      await notify({ type: 'notification', kind: 'reward', title: 'Challenge complete!', body: c.title });
+    for (const e of r.events ?? []) {
+      for (const c of e.challenges.filter((x) => x.completed))
+        await notify({
+          type: 'notification',
+          kind: 'reward',
+          title: 'Event challenge complete!',
+          body: `${e.name}: ${c.title}`,
+        });
+      if (e.tierAfter > e.tierBefore)
+        await notify({
+          type: 'notification',
+          kind: 'reward',
+          title: `${e.name} reward unlocked`,
+          body: `Tier ${e.tierAfter} is ready to claim.`,
+        });
+    }
+    await quietly(() => notifyUnlocks(ctx, r.userId, r.achievements ?? []));
+  }
+}
+
+/**
+ * Promotes Champions in their region's top of the season board to Crown
+ * League on the rewards screen, once the show's own RP is on the board, and
+ * stores the label so a replay shows the same.
+ */
+async function crownLeagueTiers(
+  ctx: AppContext,
+  result: IngestResult,
+  seasonId: string,
+  regionOf: ReadonlyMap<string, string>,
+): Promise<void> {
+  let changed = false;
+  for (const r of result.rewards) {
+    if (!r.ranked || r.ranked.tierAfter.tier !== 'champion') continue;
+    const tier = await displayTier(ctx, ctx.kv, {
+      userId: r.userId,
+      region: regionOf.get(r.userId) ?? 'na',
+      rp: r.ranked.rpAfter,
+      placementsLeft: r.ranked.placementsLeft,
+      seasonId,
+    });
+    if (tier.tier === r.ranked.tierAfter.tier) continue;
+    r.ranked = { ...r.ranked, tierAfter: tier, label: tierLabel(tier) };
+    changed = true;
+  }
+  if (changed)
+    await ctx.db.update(matches).set({ rewards: result.rewards }).where(eq(matches.id, result.matchId));
 }
 
 /**
@@ -186,6 +336,8 @@ export async function ingestMatch(
   checkConsistency(m);
   const stored = await replayStored(ctx, m.matchId);
   if (stored) return stored;
+  if (Date.parse(m.endedAt) < ctx.now().getTime() - MATCH_HISTORY_RETENTION_DAYS * 86_400_000)
+    throw badRequest('result_too_old', 'This show ended too long ago to be recorded');
   await verify?.(m);
 
   const seasonId = m.seasonId ?? ctx.catalog.season.id;
@@ -198,7 +350,8 @@ export async function ingestMatch(
     ? await countingEvents(ctx, Math.min(Date.parse(m.startedAt), now.getTime()))
     : [];
   const clubsOn = grants && (await serverFlag(ctx, 'clubs.enabled'));
-  let leaderboardUpdates: Parameters<typeof recordLeaderboards>[1][] = [];
+  let pending: PendingEffects | null = null;
+  let regions = new Map<string, string>();
 
   let result: IngestResult;
   try {
@@ -225,6 +378,7 @@ export async function ingestMatch(
             .where(inArray(users.id, claimed))
         : [];
       const regionOf = new Map(known.map((k) => [k.id, k.region]));
+      regions = regionOf;
 
       const placementOf = new Map(m.placements.map((p) => [p.key, p]));
       const qualifiedRounds = new Map<string, number>();
@@ -238,7 +392,8 @@ export async function ingestMatch(
           participantKey: p.key,
           userId: p.userId && regionOf.has(p.userId) ? p.userId : null,
           isBot: p.isBot,
-          name: p.name,
+          // A result arriving after the account was deleted must not bring its name back.
+          name: p.userId && !regionOf.has(p.userId) ? DELETED_PLAYER_NAME : p.name,
           team: p.team ?? null,
           placement: placementOf.get(p.key)!.placement,
           crowned: placementOf.get(p.key)!.crowned,
@@ -273,7 +428,7 @@ export async function ingestMatch(
           ? await rateLobby(tx, m, seasonId, regionOf, now)
           : new Map<string, RankedRow>();
       const rewards: PlayerRewardSummary[] = [];
-      leaderboardUpdates = [];
+      const leaderboardUpdates: LeaderboardUpdate[] = [];
       const humanIds = humans.map((h) => h.userId!);
       const clubOf = new Map(
         clubsOn && humanIds.length
@@ -440,7 +595,8 @@ export async function ingestMatch(
             roundsQualified: sql`${playerStats.roundsQualified} + ${qualified}`,
             currentWinStreak: streak,
             bestWinStreak: bestStreak,
-            lastShowDay: dayKey(now),
+            // A custom lobby pays nothing, so it must not use up the first-show bonus either.
+            ...(grants ? { lastShowDay: dayKey(now) } : {}),
             updatedAt: now,
           })
           .where(eq(playerStats.userId, userId));
@@ -545,17 +701,20 @@ export async function ingestMatch(
             : null,
           wallet: await readWallet(tx, userId),
         });
-        leaderboardUpdates.push({
-          userId,
-          region: regionOf.get(userId) ?? 'na',
-          crowned: grants && pl.crowned,
-          shardCrowns: crownsFromShards,
-          bestStreak: grants ? bestStreak : 0,
-          rp: rk && rk.placementsLeft === 0 ? rk.rpAfter : null,
-        });
+        const boards = new Set<BoardType>();
+        if (grants && pl.crowned) for (const b of CROWN_BOARDS) boards.add(b);
+        if (crownsFromShards > 0) boards.add('crowns_all_time');
+        if (rk && rk.placementsLeft === 0) boards.add('ranked');
+        if (boards.size)
+          leaderboardUpdates.push({ userId, region: regionOf.get(userId) ?? 'na', boards: [...boards] });
       }
 
       await tx.update(matches).set({ rewards }).where(eq(matches.id, m.matchId));
+      pending = { seasonId, endedAt: m.endedAt, leaderboards: leaderboardUpdates, notified: false };
+      // Written before the commit: a crash after it still leaves the effects
+      // for the retry. If the commit fails instead, the next ingest overwrites it.
+      // Without KV the show still counts; its effects then just run once below.
+      await ctx.kv.set(pendingKey(m.matchId), JSON.stringify(pending), PENDING_TTL_MS).catch(() => undefined);
       return { matchId: m.matchId, alreadyProcessed: false, rewards };
     });
   } catch (err) {
@@ -566,57 +725,12 @@ export async function ingestMatch(
     throw err;
   }
 
-  for (const u of leaderboardUpdates) await recordLeaderboards(ctx, u, now);
-  const clubGoalsDone = new Map<string, string[]>();
-  for (const r of result.rewards)
-    for (const g of r.club?.goals ?? [])
-      if (g.completed)
-        clubGoalsDone.set(r.club!.clubId, [...(clubGoalsDone.get(r.club!.clubId) ?? []), g.title]);
-  for (const [clubId, titles] of clubGoalsDone) {
-    for (const title of titles)
-      await notifyClub(ctx, clubId, {
-        type: 'notification',
-        kind: 'reward',
-        title: 'Club goal complete!',
-        body: title,
-      });
-    await notifyClub(ctx, clubId, { type: 'club_update', clubId });
-  }
-  for (const r of result.rewards) {
-    await ctx.notifier.notifyUser(r.userId, { type: 'wallet', ...r.wallet });
-    for (const g of r.gems?.lines ?? []) {
-      await ctx.notifier.notifyUser(r.userId, {
-        type: 'notification',
-        kind: 'reward',
-        title: `+${g.amount} Gems`,
-        body: g.label,
-      });
-    }
-    for (const c of r.challenges.filter((x) => x.completed)) {
-      await ctx.notifier.notifyUser(r.userId, {
-        type: 'notification',
-        kind: 'reward',
-        title: 'Challenge complete!',
-        body: c.title,
-      });
-    }
-    for (const e of r.events ?? []) {
-      for (const c of e.challenges.filter((x) => x.completed))
-        await ctx.notifier.notifyUser(r.userId, {
-          type: 'notification',
-          kind: 'reward',
-          title: 'Event challenge complete!',
-          body: `${e.name}: ${c.title}`,
-        });
-      if (e.tierAfter > e.tierBefore)
-        await ctx.notifier.notifyUser(r.userId, {
-          type: 'notification',
-          kind: 'reward',
-          title: `${e.name} reward unlocked`,
-          body: `Tier ${e.tierAfter} is ready to claim.`,
-        });
-    }
-    await notifyUnlocks(ctx, r.userId, r.achievements ?? []);
+  const effects = pending as PendingEffects | null;
+  if (effects) await finishEffects(ctx, result, effects);
+  try {
+    await crownLeagueTiers(ctx, result, seasonId, regions);
+  } catch {
+    // The rewards screen then shows Champion; the profile resolves Crown League on its own.
   }
   return result;
 }

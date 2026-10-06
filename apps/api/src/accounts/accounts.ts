@@ -17,6 +17,7 @@ import {
   users,
 } from '../db/schema.ts';
 import { ApiError, badRequest, notFound } from '../http/errors.ts';
+import type { TierInfo } from '../ranked/tiers.ts';
 import { checkDisplayName, generateGuestName, randomTag } from '../names/display-name.ts';
 
 /** Identity providers. `device` is the guest device secret. */
@@ -250,9 +251,16 @@ export interface ProfileCard {
 /**
  * Builds a profile card.
  *
+ * @param resolveTier - The displayed tier of a rating (Crown League depends on
+ *   the live regional board); the stored ladder tier when absent.
  * @throws {ApiError} 404 when the user does not exist.
  */
-export async function getProfileCard(db: DbOrTx, catalog: Catalog, userId: string): Promise<ProfileCard> {
+export async function getProfileCard(
+  db: DbOrTx,
+  catalog: Catalog,
+  userId: string,
+  resolveTier?: (r: { region: string; rp: number; placementsLeft: number }) => Promise<TierInfo>,
+): Promise<ProfileCard> {
   const [row] = await db
     .select({ u: users, p: profiles, s: playerStats })
     .from(users)
@@ -288,14 +296,21 @@ export async function getProfileCard(db: DbOrTx, catalog: Catalog, userId: strin
       currentWinStreak: s?.currentWinStreak ?? 0,
       bestWinStreak: s?.bestWinStreak ?? 0,
     },
-    ranked: rank.map((r) => ({
-      queue: r.queue,
-      seasonId: r.seasonId,
-      tier: r.tier,
-      division: r.division,
-      rp: r.rp,
-      placementsLeft: r.placementsLeft,
-    })),
+    ranked: await Promise.all(
+      rank.map(async (r) => {
+        const shown = resolveTier
+          ? await resolveTier({ region: row.u.region, rp: r.rp, placementsLeft: r.placementsLeft })
+          : { tier: r.tier, division: r.division };
+        return {
+          queue: r.queue,
+          seasonId: r.seasonId,
+          tier: shown.tier,
+          division: shown.division,
+          rp: r.rp,
+          placementsLeft: r.placementsLeft,
+        };
+      }),
+    ),
     loadout: lo?.items ?? null,
     createdAt: row.u.createdAt.toISOString(),
   };

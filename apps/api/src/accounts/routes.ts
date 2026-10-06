@@ -5,11 +5,13 @@ import { and, asc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.ts';
+import type { DbOrTx } from '../db/client.ts';
+import { lockWallet } from '../economy/ledger.ts';
 import { authIdentities, inventoryItems, loadouts, profiles, users } from '../db/schema.ts';
 import { requireUser } from '../http/auth.ts';
 import { conflict, notFound, parse } from '../http/errors.ts';
 import { LOADOUT_COUNT, LoadoutItemsSchema, validateLoadout } from '../inventory/loadout.ts';
-import { moveLeaderboardRegion } from '../leaderboards/service.ts';
+import { displayTier, moveLeaderboardRegion } from '../leaderboards/service.ts';
 import { isBlockedEitherWay } from '../social/friends.ts';
 import { accountRegion, changeDisplayName, getProfileCard, RegionSchema } from './accounts.ts';
 import { deleteAccount } from './erase.ts';
@@ -30,13 +32,25 @@ const IndexParam = z.object({
 });
 const PutLoadout = z.object({ name: z.string().trim().min(1).max(24).optional(), items: LoadoutItemsSchema });
 
-/** Owned cosmetic ids for a user. */
-export async function ownedSet(ctx: AppContext, userId: string): Promise<Set<string>> {
-  const rows = await ctx.db
+/**
+ * Owned cosmetic ids for a user.
+ *
+ * @param ctx - Shared services.
+ * @param userId - Owner.
+ * @param db - Read inside this transaction instead of the pool.
+ */
+export async function ownedSet(ctx: AppContext, userId: string, db: DbOrTx = ctx.db): Promise<Set<string>> {
+  const rows = await db
     .select({ id: inventoryItems.cosmeticId })
     .from(inventoryItems)
     .where(eq(inventoryItems.userId, userId));
   return new Set(rows.map((r) => r.id));
+}
+
+/** The tier a profile shows: Crown League for Champions in their region's top of the live board. */
+function shownTier(ctx: AppContext, userId: string) {
+  return (r: { region: string; rp: number; placementsLeft: number }) =>
+    displayTier(ctx, ctx.kv, { userId, ...r });
 }
 
 /**
@@ -48,7 +62,7 @@ export async function ownedSet(ctx: AppContext, userId: string): Promise<Set<str
 export function registerAccountRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/me', async (req) => {
     const auth = await requireUser(ctx, req);
-    const card = await getProfileCard(ctx.db, ctx.catalog, auth.userId);
+    const card = await getProfileCard(ctx.db, ctx.catalog, auth.userId, shownTier(ctx, auth.userId));
     const [extra] = await ctx.db
       .select({ email: users.email, isGuest: users.isGuest, p: profiles })
       .from(users)
@@ -116,7 +130,7 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: AppContext): vo
     const { id } = parse(IdParam, req.params);
     // SECURITY: a blocked pair reads as a missing profile either way, the same 404 as an unknown id.
     if (await isBlockedEitherWay(ctx.db, auth.userId, id)) throw notFound('Profile');
-    return getProfileCard(ctx.db, ctx.catalog, id);
+    return getProfileCard(ctx.db, ctx.catalog, id, shownTier(ctx, id));
   });
 
   app.get('/inventory', async (req) => {
@@ -154,16 +168,22 @@ export function registerAccountRoutes(app: FastifyInstance, ctx: AppContext): vo
     const auth = await requireUser(ctx, req);
     const { index } = parse(IndexParam, req.params);
     const body = parse(PutLoadout, req.body);
-    validateLoadout(body.items, ctx.cosmetics, await ownedSet(ctx, auth.userId));
     const name = body.name ?? `Loadout ${index + 1}`;
     const now = ctx.now();
-    await ctx.db
-      .insert(loadouts)
-      .values({ userId: auth.userId, slotIndex: index, name, items: body.items, updatedAt: now })
-      .onConflictDoUpdate({
-        target: [loadouts.userId, loadouts.slotIndex],
-        set: { name, items: body.items, updatedAt: now },
-      });
+    await ctx.db.transaction(async (tx) => {
+      // Every revoke (refund, gift reversal, admin) takes this lock before it
+      // removes an item and strips it from saved loadouts, so a save cannot
+      // validate against an item that a concurrent revoke is taking away.
+      await lockWallet(tx, auth.userId);
+      validateLoadout(body.items, ctx.cosmetics, await ownedSet(ctx, auth.userId, tx));
+      await tx
+        .insert(loadouts)
+        .values({ userId: auth.userId, slotIndex: index, name, items: body.items, updatedAt: now })
+        .onConflictDoUpdate({
+          target: [loadouts.userId, loadouts.slotIndex],
+          set: { name, items: body.items, updatedAt: now },
+        });
+    });
     return { index, name, items: body.items };
   });
 

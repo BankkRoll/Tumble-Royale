@@ -38,7 +38,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { AppContext } from '../context.ts';
 import type { DbOrTx } from '../db/client.ts';
-import { paymentReversals, purchases, stripeEvents } from '../db/schema.ts';
+import { events, paymentReversals, purchases, stripeEvents } from '../db/schema.ts';
 import { applyLedger, lockWallet, readGemDebt, revokeGems } from './ledger.ts';
 import { markRefundFailed, syncRefundRequest } from './refunds.ts';
 import type { DisputeOutcome, PaymentEvent } from './payments.ts';
@@ -80,7 +80,10 @@ function statusFor(target: number, gems: number, dispute: string | null): GemPur
  * Credits a Gem pack exactly once and records its PaymentIntent. Must run in a
  * transaction; applies any refund or dispute that arrived first.
  *
- * @returns The buyer when Gems moved, otherwise null (unknown, not a pack, already credited).
+ * @param paid - What the provider says was paid, by whom; a mismatch with the
+ *   stored purchase credits nothing.
+ * @returns The buyer when Gems moved, otherwise null (unknown, not a pack,
+ *   already credited, or not matching the purchase).
  */
 export async function creditGemPurchase(
   tx: DbOrTx,
@@ -88,15 +91,32 @@ export async function creditGemPurchase(
   purchaseId: string,
   providerRef: string | null,
   paymentIntent: string | null,
+  paid?: { userId?: string | null; amountTotal?: number | null; currency?: string | null },
 ): Promise<string | null> {
   const [row] = await tx.select().from(purchases).where(eq(purchases.id, purchaseId)).for('update');
   if (!row || row.kind !== 'gem_pack' || row.completedAt) return null;
+  // SECURITY: the session must be the one this purchase created, paid by its
+  // buyer, for its price. Anything else is left pending for support to review.
+  const mismatch =
+    (providerRef !== null && row.providerRef !== null && providerRef !== row.providerRef) ||
+    (paid?.userId != null && paid.userId !== row.userId) ||
+    (paid?.amountTotal != null && paid.amountTotal !== row.price) ||
+    (paid?.currency != null && paid.currency.toLowerCase() !== row.currency.toLowerCase());
+  if (mismatch) {
+    await tx.insert(events).values({
+      userId: row.userId,
+      name: 'payments.checkout_mismatch',
+      props: { purchaseId, providerRef, paymentIntent, paid: paid ?? null },
+      createdAt: ctx.now(),
+    });
+    return null;
+  }
   const pack = ctx.catalog.gemPacks.find((p) => p.id === row.itemId);
-  if (!pack) throw new Error(`gem pack ${row.itemId} vanished from the catalog`);
+  if (!pack && row.gems === null) throw new Error(`gem pack ${row.itemId} vanished from the catalog`);
   await applyLedger(tx, {
     userId: row.userId,
     currency: 'gems',
-    delta: pack.gems,
+    delta: row.gems ?? pack!.gems,
     reason: 'gem_pack',
     ref: purchaseId,
   });
@@ -132,10 +152,10 @@ async function reconcilePayment(tx: DbOrTx, ctx: AppContext, paymentIntent: stri
     .where(eq(paymentReversals.paymentIntent, paymentIntent))
     .for('update');
   if (!purchase || !state || !purchase.completedAt || purchase.kind !== 'gem_pack') return null;
-  const pack = ctx.catalog.gemPacks.find((p) => p.id === purchase.itemId);
-  if (!pack) throw new Error(`gem pack ${purchase.itemId} vanished from the catalog`);
-  const target = reversalTarget(pack.gems, state.amountCents ?? purchase.price, state);
-  const status = statusFor(target, pack.gems, state.disputeStatus);
+  const gems = purchase.gems ?? ctx.catalog.gemPacks.find((p) => p.id === purchase.itemId)?.gems;
+  if (gems === undefined) throw new Error(`gem pack ${purchase.itemId} vanished from the catalog`);
+  const target = reversalTarget(gems, state.amountCents ?? purchase.price, state);
+  const status = statusFor(target, gems, state.disputeStatus);
   if (purchase.status !== status) {
     await tx.update(purchases).set({ status }).where(eq(purchases.id, purchase.id));
   }
@@ -157,6 +177,21 @@ async function reconcilePayment(tx: DbOrTx, ctx: AppContext, paymentIntent: stri
     .set({ gemsReversed: target, adjustments: state.adjustments + 1, updatedAt: ctx.now() })
     .where(eq(paymentReversals.paymentIntent, paymentIntent));
   return purchase.userId;
+}
+
+/**
+ * Serialises every event of one PaymentIntent, taken before any row lock.
+ *
+ * Row locks alone cannot do it: until the checkout completion commits, no
+ * purchase row carries the PaymentIntent, so a refund arriving meanwhile locks
+ * nothing, and the completion's reconcile cannot see the refund's uncommitted
+ * `payment_reversals` row. Both would commit and the refund would be lost.
+ *
+ * @param tx - Open transaction.
+ * @param paymentIntent - Stripe PaymentIntent id.
+ */
+export async function lockPaymentIntent(tx: DbOrTx, paymentIntent: string): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pi:${paymentIntent}`}))`);
 }
 
 /** Locks the purchase (if known yet) before the reversal row, matching {@link reconcilePayment}. */
@@ -250,6 +285,8 @@ export async function applyPaymentEvent(
       .returning({ id: stripeEvents.id });
     if (fresh.length === 0) return { duplicate: true, walletsChanged: [] };
 
+    const intent = 'paymentIntent' in event ? event.paymentIntent : null;
+    if (intent) await lockPaymentIntent(tx, intent);
     const changed: (string | null)[] = [];
     switch (event.type) {
       case 'checkout_completed': {
@@ -262,7 +299,9 @@ export async function applyPaymentEvent(
           purchaseId = row?.id ?? null;
         }
         if (purchaseId) {
-          changed.push(await creditGemPurchase(tx, ctx, purchaseId, event.providerRef, event.paymentIntent));
+          changed.push(
+            await creditGemPurchase(tx, ctx, purchaseId, event.providerRef, event.paymentIntent, event),
+          );
         }
         break;
       }

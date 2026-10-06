@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { newsPosts } from '../src/db/schema.ts';
 import { ADMIN_TOKEN, createTestApi, type TestApi } from './helpers.ts';
 
 let api: TestApi;
 beforeAll(async () => {
-  api = await createTestApi();
+  // After every post date used here, so none of them is still scheduled.
+  api = await createTestApi('2099-01-02T12:00:00.000Z');
 });
 afterAll(async () => {
   await api.close();
@@ -72,5 +74,42 @@ describe('live news', () => {
     expect(after.some((p) => p.id === target.id)).toBe(false);
     expect((await api.req('GET', '/news')).json().withdrawn).toEqual([target.id]);
     expect(after).toHaveLength(before.length - 1);
+  });
+
+  it('answers 201 for a new post and 200 for a correction', async () => {
+    const fresh = { ...post, id: 'live-status-codes' };
+    const created = await api.req('POST', '/internal/news', { body: fresh, token: ADMIN_TOKEN });
+    expect(created.statusCode).toBe(201);
+    const edited = await api.req('POST', '/internal/news', {
+      body: { ...fresh, title: 'Corrected' },
+      token: ADMIN_TOKEN,
+    });
+    expect(edited.statusCode).toBe(200);
+  });
+
+  it('holds a post back until its date', async () => {
+    const scheduled = { ...post, id: 'live-scheduled', date: '2099-02-01' };
+    await api.req('POST', '/internal/news', { body: scheduled, token: ADMIN_TOKEN });
+    const ids = () =>
+      api.req('GET', '/news').then((r) => (r.json().posts as { id: string }[]).map((p) => p.id));
+    expect(await ids()).not.toContain(scheduled.id);
+    api.clock.set('2099-02-01T00:00:00.000Z');
+    expect(await ids()).toContain(scheduled.id);
+  });
+
+  it('lists every withdrawal however many posts came after it', async () => {
+    const old = { ...post, id: 'live-withdrawn-long-ago', hidden: true };
+    await api.req('POST', '/internal/news', { body: old, token: ADMIN_TOKEN });
+    await api.ctx.db.insert(newsPosts).values(
+      Array.from({ length: 205 }, (_, i) => ({
+        id: `live-filler-${i}`,
+        data: { ...post, id: `live-filler-${i}` },
+        hidden: false,
+        publishedAt: new Date(api.clock.now().getTime() + i + 1),
+        updatedAt: api.clock.now(),
+      })),
+    );
+    const feed = (await api.req('GET', '/news')).json();
+    expect(feed.withdrawn).toContain(old.id);
   });
 });

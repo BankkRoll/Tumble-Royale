@@ -19,12 +19,13 @@
  * pass, so an achievement for owning items unlocks on the next pass after a
  * purchase, pass claim or grant without any hook in those code paths.
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, gt, sql } from 'drizzle-orm';
 import type { AchievementMetric, Catalog, CatalogAchievement, CatalogGrant } from '../catalog.ts';
 import type { AppContext } from '../context.ts';
 import type { DbOrTx } from '../db/client.ts';
-import { achievementStats, inventoryItems, playerAchievements } from '../db/schema.ts';
+import { achievementStats, inventoryItems, playerAchievements, purchases } from '../db/schema.ts';
 import { applyLedger } from '../economy/ledger.ts';
+import { purchaseItems, SELF_REFUND_WINDOW_DAYS } from '../economy/refunds.ts';
 import { grantCosmetic } from '../economy/wallet.ts';
 
 /** Per-metric input for {@link recordAchievementProgress}. */
@@ -102,13 +103,33 @@ export async function recordAchievementProgress(
 /**
  * Catalogue cosmetics the player owns: inventory rows plus `default` items,
  * which every account owns even when it predates the item.
+ *
+ * SECURITY: store items still inside the self-service refund window are left
+ * out, or buying a bundle, collecting a Wardrobe achievement and refunding
+ * the bundle would keep the achievement's rewards for free. They count once
+ * the window has passed.
  */
-async function ownedCosmetics(db: DbOrTx, catalog: Catalog, userId: string): Promise<number> {
-  const rows = await db
-    .select({ id: inventoryItems.cosmeticId })
-    .from(inventoryItems)
-    .where(eq(inventoryItems.userId, userId));
-  const inv = new Set(rows.map((r) => r.id));
+async function ownedCosmetics(db: DbOrTx, catalog: Catalog, userId: string, now: Date): Promise<number> {
+  const refundableSince = new Date(now.getTime() - SELF_REFUND_WINDOW_DAYS * 86_400_000);
+  const [rows, refundable] = await Promise.all([
+    db
+      .select({ id: inventoryItems.cosmeticId, source: inventoryItems.source })
+      .from(inventoryItems)
+      .where(eq(inventoryItems.userId, userId)),
+    db
+      .select({ kind: purchases.kind, itemId: purchases.itemId, response: purchases.response })
+      .from(purchases)
+      .where(
+        and(
+          eq(purchases.userId, userId),
+          eq(purchases.kind, 'cosmetic'),
+          eq(purchases.status, 'completed'),
+          gt(purchases.completedAt, refundableSince),
+        ),
+      ),
+  ]);
+  const pending = new Set(refundable.flatMap((p) => purchaseItems(p)));
+  const inv = new Set(rows.filter((r) => r.source !== 'store' || !pending.has(r.id)).map((r) => r.id));
   return catalog.cosmetics.filter((c) => c.source === 'default' || inv.has(c.id)).length;
 }
 
@@ -118,11 +139,13 @@ async function ownedCosmetics(db: DbOrTx, catalog: Catalog, userId: string): Pro
  * @param db - Database or transaction.
  * @param catalog - Definitions and cosmetics.
  * @param userId - Player.
+ * @param now - Server clock (store items inside their refund window do not count yet).
  */
 export async function achievementValues(
   db: DbOrTx,
   catalog: Catalog,
   userId: string,
+  now: Date,
 ): Promise<Map<AchievementMetric, number>> {
   const rows = await db
     .select({ metric: achievementStats.metric, value: achievementStats.value })
@@ -130,7 +153,7 @@ export async function achievementValues(
     .where(eq(achievementStats.userId, userId));
   const values = new Map(rows.map((r) => [r.metric as AchievementMetric, r.value]));
   if (catalog.achievements.some((a) => a.kind === 'gauge'))
-    values.set('cosmeticsOwned', await ownedCosmetics(db, catalog, userId));
+    values.set('cosmeticsOwned', await ownedCosmetics(db, catalog, userId, now));
   return values;
 }
 
@@ -186,7 +209,7 @@ export async function unlockAchievements(
   let xp = 0;
   // Bounded: each extra pass needs a new cosmetic from the pass before.
   for (let pass = 0; pass < 4; pass++) {
-    const values = await achievementValues(tx, catalog, userId);
+    const values = await achievementValues(tx, catalog, userId, now);
     const have = new Set(
       (
         await tx
@@ -234,9 +257,10 @@ export const HIDDEN_DESCRIPTION = 'Hidden achievement. Keep playing to discover 
  * @param db - Database or transaction.
  * @param catalog - Definitions and cosmetics.
  * @param userId - Player.
+ * @param now - Server clock.
  */
-export async function achievementsView(db: DbOrTx, catalog: Catalog, userId: string) {
-  const values = await achievementValues(db, catalog, userId);
+export async function achievementsView(db: DbOrTx, catalog: Catalog, userId: string, now: Date) {
+  const values = await achievementValues(db, catalog, userId, now);
   const rows = await db.select().from(playerAchievements).where(eq(playerAchievements.userId, userId));
   const unlockedAt = new Map(rows.map((r) => [r.achievementId, r.unlockedAt]));
   let hiddenNo = 0;

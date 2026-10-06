@@ -404,6 +404,8 @@ export interface StoreData {
    * - `comingSoon` (or absent): no provider — packs are read-only.
    */
   gemCheckout?: 'enabled' | 'test' | 'comingSoon';
+  /** Pack whose checkout is being created; every pack button waits until it answers. */
+  gemCheckoutPending?: string | null;
   /** This week's Crown Shard shop. */
   shardShop?: ShardShopData;
   /** This week's discounted picks. */
@@ -464,6 +466,10 @@ export interface PurchaseHistoryData {
   policy: { selfServiceWindowDays: number; realMoneyWindowDays: number };
   /** Purchase whose refund is being sent (its buttons disable). */
   busyId?: string | null;
+  /** Where the next older page starts; null or absent when every purchase is shown. */
+  nextCursor?: string | null;
+  /** An older page is being fetched. */
+  loadingMore?: boolean;
 }
 
 /** Sections of the Profile tab. */
@@ -521,6 +527,10 @@ export interface GiftsData {
   busyId?: string | null;
   /** A gift just opened: its items play the capsule reveal. */
   revealed?: { giftId: string; items: CosmeticItem[] } | null;
+  /** Where the next older page of each list starts; null when it is complete. */
+  nextCursor?: { received: string | null; sent: string | null };
+  /** The list whose older page is being fetched. */
+  loadingMore?: 'received' | 'sent' | null;
 }
 
 /** One friend in the gift picker. */

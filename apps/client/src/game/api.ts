@@ -270,8 +270,46 @@ export interface ApiChallenges {
   dailyRefreshesAt: string;
   weeklyRefreshesAt: string;
   season?: { id: string; name: string; endsAt: string };
-  /** Seasonal challenges of an ended season that this call paid out. */
-  settled?: { id: string; title: string; gumballs: number; gems: number; cosmetic: string | null }[];
+  /** Completed but unclaimed challenges of an ended day, week or season that this call paid out. */
+  settled?: ApiSettledChallenge[];
+}
+
+/** A challenge the API paid out because its period ended before it was claimed. */
+export interface ApiSettledChallenge {
+  id: string;
+  title: string;
+  /** Absent from older APIs, which only settled seasonal challenges. */
+  period?: 'daily' | 'weekly' | 'seasonal';
+  gumballs: number;
+  gems: number;
+  cosmetic: string | null;
+}
+
+/**
+ * The toast for a challenge paid out after its period ended.
+ *
+ * @example
+ * settledChallengeToast({ id: '1', title: 'Dive 40 times', period: 'daily', gumballs: 0, gems: 0, cosmetic: null });
+ * // { kind: 'reward', title: 'Daily challenge paid out', body: 'Dive 40 times: completed yesterday, rewards added.', … }
+ */
+export function settledChallengeToast(s: ApiSettledChallenge): {
+  kind: 'reward';
+  title: string;
+  body: string;
+  icon: string;
+} {
+  const when =
+    s.period === 'daily'
+      ? ['Daily', 'yesterday']
+      : s.period === 'weekly'
+        ? ['Weekly', 'last week']
+        : ['Seasonal', 'last season'];
+  return {
+    kind: 'reward',
+    title: `${when[0]} challenge paid out`,
+    body: `${s.title}: completed ${when[1]}, rewards added.`,
+    icon: '🎯',
+  };
 }
 
 /** A reward as the API describes it (achievements, login ladder). */
@@ -1007,22 +1045,47 @@ export class ApiClient {
 
   store = (): Promise<ApiStore> => this.request('GET', '/store');
   wallet = (): Promise<{ wallet: ApiMe['wallet'] } & WalletLedger> => this.request('GET', '/wallet');
-  purchase = (offerId: string, key: string): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> =>
-    this.request('POST', '/purchase', { offerId }, { idempotencyKey: key });
+  /**
+   * Buys a store offer. With `expectedPrice` the API refuses (409
+   * `price_changed`, new quote in `details.price`) to charge anything else.
+   */
+  purchase = (
+    offerId: string,
+    key: string,
+    expectedPrice?: { currency: 'gumballs' | 'gems'; amount: number },
+  ): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> =>
+    this.request(
+      'POST',
+      '/purchase',
+      { offerId, ...(expectedPrice ? { expectedPrice } : {}) },
+      { idempotencyKey: key },
+    );
   gemPacks = (): Promise<ApiGemPacks> => this.request('GET', '/gems/packs');
   /** Purchase history with each purchase's refund and refund eligibility. */
-  purchaseHistory = (): Promise<ApiPurchaseHistory> => this.request('GET', '/purchases');
+  purchaseHistory = (before?: string): Promise<ApiPurchaseHistory> =>
+    this.request('GET', before ? `/purchases?before=${encodeURIComponent(before)}` : '/purchases');
   /** Refunds a store purchase, or files a Gem pack refund request (`reason` required there). */
   refundPurchase = (purchaseId: string, reason?: string): Promise<ApiRefundResult> =>
     this.request('POST', `/purchases/${encodeURIComponent(purchaseId)}/refund`, reason ? { reason } : {});
   /** Gifts sent and received, with today's count and the policy. */
   gifts = (): Promise<ApiGiftInbox> => this.request('GET', '/gifts');
+  /** An older page of settled received gifts, or of sent gifts. */
+  giftHistory = (
+    direction: 'received' | 'sent',
+    before: string,
+  ): Promise<{ gifts: ApiGiftInbox['sent']; nextCursor: string | null }> =>
+    this.request('GET', `/gifts/history?direction=${direction}&before=${encodeURIComponent(before)}`);
   /** Every friend with whether they can be gifted this offer now. */
   giftPicker = (offerId: string): Promise<ApiGiftPicker> =>
     this.request('GET', `/gifts/eligibility?offerId=${encodeURIComponent(offerId)}`);
   /** Buys an offer for a friend; the key makes a retried send replay the first. */
   sendGift = (
-    body: { recipientId: string; offerId: string; message?: string },
+    body: {
+      recipientId: string;
+      offerId: string;
+      message?: string;
+      expectedPrice?: { currency: 'gumballs' | 'gems'; amount: number };
+    },
     key: string,
   ): Promise<ApiGiftResult & { wallet: ApiMe['wallet'] }> =>
     this.request('POST', '/gifts', body, { idempotencyKey: key });
@@ -1093,7 +1156,9 @@ export class ApiClient {
   tutorialComplete = (): Promise<ApiTutorialComplete> => this.request('POST', '/me/tutorial-complete');
   leaderboard = (type: string, scope: 'global' | 'regional' | 'friends'): Promise<ApiLeaderboard> =>
     this.request('GET', `/leaderboards/${type}?scope=${scope}&limit=50`);
-  myMatches = (): Promise<{ matches: ApiMatch[] }> => this.request('GET', '/me/matches');
+  /** The newest 20 shows, or the 20 before `before` (a previous page's `nextCursor`). */
+  myMatches = (before?: string): Promise<{ matches: ApiMatch[]; nextCursor?: string | null }> =>
+    this.request('GET', before ? `/me/matches?before=${encodeURIComponent(before)}` : '/me/matches');
   /**
    * The caller's reward for one show; 404 (`not_found`) until the game
    * server's results reach the API, `reward: null` when there was none.

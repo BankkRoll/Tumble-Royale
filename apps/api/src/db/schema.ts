@@ -116,6 +116,8 @@ export const profiles = pgTable(
      */
     gemDebt: integer('gem_debt').notNull().default(0),
     activeLoadout: integer('active_loadout').notNull().default(0),
+    /** When the one-time Practice Island reward was granted; null until then. */
+    tutorialGrantedAt: ts('tutorial_granted_at'),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
   (t) => [uniqueIndex('profiles_name_tag_uq').on(sql`lower(${t.displayName})`, t.tag)],
@@ -245,6 +247,12 @@ export const purchases = pgTable(
     itemId: text('item_id').notNull(),
     currency: text('currency').notNull(),
     price: integer('price').notNull(),
+    /**
+     * Gem packs: the Gems the pack held at checkout, so a later catalog change
+     * never alters what a paid checkout credits or a refund takes back.
+     * Null on older rows and non-pack purchases (the catalog value applies).
+     */
+    gems: integer('gems'),
     status: text('status').notNull(),
     provider: text('provider'),
     providerRef: text('provider_ref'),
@@ -684,7 +692,10 @@ export const eventMatchCredits = pgTable(
     points: integer('points').notNull(),
     createdAt: createdAt(),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.eventId, t.matchId] })],
+  (t) => [
+    primaryKey({ columns: [t.userId, t.eventId, t.matchId] }),
+    index('event_match_credits_match_idx').on(t.matchId),
+  ],
 );
 
 // -----------------------------------------------------------------------------
@@ -758,7 +769,7 @@ export const matches = pgTable(
     /** Per-player reward summaries returned to the game server; replayed on retries. */
     rewards: jsonb('rewards').notNull(),
   },
-  (t) => [index('matches_season_idx').on(t.seasonId)],
+  (t) => [index('matches_season_idx').on(t.seasonId), index('matches_ended_idx').on(t.endedAt)],
 );
 
 /** Every participant (human or bot) of a show. */
@@ -1071,8 +1082,8 @@ export const clubInvites = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     /** `request` (the player asked) or `invite` (an officer asked). */
     kind: text('kind').notNull(),
-    /** Officer who sent an invite. */
-    invitedBy: uuid('invited_by'),
+    /** Officer who sent an invite (null once that account is deleted). */
+    invitedBy: uuid('invited_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
   },
   (t) => [primaryKey({ columns: [t.clubId, t.userId, t.kind] }), index('club_invites_user_idx').on(t.userId)],

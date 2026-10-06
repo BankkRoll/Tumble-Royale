@@ -27,7 +27,7 @@ import {
   validateCustomRound,
 } from '@tumble/content/custom';
 import { maskProfanity } from '@tumble/shared';
-import { and, count, desc, eq, inArray } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppContext } from '../context.ts';
@@ -191,42 +191,52 @@ export function registerCustomRoundRoutes(app: FastifyInstance, ctx: AppContext)
       if (auth.guest)
         throw forbidden('guest_account', 'Link an email, Discord or Google sign-in to share rounds');
       const body = parse(PublishBody, req.body);
-      const [{ n } = { n: 0 }] = await ctx.db
-        .select({ n: count() })
-        .from(customRounds)
-        .where(eq(customRounds.ownerId, auth.userId));
-      if (n >= CUSTOM_ROUND_LIMITS.maxPerAccount)
-        throw conflict(
-          'round_limit',
-          `You can share up to ${CUSTOM_ROUND_LIMITS.maxPerAccount} rounds; delete one first`,
-        );
       const now = ctx.now();
       const checked = checkSubmission(body, 'X'.repeat(SHARE_CODE_LENGTH));
-      for (let attempt = 0; attempt < 5; attempt++) {
-        const code = randomShareCode(randomInt);
-        const s = { ...checked, definition: { ...checked.definition, id: customRoundId(code) } };
-        try {
-          const [row] = await ctx.db
-            .insert(customRounds)
-            .values({
-              code,
-              ownerId: auth.userId,
-              name: s.name,
-              description: s.description,
-              roundType: s.type,
-              definition: s.definition,
-              sizeBytes: s.bytes,
-              status: 'published',
-              createdAt: now,
-              updatedAt: now,
-            })
-            .returning();
-          return reply.code(201).send({ round: roundSummary(row!) });
-        } catch (err) {
-          if (!isUniqueViolation(err)) throw err;
+      const row = await ctx.db.transaction(async (tx) => {
+        // One owner's shares serialise here, so two at once cannot both slip
+        // under the cap.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`custom-rounds:${auth.userId}`}))`);
+        // Rounds staff took down stay on record but no longer use a slot.
+        const [{ n } = { n: 0 }] = await tx
+          .select({ n: count() })
+          .from(customRounds)
+          .where(and(eq(customRounds.ownerId, auth.userId), ne(customRounds.status, 'taken_down')));
+        if (n >= CUSTOM_ROUND_LIMITS.maxPerAccount)
+          throw conflict(
+            'round_limit',
+            `You can share up to ${CUSTOM_ROUND_LIMITS.maxPerAccount} rounds; delete one first`,
+          );
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const code = randomShareCode(randomInt);
+          const s = { ...checked, definition: { ...checked.definition, id: customRoundId(code) } };
+          try {
+            // A savepoint per attempt: a clashing code must not abort the whole transaction.
+            const [inserted] = await tx.transaction((sp) =>
+              sp
+                .insert(customRounds)
+                .values({
+                  code,
+                  ownerId: auth.userId,
+                  name: s.name,
+                  description: s.description,
+                  roundType: s.type,
+                  definition: s.definition,
+                  sizeBytes: s.bytes,
+                  status: 'published',
+                  createdAt: now,
+                  updatedAt: now,
+                })
+                .returning(),
+            );
+            return inserted!;
+          } catch (err) {
+            if (!isUniqueViolation(err)) throw err;
+          }
         }
-      }
-      throw new ApiError(503, 'code_exhausted', 'Could not pick a share code; try again');
+        throw new ApiError(503, 'code_exhausted', 'Could not pick a share code; try again');
+      });
+      return reply.code(201).send({ round: roundSummary(row) });
     },
   );
 
@@ -236,8 +246,13 @@ export function registerCustomRoundRoutes(app: FastifyInstance, ctx: AppContext)
       .select()
       .from(customRounds)
       .where(eq(customRounds.ownerId, auth.userId))
-      .orderBy(desc(customRounds.updatedAt))
-      .limit(CUSTOM_ROUND_LIMITS.maxPerAccount);
+      // Taken-down rounds no longer use a slot, so the live ones (which do) come first.
+      .orderBy(
+        sql`${customRounds.status} = 'taken_down'`,
+        desc(customRounds.updatedAt),
+        desc(customRounds.id),
+      )
+      .limit(CUSTOM_ROUND_LIMITS.maxPerAccount * 2);
     return { rounds: rows.map((r) => roundSummary(r, true)), limit: CUSTOM_ROUND_LIMITS.maxPerAccount };
   });
 

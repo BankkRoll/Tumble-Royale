@@ -16,7 +16,7 @@ import type { DbOrTx } from '../db/client.ts';
 import { inventoryItems, purchases } from '../db/schema.ts';
 import { optionalUser, requireUser } from '../http/auth.ts';
 import { ApiError, conflict, isUniqueViolation, parse } from '../http/errors.ts';
-import { applyLedger, type Wallet } from './ledger.ts';
+import { applyLedger, lockWallet, type Wallet } from './ledger.ts';
 import { grantCosmetic, readWallet } from './wallet.ts';
 
 const BuyBody = z.object({ offerId: z.string().min(3).max(64) });
@@ -62,6 +62,9 @@ export async function buyShardOffer(
     )[0];
   try {
     return await ctx.db.transaction(async (tx) => {
+      // SECURITY: ownership is read under the wallet lock, or two purchases
+      // with different keys both see "not owned" and both pay.
+      await lockWallet(tx, userId);
       const existing = await findExisting(tx);
       if (existing) return replay(existing, offerId);
       const offer = ctx.catalog.shardShop(ctx.now()).offers.find((o) => o.itemId === offerId);

@@ -282,6 +282,10 @@ export async function approveRefund(
     assertDecidable(current);
     const [purchase] = await tx.select().from(purchases).where(eq(purchases.id, current.purchaseId));
     if (!purchase) throw notFound('Purchase');
+    if (purchase.status === 'disputed' || purchase.status === 'charged_back')
+      throw conflict('refund_payment_reversed', 'This payment is disputed; the bank handles its refund', {
+        status: purchase.status,
+      });
     const mode: 'stripe' | 'manual' =
       ctx.payments.id === 'stripe' && purchase.paymentIntent ? 'stripe' : 'manual';
     const attempts = current.attempts + (mode === 'stripe' ? 1 : 0);

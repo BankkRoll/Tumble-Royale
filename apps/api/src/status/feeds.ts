@@ -3,6 +3,7 @@
  * incident text as plain text only (`content_text`, `type="text"`), so a feed
  * reader never renders operator input as HTML.
  */
+import type { MaintenanceStatus } from '@tumble/shared/liveops';
 import { INCIDENT_STATUS_LABELS, componentName, type PublicIncident } from '@tumble/shared/status';
 
 /** Where the feeds point. */
@@ -27,29 +28,80 @@ const entryTitle = (i: PublicIncident) =>
 const newest = (incidents: readonly PublicIncident[], fallback: string) =>
   incidents.reduce((m, i) => (i.updatedAt > m ? i.updatedAt : m), incidents.length ? '' : fallback);
 
+/** A scheduled or running maintenance window as a feed entry. */
+interface MaintenanceEntry {
+  id: string;
+  title: string;
+  text: string;
+  published: string;
+}
+
+/**
+ * The maintenance window as a feed entry, so subscribers hear about planned
+ * downtime too; null when none is scheduled or running.
+ *
+ * @param m - The window with its phase now.
+ * @param nowIso - Publication time of a window without a start.
+ */
+export function maintenanceEntry(
+  m: MaintenanceStatus | null | undefined,
+  nowIso: string,
+): MaintenanceEntry | null {
+  if (!m || m.phase === 'off') return null;
+  const window = [
+    m.startsAt ? `From ${m.startsAt}` : 'Started now',
+    m.endsAt ? `until ${m.endsAt}` : 'until further notice',
+  ];
+  return {
+    id: `urn:tumble:maintenance:${m.startsAt ?? 'now'}`,
+    title: m.phase === 'scheduled' ? 'Scheduled maintenance' : 'Maintenance in progress',
+    text: `${m.message}\n\n${window.join(' ')}.`,
+    published: m.startsAt ?? nowIso,
+  };
+}
+
 /**
  * A JSON Feed 1.1 document of incidents.
  *
  * @param incidents - Incidents, newest first.
  * @param links - Public URLs.
+ * @param maintenance - The maintenance window entry, listed first.
  * @returns The feed object (serialise with `JSON.stringify`).
  */
-export function jsonFeed(incidents: readonly PublicIncident[], links: FeedLinks): Record<string, unknown> {
+export function jsonFeed(
+  incidents: readonly PublicIncident[],
+  links: FeedLinks,
+  maintenance: MaintenanceEntry | null = null,
+): Record<string, unknown> {
   return {
     version: 'https://jsonfeed.org/version/1.1',
     title: FEED_TITLE,
     home_page_url: links.page,
     feed_url: `${links.api}/status/feed.json`,
     description: 'Incidents and maintenance updates for Tumble Royale.',
-    items: incidents.map((i) => ({
-      id: `urn:uuid:${i.id}`,
-      url: `${links.page}#incident-${i.id}`,
-      title: entryTitle(i),
-      content_text: entryText(i),
-      date_published: i.startedAt,
-      date_modified: i.updatedAt,
-      tags: [i.impact, i.status],
-    })),
+    items: [
+      ...(maintenance
+        ? [
+            {
+              id: maintenance.id,
+              url: links.page,
+              title: maintenance.title,
+              content_text: maintenance.text,
+              date_published: maintenance.published,
+              tags: ['maintenance'],
+            },
+          ]
+        : []),
+      ...incidents.map((i) => ({
+        id: `urn:uuid:${i.id}`,
+        url: `${links.page}#incident-${i.id}`,
+        title: entryTitle(i),
+        content_text: entryText(i),
+        date_published: i.startedAt,
+        date_modified: i.updatedAt,
+        tags: [i.impact, i.status],
+      })),
+    ],
   };
 }
 
@@ -79,10 +131,29 @@ export function xmlEscape(s: string): string {
  * @param incidents - Incidents, newest first.
  * @param links - Public URLs.
  * @param nowIso - `updated` of an empty feed.
+ * @param maintenance - The maintenance window entry, listed first.
  * @returns The XML text.
  */
-export function atomFeed(incidents: readonly PublicIncident[], links: FeedLinks, nowIso: string): string {
+export function atomFeed(
+  incidents: readonly PublicIncident[],
+  links: FeedLinks,
+  nowIso: string,
+  maintenance: MaintenanceEntry | null = null,
+): string {
   const e = xmlEscape;
+  const planned = maintenance
+    ? [
+        `  <entry>
+    <id>${e(maintenance.id)}</id>
+    <title type="text">${e(maintenance.title)}</title>
+    <link rel="alternate" type="text/html" href="${e(links.page)}"/>
+    <published>${e(maintenance.published)}</published>
+    <updated>${e(maintenance.published)}</updated>
+    <category term="maintenance"/>
+    <content type="text">${e(maintenance.text)}</content>
+  </entry>`,
+      ]
+    : [];
   const entries = incidents.map(
     (i) => `  <entry>
     <id>urn:uuid:${e(i.id)}</id>
@@ -102,7 +173,7 @@ export function atomFeed(incidents: readonly PublicIncident[], links: FeedLinks,
   <author><name>Tumble Royale</name></author>
   <link rel="self" type="application/atom+xml" href="${e(`${links.api}/status/feed.atom`)}"/>
   <link rel="alternate" type="text/html" href="${e(links.page)}"/>
-${entries.join('\n')}
+${[...planned, ...entries].join('\n')}
 </feed>
 `;
 }

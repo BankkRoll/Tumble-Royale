@@ -144,6 +144,7 @@ export function pushMeta(profile: ProfileStore): void {
   s.setCollection(uiCollection((id) => profile.owns(id)));
   s.setEvents(offlineEvents((id) => profile.owns(id), Date.now()));
   s.setMatchHistory(profile.uiHistory());
+  s.setMatchHistoryPaging(null);
   syncLocalNotifications(profile);
   pushStaticMeta(profile.showsPlayed);
   const p = s.profile;

@@ -155,6 +155,37 @@ export async function removeFromWishlist(db: DbOrTx, userId: string, itemIds: st
 }
 
 /**
+ * Drops wish list entries the player now has: the ids just obtained, and any
+ * wished-for bundle whose every item they now own (a bundle can be completed
+ * piece by piece, by purchases and gifts of its single items).
+ *
+ * @param db - The transaction that granted the items.
+ * @param userId - Owner of the list.
+ * @param obtained - Offer and cosmetic ids just obtained.
+ */
+export async function removeObtainedFromWishlist(
+  db: DbOrTx,
+  userId: string,
+  obtained: string[],
+): Promise<void> {
+  const bundles = (
+    await db
+      .select({ itemId: wishlistItems.itemId })
+      .from(wishlistItems)
+      .where(and(eq(wishlistItems.userId, userId), sql`${wishlistItems.itemId} like 'bundle:%'`))
+  ).map((r) => r.itemId);
+  let complete: string[] = [];
+  if (bundles.length > 0) {
+    const owned = await ownedSet(db, userId);
+    complete = bundles.filter((b) => {
+      const items = coveredItems(b);
+      return items.length > 0 && items.every((id) => owned.has(id));
+    });
+  }
+  await removeFromWishlist(db, userId, [...new Set([...obtained, ...complete])]);
+}
+
+/**
  * Sends the day's wish list alert if wished-for items are on today's shelves
  * and this player has not been told today. The conditional upsert makes it
  * at most once per UTC day across every API instance.

@@ -26,6 +26,8 @@ import {
   type StoreSection,
 } from '@tumble/content/progression';
 import { STORE_SETS } from '@tumble/content/cosmetics';
+import { z } from 'zod';
+import { conflict } from '../http/errors.ts';
 import type { Catalog, CatalogCosmetic } from '../catalog.ts';
 import type { DbOrTx } from '../db/client.ts';
 import { storeRotations } from '../db/schema.ts';
@@ -122,6 +124,32 @@ export function bundleQuotes(catalog: Catalog, owns: (id: string) => boolean): B
   return STORE_SETS.flatMap((s) => {
     const q = quoteBundle(s, catalog.cosmetics, owns);
     return q ? [q] : [];
+  });
+}
+
+/** The price the client showed the player; a purchase or gift at any other price is refused. */
+export const ExpectedPrice = z.object({
+  currency: z.enum(['gumballs', 'gems']),
+  amount: z.number().int().min(0),
+});
+
+/**
+ * Refuses a charge that differs from the price the player confirmed: the
+ * shelves rotated since the store was opened, or a bundle got cheaper because
+ * the buyer (or gift recipient) came to own part of it.
+ *
+ * @param expected - What the client showed, when it said.
+ * @param actual - What the server would charge now.
+ * @throws {ApiError} 409 `price_changed` with the new quote in `details.price`.
+ */
+export function assertExpectedPrice(
+  expected: { currency: string; amount: number } | undefined,
+  actual: { currency: string; amount: number },
+): void {
+  if (!expected) return;
+  if (expected.currency === actual.currency && expected.amount === actual.amount) return;
+  throw conflict('price_changed', 'The price changed since you opened the store', {
+    price: { currency: actual.currency, amount: actual.amount },
   });
 }
 

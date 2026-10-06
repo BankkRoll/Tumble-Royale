@@ -11,14 +11,14 @@
  * - Apply per-match metric increments to the active rows.
  * - Claims: XP (player + pass), Gumballs, Gems and a cosmetic, exactly once
  *   per row (the conditional `claimed_at` update is the guard).
- * - Settle seasonal challenges of an ended season: completed but unclaimed
+ * - Settle challenges of an ended day, week or season: completed but unclaimed
  *   ones pay out automatically, like unclaimed pass tiers (ECONOMY.md §2.1);
  *   unfinished ones simply stop counting.
  *
  * Every boundary is UTC: days and weeks from `util/time.ts`, seasons from the
  * content schedule (always 00:00 UTC on the 1st), so DST never moves a reset.
  */
-import { and, eq, isNotNull, isNull, ne } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import { hashString, Rng } from '@tumble/shared';
 import type { Catalog, CatalogChallenge, ChallengeMetric, ChallengePeriod } from '../catalog.ts';
 import type { DbOrTx } from '../db/client.ts';
@@ -170,20 +170,33 @@ export async function applyChallengeProgress(
     if (!def || row.completedAt) continue;
     const inc = metrics[def.metric] ?? 0;
     if (inc <= 0) continue;
-    const progress = Math.min(row.target, row.progress + inc);
-    const completed = progress >= row.target;
-    await tx
+    // Computed in SQL and guarded on the challenge id: a reroll committed since
+    // the rows were read swaps the row's challenge, and this show's progress
+    // must not land on the new one (nor overwrite a concurrent show's).
+    const [after] = await tx
       .update(challengeProgress)
-      .set({ progress, ...(completed ? { completedAt: now } : {}) })
-      .where(eq(challengeProgress.id, row.id));
+      .set({
+        progress: sql`least(${challengeProgress.target}, ${challengeProgress.progress} + ${inc})`,
+        completedAt: sql`case when ${challengeProgress.progress} + ${inc} >= ${challengeProgress.target}
+          then ${now.toISOString()}::timestamptz else null end`,
+      })
+      .where(
+        and(
+          eq(challengeProgress.id, row.id),
+          eq(challengeProgress.challengeId, row.challengeId),
+          isNull(challengeProgress.completedAt),
+        ),
+      )
+      .returning({ progress: challengeProgress.progress, target: challengeProgress.target });
+    if (!after) continue;
     updates.push({
       challengeId: def.id,
       title: def.title,
       period: row.period as ChallengePeriod,
-      before: row.progress,
-      progress,
-      target: row.target,
-      completed,
+      before: Math.min(row.progress, after.progress),
+      progress: after.progress,
+      target: after.target,
+      completed: after.progress >= after.target,
     });
   }
   return updates;
@@ -253,8 +266,10 @@ async function payClaim(
 }
 
 /**
- * Pays every seasonal challenge completed but never claimed in a season that
- * has ended. Idempotent: paid rows are marked claimed.
+ * Pays every daily, weekly and seasonal challenge completed but never claimed
+ * in a period that has ended, like unclaimed pass tiers: finishing a
+ * challenge earns it, whether or not the player opened the board before the
+ * reset. Idempotent: paid rows are marked claimed.
  *
  * @param tx - Open transaction.
  * @param catalog - Season schedule and definitions.
@@ -262,31 +277,38 @@ async function payClaim(
  * @param now - Server clock.
  * @returns One payout per row settled by this call.
  */
-export async function settleExpiredSeasonal(
+export async function settleExpiredChallenges(
   tx: DbOrTx,
   catalog: Catalog,
   userId: string,
   now: Date,
 ): Promise<ChallengePayout[]> {
   const live = catalog.seasonAt(now);
+  const current = { daily: dayKey(now), weekly: isoWeekKey(now) };
   const rows = await tx
     .select()
     .from(challengeProgress)
     .where(
       and(
         eq(challengeProgress.userId, userId),
-        eq(challengeProgress.period, 'seasonal'),
-        ne(challengeProgress.periodKey, live.id),
+        ne(challengeProgress.period, 'milestone'),
         isNotNull(challengeProgress.completedAt),
         isNull(challengeProgress.claimedAt),
       ),
     )
+    .orderBy(challengeProgress.periodKey, challengeProgress.slot)
     .for('update');
   const out: ChallengePayout[] = [];
   for (const row of rows) {
-    // A clock stepping back into an earlier season must not settle the "future" one.
-    const season = catalog.seasonById(row.periodKey);
-    if (!season || season.number >= live.number) continue;
+    // Only periods strictly before the live one: a clock stepping back must
+    // not settle a "future" period. `YYYY-MM-DD` and `YYYY-Www` keys sort in
+    // time order as strings.
+    if (row.period === 'seasonal') {
+      const season = catalog.seasonById(row.periodKey);
+      if (!season || season.number >= live.number) continue;
+    } else if (row.period === 'daily' || row.period === 'weekly') {
+      if (row.periodKey >= current[row.period]) continue;
+    } else continue;
     out.push(await payClaim(tx, catalog, userId, row, now));
   }
   return out;
@@ -302,7 +324,7 @@ export async function settleExpiredSeasonal(
  * @param now - Server clock.
  */
 export async function challengesView(tx: DbOrTx, catalog: Catalog, userId: string, now: Date) {
-  const settled = await settleExpiredSeasonal(tx, catalog, userId, now);
+  const settled = await settleExpiredChallenges(tx, catalog, userId, now);
   const rows = await ensureChallenges(tx, catalog, userId, now);
   const defs = new Map(catalog.challenges.map((c) => [c.id, c]));
   const items = new Map(catalog.cosmetics.map((c) => [c.id, c]));
@@ -344,6 +366,7 @@ export async function challengesView(tx: DbOrTx, catalog: Catalog, userId: strin
     settled: settled.map((p) => ({
       id: p.id,
       challengeId: p.challengeId,
+      period: p.period,
       title: p.title,
       xp: p.xp.xpAfter - p.xp.xpBefore,
       gumballs: p.gumballs,
@@ -365,13 +388,32 @@ export async function rerollChallenge(
   rowId: string,
   now: Date,
 ) {
-  const rows = await ensureChallenges(tx, catalog, userId, now);
-  const row = rows.find((r) => r.id === rowId);
-  if (!row) throw notFound('Challenge');
-  if (row.period !== 'daily')
-    throw new ApiError(400, 'not_rerollable', 'Only daily challenges can be rerolled');
+  await ensureChallenges(tx, catalog, userId, now);
+  // SECURITY: the day's rows are locked before the checks, so two concurrent
+  // rerolls serialise and the second sees the first's `rerolled` flag; the
+  // match ingest's progress update waits too, instead of being overwritten.
+  const daily = await tx
+    .select()
+    .from(challengeProgress)
+    .where(
+      and(
+        eq(challengeProgress.userId, userId),
+        eq(challengeProgress.period, 'daily'),
+        eq(challengeProgress.periodKey, periodKey(catalog, 'daily', now)),
+      ),
+    )
+    .orderBy(challengeProgress.slot)
+    .for('update');
+  const row = daily.find((r) => r.id === rowId);
+  if (!row) {
+    const [other] = await tx
+      .select({ period: challengeProgress.period })
+      .from(challengeProgress)
+      .where(and(eq(challengeProgress.id, rowId), eq(challengeProgress.userId, userId)));
+    if (other) throw new ApiError(400, 'not_rerollable', 'Only daily challenges can be rerolled');
+    throw notFound('Challenge');
+  }
   if (row.completedAt) throw conflict('challenge_completed', 'Completed challenges cannot be rerolled');
-  const daily = rows.filter((r) => r.period === 'daily');
   if (daily.filter((r) => r.rerolled).length >= DAILY_REROLLS)
     throw conflict('reroll_used', 'Daily reroll already used');
   const assigned = new Set(daily.map((r) => r.challengeId));
@@ -379,10 +421,18 @@ export async function rerollChallenge(
   if (!pool.length) throw conflict('no_alternatives', 'No other daily challenges available');
   const rng = new Rng(hashString(`reroll:${userId}:${row.periodKey}:${row.slot}`));
   const pick = rng.pick(pool);
-  await tx
+  const swapped = await tx
     .update(challengeProgress)
     .set({ challengeId: pick.id, target: pick.target, progress: 0, rerolled: true })
-    .where(eq(challengeProgress.id, row.id));
+    .where(
+      and(
+        eq(challengeProgress.id, row.id),
+        isNull(challengeProgress.completedAt),
+        eq(challengeProgress.rerolled, false),
+      ),
+    )
+    .returning({ id: challengeProgress.id });
+  if (!swapped.length) throw conflict('reroll_used', 'Daily reroll already used');
   return challengesView(tx, catalog, userId, now);
 }
 

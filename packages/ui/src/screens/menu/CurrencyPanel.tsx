@@ -114,6 +114,7 @@ function GemsBody({ amount }: { amount: number }): JSX.Element {
   const mode = store?.gemCheckout ?? 'comingSoon';
   const buyable = mode === 'enabled' || mode === 'test';
   const packs = store?.gemPacks ?? [];
+  const pending = store?.gemCheckoutPending ?? null;
   return (
     <>
       <div className="tr-wallet-hero tr-wallet-hero--gems">
@@ -170,12 +171,14 @@ function GemsBody({ amount }: { amount: number }): JSX.Element {
               type="button"
               className={`tr-gem-pack${buyable ? '' : ' is-soon'}`}
               data-nav=""
-              disabled={!buyable}
+              data-testid={`gem-pack-${p.id}`}
+              disabled={!buyable || pending !== null}
+              aria-busy={pending === p.id}
               aria-label={`${p.name}: ${p.gems} Gems, ${
                 mode === 'test' ? 'test purchase (dev)' : buyable ? p.price : 'coming soon'
               }`}
               onClick={() => {
-                if (!buyable) return;
+                if (!buyable || pending !== null) return;
                 playCue('ui.confirm');
                 uiEvents.emit('buyGems', { packId: p.id });
               }}
@@ -184,7 +187,15 @@ function GemsBody({ amount }: { amount: number }): JSX.Element {
               <b>{formatNumber(p.gems)}</b>
               <span className="tr-small">{p.name}</span>
               <span className="tr-gem-pack-price">
-                {mode === 'test' ? 'Test purchase (dev)' : buyable ? p.price : 'Soon'}
+                {pending === p.id ? (
+                  <span className="tr-gumball-spinner tr-gumball-spinner--sm" aria-label="Opening checkout" />
+                ) : mode === 'test' ? (
+                  'Test purchase (dev)'
+                ) : buyable ? (
+                  p.price
+                ) : (
+                  'Soon'
+                )}
               </span>
             </button>
           ))}

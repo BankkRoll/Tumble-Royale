@@ -38,6 +38,7 @@ import { requireUser } from '../http/auth.ts';
 import { ApiError, badRequest, isUniqueViolation, notFound, parse } from '../http/errors.ts';
 import { revokeCosmetic } from '../inventory/revoke.ts';
 import { applyLedger, lockWallet, type Wallet } from './ledger.ts';
+import { CursorParam, encodeCursor, olderThan, type PageCursor } from '../util/cursor.ts';
 import { readWallet } from './wallet.ts';
 
 // -----------------------------------------------------------------------------
@@ -302,16 +303,19 @@ export async function refundPurchase(
   };
   try {
     return await ctx.db.transaction(async (tx) => {
-      // SECURITY: the wallet lock serialises every refund and purchase of this
-      // player, so the limit count and the "already refunded" check below
-      // cannot race a second request.
-      await lockWallet(tx, userId);
+      // IMPORTANT: purchase row before wallet, the order the Stripe webhook
+      // takes them in (reversals.ts); the reverse order deadlocks against a
+      // refund or dispute event for the same Gem pack.
       const [purchase] = await tx
         .select()
         .from(purchases)
         .where(and(eq(purchases.id, purchaseId), eq(purchases.userId, userId)))
         .for('update');
       if (!purchase) throw notFound('Purchase');
+      // SECURITY: the wallet lock serialises every refund and purchase of this
+      // player, so the limit count and the "already refunded" check below
+      // cannot race a second request.
+      await lockWallet(tx, userId);
       const replayed = await replay(tx);
       if (replayed) return replayed;
 
@@ -420,6 +424,27 @@ export async function syncRefundRequest(
   purchaseId: string,
   purchaseStatus: string,
 ): Promise<void> {
+  if (purchaseStatus === 'disputed' || purchaseStatus === 'charged_back') {
+    // The bank is already returning the money; approving the request too
+    // would pay the player twice.
+    await tx
+      .update(refunds)
+      .set({
+        status: 'denied',
+        decisionReason: 'This payment was disputed with your bank, which handles the refund.',
+        decidedBy: 'system',
+        decidedAt: ctx.now(),
+        updatedAt: ctx.now(),
+      })
+      .where(
+        and(
+          eq(refunds.purchaseId, purchaseId),
+          eq(refunds.kind, 'real_money'),
+          inArray(refunds.status, [...DECIDABLE_REFUND_STATUSES]),
+        ),
+      );
+    return;
+  }
   if (purchaseStatus !== 'refunded' && purchaseStatus !== 'partially_refunded') return;
   await tx
     .update(refunds)
@@ -505,6 +530,8 @@ export interface PurchaseHistoryEntry {
 /** `GET /purchases`. */
 export interface PurchaseHistory {
   purchases: PurchaseHistoryEntry[];
+  /** Pass as `before` for the next (older) page; null on the last page. */
+  nextCursor: string | null;
   selfRefunds: {
     used: number;
     limit: number;
@@ -534,24 +561,47 @@ function titleOf(ctx: AppContext, row: PurchaseRow): string {
  * @param ctx - Shared services.
  * @param userId - The buyer.
  * @param limit - Most purchases to return.
+ * @param before - Cursor from the previous page's `nextCursor`.
  */
 export async function purchaseHistory(
   ctx: AppContext,
   userId: string,
   limit: number,
+  before?: PageCursor,
 ): Promise<PurchaseHistory> {
   const now = ctx.now();
-  const [rows, refundRows, owned, recent] = await Promise.all([
+  const [fetched, owned, recent] = await Promise.all([
     ctx.db
       .select()
       .from(purchases)
-      .where(and(eq(purchases.userId, userId), isNotNull(purchases.completedAt)))
-      .orderBy(desc(purchases.completedAt))
-      .limit(limit),
-    ctx.db.select().from(refunds).where(eq(refunds.userId, userId)),
+      .where(
+        and(
+          eq(purchases.userId, userId),
+          isNotNull(purchases.completedAt),
+          before ? olderThan(purchases.completedAt, purchases.id, before) : undefined,
+        ),
+      )
+      .orderBy(desc(purchases.completedAt), desc(purchases.id))
+      .limit(limit + 1),
     ownedSet(ctx.db, userId),
     recentSelfRefunds(ctx.db, userId, now),
   ]);
+  const rows = fetched.slice(0, limit);
+  const last = rows.at(-1);
+  const refundRows = rows.length
+    ? await ctx.db
+        .select()
+        .from(refunds)
+        .where(
+          and(
+            eq(refunds.userId, userId),
+            inArray(
+              refunds.purchaseId,
+              rows.map((r) => r.id),
+            ),
+          ),
+        )
+    : [];
   const byPurchase = new Map(refundRows.map((r) => [r.purchaseId, r]));
   const entries = rows.map((row): PurchaseHistoryEntry => {
     const refund = byPurchase.get(row.id) ?? null;
@@ -598,6 +648,7 @@ export async function purchaseHistory(
   const limited = sorted.length >= SELF_REFUND_LIMIT;
   return {
     purchases: entries,
+    nextCursor: fetched.length > limit && last ? encodeCursor(last.completedAt!, last.id) : null,
     selfRefunds: {
       used: sorted.length,
       limit: SELF_REFUND_LIMIT,
@@ -624,12 +675,15 @@ const RefundBody = z
   .object({ reason: z.string().trim().min(3).max(500).optional() })
   .strict()
   .optional();
-const HistoryQuery = z.object({ limit: z.coerce.number().int().min(1).max(100).default(50) });
+const HistoryQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  before: CursorParam.optional(),
+});
 
 /**
  * Registers the player refund routes:
  *
- * - `GET /purchases` — history with refund status and eligibility.
+ * - `GET /purchases?before=` — history with refund status and eligibility, newest first, paged.
  * - `POST /purchases/:purchaseId/refund` `{ reason? }` — refund a store
  *   purchase, or request a Gem pack refund (reason required). Closed with
  *   the store (`store.enabled`, via `STORE_SPEND_ROUTES`) and during
@@ -643,8 +697,8 @@ const HistoryQuery = z.object({ limit: z.coerce.number().int().min(1).max(100).d
 export function registerRefundRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/purchases', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req) => {
     const auth = await requireUser(ctx, req);
-    const { limit } = parse(HistoryQuery, req.query);
-    return purchaseHistory(ctx, auth.userId, limit);
+    const { limit, before } = parse(HistoryQuery, req.query);
+    return purchaseHistory(ctx, auth.userId, limit, before);
   });
 
   app.post(

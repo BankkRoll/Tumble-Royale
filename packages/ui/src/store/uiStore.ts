@@ -153,6 +153,12 @@ export interface UIState {
   challengesView: 'board' | 'event';
   leaderboards: Partial<Record<LeaderboardId, LeaderboardRow[]>>;
   matchHistory: MatchHistoryEntry[];
+  /**
+   * Paging of an online account's history: where the next older page starts
+   * (null at the end) and whether it is being fetched. Null offline, where the
+   * device's own last 20 shows are all there is.
+   */
+  matchHistoryPaging: { next: string | null; loading: boolean } | null;
   news: NewsItem[];
   friends: Friend[];
   party: PartyState | null;
@@ -306,6 +312,7 @@ export interface UIState {
   /** Marks a board's last load as failed (`null` clears it before a retry). Rows are kept. */
   setLeaderboardError: (board: LeaderboardId, scope: LeaderboardScope, error: string | null) => void;
   setMatchHistory: (entries: MatchHistoryEntry[]) => void;
+  setMatchHistoryPaging: (paging: { next: string | null; loading: boolean } | null) => void;
   setNews: (news: NewsItem[]) => void;
   setFriends: (friends: Friend[]) => void;
   setParty: (party: PartyState | null) => void;
@@ -457,6 +464,7 @@ export const ui = createStore<UIState>()((set, get) => ({
   challengesView: 'board',
   leaderboards: {},
   matchHistory: [],
+  matchHistoryPaging: null,
   news: [],
   friends: [],
   party: null,
@@ -654,6 +662,7 @@ export const ui = createStore<UIState>()((set, get) => ({
     set({ leaderboardInfo: { ...get().leaderboardInfo, [board]: next } });
   },
   setMatchHistory: (matchHistory) => set({ matchHistory }),
+  setMatchHistoryPaging: (matchHistoryPaging) => set({ matchHistoryPaging }),
   setNews: (news) => set({ news }),
   setFriends: (friends) => set({ friends }),
   setParty: (party) => set({ party }),

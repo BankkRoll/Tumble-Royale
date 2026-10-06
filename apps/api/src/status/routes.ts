@@ -31,7 +31,8 @@ import type { AppContext } from '../context.ts';
 import { parse } from '../http/errors.ts';
 import { recordAudit } from '../staff/audit.ts';
 import { requireStaff } from '../staff/auth.ts';
-import { atomFeed, jsonFeed } from './feeds.ts';
+import { maintenanceStatus } from '../liveops/state.ts';
+import { atomFeed, jsonFeed, maintenanceEntry } from './feeds.ts';
 import { getIncident, listIncidents, openIncident, updateIncident } from './incidents.ts';
 import type { StatusService } from './service.ts';
 
@@ -90,6 +91,7 @@ export function registerStatusRoutes(app: FastifyInstance, ctx: AppContext, stat
   const links = () => ({ page: `${ctx.config.publicWebUrl}/status`, api: ctx.config.publicApiUrl });
   const feedIncidents = () =>
     listIncidents(ctx.db, { since: new Date(ctx.now().getTime() - UPTIME_DAYS * 86_400_000), limit: 50 });
+  const feedMaintenance = async () => maintenanceEntry(await maintenanceStatus(ctx), ctx.now().toISOString());
 
   app.get('/status/summary', limited(60), async (_req, reply) => {
     reply.header('cache-control', 'public, max-age=15');
@@ -104,13 +106,13 @@ export function registerStatusRoutes(app: FastifyInstance, ctx: AppContext, stat
   app.get('/status/feed.json', limited(20), async (_req, reply) => {
     reply.header('cache-control', 'public, max-age=300');
     reply.type('application/feed+json; charset=utf-8');
-    return JSON.stringify(jsonFeed(await feedIncidents(), links()));
+    return JSON.stringify(jsonFeed(await feedIncidents(), links(), await feedMaintenance()));
   });
 
   app.get('/status/feed.atom', limited(20), async (_req, reply) => {
     reply.header('cache-control', 'public, max-age=300');
     reply.type('application/atom+xml; charset=utf-8');
-    return atomFeed(await feedIncidents(), links(), ctx.now().toISOString());
+    return atomFeed(await feedIncidents(), links(), ctx.now().toISOString(), await feedMaintenance());
   });
 
   // --- Staff ----------------------------------------------------------------------

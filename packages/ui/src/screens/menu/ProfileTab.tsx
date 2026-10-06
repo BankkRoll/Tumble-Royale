@@ -362,7 +362,7 @@ export function HistoryList({ entries }: { entries: MatchHistoryEntry[] }): JSX.
     return <div className="tr-empty tr-small">No shows yet. Go make some history!</div>;
   return (
     <div className="tr-history-list">
-      {entries.slice(0, 20).map((m) => {
+      {entries.map((m) => {
         const isOpen = open === m.id;
         return (
           <div key={m.id} className={`tr-history-row is-${m.result}${isOpen ? ' is-open' : ''}`}>

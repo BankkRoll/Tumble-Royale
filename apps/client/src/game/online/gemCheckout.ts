@@ -95,3 +95,62 @@ export function explainGemCheckoutRefusal(
   }
   return false;
 }
+
+/** How long the pack buttons stay disabled after handing the page to the checkout. */
+export const CHECKOUT_REDIRECT_HOLD_MS = 10_000;
+
+function markPending(packId: string | null): void {
+  const store = ui.getState().store;
+  if (store) ui.getState().setStoreData({ ...store, gemCheckoutPending: packId });
+}
+
+/**
+ * Lets one Gem checkout run at a time and shows which pack it is for.
+ *
+ * Every tap gets its own idempotency key, so the API cannot tell a double tap
+ * from two purchases; the guard has to be here. While a checkout is being
+ * created every pack button is disabled and the chosen one shows a spinner.
+ */
+export class GemCheckoutGate {
+  private busy = false;
+
+  /**
+   * @param schedule - Timer used to release the gate after a redirect (tests pass a fake).
+   */
+  constructor(
+    private readonly schedule: (fn: () => void, ms: number) => unknown = (fn, ms) => setTimeout(fn, ms),
+  ) {}
+
+  /** A checkout is being created. */
+  get pending(): boolean {
+    return this.busy;
+  }
+
+  /**
+   * Runs `task` unless a checkout is already running.
+   *
+   * @param packId - The pack being bought.
+   * @param task - Creates the checkout; resolves `redirected` once the page
+   *   is being sent to the payment provider.
+   * @returns False when the tap was ignored.
+   */
+  async run(packId: string, task: () => Promise<'redirected' | 'done'>): Promise<boolean> {
+    if (this.busy) return false;
+    this.busy = true;
+    markPending(packId);
+    let outcome: 'redirected' | 'done' = 'done';
+    const release = () => {
+      this.busy = false;
+      markPending(null);
+    };
+    try {
+      outcome = await task();
+    } finally {
+      // NOTE: a redirect normally unloads the page; if the browser comes back
+      // (back button, back/forward cache) the buttons must not stay disabled.
+      if (outcome === 'redirected') this.schedule(release, CHECKOUT_REDIRECT_HOLD_MS);
+      else release();
+    }
+    return true;
+  }
+}

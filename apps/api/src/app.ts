@@ -11,6 +11,7 @@
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import { trustFunction } from '@tumble/shared/proxy';
+import { and, eq, notInArray } from 'drizzle-orm';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { registerIdentityRoutes } from './accounts/identities.ts';
 import { registerAccountRoutes } from './accounts/routes.ts';
@@ -95,8 +96,9 @@ export interface BuiltApp {
 }
 
 /**
- * Upserts the content catalog into `cosmetics_catalog` and `challenges` so SQL
- * reporting and foreign tools see the same items the API validates against.
+ * Upserts the content catalog into `cosmetics_catalog` and `challenges` (and
+ * marks rows no longer in it inactive) so SQL reporting and foreign tools see
+ * the same items the API validates against.
  */
 export async function syncCatalog(ctx: AppContext): Promise<void> {
   const now = ctx.now();
@@ -134,6 +136,19 @@ export async function syncCatalog(ctx: AppContext): Promise<void> {
       .values({ id: c.id, ...values })
       .onConflictDoUpdate({ target: challenges.id, set: values });
   }
+  // Rows of items and challenges removed from content are kept (inventories
+  // and progress may still name them) but marked inactive, so reporting does
+  // not count them as live.
+  const cosmeticIds = ctx.catalog.cosmetics.map((c) => c.id);
+  await ctx.db
+    .update(cosmeticsCatalog)
+    .set({ active: false, updatedAt: now })
+    .where(and(eq(cosmeticsCatalog.active, true), notInArray(cosmeticsCatalog.id, cosmeticIds)));
+  const challengeIds = ctx.catalog.challenges.map((c) => c.id);
+  await ctx.db
+    .update(challenges)
+    .set({ active: false })
+    .where(and(eq(challenges.active, true), notInArray(challenges.id, challengeIds)));
 }
 
 /** Stable error codes for Fastify's own 4xx errors (body too large, wrong content type…). */

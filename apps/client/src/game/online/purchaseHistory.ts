@@ -37,6 +37,8 @@ export interface ApiPurchaseHistory {
   }[];
   selfRefunds: { used: number; limit: number; windowDays: number; nextAvailableAt: string | null };
   policy: { selfServiceWindowDays: number; realMoneyWindowDays: number };
+  /** Cursor for the next older page (absent from older APIs). */
+  nextCursor?: string | null;
 }
 
 /** `POST /purchases/:purchaseId/refund`. */
@@ -85,6 +87,28 @@ export function toPurchaseHistory(h: ApiPurchaseHistory): PurchaseHistoryData {
       nextAvailableAt: h.selfRefunds.nextAvailableAt ? Date.parse(h.selfRefunds.nextAvailableAt) : null,
     },
     policy: h.policy,
+    nextCursor: h.nextCursor ?? null,
+  };
+}
+
+/**
+ * Appends an older page of history, skipping purchases already shown.
+ *
+ * @param shown - What is shown.
+ * @param older - The next page from `GET /purchases?before=`.
+ */
+export function appendPurchasePage(
+  shown: PurchaseHistoryData,
+  older: ApiPurchaseHistory,
+): PurchaseHistoryData {
+  const page = toPurchaseHistory(older);
+  const ids = new Set(shown.entries.map((e) => e.purchaseId));
+  return {
+    ...shown,
+    status: 'ready',
+    entries: [...shown.entries, ...page.entries.filter((e) => !ids.has(e.purchaseId))],
+    nextCursor: page.nextCursor ?? null,
+    loadingMore: false,
   };
 }
 

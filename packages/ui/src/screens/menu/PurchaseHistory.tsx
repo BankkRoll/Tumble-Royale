@@ -264,11 +264,28 @@ export function PurchaseHistorySection(): JSX.Element {
           <p>No purchases yet.</p>
         </div>
       ) : (
-        <ul className="tr-col" style={{ gap: '0.5em', listStyle: 'none', padding: 0, margin: 0 }}>
-          {history.entries.map((e) => (
-            <PurchaseRow key={e.purchaseId} entry={e} history={history} />
-          ))}
-        </ul>
+        <>
+          <ul className="tr-col" style={{ gap: '0.5em', listStyle: 'none', padding: 0, margin: 0 }}>
+            {history.entries.map((e) => (
+              <PurchaseRow key={e.purchaseId} entry={e} history={history} />
+            ))}
+          </ul>
+          {history.nextCursor && (
+            <Button
+              size="sm"
+              variant="secondary"
+              data-testid="purchases-more"
+              disabled={history.loadingMore === true}
+              onClick={() => uiEvents.emit('loadMorePurchases')}
+            >
+              {history.loadingMore ? (
+                <span className="tr-gumball-spinner tr-gumball-spinner--sm" />
+              ) : (
+                'Show older'
+              )}
+            </Button>
+          )}
+        </>
       )}
     </section>
   );

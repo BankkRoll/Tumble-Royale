@@ -7,6 +7,7 @@
  */
 import type {
   CosmeticSlot,
+  Currency,
   CustomLobbyOptions,
   LeaderboardId,
   LeaderboardScope,
@@ -60,9 +61,18 @@ export interface UIIntents {
   selectLoadout: { index: number };
   customizeColors: { colors: TumblerColors };
   randomizeOutfit: undefined;
-  purchase: { offerId: string };
+  /**
+   * Buy an offer the player confirmed. `expectedPrice` is the price the
+   * confirmation showed; the purchase is refused if the server would charge
+   * anything else (the shelves rotated meanwhile).
+   */
+  purchase: { offerId: string; expectedPrice?: { currency: Currency; amount: number } };
+  /** The open Store's daily, weekly or Crown Shard shelves just rotated: fetch the new ones. */
+  storeExpired: undefined;
   /** Store → Purchases opened or refreshed. */
   requestPurchaseHistory: undefined;
+  /** Store → Purchases scrolled to the end: fetch the next older page. */
+  loadMorePurchases: undefined;
   /**
    * Refund a store purchase (already confirmed by the player), or request a
    * Gem pack refund (`reason` required) for staff review.
@@ -70,6 +80,8 @@ export interface UIIntents {
   refundPurchase: { purchaseId: string; reason?: string };
   /** Profile → Gifts opened or refreshed. */
   requestGifts: undefined;
+  /** Profile → Gifts: fetch older settled received gifts, or older sent gifts. */
+  loadMoreGifts: { direction: 'received' | 'sent' };
   /** Open or decline a received gift, or cancel a sent one (already confirmed where it costs anything). */
   giftAction: { giftId: string; action: 'open' | 'decline' | 'cancel' };
   /** Open the gift sheet for an offer, optionally with a friend picked. */

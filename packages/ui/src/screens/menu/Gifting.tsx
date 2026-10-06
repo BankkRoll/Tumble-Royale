@@ -660,6 +660,21 @@ export function GiftsSection(): JSX.Element {
           )}
         </ul>
       )}
+      {gifts.nextCursor?.[tab] && (
+        <Button
+          size="sm"
+          variant="secondary"
+          data-testid="gifts-more"
+          disabled={gifts.loadingMore === tab}
+          onClick={() => uiEvents.emit('loadMoreGifts', { direction: tab })}
+        >
+          {gifts.loadingMore === tab ? (
+            <span className="tr-gumball-spinner tr-gumball-spinner--sm" />
+          ) : (
+            'Show older'
+          )}
+        </Button>
+      )}
     </section>
   );
 }

@@ -16,6 +16,7 @@ import type {
   WishlistEntryView,
 } from '@tumble/ui';
 import { ApiError } from '../api.ts';
+import { changedPrice, priceChangedText } from './priceCheck.ts';
 
 /** Resolves a cosmetic id to the UI's item (null when unknown to this build). */
 export type ItemResolver = (id: string) => CosmeticItem | null;
@@ -53,6 +54,8 @@ export interface ApiGiftInbox {
   unopened: number;
   limits: { daily: number; sentToday: number; resetsAt: string; inbox: number };
   policy: GiftsData['policy'];
+  /** Cursors for `GET /gifts/history` (absent from older APIs). */
+  nextCursor?: { received: string | null; sent: string | null };
 }
 
 /** `GET /gifts/eligibility`. */
@@ -142,6 +145,32 @@ export function toGifts(inbox: ApiGiftInbox, resolve: ItemResolver): GiftsData {
       resetsAt: Date.parse(inbox.limits.resetsAt),
     },
     policy: inbox.policy,
+    nextCursor: inbox.nextCursor ?? { received: null, sent: null },
+  };
+}
+
+/**
+ * Appends an older page from `GET /gifts/history` to one list, skipping any
+ * gift already shown (a gift settled between the pages moves lists).
+ *
+ * @param data - What is shown.
+ * @param direction - Which list the page belongs to.
+ * @param page - The API's page.
+ * @param resolve - Cosmetic lookup.
+ */
+export function appendGiftPage(
+  data: GiftsData,
+  direction: 'received' | 'sent',
+  page: { gifts: ApiGift[]; nextCursor: string | null },
+  resolve: ItemResolver,
+): GiftsData {
+  const shown = new Set(data[direction].map((g) => g.giftId));
+  const older = page.gifts.filter((g) => !shown.has(g.giftId)).map((g) => giftEntry(g, resolve));
+  return {
+    ...data,
+    [direction]: [...data[direction], ...older],
+    nextCursor: { ...(data.nextCursor ?? { received: null, sent: null }), [direction]: page.nextCursor },
+    loadingMore: null,
   };
 }
 
@@ -233,6 +262,8 @@ export function giftErrorText(err: unknown): string {
       return 'The store is closed for a moment, and gifting with it. Nothing changed; try again soon!';
     if (err.code === 'maintenance') return `${err.message} Gifts will be back after maintenance.`;
     if (err.code === 'insufficient_funds') return "You don't have enough for this gift right now.";
+    const moved = changedPrice(err);
+    if (moved) return priceChangedText(moved);
     if (err.code === 'rate_limited' || err.status === 429)
       return err.message || 'Too many tries. Wait a minute.';
     return err.message;

@@ -92,6 +92,7 @@ import { PhotoMode } from './photo/photoMode.ts';
 import { AccountAuth } from './online/auth.ts';
 import { finishCheckoutReturn } from './online/checkout.ts';
 import { joinWithCode } from './online/joinCode.ts';
+import { priceChangedText } from './online/priceCheck.ts';
 import {
   liveStartedLobby,
   lobbyOptions,
@@ -1740,16 +1741,24 @@ export class GameApp {
         }
         this.menu?.emote('emote.flex');
       },
-      onPurchase: ({ offerId }) => {
+      onPurchase: ({ offerId, expectedPrice }) => {
         const a = online();
         if (a) {
-          void a.purchase(offerId);
+          void a.purchase(offerId, expectedPrice);
           return;
         }
-        const r = this.profile.purchase(offerId);
+        const r = this.profile.purchase(offerId, expectedPrice);
         if ('item' in r) {
           s().pushToast({ kind: 'reward', title: `${r.item.name} is yours!`, icon: r.item.icon });
           this.pushMeta();
+        } else if (r.error === 'price') {
+          this.pushMeta();
+          s().showDialog({
+            id: 'purchase-price-changed',
+            kind: 'info',
+            title: 'The price changed',
+            body: priceChangedText(r.price),
+          });
         } else {
           const msg =
             r.error === 'funds'
@@ -1760,9 +1769,18 @@ export class GameApp {
           s().showDialog({ id: 'purchase-failed', kind: 'error', title: 'Purchase failed', body: msg });
         }
       },
+      onStoreExpired: () => {
+        const a = online();
+        if (a) void a.refreshStore();
+        else this.pushMeta();
+      },
       onRequestPurchaseHistory: () => {
         const a = online();
         if (a) void a.loadPurchaseHistory();
+      },
+      onLoadMorePurchases: () => {
+        const a = online();
+        if (a) void a.loadMorePurchases();
       },
       onRefundPurchase: ({ purchaseId, reason }) => {
         const a = online();
@@ -1772,6 +1790,10 @@ export class GameApp {
       onRequestGifts: () => {
         const a = online();
         if (a) void a.loadGifts();
+      },
+      onLoadMoreGifts: ({ direction }) => {
+        const a = online();
+        if (a) void a.loadMoreGifts(direction);
       },
       onGiftAction: ({ giftId, action }) => {
         const a = online();

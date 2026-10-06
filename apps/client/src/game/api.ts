@@ -880,22 +880,47 @@ export class ApiClient {
 
   store = (): Promise<ApiStore> => this.request('GET', '/store');
   wallet = (): Promise<{ wallet: ApiMe['wallet'] } & WalletLedger> => this.request('GET', '/wallet');
-  purchase = (offerId: string, key: string): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> =>
-    this.request('POST', '/purchase', { offerId }, { idempotencyKey: key });
+  /**
+   * Buys a store offer. With `expectedPrice` the API refuses (409
+   * `price_changed`, new quote in `details.price`) to charge anything else.
+   */
+  purchase = (
+    offerId: string,
+    key: string,
+    expectedPrice?: { currency: 'gumballs' | 'gems'; amount: number },
+  ): Promise<{ wallet: ApiMe['wallet']; replayed: boolean }> =>
+    this.request(
+      'POST',
+      '/purchase',
+      { offerId, ...(expectedPrice ? { expectedPrice } : {}) },
+      { idempotencyKey: key },
+    );
   gemPacks = (): Promise<ApiGemPacks> => this.request('GET', '/gems/packs');
   /** Purchase history with each purchase's refund and refund eligibility. */
-  purchaseHistory = (): Promise<ApiPurchaseHistory> => this.request('GET', '/purchases');
+  purchaseHistory = (before?: string): Promise<ApiPurchaseHistory> =>
+    this.request('GET', before ? `/purchases?before=${encodeURIComponent(before)}` : '/purchases');
   /** Refunds a store purchase, or files a Gem pack refund request (`reason` required there). */
   refundPurchase = (purchaseId: string, reason?: string): Promise<ApiRefundResult> =>
     this.request('POST', `/purchases/${encodeURIComponent(purchaseId)}/refund`, reason ? { reason } : {});
   /** Gifts sent and received, with today's count and the policy. */
   gifts = (): Promise<ApiGiftInbox> => this.request('GET', '/gifts');
+  /** An older page of settled received gifts, or of sent gifts. */
+  giftHistory = (
+    direction: 'received' | 'sent',
+    before: string,
+  ): Promise<{ gifts: ApiGiftInbox['sent']; nextCursor: string | null }> =>
+    this.request('GET', `/gifts/history?direction=${direction}&before=${encodeURIComponent(before)}`);
   /** Every friend with whether they can be gifted this offer now. */
   giftPicker = (offerId: string): Promise<ApiGiftPicker> =>
     this.request('GET', `/gifts/eligibility?offerId=${encodeURIComponent(offerId)}`);
   /** Buys an offer for a friend; the key makes a retried send replay the first. */
   sendGift = (
-    body: { recipientId: string; offerId: string; message?: string },
+    body: {
+      recipientId: string;
+      offerId: string;
+      message?: string;
+      expectedPrice?: { currency: 'gumballs' | 'gems'; amount: number };
+    },
     key: string,
   ): Promise<ApiGiftResult & { wallet: ApiMe['wallet'] }> =>
     this.request('POST', '/gifts', body, { idempotencyKey: key });

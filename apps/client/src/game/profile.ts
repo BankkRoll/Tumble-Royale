@@ -72,6 +72,14 @@ import {
 } from './cosmetics.ts';
 import { loadJson, removeJson, saveJson } from './storage.ts';
 import { offlineStoreShelves } from './storeOffers.ts';
+import { quoteHolds, type Quote } from './online/priceCheck.ts';
+
+/** What an offline purchase did: the item, or why nothing was charged. */
+export type PurchaseOutcome =
+  | { item: UiItem }
+  | { error: 'unknown' | 'owned' | 'funds' }
+  /** The shelves rotated since the confirmation; `price` is today's. */
+  | { error: 'price'; price: Quote };
 
 // -----------------------------------------------------------------------------
 // Persisted shape
@@ -626,17 +634,20 @@ export class ProfileStore {
    * Buys a store item (`offer:<id>`, at today's shelf or list price), a bundle
    * (`bundle:<id>`) or a Crown Shard offer (`shards:<id>`) with the local wallet.
    *
+   * @param expected - The price the confirmation showed; if the shelves have
+   *   rotated since, nothing is charged and the new price comes back.
    * @returns The bought item, or an error code.
    */
-  purchase(offerId: string): { item: UiItem } | { error: 'unknown' | 'owned' | 'funds' } {
+  purchase(offerId: string, expected?: Quote): PurchaseOutcome {
     if (offerId.startsWith('shards:')) return this.buyShardOffer(offerId.slice('shards:'.length));
-    if (offerId.startsWith(BUNDLE_OFFER_PREFIX)) return this.buyBundle(offerId);
+    if (offerId.startsWith(BUNDLE_OFFER_PREFIX)) return this.buyBundle(offerId, expected);
     const d = this.data;
     const id = offerId.replace(/^offer:/, '');
     const item = getCosmetic(id);
     const price = item ? storePriceOnShelf(storeShelfAt(new Date(this.clock()), COSMETICS), item) : null;
     if (!d || !item || !price) return { error: 'unknown' };
     if (this.owns(id)) return { error: 'owned' };
+    if (!quoteHolds(expected, price)) return { error: 'price', price };
     if (d[price.currency] < price.amount) return { error: 'funds' };
     d[price.currency] -= price.amount;
     d.owned.push(id);
@@ -645,13 +656,14 @@ export class ProfileStore {
   }
 
   /** Buys the items of a bundle the player is missing, at the bundle price. */
-  private buyBundle(offerId: string): { item: UiItem } | { error: 'unknown' | 'owned' | 'funds' } {
+  private buyBundle(offerId: string, expected?: Quote): PurchaseOutcome {
     const d = this.data;
     const set = storeSetById(offerId);
     const quote = set ? quoteBundle(set, COSMETICS, (id) => this.owns(id)) : null;
     const hero = set ? getCosmetic(set.itemIds[0]!) : undefined;
     if (!d || !quote || !hero) return { error: 'unknown' };
     if (quote.missing.length === 0) return { error: 'owned' };
+    if (!quoteHolds(expected, quote.price)) return { error: 'price', price: quote.price };
     if (d[quote.price.currency] < quote.price.amount) return { error: 'funds' };
     d[quote.price.currency] -= quote.price.amount;
     d.owned.push(...quote.missing);
@@ -659,7 +671,7 @@ export class ProfileStore {
     return { item: uiItem(hero, true) };
   }
 
-  private buyShardOffer(itemId: string): { item: UiItem } | { error: 'unknown' | 'owned' | 'funds' } {
+  private buyShardOffer(itemId: string): PurchaseOutcome {
     const d = this.data;
     const offer = shardShopAt(new Date(this.clock())).offers.find((o) => o.itemId === itemId);
     const item = getCosmetic(itemId);

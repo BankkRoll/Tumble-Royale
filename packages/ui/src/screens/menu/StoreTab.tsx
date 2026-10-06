@@ -16,7 +16,7 @@
  * now", and (online, Gumball and Gem offers) puts it on the wish list or
  * gifts it to a friend (`Gifting.tsx`). docs/design/SCREENS.md §5.2, docs/design/ECONOMY.md §4.
  */
-import { useEffect, useMemo, useState, type JSX } from 'react';
+import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { playCue } from '../../audio-cues.ts';
 import { Coin, ItemCard, Price } from '../../components/bits.tsx';
 import { Button } from '../../components/controls.tsx';
@@ -32,6 +32,7 @@ import {
   type CosmeticItem,
   type CosmeticSlot,
   type Currency,
+  type StoreData,
   type StoreOffer,
   type StoreSection,
 } from '../../store/types.ts';
@@ -56,6 +57,64 @@ interface ShelfOffer {
 }
 
 type Wallet = Record<ShelfOffer['currency'], number>;
+
+/**
+ * A shelf's countdown; once it has run out the new shelves are on their way.
+ *
+ * @example
+ * countdown('New picks in', 0, 1); // 'Restocking…'
+ */
+export function countdown(prefix: string, endsAt: number, now: number): string {
+  return endsAt <= now ? 'Restocking…' : `${prefix} ${formatRemaining(endsAt - now)}`;
+}
+
+/** When the first of the shown shelves (daily, weekly, Crown Shard) rotates; Infinity without a store. */
+export function storeExpiresAt(store: StoreData | null | undefined): number {
+  return Math.min(
+    store?.rotationEndsAt ?? Infinity,
+    store?.weeklyEndsAt ?? Infinity,
+    store?.shardShop?.rotationEndsAt ?? Infinity,
+  );
+}
+
+/**
+ * Whether the open Store should ask for new shelves: a shelf has rotated and
+ * this rotation was not asked about yet (the answer moves the time forward).
+ *
+ * @param expiresAt - {@link storeExpiresAt}.
+ * @param now - Epoch ms.
+ * @param askedFor - The rotation time last asked about.
+ */
+export function shouldRefreshStore(expiresAt: number, now: number, askedFor: number | null): boolean {
+  return Number.isFinite(expiresAt) && now >= expiresAt && askedFor !== expiresAt;
+}
+
+// The price each open confirmation showed: the store may refresh (and the
+// shelves rotate) while the dialog is up, and the purchase must then be
+// refused rather than charge something the player never saw.
+const quotedPrices = new Map<string, { currency: Currency; amount: number }>();
+
+/** Records the price a purchase confirmation for `offerId` shows. */
+export function quotePurchase(offerId: string, price: { currency: Currency; amount: number }): void {
+  quotedPrices.set(offerId, price);
+}
+
+/**
+ * Turns a confirmed purchase dialog into the `purchase` intent, carrying the
+ * price the dialog showed as `expectedPrice`.
+ *
+ * @returns Unsubscribe.
+ */
+export function bindPurchaseConfirm(): () => void {
+  return uiEvents.on('dialogResult', ({ dialogId, buttonId }) => {
+    if (!dialogId.startsWith('purchase:')) return;
+    const offerId = dialogId.slice('purchase:'.length);
+    const expectedPrice = quotedPrices.get(offerId);
+    quotedPrices.delete(offerId);
+    if (buttonId !== 'confirm') return;
+    uiEvents.emit('purchase', { offerId, ...(expectedPrice ? { expectedPrice } : {}) });
+  });
+}
 
 const CURRENCY_NAMES: Readonly<Record<ShelfOffer['currency'], string>> = {
   gumballs: 'Gumballs',
@@ -402,14 +461,16 @@ function StoreShelves(): JSX.Element {
   ];
   const active = sections.includes(section) ? section : 'today';
 
-  useEffect(
-    () =>
-      uiEvents.on('dialogResult', ({ dialogId, buttonId }) => {
-        if (!dialogId.startsWith('purchase:') || buttonId !== 'confirm') return;
-        uiEvents.emit('purchase', { offerId: dialogId.slice('purchase:'.length) });
-      }),
-    [],
-  );
+  const expiresAt = storeExpiresAt(store);
+  const askedFor = useRef<number | null>(null);
+  useEffect(() => {
+    if (shouldRefreshStore(expiresAt, now, askedFor.current)) {
+      askedFor.current = expiresAt;
+      uiEvents.emit('storeExpired');
+    }
+  }, [now, expiresAt]);
+
+  useEffect(() => bindPurchaseConfirm(), []);
 
   const select = (o: ShelfOffer): void => {
     playCue('ui.click');
@@ -428,6 +489,7 @@ function StoreShelves(): JSX.Element {
     const what = o.bundle
       ? `the ${o.title ?? o.item.name} bundle`
       : `${o.item.name} (${SLOT_NAMES[o.item.slot]})`;
+    if (o.currency !== 'crownShards') quotePurchase(o.id, { currency: o.currency, amount: o.price });
     ui.getState().showDialog({
       id: `purchase:${o.id}`,
       kind: 'purchase',
@@ -493,7 +555,7 @@ function StoreShelves(): JSX.Element {
                   <div className="tr-panel-head">
                     <h2 className="tr-title tr-h3 tr-grow">Featured</h2>
                     <span className="tr-chip tr-chip--lemon">
-                      New picks in {formatRemaining(store.rotationEndsAt - now)}
+                      {countdown('New picks in', store.rotationEndsAt, now)}
                     </span>
                   </div>
                   <div className="tr-featured-row">
@@ -543,7 +605,7 @@ function StoreShelves(): JSX.Element {
                     <h2 className="tr-title tr-h3 tr-grow">This week</h2>
                     {store.weeklyEndsAt !== undefined && (
                       <span className="tr-chip tr-chip--lemon">
-                        Restocks in {formatRemaining(store.weeklyEndsAt - now)}
+                        {countdown('Restocks in', store.weeklyEndsAt, now)}
                       </span>
                     )}
                   </div>
@@ -566,7 +628,7 @@ function StoreShelves(): JSX.Element {
                       <Coin currency="crownShards" /> {formatNumber(wallet.crownShards)}
                     </span>
                     <span className="tr-chip tr-chip--lemon">
-                      Restocks in {formatRemaining(shardShop.rotationEndsAt - now)}
+                      {countdown('Restocks in', shardShop.rotationEndsAt, now)}
                     </span>
                   </div>
                   <p className="tr-small tr-muted" style={{ margin: 0 }}>

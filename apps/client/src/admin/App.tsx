@@ -97,7 +97,15 @@ export function AdminApp(props: AdminAppProps) {
   const [signingIn, setSigningIn] = useState(false);
   const [signInError, setSignInError] = useState<string | null>(null);
 
-  useEffect(() => api.onSignedOut(() => setSession(null)), [api]);
+  useEffect(
+    () =>
+      api.onSignedOut(() => {
+        setSession(null);
+        // An action confirmed after signing back in would run under the new session without being asked for.
+        setPending(null);
+      }),
+    [api],
+  );
   useEffect(() => {
     const onHash = () => setRoute(parseRoute(location.hash));
     window.addEventListener('hashchange', onHash);

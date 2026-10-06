@@ -45,6 +45,7 @@ import {
   type PlayerRewardMsg,
   type RoundStatus,
   type SnapshotFrame,
+  type SnapshotViewer,
 } from '@tumble/netcode';
 import { isCustomRoundId } from '@tumble/content/custom';
 import type { CharacterInput, SimEvent } from '@tumble/sim';
@@ -100,6 +101,12 @@ interface PlayerSlot {
   left: boolean;
   /** Joined after the show started: watches only. */
   spectator: boolean;
+  /**
+   * Took a private show's spectator seat (ticket role `spectator`): never a
+   * player, counts against the host's seat limit, and chats into the show
+   * only when the host allowed spectator chat.
+   */
+  watchOnly: boolean;
   jitter: InputJitterBuffer;
   seqGuard: InputSequenceGuard;
   brain: ServerBotBrain | null;
@@ -155,6 +162,7 @@ function newSlot(
     lobbyBrain: null,
     lastInput: { moveX: 0, moveZ: 0, yaw: 0, buttons: 0, emote: 0 },
     inputRate: new InputRateMonitor(),
+    watchOnly: false,
   };
 }
 
@@ -449,7 +457,41 @@ export class Room {
 
   /** True when the room can take a spectator. */
   canAcceptSpectator(): boolean {
-    return this.state === 'show' && this.allocateId(true) >= 0;
+    return this.state === 'show' && this.hasSpectatorSeat(false) && this.allocateId(true) >= 0;
+  }
+
+  /** Spectators connected now, and how many of them hold a private show's spectator seat. */
+  spectatorCount(): { all: number; seats: number } {
+    let all = 0;
+    let seats = 0;
+    for (const s of this.slots.values()) {
+      if (!s.spectator || s.left) continue;
+      all++;
+      if (s.watchOnly) seats++;
+    }
+    return { all, seats };
+  }
+
+  /**
+   * Whether one more spectator fits: every room caps spectators at
+   * {@link RoomConfig.maxSpectators} (each costs a snapshot encode per tick),
+   * and a private show's spectator seats at the host's limit.
+   *
+   * @param watchOnly - The joiner holds a spectator-seat ticket.
+   */
+  private hasSpectatorSeat(watchOnly: boolean): boolean {
+    const { all, seats } = this.spectatorCount();
+    if (all >= this.config.maxSpectators) return false;
+    if (watchOnly && this.match?.custom) return seats < Math.max(0, this.match.custom.spectatorSlots);
+    return true;
+  }
+
+  /**
+   * Whether a slot may chat into the show: everyone but a private show's
+   * spectator seat, which needs the host's "Spectators can chat".
+   */
+  private canChat(slot: PlayerSlot): boolean {
+    return !slot.watchOnly || this.match?.custom?.spectatorChat === true;
   }
 
   /** Room summary. */
@@ -520,7 +562,12 @@ export class Room {
       this.log(`[room ${this.id}] ${name} took held seat ${held.id} after the show started`);
       return held.id;
     }
-    const spectator = this.state !== 'lobby' || ticket?.role === 'spectator';
+    const watchOnly = ticket?.role === 'spectator';
+    const spectator = this.state !== 'lobby' || watchOnly;
+    if (spectator && !this.hasSpectatorSeat(watchOnly)) {
+      this.log(`[room ${this.id}] refused ${name}: no spectator seat left`);
+      return -1;
+    }
     const id = this.allocateId(spectator);
     if (id < 0) return -1;
     const slot = newSlot({
@@ -536,6 +583,7 @@ export class Room {
     slot.partyKey = partyKeyOf(ticket);
     slot.queuePartyId = ticket?.pid && !ticket.pid.startsWith('solo:') ? ticket.pid : null;
     slot.muted = ticket?.mute === true;
+    slot.watchOnly = watchOnly;
     this.slots.set(id, slot);
     this.chat.register(id, { muted: slot.muted === true }, now);
     if (this.firstJoinAt < 0) this.firstJoinAt = now;
@@ -987,6 +1035,20 @@ export class Room {
   // Inputs & events
   // ---------------------------------------------------------------------------
 
+  /**
+   * A spectator camera's focus point from an untrusted `spectate.focus`,
+   * clamped into the round's netcode bounds; null when absent or malformed.
+   */
+  private focusOf(raw: unknown): { x: number; y: number; z: number } | null {
+    if (!Array.isArray(raw) || raw.length !== 3) return null;
+    if (!raw.every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+    const [x, y, z] = raw as [number, number, number];
+    const q = this.quantizer;
+    if (!q) return { x, y, z };
+    const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+    return { x: clamp(x, q.min.x, q.max.x), y: clamp(y, q.min.y, q.max.y), z: clamp(z, q.min.z, q.max.z) };
+  }
+
   private applyInputs(sim: MatchSim): void {
     const input = this.scratchInput;
     for (const id of this.roundPlayers) {
@@ -1121,6 +1183,8 @@ export class Room {
   private onLowFreq(session: ClientSession, slot: PlayerSlot, msg: LowFreqMessage, now: number): void {
     switch (msg.t) {
       case 'chat': {
+        // A spectator seat without the host's permission is dropped quietly: the client hides chat for it.
+        if (!this.canChat(slot)) return;
         if (!session.guard.admitChat(now)) {
           this.metrics.rateLimited++;
           return;
@@ -1132,8 +1196,13 @@ export class Room {
         return;
       }
       case 'spectate':
+        if (!session.guard.admitSpectate(now)) {
+          this.metrics.rateLimited++;
+          return;
+        }
         session.spectateTarget =
           typeof msg.target === 'number' && this.roundPlayers.includes(msg.target) ? msg.target : -1;
+        session.spectateFocus = session.spectateTarget < 0 ? this.focusOf(msg.focus) : null;
         return;
       case 'loaded':
         if (this.round && msg.roundId === this.round.id && !this.lobbyActive)
@@ -1356,12 +1425,13 @@ export class Room {
     f.serverTick = this.serverTick;
     f.matchTime = sim.time;
 
-    const viewer = { playerId: -1, spectateTarget: -1, ackedInputSeq: -1 };
+    const viewer: SnapshotViewer = { playerId: -1, spectateTarget: -1, ackedInputSeq: -1, focus: null };
     for (const s of this.sessions) {
       const slot = this.slots.get(s.playerId);
       if (!slot) continue;
       viewer.playerId = slot.spectator ? -1 : slot.id;
       viewer.spectateTarget = s.spectateTarget;
+      viewer.focus = s.spectateFocus;
       viewer.ackedInputSeq = slot.spectator ? -1 : slot.jitter.lastConsumedSeq;
       const w = this.writer.reset();
       const stats = s.encoder.encode(w, f, viewer);
@@ -1401,7 +1471,7 @@ export class Room {
     this.sessions.add(session);
     if (!slot.spectator && !slot.isBot) this.show.onPlayerConnection?.(slot.id, true);
     this.sendWelcome(session, slot, resumed);
-    if (this.state !== 'lobby' || this.match) session.sendLowFreq(this.showInfo());
+    if (this.state !== 'lobby' || this.match) session.sendLowFreq(this.showInfo(slot));
     if (this.state === 'show' && this.roundIndex < 0 && this.preShowEndTick >= 0)
       session.sendLowFreq(this.preShowPhase());
     if (this.sim) this.sendJoinRound(session);
@@ -1483,7 +1553,7 @@ export class Room {
     });
   }
 
-  private showInfo(): LowFreqMessage {
+  private showInfo(slot: PlayerSlot | undefined): LowFreqMessage {
     const m = this.match;
     const players = this.roster().length || this.config.capacity;
     const desc = this.deps.describePlaylist?.(m?.custom?.playlistId ?? m?.playlistId ?? null, players);
@@ -1494,11 +1564,12 @@ export class Room {
       showName: desc?.name ?? 'Main Show',
       queue: m?.queue ?? 'dev',
       roundCount: desc?.roundCount ?? 3,
+      canChat: slot ? this.canChat(slot) : true,
     };
   }
 
   private broadcastShowInfo(): void {
-    this.broadcast(this.showInfo());
+    for (const s of this.sessions) s.sendLowFreq(this.showInfo(this.slots.get(s.playerId)));
   }
 
   // ---------------------------------------------------------------------------

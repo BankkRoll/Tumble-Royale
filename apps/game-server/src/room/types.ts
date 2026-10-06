@@ -273,6 +273,12 @@ export interface RoomConfig {
   lateJoinGraceMs: number;
   /** Snapshots go out every N × {@link snapshotEvery} ticks on the pre-show platform (bandwidth). */
   lobbySnapshotDivisor: number;
+  /**
+   * Spectators one room takes at most (late joiners plus private spectator
+   * seats). Each costs one snapshot encode per tick, like a player, so this
+   * bounds what watchers add to the tick.
+   */
+  maxSpectators: number;
 }
 
 /** Defaults per SPEC §3.1. */
@@ -287,4 +293,5 @@ export const DEFAULT_ROOM_CONFIG: RoomConfig = {
   ticketedFillWaitMs: 15_000,
   lateJoinGraceMs: 10_000,
   lobbySnapshotDivisor: 2,
+  maxSpectators: 16,
 };

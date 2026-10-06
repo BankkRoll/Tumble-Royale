@@ -382,3 +382,41 @@ export interface ClubDetail {
   reports: ClubReportRow[];
   audit: AuditEntry[];
 }
+
+/** Gift statuses (`apps/api/src/economy/gifts.ts`). */
+export type GiftStatus = 'pending' | 'opened' | 'declined' | 'cancelled' | 'returned' | 'reversed';
+
+/** One gift on a player's page (`GET /internal/users/:id/gifts`). */
+export interface AdminGift {
+  giftId: string;
+  offerId: string;
+  title: string;
+  items: { id: string; name: string; slot: string | null; rarity: string | null }[];
+  price: { currency: string; amount: number };
+  message: { text: string; masked?: string } | null;
+  status: GiftStatus;
+  refunded: boolean;
+  autoAccepted: boolean;
+  note: 'recipient_owns' | 'recipient_deleted' | 'staff' | null;
+  sentAt: string;
+  opensAutomaticallyAt: string;
+  resolvedAt: string | null;
+  from: { userId: string; name: string; tag: string } | null;
+  to: { userId: string; name: string; tag: string } | null;
+  /** The gift's ledger rows: the sender's charge and any refund. */
+  ledger: {
+    userId: string;
+    currency: string;
+    delta: number;
+    reason: string;
+    ref: string;
+    createdAt: string;
+  }[];
+}
+
+/** `GET /internal/users/:id/gifts`. */
+export interface PlayerGifts {
+  userId: string;
+  sent: AdminGift[];
+  received: AdminGift[];
+}

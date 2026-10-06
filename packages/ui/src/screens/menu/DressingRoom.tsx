@@ -185,6 +185,8 @@ export interface ItemDetailProps {
   bundle?: CosmeticItem[];
   /** Heading when it differs from the item name (bundles). */
   title?: string;
+  /** Extra buttons under the price row (Store: wish list, gift). */
+  actions?: ReactNode;
 }
 
 /** Docked item detail (never a modal over the stage). */
@@ -199,6 +201,7 @@ export function ItemDetail({
   onGetInStore,
   bundle,
   title,
+  actions,
 }: ItemDetailProps): JSX.Element {
   return (
     <div key={item.id} className={`tr-panel tr-item-detail tr-item-detail--${item.rarity} tr-enter-pop`}>
@@ -263,6 +266,11 @@ export function ItemDetail({
             </span>
           )}
         </div>
+        {actions && (
+          <div className="tr-row tr-wrap" style={{ gap: '0.5em' }} data-testid="item-actions">
+            {actions}
+          </div>
+        )}
       </div>
     </div>
   );

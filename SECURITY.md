@@ -46,6 +46,35 @@ submit refunds once. Real-money refunds are only ever issued by an admin
 (moderators can deny but not approve), each decision is audited, and the
 Stripe refund carries an idempotency key per approval attempt.
 
+### Gifting abuse
+
+Gifting moves value between accounts, which makes it the obvious channel for
+laundering stolen currency, farming with throwaway accounts, and harassment.
+The server enforces every limit ([ECONOMY.md §3.4](docs/design/ECONOMY.md)):
+
+- **Throwaways:** only linked (non-guest) accounts at least 7 days old can
+  send, the guest flag is read from the database rather than the token, and
+  only to friends of at least 3 days, so a fresh account cannot be set up to
+  move currency the same day.
+- **Volume:** 5 gifts per sender per UTC day (cancelled and declined ones
+  count, so cancel-and-resend does not reset it), 30 unopened gifts per
+  recipient, and per-route rate limits (`POST /gifts` 10/min).
+- **Harassment:** blocks end gifting in both directions and read exactly like
+  "not friends", suspended players cannot receive gifts, notes go through the
+  chat filter and chat-muted accounts cannot attach one, and a recipient can
+  decline (which refunds the sender) or ignore a gift.
+- **Double spending:** both players' profile rows are locked in id order
+  before any check, the send is idempotent per `Idempotency-Key`, and each
+  refund is a single `gift_refund` / `gift:<id>` ledger row under the ledger's
+  unique key, so races, retries and replays charge and refund at most once.
+- **Trail:** every gift is a row with both parties, price and outcome; the
+  ledger rows carry `gift:<id>`. Moderators can list a player's gifts in the
+  console, and only admins can reverse one, audited in the same transaction.
+- **Privacy:** wish lists are friends-only by default and can be hidden, and
+  every refusal of someone else's list is the same `wishlist_hidden`, so it
+  never reveals a block or whether an account exists. Streamer Mode masks the
+  names in gift toasts, the inbox and the friend picker.
+
 ### Admin console trust boundary
 
 The console at `/admin` is only a client. Every action is authorised by the

@@ -1683,6 +1683,44 @@ export class GameApp {
         if (a) void a.refundPurchase(purchaseId, reason);
         else s().pushToast({ kind: 'info', title: 'Refunds need an online account' });
       },
+      onRequestGifts: () => {
+        const a = online();
+        if (a) void a.loadGifts();
+      },
+      onGiftAction: ({ giftId, action }) => {
+        const a = online();
+        if (a) void a.giftAction(giftId, action);
+      },
+      onOpenGiftPicker: ({ offerId, recipientId }) => {
+        const a = online();
+        if (a) void a.openGiftPicker(offerId, recipientId);
+        else s().pushToast({ kind: 'info', title: 'Gifts need an online account' });
+      },
+      onSendGift: ({ offerId, recipientId, message }) => {
+        const a = online();
+        if (a) void a.sendGift(offerId, recipientId, message);
+      },
+      onRequestWishlist: () => {
+        const a = online();
+        if (a) void a.loadWishlist();
+      },
+      onWishlistToggle: ({ itemId, on }) => {
+        const a = online();
+        if (a) void a.wishlistToggle(itemId, on);
+        else s().pushToast({ kind: 'info', title: 'Wish lists need an online account' });
+      },
+      onWishlistReorder: ({ itemIds }) => {
+        const a = online();
+        if (a) void a.wishlistReorder(itemIds);
+      },
+      onWishlistSettings: (patch) => {
+        const a = online();
+        if (a) void a.wishlistSettings(patch);
+      },
+      onRequestFriendWishlist: ({ userId }) => {
+        const a = online();
+        if (a) void a.loadFriendWishlist(userId);
+      },
       onBuyGems: ({ packId }) => {
         const a = online();
         if (a) void a.buyGems(packId);

@@ -367,6 +367,85 @@ export const storeRotations = pgTable('store_rotations', {
   createdAt: createdAt(),
 });
 
+/**
+ * A store item bought by one player for a friend (`economy/gifts.ts`).
+ *
+ * The sender's charge is the ledger row `gift` / `gift:<id>` and any money
+ * given back is one `gift_refund` / `gift:<id>` row, so a gift can be
+ * refunded at most once. Statuses: `pending` (unopened) → `opened` (items
+ * granted with source `gift`), or `declined` / `cancelled` / `returned`
+ * (the system sent it back) / `reversed` (staff), each refunding the sender
+ * when the sender still exists.
+ *
+ * Both parties are `ON DELETE SET NULL`: the other side's history survives an
+ * account deletion, which settles pending gifts first (`accounts/erase.ts`).
+ */
+export const gifts = pgTable(
+  'gifts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    senderId: uuid('sender_id').references(() => users.id, { onDelete: 'set null' }),
+    recipientId: uuid('recipient_id').references(() => users.id, { onDelete: 'set null' }),
+    /** Sender's `Idempotency-Key`: a double submit replays the first gift. */
+    idempotencyKey: text('idempotency_key').notNull(),
+    /** Cosmetic id or `bundle:<id>`. */
+    offerId: text('offer_id').notNull(),
+    /** Cosmetic ids opening grants (a bundle's items the recipient lacked when it was sent). */
+    items: jsonb('items').notNull(),
+    currency: text('currency').notNull(),
+    price: integer('price').notNull(),
+    /** Optional note, slurs masked (`filterChat`). */
+    message: text('message'),
+    /** Fully masked copy of `message`, when it differs. */
+    messageMasked: text('message_masked'),
+    status: text('status').notNull(),
+    /** True once the price went back to the sender. */
+    refunded: boolean('refunded').notNull().default(false),
+    /** Opened by the 30-day auto-accept rather than by the recipient. */
+    autoAccepted: boolean('auto_accepted').notNull().default(false),
+    /** Why it was returned or reversed (`recipient_owns`, `recipient_deleted`, a staff reason…). */
+    note: text('note'),
+    createdAt: createdAt(),
+    /** When an unopened gift opens by itself. */
+    expiresAt: ts('expires_at').notNull(),
+    resolvedAt: ts('resolved_at'),
+  },
+  (t) => [
+    uniqueIndex('gifts_sender_key_uq').on(t.senderId, t.idempotencyKey),
+    index('gifts_recipient_idx').on(t.recipientId, t.status, t.createdAt),
+    index('gifts_sender_idx').on(t.senderId, t.createdAt),
+    index('gifts_pending_expiry_idx').on(t.status, t.expiresAt),
+  ],
+);
+
+/** A player's wish list: store items (or `bundle:<id>`) in the player's own order. */
+export const wishlistItems = pgTable(
+  'wishlist_items',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    itemId: text('item_id').notNull(),
+    position: integer('position').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.itemId] })],
+);
+
+/** Wish list privacy and alerts; no row means the defaults (friends may look, alerts on). */
+export const wishlistSettings = pgTable('wishlist_settings', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  /** `friends` or `nobody`. */
+  visibility: text('visibility').notNull().default('friends'),
+  /** Tell the player when a wished item is in the day's store. */
+  alerts: boolean('alerts').notNull().default(true),
+  /** UTC day of the last alert sent, so a rotation alerts once. */
+  lastAlertDay: text('last_alert_day'),
+  updatedAt: ts('updated_at').notNull().defaultNow(),
+});
+
 // -----------------------------------------------------------------------------
 // Season pass & challenges
 // -----------------------------------------------------------------------------

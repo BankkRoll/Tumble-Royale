@@ -62,6 +62,7 @@ What a player can do today:
   achievements (some hidden), a collection log, a daily login streak,
   limited-time events with their own challenges, points track and cosmetics,
   store with self-service refunds (Gem packs go to a staff refund queue),
+  gifting store items to friends and wish lists friends can gift from,
   Crown Shard shop, free Gem paths, live news and notifications
 - **Watch & share:** keep spectating after elimination, round replays (save and
   reopen them), photo mode, share cards for wins and deep runs, and 5–15 s

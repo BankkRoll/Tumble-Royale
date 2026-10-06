@@ -109,7 +109,26 @@ export type RealtimeEvent =
   | { type: 'club_removed'; clubId: string; name: string; reason: 'kicked' | 'disbanded' }
   | { type: 'club_invite'; clubId: string; name: string; tag: string; from: SocialRef }
   /** To officers: someone asked to join. */
-  | { type: 'club_request'; clubId: string; from: SocialRef };
+  | { type: 'club_request'; clubId: string; from: SocialRef }
+  /**
+   * A gift changed: `received` reaches the recipient, every later status
+   * (`opened`, `declined`, `cancelled`, `returned`, `reversed`) both sides.
+   * Clients reload `GET /gifts` for the details.
+   */
+  | {
+      type: 'gift';
+      giftId: string;
+      status: 'received' | 'opened' | 'declined' | 'cancelled' | 'returned' | 'reversed';
+      /** Whose point of view this event is for. */
+      role: 'sender' | 'recipient';
+      /** The other party, when they still exist. */
+      other: SocialRef | null;
+      /** Item or bundle name. */
+      title: string;
+      autoAccepted?: boolean;
+    }
+  /** Wished-for items are in the day's store (at most once per UTC day). */
+  | { type: 'wishlist_in_store'; day: string; items: { itemId: string; title: string }[] };
 
 /** Channel name for a user's personal event stream. */
 export const userChannel = (userId: string): string => `user:${userId}`;

@@ -2,7 +2,7 @@
  * Party leader tools: kicking members and handing leadership over, with the
  * realtime events every member relies on to update their party slots.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { userChannel, type RealtimeEvent } from '../src/realtime/notifier.ts';
 import { createTestApi, type TestApi, type TestUser } from './helpers.ts';
 
@@ -52,8 +52,10 @@ describe('party leader tools', () => {
 
     const res = await api.req('POST', '/party/kick', { token: leader.accessToken, body: { userId: ann.id } });
     expect(res.statusCode).toBe(200);
-    expect(annEvents.some((e) => e.type === 'party_kicked')).toBe(true);
-    expect(lastParty(bobEvents)!.members.map((m) => m.userId)).toEqual([leader.id, bob.id]);
+    await vi.waitFor(() => expect(annEvents.some((e) => e.type === 'party_kicked')).toBe(true));
+    await vi.waitFor(() =>
+      expect(lastParty(bobEvents)?.members.map((m) => m.userId)).toEqual([leader.id, bob.id]),
+    );
     expect((await api.req('GET', '/party', { token: ann.accessToken })).json().party).toBeNull();
     const rejoin = await api.req('POST', '/party/join', { token: ann.accessToken, body: { code } });
     expect(rejoin.json().error).toBe('kicked');
@@ -86,8 +88,8 @@ describe('party leader tools', () => {
     });
     expect(res.json().party.leaderId).toBe(ann.id);
     expect(res.json().party.members.find((m: { userId: string }) => m.userId === ann.id).ready).toBe(true);
-    expect(lastParty(leaderEvents)!.leaderId).toBe(ann.id);
-    expect(lastParty(bobEvents)!.leaderId).toBe(ann.id);
+    await vi.waitFor(() => expect(lastParty(leaderEvents)?.leaderId).toBe(ann.id));
+    await vi.waitFor(() => expect(lastParty(bobEvents)?.leaderId).toBe(ann.id));
 
     // The old leader is now a regular member.
     const oldKick = await api.req('POST', '/party/kick', {

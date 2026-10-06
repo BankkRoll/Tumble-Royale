@@ -5,7 +5,7 @@
  */
 import { encodeLobbyFrame, type LobbyGameWire } from '@tumble/shared';
 import { and, eq } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { adminAuditLog, events } from '../src/db/schema.ts';
 import { recordServerError } from '../src/liveops/routes.ts';
 import { sendGlobalChat } from '../src/social/globalChat.ts';
@@ -418,7 +418,12 @@ describe('kill switches', () => {
     expect(await relay.handle(lead.id, encodeLobbyFrame(pose, 1, null, { game }), 300)).toBe('relayed');
     await flag('party.lobbyGames', true);
     await relay.handle(lead.id, encodeLobbyFrame(pose, 2, null, { game }), 300);
-    const frames = seen.filter((e) => e.type === 'party_lobby');
+    // Redis delivers to subscribers after PUBLISH has already returned.
+    const frames = await vi.waitFor(() => {
+      const got = seen.filter((e) => e.type === 'party_lobby');
+      expect(got).toHaveLength(2);
+      return got;
+    });
     expect(frames[0]!.game).toBeUndefined();
     expect(frames[0]).toMatchObject({ x: 1 });
     expect(frames[1]!.game).toBeDefined();

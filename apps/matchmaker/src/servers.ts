@@ -110,3 +110,33 @@ export function pickServer(
   }
   return null;
 }
+
+/** Live game-server capacity of one region. */
+export interface RegionCapacity {
+  region: string;
+  /** Live servers. */
+  servers: number;
+  /** Seats across them. */
+  capacity: number;
+  /** Seats in use (humans and bots). */
+  load: number;
+}
+
+/**
+ * Sums live servers per region, regions sorted by id. Counts only, never a
+ * server's id or address: this feeds the public status page.
+ *
+ * @param servers - Live servers (already filtered by heartbeat age).
+ * @returns One entry per region with at least one server.
+ */
+export function capacityByRegion(servers: readonly GameServer[]): RegionCapacity[] {
+  const by = new Map<string, RegionCapacity>();
+  for (const s of servers) {
+    const r = by.get(s.region) ?? { region: s.region, servers: 0, capacity: 0, load: 0 };
+    r.servers += 1;
+    r.capacity += s.capacity;
+    r.load += Math.min(s.load, s.capacity);
+    by.set(s.region, r);
+  }
+  return [...by.values()].sort((a, b) => a.region.localeCompare(b.region));
+}

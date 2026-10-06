@@ -139,7 +139,7 @@ export function playerActions(
   id: string,
   send: (method: 'POST', path: string, body: unknown) => Promise<unknown>,
   reload: () => void,
-): Record<'warn' | 'mute' | 'suspend' | 'resetName', ActionRequest> {
+): Record<'warn' | 'mute' | 'voiceMute' | 'suspend' | 'resetName', ActionRequest> {
   const after = async (p: Promise<unknown>) => {
     await p;
     reload();
@@ -168,6 +168,23 @@ export function playerActions(
           }),
         ),
       done: 'Player muted',
+    },
+    voiceMute: {
+      title: `Mute ${name}'s voice`,
+      body: 'Ends their voice chat at once, on every server, and drops them from every voice room. Text chat is not affected.',
+      confirmLabel: 'Mute voice',
+      danger: true,
+      durations: MUTE_DURATIONS,
+      run: (reason, hours) =>
+        after(
+          send('POST', '/internal/bans', {
+            userId: id,
+            scope: 'voice',
+            reason,
+            durationHours: hours ?? undefined,
+          }),
+        ),
+      done: 'Voice muted',
     },
     suspend: {
       title: `Suspend ${name}`,
@@ -233,6 +250,13 @@ function PlayerPage(props: { id: string }) {
                     onClick={() => confirm(actions.mute)}
                   >
                     Mute…
+                  </button>
+                  <button
+                    type="button"
+                    className="adm-btn adm-btn--danger"
+                    onClick={() => confirm(actions.voiceMute)}
+                  >
+                    Mute voice…
                   </button>
                   <button
                     type="button"

@@ -18,15 +18,20 @@ export const CHAT_EVIDENCE_TTL_MS = 60 * 60_000;
 
 /** One stored line. */
 export interface EvidenceLine {
-  channel: 'global' | 'whisper' | 'club';
-  /** As relayed (slurs already masked by the chat filter). */
+  /** `voice` lines are room/time metadata from `voice/service.ts`, never audio. */
+  channel: 'global' | 'whisper' | 'club' | 'voice';
+  /** As relayed (slurs already masked by the chat filter), or a voice summary. */
   text: string;
-  /** Epoch ms. */
+  /** Epoch ms (for voice: when the two were last in the room together). */
   at: number;
   /** Whisper recipient. */
   to?: string;
   /** Club of a club chat line. */
   club?: string;
+  /** Voice room id. */
+  room?: string;
+  /** Voice: epoch ms when the two first shared the room. */
+  from?: number;
 }
 
 const key = (userId: string) => `chat-evidence:${userId}`;

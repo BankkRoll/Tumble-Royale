@@ -67,6 +67,12 @@ What a player can do today:
   roles, open, request or invite-only joining, a club chat, club tags beside
   names, "Party up" with online members, weekly club goals that pay everyone
   who played, discovery and moderation from the admin console
+- **Voice chat (opt-in):** off by default; party voice and, in team rounds,
+  squads of up to 8 teammates over a WebRTC mesh (Opus only) with the API
+  deciding every room; push-to-talk (rebindable) or open mic, per-player
+  volume and mute, speaking marks, "relay only" to hide your IP, Streamer
+  Mode options, voice mutes and voice reports (nothing is recorded). Needs a
+  TURN relay: the Compose stack ships coturn behind a `voice` profile
 - **Progression:** accounts (guest, Discord, Google, email link), seasons,
   a 100-tier pass, daily/weekly/seasonal/milestone challenges, 45
   achievements (some hidden), a collection log, a daily login streak,
@@ -165,7 +171,7 @@ The "Required in production" group of each `.env.example` lists what to set.
 
 The client is a single-page app. Party invites (`/join/<code>`), OAuth and
 email sign-in returns (`/auth/*`) and Stripe returns (`/store`) must serve
-`index.html`, and `/admin` serves `admin.html`. The build includes `_redirects` (Netlify, Cloudflare Pages)
+`index.html`, `/admin` serves `admin.html` and `/status` serves `status.html`. The build includes `_redirects` (Netlify, Cloudflare Pages)
 from `apps/client/public/`, and `apps/client/vercel.json` does the same on
 Vercel; other hosts need equivalent rewrites.
 
@@ -194,6 +200,9 @@ pnpm admin errors top                                   # most frequent client e
   `clubs.enabled`, `shows.mapVoting`) default to on. With `clubs.enabled`
   off every club route answers `503 feature_disabled`, club chat stops and
   shows stop counting toward club goals; clubs and their members are kept.
+  `voice.enabled` is the exception: it defaults to off because voice needs a
+  TURN relay (`VOICE_ICE_SERVERS`, `VOICE_TURN_SECRET`; docs/SELF_HOSTING.md,
+  "Voice chat"), and the client hides voice until both are in place.
   The client fetches them at boot and on reconnect and caches them for
   offline boots; the matchmaker and game servers read them from the API
   over the internal HMAC channel, cached 30 s.
@@ -207,6 +216,11 @@ pnpm admin errors top                                   # most frequent client e
   with no identity beyond the account id; players can turn them off in
   Settings → Gameplay, and they start off under Do Not Track or Global
   Privacy Control. Client and server crashes go to the same table.
+- **Status page** at `/status`: live component states from real probes
+  (database, KV, matchmaker, game servers per region, store and chat
+  switches), maintenance, incidents with updates, 90 days of uptime, and
+  Atom and JSON incident feeds. Admins publish incidents from the console or
+  `pnpm admin status incident open|update|resolve|list`.
 
 The full reference is the Live ops section of
 [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md#6-live-ops).

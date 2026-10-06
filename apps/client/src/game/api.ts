@@ -10,7 +10,7 @@
  * - typed endpoint helpers mirroring `apps/api/README.md`.
  */
 import type { PlayerRewardMsg } from '@tumble/netcode';
-import type { ClubEmblemMotif, ClubJoinMode, ClubRole } from '@tumble/shared';
+import type { ClubEmblemMotif, ClubJoinMode, ClubRole, VoiceConfigResponse } from '@tumble/shared';
 import type { WalletLedger } from './online/checkout.ts';
 import type {
   ApiGiftInbox,
@@ -448,7 +448,8 @@ export type ApiRecentPlayer = ApiFriendCard & { relation?: ApiRelation; presence
 export type ApiSearchResult = ApiFriendCard & { relation: ApiRelation };
 
 /** Report reasons accepted by `POST /report`. */
-export type ApiReportReason = 'cheating' | 'harassment' | 'offensive_name' | 'griefing' | 'spam' | 'other';
+export type ApiReportReason =
+  'cheating' | 'harassment' | 'offensive_name' | 'griefing' | 'spam' | 'voice' | 'other';
 
 /** A party (API view). */
 export interface ApiParty {
@@ -1036,6 +1037,8 @@ export class ApiClient {
     this.request('POST', '/party/playlist', { playlistId });
   inviteToParty = (userId: string): Promise<{ party: ApiParty }> =>
     this.request('POST', '/party/invite', { userId });
+  /** Whether voice chat can be switched on for this account (`GET /voice/config`). */
+  voiceConfig = (): Promise<VoiceConfigResponse> => this.request('GET', '/voice/config');
 
   // ---------------------------------------------------------------------------
   // Clubs

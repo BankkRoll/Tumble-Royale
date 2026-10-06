@@ -32,6 +32,7 @@ export const PAD_GLYPHS: Record<BindAction, string> = {
   spectatePrev: 'LB',
   spectateNext: 'RB',
   pause: 'Start',
+  pushToTalk: 'Back',
 };
 
 /** Left stick glyph: movement is never remapped. */

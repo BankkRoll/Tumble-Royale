@@ -591,6 +591,20 @@ Full-height sheet with text-only tabs:
   (off also hides quick pings), **Chat filter** (masks swearing; slurs are
   always hidden), **Region** (Auto or a fixed region, each with its measured
   ping; `probeRegions` when shown).
+- **Voice** (only when the server offers voice, or to a voice-muted player so
+  they see why): the **Voice chat** toggle, off by default; the first time it
+  opens a dialog (what voice does, that peers can see your IP unless Relay
+  only is on, nothing is recorded) and only on "Turn on voice" does the
+  browser ask for the microphone. Talk mode **Push to talk** (default, key V /
+  controller Back, rebindable in Controls) or **Open mic** with a sensitivity
+  slider and live level meter; microphone picker; voice volume; noise
+  suppression; echo cancellation; **Relay only (hide my IP)** (disabled without
+  a relay); **Team voice** (team rounds; needs a linked account 3+ days old);
+  Streamer Mode "hide voice names" and "don't play voice"; while on, the room's
+  players with volume, Mute and Report (reason "Voice chat", with a note that
+  nothing is recorded). Speaking marks (🔊 with "Speaking" for screen readers)
+  sit on party slots and the friends sheet's party list; in shows a small
+  voice roster sits under the team scores.
 - **Account**: display name with Rename (monthly cooldown online), linked
   logins (Link / Unlink per provider), Sign in to an existing Tumbler, Sign
   out, Delete Tumbler (confirm).

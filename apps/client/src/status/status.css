@@ -1,0 +1,257 @@
+/* Public status page. Plain CSS: this page loads no framework. */
+:root {
+  --st-bg: #f6f7fb;
+  --st-card: #ffffff;
+  --st-text: #1d2233;
+  --st-muted: #5d6478;
+  --st-line: #e3e6ef;
+  --st-ok: #1f9d55;
+  --st-degraded: #c98a00;
+  --st-partial: #e0661b;
+  --st-major: #d0342c;
+  --st-maint: #3b6fd8;
+  --st-none: #c9cdd8;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --st-bg: #11131b;
+    --st-card: #1a1d28;
+    --st-text: #e8eaf2;
+    --st-muted: #a2a8bb;
+    --st-line: #2c3040;
+    --st-ok: #37c07a;
+    --st-degraded: #e5b13a;
+    --st-partial: #f08a46;
+    --st-major: #f0605a;
+    --st-maint: #6b96f0;
+    --st-none: #3a3f52;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--st-bg);
+  color: var(--st-text);
+  font:
+    16px/1.5 system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+}
+
+a {
+  color: var(--st-maint);
+}
+
+.st-page {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+.st-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.st-head h1 {
+  font-size: 1.5rem;
+  margin: 0 0 16px;
+}
+
+.st-play {
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.st-banner {
+  --st-tone: var(--st-none);
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  background: color-mix(in srgb, var(--st-tone) 16%, var(--st-card));
+  border-left: 6px solid var(--st-tone);
+}
+
+.st-banner h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.st-banner p {
+  margin: 4px 0 0;
+}
+
+.st-card {
+  background: var(--st-card);
+  border: 1px solid var(--st-line);
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+.st-card > h2 {
+  font-size: 1.1rem;
+  margin: 0 0 12px;
+}
+
+.st-notice {
+  border-left: 6px solid var(--st-maint);
+}
+
+.st-notice p {
+  margin: 4px 0;
+  white-space: pre-line;
+}
+
+.st-muted,
+.st-sub {
+  color: var(--st-muted);
+  font-size: 0.9rem;
+}
+
+.st-components {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.st-component {
+  padding: 10px 0;
+  border-top: 1px solid var(--st-line);
+}
+
+.st-component:first-child {
+  border-top: 0;
+}
+
+.st-region .st-name {
+  padding-left: 16px;
+  color: var(--st-muted);
+}
+
+.st-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.st-name {
+  font-weight: 600;
+}
+
+.st-state {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--st-tone);
+}
+
+.st-bars {
+  display: grid;
+  grid-template-columns: repeat(90, 1fr);
+  gap: 1px;
+  height: 28px;
+  margin-top: 6px;
+}
+
+.st-bar {
+  border-radius: 2px;
+  background: var(--st-tone);
+  min-width: 0;
+}
+
+.st-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+  font-size: 0.75rem;
+}
+
+.st-incident {
+  border-left: 4px solid var(--st-degraded);
+  padding: 4px 0 4px 12px;
+  margin: 12px 0;
+}
+
+.st-incident.st-impact-major {
+  border-color: var(--st-partial);
+}
+
+.st-incident.st-impact-critical {
+  border-color: var(--st-major);
+}
+
+.st-incident h3 {
+  margin: 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.st-incident header p {
+  margin: 2px 0 0;
+}
+
+.st-timeline {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.st-timeline li {
+  margin-bottom: 8px;
+}
+
+.st-timeline time {
+  color: var(--st-muted);
+  font-size: 0.85rem;
+}
+
+.st-update {
+  margin: 2px 0 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.st-foot {
+  margin-top: 24px;
+  text-align: center;
+}
+
+.st-operational {
+  --st-tone: var(--st-ok);
+}
+.st-degraded {
+  --st-tone: var(--st-degraded);
+}
+.st-partial_outage {
+  --st-tone: var(--st-partial);
+}
+.st-major_outage {
+  --st-tone: var(--st-major);
+}
+.st-maintenance {
+  --st-tone: var(--st-maint);
+}
+.st-unknown,
+.st-none {
+  --st-tone: var(--st-none);
+}
+.st-unknown.st-state {
+  color: var(--st-muted);
+}
+
+@media (max-width: 520px) {
+  .st-bars {
+    height: 22px;
+    gap: 0;
+  }
+}

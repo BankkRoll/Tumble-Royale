@@ -67,6 +67,16 @@ export {
   type ClubContributionView,
 } from './clubs.ts';
 export {
+  voice,
+  useVoice,
+  VOICE_UNAVAILABLE_TEXT,
+  type VoiceState,
+  type VoiceStatus,
+  type VoiceUnavailableReason,
+  type VoicePeerView,
+  type VoiceDeviceView,
+} from './voice.ts';
+export {
   shareUI,
   useShare,
   CLOSED_SHARE_SHEET,

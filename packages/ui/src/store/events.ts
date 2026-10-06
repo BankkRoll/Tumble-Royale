@@ -240,6 +240,13 @@ export interface UIIntents {
   clubChat: { text: string };
   /** Report a club. */
   clubReport: { clubId: string; reason: ClubReportReason; details?: string };
+  /**
+   * Switch voice chat on (after the first-use explanation; the game then asks
+   * for the microphone) or off.
+   */
+  voiceToggle: { on: boolean };
+  /** Settings → Voice opened: re-check availability and list microphones. */
+  voiceRefresh: undefined;
   /** In-show text chat (online shows only). */
   sendChat: { text: string };
   /** The in-show chat input opened or closed (the game frees the mouse and held keys). */

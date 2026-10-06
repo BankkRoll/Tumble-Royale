@@ -197,13 +197,6 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
     if (await storePresence(userId)) await broadcastPresence(ctx, userId);
     send(ws, { type: 'hello', userId, presenceTtlMs: PRESENCE_TTL_MS });
     send(ws, { type: 'global_chat_history', lines: globalChat.history() });
-    const ids = await friendIds(ctx.db, userId);
-    const views = await presenceViews(ctx.kv, ids);
-    send(ws, {
-      type: 'presence_snapshot',
-      friends: ids.map((id) => ({ userId: id, ...(views.get(id) ?? { status: 'offline' }) })),
-    });
-
     ws.on('pong', () => alive.set(ws, true));
     // NOTE: an over-size frame or protocol violation surfaces here; `ws` closes
     // the socket itself, but an unhandled 'error' would crash the process.
@@ -270,6 +263,15 @@ export function attachGateway(app: FastifyInstance, ctx: AppContext): Gateway {
         t.unref();
         offlineTimers.set(userId, t);
       })().catch(() => undefined);
+    });
+
+    // NOTE: only once the handlers are attached: a client may answer `hello` at
+    // once (voice rejoin, presence), and `ws` drops frames nobody listens to.
+    const ids = await friendIds(ctx.db, userId);
+    const views = await presenceViews(ctx.kv, ids);
+    send(ws, {
+      type: 'presence_snapshot',
+      friends: ids.map((id) => ({ userId: id, ...(views.get(id) ?? { status: 'offline' }) })),
     });
   };
 

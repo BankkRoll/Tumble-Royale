@@ -5,6 +5,7 @@
  * the hard cap (which eliminates whoever has not loaded).
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import WebSocket from 'ws';
 import { SwarmClient } from '../../../tools/bot-swarm/src/client.ts';
 import { DEV_HTTP_POLICY, startGameServer, type GameServer } from '../src/server.ts';
 import { SimpleShowController } from '../src/show/SimpleShowController.ts';
@@ -12,8 +13,10 @@ import { testDeps, type FakeMatchSim } from './helpers.ts';
 
 let server: GameServer | null = null;
 const clients: SwarmClient[] = [];
+const sockets: WebSocket[] = [];
 afterEach(async () => {
   for (const c of clients.splice(0)) c.close();
+  for (const ws of sockets.splice(0)) ws.terminate();
   await server?.close();
   server = null;
 });
@@ -44,7 +47,14 @@ describe('bot swarm', () => {
       http: { ...DEV_HTTP_POLICY, maxPendingPerIp: 2 },
       config: { capacity: count, startAtHumans: count, fillWaitMs: 60_000 },
     });
-    // Opened in one burst, as `--ramp 0` would: most exceed the two pending sockets allowed.
+    // Whether a burst overlaps enough handshakes to reach the cap depends on how
+    // the host schedules loopback I/O, so two silent sockets hold both pending
+    // slots and the swarm is refused until they leave, on any host.
+    const url = `ws://127.0.0.1:${server.port}/ws`;
+    const holders = [new WebSocket(url), new WebSocket(url)];
+    sockets.push(...holders);
+    await Promise.all(holders.map((ws) => new Promise((resolve) => ws.once('open', resolve))));
+    // Opened in one burst, as `--ramp 0` would.
     for (let i = 0; i < count; i++) {
       const c = new SwarmClient(`ws://127.0.0.1:${server.port}/ws`, i);
       c.connect();
@@ -54,12 +64,15 @@ describe('bot swarm', () => {
       for (const c of clients) c.step();
     }, 16);
     try {
+      await until(() => clients.every((c) => c.stats.refused > 0), 5_000);
+      expect(clients.filter((c) => c.stats.welcomed)).toHaveLength(0);
+      for (const ws of holders) ws.close();
       await until(() => clients.every((c) => c.stats.welcomed) && loaded.size === count, 20_000);
     } finally {
       clearInterval(timer);
     }
     expect(clients.filter((c) => c.stats.welcomed)).toHaveLength(count);
-    expect(clients.reduce((s, c) => s + c.stats.refused, 0)).toBeGreaterThan(0);
+    expect(clients.every((c) => c.stats.refused > 0)).toBe(true);
     expect(loaded.size).toBe(count);
   });
 });

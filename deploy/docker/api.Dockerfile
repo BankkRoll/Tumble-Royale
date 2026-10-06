@@ -22,20 +22,29 @@ COPY . .
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile --offline --filter "@tumble/api..." --filter tumble-royale
 RUN pnpm --filter @tumble/api build
-# Production dependencies only, as real files rather than links into the workspace.
+# Production dependencies only, pinned by the lockfile, in a tree that holds
+# nothing but the workspace manifests. Workspace packages are bundled into dist/.
+# NOTE: not `pnpm deploy`: without inject-workspace-packages it falls back to the
+# legacy mode, which re-resolves every version from the registry.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm --filter @tumble/api deploy --prod --legacy --offline /out \
-    && rm -rf /out/src /out/test /out/dist \
-    && cp -r apps/api/dist /out/dist \
-    && mkdir -p /out/scripts && cp scripts/admin.mjs /out/scripts/admin.mjs
+    mkdir /out \
+    && cp package.json pnpm-lock.yaml pnpm-workspace.yaml /out/ \
+    && find apps packages tools -mindepth 2 -maxdepth 2 -name package.json -exec cp --parents {} /out \; \
+    && cd /out \
+    && pnpm install --prod --frozen-lockfile --offline --filter @tumble/api \
+    && rm -rf apps/api/node_modules/@tumble \
+    && cp -r /repo/apps/api/dist /repo/apps/api/drizzle apps/api/ \
+    && mkdir apps/api/scripts && cp /repo/scripts/admin.mjs apps/api/scripts/admin.mjs
 
 FROM ${NODE_IMAGE} AS runtime
 # ADMIN_API_URL: `docker compose exec api node scripts/admin.mjs …` talks to this instance.
 ENV NODE_ENV=production \
     PORT=7360 \
     ADMIN_API_URL=http://127.0.0.1:7360
-WORKDIR /app
-COPY --from=build /out ./
+# The app's node_modules links into the virtual store two levels up.
+WORKDIR /app/apps/api
+COPY --from=build /out/node_modules /app/node_modules
+COPY --from=build /out/apps/api ./
 USER node
 EXPOSE 7360
 STOPSIGNAL SIGTERM

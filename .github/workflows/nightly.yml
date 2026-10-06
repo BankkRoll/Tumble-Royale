@@ -19,6 +19,9 @@ jobs:
       GAME_URL: http://localhost:4173
       # No WebGPU on the runner; force the WebGL2 path SwiftShader provides.
       BACKEND: webgl
+      # SwiftShader spends ~40 s compiling a round's shaders at medium and draws
+      # 100 Tumblers at a few fps; the low tier keeps the shows inside their timeouts.
+      TIER: low
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

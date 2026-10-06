@@ -21,17 +21,26 @@ COPY . .
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile --offline --filter "@tumble/matchmaker..." --filter tumble-royale
 RUN pnpm --filter @tumble/matchmaker build
-# Production dependencies only, as real files rather than links into the workspace.
+# Production dependencies only, pinned by the lockfile, in a tree that holds
+# nothing but the workspace manifests. Workspace packages are bundled into dist/.
+# NOTE: not `pnpm deploy`: without inject-workspace-packages it falls back to the
+# legacy mode, which re-resolves every version from the registry.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm --filter @tumble/matchmaker deploy --prod --legacy --offline /out \
-    && rm -rf /out/src /out/test /out/dist \
-    && cp -r apps/matchmaker/dist /out/dist
+    mkdir /out \
+    && cp package.json pnpm-lock.yaml pnpm-workspace.yaml /out/ \
+    && find apps packages tools -mindepth 2 -maxdepth 2 -name package.json -exec cp --parents {} /out \; \
+    && cd /out \
+    && pnpm install --prod --frozen-lockfile --offline --filter @tumble/matchmaker \
+    && rm -rf apps/matchmaker/node_modules/@tumble \
+    && cp -r /repo/apps/matchmaker/dist apps/matchmaker/dist
 
 FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production \
     PORT=7370
-WORKDIR /app
-COPY --from=build /out ./
+# The app's node_modules links into the virtual store two levels up.
+WORKDIR /app/apps/matchmaker
+COPY --from=build /out/node_modules /app/node_modules
+COPY --from=build /out/apps/matchmaker ./
 USER node
 EXPOSE 7370
 STOPSIGNAL SIGTERM

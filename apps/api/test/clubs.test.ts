@@ -6,6 +6,7 @@
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CLUB_MAX_MEMBERS } from '@tumble/shared';
+import { removeMember } from '../src/clubs/service.ts';
 import { clubKicks, clubs, clubMembers, featureFlags } from '../src/db/schema.ts';
 import { invalidateLiveOps } from '../src/liveops/state.ts';
 import { userChannel, type RealtimeEvent } from '../src/realtime/notifier.ts';
@@ -309,6 +310,50 @@ describe('caps and concurrency', () => {
     expect(results.map((r) => r.statusCode).sort()).toEqual([200, 409]);
     const rows = await api.ctx.db.select().from(clubMembers).where(eq(clubMembers.userId, joiner.id));
     expect(rows).toHaveLength(1);
+  });
+
+  /** Owners on the roster, and the stored count against the real rows. */
+  async function integrity(clubId: string) {
+    const rows = await api.ctx.db.select().from(clubMembers).where(eq(clubMembers.clubId, clubId));
+    const [row] = await api.ctx.db.select().from(clubs).where(eq(clubs.id, clubId));
+    return {
+      owners: rows.filter((r) => r.role === 'owner').length,
+      rows: rows.length,
+      memberCount: row!.memberCount,
+    };
+  }
+
+  it('keeps exactly one owner when the owner transfers and leaves at once', async () => {
+    for (let round = 0; round < 3; round++) {
+      const { club, owner, member } = await trio();
+      await Promise.all([
+        call(owner, 'POST', '/clubs/me/transfer', { userId: member.id }),
+        call(owner, 'POST', '/clubs/me/leave'),
+      ]);
+      const after = await integrity(club.id);
+      expect(after.owners).toBe(1);
+      expect(after.memberCount).toBe(after.rows);
+    }
+  });
+
+  it('counts a member out once when a kick and a leave race', async () => {
+    const { club, owner, member } = await trio();
+    await Promise.all([
+      call(owner, 'POST', `/clubs/me/members/${member.id}/kick`),
+      call(member, 'POST', '/clubs/me/leave'),
+    ]);
+    expect(await integrity(club.id)).toEqual({ owners: 1, rows: 2, memberCount: 2 });
+  });
+
+  it('removes a member once when two removals run concurrently', async () => {
+    const { club, member } = await trio();
+    const now = api.clock.now();
+    const results = await Promise.all([
+      api.ctx.db.transaction((tx) => removeMember(tx, member.id, now)),
+      api.ctx.db.transaction((tx) => removeMember(tx, member.id, now)),
+    ]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(await integrity(club.id)).toEqual({ owners: 1, rows: 2, memberCount: 2 });
   });
 
   it('keeps a kicked player out until the cooldown ends', async () => {

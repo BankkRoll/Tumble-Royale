@@ -633,6 +633,9 @@ describe('player', () => {
     ui.getState().setScreen('roundResults', { transition: 'wipe' });
     expect(ui.getState().wipe.phase).toBe('covering');
     await start();
+    // Frames keep coming while the bands are still rising.
+    tick(0.1);
+    expect(ui.getState().elimReplay).toMatchObject({ mode: 'playing' });
     ui.getState()._wipeCovered();
     expect(ui.getState().screen).toBe('roundResults');
     ui.getState()._wipeDone();

@@ -81,6 +81,8 @@ interface Running {
   req: EliminationReplayRequest;
   view: ReplayView | null;
   screenSeq: number;
+  /** The screen the covering wipe is bringing in, which the replay plays over (not an interruption). */
+  arrivingSeq: number | null;
   /** Seconds since the request (loading) or since it appeared. */
   age: number;
   shown: boolean;
@@ -184,9 +186,9 @@ export class EliminationPlayer implements EliminationReplays {
     const run: Running = {
       req,
       view: null,
-      // A knock-out at the round's end starts while the wipe to the results wall is still
-      // covering: that screen change is the one this replay plays over, not an interruption.
-      screenSeq: s.wipe.phase === 'covering' && s.wipe.target ? s.screenSeq + 1 : s.screenSeq,
+      screenSeq: s.screenSeq,
+      // A knock-out at the round's end starts while the wipe to the results wall is still covering.
+      arrivingSeq: s.wipe.phase === 'covering' && s.wipe.target ? s.screenSeq + 1 : null,
       age: 0,
       shown: false,
       progress: 0,
@@ -249,8 +251,12 @@ export class EliminationPlayer implements EliminationReplays {
     run.age += realDt;
     const s = ui.getState();
     if (s.screenSeq !== run.screenSeq) {
-      this.finish('interrupted');
-      return;
+      if (s.screenSeq !== run.arrivingSeq) {
+        this.finish('interrupted');
+        return;
+      }
+      run.screenSeq = s.screenSeq;
+      run.arrivingSeq = null;
     }
     if (!run.view) {
       if (run.age > ELIM_LOAD_TIMEOUT_S) this.finish('interrupted');

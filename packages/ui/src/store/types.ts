@@ -80,7 +80,14 @@ export const MENU_TABS: readonly MenuTab[] = [
 
 /** Side sheets / drop-downs layered over any screen. */
 export type OverlayId =
-  'none' | 'settings' | 'friends' | 'notifications' | 'privateShow' | 'joinCode' | 'inGameMenu';
+  | 'none'
+  | 'settings'
+  | 'friends'
+  | 'notifications'
+  | 'privateShow'
+  | 'joinCode'
+  | 'inGameMenu'
+  | 'spectatorRoster';
 
 /** How a screen change is presented. */
 export type TransitionKind = 'none' | 'fade' | 'wipe';
@@ -1178,6 +1185,8 @@ export interface CustomLobbyOptions {
   minPlayers?: number;
   /** Players vote on each next round, between the picked rounds (absent: on). */
   roundVoting?: boolean;
+  /** Spectator seats may chat into the show (absent: off, they watch quietly). */
+  spectatorChat?: boolean;
 }
 
 /** A member of a custom lobby as the lobby view shows them. */
@@ -1417,6 +1426,53 @@ export interface SpectateInfo {
   remaining?: number;
 }
 
+/** How the spectator camera picks what to show. */
+export type SpectatorCamMode = 'follow' | 'free' | 'overview' | 'director';
+
+/** One row of the spectator roster (names already masked for Streamer Mode). */
+export interface SpectatorRosterEntry {
+  id: number;
+  name: string;
+  /** Body colour, for the row's swatch. */
+  color: string;
+  isBot: boolean;
+  /** In the local player's party. */
+  isParty: boolean;
+  /** In the local player's club. */
+  isClub: boolean;
+  /** Team index, −1 outside team rounds. */
+  team: number;
+  status: 'playing' | 'qualified' | 'eliminated';
+  /** 1 = first; 0 when unknown. */
+  place: number;
+  /** The viewer pinned this player (the camera stays on them). */
+  pinned: boolean;
+  /** The camera follows this player now. */
+  following: boolean;
+}
+
+/**
+ * Spectator and broadcast tools for the running show. Present for the whole
+ * show so the viewer's choices (camera mode, broadcast overlay, pin) carry
+ * over between rounds; `live` says whether they apply right now.
+ */
+export interface SpectatorState {
+  /** The local player is watching a round (eliminated, qualified and waiting, or a spectator seat). */
+  live: boolean;
+  mode: SpectatorCamMode;
+  /** Pinned player: the camera, the director included, stays on them while they play. */
+  pinnedId: number | null;
+  roster: SpectatorRosterEntry[];
+  /** Clean broadcast overlay instead of the personal HUD, chat and toasts. */
+  broadcast: boolean;
+  /** Hotkey help card open. */
+  help: boolean;
+  /** Solid chroma-key backdrop instead of the 3D world, for capture software (broadcast only). */
+  chroma: boolean;
+  /** Why the auto camera picked its current shot, e.g. "Close race" (director mode only). */
+  note: string | null;
+}
+
 /** The local player's seat in the running show. */
 export interface ShowSeat {
   /** The show runs on a game server (rewards are granted by the account API). */
@@ -1425,6 +1481,8 @@ export interface ShowSeat {
   outOfShow: boolean;
   /** Joined as a spectator (a private show's spectator seat): watching, never knocked out. */
   spectator?: boolean;
+  /** False when this seat may not chat into the show (a spectator seat without the host's permission). */
+  canChat?: boolean;
 }
 
 /**
@@ -1638,6 +1696,13 @@ export type BindAction =
   | 'emote4'
   | 'spectatePrev'
   | 'spectateNext'
+  | 'spectateCamera'
+  | 'spectateLeader'
+  | 'spectateRoster'
+  | 'spectatePin'
+  | 'broadcastOverlay'
+  | 'broadcastHelp'
+  | 'broadcastChroma'
   | 'pause'
   | 'pushToTalk';
 
@@ -1657,6 +1722,12 @@ export type PadBindAction =
   | 'pause'
   | 'spectatePrev'
   | 'spectateNext'
+  | 'spectateCamera'
+  | 'spectateLeader'
+  | 'spectateRoster'
+  | 'spectatePin'
+  | 'broadcastOverlay'
+  | 'broadcastHelp'
   | 'pushToTalk';
 
 /**

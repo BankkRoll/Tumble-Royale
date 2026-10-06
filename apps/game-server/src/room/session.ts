@@ -23,6 +23,8 @@ export class ClientSession {
   playerId = -1;
   /** Entity the client spectates (interest management), or -1. */
   spectateTarget = -1;
+  /** Where a free spectator camera looks (interest management when `spectateTarget` is -1), or null. */
+  spectateFocus: { x: number; y: number; z: number } | null = null;
   /** Smoothed RTT estimate from snapshot→ack timing (ms). */
   rttMs = 100;
   private rttSamples = 0;

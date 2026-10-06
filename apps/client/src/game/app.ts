@@ -92,7 +92,7 @@ import { OnlineAccount } from './online/account.ts';
 import { PhotoMode } from './photo/photoMode.ts';
 import { AccountAuth } from './online/auth.ts';
 import { finishCheckoutReturn } from './online/checkout.ts';
-import { joinWithCode, partyOwnerLabel } from './online/joinCode.ts';
+import { joinWithCode, partyOwnerLabel, watchStartedShow } from './online/joinCode.ts';
 import {
   liveStartedLobby,
   lobbyOptions,
@@ -2118,6 +2118,34 @@ export class GameApp {
    * Join with a code: a private show's lobby when one owns the code, else
    * the party behind it (asking before leaving a party with others in it).
    */
+  /**
+   * The code's private show already started: offer a spectator seat and, on
+   * yes, join the running show to watch it.
+   */
+  private async offerWatch(code: string): Promise<void> {
+    const s = ui.getState();
+    const mm = this.mm?.online ? this.mm : null;
+    if (!mm) return;
+    const choice = await this.ask({
+      id: 'watch-started-show',
+      kind: 'confirm',
+      title: 'That show already started',
+      body: 'Watch it from a spectator seat? Spectators never count as players and can follow anyone.',
+      buttons: [
+        { id: 'cancel', label: 'Not now', variant: 'secondary' },
+        { id: 'watch', label: 'Watch', variant: 'go', autofocus: true },
+      ],
+    });
+    if (choice !== 'watch' || this.session) return;
+    const r = await watchStartedShow(code, (c) => mm.watchLobby(c));
+    if (r.kind === 'error') {
+      s.showDialog({ id: 'watch-failed', kind: 'error', title: r.title, body: r.body, code: r.code });
+      return;
+    }
+    if (s.overlay === 'joinCode') s.setOverlay('none');
+    this.startMatchmadeShow(r.match);
+  }
+
   private async joinCode(code: string, leaveParty = false): Promise<void> {
     const s = ui.getState();
     const account = this.account?.active ? this.account : null;
@@ -2145,6 +2173,9 @@ export class GameApp {
     switch (r.kind) {
       case 'lobby':
         this.applyLobby(r.lobby);
+        return;
+      case 'started':
+        await this.offerWatch(r.code);
         return;
       case 'party':
         account.adoptJoinedParty(r.party);

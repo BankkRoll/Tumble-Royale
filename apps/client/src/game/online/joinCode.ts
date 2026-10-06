@@ -2,13 +2,14 @@
  * "Join with a code": one dialog for both kinds of six-character code the
  * game hands out, a private show's lobby code (matchmaker) and a party's
  * invite code (account API). The lobby is tried first; a code no lobby owns
- * is looked up as a party.
+ * is looked up as a party. A private show that already started can still be
+ * watched from a spectator seat ({@link watchStartedShow}).
  *
  * Kept free of the UI and the network so every branch is testable: the
  * caller supplies the calls and renders the outcome.
  */
 import { ApiError, type ApiParty, type ApiPartyPreview } from '../api.ts';
-import type { Lobby } from './matchmaker.ts';
+import type { Lobby, MatchFound } from './matchmaker.ts';
 
 /** The calls a join needs. */
 export interface JoinCodeDeps {
@@ -25,6 +26,8 @@ export interface JoinCodeDeps {
 /** What happened, for the caller to show. */
 export type JoinCodeOutcome =
   | { kind: 'lobby'; lobby: Lobby }
+  /** The show behind the code is already running: offer a spectator seat ({@link watchStartedShow}). */
+  | { kind: 'started'; code: string }
   | { kind: 'party'; party: ApiParty }
   /** The code is the player's own party. */
   | { kind: 'alreadyInParty' }
@@ -130,6 +133,7 @@ export async function joinWithCode(
       return { kind: 'lobby', lobby: (await deps.joinLobby(code)).lobby };
     } catch (err) {
       if (isNetwork(err)) lobbyUnreachable = true;
+      else if (errorCode(err) === 'lobby_started') return { kind: 'started', code };
       else if (!isNotFound(err)) return lobbyRefusal(err);
     }
   }
@@ -154,5 +158,44 @@ export async function joinWithCode(
   } catch (err) {
     if (isNotFound(err)) return NO_CODE_MATCH;
     return partyRefusal(err);
+  }
+}
+
+/** What watching a running private show came to. */
+export type WatchOutcome = { kind: 'match'; match: MatchFound } | Extract<JoinCodeOutcome, { kind: 'error' }>;
+
+/**
+ * Takes a spectator seat in a private show that already started (the code's
+ * lobby refused a join with `lobby_started`).
+ *
+ * @param code - The lobby code.
+ * @param watch - The matchmaker's `POST /lobbies/:code/watch`.
+ * @returns The `match_found` to join, or why there is no seat.
+ * @example
+ * const r = await watchStartedShow('ABC234', (c) => mm.watchLobby(c));
+ * if (r.kind === 'match') startMatchmadeShow(r.match);
+ */
+export async function watchStartedShow(
+  code: string,
+  watch: (code: string) => Promise<MatchFound>,
+): Promise<WatchOutcome> {
+  try {
+    return { kind: 'match', match: await watch(code) };
+  } catch (err) {
+    if (isNetwork(err)) return unreachable('The servers could not be reached. Try again in a moment.');
+    const titles: Record<string, string> = {
+      spectators_full: 'Every spectator seat is taken',
+      no_spectators: 'This show has no spectator seats',
+      match_over: 'That show just ended',
+      lobby_locked: 'The host locked that show',
+      banned: 'You were removed from that show',
+      removed_by_host: 'You were removed from that show',
+    };
+    return {
+      kind: 'error',
+      title: titles[errorCode(err)] ?? "Couldn't watch that show",
+      body: message(err),
+      code: 'E-WATCH',
+    };
   }
 }

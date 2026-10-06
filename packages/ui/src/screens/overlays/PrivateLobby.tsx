@@ -266,6 +266,18 @@ function HostSettings({ lobby }: { lobby: CustomLobbyState }): JSX.Element {
           />
         </div>
       )}
+      {slots > 0 && (
+        <div className="tr-settings-row">
+          <span title="Spectator and broadcast seats never count as players, can join after the start, and stay quiet unless this is on">
+            Spectators can chat
+          </span>
+          <Toggle
+            label="Spectators can chat"
+            checked={o.spectatorChat ?? false}
+            onChange={(spectatorChat) => change({ spectatorChat })}
+          />
+        </div>
+      )}
     </section>
   );
 }

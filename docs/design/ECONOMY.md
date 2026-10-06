@@ -232,3 +232,37 @@ schema; tiers plus challenge XP):
 event, so events add a little to the Gem budget without moving the premium
 pass or a Legendary item noticeably closer. Gumballs stay below a week of
 regular play. Events are optional: none of the §3 season budget counts on them.
+
+## 6. Club goals
+
+- Data: `CLUB_GOALS` in `packages/shared/src/social/clubs.ts`; the API counts
+  them in the match-ingest transaction (`apps/api/src/clubs/goals.ts`).
+- Every club gets three goals per ISO week (Monday 00:00 UTC). A member's
+  granting show adds to their club's goals; custom lobbies never count. The
+  target is fixed the first time the week counts a show, from the member count
+  at that moment, so joins and leaves mid-week never move the finish line.
+
+| Goal    | Counts                | Target per member | Range  | Reward per member      |
+| ------- | --------------------- | ----------------- | ------ | ---------------------- |
+| Shows   | 1 per member show     | 5                 | 10–150 | 2,000 XP, 100 Gumballs |
+| Qualify | rounds qualified from | 8                 | 15–250 | 2,500 XP, 100 Gumballs |
+| Crowns  | Crowns won            | 0.4               | 2–20   | 3,000 XP, 150 Gumballs |
+
+- Who is paid: every member who played at least one show for the club that
+  week and is still in the club when the reward is claimed or settled.
+  Leaving a club forfeits its unclaimed rewards.
+- Claims and settlement: a finished goal can be claimed at once; anything left
+  unclaimed after the week pays out automatically the next time the member
+  opens their club, through the same guard as a claim.
+- Idempotency: the ledger ref is `club:<clubId>:<week>:<goalId>` (reason
+  `club_reward`), and `club_reward_claims` is keyed by **player, week and
+  goal**, not club, so a player who hops clubs mid-week still collects each
+  goal at most once that week.
+
+**Budget.** Club goals pay XP and Gumballs only, never Gems or cosmetics, so
+the §3 Gem budget and the premium pass price are untouched. The most one
+player can earn is 7,500 XP and 350 Gumballs a week (97,500 XP and 4,550
+Gumballs over a 13-week season): about half a week of weekly challenges'
+XP and a few days of regular play's Gumballs. A one-member club can only
+finish a goal at its minimum target, which a solo player reaches no faster
+than the weekly challenges they already have.

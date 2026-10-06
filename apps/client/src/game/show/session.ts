@@ -84,6 +84,7 @@ import {
   cycleSpectateIndex,
   planAfterEliminated,
   spectateCandidates,
+  spectateFollowUp,
   spectateDetail,
   type SpectateStatus,
   type WatchDecision,
@@ -308,6 +309,8 @@ export abstract class ShowSession {
   /** The watch choice holds the (offline) show clock. */
   private choiceHeld = false;
   private spectateRefresh = 0;
+  /** How long the watched player has been out of the running (qualified or knocked out). */
+  private spectateFinishedFor = 0;
   /** Free / overview / director cameras, roster and broadcast tools. */
   private readonly spectator: SpectatorController;
   /** The live round as the spectator controller sees it (rebuilt when the view changes). */
@@ -1846,7 +1849,10 @@ export abstract class ShowSession {
   private spectatePlayer(id: number, index: number, count: number): void {
     const r = this.round;
     if (!r) return;
-    if (r.spectateId !== id) this.spectator.beforeCut();
+    if (r.spectateId !== id) {
+      this.spectator.beforeCut();
+      this.spectateFinishedFor = 0;
+    }
     if (this.serverTarget !== id) {
       this.serverTarget = id;
       this.onSpectateTarget(id);
@@ -1871,10 +1877,21 @@ export abstract class ShowSession {
     if (!r || r.fate !== 'spectating' || r.spectateId < 0 || !this.spectator.followsPlayers) return;
     this.spectateRefresh += realDt;
     if (this.spectateRefresh < SPECTATE_REFRESH_S) return;
+    const elapsed = this.spectateRefresh;
     this.spectateRefresh = 0;
     const list = this.candidates();
-    const i = list.indexOf(r.spectateId);
-    if (i >= 0) this.spectatePlayer(r.spectateId, i, list.length);
+    const step = spectateFollowUp(list, r.spectateId, this.spectateFinishedFor);
+    if (step.kind === 'refresh') {
+      this.spectateFinishedFor = 0;
+      this.spectatePlayer(r.spectateId, step.index, list.length);
+    } else if (step.kind === 'finished') {
+      this.spectateFinishedFor += elapsed;
+      const index = ui.getState().spectate?.index ?? 0;
+      this.spectatePlayer(r.spectateId, index, Math.max(list.length, index + 1));
+    } else {
+      this.spectateFinishedFor = 0;
+      this.spectatePlayer(step.id, step.index, list.length);
+    }
   }
 
   /** True for a member of the local player's club (online accounts only). */

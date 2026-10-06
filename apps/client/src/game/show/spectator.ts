@@ -168,6 +168,33 @@ export function cycleSpectateIndex(list: readonly number[], currentId: number, d
   return (i + dir + list.length) % list.length;
 }
 
+/** How long the banner stays on a watched player who has finished the round before moving on (s). */
+export const SPECTATE_MOVE_ON_S = 2.5;
+
+/** What the spectate banner does on a refresh. */
+export type SpectateFollowUp =
+  /** Still a target: refresh the banner at this place. */
+  | { kind: 'refresh'; index: number }
+  /** Finished the round (qualified or out): show it and stay a moment longer. */
+  | { kind: 'finished' }
+  /** Watched long enough after finishing: move on to the next player still running. */
+  | { kind: 'moveOn'; id: number; index: number };
+
+/**
+ * Decides the spectate banner's next step when it refreshes.
+ *
+ * @param list - Current targets ({@link spectateCandidates}).
+ * @param watchedId - The player being watched.
+ * @param finishedFor - Seconds since the watched player dropped out of the targets.
+ * @returns The step.
+ */
+export function spectateFollowUp(list: readonly number[], watchedId: number, finishedFor: number): SpectateFollowUp {
+  const i = list.indexOf(watchedId);
+  if (i >= 0) return { kind: 'refresh', index: i };
+  if (finishedFor < SPECTATE_MOVE_ON_S || list.length === 0) return { kind: 'finished' };
+  return { kind: 'moveOn', id: list[0] as number, index: 0 };
+}
+
 /**
  * Caption under the spectated name.
  *

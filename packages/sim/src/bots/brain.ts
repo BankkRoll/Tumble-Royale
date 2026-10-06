@@ -79,6 +79,21 @@ const LONG_JUMP = 3.8;
  */
 const LOGIC_SAME_SPOT = 2.6;
 
+/**
+ * Ball rounds: share of a team attacking the ball at once, scaled by how far
+ * up the pitch it is (×0.15 at our goal to ×1.4 at theirs); the rest hold formation.
+ */
+const BALL_CHASE_SHARE = 0.18;
+/** Ball rounds: extra attackers whatever the team size, all of them at the far goal, none at ours. */
+const BALL_CHASE_UPFIELD = 2;
+/** Ball rounds: formation rows span this stretch of the pitch, as fractions from our goal to theirs. */
+const BALL_FORMATION_FROM = 0.3;
+const BALL_FORMATION_TO = 0.85;
+/** Ball rounds: keepers leave the goal mouth to clear a ball this close to it (m). */
+const BALL_KEEPER_RANGE = 12;
+/** Ball rounds: chance per decision of diving into a lined-up ball from close range. */
+const BALL_DIVE_CHANCE = 0.3;
+
 type Strategy = 'course' | 'survive' | 'wander' | 'team' | 'hunt' | 'logic' | 'objective';
 
 /** One scheduled button action. */
@@ -246,6 +261,8 @@ export class DefaultBotBrain implements BotBrainLike {
   private layerAnchorY = Number.NaN;
   private logicKnown = false;
   private readonly logicSpot = vec3(Number.NaN, 0, 0);
+  /** Ball rounds: lowest ball-centre height above our feet seen so far, i.e. the ball's radius. */
+  private ballRadius = Infinity;
   private emoteCooldown = 0;
 
   // Flavour.
@@ -937,17 +954,7 @@ export class DefaultBotBrain implements BotBrainLike {
       }
     } else if (goal) {
       if (this.nearestProp(view, self, prop, null)) {
-        const toGoal = this.s2;
-        this.dirTo(prop, goal.position, toGoal);
-        const bx = prop.x - toGoal.x * 1.4;
-        const bz = prop.z - toGoal.z * 1.4;
-        const behind = (self.pos.x - bx) ** 2 + (self.pos.z - bz) ** 2 < 1.5;
-        if (behind) {
-          this.setTarget(prop.x + toGoal.x, prop.y, prop.z + toGoal.z);
-          if (this.rng.chance(0.08) && this.act === Act.None) this.schedule(view, Act.Dive, 0);
-        } else {
-          this.setTarget(bx, prop.y, bz);
-        }
+        this.decideBall(view, self, prop, goal);
         return;
       }
     } else if (zone) {
@@ -962,6 +969,148 @@ export class DefaultBotBrain implements BotBrainLike {
     // Painting rounds and fallbacks: roam widely so every step covers new ground.
     this.decideWander(view, self, 9);
     this.speed = this.p.speed;
+  }
+
+  /**
+   * Ball play. A whole team rushing the ball only builds a scrum that pins it
+   * in place, so roles are re-dealt every decision:
+   * - keepers (the lowest ids: one from four teammates up, two from twenty)
+   *   hold the goal mouth and clear a ball that comes close;
+   * - the few teammates nearest the ball attack it: get round to the side
+   *   away from the goal they score in, then run (and dive) through it;
+   * - everyone else holds a formation slot that slides with the ball, so the
+   *   pitch stays covered and the nearest of them takes over as it rolls by.
+   */
+  private decideBall(view: BotWorldView, self: BotSelfView, ball: Vec3, goal: TriggerDef): void {
+    let own: TriggerDef | null = null;
+    for (const t of view.round.triggers) {
+      if (t.kind === 'goal' && t.index !== self.team) {
+        own = t;
+        break;
+      }
+    }
+    const feet = self.pos.y - CENTRE_HEIGHT;
+    // A resting ball's centre sits one radius above the turf, so the lowest centre seen is the radius.
+    if (self.grounded && ball.y - feet > 0.6 && ball.y - feet < this.ballRadius)
+      this.ballRadius = ball.y - feet;
+    const r = Number.isFinite(this.ballRadius) ? Math.min(3, this.ballRadius) : 1.6;
+
+    let mates = 0;
+    let idRank = 0;
+    let closer = 0;
+    const mine = sqDistXZ(ball, self.pos);
+    for (const peer of view.peers) {
+      if (peer.id === this.id || peer.team !== self.team || peer.status !== PlayerRoundStatus.Playing)
+        continue;
+      mates++;
+      if (peer.id < this.id) idRank++;
+      if (sqDistXZ(ball, peer.pos) < mine) closer++;
+    }
+    const size = mates + 1;
+    if (!own) {
+      this.attackBall(view, self, ball, r, goal.position);
+      return;
+    }
+    const axis = this.dirTo(own.position, goal.position, this.s3);
+    const length = Math.sqrt(sqDistXZ(own.position, goal.position));
+    const bx = ball.x - own.position.x;
+    const bz = ball.z - own.position.z;
+    const ballAlong = bx * axis.x + bz * axis.z;
+    const ballLat = bx * axis.z - bz * axis.x;
+    const keepers = size >= 4 ? 1 : 0;
+
+    if (idRank < keepers) {
+      if (sqDistXZ(ball, own.position) < BALL_KEEPER_RANGE ** 2) {
+        this.attackBall(view, self, ball, r, goal.position);
+        return;
+      }
+      const mouth = own.size.x / 2 - 1;
+      const side = Math.max(
+        -mouth,
+        Math.min(mouth, ballLat * 0.3 + (keepers > 1 ? (idRank === 0 ? -2 : 2) : 0)),
+      );
+      this.holdSpot(
+        self,
+        own.position.x + axis.x * 4 + axis.z * side,
+        own.position.y,
+        own.position.z + axis.z * 4 - axis.x * side,
+      );
+      return;
+    }
+    // Teams commit more players the further up the pitch the ball is, so attackers outnumber defenders at
+    // either end; even numbers everywhere pin the ball in a scrum in front of each goal.
+    const upfield = Math.max(0, Math.min(1, ballAlong / Math.max(1, length)));
+    const chasers =
+      1 +
+      Math.round(BALL_CHASE_UPFIELD * upfield) +
+      Math.ceil(size * BALL_CHASE_SHARE * (0.15 + 1.25 * upfield));
+    if (closer < chasers) {
+      this.attackBall(view, self, ball, r, goal.position);
+      return;
+    }
+
+    // Formation: rows from our third up to their box, five lanes across, all leaning toward the ball.
+    const slot = idRank - keepers;
+    const rows = Math.max(1, Math.ceil((size - keepers) / 5));
+    const lane = (slot % 5) - 2;
+    const row = Math.floor(slot / 5);
+    let along =
+      length * (BALL_FORMATION_FROM + ((BALL_FORMATION_TO - BALL_FORMATION_FROM) * (row + 0.5)) / rows);
+    let lat = lane * length * 0.085;
+    along += (ballAlong - along) * 0.35;
+    lat += (ballLat - lat) * 0.35;
+    const wing = length * 0.2;
+    lat = Math.max(-wing, Math.min(wing, lat));
+    this.holdSpot(
+      self,
+      own.position.x + axis.x * along + axis.z * lat,
+      self.pos.y,
+      own.position.z + axis.z * along - axis.x * lat,
+    );
+  }
+
+  /** Walks to a spot and stands there (an intentional wait, not stuck). */
+  private holdSpot(self: BotSelfView, x: number, y: number, z: number): void {
+    this.setTarget(x, y, z);
+    if ((self.pos.x - x) ** 2 + (self.pos.z - z) ** 2 < 0.8) this.speed = 0;
+  }
+
+  /**
+   * Kicks a ball of radius `r` toward `aim`: from the wrong side, circle round
+   * it; once behind, line up and run through it, diving in from close range.
+   */
+  private attackBall(view: BotWorldView, self: BotSelfView, ball: Vec3, r: number, aim: Vec3): void {
+    const dir = this.dirTo(ball, aim, this.s3);
+    const rx = self.pos.x - ball.x;
+    const rz = self.pos.z - ball.z;
+    const along = rx * dir.x + rz * dir.z;
+    // Perpendicular offset: positive to the right of the ball's path.
+    const lat = rx * dir.z - rz * dir.x;
+    if (along > -0.4 * r) {
+      const side = lat >= 0 ? 1 : -1;
+      const out = r + 1.6;
+      this.setTarget(
+        ball.x + dir.z * side * out - dir.x * r * 0.7,
+        ball.y,
+        ball.z - dir.x * side * out - dir.z * r * 0.7,
+      );
+      return;
+    }
+    if (Math.abs(lat) > r * 0.6) {
+      this.setTarget(ball.x - dir.x * (r + 1), ball.y, ball.z - dir.z * (r + 1));
+      return;
+    }
+    this.setTarget(ball.x + dir.x * 2, ball.y, ball.z + dir.z * 2);
+    this.fullSpeed = true;
+    const gap = Math.sqrt(rx * rx + rz * rz) - r;
+    if (
+      gap < 1.4 &&
+      self.grounded &&
+      this.act === Act.None &&
+      this.rng.chance(BALL_DIVE_CHANCE * (1 - this.p.mistakeChance))
+    ) {
+      this.schedule(view, Act.Dive, this.reactionDelay() * 0.3);
+    }
   }
 
   private nearestProp(
